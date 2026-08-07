@@ -1,0 +1,47 @@
+:root {
+  --ink: #ece5d8;
+  --ink-dim: #9c9384;
+  --bg: #14110e;
+  --bg-panel: #1e1a15;
+  --edge: #3a3229;
+  --gold: #d7a94b;
+  --blood: #a3232b;
+  --font-display: 'Trebuchet MS', 'Gill Sans', sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell {
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  height: 100%;
+  text-align: center;
+}
+
+.app-shell h1 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+
+.muted {
+  color: var(--ink-dim);
+}

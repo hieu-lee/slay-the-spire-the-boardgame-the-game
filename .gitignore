@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# The publisher's rulebook, kept locally as ground truth but not redistributed.
+# docs/rules.md records where to fetch it.
+docs/reference/
+artifacts/
+tmp/
+*.tsbuildinfo
+
+# src/ is TypeScript only. A stray `tsc` (without -b, or with --noEmit false)
+# drops compiled siblings next to the sources, which Vite will happily resolve
+# ahead of the .ts file and which must never be committed.
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+.DS_Store
+.rooms/
