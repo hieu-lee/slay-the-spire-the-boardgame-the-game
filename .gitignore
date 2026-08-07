@@ -4,7 +4,6 @@ dist/
 # The publisher's rulebook, kept locally as ground truth but not redistributed.
 # docs/rules.md records where to fetch it.
 docs/reference/
-artifacts/
 tmp/
 *.tsbuildinfo
 
@@ -22,3 +21,10 @@ src/**/*.d.ts
 /test-*.mjs
 /scratch-*.mjs
 /tmp-*.mjs
+artifacts/
+
+# All artwork is the publisher's. It is fetched into the working tree by the
+# sync-* scripts and deliberately NOT redistributed here. See ATTRIBUTION.md.
+public/assets/cards/
+public/assets/icons/
+public/assets/enemies/

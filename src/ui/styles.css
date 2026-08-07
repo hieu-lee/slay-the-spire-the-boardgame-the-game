@@ -1,13 +1,27 @@
+/* One stylesheet while the surface is small. It splits by screen when the map,
+   shop and campfire arrive, following the same by-surface split as the engine. */
+
 :root {
   --ink: #ece5d8;
-  --ink-dim: #9c9384;
+  --ink-dim: #a49a88;
   --bg: #14110e;
   --bg-panel: #1e1a15;
+  --bg-raised: #272119;
   --edge: #3a3229;
   --gold: #d7a94b;
   --blood: #a3232b;
-  --font-display: 'Trebuchet MS', 'Gill Sans', sans-serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --hp: #b5322f;
+  --block: #4b93c4;
+  --energy: #e0b34a;
+
+  --motion-fast: 120ms;
+  --motion-medium: 180ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --card-width: 104px;
+  --card-ratio: 1.395; /* 744 x 1039 scans */
+
+  font-family: 'Trebuchet MS', 'Gill Sans', system-ui, sans-serif;
 }
 
 * {
@@ -22,26 +36,749 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #241d16 0%, transparent 70%),
+    var(--bg);
   color: var(--ink);
-  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
 
-.app-shell {
-  display: grid;
-  place-content: center;
-  gap: 0.5rem;
-  height: 100%;
-  text-align: center;
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 
-.app-shell h1 {
-  font-family: var(--font-display);
-  color: var(--gold);
-  letter-spacing: 0.04em;
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Keyboard users must always be able to see what is focused. */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .muted {
   color: var(--ink-dim);
+  font-size: 0.85rem;
 }
+
+/* ---------- shell ---------- */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 1rem;
+  gap: 0.5rem;
+}
+
+/* Grid and flex children default to min-width:auto, so a wide control forces
+   the whole shell past the viewport. Every track here is allowed to shrink. */
+.app-shell > * {
+  min-width: 0;
+}
+
+.app-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+  border-bottom: 1px solid var(--edge);
+  padding-bottom: 0.5rem;
+}
+
+.app-shell h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.setup {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.setup label {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.setup select,
+.setup input,
+.setup button,
+.combat__actions button {
+  background: var(--bg-raised);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.setup input {
+  width: 7ch;
+}
+
+.combat__actions button {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ---------- combat ---------- */
+
+/* Flex, not grid: the result banner is conditional, so fixed grid rows would
+   shift every child up one track and hand the free space to the wrong element. */
+.combat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  min-width: 0;
+}
+
+.combat__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+}
+
+.combat__die {
+  color: var(--gold);
+}
+
+.combat__phase {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+}
+
+.combat__phase--player {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.combat__phase--enemy {
+  color: var(--blood);
+  border-color: var(--blood);
+}
+
+.combat__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.combat__result {
+  margin: 0;
+  text-align: center;
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.combat__result--won {
+  color: var(--gold);
+}
+
+.combat__result--lost {
+  color: var(--blood);
+}
+
+/* ---------- board ---------- */
+
+.board {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  min-height: 0;
+  /* `safe` keeps the first row reachable when the rows overflow; plain `center`
+     would push the top out of the scrollable area. */
+  justify-content: safe center;
+}
+
+.board__bosses {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--edge);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
+  gap: 0.6rem;
+  min-width: 0;
+  align-items: stretch;
+  background: var(--bg-panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 0.6rem;
+}
+
+.row__enemies {
+  min-width: 0;
+  /* auto-fit rather than fixed widths: one enemy fills the row, four share it,
+     and the same rule handles mobile without a breakpoint. */
+  display: grid;
+  /* The upper bound matters: with a 1fr column the card fills the whole row and
+     the portrait's aspect-ratio turns that width into ~500px of height. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 250px));
+  justify-content: start;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+/* ---------- seat ---------- */
+
+.seat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  padding: 0.45rem 0.55rem;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+
+.seat--viewer {
+  border-color: var(--gold);
+}
+
+.seat--dead {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.seat--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-dim);
+  font-size: 0.75rem;
+  border: 1px dashed var(--edge);
+  border-radius: 5px;
+  padding: 0.45rem;
+}
+
+.seat__name {
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+}
+
+.stance {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.stance--calm {
+  color: #6fb7d8;
+}
+
+.stance--wrath {
+  color: #d86f6f;
+}
+
+/* ---------- enemy ---------- */
+
+.enemy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  padding: 0.4rem 0.5rem;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+.enemy--targeted:not(:disabled):hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+}
+
+.enemy--boss {
+  border-color: var(--blood);
+}
+
+.enemy--dead {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.enemy__name {
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.enemy__boss-tag {
+  font-size: 0.55rem;
+  letter-spacing: 0.14em;
+  color: var(--blood);
+  border: 1px solid var(--blood);
+  border-radius: 999px;
+  padding: 0 0.3rem;
+}
+
+.enemy__intent {
+  font-size: 0.8rem;
+  color: var(--gold);
+}
+
+/* ---------- bars and tokens ---------- */
+
+.bar {
+  position: relative;
+  display: block;
+  height: 14px;
+  background: #120f0c;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--hp);
+  transition: width var(--motion-medium) var(--ease);
+}
+
+.bar__label {
+  position: relative;
+  display: block;
+  text-align: center;
+  font-size: 0.65rem;
+  line-height: 14px;
+  text-shadow: 0 1px 2px #000;
+}
+
+.tokens {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  background: #120f0c;
+  border: 1px solid var(--edge);
+}
+
+.token--block {
+  color: var(--block);
+}
+
+.token--vulnerable,
+.token--weak {
+  color: #d89a6f;
+}
+
+.token--poison {
+  color: #7fb069;
+}
+
+/* ---------- hand ---------- */
+
+.hand-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-top: 1px solid var(--edge);
+  padding-top: 0.5rem;
+}
+
+.hand-area__stats {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.pip--energy {
+  color: var(--energy);
+}
+
+.hand {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-end;
+  min-height: calc(var(--card-width) * var(--card-ratio));
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.card {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--card-width);
+  padding: 0;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  transition:
+    transform var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
+}
+
+.card__art {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.card:not(:disabled):hover {
+  transform: translateY(-8px);
+}
+
+.card--selected {
+  border-color: var(--gold);
+  transform: translateY(-10px);
+}
+
+.card--unplayable {
+  filter: grayscale(0.7) brightness(0.6);
+}
+
+.card__cost {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.7rem;
+  color: var(--energy);
+  text-shadow: 0 1px 3px #000;
+}
+
+/* ---------- log ---------- */
+
+.log {
+  border-top: 1px solid var(--edge);
+  padding-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+  max-height: 5.5rem;
+  overflow-y: auto;
+}
+
+.log p {
+  margin: 0.1rem 0;
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  :root {
+    --card-width: 84px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- icons ---------- */
+
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  image-rendering: auto;
+  /* Icons sit on dark panels; a slight lift keeps them from muddying. */
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.6));
+}
+
+.icon-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-value__number {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 1px 2px #000;
+}
+
+/* ---------- intent ---------- */
+
+.enemy__head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.enemy__intent {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem 0.4rem;
+  flex-wrap: wrap;
+  min-height: 34px;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  /* The single most important thing on an enemy is what it will do to you, so
+     it gets the strongest contrast on the card and the largest icons. */
+  background: rgb(0 0 0 / 0.45);
+  border: 1px solid rgb(215 169 75 / 0.35);
+}
+
+/* A divider between effects, so "1 Block, 1 Weak" cannot read as "11". */
+.intent + .intent::before {
+  content: '';
+  align-self: stretch;
+  width: 1px;
+  margin-right: 0.4rem;
+  background: rgb(215 169 75 / 0.3);
+}
+
+.intent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.intent .icon-value__number {
+  font-size: 1.15rem;
+}
+
+.enemy__asleep {
+  color: var(--ink-dim);
+  letter-spacing: 0.2em;
+}
+
+/* ---------- prompt ---------- */
+
+.prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.95rem;
+  color: var(--gold);
+  /* A gold tint rather than the panel colour: the prompt is an instruction the
+     player must act on, and it was disappearing into the board. */
+  background: rgb(215 169 75 / 0.12);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  animation: prompt-in var(--motion-medium) var(--ease);
+}
+
+.prompt__cancel {
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  color: var(--ink-dim);
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+@keyframes prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* ---------- targeting feedback ---------- */
+
+.enemy--targeted {
+  border-color: rgb(215 169 75 / 0.55);
+  animation: targetable 1.6s ease-in-out infinite;
+}
+
+.seat--targetable {
+  border-color: rgb(75 147 196 / 0.7);
+  animation: targetable 1.6s ease-in-out infinite;
+}
+
+@keyframes targetable {
+  50% {
+    box-shadow: 0 0 0 2px rgb(215 169 75 / 0.25);
+  }
+}
+
+.card--picked {
+  border-color: #ff6b5e;
+  transform: translateY(-6px);
+  /* A dark border on a dark hand is invisible; the glow is what reads. */
+  box-shadow: 0 0 0 2px rgb(255 107 94 / 0.45), 0 0 14px rgb(255 107 94 / 0.35);
+  filter: brightness(0.9) saturate(0.75);
+}
+
+.token__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pip__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pip--energy .icon-value__number {
+  color: var(--energy);
+  font-size: 1.2rem;
+}
+
+/* ---------- readability fixes ---------- */
+
+.bar {
+  height: 16px;
+}
+
+.bar__label {
+  font-size: 0.72rem;
+  line-height: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.log {
+  max-height: 8rem;
+  font-size: 0.8rem;
+}
+
+.combat__die {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------- enemy portrait ---------- */
+
+.enemy {
+  padding: 0;
+  overflow: hidden;
+}
+
+.enemy__portrait {
+  position: relative;
+  display: block;
+  /* The extracted art window is ~1.60 wide-to-tall. Matching it means
+     object-fit has essentially nothing to crop, so no creature loses its feet. */
+  aspect-ratio: 16 / 10;
+  background: #0e0c0a;
+  overflow: hidden;
+}
+
+.enemy__portrait > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--motion-medium) var(--ease);
+}
+
+.enemy:not(:disabled):hover .enemy__portrait > img {
+  transform: scale(1.04);
+}
+
+.enemy__head {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.4rem 0.2rem;
+  /* A scrim so the name stays legible over any artwork. */
+  background: linear-gradient(to top, rgb(14 12 10 / 0.95), transparent);
+  font-size: 0.8rem;
+}
+
+.enemy__intent,
+.enemy .bar,
+.enemy .tokens {
+  margin: 0 0.5rem;
+}
+
+.enemy__intent {
+  margin-top: 0.6rem;
+}
+
+.enemy .tokens {
+  margin-bottom: 0.45rem;
+}
+
+.enemy .bar {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+/* ---------- feedback ---------- */
+
+/* A hit should be felt, not just recorded in a log. */
+@keyframes struck {
+  0% { transform: translateX(0); filter: brightness(1); }
+  20% { transform: translateX(-4px); filter: brightness(2.2) saturate(0.4); }
+  45% { transform: translateX(3px); }
+  70% { transform: translateX(-2px); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+
+.enemy--struck,
+.seat--struck {
+  animation: struck 380ms var(--ease);
+}
+
+@keyframes card-play {
+  from { opacity: 0; transform: translateY(14px) scale(0.94); }
+}
+
+/* Deliberately NOT applied to .card globally: the hand re-renders on every
+   state change, and a blanket entry animation makes the whole hand flicker. */

@@ -1,0 +1,2676 @@
+[
+ {
+  "type": "ironclad",
+  "tier": "ironclad/starter",
+  "name": "Strike",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/starter",
+  "name": "Defend",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/starter",
+  "name": "Bash",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Anger",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Body Slam",
+  "index": 18,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Cleave",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Clothesline",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Flex",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Havoc",
+  "index": 43,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Heavy Blade",
+  "index": 23,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Iron Wave",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Pommel Strike",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Seeing Red",
+  "index": 51,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Shrug It Off",
+  "index": 21,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "True Grit",
+  "index": 16,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Twin Strike",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Warcry",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Wild Strike",
+  "index": 40,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Battle Trance",
+  "index": 32,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Blood for Blood",
+  "index": 38,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Burning Pact",
+  "index": 33,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Carnage",
+  "index": 36,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Clash",
+  "index": 27,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Combust",
+  "index": 55,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Dark Embrace",
+  "index": 28,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Disarm",
+  "index": 35,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Entrench",
+  "index": 47,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Evolve",
+  "index": 30,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Feel No Pain",
+  "index": 25,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Fire Breathing",
+  "index": 42,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Flame Barrier",
+  "index": 26,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Ghostly Armor",
+  "index": 58,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Headbutt",
+  "index": 20,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Inflame",
+  "index": 53,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Metallicize",
+  "index": 31,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Perfected Strike",
+  "index": 34,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Power Through",
+  "index": 57,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Rage",
+  "index": 59,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Rampage",
+  "index": 46,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Rupture",
+  "index": 54,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Second Wind",
+  "index": 48,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Sentinel",
+  "index": 45,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Sever Soul",
+  "index": 29,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Shockwave",
+  "index": 56,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Spot Weakness",
+  "index": 37,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/normal",
+  "name": "Whirlwind",
+  "index": 39,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Barricade",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Berserk",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Bludgeon",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Corruption",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Demon Form",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Double Tap",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Exhume",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Feed",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Fiend Fire",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Immolate",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Impervious",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Juggernaut",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Limit Break",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Offering",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "ironclad",
+  "tier": "ironclad/rare",
+  "name": "Uppercut",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/starter",
+  "name": "Strike",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/starter",
+  "name": "Defend",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/starter",
+  "name": "Neutralize",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/starter",
+  "name": "Survivor",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Acrobatics",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Backflip",
+  "index": 20,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Bane",
+  "index": 30,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Blade Dance",
+  "index": 22,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Cloak and Dagger",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Dagger Spray",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Dagger Throw",
+  "index": 24,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Deadly Poison",
+  "index": 26,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Deflect",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Dodge and Roll",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Poisoned Stab",
+  "index": 17,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Prepared",
+  "index": 28,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Slice",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Sneaky Strike",
+  "index": 15,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Accuracy",
+  "index": 35,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "All-Out Attack",
+  "index": 36,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Backstab",
+  "index": 37,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Blur",
+  "index": 33,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Bouncing Flask",
+  "index": 41,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Calculated Gamble",
+  "index": 38,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Catalyst",
+  "index": 39,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Choke",
+  "index": 59,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Concentrate",
+  "index": 32,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Crippling Cloud",
+  "index": 44,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Dash",
+  "index": 47,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Distraction",
+  "index": 31,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Escape Plan",
+  "index": 46,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Expertise",
+  "index": 56,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Finisher",
+  "index": 49,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Flechettes",
+  "index": 50,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Footwork",
+  "index": 54,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Infinite Blades",
+  "index": 51,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Leg Sweep",
+  "index": 52,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Masterful Stab",
+  "index": 55,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Noxious Fumes",
+  "index": 53,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Outmaneuver",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Piercing Wail",
+  "index": 19,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Predator",
+  "index": 57,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Reflex",
+  "index": 42,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Riddle with Holes",
+  "index": 40,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Setup",
+  "index": 58,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Skewer",
+  "index": 48,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Tactician",
+  "index": 43,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Terror",
+  "index": 45,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/normal",
+  "name": "Well-Laid Plans",
+  "index": 34,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "A Thousand Cuts",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Adrenaline",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "After Image",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Bullet Time",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Burst",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Corpse Explosion",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Die Die Die",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Doppelganger",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Envenom",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Grand Finale",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Malaise",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Storm of Steel",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Tools of the Trade",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Unload",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "silent",
+  "tier": "silent/rare",
+  "name": "Wraith Form",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/starter",
+  "name": "Strike",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/starter",
+  "name": "Defend",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/starter",
+  "name": "Zap",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/starter",
+  "name": "Dual Cast",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Ball Lightning",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Barrage",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Chaos",
+  "index": 48,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Charge Battery",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Claw",
+  "index": 37,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Claw (Claw Pack)",
+  "index": 60,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Cold Snap",
+  "index": 29,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Compile Driver",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Coolheaded",
+  "index": 27,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Go for the Eyes",
+  "index": 34,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Leap",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Recursion",
+  "index": 50,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Skim",
+  "index": 58,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Steam Barrier",
+  "index": 40,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Sweeping Beam",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "TURBO",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Beam Cell",
+  "index": 36,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Blizzard",
+  "index": 55,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Capacitor",
+  "index": 24,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Consume",
+  "index": 56,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Darkness",
+  "index": 31,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Doom and Gloom",
+  "index": 32,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Double Energy",
+  "index": 57,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Equilibrium",
+  "index": 54,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "FTL",
+  "index": 43,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Force Field",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Fusion",
+  "index": 20,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Glacier",
+  "index": 26,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Heatsinks",
+  "index": 22,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Hologram",
+  "index": 15,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Loop",
+  "index": 23,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Machine Learning",
+  "index": 21,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Melter",
+  "index": 44,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Overclock",
+  "index": 39,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Recycle",
+  "index": 45,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Reinforced Body",
+  "index": 16,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Reprogram",
+  "index": 33,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Scrape",
+  "index": 18,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Stack",
+  "index": 53,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Streamline",
+  "index": 42,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Storm",
+  "index": 25,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Sunder",
+  "index": 17,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/normal",
+  "name": "Tempest",
+  "index": 52,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "All for One",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Amplify",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Buffer",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Core Surge",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Defragment",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Echo Form",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Electrodynamics",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Fission",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Hyperbeam",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Meteor Strike",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Multi-Cast",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Rainbow",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Seek",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Static Discharge",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "defect",
+  "tier": "defect/rare",
+  "name": "Thunder Strike",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/starter",
+  "name": "Strike",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/starter",
+  "name": "Defend",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/starter",
+  "name": "Eruption",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/starter",
+  "name": "Vigilance",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Collect",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Consecrate",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Crescendo",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Cut Through Fate",
+  "index": 20,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Empty Body",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Empty Fist",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Flurry of Blows",
+  "index": 16,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Flying Sleeves",
+  "index": 24,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Halt",
+  "index": 26,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Just Lucky",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Protect",
+  "index": 22,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Third Eye",
+  "index": 18,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Tranquility",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Battle Hymn",
+  "index": 44,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Carve Reality",
+  "index": 54,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Conclude",
+  "index": 51,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Crush Joints",
+  "index": 57,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Empty Mind",
+  "index": 55,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Fear No Evil",
+  "index": 35,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Foreign Influence",
+  "index": 37,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Foresight",
+  "index": 34,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Indignation",
+  "index": 39,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Inner Peace",
+  "index": 38,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Like Water",
+  "index": 46,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Meditate",
+  "index": 52,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Mental Fortress",
+  "index": 47,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Nirvana",
+  "index": 40,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Perseverance",
+  "index": 42,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Pray",
+  "index": 31,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Prostrate",
+  "index": 32,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Reach Heaven",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Rushdown",
+  "index": 45,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Sands of Time",
+  "index": 41,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Sash Whip",
+  "index": 50,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Signature Move",
+  "index": 33,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Simmering Fury",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Study",
+  "index": 48,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Swivel",
+  "index": 43,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Talk to the Hand",
+  "index": 49,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Tantrum",
+  "index": 36,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Wallop",
+  "index": 30,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Weave",
+  "index": 53,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Windmill Strike",
+  "index": 56,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Worship",
+  "index": 59,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/normal",
+  "name": "Wreath of Flame",
+  "index": 58,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Blasphemy",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Brilliance",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Conjure Blade",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Deus Ex Machina",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Deva Form",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Devotion",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Establishment",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Judgment",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Omega",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Omniscience",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Ragnarok",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Scrawl",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Spirit Shield",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Vault",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "watcher",
+  "tier": "watcher/rare",
+  "name": "Wish",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Apparition",
+  "index": 21,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Blind",
+  "index": 9,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Dark Shackles",
+  "index": 20,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Dramatic Entrance",
+  "index": 0,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Finesse",
+  "index": 4,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Flash of Steel",
+  "index": 5,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Good Instincts",
+  "index": 1,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Impatience",
+  "index": 19,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Madness",
+  "index": 17,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Mind Blast",
+  "index": 2,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Panacea",
+  "index": 7,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Panache",
+  "index": 14,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Purity",
+  "index": 8,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Sadistic Nature",
+  "index": 12,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Swift Strike",
+  "index": 6,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Thinking Ahead",
+  "index": 15,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Trip",
+  "index": 10,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Apotheosis",
+  "index": 18,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Hand of Greed",
+  "index": 3,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Master of Strategy",
+  "index": 16,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "Mayhem",
+  "index": 11,
+  "hasUpgrade": true
+ },
+ {
+  "type": "colorless",
+  "tier": "colourless",
+  "name": "The Bomb",
+  "index": 13,
+  "hasUpgrade": true
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Clumsy",
+  "index": 2,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Decay",
+  "index": 12,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Doubt",
+  "index": 9,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Injury",
+  "index": 0,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Pain",
+  "index": 10,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Parasite",
+  "index": 4,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Regret",
+  "index": 6,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Shame",
+  "index": 11,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "curses",
+  "name": "Writhe",
+  "index": 8,
+  "hasUpgrade": false
+ },
+ {
+  "type": "curse",
+  "tier": "ascension",
+  "name": "Ascender's Bane",
+  "index": 0,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Ancient Potion",
+  "index": 16,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Attack Potion",
+  "index": 14,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Block Potion",
+  "index": 0,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Blood Potion",
+  "index": 9,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Cunning Potion",
+  "index": 28,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Distilled Chaos",
+  "index": 11,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Energy Potion",
+  "index": 1,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Entropic Brew",
+  "index": 12,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Explosive Potion",
+  "index": 2,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Fairy in a Bottle",
+  "index": 13,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Fire Potion",
+  "index": 3,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Flex Potion",
+  "index": 7,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Gambler's Potion",
+  "index": 8,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Ghost in a Jar",
+  "index": 10,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Liquid Memories",
+  "index": 25,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Purity Potion",
+  "index": 27,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Skill Potion",
+  "index": 15,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Snecko Oil",
+  "index": 26,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Swift Potion",
+  "index": 4,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Vulnerable Potion",
+  "index": 6,
+  "hasUpgrade": false
+ },
+ {
+  "type": "potion",
+  "tier": "potions",
+  "name": "Weak Potion",
+  "index": 5,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Akabeko",
+  "index": 40,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Anchor",
+  "index": 3,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Bag of Preparation",
+  "index": 2,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Bird-Faced Urn",
+  "index": 33,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Blood Vial",
+  "index": 0,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Blue Candle",
+  "index": 42,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Calipers",
+  "index": 49,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Captain's Wheel",
+  "index": 18,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Centennial Puzzle",
+  "index": 41,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Charon's Ashes",
+  "index": 14,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Dead Branch",
+  "index": 50,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Dolly's Mirror",
+  "index": 11,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Du-Vu Doll",
+  "index": 51,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Duality",
+  "index": 20,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Gambling Chip",
+  "index": 7,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Golden Eye",
+  "index": 45,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Golden Idol",
+  "index": 48,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Gremlin Horn",
+  "index": 24,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Happy Flower",
+  "index": 21,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Horn Cleat",
+  "index": 12,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Ice Cream",
+  "index": 46,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Incense Burner",
+  "index": 30,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Ink Bottle",
+  "index": 27,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Lantern",
+  "index": 1,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Meat on the Bone",
+  "index": 34,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Mercury Hourglass",
+  "index": 13,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Molten Egg",
+  "index": 56,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Mummified Hand",
+  "index": 5,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Mutagen",
+  "index": 9,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Necronomicon",
+  "index": 10,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Nilry's Codex",
+  "index": 19,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Ninja Scroll",
+  "index": 4,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Oddly Smooth Stone",
+  "index": 23,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Old Coin",
+  "index": 39,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Omamori",
+  "index": 54,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Orichalcum",
+  "index": 44,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Peace Pipe",
+  "index": 31,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Pen Nib",
+  "index": 26,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Pocketwatch",
+  "index": 17,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Red Mask",
+  "index": 28,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Red Skull",
+  "index": 6,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Regal Pillow",
+  "index": 8,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Runic Pyramid",
+  "index": 53,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Self-Forming Clay",
+  "index": 52,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Ssserpent Head",
+  "index": 47,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Stone Calendar",
+  "index": 22,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Strike Dummy",
+  "index": 32,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Sundial",
+  "index": 16,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "The Abacus",
+  "index": 35,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "The Boot",
+  "index": 29,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "The Courier",
+  "index": 43,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Toolbox",
+  "index": 36,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Toxic Egg",
+  "index": 57,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Tungsten Rod",
+  "index": 25,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Vajra",
+  "index": 15,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "War Paint",
+  "index": 38,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Whetstone",
+  "index": 37,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics",
+  "name": "Wing Boots",
+  "index": 55,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Astrolabe",
+  "index": 16,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Black Blood",
+  "index": 12,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Calling Bell",
+  "index": 17,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Coffee Dripper",
+  "index": 6,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Cursed Key",
+  "index": 1,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Ectoplasm",
+  "index": 0,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Empty Cage",
+  "index": 11,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Enchiridion",
+  "index": 18,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Frozen Core",
+  "index": 10,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Fusion Hammer",
+  "index": 7,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Holy Water",
+  "index": 3,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Mark of Pain",
+  "index": 19,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Orrery",
+  "index": 8,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Pandora's Box",
+  "index": 5,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Ring of the Serpent",
+  "index": 13,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Snecko Eye",
+  "index": 4,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Sozu",
+  "index": 9,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Tiny House",
+  "index": 15,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "White Beast Statue",
+  "index": 14,
+  "hasUpgrade": false
+ },
+ {
+  "type": "relic",
+  "tier": "relics/boss",
+  "name": "Wrist Blade",
+  "index": 2,
+  "hasUpgrade": false
+ }
+]
