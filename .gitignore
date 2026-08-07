@@ -16,3 +16,9 @@ src/**/*.js.map
 src/**/*.d.ts
 .DS_Store
 .rooms/
+
+# Review subagents occasionally drop scratch files in the repo root despite
+# being told not to. Keep them out of commits.
+/test-*.mjs
+/scratch-*.mjs
+/tmp-*.mjs
