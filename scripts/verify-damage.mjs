@@ -103,10 +103,25 @@ check('HP loss ignores Block entirely', () => {
 })
 
 check('every token clamps at its cap instead of overflowing', () => {
-  assertEqual(gainBlock(18, 5), CAPS.block, 'Block caps at 20')
-  assertEqual(gainStrength(7, 4), CAPS.strength, 'Strength caps at 8')
-  assertEqual(gainVulnerable(2, 3), CAPS.vulnerable, 'Vulnerable caps at 3')
-  assertEqual(gainWeak(0, 9), CAPS.weak, 'Weak caps at 3')
+  // Literals, not CAPS: comparing the result against the very constant that
+  // produced it passes however that constant drifts, while the message goes on
+  // claiming a number that is no longer true.
+  assertEqual(gainBlock(18, 5), 20, 'Block caps at 20')
+  assertEqual(gainStrength(7, 4), 8, 'Strength caps at 8')
+  assertEqual(gainVulnerable(2, 3), 3, 'Vulnerable caps at 3')
+  assertEqual(gainWeak(0, 9), 3, 'Weak caps at 3')
+})
+
+check('the caps are the ones the rulebook prints', () => {
+  assertEqual(CAPS.block, 20, 'Block')
+  assertEqual(CAPS.strength, 8, 'Strength')
+  assertEqual(CAPS.vulnerable, 3, 'Vulnerable')
+  assertEqual(CAPS.weak, 3, 'Weak')
+  assertEqual(CAPS.poison, 30, 'Poison, across the whole table')
+  assertEqual(CAPS.energy, 6, 'Energy')
+  assertEqual(CAPS.shivs, 5, 'Shivs')
+  assertEqual(CAPS.miracles, 5, 'Miracles')
+  assertEqual(CAPS.potions, 3, 'Potions')
 })
 
 check('tokens never go negative', () => {

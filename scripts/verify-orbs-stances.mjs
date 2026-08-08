@@ -2,6 +2,8 @@
 // enemies apply. These were no-ops until now, so Zap and Dual Cast sat in the
 // Defect's starter deck doing nothing.
 import { createCombat, endPlayerTurn, enemyTurn, playCard, startPlayerTurn } from '../src/game/combat.ts'
+import { gainVulnerable, gainWeak } from '../src/game/damage.ts'
+import { STARTING_RELIC } from '../src/game/relics.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
@@ -80,7 +82,14 @@ check('each orb type evokes for its printed effect', () => {
 check('a Dark orb evokes for 3 plus one per Power in play', () => {
   const dual = instance('dual_cast')
   const state = combat(
-    [player({ hand: [dual], orbs: ['dark', null, null], powers: [instance('p1'), instance('p2')] })],
+    // Real Powers, not just real card ids: the dispatcher looks these up, and
+    // only a Power can actually sit in front of you. Neither of these two
+    // triggers on an evoke, so they add to the count without altering it.
+    [player({
+      hand: [dual],
+      orbs: ['dark', null, null],
+      powers: [instance('metallicize'), instance('demon_form')],
+    })],
     [enemy({ hp: 20 })],
   )
   const next = playCard(state, 'p1', dual.uid, { enemyUid: 'e1', playerId: 'p1' })
@@ -246,9 +255,12 @@ check('a Weak enemy attacking a Vulnerable player cancels both', () => {
 })
 
 check('player tokens clamp at their caps', () => {
-  const state = combat([player({ vulnerable: 3, weak: 3 })], [enemy()])
-  assertEqual(state.players[0].vulnerable, 3)
-  assertEqual(state.players[0].weak, 3)
+  // Through the functions that actually clamp. Building a fixture with the cap
+  // already set and asserting it is still the cap tests the fixture, not the
+  // engine — createCombat clamps nothing.
+  assertEqual(gainVulnerable(2, 5), 3, 'Vulnerable caps at 3')
+  assertEqual(gainWeak(1, 9), 3, 'Weak caps at 3')
+  assertEqual(gainVulnerable(3, 1), 3, 'and stays there')
 })
 
 
@@ -265,8 +277,11 @@ check('a start-of-combat relic fires on turn 1 only', () => {
   state = startPlayerTurn(state)
   assertEqual(state.players[0].strength, 1, 'Akabeko grants 1 Strength at the start of combat')
 
-  state = startPlayerTurn({ ...state, phase: 'player' })
-  assertEqual(state.players[0].strength, 1, 'and does not fire again on turn 2')
+  // A real round-trip. `startPlayerTurn` on a turn already begun is refused,
+  // so the old version never reached turn 2 and asserted nothing.
+  state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
+  assertEqual(state.turn, 2, 'precondition: the second round must actually begin')
+  assertEqual(state.players[0].strength, 1, 'and it does not fire again on turn 2')
 })
 
 check('a start-of-combat draw relic fills the hand further', () => {
@@ -348,6 +363,94 @@ check('a player with no relics is unaffected', () => {
   assertEqual(state.players[0].strength, 0)
   assertEqual(state.players[0].energy, 3)
   assertEqual(state.players[0].hand.length, 5)
+})
+
+
+check('only leaving Calm pays out Energy', () => {
+  // Reachable with the shipped Watcher deck: Eruption enters Wrath, then
+  // Vigilance enters Calm. Leaving WRATH must not refund anything.
+  const eruption = instance('eruption')
+  const vigilance = instance('vigilance')
+  let state = combat(
+    // Enough Energy for both: Eruption is 2 and Vigilance is 2, so a starting
+    // 3 would leave the second play refused for cost rather than stance.
+    [player({ character: 'watcher', hand: [eruption, vigilance], energy: 6 })],
+    [enemy({ hp: 20 })],
+  )
+  state = playCard(state, 'p1', eruption.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.players[0].stance, 'wrath', 'precondition: Eruption enters Wrath')
+  const afterWrath = state.players[0].energy
+
+  state = playCard(state, 'p1', vigilance.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].stance, 'calm', 'Vigilance enters Calm')
+  assertEqual(
+    state.players[0].energy,
+    afterWrath - 2,
+    'leaving Wrath refunds nothing; only leaving Calm does',
+  )
+})
+
+check('channelling fills the next free slot rather than forcing an evoke', () => {
+  // The all-empty and all-full cases were covered; the partially filled one —
+  // the only case that distinguishes "fill a slot" from "always evoke" — was
+  // not.
+  const first = instance('zap')
+  const second = instance('zap')
+  let state = combat(
+    [player({ character: 'defect', hand: [first, second], orbs: [null, null, null], energy: 3 })],
+    [enemy({ hp: 20 })],
+  )
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: 'p1' })
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertDeepEqual(
+    state.players[0].orbs,
+    ['lightning', 'lightning', null],
+    'two channels fill two slots; neither should have forced an evoke',
+  )
+  assertEqual(state.enemies[0].hp, 20, 'and nothing was evoked at an enemy')
+})
+
+check('each character starts with the relic printed on their board', () => {
+  const PRINTED = {
+    ironclad: 'burning_blood',
+    silent: 'ring_of_the_snake',
+    defect: 'cracked_core',
+    watcher: 'pure_water',
+  }
+  for (const [character, defId] of Object.entries(PRINTED)) {
+    assertEqual(STARTING_RELIC[character], defId, `${character} starting relic`)
+  }
+})
+
+check('a Daze cannot be played out of hand', () => {
+  // `unplayable` was only ever tested through a fixture, never through the one
+  // real card that carries it.
+  const daze = instance('daze')
+  const state = combat([player({ hand: [daze] })], [enemy({ hp: 20 })])
+  assert(
+    playCard(state, 'p1', daze.uid, { enemyUid: 'e1', playerId: 'p1' }) === state,
+    'a Daze is dead weight, not a free discard',
+  )
+})
+
+check("every character's Defend+ can be given to an ally", () => {
+  // Three of the four come from a shared factory and only the hand-written
+  // Ironclad copy was tested — two copies of one card is the drift this
+  // codebase guards against elsewhere.
+  for (const character of ['ironclad', 'silent', 'defect', 'watcher']) {
+    const defend = instance(`defend_${character}`, true)
+    const next = playCard(
+      combat(
+        [player({ id: 'p1', character, hand: [defend] }), player({ id: 'p2', row: 1 })],
+        [enemy()],
+      ),
+      'p1',
+      defend.uid,
+      { enemyUid: null, playerId: 'p2' },
+    )
+    assertEqual(next.players[1].block, 2, `${character} Defend+ should reach the ally`)
+    assertEqual(next.players[0].block, 0, `${character} Defend+ should not stay with the caster`)
+  }
 })
 
 report('orbs, stances, statuses and relics')

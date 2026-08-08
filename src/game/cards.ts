@@ -2,6 +2,7 @@
 // icons — Bash is literally "2⚔ 💔" — so an effect list is a transcription of
 // the card rather than an interpretation of it. One resolver reads them all.
 import type { CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
+import type { Trigger } from './triggers.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
 export type TargetScope =
@@ -15,6 +16,18 @@ export type TargetScope =
   | 'anyPlayer'
   | 'allPlayers'
 
+/**
+ * Whether a supportive effect goes to the player the caster chose, or to the
+ * caster themselves.
+ *
+ * This lives on the EFFECT, not the card, because the printed text attaches
+ * "to any player" to one clause. Vigilance reads "2 Block to any player. Enter
+ * Calm." — the Block is redirected, the stance is the Watcher's own. A
+ * card-level flag cannot express that, and reading it as card-wide put allies
+ * into stances they can never legally be in.
+ */
+type Redirectable = { toChosen?: boolean }
+
 export type Effect =
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
   | { kind: 'hit'; amount: number; times?: number }
@@ -22,20 +35,20 @@ export type Effect =
   | { kind: 'damage'; amount: number }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
-  | { kind: 'block'; amount: number }
+  | ({ kind: 'block'; amount: number } & Redirectable)
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
-  | { kind: 'gainStrength'; amount: number }
+  | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   | { kind: 'poison'; amount: number }
-  | { kind: 'draw'; amount: number }
-  | { kind: 'gainEnergy'; amount: number }
-  | { kind: 'gainShiv'; amount: number }
-  | { kind: 'gainMiracle'; amount: number }
+  | ({ kind: 'draw'; amount: number } & Redirectable)
+  | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
+  | ({ kind: 'gainShiv'; amount: number } & Redirectable)
+  | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: number }
   | { kind: 'evoke'; times: number }
   | { kind: 'scry'; amount: number }
-  | { kind: 'heal'; amount: number }
+  | ({ kind: 'heal'; amount: number } & Redirectable)
   /**
    * Discard cards the player chooses. The choice travels with the action rather
    * than parking the game in a prompt state, which keeps a card play a single
@@ -63,6 +76,12 @@ export type CardDef = {
   exhaust?: boolean
   /** Cannot be played at all; an effect that tries to play it is ignored (p.24). */
   unplayable?: boolean
+  /**
+   * For Powers: when the ongoing effect fires once the card is in play. The
+   * `effects` list is what the Power DOES each time it triggers, not what
+   * happens when it is played — a Power with a trigger does nothing on play.
+   */
+  trigger?: Trigger
   // Ethereal and Retain are deliberately absent. No card here has them yet, and
   // a declared-but-unhonoured flag is worse than a missing one: a card carrying
   // it would silently play as though it were normal.
@@ -102,7 +121,10 @@ function starterDefend(owner: CharacterId): CardDef {
     cost: 1,
     effects: [{ kind: 'block', amount: 1 }],
     // Defend+ reads "2 Block to any player" — co-op targeting is on the card.
-    upgrade: { effects: [{ kind: 'block', amount: 2 }], supportTarget: 'anyPlayer' },
+    upgrade: {
+      effects: [{ kind: 'block', amount: 2, toChosen: true }],
+      supportTarget: 'anyPlayer',
+    },
   }
 }
 
@@ -199,14 +221,16 @@ export const CARDS: Record<string, CardDef> = {
     type: 'skill',
     rarity: 'starter',
     cost: 2,
+    // "2 Block to any player. Enter Calm." — the Block is redirected; the
+    // stance is the Watcher's own, which is why the flag is per effect.
     supportTarget: 'anyPlayer',
     effects: [
-      { kind: 'block', amount: 2 },
+      { kind: 'block', amount: 2, toChosen: true },
       { kind: 'enterStance', stance: 'calm' },
     ],
     upgrade: {
       effects: [
-        { kind: 'block', amount: 3 },
+        { kind: 'block', amount: 3, toChosen: true },
         { kind: 'enterStance', stance: 'calm' },
       ],
     },
@@ -231,7 +255,10 @@ export const CARDS: Record<string, CardDef> = {
     cost: 1,
     effects: [{ kind: 'block', amount: 1 }],
     // Defend+ reads "2 Block to any player" — co-op targeting is printed on the card.
-    upgrade: { effects: [{ kind: 'block', amount: 2 }], supportTarget: 'anyPlayer' },
+    upgrade: {
+      effects: [{ kind: 'block', amount: 2, toChosen: true }],
+      supportTarget: 'anyPlayer',
+    },
   }),
   // Two separate hits, not one hit of 2 — each is modified on its own, and the
   // pair still spends only a single Vulnerable token.
@@ -252,18 +279,68 @@ export const CARDS: Record<string, CardDef> = {
     type: 'skill',
     rarity: 'common',
     cost: 1,
+    // "1 Block to any player. Exhaust a card." — only the Block is redirected;
+    // the card you exhaust comes from your own hand.
     supportTarget: 'anyPlayer',
     effects: [
-      { kind: 'block', amount: 1 },
+      { kind: 'block', amount: 1, toChosen: true },
       { kind: 'exhaustFromHand', amount: 1 },
     ],
     upgrade: {
       effects: [
-        { kind: 'block', amount: 2 },
+        { kind: 'block', amount: 2, toChosen: true },
         { kind: 'exhaustFromHand', amount: 1 },
       ],
     },
   }),
+  // Powers: the `effects` fire on the TRIGGER, not when the card is played.
+  // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change
+  // only their cost, and Demon Form's bare Strength icon means 1.
+  metallicize: card({
+    id: 'metallicize',
+    name: 'Metallicize',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'uncommon',
+    cost: 1,
+    trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'block', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
+  demon_form: card({
+    id: 'demon_form',
+    name: 'Demon Form',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'rare',
+    cost: 3,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'gainStrength', amount: 1 }],
+    upgrade: { cost: 2 },
+  }),
+  feel_no_pain: card({
+    id: 'feel_no_pain',
+    name: 'Feel No Pain',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'uncommon',
+    cost: 1,
+    trigger: { kind: 'onExhaust' },
+    effects: [{ kind: 'block', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
+  dark_embrace: card({
+    id: 'dark_embrace',
+    name: 'Dark Embrace',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'uncommon',
+    cost: 2,
+    trigger: { kind: 'onExhaust' },
+    effects: [{ kind: 'draw', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+
   bash: card({
     id: 'bash',
     name: 'Bash',

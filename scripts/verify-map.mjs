@@ -39,8 +39,10 @@ check('the row below the boss is all campfires', () => {
 
 check('the map has the expected number of rows', () => {
   const map = build()
-  // opening encounter + middle rows + campfire row + boss
-  assertEqual(map.rows.length, ACT_SHAPE.middleRows + 3)
+  // opening encounter + middle rows + campfire row + boss. The literal is the
+  // point: derived from ACT_SHAPE it holds however ACT_SHAPE drifts.
+  assertEqual(map.rows.length, 9, 'an act is nine rows deep')
+  assertEqual(ACT_SHAPE.middleRows, 6, 'six rows between the opening and the campfire')
 })
 
 check('every room is reachable from the row below it', () => {
@@ -633,5 +635,6 @@ check('losing a combat ends the run', () => {
   const lost = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'lost' } })
   assertEqual(lost.phase, 'defeat')
 })
+
 
 report('map and run')

@@ -24,6 +24,12 @@ export type DrawResult = Piles & {
   drawn: number
   /** True when the discard pile had to be reshuffled to satisfy the draw. */
   reshuffled: boolean
+  /**
+   * How many cards had already been drawn when the reshuffle happened, or -1
+   * if it did not. A reshuffle lands in the MIDDLE of a draw, so a caller that
+   * fires an effect per card drawn needs to know where to slot it in.
+   */
+  reshuffledAfter: number
 }
 
 /**
@@ -36,6 +42,7 @@ export function drawCards(rng: RngState, piles: Piles, count: number): DrawResul
   let discard = [...piles.discard]
   let drawn = 0
   let reshuffled = false
+  let reshuffledAfter = -1
 
   for (let i = 0; i < count; i++) {
     if (draw.length === 0) {
@@ -43,6 +50,10 @@ export function drawCards(rng: RngState, piles: Piles, count: number): DrawResul
       draw.push(...shuffle(rng, discard))
       discard = []
       reshuffled = true
+      // How many cards were already in hand when the pile ran out. The shuffle
+      // happens PARTWAY through a draw (p.12), so anything that reacts to
+      // drawing and to shuffling has to interleave in the right order.
+      reshuffledAfter = drawn
     }
     const card = draw.shift()
     if (!card) break
@@ -50,7 +61,7 @@ export function drawCards(rng: RngState, piles: Piles, count: number): DrawResul
     drawn++
   }
 
-  return { draw, hand, discard, drawn, reshuffled }
+  return { draw, hand, discard, drawn, reshuffled, reshuffledAfter }
 }
 
 /** Discards the whole hand, which is what the end of the Player Turn does. */

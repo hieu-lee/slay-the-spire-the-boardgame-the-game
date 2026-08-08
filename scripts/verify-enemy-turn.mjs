@@ -7,7 +7,7 @@ import {
   startPlayerTurn,
 } from '../src/game/combat.ts'
 import { actionsFor, advanceCube, enemyDef, startingHp } from '../src/game/enemies.ts'
-import { STARTER_DECKS } from '../src/game/cards.ts'
+import { CARDS, STARTER_DECKS, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
@@ -169,9 +169,9 @@ check('a single-action enemy repeats the same action every turn', () => {
   assertEqual(state.enemies[0].strength, 2)
 })
 
-check('the Enemy Turn hands play back to the players', () => {
+check('the Enemy Turn ends the round and waits', () => {
   const next = enemyTurn(inEnemyPhase([player()], [enemy()]))
-  assertEqual(next.phase, 'player', 'the round returns to the Player Turn')
+  assertEqual(next.phase, 'roundEnd', 'the round is over, pending the next Start of Turn')
 })
 
 check('calling enemyTurn outside the enemy phase is refused', () => {
@@ -244,12 +244,866 @@ check('a full round runs Player Turn then Enemy Turn and repeats', () => {
   state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: 'p1' })
   state = endPlayerTurn(state)
   assertEqual(state.phase, 'enemy')
+  // A round is a Player Turn followed by an Enemy Turn (p.12). The Enemy Turn
+  // ends the round and the board holds there, so everyone can read what the
+  // enemies did before the next Start of Turn sweeps up every hand.
   state = enemyTurn(state)
-  assertEqual(state.phase, 'player', 'and back around for another round')
-  assertEqual(state.turn, 1, 'one Player Turn has been taken so far')
+  assertEqual(state.phase, 'roundEnd', 'the round ends and holds')
+  assertEqual(state.turn, 1, 'still one Player Turn taken')
+
   state = startPlayerTurn(state)
+  assertEqual(state.phase, 'player', 'and back around for another round')
   assertEqual(state.turn, 2, 'the second round increments the turn counter')
   assertEqual(state.players[0].hand.length, 5, 'a fresh hand is drawn each round')
+  assertEqual(state.players[0].energy, 3, 'and Energy is reset')
+})
+
+check('a Player Turn cannot be replayed to refill Energy and redraw', () => {
+  // startPlayerTurn is reachable from the network through the room layer, so
+  // re-running it would hand out a second hand and a second Energy reset while
+  // skipping the Enemy Turn altogether.
+  uid = 0
+  let state = createCombat(
+    createRng(7),
+    [player({ draw: STARTER_DECKS.ironclad.map((id) => instance(id)) })],
+    [enemy({ hp: 20 })],
+  )
+  state = startPlayerTurn(state)
+  const opened = state
+  assertEqual(state.turn, 1, 'the first turn opened')
+
+  const again = startPlayerTurn(state)
+  assert(again === opened, 'a second call must be refused, returning the same state')
+
+  // And not while the enemies are still owed their turn, which would skip it.
+  const duringEnemyPhase = { ...opened, phase: 'enemy' }
+  assert(
+    startPlayerTurn(duringEnemyPhase) === duringEnemyPhase,
+    'the Enemy Turn cannot be skipped by starting the next Player Turn',
+  )
+})
+
+suite('the combat log')
+
+// The log is the only record of the Enemy Turn. A missing line is not a
+// cosmetic gap: the player sees a number change and has to guess why.
+check('an enemy attack is reported with who, whom and how much', () => {
+  // Every line the log carries was individually deletable with the whole suite
+  // green. If the log is the only record of the Enemy Turn, its content is
+  // worth asserting at least once.
+  const next = enemyTurn(inEnemyPhase([player({ id: 'p1', hp: 10 })], [enemy({ defId: 'green_louse' })]))
+  const line = next.log.find((entry) => entry.includes('hit'))
+  assert(line, `no attack line in: ${next.log.join(' | ')}`)
+  assert(line.includes('Green Louse'), `the attacker should be named: ${line}`)
+  assert(line.includes('Ironclad'), `the target should be named: ${line}`)
+  assert(/for 1\b/.test(line), `the amount should be stated: ${line}`)
+})
+
+check('a player killed by an enemy is reported', () => {
+  const next = enemyTurn(inEnemyPhase([player({ id: 'p1', hp: 1 })], [enemy({ defId: 'green_louse' })]))
+  assert(next.players[0].dead, 'precondition: the player should have died')
+  assert(
+    next.log.some((line) => line.includes('has fallen')),
+    `a death went unlogged: ${next.log.join(' | ')}`,
+  )
+})
+
+check('the bite of Wrath is reported, and says which way it went', () => {
+  const bitten = endPlayerTurn({
+    ...createCombat(createRng(9), [player({ hp: 10, stance: 'wrath' })], [enemy({ hp: 20 })]),
+    phase: 'player',
+  })
+  assertEqual(bitten.players[0].hp, 9, 'precondition: Wrath costs 1 at end of turn')
+  assert(
+    bitten.log.some((line) => /takes 1 from Wrath/.test(line)),
+    `expected the damage line: ${bitten.log.join(' | ')}`,
+  )
+
+  const blocked = endPlayerTurn({
+    ...createCombat(
+      createRng(9),
+      [player({ hp: 10, block: 3, stance: 'wrath' })],
+      [enemy({ hp: 20 })],
+    ),
+    phase: 'player',
+  })
+  assertEqual(blocked.players[0].hp, 10, 'precondition: Block absorbs the bite')
+  assert(
+    blocked.log.some((line) => /blocks the bite of Wrath/.test(line)),
+    `expected the blocked line: ${blocked.log.join(' | ')}`,
+  )
+})
+
+check('a player killed by the bite of Wrath is named', () => {
+  const next = endPlayerTurn({
+    ...createCombat(createRng(9), [player({ hp: 1, stance: 'wrath' })], [enemy({ hp: 20 })]),
+    phase: 'player',
+  })
+  assert(next.players[0].dead, 'precondition: the bite was lethal')
+  assert(
+    next.log.some((line) => /has fallen/.test(line)),
+    `the casualty went unnamed: ${next.log.join(' | ')}`,
+  )
+})
+
+check('the enemies stop the moment a player falls', () => {
+  // p.13: the game ends immediately in defeat. Resolving the rest of the turn
+  // anyway reported four more attacks that the rules say never happened.
+  // Enemies act from the highest row down (p.13), so the doomed player sits in
+  // the higher row and the lower-row enemy is the one that must never act.
+  const state = inEnemyPhase(
+    [player({ id: 'p1', row: 1, hp: 1 }), player({ id: 'p2', row: 0, hp: 10 })],
+    [enemy({ uid: 'a', row: 1, defId: 'green_louse' }), enemy({ uid: 'b', row: 0, defId: 'green_louse' })],
+  )
+  const next = enemyTurn(state)
+  assert(next.players[0].dead, 'the player in the top row was killed')
+  assertEqual(next.phase, 'lost', 'so the combat is lost')
+  assertEqual(next.players[1].hp, 10, 'and the lower enemy never got to swing')
+  assertEqual(
+    next.log.filter((line) => line.includes('hit')).length,
+    1,
+    `only the killing blow should be reported: ${next.log.join(' | ')}`,
+  )
+})
+
+check('the party is not credited with Block it does not have', () => {
+  // The enemy side of this was fixed; the player side still said "blocked
+  // completely" when the enemy had no Block at all and Weak had simply
+  // reduced the hit to nothing.
+  const strike = instance('strike_ironclad')
+  const state = createCombat(
+    createRng(5),
+    [player({ hand: [strike], weak: 1 })],
+    [enemy({ hp: 20, block: 0 })],
+  )
+  const next = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(next.enemies[0].hp, 20, 'precondition: Weak should reduce this to nothing')
+  assert(
+    !next.log.some((line) => line.includes('blocked')),
+    `the enemy had no Block to credit: ${next.log.join(' | ')}`,
+  )
+  assert(
+    next.log.some((line) => line.includes('did no damage to')),
+    `expected a no-damage line: ${next.log.join(' | ')}`,
+  )
+})
+
+check('an area attack stops the moment it kills someone', () => {
+  // The break was outside the per-target loop, so the log reported blows on
+  // the rest of the row that p.13 says never landed.
+  const state = inEnemyPhase(
+    [
+      player({ id: 'p1', row: 0, hp: 1 }),
+      player({ id: 'p2', row: 0, hp: 10 }),
+      player({ id: 'p3', row: 0, hp: 10 }),
+    ],
+    [enemy({ defId: 'gremlin_nob', hp: 28, row: 0, actionIndex: 1 })],
+  )
+  const next = enemyTurn(state)
+  assert(next.players[0].dead, 'the first player in the row was killed')
+  assertEqual(next.players[1].hp, 10, 'the sweep stopped there')
+  assertEqual(next.players[2].hp, 10, 'and never reached the third player')
+})
+
+check('the log reports what the party did, not only what was done to it', () => {
+  // Enemy attacks carried a number; the player's own damage — the figure that
+  // Strength, Weak and Vulnerable all modify — did not.
+  const strike = instance('strike_ironclad')
+  const state = createCombat(createRng(5), [player({ hand: [strike], strength: 2 })], [enemy({ hp: 20 })])
+  const next = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const line = next.log.find((entry) => entry.includes('hit'))
+  assert(line, `no line for the party's own attack: ${next.log.join(' | ')}`)
+  assert(line.includes('Ironclad'), `the attacker should be named: ${line}`)
+  assert(/for 3\b/.test(line), `1 damage plus 2 Strength is 3: ${line}`)
+})
+
+check('a card is logged before what it causes', () => {
+  // Newest-first, a kill appended before the card that caused it reads as if
+  // the enemy died first.
+  const strike = instance('strike_ironclad')
+  const state = createCombat(createRng(5), [player({ hand: [strike] })], [enemy({ hp: 1 })])
+  const next = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const played = next.log.findIndex((line) => line.includes('played Strike'))
+  const died = next.log.findIndex((line) => line.includes('is dead'))
+  assert(played >= 0 && died >= 0, `expected both lines: ${next.log.join(' | ')}`)
+  assert(played < died, `the card must be logged before the kill: ${next.log.join(' | ')}`)
+})
+
+check('poison reports the hit points lost, not the token count', () => {
+  const state = {
+    ...createCombat(createRng(3), [player()], [enemy({ hp: 2, poison: 5 })]),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  const line = next.log.find((entry) => entry.includes('Poison'))
+  assert(line, `no poison line: ${next.log.join(' | ')}`)
+  assert(/loses 2 /.test(line), `an enemy on 2 hit points loses 2, not 5: ${line}`)
+})
+
+check('a Daze pushed into a deck is reported', () => {
+  // The Spike Slime dazes on a roll of 3 or 4 (die pattern, not a cube track —
+  // an earlier version of this check set actionIndex, which does nothing for a
+  // die enemy, and quietly asserted nothing at all).
+  const state = inEnemyPhase(
+    [player({ draw: [instance('strike_ironclad')] })],
+    [enemy({ defId: 'spike_slime', hp: 5 })],
+  )
+  const next = enemyTurn({ ...state, die: 3 })
+  assert(
+    next.players[0].draw.some((card) => card.defId === 'daze'),
+    'a roll of 3 should put a Daze on top of the draw pile',
+  )
+  const line = next.log.find((entry) => entry.includes('Daze'))
+  assert(line, `a Daze entered the deck with no log line: ${next.log.join(' | ')}`)
+  assert(line.includes('Ironclad'), `the victim should be named: ${line}`)
+  assert(/slipped a Daze into/.test(line), `one Daze reads as "a Daze", not "1 Dazes": ${line}`)
+})
+
+check('Block is only credited when Block did the work', () => {
+  // A Weak attack reduced to nothing is not the shield's doing, and saying so
+  // tells the player their Block is working when they have none.
+  const next = enemyTurn(
+    inEnemyPhase([player({ block: 0 })], [enemy({ defId: 'green_louse', weak: 3, strength: -5 })]),
+  )
+  const claimsBlock = next.log.some((line) => line.includes('blocked'))
+  assertEqual(next.players[0].block, 0, 'precondition: the player has no Block')
+  assert(!claimsBlock, `credited Block to a player with none: ${next.log.join(' | ')}`)
+  // And says what DID happen, rather than leaving the round unexplained.
+  assert(
+    next.log.some((line) => line.includes('did no damage to')),
+    `expected a no-damage line: ${next.log.join(' | ')}`,
+  )
+})
+
+check('an enemy killed by poison says so', () => {
+  const state = {
+    ...createCombat(createRng(3), [player()], [enemy({ hp: 1, poison: 2 })]),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assert(next.enemies[0].dead, 'the poison killed it')
+  assert(
+    next.log.some((line) => line.includes('Poison')),
+    `poison damage went unlogged: ${next.log.join(' | ')}`,
+  )
+  assert(
+    next.log.some((line) => line.includes('is dead')),
+    `the kill went unlogged: ${next.log.join(' | ')}`,
+  )
+})
+
+suite('what the log says')
+
+// Every line below was individually deletable with the whole suite green. The
+// log is the only record of a round, so its CONTENT is the thing to assert,
+// not merely that a state change happened.
+
+check('a multi-action enemy stops mid-action when the blow is lethal', () => {
+  // The Jaw Worm attacks AND blocks on a roll of 1. If the attack kills, the
+  // Block half must never resolve, and must not be reported.
+  const state = inEnemyPhase([player({ hp: 1 })], [enemy({ defId: 'jaw_worm', hp: 10 })])
+  const next = enemyTurn({ ...state, die: 1 })
+  assert(next.players[0].dead, 'precondition: the attack should be lethal')
+  assertEqual(next.enemies[0].block, 0, 'the Block half never resolved')
+  const fell = next.log.findIndex((line) => /has fallen/.test(line))
+  assert(fell >= 0, `expected a death line: ${next.log.join(' | ')}`)
+  assertEqual(fell, next.log.length - 1, `nothing may follow the death: ${next.log.join(' | ')}`)
+})
+
+check('a partly blocked hit reports both halves', () => {
+  const state = inEnemyPhase([player({ block: 1, hp: 10 })], [enemy({ defId: 'jaw_worm', hp: 10 })])
+  const next = enemyTurn({ ...state, die: 1 })
+  assertEqual(next.players[0].hp, 8, 'precondition: 3 damage against 1 Block')
+  const line = next.log.find((entry) => entry.includes('hit'))
+  assert(line && /for 2 \(1 blocked\)/.test(line), `expected both halves: ${line}`)
+})
+
+check('a fully blocked attack credits the Block, on both sides', () => {
+  const enemySide = enemyTurn(
+    inEnemyPhase([player({ block: 20 })], [enemy({ defId: 'green_louse' })]),
+  )
+  assertEqual(enemySide.players[0].hp, 10, 'precondition: nothing gets through')
+  assert(
+    enemySide.log.some((line) => /blocked .* completely/.test(line)),
+    `expected a full-block line: ${enemySide.log.join(' | ')}`,
+  )
+
+  const strike = instance('strike_ironclad')
+  const playerSide = playCard(
+    createCombat(createRng(5), [player({ hand: [strike] })], [enemy({ hp: 20, block: 9 })]),
+    'p1',
+    strike.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(
+    playerSide.log.some((line) => /blocked .* completely/.test(line)),
+    `the player side should say so too: ${playerSide.log.join(' | ')}`,
+  )
+})
+
+check('an enemy that buffs or debuffs says so, and stays quiet at the cap', () => {
+  const jaw = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })]),
+    die: 5,
+  })
+  assert(
+    jaw.log.some((line) => /gained 2 Block/.test(line)),
+    `expected a Block line: ${jaw.log.join(' | ')}`,
+  )
+  assert(
+    jaw.log.some((line) => /gained 1 Strength/.test(line)),
+    `expected a Strength line: ${jaw.log.join(' | ')}`,
+  )
+
+  // At the Strength cap nothing is gained, so nothing should be claimed.
+  const capped = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10, strength: 8 })]),
+    die: 5,
+  })
+  assert(
+    !capped.log.some((line) => /gained \d+ Strength/.test(line)),
+    `a capped Strength claimed a gain: ${capped.log.join(' | ')}`,
+  )
+
+  let slaver = inEnemyPhase([player()], [enemy({ defId: 'blue_slaver', hp: 7 })])
+  slaver = enemyTurn(slaver)
+  slaver = enemyTurn({ ...slaver, phase: 'enemy' })
+  assert(
+    slaver.log.some((line) => /weakened/.test(line)),
+    `expected a Weak line: ${slaver.log.join(' | ')}`,
+  )
+
+  const slime = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'spike_slime', hp: 5 })]),
+    die: 1,
+  })
+  assertEqual(slime.players[0].vulnerable, 1, 'precondition: a roll of 1 applies Vulnerable')
+  assert(
+    slime.log.some((line) => /vulnerable/.test(line)),
+    `expected a Vulnerable line: ${slime.log.join(' | ')}`,
+  )
+})
+
+check('two of the same enemy can be told apart in the log', () => {
+  const twins = enemyTurn(
+    inEnemyPhase(
+      [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
+      [
+        enemy({ uid: 'a', row: 0, defId: 'green_louse' }),
+        enemy({ uid: 'b', row: 1, defId: 'green_louse' }),
+      ],
+    ),
+  )
+  assert(
+    twins.log.some((line) => /Green Louse \(row \d\)/.test(line)),
+    `two identical enemies need distinguishing: ${twins.log.join(' | ')}`,
+  )
+
+  const lone = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse' })]))
+  assert(
+    !lone.log.some((line) => /\(row \d\)/.test(line)),
+    `a single enemy needs no row: ${lone.log.join(' | ')}`,
+  )
+})
+
+check('an ongoing effect is credited to itself, not to the player', () => {
+  CARDS.fixture_striker = {
+    id: 'fixture_striker',
+    name: 'Fixture Striker',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'rare',
+    cost: 0,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'hit', amount: 1 }],
+  }
+  const state = startPlayerTurn(
+    createCombat(
+      createRng(5),
+      [player({ powers: [instance('fixture_striker')], draw: STARTER_DECKS.ironclad.map((id) => instance(id)) })],
+      [enemy({ hp: 20 })],
+    ),
+  )
+  const line = state.log.find((entry) => entry.includes('hit'))
+  assert(line, `the Power dealt damage silently: ${state.log.join(' | ')}`)
+  assert(
+    line.includes('Fixture Striker'),
+    `a Power's damage should name the Power, not just the player: ${line}`,
+  )
+})
+
+check('loseHp reports what was lost, and the kill', () => {
+  CARDS.fixture_bleed = {
+    id: 'fixture_bleed',
+    name: 'Fixture Bleed',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'loseHp', amount: 5 }],
+  }
+  const card = instance('fixture_bleed')
+  const next = playCard(
+    createCombat(createRng(5), [player({ hand: [card] })], [enemy({ hp: 2 })]),
+    'p1',
+    card.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(
+    next.log.some((line) => /loses 2\b/.test(line)),
+    `an enemy on 2 hit points loses 2, not 5: ${next.log.join(' | ')}`,
+  )
+  assert(
+    next.log.some((line) => /is dead/.test(line)),
+    `the kill went unlogged: ${next.log.join(' | ')}`,
+  )
+})
+
+check('every effect the party can use reports itself', () => {
+  // One card per effect kind, so the whole family cannot go silent at once.
+  const CASES = [
+    { effect: { kind: 'block', amount: 2 }, expect: /gains 2 Block/ },
+    { effect: { kind: 'gainStrength', amount: 2 }, expect: /gains 2 Strength/ },
+    { effect: { kind: 'draw', amount: 1 }, expect: /draws 1/ },
+    { effect: { kind: 'gainEnergy', amount: 1 }, expect: /gains 1 Energy/ },
+    { effect: { kind: 'gainShiv', amount: 1 }, expect: /gains 1 Shiv/ },
+    { effect: { kind: 'gainMiracle', amount: 1 }, expect: /gains 1 Miracle/ },
+    { effect: { kind: 'heal', amount: 2 }, expect: /heals 2/ },
+    { effect: { kind: 'channel', orb: 'lightning', amount: 1 }, expect: /channels 1 lightning/ },
+    { effect: { kind: 'enterStance', stance: 'calm' }, expect: /enters calm/ },
+    { effect: { kind: 'applyWeak', amount: 1 }, expect: /is weakened/, needsTarget: true },
+    { effect: { kind: 'applyVulnerable', amount: 1 }, expect: /is vulnerable/, needsTarget: true },
+    { effect: { kind: 'poison', amount: 2 }, expect: /takes 2 Poison/, needsTarget: true },
+  ]
+
+  for (const { effect, expect, needsTarget } of CASES) {
+    CARDS.fixture_reports = {
+      id: 'fixture_reports',
+      name: 'Fixture Reports',
+      owner: 'ironclad',
+      type: 'skill',
+      rarity: 'common',
+      cost: 0,
+      effects: [effect],
+    }
+    const card = instance('fixture_reports')
+    const next = playCard(
+      createCombat(
+        createRng(5),
+        [player({ hand: [card], hp: 5, energy: 3, draw: [instance('strike_ironclad')] })],
+        [enemy({ hp: 20 })],
+      ),
+      'p1',
+      card.uid,
+      { enemyUid: needsTarget ? 'e1' : null, playerId: 'p1' },
+    )
+    assert(
+      next.log.some((line) => expect.test(line)),
+      `${effect.kind} went unlogged: ${next.log.join(' | ')}`,
+    )
+  }
+})
+
+check('an evoked orb names itself', () => {
+  CARDS.fixture_evoke_log = {
+    id: 'fixture_evoke_log',
+    name: 'Fixture Evoke Log',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'evoke', times: 1 }],
+  }
+  const lightning = instance('fixture_evoke_log')
+  const zap = playCard(
+    createCombat(
+      createRng(5),
+      [player({ hand: [lightning], orbs: ['lightning', null, null] })],
+      [enemy({ hp: 20 })],
+    ),
+    'p1',
+    lightning.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(
+    zap.log.some((line) => /Lightning orb/.test(line)),
+    `the orb should name itself: ${zap.log.join(' | ')}`,
+  )
+
+  const frostCard = instance('fixture_evoke_log')
+  const frost = playCard(
+    createCombat(
+      createRng(5),
+      [player({ hand: [frostCard], orbs: ['frost', null, null] })],
+      [enemy({ hp: 20 })],
+    ),
+    'p1',
+    frostCard.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(
+    frost.log.some((line) => /Frost orb gives 1 Block/.test(line)),
+    `the Frost orb should say what it gave: ${frost.log.join(' | ')}`,
+  )
+})
+
+suite('silence at the cap')
+
+// Every one of these logs "gained N" only when N actually went on. The
+// emitting direction is covered above; this is the other one, which was
+// asserted at exactly one site out of nineteen. The caps are all reachable in
+// an ordinary fight, so without this the log claims gains that never happened.
+check('a capped gain is not claimed', () => {
+  const CASES = [
+    {
+      what: 'Block',
+      effect: { kind: 'block', amount: 2 },
+      from: { block: 20 },
+      pattern: /gains \d+ Block/,
+    },
+    {
+      what: 'Strength',
+      effect: { kind: 'gainStrength', amount: 2 },
+      from: { strength: 8 },
+      pattern: /gains \d+ Strength/,
+    },
+    {
+      what: 'Energy',
+      effect: { kind: 'gainEnergy', amount: 2 },
+      from: { energy: 6 },
+      pattern: /gains \d+ Energy/,
+    },
+    {
+      what: 'Shivs',
+      effect: { kind: 'gainShiv', amount: 2 },
+      from: { shivs: 5 },
+      pattern: /gains \d+ Shiv/,
+    },
+    {
+      what: 'Miracles',
+      effect: { kind: 'gainMiracle', amount: 2 },
+      from: { miracles: 5 },
+      pattern: /gains \d+ Miracle/,
+    },
+    {
+      what: 'healing at full',
+      effect: { kind: 'heal', amount: 3 },
+      from: { hp: 10, maxHp: 10 },
+      pattern: /heals \d+/,
+    },
+    {
+      what: 'Vulnerable',
+      effect: { kind: 'applyVulnerable', amount: 2 },
+      from: {},
+      enemy: { vulnerable: 3 },
+      pattern: /is vulnerable/,
+      needsTarget: true,
+    },
+    {
+      what: 'Weak',
+      effect: { kind: 'applyWeak', amount: 2 },
+      from: {},
+      enemy: { weak: 3 },
+      pattern: /is weakened/,
+      needsTarget: true,
+    },
+  ]
+
+  for (const { what, effect, from, enemy: enemyOver, pattern, needsTarget } of CASES) {
+    CARDS.fixture_capped = {
+      id: 'fixture_capped',
+      name: 'Fixture Capped',
+      owner: 'ironclad',
+      type: 'skill',
+      rarity: 'common',
+      cost: 0,
+      effects: [effect],
+    }
+    const card = instance('fixture_capped')
+    const next = playCard(
+      createCombat(
+        createRng(5),
+        [player({ hand: [card], ...from })],
+        [enemy({ hp: 20, ...(enemyOver ?? {}) })],
+      ),
+      'p1',
+      card.uid,
+      { enemyUid: needsTarget ? 'e1' : null, playerId: 'p1' },
+    )
+    assert(
+      !next.log.some((line) => pattern.test(line)),
+      `${what} was already at its cap, so nothing should be claimed: ${next.log.join(' | ')}`,
+    )
+  }
+})
+
+check('a capped enemy gain is not claimed either', () => {
+  // Strength only. An enemy's Block is cleared at the start of its own turn
+  // (p.13), so it can never be at the cap at the moment it blocks — there is
+  // no capped-Block case to test on this side.
+  const capped = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10, strength: 8 })]),
+    die: 5,
+  })
+  assert(
+    !capped.log.some((line) => /gained \d+ Strength/.test(line)),
+    `a capped Strength claimed a gain: ${capped.log.join(' | ')}`,
+  )
+  assert(
+    capped.log.some((line) => /gained 2 Block/.test(line)),
+    `but Block still happened and should be reported: ${capped.log.join(' | ')}`,
+  )
+})
+
+check('a capped debuff from an enemy is not claimed', () => {
+  let slaver = inEnemyPhase([player({ weak: 3 })], [enemy({ defId: 'blue_slaver', hp: 7 })])
+  slaver = enemyTurn(slaver)
+  slaver = enemyTurn({ ...slaver, phase: 'enemy' })
+  assert(
+    !slaver.log.some((line) => /weakened/.test(line)),
+    `Weak was already capped: ${slaver.log.join(' | ')}`,
+  )
+
+  // No Vulnerable case here: every enemy action that applies it also attacks,
+  // and attacking SPENDS a Vulnerable token first (p.14) — so the token is at
+  // 2 by the time it is reapplied and the gain is real. The capped-Vulnerable
+  // path is covered on the player side, where nothing spends it first.
+})
+
+check('damage dealt by an orb is reported in full, including the kill', () => {
+  // damageEnemyLogged writes four different lines and none of them was pinned;
+  // an enemy could be killed by an orb with no "is dead" line at all.
+  CARDS.fixture_orb_evoke = {
+    id: 'fixture_orb_evoke',
+    name: 'Fixture Orb Evoke',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'evoke', times: 1 }],
+  }
+  const killer = instance('fixture_orb_evoke')
+  const killed = playCard(
+    createCombat(
+      createRng(5),
+      [player({ hand: [killer], orbs: ['lightning', null, null] })],
+      [enemy({ hp: 2 })],
+    ),
+    'p1',
+    killer.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(killed.enemies[0].dead, 'precondition: the orb should kill it')
+  assert(
+    // "damages", not "hit": a hit is specifically what Strength, Weak and
+    // Vulnerable modify, and orb damage is none of those.
+    killed.log.some((line) => /Lightning orb damages .* for 2/.test(line)),
+    `the orb's damage should be reported: ${killed.log.join(' | ')}`,
+  )
+  assert(
+    killed.log.some((line) => /is dead/.test(line)),
+    `and so should the kill: ${killed.log.join(' | ')}`,
+  )
+
+  const blocked = instance('fixture_orb_evoke')
+  const partly = playCard(
+    createCombat(
+      createRng(5),
+      [player({ hand: [blocked], orbs: ['lightning', null, null] })],
+      [enemy({ hp: 20, block: 1 })],
+    ),
+    'p1',
+    blocked.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assert(
+    partly.log.some((line) => /for 1 \(1 blocked\)/.test(line)),
+    `a partly blocked orb should report both halves: ${partly.log.join(' | ')}`,
+  )
+})
+
+check("a player's own partly blocked attack reports both halves", () => {
+  // The enemy side of this was pinned; the player side was not.
+  const strike = instance('strike_ironclad')
+  const next = playCard(
+    createCombat(createRng(5), [player({ hand: [strike], strength: 2 })], [enemy({ hp: 20, block: 1 })]),
+    'p1',
+    strike.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  const line = next.log.find((entry) => entry.includes('hit'))
+  assert(line && /for 2 \(1 blocked\)/.test(line), `expected both halves: ${line}`)
+})
+
+check('the cost a card charges is named', () => {
+  const survivor = instance('survivor')
+  const spare = instance('strike_silent')
+  const discarded = playCard(
+    createCombat(
+      createRng(5),
+      [player({ character: 'silent', hand: [survivor, spare] })],
+      [enemy({ hp: 20 })],
+    ),
+    'p1',
+    survivor.uid,
+    { enemyUid: null, playerId: 'p1', discardUids: [spare.uid] },
+  )
+  assert(
+    discarded.log.some((line) => /discards 1/.test(line)),
+    `the discard cost went unmentioned: ${discarded.log.join(' | ')}`,
+  )
+
+  const grit = instance('true_grit')
+  const fodder = instance('strike_ironclad')
+  const exhausted = playCard(
+    createCombat(createRng(5), [player({ hand: [grit, fodder] })], [enemy({ hp: 20 })]),
+    'p1',
+    grit.uid,
+    { enemyUid: null, playerId: 'p1', exhaustUids: [fodder.uid] },
+  )
+  assert(
+    exhausted.log.some((line) => /exhausts 1/.test(line)),
+    `the exhaust cost went unmentioned: ${exhausted.log.join(' | ')}`,
+  )
+})
+
+check('two DIFFERENT enemies are not given rows they do not need', () => {
+  const mixed = enemyTurn(
+    inEnemyPhase(
+      [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
+      [
+        enemy({ uid: 'a', row: 0, defId: 'green_louse' }),
+        enemy({ uid: 'b', row: 1, defId: 'jaw_worm', hp: 10 }),
+      ],
+    ),
+  )
+  assert(
+    !mixed.log.some((line) => /\(row \d\)/.test(line)),
+    `only identical names need a row: ${mixed.log.join(' | ')}`,
+  )
+})
+
+check('the first end-of-turn guard stops a later player acting after the fight', () => {
+  // Two players: the poison tick ends the combat before ANY player takes their
+  // end-of-turn step, so the second player's Frost orb must not fire. With one
+  // player the second guard masks this entirely.
+  const state = {
+    ...createCombat(
+      createRng(5),
+      [
+        player({ id: 'p1', row: 0 }),
+        player({ id: 'p2', row: 1, orbs: ['frost', null, null] }),
+      ],
+      [enemy({ hp: 1, poison: 3 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assertEqual(next.phase, 'won', 'the poison finished the last enemy')
+  assertEqual(next.players[1].block, 0, "the second player's Frost orb never fired")
+  assert(
+    !next.log.some((line) => /Frost orb/.test(line)),
+    `and wrote no line: ${next.log.join(' | ')}`,
+  )
+})
+
+check('an "acts last" enemy goes after the rest of its row', () => {
+  // The Spike Slime carries actsLast. Bosses-last was pinned; this was not,
+  // so the flag could be ignored and the order silently change.
+  const order = enemyActingOrder(
+    inEnemyPhase(
+      [player()],
+      [
+        enemy({ uid: 'slime', row: 2, defId: 'spike_slime', hp: 5 }),
+        enemy({ uid: 'louse', row: 0, defId: 'green_louse' }),
+        enemy({ uid: 'worm', row: 1, defId: 'jaw_worm', hp: 10 }),
+      ],
+    ),
+  ).map((foe) => foe.uid)
+  assertEqual(order[order.length - 1], 'slime', `acts-last should be last: ${order.join(', ')}`)
+  assertDeepEqual(order, ['worm', 'louse', 'slime'], 'and the rest go highest row first')
+})
+
+check('a Weak token is not spent on an attack that hits nothing', () => {
+  // p.24: Weak is spent by attacking. An attack that found no target has not
+  // attacked, so the token stays.
+  CARDS.fixture_sweep_all = {
+    id: 'fixture_sweep_all',
+    name: 'Fixture Sweep All',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    target: 'allEnemies',
+    effects: [{ kind: 'hit', amount: 1 }],
+  }
+  const card = instance('fixture_sweep_all')
+  const state = createCombat(
+    createRng(5),
+    [player({ hand: [card], weak: 2 })],
+    [enemy({ hp: 5, dead: true })],
+  )
+  const next = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+  assert(next !== state, 'precondition: an all-enemies card is playable with no living target')
+  assertEqual(next.players[0].weak, 2, 'nothing was attacked, so no Weak was spent')
+})
+
+check('the round divider opens the round even when the draw itself logs', () => {
+  // The divider is spliced in ahead of the Start of Turn draw, so an on-draw
+  // trigger's lines land under the heading they belong to.
+  CARDS.fixture_draw_noisy = {
+    id: 'fixture_draw_noisy',
+    name: 'Fixture Draw Noisy',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'rare',
+    cost: 0,
+    trigger: { kind: 'onDraw' },
+    effects: [{ kind: 'gainStrength', amount: 1 }],
+  }
+  const state = startPlayerTurn(
+    createCombat(
+      createRng(5),
+      [player({ powers: [instance('fixture_draw_noisy')], draw: STARTER_DECKS.ironclad.map((id) => instance(id)) })],
+      [enemy({ hp: 20 })],
+    ),
+  )
+  const divider = state.log.findIndex((line) => /^Turn 1 begins/.test(line))
+  const firstDraw = state.log.findIndex((line) => /Fixture Draw Noisy/.test(line))
+  assert(divider >= 0, `expected a divider: ${state.log.join(' | ')}`)
+  assert(firstDraw >= 0, `expected the on-draw Power to log: ${state.log.join(' | ')}`)
+  assert(divider < firstDraw, `the divider must open the round: ${state.log.join(' | ')}`)
+})
+
+check('a row-only enemy debuff does not reach another row', () => {
+  // The Weak equivalent was pinned; Vulnerable was not, so the branch could
+  // be forced to always-AoE with everything green.
+  const state = inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
+    [enemy({ defId: 'spike_slime', row: 0, hp: 5 })],
+  )
+  const next = enemyTurn({ ...state, die: 1 })
+  assertEqual(next.players[0].vulnerable, 1, 'the player sharing the row is marked')
+  assertEqual(next.players[1].vulnerable, 0, 'the other row is not')
+})
+
+check('a boss reaches every row, even without an area attack', () => {
+  // A boss counts as being in every row. The player-facing targeting already
+  // honoured that; the enemy side did not, so a single-target boss attack
+  // could only ever reach its spawn row.
+  const state = inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 }), player({ id: 'p3', row: 2 })],
+    [enemy({ uid: 'boss', defId: 'cultist', row: 2, hp: 9, isBoss: true })],
+  )
+  const next = enemyTurn(state)
+  for (const seat of next.players) {
+    assertEqual(seat.hp, 9, `${seat.id} should have been reached by the boss`)
+  }
+})
+
+check('an upgraded card is named as upgraded', () => {
+  assertEqual(faceOf(CARDS.bash, true).name, 'Bash+', 'the upgraded face carries the plus')
+  assertEqual(faceOf(CARDS.bash, false).name, 'Bash', 'and the base face does not')
 })
 
 report('enemy turn')

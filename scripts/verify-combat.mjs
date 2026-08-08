@@ -1,13 +1,23 @@
 import {
+  cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
+  enemyTurn,
   livingEnemies,
   playCard,
   resolveEnemyTargets,
   startPlayerTurn,
 } from '../src/game/combat.ts'
-import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
+import { CARDS, STARTER_DECKS, cardDef } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
+import {
+  advanceAct,
+  createRun,
+  enterRoom,
+  resolveCampfire,
+  resolveCombat,
+  roomChoices,
+} from '../src/game/run.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 let uid = 0
@@ -495,6 +505,654 @@ check('a full turn cycle is reproducible from the same seed', () => {
     JSON.stringify({ ...b, log: null }),
     'identical seeds and actions must produce identical states, or replays desync',
   )
+})
+
+suite('defeat')
+
+// p.13: "When a player dies, the game immediately ends in defeat." One death,
+// not a wipe. Reading it as last-man-standing makes a co-op game much easier
+// than the box intends, and nothing else in the engine would notice.
+check('one player dying ends the whole combat in defeat', () => {
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', hp: 1, row: 0 }), makePlayer({ id: 'p2', hp: 10, row: 1 })],
+      [makeEnemy({ uid: 'e1', row: 0 })],
+    ),
+    phase: 'enemy',
+  }
+  const next = enemyTurn(state)
+  assert(next.players[0].dead, 'the player in the enemy\'s row was killed')
+  assert(!next.players[1].dead, 'the other player is still standing')
+  assertEqual(next.phase, 'lost', 'and the combat is lost anyway')
+})
+
+check('a combat with everyone alive is not lost', () => {
+  const state = combat([makePlayer({ hp: 10 })], [makeEnemy({ hp: 5 })])
+  assert(state.phase !== 'lost', 'a healthy party has not lost')
+})
+
+check('killing the last enemy wins, even if the party then takes lethal damage', () => {
+  // Both endings are immediate (p.13). Once the last monster is dead the
+  // combat is over, so the end-of-turn effects that follow never run at all —
+  // which is what `combatIsOver` enforces, and what this exercises.
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', hp: 1, stance: 'wrath' })],
+      [makeEnemy({ uid: 'e1', hp: 1, poison: 3 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assert(next.enemies[0].dead, 'the poison finished the last enemy')
+  assertEqual(next.phase, 'won', 'so the combat is won, not lost to the Wrath bite')
+})
+
+check('poison resolves before the party takes its own end-of-turn damage', () => {
+  const state = {
+    ...combat([makePlayer({ id: 'p1', hp: 5 })], [makeEnemy({ uid: 'e1', hp: 10, poison: 2 })]),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  const poisonLine = next.log.findIndex((line) => line.includes('Poison'))
+  assert(poisonLine >= 0, `expected a poison line, got: ${next.log.join(' | ')}`)
+  assertEqual(next.enemies[0].hp, 8, 'the enemy lost hit points to poison')
+})
+
+check('a lost combat carries the party out of it as it stood', () => {
+  // The fold-back for a defeat was untested: survivors' hit points and the
+  // dead flag have to come from the COMBAT, not from the run as it was before.
+  const run = createRun(77, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const combat = entered.combat
+  const hurt = {
+    ...entered,
+    combat: {
+      ...combat,
+      phase: 'lost',
+      players: combat.players.map((player, i) =>
+        i === 0 ? { ...player, hp: 0, dead: true } : { ...player, hp: 3, gold: 12 },
+      ),
+    },
+  }
+  const after = resolveCombat(hurt)
+  assertEqual(after.phase, 'defeat', 'a lost combat ends the run')
+  assert(after.players[0].dead, 'the fallen player is carried out as dead')
+  assertEqual(after.players[1].hp, 3, "and the survivor's hit points come from the combat")
+  assertEqual(after.players[1].gold, 12, 'as does their gold')
+})
+
+check('nothing else resolves once the last enemy is dead', () => {
+  // The combat ends immediately (p.13). Letting the rest of the end-of-turn
+  // work run anyway killed a player AFTER victory, and the corpse was then
+  // folded into the run — where advanceAct healed it back to full.
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', hp: 1, stance: 'wrath' })],
+      [makeEnemy({ uid: 'e1', hp: 1, poison: 5 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assertEqual(next.phase, 'won', 'the poison finished the last enemy')
+  assert(!next.players[0].dead, 'and the Wrath bite never landed')
+  assertEqual(next.players[0].hp, 1, 'the player is untouched')
+})
+
+check('a discard cost cannot be skipped', () => {
+  // Reachable straight off the network: an empty list used to satisfy it, and
+  // the card paid nothing.
+  const survivor = instance('survivor')
+  const spare = instance('strike_silent')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'silent', hand: [survivor, spare], energy: 3 })],
+    [makeEnemy()],
+  )
+  const skipped = playCard(state, 'p1', survivor.uid, { enemyUid: null, playerId: 'p1' })
+  assert(skipped === state, 'a Survivor played with nothing discarded must be refused')
+
+  const paid = playCard(state, 'p1', survivor.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid],
+  })
+  assert(paid !== state, 'and accepted when the cost is paid')
+  assertEqual(paid.players[0].discard.length, 2, 'the discarded card and the card itself')
+})
+
+check('an exhaust cost cannot be skipped either', () => {
+  // The mirror of the discard check. True Grit reads "1 Block to any player.
+  // Exhaust a card in your hand." — without this it was 1 Block for free.
+  const grit = instance('true_grit')
+  const spare = instance('strike_ironclad')
+  const state = combat(
+    [makePlayer({ id: 'p1', hand: [grit, spare], energy: 3 })],
+    [makeEnemy()],
+  )
+  const skipped = playCard(state, 'p1', grit.uid, { enemyUid: null, playerId: 'p1' })
+  assert(skipped === state, 'True Grit with nothing exhausted must be refused')
+
+  const forged = playCard(state, 'p1', grit.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    exhaustUids: ['not-a-card'],
+  })
+  assert(forged === state, 'and a uid naming no card in hand pays nothing')
+
+  const paid = playCard(state, 'p1', grit.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    exhaustUids: [spare.uid],
+  })
+  assert(paid !== state, 'but it works when the cost is paid')
+  assertEqual(paid.players[0].exhaust.length, 1, 'and the card is exhausted')
+})
+
+check('the same card cannot pay two separate costs', () => {
+  // Two consuming clauses were each validated against the pre-play hand, so
+  // one card satisfied both while only one of them actually took it.
+  CARDS.fixture_two_costs = {
+    id: 'fixture_two_costs',
+    name: 'Fixture Two Costs',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [
+      { kind: 'discard', amount: 1 },
+      { kind: 'exhaustFromHand', amount: 1 },
+    ],
+  }
+  const greedy = instance('fixture_two_costs')
+  const spare = instance('strike_ironclad')
+  const second = instance('defend_ironclad')
+  const state = combat([makePlayer({ id: 'p1', hand: [greedy, spare, second] })], [makeEnemy()])
+
+  const doubled = playCard(state, 'p1', greedy.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid],
+    exhaustUids: [spare.uid],
+  })
+  assert(doubled === state, 'naming one card for both costs must be refused')
+
+  const paid = playCard(state, 'p1', greedy.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid],
+    exhaustUids: [second.uid],
+  })
+  assert(paid !== state, 'two different cards pay both costs')
+})
+
+check('a cost the hand cannot fully pay takes what it can', () => {
+  // One spare card against two consuming clauses: you discard it and then have
+  // nothing left to exhaust, which is exactly what happens at the table. The
+  // play is legal, not refused.
+  const greedy = instance('fixture_two_costs')
+  const spare = instance('strike_ironclad')
+  const state = combat([makePlayer({ id: 'p1', hand: [greedy, spare] })], [makeEnemy()])
+  const played = playCard(state, 'p1', greedy.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid],
+  })
+  assert(played !== state, 'paying as much as the hand allows is legal')
+})
+
+check('a discard cost takes what the hand can pay, and no more', () => {
+  // Holding nothing else, the cost is paid by discarding nothing — the card is
+  // not made unplayable by an empty hand.
+  const survivor = instance('survivor')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'silent', hand: [survivor], energy: 3 })],
+    [makeEnemy()],
+  )
+  const played = playCard(state, 'p1', survivor.uid, { enemyUid: null, playerId: 'p1' })
+  assert(played !== state, 'the last card in hand can still be played')
+})
+
+check('a forged discard uid does not pay the cost', () => {
+  const survivor = instance('survivor')
+  const spare = instance('strike_silent')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'silent', hand: [survivor, spare], energy: 3 })],
+    [makeEnemy()],
+  )
+  const forged = playCard(state, 'p1', survivor.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: ['not-a-card'],
+  })
+  assert(forged === state, 'a uid naming no card in hand pays nothing')
+})
+
+check('an orb that kills the last enemy stops the Wrath bite', () => {
+  // The poison guard and the orb guard each hide the other: delete either one
+  // alone and the sibling still ends the combat, so neither was pinned.
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', hp: 1, stance: 'wrath', orbs: ['lightning', null, null] })],
+      [makeEnemy({ uid: 'e1', hp: 1 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assert(next.enemies[0].dead, 'the Lightning orb finished the last enemy')
+  assertEqual(next.phase, 'won', 'so the combat is won')
+  assert(!next.players[0].dead, 'and the Wrath bite never landed')
+})
+
+check('a death stops a LATER player from winning the combat', () => {
+  // The mirror of the check above, and the reason single-player coverage was
+  // not enough: the first player dies to the Wrath bite, then the second
+  // player's orb kills the last enemy. p.13 — the death happened first, so
+  // this is a defeat, not a victory with a corpse in the party.
+  const state = {
+    ...combat(
+      [
+        makePlayer({ id: 'p1', row: 0, hp: 1, stance: 'wrath' }),
+        makePlayer({ id: 'p2', row: 1, hp: 10, orbs: ['lightning', null, null] }),
+      ],
+      [makeEnemy({ uid: 'e1', hp: 1 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assert(next.players[0].dead, 'the Wrath bite killed the first player')
+  assertEqual(next.phase, 'lost', 'so the combat is lost, whatever happened after')
+  assert(!next.enemies[0].dead, 'and the second player never got their orb tick')
+})
+
+check('a defeated party is never folded back into a live run', () => {
+  // What the bug above actually produced downstream: a corpse carried onto the
+  // map, healed to full by advanceAct, losing the next combat before anyone
+  // acted.
+  const run = createRun(88, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const lost = {
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'lost',
+      players: entered.combat.players.map((player, i) =>
+        i === 0 ? { ...player, hp: 0, dead: true } : player,
+      ),
+    },
+  }
+  const after = resolveCombat(lost)
+  assertEqual(after.phase, 'defeat', 'a lost combat ends the run rather than continuing it')
+})
+
+check('the same card named twice does not pay a cost of two', () => {
+  // Without deduplication, `discardUids: ['a','a']` paid a printed "Discard 2"
+  // with a single card. The sibling check covers one uid across TWO arrays,
+  // which the spent-set catches; this is one uid twice in ONE array.
+  CARDS.fixture_discard_two = {
+    id: 'fixture_discard_two',
+    name: 'Fixture Discard Two',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'discard', amount: 2 }],
+  }
+  const card = instance('fixture_discard_two')
+  const spare = instance('strike_ironclad')
+  const other = instance('defend_ironclad')
+  const state = combat([makePlayer({ id: 'p1', hand: [card, spare, other] })], [makeEnemy()])
+
+  const doubled = playCard(state, 'p1', card.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid, spare.uid],
+  })
+  assert(doubled === state, 'one card cannot be discarded twice')
+
+  const paid = playCard(state, 'p1', card.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [spare.uid, other.uid],
+  })
+  assert(paid !== state, 'two different cards pay it')
+  assertEqual(paid.players[0].discard.length, 3, 'both discards plus the card itself')
+})
+
+suite('who may play, and when')
+
+// Both of these guards are reachable straight off the network and neither was
+// pinned by anything.
+
+check('a card cannot be played outside the Player Turn', () => {
+  const strike = instance('strike_ironclad')
+  const base = combat([makePlayer({ id: 'p1', hand: [strike] })], [makeEnemy()])
+  for (const phase of ['enemy', 'roundEnd', 'won', 'lost']) {
+    const parked = { ...base, phase }
+    assert(
+      playCard(parked, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' }) === parked,
+      `a card was played during ${phase}`,
+    )
+  }
+})
+
+check('a fallen player cannot play cards', () => {
+  const strike = instance('strike_ironclad')
+  const state = combat(
+    [makePlayer({ id: 'p1', hand: [strike], hp: 0, dead: true })],
+    [makeEnemy()],
+  )
+  assert(
+    playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' }) === state,
+    'the dead do not act',
+  )
+})
+
+check('a bogus uid does not stand in for a real one when paying a cost', () => {
+  // `missingChoices` validates the list, then `allocate` spends from it. If
+  // allocate did not re-check ownership it would take the bogus uid into its
+  // slice and discard nothing, leaving the cost unpaid.
+  const survivor = instance('survivor')
+  const spare = instance('strike_silent')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'silent', hand: [survivor, spare] })],
+    [makeEnemy()],
+  )
+  const played = playCard(state, 'p1', survivor.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: ['zzz-not-a-card', spare.uid],
+  })
+  assert(played !== state, 'the real uid in the list pays the cost')
+  assert(
+    !played.players[0].hand.some((card) => card.uid === spare.uid),
+    'and the real card actually left the hand',
+  )
+})
+
+check('an evoke with no orbs is refused rather than wasted', () => {
+  const card = instance('dual_cast')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: [null, null, null] })],
+    [makeEnemy()],
+  )
+  assert(
+    playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: 'p1' }) === state,
+    'it would otherwise spend the Energy, discard the card and do nothing',
+  )
+})
+
+check('an evoke card asks for a target, and hits the one chosen', () => {
+  // cardNeedsEnemy is exported so the UI prompts for exactly what the engine
+  // requires; without evoke in that list the UI stops asking and the engine
+  // silently aims at the first living enemy.
+  assertEqual(cardNeedsEnemy(cardDef('dual_cast')), true, 'Dual Cast needs a target')
+
+  const card = instance('dual_cast')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: ['lightning', null, null] })],
+    [makeEnemy({ uid: 'e1', row: 0, hp: 20 }), makeEnemy({ uid: 'e2', row: 1, hp: 20 })],
+  )
+  const next = playCard(state, 'p1', card.uid, { enemyUid: 'e2', playerId: 'p1' })
+  assertEqual(next.enemies[1].hp, 18, 'the chosen enemy took the orb')
+  assertEqual(next.enemies[0].hp, 20, 'and the other did not')
+})
+
+check('poison winning the fight suppresses the FIRST player\'s own bite', () => {
+  // The guard at the top of the end-of-turn loop. The one after the orbs is
+  // separately tested; this one covers the player whose turn it is when the
+  // poison tick has already ended the combat.
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', hp: 1, stance: 'wrath' })],
+      [makeEnemy({ uid: 'e1', hp: 1, poison: 5 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assertEqual(next.phase, 'won', 'the poison finished it')
+  assert(!next.players[0].dead, 'so the bite never landed')
+  assertEqual(next.players[0].hp, 1, 'and the player is untouched')
+})
+
+check('an orb behind a lethal one does not resolve', () => {
+  // The guard INSIDE the orb loop, as opposed to the one around it.
+  const state = {
+    ...combat(
+      [makePlayer({ id: 'p1', orbs: ['lightning', 'frost', null] })],
+      [makeEnemy({ uid: 'e1', hp: 1 })],
+    ),
+    phase: 'player',
+  }
+  const next = endPlayerTurn(state)
+  assert(next.enemies[0].dead, 'the Lightning orb killed it')
+  assertEqual(next.players[0].block, 0, 'and the Frost orb behind it gave nothing')
+  assert(
+    !next.log.some((line) => /Frost orb/.test(line)),
+    `nor wrote a line: ${next.log.join(' | ')}`,
+  )
+})
+
+check('plain damage is not modified the way a hit is', () => {
+  // The defining difference between the two effects, and it was untested: a
+  // hit takes Strength, Weak and Vulnerable; plain damage takes none of them.
+  CARDS.fixture_plain_damage = {
+    id: 'fixture_plain_damage',
+    name: 'Fixture Plain Damage',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'damage', amount: 2 }],
+  }
+  const card = instance('fixture_plain_damage')
+  const next = playCard(
+    combat(
+      [makePlayer({ id: 'p1', hand: [card], strength: 3 })],
+      [makeEnemy({ uid: 'e1', hp: 20, vulnerable: 2 })],
+    ),
+    'p1',
+    card.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assertEqual(next.enemies[0].hp, 18, '2 damage, not 2+3 doubled')
+})
+
+check('losing hit points ignores Block entirely', () => {
+  CARDS.fixture_lose_hp = {
+    id: 'fixture_lose_hp',
+    name: 'Fixture Lose HP',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'loseHp', amount: 3 }],
+  }
+  const card = instance('fixture_lose_hp')
+  const next = playCard(
+    combat([makePlayer({ id: 'p1', hand: [card] })], [makeEnemy({ uid: 'e1', hp: 20, block: 10 })]),
+    'p1',
+    card.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  assertEqual(next.enemies[0].hp, 17, 'the Block did not absorb any of it')
+  assertEqual(next.enemies[0].block, 10, 'and none of it was spent')
+})
+
+check('Poison is capped across the whole table, not per enemy', () => {
+  CARDS.fixture_poison = {
+    id: 'fixture_poison',
+    name: 'Fixture Poison',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'poison', amount: 10 }],
+  }
+  const card = instance('fixture_poison')
+  const next = playCard(
+    combat(
+      [makePlayer({ id: 'p1', character: 'silent', hand: [card] })],
+      [makeEnemy({ uid: 'e1', hp: 40, poison: 25 }), makeEnemy({ uid: 'e2', row: 1, hp: 40 })],
+    ),
+    'p1',
+    card.uid,
+    { enemyUid: 'e1', playerId: 'p1' },
+  )
+  // 25 already on the table, so only 5 of the 10 can go on.
+  assertEqual(next.enemies[0].poison, 30, 'the shared cap of 30 bounds the table')
+})
+
+check('a row card with no anchor is refused, not turned into a board wipe', () => {
+  CARDS.fixture_row_hit = {
+    id: 'fixture_row_hit',
+    name: 'Fixture Row Hit',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1 }],
+  }
+  const card = instance('fixture_row_hit')
+  const state = combat(
+    [makePlayer({ id: 'p1', hand: [card] })],
+    [makeEnemy({ uid: 'e1', row: 0, hp: 10 }), makeEnemy({ uid: 'e2', row: 1, hp: 10 })],
+  )
+  assert(
+    playCard(state, 'p1', card.uid, { enemyUid: null, playerId: 'p1' }) === state,
+    'a row card with no anchor must be refused',
+  )
+  assert(
+    playCard(state, 'p1', card.uid, { enemyUid: 'gone', playerId: 'p1' }) === state,
+    'and a stale anchor too',
+  )
+})
+
+check('the campfire only works at a campfire', () => {
+  // The engine function is exported and the local UI calls it directly, so it
+  // cannot rely on the room layer's guard.
+  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const treasure = Object.values(run.map.rooms).find((room) => room.kind === 'treasure')
+  assert(treasure, 'precondition: the act should contain a treasure room')
+  const parked = { ...run, phase: 'room', map: { ...run.map, position: treasure.id } }
+  assert(
+    resolveCampfire(parked, { p1: { choice: 'rest' } }) === parked,
+    'resting in a treasure room must be refused',
+  )
+})
+
+suite('guards that stop an exploit')
+
+// Every check here was proven deletable by mutation testing. None of them was
+// a live bug — the shipped code is right — but each is the only thing between
+// a client and something farmable.
+
+check('a crafted orb slot is refused by the ENGINE, not just the transport', () => {
+  // The room layer sanitises these, so a test that goes through `apply` can
+  // never see the engine's own guard. Both layers were mutually masking.
+  const card = instance('dual_cast')
+  for (const crafted of [['length'], ['__proto__'], ['constructor'], ['0'], [1.5], [null]]) {
+    const state = combat(
+      [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: ['lightning', null, null] })],
+      [makeEnemy({ uid: 'e1', hp: 20 })],
+    )
+    let threw = null
+    let next = state
+    try {
+      next = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: 'p1', evokeSlots: crafted })
+    } catch (error) {
+      threw = error
+    }
+    assertEqual(threw, null, `${String(crafted[0])} threw ${threw?.message}`)
+    assertEqual(next.players[0].orbs.length, 3, `${String(crafted[0])} changed the slot count`)
+    // It falls back to the real orb rather than evoking a phantom one.
+    assertEqual(next.enemies[0].hp, 18, `${String(crafted[0])} did not fall back to the real orb`)
+  }
+})
+
+check('an empty but valid slot falls back to a charged orb', () => {
+  const card = instance('dual_cast')
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: ['lightning', null, null] })],
+    [makeEnemy({ uid: 'e1', hp: 20 })],
+  )
+  const next = playCard(state, 'p1', card.uid, {
+    enemyUid: 'e1',
+    playerId: 'p1',
+    evokeSlots: [2],
+  })
+  assertEqual(next.enemies[0].hp, 18, 'naming an empty slot must not waste the card')
+})
+
+check('a room already occupied cannot be re-entered to farm it', () => {
+  // After a win the party stands on the map WITH a position, which is the
+  // state the reachability guard actually has to refuse.
+  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((foe) => ({ ...foe, hp: 0, dead: true })),
+    },
+  })
+  assertEqual(won.phase, 'map', 'precondition: back on the map with a position')
+  assert(won.map.position !== null, 'precondition: the boot has moved')
+  assert(enterRoom(won, won.map.position) === won, 'the room just cleared cannot be re-entered')
+  // The boss sits at the far end of the act, so it is never an exit from the
+  // opening room — picking "any other room" would have caught a legal
+  // neighbour instead.
+  const boss = Object.values(won.map.rooms).find((room) => room.kind === 'boss')
+  assert(boss, 'precondition: the act ends at a boss')
+  assert(enterRoom(won, boss.id) === won, 'nor can the boss be jumped to')
+})
+
+check('a campfire cannot be rested at twice', () => {
+  // resolveCampfire leaves the map position on the campfire, so without the
+  // phase guard the same message heals another 3 every time it is re-sent.
+  const run = createRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
+  const parked = {
+    ...run,
+    phase: 'room',
+    map: { ...run.map, position: campfire.id },
+    players: run.players.map((player) => ({ ...player, hp: 1 })),
+  }
+  const rested = resolveCampfire(parked, { p1: { choice: 'rest' } })
+  assertEqual(rested.players[0].hp, 4, 'precondition: the first rest heals 3')
+  assert(
+    resolveCampfire(rested, { p1: { choice: 'rest' } }) === rested,
+    'a second rest at the same campfire must be refused',
+  )
+})
+
+check('the boss cannot be skipped to reach the next Act', () => {
+  // isActComplete is already true DURING the boss fight, because the boss room
+  // counts as visited — so the phase guard is the only thing stopping a client
+  // from healing to full and opening Act 2.
+  const run = createRun(51, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const boss = Object.values(run.map.rooms).find((room) => room.kind === 'boss')
+  const fighting = {
+    ...run,
+    phase: 'combat',
+    map: { ...run.map, position: boss.id, rooms: { ...run.map.rooms, [boss.id]: { ...boss, visited: true } } },
+    players: run.players.map((player) => ({ ...player, hp: 2 })),
+  }
+  assert(advanceAct(fighting) === fighting, 'the Act cannot be advanced mid-boss')
+  assertEqual(fighting.players[0].hp, 2, 'and nobody was healed')
+})
+
+check('the map offers no rooms while a fight is on', () => {
+  const run = createRun(61, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const fighting = enterRoom(run, roomChoices(run)[0].id)
+  assertEqual(fighting.phase, 'combat', 'precondition: in a fight')
+  assertEqual(roomChoices(fighting).length, 0, 'the map must offer nothing mid-combat')
 })
 
 report('combat')

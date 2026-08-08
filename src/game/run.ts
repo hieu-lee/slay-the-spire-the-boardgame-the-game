@@ -8,7 +8,7 @@ import { createCombat, startPlayerTurn } from './combat.ts'
 import type { CombatState } from './combat.ts'
 import { enemyDef, startingHp } from './enemies.ts'
 import { generateMap, currentRoom, moveTo, isActComplete } from './map.ts'
-import type { Room, SpireMap } from './map.ts'
+import type { Room, RoomKind, SpireMap } from './map.ts'
 import { STARTING_RELIC } from './relics.ts'
 import { createRng, shuffle, nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
@@ -51,7 +51,46 @@ const ACT_ENCOUNTERS: Record<number, string[]> = {
   3: ['jaw_worm', 'cultist', 'spike_slime'],
 }
 
+/**
+ * Card instance ids, counted per RUN rather than per module.
+ *
+ * A module-global counter reset by `createRun` rewinds for every room already
+ * in the store, so starting a run in one room would mint uids that already
+ * exist in another. Harmless only while nothing creates a card after setup —
+ * which stops being true the moment card rewards land.
+ */
 let instanceCounter = 0
+/**
+ * What each room is called out loud.
+ *
+ * Keyed by RoomKind so an eighth kind fails to compile rather than silently
+ * falling through to its own raw id in the log. (MapScreen holds a separate,
+ * shorter label for the map badge — deliberately different wording.)
+ */
+export const ROOM_LABEL: Record<RoomKind, string> = {
+  encounter: 'encounter',
+  elite: 'elite fight',
+  boss: 'boss fight',
+  campfire: 'campfire',
+  treasure: 'treasure room',
+  merchant: 'merchant',
+  // Called an Event on the map badge and the room screen; one name for one
+  // room, not three.
+  event: 'event',
+}
+
+/**
+ * "an encounter", "a boss fight" — the phrase a player actually reads.
+ *
+ * The article comes from the LABEL, not from the room kind: they agree today
+ * only by coincidence, and an `event` renamed to "mystery room" would have
+ * read "an mystery room".
+ */
+export function enteringRoom(kind: string): string {
+  const label = ROOM_LABEL[kind as RoomKind] ?? kind
+  return `${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label}`
+}
+
 /** Card instance ids only need to be unique within a run. */
 function makeInstance(defId: string): CardInstance {
   instanceCounter += 1
@@ -221,7 +260,12 @@ export function enterRoom(state: RunState, roomId: string): RunState {
   if (!room) return state
 
   const rng = { ...state.rng }
-  const next: RunState = { ...state, map, rng, log: [...state.log, `The party enters a ${room.kind}.`] }
+  const next: RunState = {
+    ...state,
+    map,
+    rng,
+    log: [...state.log, `The party enters ${enteringRoom(room.kind)}.`],
+  }
 
   if (room.kind === 'encounter' || room.kind === 'elite' || room.kind === 'boss') {
     const players = state.players.map((player) => readyForCombat(rng, player))
@@ -239,9 +283,19 @@ export function enterRoom(state: RunState, roomId: string): RunState {
  * Folds a finished combat back into the run: survivors keep their HP and gold,
  * and the party either climbs on or the run ends.
  */
+/** How many combat lines to carry into the run log when a fight ends. */
+const COMBAT_EPITAPH = 6
+
 export function resolveCombat(state: RunState): RunState {
   const combat = state.combat
   if (!combat || (combat.phase !== 'won' && combat.phase !== 'lost')) return state
+
+  // The combat log dies with the combat, so the last of it comes along. A
+  // defeat that cannot say what killed you is the one moment a player most
+  // wants to read the round back.
+  // Turn dividers mean nothing outside a combat, and the run log only shows a
+  // handful of lines — an unfiltered tail evicted everything about the run.
+  const epitaph = combat.log.filter((line) => !/^Turn \d+ begins/.test(line)).slice(-COMBAT_EPITAPH)
 
   if (combat.phase === 'lost') {
     return {
@@ -249,7 +303,7 @@ export function resolveCombat(state: RunState): RunState {
       phase: 'defeat',
       players: combat.players,
       combat: null,
-      log: [...state.log, 'The party has fallen.'],
+      log: [...state.log, ...epitaph, 'The party has fallen.'],
     }
   }
 
@@ -266,6 +320,7 @@ export function resolveCombat(state: RunState): RunState {
     phase: wasBoss ? 'victory' : 'map',
     players,
     combat: null,
+    // A win explains itself; only a defeat needs the round read back.
     log: [...state.log, wasBoss ? 'The Act is won.' : 'The enemies fall.'],
   }
 }

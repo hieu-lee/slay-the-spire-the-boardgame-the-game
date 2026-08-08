@@ -4,6 +4,7 @@
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { tierOf, cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
+import { healthBand, strikeClass } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -66,6 +67,35 @@ check('an upgraded face resolves to its own image', () => {
 check('the upgraded name suffix never leaks into the file name twice', () => {
   const path = cardImagePath(faceOf(CARDS.bash, true), true)
   assertEqual((path.match(/\+/g) ?? []).length, 1, 'exactly one + marker')
+})
+
+
+suite('board feedback helpers')
+
+// Neither of these had a test, and both are pure functions with sharp edges.
+
+check('the health bands fall where they are documented', () => {
+  // Green above 60%, amber above 30%, red below — with the boundary itself
+  // falling to the LOWER band, which is what the UI comment claims.
+  assertEqual(healthBand(10, 10), 'healthy', 'full')
+  assertEqual(healthBand(7, 10), 'healthy', 'just above 60%')
+  assertEqual(healthBand(6, 10), 'hurt', '60% exactly is not healthy')
+  assertEqual(healthBand(4, 10), 'hurt', 'above 30%')
+  assertEqual(healthBand(3, 10), 'critical', '30% exactly is not merely hurt')
+  assertEqual(healthBand(1, 10), 'critical', 'nearly gone')
+  assertEqual(healthBand(0, 10), 'critical', 'gone')
+  assertEqual(healthBand(0, 0), 'critical', 'and a zero maximum does not divide by zero')
+})
+
+check('the flinch alternates so a repeated hit re-animates', () => {
+  // A CSS animation only restarts when the computed animation-name changes, so
+  // consecutive hits must not produce the same class.
+  assert(strikeClass('seat', 0) !== strikeClass('seat', 1), 'consecutive hits must differ')
+  assertEqual(strikeClass('seat', 0), strikeClass('seat', 2), 'and then alternate back')
+  assert(
+    strikeClass('enemy', 1).startsWith('enemy--'),
+    'the base name follows the element it is applied to',
+  )
 })
 
 report('ui helpers')

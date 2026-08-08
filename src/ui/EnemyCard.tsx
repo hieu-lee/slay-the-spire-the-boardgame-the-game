@@ -4,12 +4,19 @@ import type { Enemy } from '../game/types.ts'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
+import { healthBand, strikeClass } from './board-signals.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
+  /** Distinguishes twins, the same way the combat log does. */
+  rowLabel?: boolean
   /** The round's shared die, which decides what a die-pattern enemy will do. */
   die: number
   targeted?: boolean
+  /** Just took damage: flinch, so the hit is felt and not merely recorded. */
+  struck?: boolean
+  /** Which hit this is, so a second blow restarts the animation. */
+  beat?: number
   onClick?: (enemy: Enemy) => void
 }
 
@@ -37,7 +44,60 @@ function intentParts(action: EnemyAction): IntentPart[] {
   }
 }
 
-export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardProps) {
+/**
+ * The enemy button's accessible name.
+ *
+ * `aria-label` replaces the element's contents wholesale, so anything left out
+ * is unreachable however it is marked up — the same trap `describeSeat` avoids
+ * for players. The intent especially: it is the one thing choosing a target
+ * depends on, and it was not being announced at all.
+ */
+function describeEnemy(
+  enemy: Enemy,
+  name: string,
+  rowLabel: boolean,
+  intent: IntentPart[],
+): string {
+  // The log says "Cultist (row 2)" when there are two; two identically named
+  // buttons would leave a screen-reader user unable to match log to board.
+  const parts = [`${name}${rowLabel ? ` (row ${enemy.row})` : ''}`]
+  if (enemy.dead) {
+    parts.push('defeated')
+    return parts.join(', ')
+  }
+  parts.push(`${enemy.hp} of ${enemy.maxHp} hit points`)
+
+  const said = intent
+    .map((part) => {
+      const value = part.value === undefined || part.value === '' ? '' : `${part.value} `
+      return `${part.aoe ? 'all rows, ' : ''}to apply ${value}${part.icon}`
+    })
+    .join(', ')
+  // "intends to apply 1 Vulnerable" rather than "vulnerable 1": the tokens the
+  // enemy CARRIES are announced below in the same shape, and case alone is not
+  // something a screen reader conveys.
+  parts.push(said ? `intends ${said}` : 'no intent')
+
+  const tokens: [string, number][] = [
+    ['Block', enemy.block],
+    ['Strength', enemy.strength],
+    ['Vulnerable', enemy.vulnerable],
+    ['Weak', enemy.weak],
+    ['Poison', enemy.poison],
+  ]
+  for (const [label, value] of tokens) if (value > 0) parts.push(`has ${label} ${value}`)
+  return parts.join(', ')
+}
+
+export function EnemyCard({
+  enemy,
+  rowLabel = false,
+  die,
+  targeted = false,
+  struck = false,
+  beat = 0,
+  onClick,
+}: EnemyCardProps) {
   const def = enemyDef(enemy.defId)
   const intent = actionsFor(def, die, enemy.actionIndex).flatMap(intentParts)
   const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
@@ -45,6 +105,7 @@ export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardPr
   const className = [
     'enemy',
     enemy.dead ? 'enemy--dead' : '',
+    struck ? strikeClass('enemy', beat) : '',
     targeted ? 'enemy--targeted' : '',
     enemy.isBoss ? 'enemy--boss' : '',
   ]
@@ -57,7 +118,7 @@ export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardPr
       className={className}
       disabled={enemy.dead}
       onClick={() => onClick?.(enemy)}
-      aria-label={`${def.name}, ${enemy.hp} of ${enemy.maxHp} hit points`}
+      aria-label={describeEnemy(enemy, def.name, rowLabel, intent)}
     >
       <span className="enemy__portrait">
         <img
@@ -76,8 +137,17 @@ export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardPr
         </span>
       </span>
 
+      {/* A corpse telegraphing an attack it will never make is worse than no
+          intent at all — it is read as a threat while choosing a target.
+          p.13: the dead are flipped over until the end of combat. */}
       <span className="enemy__intent">
-        {intent.length === 0 ? (
+        {enemy.dead ? (
+          // Not the `monster` icon: that same glyph badges LIVING enemies two
+          // lines above, so a corpse wearing it still reads as a threat.
+          <span className="enemy__defeated" aria-hidden="true">
+            ✕
+          </span>
+        ) : intent.length === 0 ? (
           <span className="enemy__asleep">…</span>
         ) : (
           intent.map((part, i) => (
@@ -90,12 +160,19 @@ export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardPr
       </span>
 
       <span className="bar" aria-hidden="true">
-        <span className="bar__fill" style={{ width: `${Math.round(hpFraction * 100)}%` }} />
+        <span
+          className="bar__fill"
+          data-health={healthBand(enemy.hp, enemy.maxHp)}
+          style={{ width: `${Math.round(hpFraction * 100)}%` }}
+        />
         <span className="bar__label">
           {enemy.hp}/{enemy.maxHp}
         </span>
       </span>
 
+      {/* A defeated enemy is flipped over (p.13), and its tokens go with it —
+          a corpse still announcing "Poison 3" reads as a live threat. */}
+      {enemy.dead ? null : (
       <TokenRow
         block={enemy.block}
         strength={enemy.strength}
@@ -103,6 +180,7 @@ export function EnemyCard({ enemy, die, targeted = false, onClick }: EnemyCardPr
         weak={enemy.weak}
         poison={enemy.poison}
       />
+      )}
     </button>
   )
 }

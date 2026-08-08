@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { ENEMY_ART } from './lib/enemy-art.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pdfPath = join(repoRoot, 'docs/reference/STS_KS_Rulebook.pdf')
@@ -21,25 +22,9 @@ const outDir = join(repoRoot, 'public/assets/enemies')
 const args = process.argv.slice(2)
 const width = Number((args.find((a) => a.startsWith('--width=')) ?? '--width=280').slice(8))
 
-/**
- * Enemy id -> md5 prefix of the card scan it is cropped from. Highest available
- * resolution wins; several enemies appear more than once in the book.
- *
- * Each mapping was checked by cropping the card's title banner and reading it,
- * not by eyeballing the creature: two of these were wrong on first pass, since
- * several enemies share a colour scheme and the Cultist card appears twice.
- */
-export const ENEMY_ART = {
-  cultist: 'd189fa17',
-  jaw_worm: 'd9506603',
-  red_louse: 'c3f81e4f',
-  green_louse: 'b59e9569',
-  gremlin_nob: '9e33a4ee',
-  lagavulin: 'a1221753',
-  spike_slime: '01e6d175',
-  fungi_beast: '2bac4550',
-}
-
+// The table lives in its own module so a verify script can read it without
+// running this pipeline as a side effect of the import.
+export { ENEMY_ART } from './lib/enemy-art.mjs'
 if (!existsSync(pdfPath)) {
   console.error(`missing ${pdfPath} — see ATTRIBUTION.md for where to fetch it`)
   process.exit(1)

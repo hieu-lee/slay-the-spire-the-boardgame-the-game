@@ -57,6 +57,15 @@ page.on('response', (response) => {
 
 const shots = []
 async function shot(label) {
+  // Screenshots are the artefact a human reviews, so they must show the app as
+  // a player sees it. Captured too early, lazy-loaded card art is still blank
+  // and the picture misrepresents the product rather than documenting it.
+  await page
+    .waitForFunction(
+      () => [...document.querySelectorAll('img')].every((img) => img.complete),
+      { timeout: 4000 },
+    )
+    .catch(() => {})
   const file = join(outDir, `${label}.png`)
   await page.screenshot({ path: file, fullPage: true })
   const state = await page.evaluate(() => window.__STS_DEBUG__.getState())
@@ -175,13 +184,558 @@ await shot('04-enemy-phase')
 
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 const afterEnemies = await readState()
-check('resolving enemies returns play to the party', () => {
+check('resolving enemies ends the round and holds the board', () => {
   assert(
-    afterEnemies.phase === 'player' || afterEnemies.phase === 'lost',
-    `expected the Player Turn or a loss, got ${afterEnemies.phase}`,
+    afterEnemies.phase === 'roundEnd' || afterEnemies.phase === 'lost',
+    `expected the round to end or the party to fall, got ${afterEnemies.phase}`,
   )
 })
 await shot('05-after-enemy-turn')
+
+// The whole reason a combat is worth playing is that it lasts more than one
+// round. This suite used to stop at the click above, which is exactly why the
+// game shipped unplayable past round 1: nothing on screen started turn 2.
+if (afterEnemies.phase === 'roundEnd') {
+  await page.getByRole('button', { name: /Start turn 2/ }).click()
+  const secondRound = await readState()
+  check('a second round can actually be started and played', () => {
+    assertEqual(secondRound.phase, 'player', 'the next Player Turn begins')
+    assertEqual(secondRound.turn, 2, 'the turn counter advances')
+    assertEqual(secondRound.players[0].hand.length, 5, 'a fresh hand is dealt')
+    assertEqual(secondRound.players[0].energy, 3, 'and Energy is reset')
+  })
+
+  const beforeSecondPlay = await readState()
+  const secondAttack = beforeSecondPlay.players[0].hand.findIndex((card) =>
+    card.defId.startsWith('strike'),
+  )
+  assert(secondAttack >= 0, 'expected a Strike in the second hand')
+  await page.locator('.hand .card').nth(secondAttack).click()
+  await page.locator('.enemy').first().click()
+  const afterSecondPlay = await readState()
+  check('cards are playable in the second round, not just the first', () => {
+    assertEqual(afterSecondPlay.players[0].hand.length, 4, 'the card leaves hand')
+    assert(
+      totalEnemyHp(afterSecondPlay) < totalEnemyHp(beforeSecondPlay),
+      'and it still damages an enemy',
+    )
+  })
+  await shot('05b-second-round')
+}
+
+// Play the encounter out to its end, clicking only what a player can click.
+// The suite used to stop a few clicks in, which is how a combat that could not
+// reach round 2 shipped green. A whole fight is the only thing that proves the
+// loop closes.
+async function playOutCombat(limit = 40) {
+  for (let step = 0; step < limit; step++) {
+    const state = await readState()
+    if (state.phase === 'won' || state.phase === 'lost') return state
+
+    if (state.phase === 'roundEnd') {
+      await page.getByRole('button', { name: /^Start turn/ }).click()
+      continue
+    }
+    if (state.phase === 'enemy') {
+      await page.getByRole('button', { name: 'Resolve enemies' }).click()
+      continue
+    }
+
+    // Player turn: swing with whatever is affordable, then end the turn.
+    const attack = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.hand .card')]
+      const index = cards.findIndex((card) => !card.disabled)
+      return index
+    })
+    if (attack >= 0) {
+      await page.locator('.hand .card').nth(attack).click()
+      // Targeted cards need an enemy; untargeted ones resolve on the spot.
+      const wantsTarget = await page.locator('.prompt').count()
+      if (wantsTarget > 0) {
+        const enemy = page.locator('.enemy:not([disabled])').first()
+        if (await enemy.count()) await enemy.click()
+        else await page.locator('.prompt__cancel').click()
+      }
+      continue
+    }
+    await page.getByRole('button', { name: 'End turn' }).click()
+  }
+  throw new Error('the combat never ended')
+}
+
+const finished = await playOutCombat()
+// Sampled from a FOUR-player round, which is where rounds actually run long.
+// Against a short round these all pass trivially: a tail keeps every line, so
+// the fixed-tail regression they exist to catch slips straight through.
+await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'log-round'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.getByRole('button', { name: 'Resolve enemies' }).click()
+await page.waitForFunction(() =>
+  ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
+)
+const logShape = await page.evaluate(() => {
+  const list = document.querySelector('.combat__log')
+  if (!list) return null
+  const items = [...list.querySelectorAll('li')]
+  const listBox = list.getBoundingClientRect()
+  const engineNewest = window.__STS_DEBUG__.getState().log.at(-1)
+  const showing = items.find((li) => li.textContent.trim() === engineNewest.trim())
+  const box = showing?.getBoundingClientRect()
+  const colourOf = (el) => (el ? getComputedStyle(el).color : '')
+  return {
+    engineNewest,
+    engineLines: window.__STS_DEBUG__.getState().log.length,
+    // Everything since the round opened — what the panel is supposed to show.
+    engineRound: (() => {
+      const log = window.__STS_DEBUG__.getState().log
+      let start = -1
+      for (let i = log.length - 1; i >= 0; i--) {
+        if (/^Turn \d+ begins/.test(log[i])) {
+          start = i
+          break
+        }
+      }
+      return (start >= 0 ? log.slice(start) : log).map((line) => line.trim())
+    })(),
+    rendered: items.map((li) => li.textContent.trim()),
+    found: showing != null,
+    isFirst: showing != null && showing === items[0],
+    fullyVisible: box != null && box.top >= listBox.top - 1 && box.bottom <= listBox.bottom + 1,
+    overflowing: list.scrollHeight > list.clientHeight + 1,
+    newestColour: colourOf(items[0]),
+    // NOT the last item: that is usually the round divider, which has a colour
+    // of its own — so the comparison passed even with the emphasis removed.
+    olderColour: colourOf(
+      items.slice(1).find((li) => !li.className.includes('combat__log-turn')) ?? null,
+    ),
+  }
+})
+check('the log shows the whole round, dropping nothing', () => {
+  // A fixed tail silently dropped lines — a four-player enemy turn ran to
+  // fifteen and rendered ten, losing a "hit for 4" without the box even
+  // overflowing to hint that anything was missing.
+  assert(logShape, 'expected a combat log on screen')
+  assert(logShape.engineLines > 4, `the fight produced only ${logShape.engineLines} lines`)
+  // Long enough that the tail this exists to catch would ACTUALLY cut it. The
+  // regression was a fixed `slice(-10)`, so the round has to exceed ten lines
+  // or the check passes with that bug still in place — which it did at nine.
+  assert(
+    logShape.engineRound.length > 10,
+    `this round is only ${logShape.engineRound.length} lines; a 10-line tail would keep them all`,
+  )
+  assert(logShape.rendered.length > 1, 'more than one line should be rendered')
+  const missing = logShape.engineRound.filter((line) => !logShape.rendered.includes(line))
+  assertEqual(
+    missing.length,
+    0,
+    `the log dropped ${missing.length} line(s) of this round: ${missing.join(' | ')}`,
+  )
+})
+check('the newest line is rendered first and fully visible', () => {
+  assert(
+    logShape.found,
+    `the engine's newest line "${logShape.engineNewest}" is not rendered: ${logShape.rendered.join(' | ')}`,
+  )
+  assert(logShape.isFirst, `the newest line should lead the list, not "${logShape.rendered[0]}"`)
+  assert(
+    logShape.fullyVisible,
+    `the newest line "${logShape.engineNewest}" is clipped or scrolled out of its box`,
+  )
+})
+check('the newest line is visibly emphasised, not just positioned', () => {
+  assert(logShape.olderColour, 'need a non-divider older line to compare against')
+  assert(
+    logShape.newestColour !== logShape.olderColour,
+    `the newest line looks identical to an older one (${logShape.newestColour})`,
+  )
+})
+
+check('a whole encounter can be fought to its end', () => {
+  assert(
+    finished.phase === 'won' || finished.phase === 'lost',
+    `the combat should end, got ${finished.phase}`,
+  )
+})
+await shot('05c-combat-over')
+
+// Victory is its own path — rewards, and the hand-off back to the map — and a
+// starter deck does not reliably win the opening fight, so it is set up rather
+// than hoped for. Testing "won or lost" alone would pass with the victory path
+// completely broken.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'winnable'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const foe of run.combat.enemies) foe.hp = 1
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.every((foe) => foe.hp === 1))
+
+const won = await playOutCombat()
+check('a combat can actually be won', () => {
+  assertEqual(won.phase, 'won', 'the party should win against 1 hit point of enemy')
+  assert(won.enemies.every((foe) => foe.dead), 'and every enemy is dead')
+})
+await shot('05d-victory')
+
+// The combat screen clears itself after a beat rather than making everyone
+// click through a screen that only says "you won".
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map', { timeout: 5000 })
+const backOnMap = await readRun()
+check('winning hands the party back to the map with somewhere to go', () => {
+  assertEqual(backOnMap.phase, 'map', 'the run continues on the map')
+  assert(backOnMap.map.position !== null, 'and the boot has moved onto the board')
+  assert(
+    backOnMap.map.rooms[backOnMap.map.position].visited,
+    'the room just cleared is marked visited',
+  )
+})
+await shot('05e-back-on-map')
+
+// Hit feedback has to survive the rest of the combat. The flinch class used to
+// stick forever the first time a state change landed inside its 380ms window
+// without hurting anyone — and being unchanged, it then never re-animated.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'flinch'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+
+// Orbs are board state the log talks about ("Defect's Lightning orb hit ...
+// for 1"), so they have to be visible. Nothing rendered them at all.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].orbs = ['lightning', 'frost', null]
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs[0] === 'lightning')
+const orbView = await page.evaluate(() => ({
+  beads: document.querySelectorAll('.seat--viewer .token--orb').length,
+  classes: [...document.querySelectorAll('.seat--viewer .token--orb')].map((b) => b.className),
+  label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
+}))
+check('channelled orbs are visible on the seat', () => {
+  assertEqual(orbView.beads, 2, 'one bead per channelled orb')
+  // The per-type class is what colours them; without it all three orb kinds
+  // render as the same bead and the board stops telling you which is which.
+  assert(
+    orbView.classes.some((name) => name.includes('token--orb-lightning')),
+    `expected a lightning bead: ${orbView.classes.join(' | ')}`,
+  )
+  assert(
+    orbView.classes.some((name) => name.includes('token--orb-frost')),
+    `expected a frost bead: ${orbView.classes.join(' | ')}`,
+  )
+  assert(orbView.label.includes('lightning orb'), `and named to a screen reader: ${orbView.label}`)
+  assert(orbView.label.includes('frost orb'), `both of them: ${orbView.label}`)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].orbs = [null, null, null]
+  debug.setRun(run)
+})
+
+async function hurtViewer() {
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].hp -= 1
+    debug.setRun(run)
+  })
+}
+
+// Two alternating classes, so a second hit inside the window restarts the
+// animation instead of leaving the class name unchanged.
+const FLINCHING = '.seat--struck, .seat--struck-alt'
+async function flinchCount(expected) {
+  await page
+    .waitForFunction(
+      ({ want, selector }) => document.querySelectorAll(selector).length === want,
+      { want: expected, selector: FLINCHING },
+      { timeout: 2000 },
+    )
+    .catch(() => {})
+  return page.locator(FLINCHING).count()
+}
+
+await hurtViewer()
+const flinchedAtOnce = await flinchCount(1)
+// A state change that hurts nobody, landing inside the flinch window.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].gold += 1
+  debug.setRun(run)
+})
+const flinchCleared = await flinchCount(0)
+await hurtViewer()
+const flinchedAgain = await flinchCount(1)
+
+check('a hit is felt, and keeps being felt for the rest of the combat', () => {
+  assertEqual(flinchedAtOnce, 1, 'the damaged seat should flinch')
+  assertEqual(flinchCleared, 0, 'and stop flinching even if another change interrupts')
+  assertEqual(flinchedAgain, 1, 'and flinch again on the next hit')
+})
+
+// Two blows landing inside the same 380ms window: the class has to CHANGE, or
+// the browser never restarts the animation and the second hit is not felt.
+const beats = await page.evaluate(async () => {
+  const seen = []
+  document.addEventListener('animationstart', (event) => {
+    if (event.animationName.startsWith('struck')) seen.push(event.animationName)
+  })
+  for (let i = 0; i < 2; i++) {
+    // Re-read the bridge every time: App rebuilds it on each render, so a
+    // captured reference keeps returning the state it closed over and the
+    // second "hit" would silently write back the hit points already there.
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].hp -= 1
+    debug.setRun(run)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  return { count: seen.length, names: seen }
+})
+check('two hits in quick succession are both felt', () => {
+  // The invariant is that the two flinches use DIFFERENT animations, which is
+  // what makes the browser restart the second one. The exact event count is
+  // not an invariant: StrictMode double-invokes the effect, so an extra
+  // animationstart can legitimately land, and asserting equality made this
+  // flaky — which is worse than not testing it at all.
+  assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
+  assertEqual(
+    new Set(beats.names).size,
+    2,
+    `the two flinches must use different animations to restart: ${beats.names.join(', ')}`,
+  )
+})
+
+// The enemy's remaining hit points are the number the whole turn is planned
+// around. Twice it fell below the fold at small sizes because the board was
+// sized by reasoning rather than measurement, so this measures.
+//
+// From a clean one-player board: this is about how the board is SIZED, and by
+// this point in the suite the seat carries injected Powers and tokens that
+// make the row taller for unrelated reasons.
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'fold'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+const foldProbe = []
+for (const size of [
+  { width: 360, height: 720 },
+  { width: 900, height: 620 },
+  { width: 1440, height: 900 },
+]) {
+  await page.setViewportSize(size)
+  foldProbe.push(
+    await page.evaluate((label) => {
+      const board = document.querySelector('.board')
+      const bar = document.querySelector('.enemy .bar')
+      if (!board || !bar) return { label, missing: true }
+      const b = board.getBoundingClientRect()
+      const r = bar.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return {
+        label,
+        missing: false,
+        inside: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+        // Inside the board is not enough: the board itself can sit partly off
+        // the page, so the viewport is the thing that decides whether a player
+        // can actually see the number.
+        onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
+        onTop: !!hit?.closest('.bar'),
+      }
+    }, `${size.width}x${size.height}`),
+  )
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+check("an enemy's hit points are on screen without scrolling, at every size", () => {
+  for (const probe of foldProbe) {
+    assert(!probe.missing, `${probe.label}: no enemy bar found`)
+    assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
+    assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
+    assert(probe.onTop, `${probe.label}: the bar is covered by something else`)
+  }
+})
+
+// And during the round-end pause, where the log opens up and used to squeeze
+// the board until the bar was sliced — exactly when the pause asks you to read
+// the board.
+//
+// From a clean board on purpose: this is about the LOG's effect on the board,
+// and by this point in the suite the seat carries injected Powers and tokens
+// that make the row taller for reasons that have nothing to do with the log.
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'pause'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.getByRole('button', { name: 'Resolve enemies' }).click()
+await page.waitForFunction(() =>
+  ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
+)
+const pauseProbe = []
+for (const size of [
+  { width: 360, height: 720 },
+  { width: 900, height: 620 },
+  { width: 1440, height: 900 },
+]) {
+  await page.setViewportSize(size)
+  pauseProbe.push(
+    await page.evaluate((label) => {
+      const board = document.querySelector('.board')
+      const bar = document.querySelector('.enemy .bar')
+      if (!board || !bar) return { label, missing: true }
+      const b = board.getBoundingClientRect()
+      const r = bar.getBoundingClientRect()
+      return {
+        label,
+        missing: false,
+        inside: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+        onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
+      }
+    }, `${size.width}x${size.height}`),
+  )
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+// And on the FOUR-player board, where the rows are tightest and the portrait
+// squash rules apply. Both fold probes ran only on the two-player board, so
+// the squash could be deleted with everything green.
+await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'fold-four'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+const crowdedProbe = []
+// Phone widths are excluded deliberately: four stacked rows do not fit a
+// 360px screen and never will without the board redesign that is tracked
+// separately. What IS promised at every size is that the row you control is
+// scrolled into view — so this checks the sizes where the guarantee holds.
+for (const size of [
+  { width: 900, height: 620 },
+  { width: 1440, height: 900 },
+]) {
+  await page.setViewportSize(size)
+  // The board scrolls the viewer's row into view on resize; give it a frame.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  crowdedProbe.push(
+    await page.evaluate((label) => {
+      const bars = [...document.querySelectorAll('.enemy .bar')]
+      const board = document.querySelector('.board')
+      if (!board || bars.length === 0) return { label, missing: true }
+      const b = board.getBoundingClientRect()
+      // The row the viewer controls is the one scrolled into view, so its
+      // enemy is the one that must be readable.
+      const own = document.querySelector('.row--viewer .enemy .bar') ?? bars[0]
+      const r = own.getBoundingClientRect()
+      return {
+        label,
+        missing: false,
+        rows: bars.length,
+        inside: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+        onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
+      }
+    }, `4p ${size.width}x${size.height}`),
+  )
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+
+check("a four-player board still shows the viewer's own enemy", () => {
+  for (const probe of crowdedProbe) {
+    assert(!probe.missing, `${probe.label}: no enemy bar found`)
+    assertEqual(probe.rows, 4, `${probe.label}: expected four enemies`)
+    assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
+    assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
+  }
+})
+
+check("an enemy's hit points stay on screen during the round-end pause", () => {
+  for (const probe of pauseProbe) {
+    assert(!probe.missing, `${probe.label}: no enemy bar found`)
+    assert(probe.inside, `${probe.label}: the log squeezed the bar out of the board`)
+    assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
+  }
+})
+
+// A dead enemy must stop telegraphing and stop announcing tokens: a corpse
+// showing an attack it will never make is misleading while choosing a target.
+const corpse = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const foe = run.combat.enemies[0]
+  foe.hp = 0
+  foe.dead = true
+  foe.poison = 3
+  foe.block = 2
+  debug.setRun(run)
+  return foe.uid
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].dead)
+const corpseView = await page.evaluate(() => {
+  const tile = document.querySelector('.enemy--dead')
+  return {
+    found: tile != null,
+    intents: tile?.querySelectorAll('.intent').length ?? -1,
+    tokens: tile?.querySelectorAll('.token').length ?? -1,
+    disabled: tile?.disabled ?? false,
+    label: tile?.getAttribute('aria-label') ?? '',
+  }
+})
+check('a defeated enemy stops telegraphing and stops carrying tokens', () => {
+  assert(corpseView.found, `expected a defeated enemy on the board (${corpse})`)
+  assertEqual(corpseView.intents, 0, 'a corpse has no intent')
+  assertEqual(corpseView.tokens, 0, 'and no tokens')
+  assert(corpseView.disabled, 'and cannot be clicked')
+  assert(corpseView.label.includes('defeated'), `and says so: ${corpseView.label}`)
+})
+
+// A cost the hand cannot fully pay must still be committable — the engine
+// accepts it, and the UI used to demand the printed count and strand the card.
+const lastCard = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const me = run.combat.players[0]
+  me.hand = [{ uid: 'solo-survivor', defId: 'survivor', upgraded: false }]
+  me.energy = 3
+  me.block = 0
+  debug.setRun(run)
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  document.querySelector('.hand .card')?.click()
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const state = window.__STS_DEBUG__.getState()
+  return { block: state.players[0].block, hand: state.players[0].hand.length }
+})
+check('a card whose cost the hand cannot pay is still playable', () => {
+  assertEqual(lastCard.hand, 0, 'the card left the hand')
+  assert(lastCard.block > 0, `and it resolved, giving Block (got ${lastCard.block})`)
+})
+
+// An evoke with nothing to evoke is refused by the engine, and a refusal is
+// reference-equality — so the card must not be clickable in the first place,
+// or the click lands and appears to do nothing at all.
+const emptyEvoke = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const me = run.combat.players[0]
+  me.hand = [{ uid: 'solo-dual', defId: 'dual_cast', upgraded: false }]
+  me.orbs = [null, null, null]
+  me.energy = 3
+  debug.setRun(run)
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const card = document.querySelector('.hand .card')
+  return { disabled: card?.disabled ?? false }
+})
+check('a card that cannot resolve is not offered', () => {
+  assert(emptyEvoke.disabled, 'Dual Cast with no orbs charged should be greyed out')
+})
 
 // Four players is the maximum the box supports and the layout most likely to
 // break, so it gets its own capture.
@@ -323,6 +877,18 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].weak
 const seatTokens = await page.evaluate(() =>
   [...document.querySelectorAll('.seat .token')].map((el) => el.className),
 )
+// aria-label replaces the button's contents wholesale, so anything left out of
+// it is unreachable no matter how it is marked up — which is how the tokens'
+// own hidden labels ended up invisible. The class-name check above cannot see
+// that; this reads the label a screen reader would actually announce.
+const debuffLabel = await page.evaluate(
+  () => document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
+)
+check('the seat announces its debuffs, not just renders them', () => {
+  assert(/Weak \d/.test(debuffLabel), `expected a Weak count in: ${debuffLabel}`)
+  assert(/Vulnerable \d/.test(debuffLabel), `expected a Vulnerable count in: ${debuffLabel}`)
+})
+
 check('a player can see the Weak and Vulnerable on their own seat', () => {
   assert(
     seatTokens.some((name) => name.includes('token--weak')),
@@ -334,6 +900,405 @@ check('a player can see the Weak and Vulnerable on their own seat', () => {
   )
 })
 await shot('13-player-debuffs')
+
+// A Power stays in play for the whole combat and changes how every turn plays
+// out. If it is not on screen the player cannot plan around it.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].powers = [
+    { uid: 'pw-1', defId: 'demon_form', upgraded: false },
+    { uid: 'pw-2', defId: 'metallicize', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 2)
+
+// Powers render as their own card art, so the assertion is that the images
+// actually LOADED — a broken scan would leave the seat blank while a check on
+// markup alone still passed. `complete` also goes true on FAILURE, so waiting
+// on it settles the race without hiding a genuinely broken path.
+await page.waitForFunction(() => {
+  const art = [...document.querySelectorAll('.row__seat .power .power__art')]
+  return art.length === 2 && art.every((img) => img.complete)
+})
+const powerArt = await page.evaluate(() =>
+  [...document.querySelectorAll('.row__seat .power')].map((button) => {
+    const img = button.querySelector('.power__art')
+    return {
+      alt: button.getAttribute('aria-label') ?? '',
+      loaded: img.complete && img.naturalWidth > 0,
+      width: img.getBoundingClientRect().width,
+      isButton: button.tagName === 'BUTTON',
+      focusable: button.tabIndex >= 0,
+    }
+  }),
+)
+check('Powers in play are shown on the seat as card art', () => {
+  assertEqual(powerArt.length, 2, 'both Powers should be on the seat')
+  for (const art of powerArt) {
+    assert(art.loaded, `the Power's card scan failed to load: ${art.alt}`)
+    assert(art.width > 8, `the Power thumbnail collapsed to ${art.width}px`)
+  }
+})
+
+// The name fallback exists only for a missing scan. It is absolutely
+// positioned over the tile, so if it ever paints ABOVE the art the thumbnail
+// silently turns back into a text chip — which is exactly what it replaced.
+const topmostOverPower = await page.evaluate(() => {
+  const tile = document.querySelector('.row__seat .power')
+  if (!tile) return 'no tile'
+  const box = tile.getBoundingClientRect()
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+  return hit?.className ?? 'nothing'
+})
+check('the card art paints over the name fallback, not under it', () => {
+  assert(
+    String(topmostOverPower).includes('power__art'),
+    `expected the art on top of the tile, found: ${topmostOverPower}`,
+  )
+})
+
+// The enlarge has to escape the board's scroll container. It previously did
+// not, and this suite missed it by hovering ONE tile at ONE viewport where the
+// popover happened to fit inside the board's box. Every tile, two sizes.
+const hoverProbes = []
+for (const size of [
+  { width: 1440, height: 900 },
+  { width: 900, height: 620 },
+  // Narrow enough that a 190px card anchored at the tile would overflow the
+  // right edge, which is the only way the horizontal clamp is exercised.
+  { width: 360, height: 720 },
+]) {
+  await page.setViewportSize(size)
+  const tiles = await page.locator('.row__seat .power').count()
+  for (let i = 0; i < tiles; i++) {
+    await page.locator('.row__seat .power').nth(i).hover()
+    await page.waitForSelector('.power__zoom')
+    hoverProbes.push(
+      await page.evaluate(
+        (label) => {
+          const img = document.querySelector('.power__zoom')
+          if (!img) return { label, missing: true }
+          const box = img.getBoundingClientRect()
+          return {
+            label,
+            missing: false,
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+            left: Math.round(box.left),
+            top: Math.round(box.top),
+            right: Math.round(box.right),
+            bottom: Math.round(box.bottom),
+            viewport: { w: window.innerWidth, h: window.innerHeight },
+            // The card is `pointer-events: none` so that moving onto it does
+            // not end the hover, which means elementFromPoint looks straight
+            // through it. Whether it is actually PAINTED is checked below by
+            // screenshotting the region instead.
+            visible: getComputedStyle(img).visibility === 'visible',
+          }
+        },
+        `${size.width}x${size.height} tile ${i}`,
+      ),
+    )
+  }
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+
+// The clipping bug this all exists for was caused by the card being a
+// DESCENDANT of the board. Geometry alone cannot see that — at a viewport
+// where the board happens not to clip, an inline card looks identical.
+const zoomParent = await page.evaluate(() => {
+  const img = document.querySelector('.power__zoom')
+  return {
+    parentIsBody: img?.parentElement === document.body,
+    parent: img?.parentElement?.className ?? img?.parentElement?.tagName ?? 'none',
+  }
+})
+check('the enlarged card is rendered outside the board, not inside it', () => {
+  assert(
+    zoomParent.parentIsBody,
+    `the enlarged card is a child of "${zoomParent.parent}" — anything with a scroll box will clip it`,
+  )
+})
+
+// The clamp only does anything when the tile sits close enough to an edge that
+// an unclamped card would overflow. At the widths above it never did, so the
+// clamp could be deleted with every assertion still green.
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.mouse.move(0, 0)
+// Shove the row hard right so the tile is within a card's width of the edge.
+await page.evaluate(() => {
+  const row = document.querySelector('.row__seat .power').closest('.row__seat')
+  row.style.marginLeft = `${window.innerWidth - 120}px`
+})
+// A REAL hover: React synthesises onMouseEnter from mouseover/mouseout and
+// ignores a dispatched `mouseenter`, so the previous version of this probe
+// never ran the placement code and read a stale card from an earlier hover.
+await page.locator('.row__seat .power').first().hover()
+await page.waitForSelector('.power__zoom')
+const clampProbe = await page.evaluate(() => {
+  const tile = document.querySelector('.row__seat .power')
+  const zoom = document.querySelector('.power__zoom')
+  const box = zoom.getBoundingClientRect()
+  return {
+    tileLeft: Math.round(tile.getBoundingClientRect().left),
+    zoomLeft: Math.round(box.left),
+    zoomRight: Math.round(box.right),
+    viewportWidth: window.innerWidth,
+  }
+})
+await page.evaluate(() => {
+  const row = document.querySelector('.row__seat .power').closest('.row__seat')
+  row.style.marginLeft = ''
+})
+await page.mouse.move(0, 0)
+
+check('an enlarged card near the right edge is pulled back on screen', () => {
+  assert(
+    clampProbe.tileLeft + 190 > clampProbe.viewportWidth,
+    `precondition: the tile must be close enough to the edge to need clamping ` +
+      `(tile at ${clampProbe.tileLeft}, viewport ${clampProbe.viewportWidth})`,
+  )
+  // The exact clamped position, not an inequality: "left of the tile" is true
+  // of a stale card sitting at x=27 as well as a correctly clamped one.
+  assertEqual(
+    clampProbe.zoomLeft,
+    clampProbe.viewportWidth - 190 - 8,
+    'the card should sit exactly one margin in from the right edge',
+  )
+  assert(
+    clampProbe.zoomRight <= clampProbe.viewportWidth,
+    `and fully on screen, got right edge ${clampProbe.zoomRight}`,
+  )
+})
+
+check('every Power enlarges into full view at every size', () => {
+  assert(hoverProbes.length >= 4, `expected several probes, got ${hoverProbes.length}`)
+  for (const probe of hoverProbes) {
+    assert(!probe.missing, `${probe.label}: no enlarged card appeared`)
+    assert(probe.width > 150 && probe.height > 200, `${probe.label}: not enlarged (${probe.width}x${probe.height})`)
+    assert(probe.left >= 0, `${probe.label}: clipped off the left (${probe.left})`)
+    assert(probe.top >= 0, `${probe.label}: clipped off the top (${probe.top})`)
+    assert(probe.right <= probe.viewport.w, `${probe.label}: off the right (${probe.right} > ${probe.viewport.w})`)
+    assert(probe.bottom <= probe.viewport.h, `${probe.label}: off the bottom (${probe.bottom} > ${probe.viewport.h})`)
+    assert(probe.visible, `${probe.label}: the enlarged card is not visible`)
+  }
+})
+
+// Geometry alone cannot tell "on screen" from "painted behind the board", so
+// the same region is captured with and without the card and compared.
+await page.mouse.move(0, 0)
+const zoomRegion = { x: 40, y: 60, width: 300, height: 320 }
+const withoutZoom = await page.screenshot({ clip: zoomRegion })
+await page.locator('.row__seat .power').first().hover()
+await page.waitForSelector('.power__zoom')
+const withZoom = await page.screenshot({ clip: zoomRegion })
+check('the enlarged card is actually painted, not just positioned', () => {
+  assert(
+    !withoutZoom.equals(withZoom),
+    'hovering a Power changed nothing on screen in the region the card should occupy',
+  )
+})
+
+await page.locator('.row__seat .power').first().hover()
+await page.waitForSelector('.power__zoom')
+const tileWhileHovered = await page.evaluate(() => {
+  const tile = document.querySelector('.row__seat .power')
+  const box = tile.getBoundingClientRect()
+  return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.className
+})
+check('the tile keeps showing its own art while the card is enlarged', () => {
+  assert(
+    String(tileWhileHovered).includes('power__art'),
+    `the tile went blank while hovered: ${tileWhileHovered}`,
+  )
+})
+await shot('14b-power-hover')
+await page.mouse.move(0, 0)
+
+// The tile crop is the whole reason a Power reads as board state rather than a
+// text chip: it must land on the ILLUSTRATION, not on the card's rules box.
+// Moving it onto the rules box is invisible to every other assertion here.
+const cropSample = await page.evaluate(() => {
+  const img = document.querySelector('.row__seat .power .power__art')
+  const tile = img.getBoundingClientRect()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const context = canvas.getContext('2d')
+  context.drawImage(img, 0, 0)
+
+  // Reproduce object-fit: cover + object-position to find the visible band.
+  const fit = getComputedStyle(img).objectFit
+  const scale = Math.max(tile.width / img.naturalWidth, tile.height / img.naturalHeight)
+  const drawnHeight = img.naturalHeight * scale
+  const overflow = Math.max(0, drawnHeight - tile.height)
+  const position = parseFloat(getComputedStyle(img).objectPosition.split(' ')[1]) / 100
+  const topPx = (overflow * position) / scale
+  const bandHeight = tile.height / scale
+
+  const spread = (y0, y1) => {
+    const data = context.getImageData(0, Math.max(0, y0), canvas.width, Math.max(1, y1 - y0)).data
+    let sum = 0
+    let sumSq = 0
+    let n = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const value = (data[i] + data[i + 1] + data[i + 2]) / 3
+      sum += value
+      sumSq += value * value
+      n++
+    }
+    const mean = sum / n
+    return Math.sqrt(sumSq / n - mean * mean)
+  }
+
+  return {
+    band: spread(Math.round(topPx), Math.round(topPx + bandHeight)),
+    // The rules box: the flat panel across the bottom of every card.
+    rulesBox: spread(Math.round(canvas.height * 0.68), Math.round(canvas.height * 0.92)),
+    // Where the visible band sits as a fraction of card height. Geometry is
+    // exact where the contrast heuristic is only a signal — rules text is
+    // high-contrast too, so a crop sitting on the text still looked "busy".
+    bandTop: topPx / img.naturalHeight,
+    bandBottom: (topPx + bandHeight) / img.naturalHeight,
+    fit,
+  }
+})
+check('the Power tile crop sits on the illustration', () => {
+  // The band is recomputed here from natural dimensions, which cannot see the
+  // actual object-fit — so that is asserted directly, or switching to `fill`
+  // would leave this maths describing a crop the browser is not applying.
+  assertEqual(cropSample.fit, 'cover', 'the tile crops its art rather than squashing it')
+  // The illustration oval runs roughly 12%-58% of card height on these scans.
+  // The gate is tight enough to exclude the default 50% centring, which would
+  // otherwise drift down onto the rules panel.
+  const centre = (cropSample.bandTop + cropSample.bandBottom) / 2
+  assert(
+    centre > 0.12 && centre < 0.42,
+    `the visible band is centred at ${(centre * 100).toFixed(0)}% of card height, off the artwork`,
+  )
+})
+
+check('the Power tile does not show the flat rules panel', () => {
+  assert(
+    cropSample.band > cropSample.rulesBox * 1.3,
+    `the crop looks flat like the rules box (band spread ${cropSample.band.toFixed(1)} vs ` +
+      `rules box ${cropSample.rulesBox.toFixed(1)}) — it should land on the illustration`,
+  )
+})
+
+// The whole pinned-zoom lifecycle. Every one of these behaviours has a comment
+// naming the bug it fixes, and none of them was checked: the suite hovered and
+// focused but never clicked to pin.
+const pinLife = await page.evaluate(async () => {
+  const tiles = [...document.querySelectorAll('.row__seat .power')]
+  const count = () => document.querySelectorAll('.power__zoom').length
+  const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  tiles[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  await settle()
+  tiles[0].click()
+  await settle()
+  const afterPin = count()
+
+  // Hovering a neighbour must not steal a pin.
+  tiles[1]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  await settle()
+  const afterNeighbour = count()
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await settle()
+  const afterEscape = count()
+
+  tiles[0].click()
+  await settle()
+  const rePinned = count()
+  document.querySelector('.board')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+  await settle()
+  const afterClickAway = count()
+
+  return { afterPin, afterNeighbour, afterEscape, rePinned, afterClickAway }
+})
+// A pin belongs to the player, not to the row that happens to hold it: another
+// row could see its own state as empty, put a hover card up, and destroy it.
+const crossRow = await page.evaluate(async () => {
+  const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const rows = [...document.querySelectorAll('.row__seat')].filter(
+    (row) => row.querySelector('.power'),
+  )
+  if (rows.length < 2) return { rows: rows.length, skipped: true }
+  const mine = rows[0].querySelector('.power')
+  const theirs = rows[1].querySelector('.power')
+
+  mine.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  await settle()
+  mine.click()
+  await settle()
+  const pinned = document.querySelectorAll('.power__zoom').length
+
+  theirs.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+  await settle()
+  const afterOtherRowHover = document.querySelectorAll('.power__zoom').length
+  const stillMine = rows[0].querySelector('.power--open') != null
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await settle()
+  return { rows: rows.length, skipped: false, pinned, afterOtherRowHover, stillMine }
+})
+check('a pin survives a hover in another row', () => {
+  if (crossRow.skipped) return // needs two seats carrying Powers
+  assertEqual(crossRow.pinned, 1, 'the card is pinned')
+  assertEqual(crossRow.afterOtherRowHover, 1, 'and another row hovering does not destroy it')
+  assert(crossRow.stillMine, 'the pin stays with the row that made it')
+})
+
+check('a pinned Power stays pinned, and every dismissal works', () => {
+  assertEqual(pinLife.afterPin, 1, 'clicking a tile pins the card')
+  assertEqual(pinLife.afterNeighbour, 1, 'hovering a neighbour does not steal the pin')
+  assertEqual(pinLife.afterEscape, 0, 'Escape dismisses it')
+  assertEqual(pinLife.rePinned, 1, 'it can be pinned again')
+  assertEqual(pinLife.afterClickAway, 0, 'and clicking elsewhere puts it down')
+})
+
+check('a Power can be reached without a mouse', () => {
+  // Hover-only left touch and keyboard users with unidentifiable 34x22 blobs.
+  for (const art of powerArt) {
+    assert(art.isButton, 'a Power tile should be a button')
+    assert(art.focusable, 'and reachable by keyboard')
+  }
+})
+
+check('a Power tells a screen reader what it does, not just its name', () => {
+  const alts = powerArt.map((art) => art.alt)
+  const demon = alts.find((alt) => alt.startsWith('Demon Form'))
+  assert(demon, `expected a Demon Form label, saw: ${alts.join(' | ')}`)
+  assert(demon.includes('Strength'), `the label should say what it grants: ${demon}`)
+  assert(demon.includes('start of each turn'), `and when it grants it: ${demon}`)
+})
+
+// aria-label replaces an element's contents wholesale, so anything missing
+// from it is invisible to a screen reader however it is marked up.
+const seatLabel = await page.evaluate(
+  () => document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
+)
+check('the seat announces its tokens, and does not repeat the Powers', () => {
+  assert(seatLabel.includes('hit points'), `expected hit points in: ${seatLabel}`)
+  // The Powers are a sibling list with their own labels. Naming them here too
+  // made a screen reader announce every Power twice.
+  assert(
+    !seatLabel.includes('Demon Form'),
+    `the seat label duplicates the Power list: ${seatLabel}`,
+  )
+})
+
+const nested = await page.evaluate(
+  () => document.querySelector('.seat--viewer')?.querySelectorAll('button, a, [tabindex]').length ?? -1,
+)
+check('the seat button contains no other interactive element', () => {
+  assertEqual(nested, 0, 'nested interactive elements break the seat button')
+})
+await shot('14-powers-in-play')
 
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.

@@ -10,6 +10,7 @@
 //      server load .ts files through Node's type stripping, which rejects enum,
 //      namespace, and constructor parameter properties.
 import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { CARDS } from '../src/game/cards.ts'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -283,6 +284,32 @@ check('the not-implemented list does not call a built room a placeholder', () =>
       `${kind} has its own screen (${screen}) but state.ts still lists it as a placeholder`,
     )
   }
+})
+
+// The list has also drifted on countable claims. Where it states a number, that
+// number is checkable, so check it rather than trusting prose.
+check('the not-implemented list states the real card count', () => {
+  const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
+  const claimed = notes.match(/(\d+) cards are live of (\d+)/)
+  assert(claimed !== null, 'the list should state how many cards are live out of the full set')
+
+  // Counted from the real table, not scraped: a regex over the source only
+  // sees cards written the way it expects, so the one card declared without
+  // the `card(...)` helper was invisible to it. Each verify script is its own
+  // process, so fixtures other suites register at runtime cannot leak in.
+  //
+  // PLAYER cards only. The 381 is the player-card count from the component
+  // list (p.3); Status and Curse cards are separate components and are not
+  // part of that total.
+  const POOLED = new Set(['status', 'curse', 'colorless'])
+  const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner)).length
+
+  assertEqual(
+    Number(claimed[1]),
+    live,
+    `state.ts claims ${claimed[1]} cards are live but cards.ts defines ${live}`,
+  )
+  assertEqual(Number(claimed[2]), 381, 'the full set is 381 player cards (rulebook p.3)')
 })
 
 report('architecture')

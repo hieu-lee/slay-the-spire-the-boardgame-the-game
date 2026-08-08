@@ -1,0 +1,499 @@
+// Room logic for co-op play: seats, reconnection, action authorisation, and
+// the per-seat redaction that keeps hidden information hidden.
+//
+// Deliberately free of any network code so it can be tested as plain function
+// calls. The socket layer on top of this is a thin shell: it owns transport,
+// this owns every rule about who may see or do what.
+//
+// Nothing here returns the room object itself except `joinRoom`, which hands a
+// seat to the player who just claimed it. `room.seats[].token` is a bearer
+// credential for that seat, so it must never travel to anyone else.
+//
+// The board game is SIMULTANEOUS (p.12): "All players take these steps
+// simultaneously." There is no turn order to enforce, so two players can act at
+// the same instant. Every mutation therefore goes through `apply`, which is the
+// single writer — Node's single thread does the rest.
+import { randomBytes } from 'node:crypto'
+import {
+  advanceAct,
+  createRun,
+  currentRoom,
+  endPlayerTurn,
+  enemyTurn,
+  enterRoom,
+  leaveRoom,
+  playCard,
+  resolveCampfire,
+  resolveCombat,
+  startPlayerTurn,
+} from '../../src/game/state.ts'
+
+/** Characters a seat may pick. Two players may not take the same one (p.4). */
+export const CHARACTERS = ['ironclad', 'silent', 'defect', 'watcher']
+
+export const MAX_SEATS = 4
+
+/**
+ * Ambiguous glyphs are left out: a room code gets read aloud over voice chat,
+ * where O/0 and I/1 are the same sound and the same mistake.
+ */
+const CODE_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY34679'
+
+export function roomCode(random = randomBytes) {
+  let code = ''
+  // 256 is not a multiple of 26, so a plain modulo would make the first 22
+  // letters ~11% likelier than the last 4. That bias is harmless for a room
+  // code, but rejecting the short tail costs one comparison, and a biased
+  // generator that claims to be uniform is the kind of thing that gets copied
+  // somewhere it matters.
+  const limit = 256 - (256 % CODE_ALPHABET.length)
+  while (code.length < 6) {
+    for (const byte of random(6)) {
+      if (code.length === 6) break
+      if (byte >= limit) continue
+      code += CODE_ALPHABET[byte % CODE_ALPHABET.length]
+    }
+  }
+  return code
+}
+
+function token(random = randomBytes) {
+  return random(24).toString('base64url')
+}
+
+export function createStore() {
+  return { rooms: new Map() }
+}
+
+export function createRoom(store, options = {}) {
+  const code = options.code ?? roomCode(options.random)
+  // Silently replacing a live room would drop everyone seated in it.
+  if (store.rooms.has(code)) fail(`Room ${code} already exists`)
+  const room = {
+    code,
+    phase: 'lobby',
+    seats: [],
+    run: null,
+    /** Bumped on every accepted mutation so clients can drop stale frames. */
+    version: 0,
+  }
+  store.rooms.set(code, room)
+  return room
+}
+
+export function findSeat(room, seatToken) {
+  if (!seatToken) return undefined
+  return room.seats.find((seat) => seat.token === seatToken)
+}
+
+/** A public, non-secret id for a seat, safe to show to the whole table. */
+function seatPublic(seat) {
+  return {
+    playerId: seat.playerId,
+    name: seat.name,
+    character: seat.character,
+    connected: seat.connected,
+  }
+}
+
+class RoomError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'RoomError'
+  }
+}
+
+const fail = (message) => {
+  throw new RoomError(message)
+}
+
+/**
+ * Claims a seat, or reclaims one with a previously issued token.
+ *
+ * This is the ONLY function that returns a seat, because it is the only one
+ * whose caller is entitled to the token inside it. Everything else returns a
+ * redacted snapshot: the room object carries every seat's token, and one
+ * careless send of it is total seat impersonation.
+ *
+ * Reconnection is the token's whole purpose: a dropped player must be able to
+ * come back to the SAME seat, because their deck and HP live there. Without it
+ * a flaky connection is a lost run.
+ */
+export function joinRoom(room, { name, character, token: existing, random } = {}) {
+  const returning = findSeat(room, existing)
+  if (returning) {
+    returning.connected = true
+    if (name) returning.name = String(name).slice(0, 24)
+    room.version += 1
+    // They may be the last answer the table was waiting on, or the first one
+    // back to a campfire that stalled while nobody was connected.
+    settleCampfire(room)
+    return returning
+  }
+
+  if (room.phase !== 'lobby') fail('This run has already started')
+  if (room.seats.length >= MAX_SEATS) fail('The room is full')
+
+  const pick = character ?? CHARACTERS.find((id) => !room.seats.some((seat) => seat.character === id))
+  if (!CHARACTERS.includes(pick)) fail(`Unknown character: ${pick}`)
+  if (room.seats.some((seat) => seat.character === pick)) fail(`${pick} is already taken`)
+
+  const seat = {
+    // Seat order is row order, and row order decides which enemies reach whom.
+    playerId: `p${room.seats.length + 1}`,
+    name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
+    character: pick,
+    token: token(random),
+    connected: true,
+  }
+  room.seats.push(seat)
+  room.version += 1
+  return seat
+}
+
+export function chooseCharacter(room, seatToken, character) {
+  const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
+  if (room.phase !== 'lobby') fail('Characters are locked once the run starts')
+  if (!CHARACTERS.includes(character)) fail(`Unknown character: ${character}`)
+  if (room.seats.some((other) => other !== seat && other.character === character)) {
+    fail(`${character} is already taken`)
+  }
+  seat.character = character
+  room.version += 1
+  return snapshotFor(room, seatToken)
+}
+
+export function markDisconnected(room, seatToken) {
+  const seat = findSeat(room, seatToken)
+  if (!seat) return snapshotFor(room, seatToken)
+  seat.connected = false
+  room.version += 1
+  // The party may have been waiting on exactly this player. Dropping without
+  // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
+  // only unstuck if someone re-sent a choice they had already made.
+  settleCampfire(room)
+  return snapshotFor(room, seatToken)
+}
+
+/**
+ * Starts the run.
+ *
+ * `seed` is deliberately NOT taken from the client in normal play: whoever
+ * picks it knows every die roll, shuffle and encounter for the entire run,
+ * which is the very thing `snapshotFor` withholds the rng state to prevent.
+ * Tests and playtests pass one explicitly.
+ */
+export function startRun(room, seatToken, { seed, ascension = 0 } = {}) {
+  findSeat(room, seatToken) ?? fail('Claim a seat before starting')
+  if (room.phase !== 'lobby') fail('The run has already started')
+  if (room.seats.length === 0) fail('Nobody has claimed a seat')
+
+  const party = room.seats.map((seat) => ({
+    id: seat.playerId,
+    name: seat.name,
+    character: seat.character,
+  }))
+  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, ascension)
+  room.phase = 'run'
+  room.version += 1
+  return snapshotFor(room, seatToken)
+}
+
+/**
+ * Applies a game action on behalf of a seat.
+ *
+ * The engine signals an illegal action by returning the SAME state reference,
+ * which is preserved here: an action that changes nothing does not bump the
+ * version, so it never wakes the other clients.
+ */
+export function apply(room, seatToken, action) {
+  const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
+  if (room.phase !== 'run' || !room.run) fail('The run has not started')
+
+  if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
+
+  const before = room.run
+  const next = dispatch(before, seat, action)
+  if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
+
+  room.run = next
+  // Campfire choices belong to the room they were made in. Left behind, a
+  // choice from one campfire silently resolves the NEXT one for a player who
+  // was never asked.
+  if (next.map.position !== before.map.position || next.phase !== before.phase) {
+    room.campfireChoices = undefined
+  }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+/**
+ * A campfire: everyone chooses, then the party leaves together (p.9).
+ *
+ * Each seat submits only its OWN choice — passing the whole record through let
+ * one client Smith everybody else's cards. But the choices also have to be
+ * COLLECTED rather than applied one at a time, because `resolveCampfire` moves
+ * the party back to the map: applied immediately, the first seat to click
+ * would heal alone and drag everyone out of the room.
+ */
+function campfire(room, seat, action, seatToken) {
+  const run = room.run
+  if (run.phase !== 'room') fail('The party is not in a room')
+  // Not merely "a room": a treasure or event room has no Rest or Smith, and
+  // accumulating choices there published a campfire prompt for a room that has
+  // none, then threw the choices away.
+  if (currentRoom(run.map)?.kind !== 'campfire') fail('This room has no campfire')
+
+  // Validated, not merely present. `resolveCampfire` treats anything that is
+  // not exactly 'rest' as a Smith, and a Smith naming no card silently does
+  // nothing — so 'Rest' with a capital R quietly burned a seat's only heal.
+  const choice = action.choices?.[seat.playerId]
+  if (!choice || (choice.choice !== 'rest' && choice.choice !== 'smith')) {
+    fail('Choose Rest or Smith')
+  }
+  if (choice.choice === 'smith') {
+    const player = run.players.find((candidate) => candidate.id === seat.playerId)
+    const target = player?.deck.find((card) => card.uid === choice.cardUid && !card.upgraded)
+    if (!target) fail('Choose one of your own cards that is not already upgraded')
+  }
+
+  room.campfireChoices = { ...room.campfireChoices, [seat.playerId]: choice }
+  room.version += 1
+
+  const waiting = settleCampfire(room)
+  if (waiting) {
+    return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+  }
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+/**
+ * Resolves the campfire once everyone still present has chosen.
+ *
+ * Returns the seats still to answer, or null once the party has left. Called
+ * both when a choice arrives and when a player drops, because a drop can be
+ * the thing that completes the table.
+ */
+function settleCampfire(room) {
+  const run = room.run
+  if (!run || run.phase !== 'room') return null
+  if (currentRoom(run.map)?.kind !== 'campfire') return null
+  if (!room.campfireChoices) return null
+  // With nobody connected there is no table to un-hold: resolving here would
+  // apply whatever partial choices happened to be in, and the players who had
+  // not answered would reconnect to find their rest spent.
+  if (!room.seats.some((seat) => seat.connected)) return null
+
+  const undecided = room.seats.filter((other) => {
+    const player = run.players.find((candidate) => candidate.id === other.playerId)
+    if (!player || player.dead) return false
+    // A dropped player must not hold the table hostage: they cannot answer, and
+    // the only other way out would forfeit everyone else's rest.
+    if (!other.connected) return false
+    return !room.campfireChoices[other.playerId]
+  })
+  if (undecided.length > 0) return undecided.map((other) => other.playerId)
+
+  const next = resolveCampfire(run, room.campfireChoices)
+  room.campfireChoices = undefined
+  if (next !== run) {
+    room.run = next
+    room.version += 1
+  }
+  return null
+}
+
+/**
+ * A list of card uids from the network, or nothing.
+ *
+ * Elements are filtered to strings as well: the engine looks cards up by uid,
+ * and anything else is not a uid.
+ */
+const uidList = (value) =>
+  Array.isArray(value) ? value.filter((item) => typeof item === 'string') : undefined
+
+/**
+ * A list of orb slot indices from the network.
+ *
+ * Integers only. Passed through raw, a string element was used as a property
+ * key on the orbs array — `'length'` evoked a phantom orb and then truncated
+ * the array, and `'__proto__'` crashed the room layer outright.
+ */
+const slotList = (value) =>
+  Array.isArray(value) ? value.filter((item) => Number.isInteger(item) && item >= 0) : undefined
+
+function dispatch(run, seat, action) {
+  switch (action?.kind) {
+    case 'playCard': {
+      if (!run.combat) fail('No combat in progress')
+      // A seat may only play cards from its OWN hand. Without this check any
+      // client could spend another player's energy and empty their hand.
+      const card = run.combat.players
+        .find((player) => player.id === seat.playerId)
+        ?.hand.find((held) => held.uid === action.cardUid)
+      if (!card) fail('That card is not in your hand')
+      const combat = playCard(run.combat, seat.playerId, action.cardUid, {
+        enemyUid: action.enemyUid ?? null,
+        playerId: action.playerId ?? seat.playerId,
+        // Coerced, not trusted: these arrive as JSON from a socket, and a
+        // string where a list belongs threw a raw TypeError out of `apply`
+        // instead of being refused like any other bad message.
+        discardUids: uidList(action.discardUids),
+        exhaustUids: uidList(action.exhaustUids),
+        // Both of these are real choices the rules grant (p.16, p.24). Dropping
+        // them here made a Scry unable to bin anything and an orb evoke always
+        // fall back to the first filled slot.
+        scryDiscardUids: uidList(action.scryDiscardUids),
+        evokeSlots: slotList(action.evokeSlots),
+      })
+      return combat === run.combat ? run : { ...run, combat }
+    }
+
+    // The turn is shared, so any seat may advance it — at the table this is
+    // one player asking "everyone done?" and nobody objecting.
+    case 'startTurn':
+    case 'endTurn':
+    case 'resolveEnemies': {
+      if (!run.combat) fail('No combat in progress')
+      const step =
+        action.kind === 'startTurn' ? startPlayerTurn : action.kind === 'endTurn' ? endPlayerTurn : enemyTurn
+      const combat = step(run.combat)
+      return combat === run.combat ? run : { ...run, combat }
+    }
+
+    case 'resolveCombat':
+      return resolveCombat(run)
+    case 'enterRoom':
+      return enterRoom(run, action.roomId)
+    case 'leaveRoom':
+      // A campfire's only exit is everyone having chosen (p.9). Otherwise one
+      // misclick walks the party out and costs everybody their Rest.
+      //
+      // The phase matters as well as the room: `resolveCampfire` leaves the
+      // map position pointing at the campfire it just left, and play is
+      // simultaneous (p.12), so a seat acting on a slightly stale frame would
+      // otherwise get a hard error for a room the party has already left.
+      if (run.phase === 'room' && currentRoom(run.map)?.kind === 'campfire') {
+        fail('Everyone must Rest or Smith before leaving the campfire')
+      }
+      return leaveRoom(run)
+    case 'campfire':
+      // Handled outside `dispatch`: it has to accumulate across messages, so it
+      // needs the room and not just the run.
+      return run
+    case 'advanceAct':
+      return advanceAct(run)
+    default:
+      return fail(`Unknown action: ${action?.kind}`)
+  }
+}
+
+/**
+ * What one seat is allowed to see.
+ *
+ * Three things are hidden, and each would break the game differently:
+ *
+ *  - `rng`, from everyone. It is the seed of every future die roll and shuffle.
+ *    Leaking it turns the game into a solved puzzle, and unlike a peeked hand
+ *    nobody at the table could tell it had happened.
+ *  - Other players' hands. The rulebook is explicit (p.12): ask "How much
+ *    damage do you have?" "rather than look at a player's hand".
+ *  - Every draw pile, including the viewer's own. It is a shuffled face-down
+ *    stack; its owner is no more entitled to read ahead than anyone else.
+ *  - Other players' deck lists. Least privilege: no screen needs them, since
+ *    each client only ever upgrades its own cards. Sending them would also
+ *    make the hand redaction above much weaker, because deck minus the face-up
+ *    piles narrows down what someone is holding.
+ *
+ * Discard and exhaust piles stay public — they are face up on the table.
+ */
+export function snapshotFor(room, seatToken) {
+  const seat = findSeat(room, seatToken)
+  const viewerId = seat?.playerId ?? null
+
+  return {
+    code: room.code,
+    phase: room.phase,
+    version: room.version,
+    you: seat ? seatPublic(seat) : null,
+    /** Seats that have chosen at the campfire, so the UI can show who is left. */
+    campfireDecided: Object.keys(room.campfireChoices ?? {}),
+    seats: room.seats.map(seatPublic),
+    run: room.run ? redactRun(room.run, viewerId) : null,
+  }
+}
+
+function redactRun(run, viewerId) {
+  return {
+    ascension: run.ascension,
+    act: run.act,
+    phase: run.phase,
+    map: run.map,
+    // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
+    log: run.log,
+    players: run.players.map((player) => redactPlayer(player, viewerId)),
+    combat: run.combat ? redactCombat(run.combat, viewerId) : null,
+  }
+}
+
+function redactCombat(combat, viewerId) {
+  return {
+    turn: combat.turn,
+    die: combat.die,
+    phase: combat.phase,
+    log: combat.log,
+    // Enemies carry nothing secret: hit points, tokens and the cube's position
+    // are all printed on the card and face up on the table.
+    enemies: combat.enemies,
+    players: combat.players.map((player) => redactPlayer(player, viewerId)),
+  }
+}
+
+/**
+ * What one seat may see of a player.
+ *
+ * An ALLOWLIST, deliberately. The obvious way to write this is to destructure
+ * the secrets out and spread the rest — but then every field added to `Player`
+ * later is published by default, and the failure is silent. Listing what goes
+ * out means a new field is invisible until someone decides it is public, which
+ * is the safe direction to fail in.
+ */
+function redactPlayer(player, viewerId) {
+  const mine = player.id === viewerId
+  return {
+    id: player.id,
+    name: player.name,
+    character: player.character,
+    row: player.row,
+    hp: player.hp,
+    maxHp: player.maxHp,
+    block: player.block,
+    energy: player.energy,
+    gold: player.gold,
+    strength: player.strength,
+    vulnerable: player.vulnerable,
+    weak: player.weak,
+    shivs: player.shivs,
+    miracles: player.miracles,
+    stance: player.stance,
+    orbs: player.orbs,
+    dead: player.dead,
+    // Face up on the table.
+    discard: player.discard,
+    exhaust: player.exhaust,
+    powers: player.powers,
+    relics: player.relics,
+    potions: player.potions,
+    // Sizes are public — you can see how big a stack is — but not contents.
+    handCount: player.hand.length,
+    drawCount: player.draw.length,
+    deckCount: player.deck.length,
+    // Face-down reward stacks, secret even from their owner until drawn.
+    cardRewardCount: player.cardRewards.length,
+    rareRewardCount: player.rareRewards.length,
+    // Yours alone. Never the draw pile: it is shuffled and face down, and its
+    // owner is no more entitled to read ahead than anyone else.
+    hand: mine ? player.hand : null,
+    deck: mine ? player.deck : null,
+  }
+}

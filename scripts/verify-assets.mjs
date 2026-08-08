@@ -10,6 +10,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import { ENEMIES } from '../src/game/enemies.ts'
+// From the data module, NOT from sync-enemy-art.mjs: importing that script runs
+// the extraction pipeline, which regenerated the very portraits this file
+// checks for — so the check asserted its own side effect and could never fail.
+import { ENEMY_ART } from './lib/enemy-art.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -46,22 +51,41 @@ const indexedKeys = new Set(
   }),
 )
 
+/**
+ * Pools with no scans in the source set. The UI degrades to a name plate for
+ * these rather than showing a broken image.
+ *
+ * An explicit allowlist, NOT "skip anything whose path is not in the index":
+ * that used `cardImagePath` as its own skip condition, so a regression in the
+ * path builder made every card skip itself and the check passed while pointing
+ * every single card at one nonexistent file.
+ */
+const UNSCANNED_POOLS = new Set(['status', 'curse'])
+
 check('every defined card resolves to an image that exists', () => {
   if (cardFiles.length === 0) return // not synced
   const missing = []
+  const unindexed = []
   for (const def of Object.values(CARDS)) {
+    if (UNSCANNED_POOLS.has(def.owner)) continue
     for (const upgraded of [false, true]) {
       // Only check the upgraded face for cards that actually have one.
       if (upgraded && !def.upgrade) continue
       const path = cardImagePath(faceOf(def, upgraded), upgraded)
-      // Daze and the Status cards are not in the scan source; the UI degrades
-      // to a name plate for those rather than showing a broken image.
-      if (!indexedKeys.has(path.split('/').pop())) continue
+      if (!indexedKeys.has(path.split('/').pop())) {
+        unindexed.push(`${def.id}${upgraded ? '+' : ''} -> ${path}`)
+        continue
+      }
       if (!existsSync(join(publicRoot, path.replace(/^\//, '')))) {
         missing.push(`${def.id}${upgraded ? '+' : ''} -> ${path}`)
       }
     }
   }
+  assert(
+    unindexed.length === 0,
+    `these cards resolve to a path the index does not know, which usually means ` +
+      `the path builder is wrong rather than the art missing:\n    ${unindexed.join('\n    ')}`,
+  )
   assert(missing.length === 0, `missing card art:\n    ${missing.join('\n    ')}`)
 })
 
@@ -119,6 +143,28 @@ check('every icon the UI can render exists on disk', () => {
   if (iconFiles.length === 0) return // not synced
   const missing = REQUIRED_ICONS.filter((name) => !iconFiles.includes(`${name}.png`))
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
+})
+
+// The table in sync-enemy-art.mjs drifted from ENEMIES once already, which is
+// how the Blue Slaver shipped as a black box: the sync ran clean because it
+// never knew the enemy existed. This runs even on a clone with no artwork.
+check('the enemy art table covers every enemy', () => {
+  const missing = Object.keys(ENEMIES).filter((defId) => !(defId in ENEMY_ART))
+  assert(missing.length === 0, `not in sync-enemy-art.mjs's ENEMY_ART: ${missing.join(', ')}`)
+  const stray = Object.keys(ENEMY_ART).filter((defId) => !(defId in ENEMIES))
+  assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
+})
+
+// EnemyCard renders /assets/enemies/<defId>.webp. A missing file is served by
+// Vite's SPA fallback as 200 + HTML, so it renders as a black box rather than
+// a broken image — nothing in the running app complains about it.
+check('every enemy the game can spawn has a portrait', () => {
+  if (enemyFiles.length === 0) return // not synced
+  const missing = Object.keys(ENEMIES).filter((defId) => !enemyFiles.includes(`${defId}.webp`))
+  assert(
+    missing.length === 0,
+    `enemies with no portrait — re-run \`pnpm sync:enemy-art\`: ${missing.join(', ')}`,
+  )
 })
 
 check('synced artwork is never truncated', () => {

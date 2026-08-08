@@ -4,7 +4,7 @@
 // action returns the SAME REFERENCE, which is how callers and the server tell
 // "not allowed" from "allowed but nothing changed".
 import { faceOf, cardDef } from './cards.ts'
-import type { Effect, TargetScope } from './cards.ts'
+import type { CardDef, Effect, TargetScope } from './cards.ts'
 import { actionsFor, advanceCube, enemyDef } from './enemies.ts'
 import type { EnemyAction } from './enemies.ts'
 import {
@@ -22,13 +22,20 @@ import {
 } from './damage.ts'
 import { drawCards, discardHand, scry } from './piles.ts'
 import { relicDef } from './relics.ts'
-import type { RelicTrigger } from './relics.ts'
+import { triggerMatches } from './triggers.ts'
+import type { Trigger, TriggerEvent } from './triggers.ts'
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
 import type { Enemy, OrbType, Player } from './types.ts'
 
-export type CombatPhase = 'player' | 'enemy' | 'won' | 'lost'
+export type CombatPhase =
+  | 'player'
+  | 'enemy'
+  /** The Enemy Turn is done and the next Start of Turn has not been taken. */
+  | 'roundEnd'
+  | 'won'
+  | 'lost'
 
 export type CombatState = {
   rng: RngState
@@ -68,12 +75,75 @@ export function resolveEnemyTargets(
   return single ? [single] : []
 }
 
+/**
+ * What to call an enemy in the log.
+ *
+ * A four-player board routinely spawns two of the same creature, and "Cultist
+ * is dead" then names a tile nobody can identify. The row disambiguates only
+ * when it needs to, so a single Cultist stays "Cultist".
+ */
+function enemyLabel(state: CombatState, enemy: Enemy): string {
+  return needsRowLabel(state.enemies, enemy) ? `${enemyDef(enemy.defId).name} (row ${enemy.row})` : enemyDef(enemy.defId).name
+}
+
+/**
+ * Whether this enemy has to be told apart from another on the board.
+ *
+ * Exported so the UI announces exactly what the log prints. Two copies of this
+ * rule had already drifted onto different fields — the log compared NAMES, the
+ * UI compared defIds — which agree only while every definition has a unique
+ * name.
+ */
+export function needsRowLabel(enemies: readonly Enemy[], enemy: Enemy): boolean {
+  const name = enemyDef(enemy.defId).name
+  return enemies.filter((other) => enemyDef(other.defId).name === name).length > 1
+}
+
 /** Deals `damage` to an enemy, spending its Block first. */
 function damageEnemy(enemy: Enemy, damage: number): void {
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
   enemy.block = outcome.block
   enemy.hp = outcome.hp
   if (enemy.hp === 0) enemy.dead = true
+}
+
+/**
+ * Damages an enemy and says so.
+ *
+ * The log reported every blow an enemy struck but nothing the party struck
+ * back, which left the player's own damage — the number Strength, Weak and
+ * Vulnerable all modify — as the one figure they had to read off an HP bar.
+ */
+function damageEnemyLogged(
+  state: CombatState,
+  enemy: Enemy,
+  damage: number,
+  source?: string,
+): void {
+  const wasAlive = !enemy.dead
+  const hpBefore = enemy.hp
+  const blockBefore = enemy.block
+  damageEnemy(enemy, damage)
+  const name = enemyLabel(state, enemy)
+  if (source) {
+    const lost = hpBefore - enemy.hp
+    const blocked = blockBefore - enemy.block
+    state.log = [
+      ...state.log,
+      lost > 0
+        // "damages", never "hit": a hit is specifically what Strength, Weak
+        // and Vulnerable modify, and every caller here — the plain `damage`
+        // effect and the orbs — is none of those. The `hit` case builds its
+        // own line because it aggregates a multi-hit into one.
+        ? `${source} damages ${name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+        : blocked > 0
+          ? `${name} blocked ${source} completely (${blocked} spent)`
+          : `${source} did no damage to ${name}`,
+    ]
+  }
+  if (wasAlive && enemy.dead) {
+    state.log = [...state.log, `${name} is dead`]
+  }
 }
 
 function damagePlayer(player: Player, damage: number): void {
@@ -104,6 +174,12 @@ export type PlayContext = {
    * you evoke ANY orb, unlike the video game's fixed front slot (p.16).
    */
   evokeSlots?: number[]
+  /**
+   * Cards already given up by an earlier clause of the SAME card, so two
+   * consuming clauses cannot both take the first uid. Filled in during
+   * resolution; callers never set it.
+   */
+  spentUids?: Set<string>
 }
 
 /**
@@ -117,8 +193,23 @@ function applyEffect(
   scope: TargetScope,
   supportScope: TargetScope,
   context: PlayContext,
+  /** The Power or relic that caused this, when it was not a card being played. */
+  source?: string,
 ): void {
   const mods = attackerModsOfPlayer(actor)
+  /** Who the log should credit: the ongoing effect if there is one, else the player. */
+  const who = source ?? actor.name
+  /**
+   * Reports a change to the party's own state.
+   *
+   * The enemies' equivalents were all logged and the players' were not, which
+   * made the log read as a record of what was done TO you rather than of the
+   * round. A Power or relic names itself, so a recurring effect can be told
+   * apart from a card that was just played.
+   */
+  const note = (text: string) => {
+    state.log = [...state.log, source ? `${source}: ${text}` : text]
+  }
 
   switch (effect.kind) {
     case 'hit': {
@@ -128,122 +219,384 @@ function applyEffect(
         // Every hit of a multi-hit is modified, but only ONE token comes off
         // after the whole thing resolves (p.14).
         const vulnerableAtStart = target.vulnerable
+        const hpBefore = target.hp
+        const blockBefore = target.block
+        const wasAlive = !target.dead
         for (let i = 0; i < times; i++) {
           if (target.dead) break
           damageEnemy(target, hitDamage(effect.amount, mods, { vulnerable: vulnerableAtStart }))
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
+        // One line for the whole attack, not one per swing: a five-hit card
+        // would otherwise bury the round in near-identical lines.
+        const name = enemyLabel(state, target)
+        const lost = hpBefore - target.hp
+        const blocked = blockBefore - target.block
+        state.log = [
+          ...state.log,
+          lost > 0
+            ? `${who} hit ${name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+            : blocked > 0
+              ? `${name} blocked ${who} completely (${blocked} spent)`
+              : `${who} did no damage to ${name}`,
+        ]
+        if (wasAlive && target.dead) state.log = [...state.log, `${name} is dead`]
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
-      if (targets.length > 0 && actor.weak > 0) actor.weak -= 1
+      if (targets.length > 0 && actor.weak > 0) {
+        actor.weak -= 1
+        // Logged because it is usually the reason the attack underperformed.
+        note(`${actor.name} spends a Weak`)
+      }
       return
     }
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
-        damageEnemy(target, effect.amount)
+        damageEnemyLogged(state, target, effect.amount, who)
       }
       return
     }
     case 'loseHp': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+        const name = enemyLabel(state, target)
+        const wasAlive = !target.dead
         const outcome = applyHpLoss(target.hp, effect.amount)
+        // What was actually lost, not what was printed: an enemy on 2 hit
+        // points struck for 5 loses 2.
+        state.log = [...state.log, `${name} loses ${target.hp - outcome.hp}`]
         target.hp = outcome.hp
-        if (target.hp === 0) target.dead = true
+        if (target.hp === 0) {
+          target.dead = true
+          // Every other kill in the game announces itself; this one used to
+          // write `dead` inline and skip the line.
+          if (wasAlive) state.log = [...state.log, `${name} is dead`]
+        }
       }
       return
     }
     case 'block': {
-      for (const target of resolvePlayerTargets(state, supportScope, context.playerId, actor)) {
-        target.block = gainBlock(target.block, effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.block
+        grantBlock(state, target, effect.amount)
+        if (target.block > before) note(`${target.name} gains ${target.block - before} Block`)
       }
       return
     }
     case 'applyVulnerable': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+        const before = target.vulnerable
         target.vulnerable = gainVulnerable(target.vulnerable, effect.amount)
+        // Only when the token actually went on: at the cap nothing happened,
+        // and saying otherwise tells the player a card did something it did not.
+        if (target.vulnerable > before) note(`${enemyLabel(state, target)} is vulnerable`)
       }
       return
     }
     case 'applyWeak': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+        const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
+        if (target.weak > before) note(`${enemyLabel(state, target)} is weakened`)
       }
       return
     }
     case 'gainStrength': {
-      actor.strength = gainStrength(actor.strength, effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.strength
+        target.strength = gainStrength(target.strength, effect.amount)
+        if (target.strength > before) {
+          note(`${target.name} gains ${target.strength - before} Strength`)
+        }
+      }
       return
     }
     case 'poison': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+        const before = target.poison
         target.poison = gainPoison(target.poison, effect.amount, totalPoisonInPlay(state.enemies))
+        if (target.poison > before) {
+          note(`${enemyLabel(state, target)} takes ${target.poison - before} Poison`)
+        }
       }
       return
     }
     case 'draw': {
-      const result = drawCards(state.rng, actor, effect.amount)
-      actor.draw = result.draw
-      actor.hand = result.hand
-      actor.discard = result.discard
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.hand.length
+        // Reserve the line before drawing: a draw can reshuffle and fire
+        // triggers that log, and those belong under this line, not above it.
+        const at = state.log.length
+        drawInto(state, target, effect.amount)
+        const drawn = target.hand.length - before
+        if (drawn > 0) {
+          const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
+          state.log = [...state.log.slice(0, at), line, ...state.log.slice(at)]
+        }
+      }
       return
     }
     case 'gainEnergy': {
-      actor.energy = Math.min(CAPS.energy, actor.energy + effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.energy
+        target.energy = Math.min(CAPS.energy, target.energy + effect.amount)
+        if (target.energy > before) note(`${target.name} gains ${target.energy - before} Energy`)
+      }
       return
     }
     case 'gainShiv': {
-      actor.shivs = Math.min(CAPS.shivs, actor.shivs + effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.shivs
+        target.shivs = Math.min(CAPS.shivs, target.shivs + effect.amount)
+        if (target.shivs > before) note(`${target.name} gains ${target.shivs - before} Shiv`)
+      }
       return
     }
     case 'gainMiracle': {
-      actor.miracles = Math.min(CAPS.miracles, actor.miracles + effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.miracles
+        target.miracles = Math.min(CAPS.miracles, target.miracles + effect.amount)
+        if (target.miracles > before) note(`${target.name} gains ${target.miracles - before} Miracle`)
+      }
       return
     }
     case 'enterStance': {
-      // Leaving Calm grants 2 energy; entering a stance you are in is ignored.
+      // Always the caster. Vigilance reads "2 Block to any player. Enter Calm."
+      // — the target clause belongs to the Block, and no printed card puts an
+      // ally into a stance (only the Prismatic Shard can, per docs/rules.md).
       if (actor.stance === effect.stance) return
-      if (actor.stance === 'calm') actor.energy = Math.min(CAPS.energy, actor.energy + 2)
+      note(`${actor.name} enters ${effect.stance}`)
+      // Leaving Calm grants 2 energy.
+      if (actor.stance === 'calm') {
+        const before = actor.energy
+        actor.energy = Math.min(CAPS.energy, actor.energy + 2)
+        // Leaving Calm pays 2 Energy. Unlogged, a card that cost 2 looked free.
+        if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy from Calm`)
+      }
       actor.stance = effect.stance
+      fireTriggers(state, { kind: 'onEnterStance', stance: effect.stance }, actor)
       return
     }
     case 'heal': {
-      actor.hp = Math.min(actor.maxHp, actor.hp + effect.amount)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        const before = target.hp
+        target.hp = Math.min(target.maxHp, target.hp + effect.amount)
+        if (target.hp > before) note(`${target.name} heals ${target.hp - before}`)
+      }
       return
     }
     case 'discard': {
-      const chosen = (context.discardUids ?? []).slice(0, effect.amount)
+      const chosen = allocate(actor, context.discardUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
       actor.discard = [...actor.discard, ...moved]
+      if (moved.length > 0) note(`${actor.name} discards ${moved.length}`)
       return
     }
     case 'exhaustFromHand': {
-      const chosen = (context.exhaustUids ?? []).slice(0, effect.amount)
+      const chosen = allocate(actor, context.exhaustUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
       actor.exhaust = [...actor.exhaust, ...moved]
+      if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
+      // Once per card exhausted, which is what the Ironclad's exhaust synergy
+      // counts.
+      for (let i = 0; i < moved.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
       return
     }
     case 'channel': {
+      // Written BEFORE the channel: a full orb array forces an evoke, and that
+      // evoke logs. Written afterwards, the forced evoke printed above the
+      // channel that caused it.
+      note(`${actor.name} channels ${effect.amount} ${effect.orb}`)
       for (let i = 0; i < effect.amount; i++) channelOrb(state, actor, effect.orb, context)
       return
     }
     case 'evoke': {
-      for (let i = 0; i < effect.times; i++) evokeOrb(state, actor, context)
+      for (let i = 0; i < effect.times; i++) {
+        if (actor.orbs.every((orb) => orb == null)) {
+          // Dual Cast evokes twice; with one orb charged the second found
+          // nothing, and said nothing.
+          note(`${actor.name} has no orb left to evoke`)
+          break
+        }
+        evokeOrb(state, actor, context)
+      }
       return
     }
     case 'scry': {
       // Scry shows the top X and lets the player bin any of them; the rest go
       // back on top IN THE SAME ORDER (p.24).
+      const looked = Math.min(effect.amount, actor.draw.length)
       const piles = scry({ draw: actor.draw, hand: actor.hand, discard: actor.discard },
         effect.amount, context.scryDiscardUids ?? [])
       actor.draw = piles.draw
       actor.discard = piles.discard
+      // An empty draw pile means no cards were looked at, so nothing scried.
+      if (looked > 0) fireTriggers(state, { kind: 'onScry' }, actor)
       return
     }
   }
+}
+
+/**
+ * The one place a player's Block goes up.
+ *
+ * Three separate sites used to write `player.block` and only this one fired
+ * the trigger, so a Frost orb quietly skipped every Block-reacting Power. A
+ * single funnel is the only version of this that cannot drift again.
+ *
+ * The trigger fires only on a real increase: at the 20 Block cap the gain is a
+ * no-op, and a Power reacting to a no-op is paying out for nothing.
+ */
+function grantBlock(state: CombatState, target: Player, amount: number): void {
+  const before = target.block
+  target.block = gainBlock(target.block, amount)
+  if (target.block > before) fireTriggers(state, { kind: 'onGainBlock' }, target)
+}
+
+/**
+ * The one place cards are drawn.
+ *
+ * Same reasoning as `grantBlock`: the Start of Turn draw of 5 is the biggest
+ * draw in the game and it used to bypass the trigger path entirely, so an
+ * on-draw Power saw nothing and an on-shuffle Power missed the reshuffle that
+ * the Start of Turn draw is the usual cause of.
+ */
+function drawInto(state: CombatState, actor: Player, amount: number): void {
+  const result = drawCards(state.rng, actor, amount)
+  actor.draw = result.draw
+  actor.hand = result.hand
+  actor.discard = result.discard
+  // The reshuffle lands in the MIDDLE of the draw (p.12): cards taken before
+  // the pile ran out were drawn first, then it was shuffled, then the rest.
+  // Firing all the draws on one side of the shuffle gets the order wrong in
+  // both directions.
+  for (let i = 0; i < result.drawn; i++) {
+    if (result.reshuffled && i === result.reshuffledAfter) {
+      state.log = [...state.log, `${actor.name} shuffles their discard pile back in`]
+      fireTriggers(state, { kind: 'onShuffle' }, actor)
+    }
+    fireTriggers(state, { kind: 'onDraw' }, actor)
+  }
+}
+
+/**
+ * The uids this effect actually takes, skipping any already spent by an
+ * earlier clause of the same card.
+ *
+ * `missingChoices` validates the whole card against one shared pool; resolution
+ * has to draw from that same pool or two clauses would both take the first uid
+ * — validated as paying two cards, actually paying one.
+ */
+function allocate(
+  actor: Player,
+  uids: readonly string[] | undefined,
+  amount: number,
+  context: PlayContext,
+): string[] {
+  const spent = (context.spentUids ??= new Set<string>())
+  const usable = (uids ?? []).filter(
+    (uid, index, all) =>
+      all.indexOf(uid) === index &&
+      !spent.has(uid) &&
+      actor.hand.some((held) => held.uid === uid),
+  )
+  const taken = usable.slice(0, amount)
+  for (const uid of taken) spent.add(uid)
+  return taken
+}
+
+/**
+ * Whether the play is missing cards the card requires the player to give up.
+ *
+ * Only enforced when the hand can actually pay: a card asking you to discard
+ * two when you hold one other card is paid in full by discarding that one,
+ * exactly as it would be at the table.
+ */
+function missingChoices(
+  player: Player,
+  def: CardDef,
+  context: PlayContext,
+  cardUid: string,
+): boolean {
+  const available = player.hand.filter((held) => held.uid !== cardUid)
+  // Spent uids are tracked ACROSS the effects, not re-counted per effect: two
+  // consuming clauses on one card would otherwise both be "paid" by the same
+  // single card while only one of them actually took it.
+  const spent = new Set<string>()
+  const pay = (uids: readonly string[] | undefined, amount: number): boolean => {
+    const usable = (uids ?? []).filter(
+      (uid, index, all) =>
+        all.indexOf(uid) === index &&
+        !spent.has(uid) &&
+        available.some((held) => held.uid === uid),
+    )
+    const required = Math.min(amount, available.length - spent.size)
+    if (usable.length < required) return false
+    for (const uid of usable.slice(0, required)) spent.add(uid)
+    return true
+  }
+
+  for (const effect of def.effects) {
+    if (effect.kind === 'discard' && !pay(context.discardUids, effect.amount)) return true
+    if (effect.kind === 'exhaustFromHand' && !pay(context.exhaustUids, effect.amount)) return true
+  }
+  return false
+}
+
+/**
+ * Effects that have to be pointed at an enemy before the card can resolve.
+ *
+ * `evoke` is here because an evoked Lightning or Dark orb picks a target: left
+ * out, Dual Cast silently aimed at the first living enemy and the Defect could
+ * not direct their biggest starter card.
+ */
+const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke']
+
+/**
+ * Whether this play is missing the enemy it needs.
+ *
+ * Only single-target scopes need a choice: `allEnemies` hits everything, and a
+ * card with no enemy-facing effect needs nothing. A `row` scope does need one,
+ * since the chosen enemy is what picks the row.
+ */
+/**
+ * Whether this card asks the player to point at an enemy.
+ *
+ * Exported so the UI prompts for exactly what the engine will require. Two
+ * copies of this rule drifted apart once: the UI collected a target the engine
+ * then discarded.
+ */
+export function cardNeedsEnemy(def: CardDef): boolean {
+  if (def.type === 'power' && def.trigger) return false
+  if ((def.target ?? 'enemy') === 'allEnemies') return false
+  return def.effects.some((effect) => ENEMY_EFFECTS.includes(effect.kind))
+}
+
+function needsChosenEnemy(state: CombatState, def: CardDef, chosenUid: string | null): boolean {
+  if (!cardNeedsEnemy(def)) return false
+  return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
+}
+
+/**
+ * Who a supportive effect lands on.
+ *
+ * The card-level `supportTarget` says the card asks you to choose an ally; the
+ * effect's own `toChosen` says whether THIS clause is the one that goes to
+ * them. Splitting the two is what keeps "2 Block to any player. Enter Calm."
+ * from handing the Watcher's stance to somebody else.
+ */
+function supportTargets(
+  state: CombatState,
+  effect: { toChosen?: boolean },
+  supportScope: TargetScope,
+  context: PlayContext,
+  actor: Player,
+): Player[] {
+  if (!effect.toChosen) return [actor]
+  return resolvePlayerTargets(state, supportScope, context.playerId, actor)
 }
 
 function resolvePlayerTargets(
@@ -281,6 +634,20 @@ export function playCard(
   if (def.unplayable) return state
   const cost = def.cost === 'X' ? player.energy : def.cost
   if (cost > player.energy) return state
+  // A card that must pick an enemy but was given none would otherwise spend the
+  // Energy, discard itself and do nothing. The UI never allows it, but the room
+  // server hands this function messages straight off the network, so the check
+  // belongs here rather than in the client.
+  if (needsChosenEnemy(state, def, context.enemyUid)) return state
+  // Survivor reads "2 Block. Discard 1 card." — the discard is the COST, not a
+  // suggestion. Off the network an empty or bogus list satisfied it, so the
+  // card was 2 Block for 1 Energy and nothing else.
+  if (missingChoices(player, def, context, cardUid)) return state
+  // Evoking with no orbs charged the Energy, discarded the card and did
+  // nothing at all — with the UI still asking which enemy to point it at.
+  if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
+    return state
+  }
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)
@@ -293,77 +660,169 @@ export function playCard(
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
 
+  // Logged before its effects resolve: appended afterwards, a kill the card
+  // caused reads as OLDER than the card, which is nonsense in a newest-first
+  // log.
+  next.log = [...next.log, `${actor.name} played ${def.name}`]
+
   const scope: TargetScope = def.target ?? 'enemy'
   const supportScope: TargetScope = def.supportTarget ?? 'self'
-  for (const effect of def.effects) {
-    applyEffect(next, actor, effect, scope, supportScope, context)
+  // A Power with a trigger does nothing when played: its effects are what the
+  // trigger does, every time it fires. Resolving them here as well would pay
+  // out Demon Form's Strength immediately AND at every Start of Turn.
+  const resolvesOnPlay = !(def.type === 'power' && def.trigger)
+  if (resolvesOnPlay) {
+    for (const effect of def.effects) {
+      applyEffect(next, actor, effect, scope, supportScope, context)
+    }
   }
 
-  if (def.exhaust) actor.exhaust = [...actor.exhaust, held]
-  else if (def.type === 'power') actor.powers = [...actor.powers, held]
-  else actor.discard = [...actor.discard, held]
+  if (def.exhaust) {
+    actor.exhaust = [...actor.exhaust, held]
+    // A card that exhausts itself is still a card being exhausted, which is
+    // what Feel No Pain and Dark Embrace count.
+    fireTriggers(next, { kind: 'onExhaust' }, actor)
+  } else if (def.type === 'power') {
+    actor.powers = [...actor.powers, held]
+  } else {
+    actor.discard = [...actor.discard, held]
+  }
 
-  next.log = [...next.log, `${actor.name} played ${def.name}`]
+  // "Abilities triggered by a card do not take effect until the card has
+  // finished resolving all of its text" (p.12) — so this fires after cleanup.
+  // `held.uid` is excluded: a Power that reacts to cards being played was not
+  // in front of you when THIS card was played, so it does not see it.
+  fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
+
   return settle(next)
 }
 
-/** Start of Turn: reset, draw 5, roll the shared die (p.12). */
+/**
+ * Begins a Player Turn: either the first of the combat, or the one that
+ * follows a finished Enemy Turn.
+ *
+ * The guard is the point. This is reachable from the network through the room
+ * layer, and while it was callable at any moment a client could re-run it to
+ * refill Energy, deal itself a fresh hand, and skip the Enemy Turn entirely.
+ * Only two states may begin a turn: a combat that has not started, and a round
+ * whose Enemy Turn has just ended.
+ */
 export function startPlayerTurn(state: CombatState): CombatState {
-  const next = clone(state)
+  const opening = state.turn === 0
+  if (!opening && state.phase !== 'roundEnd') return state
+  return beginPlayerTurn(clone(state))
+}
+
+/** Start of Turn: reset, draw 5, roll the shared die (p.12). Mutates `next`. */
+function beginPlayerTurn(next: CombatState): CombatState {
   next.phase = 'player'
   next.turn += 1
+  // Where this round's log starts, so the divider can be placed above anything
+  // the Start of Turn itself writes.
+  const drewFrom = next.log.length
 
   // The Start of Turn phases run in the order the rulebook prints them (p.12):
   // Reset, Draw, Roll, then start-of-turn abilities. The order matters even
   // though the roll is independent of the draw today, because it decides which
   // RNG values each step consumes — swapping them changes every seeded replay.
+  //
+  // Reset is its own pass over the whole party before ANY drawing starts. The
+  // rulebook prints them as two numbered steps, and now that drawing can fire
+  // a Power, an interleaved loop would let one player's on-draw Block be wiped
+  // by a later player's reset.
   for (const player of next.players) {
     if (player.dead) continue
     player.energy = 3
     player.block = 0
-    const result = drawCards(next.rng, player, 5)
-    player.draw = result.draw
-    player.hand = result.hand
-    player.discard = result.discard
+  }
+  for (const player of next.players) {
+    if (player.dead) continue
+    drawInto(next, player, 5)
   }
 
   // One roll per round; every die effect this round reads this value.
   next.die = nextInt(next.rng, 6) + 1
 
-  // Start-of-combat abilities only fire on turn 1 (p.12).
-  if (next.turn === 1) fireRelics(next, 'startOfCombat')
-  fireRelics(next, 'startOfTurn')
-  // Die relics fire after the roll, during Start of Turn (p.19).
-  fireRelics(next, 'dieRelic')
+  // The divider opens the round, so it is written before anything the round
+  // contains. The draw above can itself fire a trigger once an on-draw Power
+  // is transcribed, and those lines belong under this heading, not the
+  // previous one — so the divider is spliced in ahead of them.
+  next.log = [
+    ...next.log.slice(0, drewFrom),
+    `Turn ${next.turn} begins (die ${next.die})`,
+    ...next.log.slice(drewFrom),
+  ]
 
-  next.log = [...next.log, `-- turn ${next.turn} (die ${next.die}) --`]
-  return next
+  // Start-of-combat abilities only fire on turn 1 (p.12).
+  if (next.turn === 1) fireTriggers(next, { kind: 'startOfCombat' })
+  fireTriggers(next, { kind: 'startOfTurn' })
+  // Die relics fire after the roll, during Start of Turn (p.19).
+  fireTriggers(next, { kind: 'dieRelic', die: next.die })
+
+  // A start-of-turn ability can kill the last enemy, and a combat that is over
+  // must say so — otherwise the phase stays 'player' and endOfCombat is missed.
+  return settle(next)
 }
 
 /** End of Turn: end-of-turn effects, then discard every hand (p.12). */
 export function endPlayerTurn(state: CombatState): CombatState {
   if (state.phase !== 'player') return state
   const next = clone(state)
-  fireRelics(next, 'endOfTurn')
+  fireTriggers(next, { kind: 'endOfTurn' })
+
+  // Poison is HP loss at end of turn and ignores Block; tokens never decrement.
+  // Resolved before the players' own end-of-turn damage: p.12 lets end-of-turn
+  // abilities go in any order, and a party that would have won on the poison
+  // tick should not lose to its own Wrath bite first.
+  for (const enemy of next.enemies) {
+    if (enemy.dead || enemy.poison === 0) continue
+    const outcome = applyHpLoss(enemy.hp, enemy.poison)
+    const name = enemyLabel(next, enemy)
+    // The hit points actually lost, not the token count: an enemy on 2 HP with
+    // 5 Poison loses 2, and saying "loses 5" is simply untrue.
+    next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
+    enemy.hp = outcome.hp
+    if (enemy.hp === 0) {
+      enemy.dead = true
+      next.log = [...next.log, `${name} is dead`]
+    }
+  }
 
   for (const player of next.players) {
     if (player.dead) continue
+    // Checked in TWO places, because the combat can end at either point and
+    // both endings are immediate (p.13):
+    //   here — a previous player's orb or bite already ended it, so this
+    //   player takes no end-of-turn step at all;
+    //   again below — this player's own orb ended it, so their own Wrath bite
+    //   must not then land.
+    // Guarding only one of the two left a mirror hole each time: first a bite
+    // landing after victory, then a later player's orb reporting victory in a
+    // combat a death had already lost.
+    if (combatIsOver(next)) break
     // Orbs fire before the hand is discarded, and before the Wrath bite.
     resolveOrbsAtEndOfTurn(next, player)
+    if (combatIsOver(next)) break
     // Ending your turn in Wrath costs 1 damage, and it can be blocked (p.17).
-    if (player.stance === 'wrath') damagePlayer(player, 1)
+    // Logged, because otherwise the seat flinches with nothing to explain it.
+    if (player.stance === 'wrath') {
+      const hpBefore = player.hp
+      damagePlayer(player, 1)
+      const lost = hpBefore - player.hp
+      next.log = [
+        ...next.log,
+        lost > 0 ? `${player.name} takes 1 from Wrath` : `${player.name} blocks the bite of Wrath`,
+      ]
+      if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
+    }
+    const held = player.hand.length
     const piles = discardHand(player)
     player.draw = piles.draw
     player.hand = piles.hand
     player.discard = piles.discard
-  }
-
-  // Poison is HP loss at end of turn and ignores Block; tokens never decrement.
-  for (const enemy of next.enemies) {
-    if (enemy.dead || enemy.poison === 0) continue
-    const outcome = applyHpLoss(enemy.hp, enemy.poison)
-    enemy.hp = outcome.hp
-    if (enemy.hp === 0) enemy.dead = true
+    if (held > 0) {
+      next.log = [...next.log, `${player.name} discards ${held} at end of turn`]
+    }
   }
 
   next.phase = 'enemy'
@@ -386,9 +845,14 @@ export function enemyTurn(state: CombatState): CombatState {
 
   for (const enemy of enemyActingOrder(next)) {
     if (enemy.dead) continue
+    // p.13: "When a player dies, the game immediately ends in defeat."
+    // Immediately — so the enemies still queued behind the killing blow never
+    // get to act, and the log does not report four attacks that never landed.
+    if (combatIsOver(next)) break
     const def = enemyDef(enemy.defId)
     for (const action of actionsFor(def, next.die, enemy.actionIndex)) {
       applyEnemyAction(next, enemy, action)
+      if (combatIsOver(next)) break
     }
   }
 
@@ -397,7 +861,11 @@ export function enemyTurn(state: CombatState): CombatState {
     enemy.actionIndex = advanceCube(enemyDef(enemy.defId), enemy.actionIndex)
   }
 
-  next.phase = 'player'
+  // The round is over. The next Start of Turn is its own step (p.12) rather
+  // than something that happens invisibly: with three or four players, the
+  // board must hold still long enough to read what the enemies just did before
+  // every hand is swept up and redealt.
+  next.phase = 'roundEnd'
   return settle(next)
 }
 
@@ -413,11 +881,17 @@ export function enemyActingOrder(state: CombatState): Enemy[] {
 }
 
 function playersInRowOf(state: CombatState, enemy: Enemy): Player[] {
+  // A boss counts as being in EVERY row (docs/rules.md), which is why the
+  // player-facing `resolveEnemyTargets` already treats a row as including it.
+  // The enemy side did not, so a boss with a single-target attack could only
+  // ever reach whichever row it happened to be spawned in.
+  if (enemy.isBoss) return state.players.filter((player) => !player.dead)
   return state.players.filter((player) => !player.dead && player.row === enemy.row)
 }
 
 function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction): void {
   const living = state.players.filter((player) => !player.dead)
+  const name = enemyLabel(state, enemy)
 
   switch (action.kind) {
     case 'attack': {
@@ -427,35 +901,79 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
         // Every hit is modified, but only one Vulnerable token comes off after
         // the whole action resolves (p.14).
         const vulnerableAtStart = target.vulnerable
+        const hpBefore = target.hp
+        const blockBefore = target.block
         for (let i = 0; i < (action.times ?? 1); i++) {
           if (target.dead) break
           damagePlayer(target, hitDamage(action.amount, mods, { vulnerable: vulnerableAtStart }))
         }
-        if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
+        if (vulnerableAtStart > 0) {
+          target.vulnerable = vulnerableAtStart - 1
+          // A token leaving the board deserves the line its arrival got.
+          state.log = [...state.log, `${target.name} spends a Vulnerable`]
+        }
+        // The log is the only record of what happened during the Enemy Turn:
+        // without it a player sees a number quietly change and has to guess.
+        const lost = hpBefore - target.hp
+        const blocked = blockBefore - target.block
+        // Only credit Block when Block actually did something: a Weak attack
+        // reduced to nothing is not the shield's doing.
+        state.log = [
+          ...state.log,
+          lost > 0
+            ? `${name} hit ${target.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+            : blocked > 0
+              ? `${target.name} blocked ${name} completely (${blocked} spent)`
+              : `${name} did no damage to ${target.name}`,
+        ]
+        if (target.dead) {
+          state.log = [...state.log, `${target.name} has fallen`]
+          // The rest of the sweep never lands: the game ended on this blow.
+          break
+        }
       }
       // One Weak token comes off after the whole action, not per hit — and only
       // if the action actually attacked something. An enemy swinging at an
       // empty row has not attacked (p.24), same rule as the player side.
-      if (targets.length > 0 && enemy.weak > 0) enemy.weak -= 1
+      if (targets.length > 0 && enemy.weak > 0) {
+        enemy.weak -= 1
+        state.log = [...state.log, `${name} spends a Weak`]
+      }
       return
     }
     case 'block': {
+      // The amount actually gained, not the amount printed: at the cap the
+      // enemy gains nothing and the log should not claim otherwise.
+      const before = enemy.block
       enemy.block = gainBlock(enemy.block, action.amount)
+      if (enemy.block > before) {
+        state.log = [...state.log, `${name} gained ${enemy.block - before} Block`]
+      }
       return
     }
     case 'gainStrength': {
+      const before = enemy.strength
       enemy.strength = gainStrength(enemy.strength, action.amount)
+      if (enemy.strength > before) {
+        state.log = [...state.log, `${name} gained ${enemy.strength - before} Strength`]
+      }
       return
     }
     case 'applyWeak': {
       for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        const before = target.weak
         target.weak = gainWeak(target.weak, action.amount)
+        if (target.weak > before) state.log = [...state.log, `${name} weakened ${target.name}`]
       }
       return
     }
     case 'applyVulnerable': {
       for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        const before = target.vulnerable
         target.vulnerable = gainVulnerable(target.vulnerable, action.amount)
+        if (target.vulnerable > before) {
+          state.log = [...state.log, `${name} left ${target.name} vulnerable`]
+        }
       }
       return
     }
@@ -468,6 +986,12 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
           upgraded: false,
         }))
         target.draw = [...cards, ...target.draw]
+        state.log = [
+          ...state.log,
+          // No enemy in the box deals more than one Daze, so the plural branch
+          // that used to sit here was unreachable. One card, one phrase.
+          `${name} slipped a Daze into ${target.name}'s deck`,
+        ]
       }
       return
     }
@@ -493,18 +1017,34 @@ function channelOrb(
     actor.orbs[open] = orb
     return
   }
+  // A full set forces an evoke to make room (p.16). Unsaid, the evoke's line
+  // appeared with nothing to explain why an orb had vanished.
+  state.log = [...state.log, `${actor.name} has no free orb slot, and must evoke to make room`]
   evokeOrb(state, actor, context)
   const freed = actor.orbs.indexOf(null)
   if (freed >= 0) actor.orbs[freed] = orb
 }
 
 /**
- * Evokes one orb and applies its effect. The board game lets you evoke ANY orb;
- * there is no front slot and no rotation (p.16). Without an explicit choice the
- * first occupied slot is used, which keeps a card playable without a prompt.
+ * Evokes one orb and applies its effect.
+ *
+ * The board game lets you evoke ANY orb — there is no front slot and no
+ * rotation (p.16) — and `context.evokeSlots` carries that choice, which the
+ * room layer forwards. The LOCAL UI does not yet collect it, so playing from
+ * this client always takes the first occupied slot. That gap is listed in
+ * state.ts rather than papered over here.
  */
 function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void {
-  const chosen = context.evokeSlots?.find((slot) => actor.orbs[slot] != null)
+  // The slot has to be a real array INDEX, not any property key. These values
+  // arrive as JSON from a client, and `orbs['length']` was truthy — it evoked
+  // a non-existent Dark orb for free damage and then assigned null to
+  // `length`, truncating the array to zero slots for the rest of the combat.
+  // `orbs['__proto__']` was worse: it nulled the prototype and the next call
+  // threw straight out of the room layer.
+  const chosen = context.evokeSlots?.find(
+    (slot) =>
+      Number.isInteger(slot) && slot >= 0 && slot < actor.orbs.length && actor.orbs[slot] != null,
+  )
   const slot = chosen ?? actor.orbs.findIndex((orb) => orb != null)
   if (slot < 0) return
   const orb = actor.orbs[slot]
@@ -513,13 +1053,17 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
 
   const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
   if (orb === 'lightning') {
-    if (target) damageEnemy(target, 2)
+    if (target) damageEnemyLogged(state, target, 2, `${actor.name}'s Lightning orb`)
   } else if (orb === 'frost') {
-    actor.block = gainBlock(actor.block, 1)
+    const before = actor.block
+    grantBlock(state, actor, 1)
+    if (actor.block > before) {
+      state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
+    }
   } else {
     // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
     // time and is not boosted by card effects (rulebook FAQ, p.18).
-    if (target) damageEnemy(target, 3 + actor.powers.length)
+    if (target) damageEnemyLogged(state, target, 3 + actor.powers.length, `${actor.name}'s Dark orb`)
   }
 }
 
@@ -529,52 +1073,152 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
  */
 function resolveOrbsAtEndOfTurn(state: CombatState, actor: Player): void {
   for (const orb of actor.orbs) {
+    // The orbs behind the one that ended the fight never fire (p.13). The
+    // caller guards around this loop; without a guard INSIDE it, a Frost orb
+    // sitting after a lethal Lightning orb still handed out Block — and fired
+    // its triggers — in a combat that was already over.
+    if (combatIsOver(state)) return
     if (orb === 'lightning') {
       const target = livingEnemies(state)[0]
-      if (target) damageEnemy(target, 1)
+      // Named as the orb, not the player: an enemy's hit points dropping with
+      // no line at all was the only silent end-of-turn effect left.
+      if (target) damageEnemyLogged(state, target, 1, `${actor.name}'s Lightning orb`)
     } else if (orb === 'frost') {
-      actor.block = gainBlock(actor.block, 1)
+      const before = actor.block
+      grantBlock(state, actor, 1)
+      if (actor.block > before) {
+        state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
+      }
     }
   }
 }
 
 
 /**
- * Fires every relic whose trigger matches. Relics are the first users of the
- * trigger machinery that Powers will also need — the shape here is deliberately
- * the one a Power trigger will reuse.
+ * Fires every ongoing effect that matches an event: relics first, then Powers
+ * in the order they were played.
  *
- * A relic's effects resolve against the owner, targeting the first living enemy
- * where a target is required, since a relic never asks the player to choose.
+ * Relics and Powers are the same mechanism — a permanent thing in front of you
+ * that reacts — so they share one dispatcher rather than drifting apart.
+ *
+ * Effects resolve against their owner, targeting the first living enemy where a
+ * target is needed, since an ongoing effect never stops to ask.
  */
-function fireRelics(state: CombatState, when: RelicTrigger['kind']): void {
+/**
+ * How deep a trigger chain may go. A Power that gains Block whenever it gains
+ * Block would otherwise recurse until the stack blew. The board game has no
+ * such card, but the engine must not be one data entry away from a hang, and a
+ * silent infinite loop is far worse than a chain that stops.
+ *
+ * Triggers past this depth are DROPPED, silently and deliberately: there is no
+ * sensible way to surface it mid-resolution, and a truncated chain is a better
+ * failure than a frozen tab. If a real card ever chains deeper than this, the
+ * cap is the thing to revisit — a legitimate combo would look like a card
+ * quietly under-performing rather than an error.
+ */
+export const MAX_TRIGGER_DEPTH = 8
+let triggerDepth = 0
+
+function fireTriggers(
+  state: CombatState,
+  event: TriggerEvent,
+  only?: Player,
+  excludeUid?: string,
+): void {
+  if (triggerDepth >= MAX_TRIGGER_DEPTH) return
+  triggerDepth++
+  try {
+    fireTriggersInner(state, event, only, excludeUid)
+  } finally {
+    triggerDepth--
+  }
+}
+
+type TriggerSource = {
+  trigger: Trigger
+  effects: Effect[]
+  /** Named in the log, so a recurring effect is attributable. */
+  name: string
+  /** The card's own declared scopes, so a Power hits what it says it hits. */
+  scope: TargetScope
+  supportScope: TargetScope
+}
+
+function fireTriggersInner(
+  state: CombatState,
+  event: TriggerEvent,
+  only?: Player,
+  excludeUid?: string,
+): void {
   for (const player of state.players) {
     if (player.dead) continue
+    if (only && player.id !== only.id) continue
+
+    const sources: TriggerSource[] = []
     for (const held of player.relics) {
       const def = relicDef(held.defId)
-      const trigger = def.trigger
-      if (trigger.kind !== when) continue
-      // Die relics only fire on a matching roll (p.19).
-      if (trigger.kind === 'dieRelic' && !trigger.faces.includes(state.die)) continue
+      // Relics declare no scope, so they keep the defaults they always had.
+      sources.push({
+        trigger: def.trigger,
+        effects: def.effects,
+        name: `${player.name}'s ${def.name}`,
+        scope: 'enemy',
+        supportScope: 'self',
+      })
+    }
+    for (const card of player.powers) {
+      if (card.uid === excludeUid) continue
+      const def = faceOf(cardDef(card.defId), card.upgraded)
+      if (!def.trigger) continue
+      // A Power carries the same target fields as any other card, and a
+      // declared-but-unhonoured flag is worse than a missing one: it reads as
+      // implemented. Honour them rather than assuming single-target.
+      sources.push({
+        trigger: def.trigger,
+        effects: def.effects,
+        name: `${player.name}'s ${def.name}`,
+        scope: def.target ?? 'enemy',
+        supportScope: def.supportTarget ?? 'self',
+      })
+    }
 
+    for (const source of sources) {
+      if (!triggerMatches(source.trigger, event)) continue
       const target = livingEnemies(state)[0]
       const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
-      for (const effect of def.effects) {
-        applyEffect(state, player, effect, 'enemy', 'self', context)
+      for (const effect of source.effects) {
+        applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
       }
     }
   }
 }
 
+/**
+ * Whether either ending has already happened.
+ *
+ * Both are immediate (p.13), so anything still queued behind them — another
+ * player's orb, their Wrath bite, the next enemy in the order — must not
+ * resolve at all.
+ */
+function combatIsOver(state: CombatState): boolean {
+  return state.enemies.every((enemy) => enemy.dead) || state.players.some((player) => player.dead)
+}
+
 /** Decides whether the combat has ended, and returns the state either way. */
 function settle(state: CombatState): CombatState {
-  if (state.players.every((player) => player.dead)) {
-    state.phase = 'lost'
-    return state
-  }
+  // Victory is tested first, but the ordering no longer decides anything on
+  // its own: `combatIsOver` stops each phase at the moment either ending
+  // happens, so this is never reached with a dead player AND a wiped board.
+  // It is kept in this order as a backstop for a state assembled by hand.
   if (state.enemies.every((enemy) => enemy.dead)) {
     state.phase = 'won'
-    fireRelics(state, 'endOfCombat')
+    fireTriggers(state, { kind: 'endOfCombat' })
+    return state
+  }
+  // p.13: ONE death, not a wipe. This is a co-op game where the party stands
+  // or falls together, and last-man-standing is a much easier game.
+  if (state.players.some((player) => player.dead)) {
+    state.phase = 'lost'
     return state
   }
   return state

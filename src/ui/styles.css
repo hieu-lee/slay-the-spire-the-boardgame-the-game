@@ -220,7 +220,10 @@ button:disabled {
   flex-direction: column;
   gap: 0.5rem;
   overflow-y: auto;
-  min-height: 0;
+  /* Tall enough for one whole enemy tile INCLUDING its token row — measured at
+     273px, so 13rem was never enough and the hit-point bar still fell below
+     the fold at 360x720. */
+  min-height: 17.5rem;
   /* `safe` keeps the first row reachable when the rows overflow; plain `center`
      would push the top out of the scrollable area. */
   justify-content: safe center;
@@ -385,7 +388,22 @@ button:disabled {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--hp);
-  transition: width var(--motion-medium) var(--ease);
+  transition: width var(--motion-medium) var(--ease), background var(--motion-medium) var(--ease);
+}
+
+/* A full health bar in danger-red reads as "you are in trouble" when you are
+   fine. The colour is the warning, so it only turns on when it means something.
+   Set from the same fraction that sizes the bar. */
+.bar__fill[data-health='healthy'] {
+  background: linear-gradient(180deg, #6fbf73, #3f8f52);
+}
+
+.bar__fill[data-health='hurt'] {
+  background: linear-gradient(180deg, #d8a63e, #a97722);
+}
+
+.bar__fill[data-health='critical'] {
+  background: linear-gradient(180deg, #d9483f, #a02a26);
 }
 
 .bar__label {
@@ -760,6 +778,59 @@ button:disabled {
   margin-bottom: 0.35rem;
 }
 
+/* Channelled orbs: a coloured bead each, matching the orb colours on the
+   Defect's board. No number — the count is the number of beads. */
+.token--orb {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgb(0 0 0 / 0.5);
+  box-shadow: inset 0 -2px 4px rgb(0 0 0 / 0.45);
+}
+
+.token--orb-lightning {
+  background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520);
+}
+
+.token--orb-frost {
+  background: radial-gradient(circle at 35% 30%, #d8f4ff, #4aa6d6);
+}
+
+.token--orb-dark {
+  background: radial-gradient(circle at 35% 30%, #b28ad6, #4a2a70);
+}
+
+/* On a narrow screen the row stacks the seat above the enemy, so the row needs
+   more height than one enemy tile — and the enemy's hit-point bar, the number
+   the whole turn is planned around, fell below the fold. The portrait gives up
+   the space rather than the board growing past the viewport. */
+@media (max-width: 720px), (max-height: 760px) {
+  .hand {
+    min-height: 0;
+  }
+
+  .enemy__portrait {
+    aspect-ratio: 16 / 7;
+  }
+
+  /* One whole row, not less: a floor shorter than a row leaves the enemy in
+     your own row sliced even after the code scrolls that row to the top. The
+     17.5rem above was being overridden back down to 12rem here. */
+  .board {
+    min-height: 17.5rem;
+  }
+
+  /* The round-end pause opens the log up, which is right on a big screen and
+     wrong on a small one: it squeezed the board until the enemy's hit-point
+     bar was sliced, exactly when the pause is asking you to read the board. */
+  .combat[data-phase='roundEnd'] .combat__log,
+  .combat[data-phase='enemy'] .combat__log {
+    max-height: min(calc(6 * 1.17rem + 0.75rem), 22vh);
+  }
+
+}
+
 /* ---------- feedback ---------- */
 
 /* A hit should be felt, not just recorded in a log. */
@@ -776,12 +847,96 @@ button:disabled {
   animation: struck 380ms var(--ease);
 }
 
+/* Identical to `struck`, under a different NAME on purpose. Swapping the class
+   is not enough to restart a CSS animation — the computed animation-name has
+   to change — so two blows inside the same window produced only one flinch. */
+.enemy--struck-alt,
+.seat--struck-alt {
+  animation: struck-again 380ms var(--ease);
+}
+
+@keyframes struck-again {
+  0% { transform: translateX(0); filter: brightness(1); }
+  20% { transform: translateX(-4px); filter: brightness(2.2) saturate(0.4); }
+  45% { transform: translateX(3px); }
+  70% { transform: translateX(-2px); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+
 @keyframes card-play {
   from { opacity: 0; transform: translateY(14px) scale(0.94); }
 }
 
 /* Deliberately NOT applied to .card globally: the hand re-renders on every
    state change, and a blanket entry animation makes the whole hand flicker. */
+
+@media (prefers-reduced-motion: reduce) {
+  .enemy--struck,
+  .seat--struck,
+  .enemy--struck-alt,
+  .seat--struck-alt {
+    animation: none;
+  }
+}
+
+/* A defeated enemy is flipped over on the table (p.13): still there, still
+   taking up its space in the row, but no longer threatening anything. */
+.enemy__defeated {
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: rgb(214 176 96 / 0.42);
+}
+
+/* What just happened, in the order it happened. The round-end pause is only
+   useful if there is something to read during it. */
+.combat__log {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0.6rem;
+  list-style: none;
+  border-top: 1px solid rgb(214 176 96 / 0.18);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #c9bda6;
+  /* The component renders newest-first, so normal flow puts the newest line at
+     the top of the box where scrollTop 0 leaves it. */
+  /* Capped against the VIEWPORT as well as in absolute terms: at 360x720 a
+     fixed cap pushed the enemy's hit-point bar below the fold, and that number
+     is what the whole turn is planned around. */
+  /* Whole lines. Everything is border-box, so the cap has to include the
+     0.7rem of vertical padding and the 1px border, or the last line is sliced
+     through the middle of its glyphs. 1.5 line-height on 0.78rem is 1.17rem. */
+  /* Both halves round to whole lines. A raw vh cap cut the last line through
+     its glyphs on short screens, which is the thing this cap exists to stop. */
+  max-height: min(calc(5 * 1.17rem + 0.75rem), calc(4 * 1.17rem + 0.75rem));
+  overflow-y: auto;
+  /* A visible track, because a log that silently hides half a round looks
+     identical to one that showed all of it. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(214 176 96 / 0.35) transparent;
+}
+
+/* During the round-end pause the hand is empty and the log is the thing to
+   read, so it takes the space the hand is not using. A four-player enemy turn
+   runs to eight lines and used to show five with no scrollbar to say so. */
+.combat[data-phase='roundEnd'] .combat__log,
+.combat[data-phase='enemy'] .combat__log {
+  max-height: min(calc(12 * 1.17rem + 0.75rem), 34vh);
+}
+
+.combat__log li:first-child {
+  color: #f0e4c8;
+}
+
+/* The round divider: quieter than the events it separates. */
+.combat__log-turn {
+  color: #8d8171;
+  letter-spacing: 0.04em;
+  border-top: 1px solid rgb(214 176 96 / 0.14);
+  margin-top: 0.2rem;
+  padding-top: 0.2rem;
+}
 
 /* ---------- map ---------- */
 
@@ -1110,4 +1265,125 @@ button:disabled {
 
 .campfire__preview .card--unplayable {
   filter: none;
+}
+
+/* ---------- powers in play ---------- */
+
+/* A Power sits in front of the player for the whole combat and changes how the
+   turn plays out; it has to be visible or it cannot be planned around. */
+/* Powers in play: the little face-up cards in front of a player (p.12).
+   Rendered as their own art rather than a name, so they read as board state
+   and not as a row of tags next to the stance badge. */
+.powers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.power {
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+  /* A wide, short window rather than a whole mini-card: at this size the full
+     card is just illegible text, and the illustration is the part that reads
+     as board state. Hover shows the real card. */
+  width: 34px;
+  height: 22px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgb(214 176 96 / 0.55);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  background: #1a1520;
+}
+
+.power__art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Sits ON TOP of the name fallback, which is only meant to be seen when the
+     scan is missing. Without this the name paints over the art it replaces. */
+  position: relative;
+  z-index: 1;
+  /* Centres the crop on the illustration oval, below the title banner and
+     above the rules box. Measured against the scans: at 34x22 the visible band
+     runs roughly 12%-58% of card height, and the oval ends around 56%. */
+  object-position: center 29%;
+  display: block;
+}
+
+/* Only reachable when the scan is missing, in which case the art is hidden. */
+.power__fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1px;
+  font-size: 0.5rem;
+  line-height: 1.05;
+  text-align: center;
+  color: #e8d7a8;
+}
+
+/* Hover, focus or click enlarges the real card, which already carries its own
+   rules text — cheaper and more accurate than restating the effect in prose
+   beside it. The enlarged card itself is rendered into the body; see
+   .power__zoom below. */
+.power:focus-visible {
+  outline: 2px solid #e8c877;
+  outline-offset: 1px;
+}
+
+/* The enlarged card lives in the body, not in the tile: an ancestor with a
+   scroll container clips a fixed descendant, which cut half the card off at
+   smaller viewports. Its coordinates come from PowerRow, clamped to the
+   viewport, because CSS alone cannot see where the tile ended up. */
+.power__zoom {
+  position: fixed;
+  width: 190px;
+  aspect-ratio: 3 / 4;
+  height: auto;
+  object-fit: contain;
+  z-index: 200;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.75);
+  pointer-events: none;
+}
+
+/* A composited opacity fade rather than an animated box-shadow: a four-player
+   board can carry sixteen of these, and repainting each one forever is a cost
+   nobody asked for. */
+.power::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 3px;
+  box-shadow: 0 0 7px rgb(214 176 96 / 0.55);
+  opacity: 0;
+  animation: power-idle 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.power--open::after,
+.power:hover::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes power-idle {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .power::after {
+    animation: none;
+  }
 }

@@ -39,11 +39,33 @@ export function App() {
   const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
   const [viewerId, setViewerId] = useState('p1')
 
+  /** The settings the run in progress was actually built from. */
+  const [built, setBuilt] = useState({ count: 2, seed: 'spire' })
+
   function restart(count: number, seed: string) {
     setPlayerCount(count)
     setSeedText(seed)
     setViewerId('p1')
+    setBuilt({ count, seed })
     setRun(newRun(count, seed))
+  }
+
+  /**
+   * Starts a new run, but never by accident.
+   *
+   * The seed field used to restart on BLUR, so any stray click out of it threw
+   * away the combat in progress — no change to the value required, no warning.
+   * Now it only acts on a real change, and asks first if a run is underway.
+   */
+  function restartIfWanted(count: number, seed: string) {
+    if (count === built.count && seed === built.seed) return
+    const underway = run.phase !== 'map' || run.map.position !== null
+    if (underway && !window.confirm('Start a new run? The one in progress will be lost.')) {
+      setPlayerCount(built.count)
+      setSeedText(built.seed)
+      return
+    }
+    restart(count, seed)
   }
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
@@ -97,7 +119,7 @@ export function App() {
             Players
             <select
               value={playerCount}
-              onChange={(event) => restart(Number(event.target.value), seedText)}
+              onChange={(event) => restartIfWanted(Number(event.target.value), seedText)}
             >
               {[1, 2, 3, 4].map((n) => (
                 <option key={n} value={n}>
@@ -111,7 +133,7 @@ export function App() {
             <input
               value={seedText}
               onChange={(event) => setSeedText(event.target.value)}
-              onBlur={() => restart(playerCount, seedText)}
+              onBlur={() => restartIfWanted(playerCount, seedText)}
             />
           </label>
           <label>
@@ -179,7 +201,7 @@ export function App() {
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
           <button type="button" onClick={() => restart(playerCount, seedText)}>
-            New run
+            Try again
           </button>
         </section>
       ) : null}

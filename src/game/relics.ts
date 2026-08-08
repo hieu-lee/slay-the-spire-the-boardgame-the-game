@@ -4,17 +4,10 @@
 // modelled as triggers rather than as code so the campaign can hold them as
 // plain data alongside everything else.
 import type { Effect } from './cards.ts'
+import type { Trigger } from './triggers.ts'
 
-/**
- * When a relic fires. `dieRelic` triggers on a matching roll during Start of
- * Turn, which is why the die is rolled before start-of-turn abilities (p.12).
- */
-export type RelicTrigger =
-  | { kind: 'startOfCombat' }
-  | { kind: 'startOfTurn' }
-  | { kind: 'endOfTurn' }
-  | { kind: 'endOfCombat' }
-  | { kind: 'dieRelic'; faces: number[] }
+/** Relics and Powers share one trigger vocabulary; see triggers.ts. */
+export type RelicTrigger = Trigger
 
 export type RelicDef = {
   id: string
