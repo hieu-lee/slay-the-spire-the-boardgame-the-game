@@ -10,7 +10,7 @@
 //      server load .ts files through Node's type stripping, which rejects enum,
 //      namespace, and constructor parameter properties.
 import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
-import { CARDS } from '../src/game/cards.ts'
+import { CARDS, DEFERRED_CARDS } from '../src/game/cards.ts'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -311,5 +311,89 @@ check('the not-implemented list states the real card count', () => {
   )
   assertEqual(Number(claimed[2]), 381, 'the full set is 381 player cards (rulebook p.3)')
 })
+
+// DEFERRED_CARDS is a promise about what is NOT in the game. A promise nothing
+// checks is just a comment, and this one is the record of which transcribed
+// cards were held back and why -- if an id quietly appears in both lists, the
+// list stops describing the game.
+check('the deferred list and the live table do not overlap', () => {
+  const clash = DEFERRED_CARDS.filter((id) => CARDS[id] !== undefined)
+  assertEqual(
+    clash.length,
+    0,
+    `these ids are listed as deferred but are live: ${clash.join(', ')}`,
+  )
+})
+
+check('the not-implemented list states the real deferred count', () => {
+  const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
+  const WORDS = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+    ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
+    fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+  }
+  const claimed = notes.match(/(\w+) more[^.]*?held back/i)
+  assert(claimed !== null, 'the list should say how many cards are held back')
+  const stated = WORDS[claimed[1].toLowerCase()] ?? Number(claimed[1])
+  assert(Number.isFinite(stated), `could not read "${claimed[1]}" as a number`)
+  assertEqual(
+    stated,
+    DEFERRED_CARDS.length,
+    `state.ts says ${claimed[1]} cards are held back but DEFERRED_CARDS lists ${DEFERRED_CARDS.length}`,
+  )
+})
+
+
+// The bug this exists to prevent: a card whose consuming clause comes AFTER a
+// clause that draws. The player nominates what to give up when they commit the
+// play, but the cards a draw puts in their hand do not exist yet at that
+// moment -- so a card asking for one of them can never be paid, and the play is
+// refused with nothing shown to explain it. Acrobatics ("Draw 3 cards. Discard
+// 1 card.") is exactly this and is held back in DEFERRED_CARDS until a play can
+// happen in two steps. Nothing stopped it being added, so this does.
+check('no live card asks for a card it has not dealt yet', () => {
+  const CONSUMING = new Set(['discard', 'exhaustFromHand'])
+  const offenders = []
+  for (const def of Object.values(CARDS)) {
+    for (const face of [def, def.upgrade ? { ...def, ...def.upgrade } : null]) {
+      if (!face?.effects) continue
+      let drewFirst = false
+      for (const effect of face.effects) {
+        if (effect.kind === 'draw') drewFirst = true
+        if (drewFirst && CONSUMING.has(effect.kind)) {
+          offenders.push(`${def.id} (${effect.kind} after draw)`)
+        }
+      }
+    }
+  }
+  assertEqual(
+    offenders.length,
+    0,
+    `these cards cannot be paid for at the moment the player commits: ${offenders.join(', ')}`,
+  )
+})
+
+// Both checks above are self-consistency only: the list is compared with itself
+// and with prose. Nothing tied an entry to a card that exists, so a typo --
+// 'thirdeye' for 'third_eye' -- would drop a card from the live table AND from
+// the record of what was held back, silently, in both directions.
+check('every deferred id names a real printed card', () => {
+  const rows = readFileSync(join(srcRoot, '../data/raw/player-cards.csv'), 'utf8')
+  const slugs = new Set()
+  for (const line of rows.split('\n').slice(1)) {
+    const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
+    if (cells.length < 2 || !cells[1]) continue
+    slugs.add(cells[1].toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, ''))
+  }
+  assert(slugs.size > 250, `the component list should have parsed, got ${slugs.size} names`)
+
+  const unknown = DEFERRED_CARDS.filter((id) => !slugs.has(id))
+  assertEqual(
+    unknown.length,
+    0,
+    `these deferred ids match no card in the printed component list: ${unknown.join(', ')}`,
+  )
+})
+
 
 report('architecture')

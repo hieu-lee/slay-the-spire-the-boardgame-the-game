@@ -8,8 +8,8 @@ import { healthBand, strikeClass } from './board-signals.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
-  /** Distinguishes twins, the same way the combat log does. */
-  rowLabel?: boolean
+  /** The finished display name, built by the engine so the log agrees. */
+  label: string
   /** The round's shared die, which decides what a die-pattern enemy will do. */
   die: number
   targeted?: boolean
@@ -76,15 +76,12 @@ function intentParts(action: EnemyAction): IntentPart[] {
  * for players. The intent especially: it is the one thing choosing a target
  * depends on, and it was not being announced at all.
  */
-function describeEnemy(
-  enemy: Enemy,
-  name: string,
-  rowLabel: boolean,
-  intent: IntentPart[],
-): string {
-  // The log says "Cultist (row 2)" when there are two; two identically named
-  // buttons would leave a screen-reader user unable to match log to board.
-  const parts = [`${name}${rowLabel ? ` (row ${enemy.row})` : ''}`]
+function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[]): string {
+  // The label is built by the engine and is the SAME string the log prints --
+  // "Cultist (row 0, #2)" when two of them share a row. Two identically named
+  // buttons would leave a screen-reader user unable to match log to board, and
+  // rebuilding the name here is what let the two drift apart before.
+  const parts = [label]
   if (enemy.dead) {
     parts.push('defeated')
     return parts.join(', ')
@@ -111,13 +108,13 @@ function describeEnemy(
     ['Weak', enemy.weak],
     ['Poison', enemy.poison],
   ]
-  for (const [label, value] of tokens) if (value > 0) parts.push(`has ${label} ${value}`)
+  for (const [token, value] of tokens) if (value > 0) parts.push(`has ${token} ${value}`)
   return parts.join(', ')
 }
 
 export function EnemyCard({
   enemy,
-  rowLabel = false,
+  label,
   die,
   targeted = false,
   struck = false,
@@ -144,7 +141,7 @@ export function EnemyCard({
       className={className}
       disabled={enemy.dead}
       onClick={() => onClick?.(enemy)}
-      aria-label={describeEnemy(enemy, def.name, rowLabel, intent)}
+      aria-label={describeEnemy(enemy, label, intent)}
     >
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.

@@ -2,6 +2,7 @@ import type React from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
+import { Icon } from './Icon.tsx'
 import type { CardInstance } from '../game/types.ts'
 
 type CardProps = {
@@ -14,6 +15,36 @@ type CardProps = {
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
   onClick?: (card: CardInstance) => void
+}
+
+/**
+ * What a screen reader announces for the card.
+ *
+ * The face is a scan, so the printed numbers are an IMAGE and are never read
+ * out. This string carries the clauses that change HOW the card is played —
+ * its reach, and whether playing it spends the card for good — which is what a
+ * player needs before choosing a target. It does NOT carry the effects
+ * themselves: "Cleave, cost 1, attack, hits a whole row and any boss" never
+ * says 2 damage. Rendering `effects` into words is the fix, and it is a bigger
+ * one than this; until then the label is a targeting aid, not a card reading.
+ */
+function accessibleName(def: CardDef): string {
+  return [
+    def.name,
+    // "cost —" reads as a dangling "cost" once a screen reader drops the dash
+    // at its default punctuation setting. An unplayable card and one you merely
+    // cannot afford are both greyed out, so the name is the only thing that can
+    // tell them apart.
+    def.unplayable ? 'unplayable' : `cost ${costLabel(def)}`,
+    def.type,
+    // A row always takes the boss too, wherever the boss stands (p.15). Saying
+    // only "a whole row" tells a player picking a distant row that the boss is
+    // safe from it, which is the opposite of the rule.
+    def.target === 'row' ? 'hits a whole row and any boss' : '',
+    def.exhaust ? 'exhausts when played' : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
 }
 
 /** The energy cost badge, or nothing at all for an unplayable card (p.24). */
@@ -54,7 +85,7 @@ export function Card({
       } as React.CSSProperties}
       disabled={!playable}
       onClick={() => onClick?.(card)}
-      aria-label={`${def.name}, cost ${costLabel(def)}, ${def.type}`}
+      aria-label={accessibleName(def)}
       title={def.name}
     >
       <img
@@ -71,6 +102,14 @@ export function Card({
       <span className="card__fallback" aria-hidden="true">
         {def.name}
       </span>
+      {def.target === 'row' ? (
+        // The burst printed on Cleave and its like. Marked hidden because
+        // `accessibleName` already says "hits a whole row" — announced here as
+        // well, every such card would read its reach out twice.
+        <span className="card__aoe" aria-hidden="true">
+          <Icon name="aoe" size={18} />
+        </span>
+      ) : null}
       <span className="card__cost" aria-hidden="true">
         {costLabel(def)}
       </span>

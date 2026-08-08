@@ -14,8 +14,9 @@
 //     silence. No printed card chains that deep; a future one would look like
 //     a Power quietly under-performing.
 //   - Card effects cannot scale off game state (per Orb, per Miracle, per card
-//     in hand) and X-cost cards cannot read the energy spent. This is now the
-//     largest gap: roughly 26 of the transcribed cards need it.
+//     in hand) and X-cost cards cannot read the energy spent. Two of the
+//     fifteen held-back cards need it outright (Barrage, Charge Battery), and
+//     it is the single mechanic that blocks the most of the untranscribed set.
 //   - Retain and Ethereal are not modelled.
 //   - Enemy special abilities are stored as prose on `unimplementedAbility` and
 //     do NOT resolve: Curl Up, Spore Cloud, Enraged.
@@ -24,8 +25,14 @@
 //   - Event, treasure and merchant rooms show a placeholder screen.
 //   - Relics fire on their triggers, but there is no way to GAIN one during a
 //     run, and potions have no trigger and cannot be drunk at all.
-//   - 21 cards are live of 381. Another 236 are transcribed from scans and
-//     waiting on the gaps above. 9 enemies of roughly 60; no events, no shops.
+//   - 35 cards are live of 381. Fifteen more have been read off the scans and
+//     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
+//     — Retain, die-conditionals, conditional bonuses, counting effects, modal
+//     faces, temporary Strength, deck manipulation, and choices that can only
+//     be made after the same card reveals cards. The other ~330 have not been
+//     transcribed at all: their names and printed costs are known from
+//     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
+//     effects. 9 enemies of roughly 60; no events, no shops.
 //   - Ascension modifiers other than the Act-heal are not applied.
 //   - Orbs: the engine lets a player evoke ANY orb and the room layer forwards
 //     the choice, but the local UI never collects it, so a client-side play
@@ -100,7 +107,7 @@ export {
   createCombat,
   endPlayerTurn,
   livingEnemies,
-  needsRowLabel,
+  enemyLabel,
   playCard,
   resolveEnemyTargets,
   startPlayerTurn,

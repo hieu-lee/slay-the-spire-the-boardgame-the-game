@@ -737,6 +737,108 @@ check('a card that cannot resolve is not offered', () => {
   assert(emptyEvoke.disabled, 'Dual Cast with no orbs charged should be greyed out')
 })
 
+// A row card and a single-target card are the same interaction -- click one
+// enemy -- so without a mark on the card and a word in the prompt, nothing
+// tells the player that Cleave hits the crowd and Strike does not.
+const aoeAffordance = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const me = run.combat.players[0]
+  me.hand = [
+    { uid: 'aoe-cleave', defId: 'cleave', upgraded: false },
+    { uid: 'aoe-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  me.energy = 3
+  debug.setRun(run)
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const cards = [...document.querySelectorAll('.hand .card')]
+  const badges = cards.map((card) => card.querySelector('.card__aoe') !== null)
+  const names = cards.map((card) => card.getAttribute('aria-label') ?? '')
+  // A bounding box and `visibility` are not enough on their own: the Icon
+  // renders <img width=18 height=18>, so the box is 18x18 even if the file
+  // 404s, and both `opacity: 0` and a badge parked off-screen keep a box of
+  // that size. So walk up to the card accumulating opacity, and require the
+  // badge to sit INSIDE the card it belongs to.
+  const painted = cards.map((card) => {
+    const badge = card.querySelector('.card__aoe img')
+    if (!badge) return null
+    const box = badge.getBoundingClientRect()
+    const cardBox = card.getBoundingClientRect()
+    let opacity = 1
+    for (let node = badge; node && node !== document.body; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      if (style.visibility === 'hidden' || style.display === 'none') return false
+      opacity *= Number(style.opacity)
+    }
+    return (
+      box.width > 0 &&
+      box.height > 0 &&
+      opacity > 0.1 &&
+      box.left >= cardBox.left - 1 &&
+      box.right <= cardBox.right + 1 &&
+      box.top >= cardBox.top - 1 &&
+      box.bottom <= cardBox.bottom + 1
+    )
+  })
+
+  // Stage the row card and read the prompt it asks the player for.
+  cards[0].click()
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const rowPrompt = document.querySelector('.prompt')?.textContent ?? ''
+
+  // And the single-target card, so the prompt is pinned in BOTH directions --
+  // `hitsRow` is its own code path in CombatScreen, not the one the badge uses,
+  // so a version that claimed every card takes a row would pass otherwise.
+  document.querySelectorAll('.hand .card')[1]?.click()
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const singlePrompt = document.querySelector('.prompt')?.textContent ?? ''
+
+  return { badges, names, painted, rowPrompt, singlePrompt }
+})
+check('a card that takes a whole row says so', () => {
+  assert(aoeAffordance.badges[0], 'Cleave should carry the area-of-effect burst')
+  assert(!aoeAffordance.badges[1], 'a single-target Strike should not')
+  assert(
+    aoeAffordance.painted[0] === true,
+    'and the burst must actually be painted, not merely present in the markup',
+  )
+  assert(
+    /hits a whole row and any boss/.test(aoeAffordance.names[0]),
+    `the card's accessible name should carry the reach: "${aoeAffordance.names[0]}"`,
+  )
+  assert(
+    !/hits a whole row/.test(aoeAffordance.names[1]),
+    `and a single-target card should not claim it: "${aoeAffordance.names[1]}"`,
+  )
+  assert(
+    /whole row/.test(aoeAffordance.rowPrompt),
+    `the prompt should say the row is hit, got "${aoeAffordance.rowPrompt}"`,
+  )
+  assert(
+    !/whole row/.test(aoeAffordance.singlePrompt),
+    `a single-target card must not claim a row, got "${aoeAffordance.singlePrompt}"`,
+  )
+})
+
+// The face is a scan, so the printed text is an image nobody's screen reader
+// will ever read. The accessible name is the only card text some players get.
+const exhaustName = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = [{ uid: 'ex-1', defId: 'poisoned_stab', upgraded: false }]
+  run.combat.players[0].energy = 3
+  debug.setRun(run)
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  return document.querySelector('.hand .card')?.getAttribute('aria-label') ?? ''
+})
+check('a card that spends itself says so too', () => {
+  assert(
+    /exhausts when played/.test(exhaustName),
+    `Poisoned Stab exhausts and should announce it: "${exhaustName}"`,
+  )
+})
+
 // The hand is fanned, not stacked: each card tilted by its distance from the
 // middle. Zeroing the angle and the lift left a flat row and passed everything.
 // Its own hand, because the check above deliberately leaves one card.
@@ -1092,6 +1194,13 @@ for (const size of [
   }
 }
 await page.setViewportSize({ width: 1440, height: 900 })
+
+// Re-hover after the resize. Changing the viewport re-renders and drops the
+// zoom, so reading it straight afterwards found `null` roughly one run in
+// twelve and reported it as the card being parented wrongly. This is the same
+// cause as an earlier flake in this file: a hover does not survive a resize.
+await page.locator('.row__seat .power').first().hover()
+await page.waitForSelector('.power__zoom')
 
 // The clipping bug this all exists for was caused by the card being a
 // DESCENDANT of the board. Geometry alone cannot see that — at a viewport

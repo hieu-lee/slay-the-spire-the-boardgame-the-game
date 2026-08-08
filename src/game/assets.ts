@@ -24,6 +24,13 @@ function slugify(name: string): string {
 /**
  * The tier directory a card's scan lives in. Player cards are filed by rarity:
  * starters together, rares together, everything else under `normal`.
+ *
+ * `normal` is a FILING category, not a rarity. Common and uncommon cards share
+ * a directory here, but they are distinct on the table and the cards say so:
+ * the banner across the top is silver on a common, teal on an uncommon and
+ * gold on a rare. Do not read this directory layout back as the game's
+ * vocabulary — `data/raw/player-cards.csv` lists the printed rarity, and the
+ * reward decks are built from it.
  */
 export function tierOf(def: CardDef): string {
   const pooled = POOL_TIERS[def.owner]

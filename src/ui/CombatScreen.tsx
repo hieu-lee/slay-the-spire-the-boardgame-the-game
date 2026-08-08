@@ -5,7 +5,7 @@ import {
   cardNeedsEnemy,
   endPlayerTurn,
   enemyTurn,
-  needsRowLabel,
+  enemyLabel,
   playCard,
   startPlayerTurn,
 } from '../game/combat.ts'
@@ -35,6 +35,13 @@ type Pending = {
    * quietly remove the co-op play the card exists for.
    */
   needsAlly: boolean
+  /**
+   * The card carries the area-of-effect burst, so the chosen enemy is only an
+   * anchor: everything in its row is hit, and so is the boss. Without saying
+   * so, Cleave and a Strike look like the same interaction — pick one enemy —
+   * and the player never learns why they would hold Cleave for a crowd.
+   */
+  hitsRow: boolean
   /** Cards that must be picked out of hand, as Survivor and True Grit require. */
   choice: { kind: 'discard' | 'exhaust'; amount: number } | null
   picked: string[]
@@ -86,7 +93,7 @@ function requirementsOf(def: CardDef, allies: number): Omit<Pending, 'card' | 'p
     : exhaust
       ? { kind: 'exhaust' as const, amount: exhaust.amount }
       : null
-  return { needsEnemy, needsAlly, choice }
+  return { needsEnemy, needsAlly, hitsRow: def.target === 'row', choice }
 }
 
 /** Rows are the board's spatial unit: one per player, enemies sit in them. */
@@ -248,9 +255,12 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
 
   const over = state.phase === 'won' || state.phase === 'lost'
-  // Mirrors the engine: a cost is paid in full by whatever the hand can give.
-  // Demanding the printed count left Survivor played as your LAST card staged
-  // for ever — the engine accepts it, the UI could never commit it.
+  // The engine charges a consuming clause against the hand AS THAT CLAUSE
+  // RESOLVES; this clamp measures the hand before the card is played. The two
+  // agree for every shipped card only because none of them draws before it
+  // charges — a rule `verify-architecture.mjs` enforces, because the player
+  // cannot nominate a card that has not been dealt yet. Do not treat this as a
+  // general mirror of the engine: it is a clamp that is correct given that rule.
   const choiceNeeded = pending?.choice
     ? Math.min(pending.choice.amount, Math.max(0, viewer.hand.length - 1))
     : 0
@@ -323,7 +333,14 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
           choiceNeeded === 1 ? '' : 's'
         } — ${pending.picked.length}/${choiceNeeded} chosen`
       : pending?.needsEnemy
-        ? 'Choose an enemy'
+        ? pending.hitsRow
+          ? // The boss is hit from any row, so name it only when one is
+            // actually standing — otherwise the prompt warns about a threat
+            // that is not on the board.
+            state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
+            ? 'Choose an enemy — its whole row is hit, and the boss'
+            : 'Choose an enemy — its whole row is hit'
+          : 'Choose an enemy'
         : pending?.needsAlly
           ? 'Choose who gets it'
           : null
@@ -380,7 +397,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
               <EnemyCard
                 key={enemy.uid}
                 enemy={enemy}
-                rowLabel={needsRowLabel(state.enemies, enemy)}
+                label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
@@ -455,7 +472,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
                     <EnemyCard
                       key={enemy.uid}
                       enemy={enemy}
-                      rowLabel={needsRowLabel(state.enemies, enemy)}
+                      label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}

@@ -82,21 +82,17 @@ export function resolveEnemyTargets(
  * is dead" then names a tile nobody can identify. The row disambiguates only
  * when it needs to, so a single Cultist stays "Cultist".
  */
-function enemyLabel(state: CombatState, enemy: Enemy): string {
-  return needsRowLabel(state.enemies, enemy) ? `${enemyDef(enemy.defId).name} (row ${enemy.row})` : enemyDef(enemy.defId).name
-}
-
-/**
- * Whether this enemy has to be told apart from another on the board.
- *
- * Exported so the UI announces exactly what the log prints. Two copies of this
- * rule had already drifted onto different fields — the log compared NAMES, the
- * UI compared defIds — which agree only while every definition has a unique
- * name.
- */
-export function needsRowLabel(enemies: readonly Enemy[], enemy: Enemy): boolean {
+export function enemyLabel(enemies: readonly Enemy[], enemy: Enemy): string {
   const name = enemyDef(enemy.defId).name
-  return enemies.filter((other) => enemyDef(other.defId).name === name).length > 1
+  const sameName = enemies.filter((other) => enemyDef(other.defId).name === name)
+  if (sameName.length <= 1) return name
+  const sameRow = sameName.filter((other) => other.row === enemy.row)
+  // The row is the natural way to tell two of a creature apart, but a row card
+  // routinely puts both of them in the SAME row -- and then both print
+  // "Cultist (row 0)" and the log reads as striking a corpse. Fall back to a
+  // position within the row, which is the only thing left that separates them.
+  if (sameRow.length <= 1) return `${name} (row ${enemy.row})`
+  return `${name} (row ${enemy.row}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
 }
 
 /** Deals `damage` to an enemy, spending its Block first. */
@@ -124,7 +120,7 @@ function damageEnemyLogged(
   const hpBefore = enemy.hp
   const blockBefore = enemy.block
   damageEnemy(enemy, damage)
-  const name = enemyLabel(state, enemy)
+  const name = enemyLabel(state.enemies, enemy)
   if (source) {
     const lost = hpBefore - enemy.hp
     const blocked = blockBefore - enemy.block
@@ -175,11 +171,27 @@ export type PlayContext = {
    */
   evokeSlots?: number[]
   /**
-   * Cards already given up by an earlier clause of the SAME card, so two
-   * consuming clauses cannot both take the first uid. Filled in during
-   * resolution; callers never set it.
+   * Cards already given up by an earlier clause of the SAME card.
+   *
+   * Belt and braces, honestly: both consuming effects splice what they took out
+   * of the hand immediately, so the membership test in `allocate` already stops
+   * a second clause re-taking the same uid, and deleting this set changes no
+   * outcome on any card or hostile input I could construct. It is kept for the
+   * clause that resolves without removing from hand — a "reveal a card" cost,
+   * say — where the hand check alone would let one card pay twice. Filled in
+   * during resolution; callers never set it.
    */
   spentUids?: Set<string>
+  /**
+   * Set when a consuming clause could not be paid from the hand it faced.
+   *
+   * A card's cost is checked as each clause resolves, not before the card
+   * starts, because an earlier clause can change what the hand holds.
+   * Acrobatics reads "Draw 3 cards. Discard 1 card." and the card you discard
+   * is very often one of the three you just drew. Filled in during resolution;
+   * callers never set it.
+   */
+  shortfall?: boolean
 }
 
 /**
@@ -229,7 +241,7 @@ function applyEffect(
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
         // One line for the whole attack, not one per swing: a five-hit card
         // would otherwise bury the round in near-identical lines.
-        const name = enemyLabel(state, target)
+        const name = enemyLabel(state.enemies, target)
         const lost = hpBefore - target.hp
         const blocked = blockBefore - target.block
         state.log = [
@@ -260,7 +272,7 @@ function applyEffect(
     }
     case 'loseHp': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
-        const name = enemyLabel(state, target)
+        const name = enemyLabel(state.enemies, target)
         const wasAlive = !target.dead
         const outcome = applyHpLoss(target.hp, effect.amount)
         // What was actually lost, not what was printed: an enemy on 2 hit
@@ -290,7 +302,7 @@ function applyEffect(
         target.vulnerable = gainVulnerable(target.vulnerable, effect.amount)
         // Only when the token actually went on: at the cap nothing happened,
         // and saying otherwise tells the player a card did something it did not.
-        if (target.vulnerable > before) note(`${enemyLabel(state, target)} is vulnerable`)
+        if (target.vulnerable > before) note(`${enemyLabel(state.enemies, target)} is vulnerable`)
       }
       return
     }
@@ -298,7 +310,7 @@ function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
         const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
-        if (target.weak > before) note(`${enemyLabel(state, target)} is weakened`)
+        if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
       }
       return
     }
@@ -317,7 +329,7 @@ function applyEffect(
         const before = target.poison
         target.poison = gainPoison(target.poison, effect.amount, totalPoisonInPlay(state.enemies))
         if (target.poison > before) {
-          note(`${enemyLabel(state, target)} takes ${target.poison - before} Poison`)
+          note(`${enemyLabel(state.enemies, target)} takes ${target.poison - before} Poison`)
         }
       }
       return
@@ -483,12 +495,20 @@ function drawInto(state: CombatState, actor: Player, amount: number): void {
 }
 
 /**
- * The uids this effect actually takes, skipping any already spent by an
- * earlier clause of the same card.
+ * The uids this effect actually takes, and whether the player paid what they
+ * owed.
  *
- * `missingChoices` validates the whole card against one shared pool; resolution
- * has to draw from that same pool or two clauses would both take the first uid
- * — validated as paying two cards, actually paying one.
+ * This is the ONLY place a consuming clause is validated, and it runs as the
+ * clause resolves, against the hand as it stands right then. An earlier
+ * version also pre-checked the whole card up front against the hand the player
+ * held BEFORE the card started; that rejected Acrobatics ("Draw 3 cards.
+ * Discard 1 card.") whenever the discarded card was one of the three just
+ * drawn, which is the ordinary way to play it. Two validators reading two
+ * different hands is one validator too many.
+ *
+ * A card asking for more than the hand can pay is paid in full by what there
+ * is, exactly as it would be at the table: discarding your only other card
+ * settles a "discard 2".
  */
 function allocate(
   actor: Player,
@@ -503,47 +523,13 @@ function allocate(
       !spent.has(uid) &&
       actor.hand.some((held) => held.uid === uid),
   )
-  const taken = usable.slice(0, amount)
+  // The played card has already left hand, so what remains is exactly the pool
+  // this clause may take from.
+  const required = Math.min(amount, actor.hand.length)
+  const taken = usable.slice(0, required)
+  if (taken.length < required) context.shortfall = true
   for (const uid of taken) spent.add(uid)
   return taken
-}
-
-/**
- * Whether the play is missing cards the card requires the player to give up.
- *
- * Only enforced when the hand can actually pay: a card asking you to discard
- * two when you hold one other card is paid in full by discarding that one,
- * exactly as it would be at the table.
- */
-function missingChoices(
-  player: Player,
-  def: CardDef,
-  context: PlayContext,
-  cardUid: string,
-): boolean {
-  const available = player.hand.filter((held) => held.uid !== cardUid)
-  // Spent uids are tracked ACROSS the effects, not re-counted per effect: two
-  // consuming clauses on one card would otherwise both be "paid" by the same
-  // single card while only one of them actually took it.
-  const spent = new Set<string>()
-  const pay = (uids: readonly string[] | undefined, amount: number): boolean => {
-    const usable = (uids ?? []).filter(
-      (uid, index, all) =>
-        all.indexOf(uid) === index &&
-        !spent.has(uid) &&
-        available.some((held) => held.uid === uid),
-    )
-    const required = Math.min(amount, available.length - spent.size)
-    if (usable.length < required) return false
-    for (const uid of usable.slice(0, required)) spent.add(uid)
-    return true
-  }
-
-  for (const effect of def.effects) {
-    if (effect.kind === 'discard' && !pay(context.discardUids, effect.amount)) return true
-    if (effect.kind === 'exhaustFromHand' && !pay(context.exhaustUids, effect.amount)) return true
-  }
-  return false
 }
 
 /**
@@ -639,10 +625,6 @@ export function playCard(
   // server hands this function messages straight off the network, so the check
   // belongs here rather than in the client.
   if (needsChosenEnemy(state, def, context.enemyUid)) return state
-  // Survivor reads "2 Block. Discard 1 card." — the discard is the COST, not a
-  // suggestion. Off the network an empty or bogus list satisfied it, so the
-  // card was 2 Block for 1 Energy and nothing else.
-  if (missingChoices(player, def, context, cardUid)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
   if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
@@ -671,11 +653,23 @@ export function playCard(
   // trigger does, every time it fires. Resolving them here as well would pay
   // out Demon Form's Strength immediately AND at every Start of Turn.
   const resolvesOnPlay = !(def.type === 'power' && def.trigger)
+  // `spentUids` and `shortfall` are this play's verdict, not the caller's
+  // request, so they go on a copy. The caller's object is theirs: in the UI it
+  // is assembled out of React state, and writing a scratch field back into it
+  // would be a mutation from a function that is otherwise pure.
+  const ctx: PlayContext = { ...context, spentUids: new Set<string>(), shortfall: false }
   if (resolvesOnPlay) {
     for (const effect of def.effects) {
-      applyEffect(next, actor, effect, scope, supportScope, context)
+      applyEffect(next, actor, effect, scope, supportScope, ctx)
     }
   }
+
+  // Survivor reads "2 Block. Discard 1 card." — the discard is the COST, not a
+  // suggestion. Off the network an empty or bogus list would otherwise buy the
+  // card's effects for nothing. The whole play is resolved into a clone first,
+  // so refusing it here costs the caller nothing and still signals illegality
+  // the way every other refusal does: by handing back the very same reference.
+  if (ctx.shortfall) return state
 
   if (def.exhaust) {
     actor.exhaust = [...actor.exhaust, held]
@@ -777,7 +771,7 @@ export function endPlayerTurn(state: CombatState): CombatState {
   for (const enemy of next.enemies) {
     if (enemy.dead || enemy.poison === 0) continue
     const outcome = applyHpLoss(enemy.hp, enemy.poison)
-    const name = enemyLabel(next, enemy)
+    const name = enemyLabel(next.enemies, enemy)
     // The hit points actually lost, not the token count: an enemy on 2 HP with
     // 5 Poison loses 2, and saying "loses 5" is simply untrue.
     next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
@@ -891,7 +885,7 @@ function playersInRowOf(state: CombatState, enemy: Enemy): Player[] {
 
 function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction): void {
   const living = state.players.filter((player) => !player.dead)
-  const name = enemyLabel(state, enemy)
+  const name = enemyLabel(state.enemies, enemy)
 
   switch (action.kind) {
     case 'attack': {

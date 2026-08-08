@@ -8,7 +8,7 @@ import {
   resolveEnemyTargets,
   startPlayerTurn,
 } from '../src/game/combat.ts'
-import { CARDS, STARTER_DECKS, cardDef } from '../src/game/cards.ts'
+import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
 import {
   advanceAct,
@@ -18,6 +18,7 @@ import {
   resolveCombat,
   roomChoices,
 } from '../src/game/run.ts'
+import { readFileSync } from 'node:fs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 let uid = 0
@@ -853,9 +854,9 @@ check('a fallen player cannot play cards', () => {
 })
 
 check('a bogus uid does not stand in for a real one when paying a cost', () => {
-  // `missingChoices` validates the list, then `allocate` spends from it. If
-  // allocate did not re-check ownership it would take the bogus uid into its
-  // slice and discard nothing, leaving the cost unpaid.
+  // `allocate` is the sole validator: it re-checks that each uid is really in
+  // hand as the clause resolves. Without that check it would take the bogus
+  // uid into its slice and discard nothing, leaving the cost unpaid.
   const survivor = instance('survivor')
   const spare = instance('strike_silent')
   const state = combat(
@@ -1153,6 +1154,428 @@ check('the map offers no rooms while a fight is on', () => {
   const fighting = enterRoom(run, roomChoices(run)[0].id)
   assertEqual(fighting.phase, 'combat', 'precondition: in a fight')
   assertEqual(roomChoices(fighting).length, 0, 'the map must offer nothing mid-combat')
+})
+
+
+suite('what the printed cards actually do')
+
+// Every card below was read off a scan. These checks exist because a
+// transcription error is invisible: the card plays, the numbers look
+// plausible, and only the printed face says otherwise. Each one asserts the
+// OUTCOME on the board, not that some effect list has a given shape.
+
+check('a numeral repeats the symbol rather than scaling it', () => {
+  // Dagger Spray prints "AoE 1x 1x" and its upgrade prints three. That is two
+  // separate hits for 1, not one hit for 2.
+  //
+  // Block does NOT tell the two apart -- it is a depleting pool, so against 1
+  // Block both shapes leak exactly 1. Strength does, because it is added to
+  // every hit: two hits at 1+1 deal 4, where one hit at 2+1 would deal 3.
+  const spray = instance('dagger_spray')
+  const buffed = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hand: [spray], strength: 1 })],
+      [makeEnemy({ hp: 20 })],
+    ),
+    'p1',
+    spray.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(buffed.enemies[0].hp, 16, 'Strength is added to each of the two hits, not once')
+
+  const open = instance('dagger_spray')
+  const through = playCard(
+    combat([makePlayer({ character: 'silent', hand: [open] })], [makeEnemy({ hp: 9 })]),
+    'p1',
+    open.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(through.enemies[0].hp, 7, 'unblocked, both hits land')
+
+  const upgraded = instance('dagger_spray', true)
+  const thrice = playCard(
+    combat([makePlayer({ character: 'silent', hand: [upgraded] })], [makeEnemy({ hp: 9 })]),
+    'p1',
+    upgraded.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(thrice.enemies[0].hp, 6, 'the upgraded face prints a third dagger')
+})
+
+check('a bare symbol means one', () => {
+  // Deadly Poison prints a single poison skull with no numeral. Its upgraded
+  // face prints the same single skull for no energy, and Poisoned Stab+ prints
+  // two skulls where the base card prints one -- so a lone symbol is 1, not
+  // some unprinted default.
+  const dose = instance('deadly_poison')
+  const one = playCard(
+    combat([makePlayer({ character: 'silent', hand: [dose] })], [makeEnemy()]),
+    'p1',
+    dose.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(one.enemies[0].poison, 1, 'one skull is one Poison')
+  assertEqual(one.players[0].energy, 2, 'and the base face costs 1')
+
+  const free = instance('deadly_poison', true)
+  const upgraded = playCard(
+    combat([makePlayer({ character: 'silent', hand: [free] })], [makeEnemy()]),
+    'p1',
+    free.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(upgraded.enemies[0].poison, 1, 'the upgrade changes the cost, not the dose')
+  assertEqual(upgraded.players[0].energy, 3, 'and it is free')
+
+  const stab = instance('poisoned_stab', true)
+  const two = playCard(
+    combat([makePlayer({ character: 'silent', hand: [stab] })], [makeEnemy()]),
+    'p1',
+    stab.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(two.enemies[0].poison, 2, 'two skulls are two Poison')
+})
+
+check('the burst symbol hits a whole row', () => {
+  // Cleave, Consecrate and Dagger Spray all print the red burst. It takes the
+  // row, so a second enemy standing in it is hit by the same card -- and one
+  // in another row is not.
+  const cleave = instance('cleave')
+  const swept = playCard(
+    combat(
+      [makePlayer({ hand: [cleave] })],
+      [
+        makeEnemy({ uid: 'a', row: 0, hp: 9 }),
+        makeEnemy({ uid: 'b', row: 0, hp: 9 }),
+        makeEnemy({ uid: 'c', row: 1, hp: 9 }),
+      ],
+    ),
+    'p1',
+    cleave.uid,
+    { enemyUid: 'a', playerId: null },
+  )
+  assertEqual(swept.enemies[0].hp, 7, 'the chosen enemy is hit')
+  assertEqual(swept.enemies[1].hp, 7, 'so is the one beside it')
+  assertEqual(swept.enemies[2].hp, 9, 'the next row is untouched')
+})
+
+check('Poisoned Stab exhausts itself, and Cleave does not', () => {
+  const stab = instance('poisoned_stab')
+  const spent = playCard(
+    combat([makePlayer({ character: 'silent', hand: [stab] })], [makeEnemy()]),
+    'p1',
+    stab.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(spent.players[0].exhaust.length, 1, 'the card is exhausted')
+  assertEqual(spent.players[0].discard.length, 0, 'and never reaches the discard pile')
+
+  const cleave = instance('cleave')
+  const kept = playCard(
+    combat([makePlayer({ hand: [cleave] })], [makeEnemy()]),
+    'p1',
+    cleave.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(kept.players[0].exhaust.length, 0, 'Cleave prints no Exhaust')
+  assertEqual(kept.players[0].discard.length, 1, 'so it goes to the discard pile')
+})
+
+check('a consuming clause that goes unpaid refuses the whole play', () => {
+  // The discard is the COST. Off the network an empty or invented uid list
+  // would otherwise buy the card's effects for nothing, so the refusal has to
+  // survive resolution: the card is resolved into a clone and the clone thrown
+  // away, signalled by handing back the very same reference.
+  const survivor = instance('survivor')
+  const spare = instance('strike_silent')
+  const state = combat(
+    [makePlayer({ character: 'silent', hand: [survivor, spare] })],
+    [makeEnemy()],
+  )
+  const base = { enemyUid: null, playerId: null }
+  assert(
+    playCard(state, 'p1', survivor.uid, { ...base, discardUids: [] }) === state,
+    'naming no card at all must be refused',
+  )
+  assert(
+    playCard(state, 'p1', survivor.uid, { ...base, discardUids: ['not-a-card'] }) === state,
+    'naming a card that does not exist must be refused',
+  )
+  assert(
+    playCard(state, 'p1', survivor.uid, { ...base, discardUids: [survivor.uid] }) === state,
+    'the card being played has left hand and cannot pay for itself',
+  )
+  assert(
+    playCard(state, 'p1', survivor.uid, { ...base, discardUids: [spare.uid, spare.uid] }) !==
+      state,
+    'naming the same card twice still pays the one card it owes',
+  )
+  // A refused play must leave nothing behind at all.
+  const refused = playCard(state, 'p1', survivor.uid, { ...base, discardUids: [] })
+  assertEqual(refused, state, 'the refusal is the same reference')
+  assertEqual(state.players[0].energy, 3, 'and no energy was taken on the way')
+
+  // True Grit exhausts rather than discards; the same rule holds.
+  const grit = instance('true_grit')
+  const fodder = instance('strike_ironclad')
+  const ironclad = combat([makePlayer({ hand: [grit, fodder] })], [makeEnemy()])
+  assert(
+    playCard(ironclad, 'p1', grit.uid, { ...base, exhaustUids: [] }) === ironclad,
+    'an unpaid exhaust cost is refused the same way',
+  )
+})
+
+check('a cost larger than the hand is paid by whatever the hand holds', () => {
+  // "Discard 1" with nothing else in hand is settled by discarding nothing, as
+  // it would be at the table -- the card is not stuck in limbo. Survivor is the
+  // live card that reaches this: its Block resolves BEFORE its discard, so the
+  // hand it is paid from is the hand the player could actually see.
+  const survivor = instance('survivor')
+  const state = combat(
+    [makePlayer({ character: 'silent', hand: [survivor], draw: [] })],
+    [makeEnemy()],
+  )
+  const next = playCard(state, 'p1', survivor.uid, {
+    enemyUid: null,
+    playerId: null,
+    discardUids: [],
+  })
+  assert(next !== state, 'an otherwise empty hand still lets the card resolve')
+  assert(next.players[0].block > 0, 'and the Block half is paid out')
+  assertEqual(next.players[0].hand.length, 0, 'there was nothing to discard')
+})
+
+check('every newly transcribed card does what its face prints', () => {
+  // One expected BOARD OUTCOME per card, per face.
+  //
+  // This replaces a sweep that asserted `playCard(...) !== state`. That can
+  // never fail for an accepted play: the card leaves hand and the energy is
+  // spent before any effect resolves, so the clone always differs. Eleven of
+  // these cards could lose a whole printed clause -- Ball Lightning its orb,
+  // Clothesline its Weak, Pommel Strike its draw -- with the entire suite
+  // green. State inequality proves "not refused", never "the text happened".
+  const E = 6
+  const CASES = [
+    { id: 'cleave', enemyHp: [18, 17] },
+    { id: 'clothesline', enemyHp: [17, 16], weak: [1, 1] },
+    { id: 'pommel_strike', enemyHp: [18, 18], hand: [1, 2] },
+    { id: 'shrug_it_off', block: [2, 3], hand: [1, 1] },
+    { id: 'deadly_poison', poison: [1, 1], energy: [E - 1, E] },
+    { id: 'poisoned_stab', enemyHp: [19, 19], poison: [1, 2], exhaust: [1, 1] },
+    { id: 'dagger_spray', enemyHp: [18, 17] },
+    { id: 'backflip', block: [1, 2], hand: [2, 2] },
+    { id: 'ball_lightning', enemyHp: [19, 18], orb: ['lightning', 'lightning'] },
+    { id: 'cold_snap', enemyHp: [18, 17], orb: ['frost', 'frost'] },
+    { id: 'coolheaded', orb: ['frost', 'frost'], hand: [0, 1] },
+    { id: 'consecrate', enemyHp: [19, 18] },
+    { id: 'empty_body', block: [2, 3], stance: ['neutral', 'neutral'] },
+    // Started in Wrath (below), which is worth +1 damage (p.17), so the
+    // printed 2 and 3 land as 3 and 4.
+    { id: 'empty_fist', enemyHp: [17, 16], stance: ['neutral', 'neutral'] },
+  ]
+
+  // A hardcoded list silently stops covering card sixteen. Everything outside
+  // the original hand-built set must appear here, so adding a card without an
+  // expected outcome fails rather than passing unnoticed.
+  const LEGACY = new Set([
+    'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit',
+    'metallicize', 'demon_form', 'feel_no_pain', 'dark_embrace',
+    'strike_silent', 'defend_silent', 'neutralize', 'survivor',
+    'strike_defect', 'defend_defect', 'zap', 'dual_cast',
+    'strike_watcher', 'defend_watcher', 'eruption', 'vigilance',
+    'daze',
+  ])
+  const covered = new Set(CASES.map((spec) => spec.id))
+  // Checks earlier in THIS process register `fixture_*` cards into the table;
+  // they are scaffolding, not printed cards.
+  const uncovered = Object.keys(CARDS).filter(
+    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id),
+  )
+  assertEqual(
+    uncovered.length,
+    0,
+    `these cards have no expected outcome and could lose a clause unnoticed: ${uncovered.join(', ')}`,
+  )
+
+  for (const spec of CASES) {
+    const def = CARDS[spec.id]
+    assert(def, `${spec.id} should be defined`)
+    for (const upgraded of [false, true]) {
+      const at = upgraded ? 1 : 0
+      const label = `${spec.id}${upgraded ? '+' : ''}`
+      const card = instance(spec.id, upgraded)
+      const state = combat(
+        [
+          makePlayer({
+            character: def.owner,
+            hand: [card],
+            draw: Array.from({ length: 6 }, () => instance('strike_ironclad')),
+            energy: E,
+            // Entering Neutral is invisible from Neutral, so the stance cards
+            // start in Wrath -- otherwise the clause could be deleted outright
+            // and the check would still see the stance it expected.
+            stance: spec.stance ? 'wrath' : 'neutral',
+          }),
+        ],
+        [makeEnemy({ hp: 20 })],
+      )
+      const face = faceOf(def, upgraded)
+      const next = playCard(state, 'p1', card.uid, {
+        enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
+        playerId: null,
+      })
+      assert(next !== state, `${label} was refused outright`)
+      const me = next.players[0]
+      const foe = next.enemies[0]
+
+      if (spec.enemyHp) assertEqual(foe.hp, spec.enemyHp[at], `${label}: enemy hit points`)
+      if (spec.weak) assertEqual(foe.weak, spec.weak[at], `${label}: Weak on the enemy`)
+      if (spec.poison) assertEqual(foe.poison, spec.poison[at], `${label}: Poison on the enemy`)
+      if (spec.block) assertEqual(me.block, spec.block[at], `${label}: Block gained`)
+      if (spec.hand) assertEqual(me.hand.length, spec.hand[at], `${label}: cards drawn`)
+      if (spec.exhaust) assertEqual(me.exhaust.length, spec.exhaust[at], `${label}: cards exhausted`)
+      if (spec.stance) assertEqual(me.stance, spec.stance[at], `${label}: stance entered`)
+      if (spec.orb) assertEqual(me.orbs[0], spec.orb[at], `${label}: orb channelled`)
+      // Every card charges its printed cost, and the cost is a balance number
+      // nothing else pins.
+      const cost = face.cost === 'X' ? 0 : face.cost
+      assertEqual(me.energy, spec.energy ? spec.energy[at] : E - cost, `${label}: energy left`)
+    }
+  }
+})
+
+// The scans and the component CSV are two independent transcriptions of the
+// same physical cards. Cost and type are printed on both, so disagreement means
+// one of them was read wrong -- and neither is checkable from the other side of
+// the code.
+check('every card agrees with the printed component list', () => {
+  const rows = readFileSync(new URL('../data/raw/player-cards.csv', import.meta.url), 'utf8')
+  const byName = new Map()
+  // Values are quoted and none of the fields used here contain a comma.
+  const lines = rows.split('\n').slice(1)
+  for (const line of lines) {
+    const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
+    if (cells.length < 6) continue
+    const [, name, cost, , , type] = cells
+    byName.set(name, { cost, type })
+  }
+  assert(byName.size > 250, `the component list should have parsed, got ${byName.size} rows`)
+
+  const disagreements = []
+  for (const def of Object.values(CARDS)) {
+    const printed = byName.get(def.name)
+    // Not every live card has a row: Dual Cast and the Status cards are listed
+    // differently or not at all.
+    if (!printed || printed.cost === '') continue
+    if (String(def.cost) !== printed.cost) {
+      disagreements.push(`${def.id}: code costs ${def.cost}, the list prints ${printed.cost}`)
+    }
+    if (def.type !== printed.type.toLowerCase()) {
+      disagreements.push(`${def.id}: code says ${def.type}, the list prints ${printed.type}`)
+    }
+  }
+  assertEqual(disagreements.length, 0, disagreements.join(' | '))
+})
+
+check('a multi-hit into a row lands every blow on every enemy', () => {
+  // The two dimensions were never crossed: the row check used Cleave, which
+  // hits once, and both Dagger Spray checks used a single enemy. An engine that
+  // gave all the hits to the anchor and one to each of its neighbours passed
+  // everything -- Dagger Spray+ into a row of three would read 3/1/1.
+  const spray = instance('dagger_spray', true)
+  const swept = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hand: [spray] })],
+      [
+        makeEnemy({ uid: 'a', row: 0, hp: 20 }),
+        makeEnemy({ uid: 'b', row: 0, hp: 20 }),
+        makeEnemy({ uid: 'c', row: 1, hp: 20 }),
+      ],
+    ),
+    'p1',
+    spray.uid,
+    { enemyUid: 'a', playerId: null },
+  )
+  assertEqual(swept.enemies[0].hp, 17, 'the anchor takes all three hits')
+  assertEqual(swept.enemies[1].hp, 17, 'and so does the enemy beside it')
+  assertEqual(swept.enemies[2].hp, 20, 'the next row is untouched')
+})
+
+check('a multi-hit that kills partway still reports one clean attack', () => {
+  // Dagger Spray is the first shipped card that can kill on its first swing and
+  // still have a swing left.
+  //
+  // Note what this does NOT claim. `combat.ts` breaks out of the swing loop on
+  // a kill, and that break is deliberately unobservable: damage clamps at zero
+  // hit points and the log writes one aggregated line per attack, so deleting
+  // it changes no state and no text. I tried -- the mutation survives, and it
+  // survives because there is nothing there to catch, not because the check is
+  // weak. It is a guard against a future change (a per-swing trigger, an
+  // overkill counter), not current behaviour. What IS observable is asserted:
+  // the kill is clean, and the swings the corpse did not absorb are not
+  // silently transferred to anyone else.
+  const spray = instance('dagger_spray')
+  const killed = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hand: [spray] })],
+      [makeEnemy({ uid: 'a', row: 0, hp: 1 }), makeEnemy({ uid: 'b', row: 0, hp: 20 })],
+    ),
+    'p1',
+    spray.uid,
+    { enemyUid: 'a', playerId: null },
+  )
+  assert(killed.enemies[0].dead, 'the first hit is lethal')
+  assertEqual(killed.enemies[0].hp, 0, 'and hit points never go below zero')
+  assertEqual(
+    killed.log.filter((line) => /is dead/.test(line)).length,
+    1,
+    `the kill is announced exactly once: ${killed.log.join(' | ')}`,
+  )
+  assertEqual(killed.enemies[1].hp, 18, 'the living neighbour takes both of its own hits')
+})
+
+check('two of the same enemy in ONE row can still be told apart', () => {
+  // The row is the natural discriminator, but a row-targeting card puts both
+  // copies in the same row -- and then "Cultist (row 0)" names them both. The
+  // log then reads as striking a corpse: kill one and the next line reports a
+  // hit on what looks like the same creature.
+  const spray = instance('dagger_spray')
+  const state = combat(
+    [makePlayer({ character: 'silent', hand: [spray] })],
+    [
+      makeEnemy({ uid: 'a', row: 0, defId: 'green_louse', hp: 1 }),
+      makeEnemy({ uid: 'b', row: 0, defId: 'green_louse', hp: 20 }),
+    ],
+  )
+  const next = playCard(state, 'p1', spray.uid, { enemyUid: 'a', playerId: null })
+  const hits = next.log.filter((line) => /hit|damages/.test(line))
+  const named = new Set(hits.map((line) => line.replace(/.*?(Green Louse[^ ]*[^,]*?)( for| is).*/, '$1')))
+  assert(
+    named.size >= 2,
+    `two enemies sharing a row must not print the same name: ${next.log.join(' | ')}`,
+  )
+  assert(
+    next.log.some((line) => /#1|#2/.test(line)),
+    `a position within the row is what separates them: ${next.log.join(' | ')}`,
+  )
+
+  // And two in DIFFERENT rows still use the row alone -- no needless "#1".
+  const split = combat(
+    [makePlayer({ character: 'silent', hand: [instance('dagger_spray')] })],
+    [
+      makeEnemy({ uid: 'a', row: 0, defId: 'green_louse', hp: 20 }),
+      makeEnemy({ uid: 'b', row: 1, defId: 'green_louse', hp: 20 }),
+    ],
+  )
+  const apart = playCard(split, 'p1', split.players[0].hand[0].uid, {
+    enemyUid: 'a',
+    playerId: null,
+  })
+  assert(
+    !apart.log.some((line) => /#\d/.test(line)),
+    `the row alone already separates these: ${apart.log.join(' | ')}`,
+  )
 })
 
 report('combat')

@@ -27,6 +27,7 @@ import {
   roomChoices,
   startPlayerTurn,
 } from '../src/game/state.ts'
+import { CARDS } from '../src/game/cards.ts'
 import { suite, check, assert, report } from './lib/harness.mjs'
 
 /** Runs `call` and fails if it changed anything reachable from `input`. */
@@ -207,6 +208,24 @@ check('every way playCard can refuse leaves the combat untouched', () => {
   const strike = combat.players[0].hand.find((card) => card.defId.startsWith('strike'))
   const enemyUid = combat.enemies[0].uid
 
+  // No SHIPPED card draws before it charges -- an architecture check forbids it,
+  // because the UI cannot nominate a card that has not been dealt yet. A fixture
+  // is the only way to reach the refuse-after-resolving path, which is exactly
+  // the path nothing was covering.
+  CARDS.fixture_draw_then_charge = {
+    id: 'fixture_draw_then_charge',
+    name: 'Fixture Draw Then Charge',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'draw', amount: 2 },
+      { kind: 'discard', amount: 1 },
+    ],
+  }
+  const drawThenCharge = { uid: 'purity-draw-charge', defId: 'fixture_draw_then_charge', upgraded: false }
+
   const REFUSALS = [
     {
       why: 'the wrong phase',
@@ -232,6 +251,40 @@ check('every way playCard can refuse leaves the combat untouched', () => {
       why: 'an attack with no target',
       state: combat,
       call: (state) => playCard(state, 'p1', strike.uid, { enemyUid: null, playerId: 'p1' }),
+    },
+    {
+      // The one refusal that matters here. Every other entry returns BEFORE the
+      // state is cloned, so none of them can detect a leak -- they were five
+      // checks on a path that does nothing. This card is resolved in full, and
+      // only then refused because its discard went unpaid, so anything the
+      // resolution touched outside the clone escapes with it. An engine that
+      // shares the caller's RNG object with the clone passes all fourteen
+      // suites without this, and every shuffle for the rest of the run desyncs.
+      why: 'an unpaid discard cost, after the card has already resolved',
+      // The draw pile is deliberately EMPTY and the discard pile full, so the
+      // draw must reshuffle -- which is the only thing in a card play that
+      // turns the RNG. Without a reshuffle the leak is invisible: a shared RNG
+      // object that is never advanced looks identical to a copied one.
+      state: {
+        ...combat,
+        players: combat.players.map((player, index) =>
+          index === 0
+            ? {
+                ...player,
+                hand: [...player.hand, drawThenCharge],
+                energy: 3,
+                draw: [],
+                discard: [...player.discard, ...player.draw],
+              }
+            : player,
+        ),
+      },
+      call: (state) =>
+        playCard(state, 'p1', drawThenCharge.uid, {
+          enemyUid,
+          playerId: 'p1',
+          discardUids: [],
+        }),
     },
   ]
 

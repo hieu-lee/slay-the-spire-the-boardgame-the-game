@@ -559,6 +559,27 @@ button:disabled {
   text-shadow: 0 1px 3px #000;
 }
 
+/*
+ * The area-of-effect burst, opposite the cost so the two badges never collide.
+ * A disc behind it keeps the symbol readable over whatever art it lands on —
+ * these are full-colour printed symbols, and the card faces they sit on run
+ * from near-black to bright orange.
+ */
+.card__aoe {
+  position: absolute;
+  /* Below the title banner, over the art. The banner sweeps across the top of
+     every scan, so a badge at the top-right clips the last letters of a long
+     name — "Dagger Spray" loses its y at the smallest card size. */
+  top: 24%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+}
+
 /* ---------- log ---------- */
 
 .log {

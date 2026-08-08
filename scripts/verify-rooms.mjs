@@ -7,10 +7,12 @@
 import {
   CHARACTERS,
   MAX_SEATS,
+  UID_LIMIT,
   apply,
   chooseCharacter,
   createRoom,
   createStore,
+  uidList,
   joinRoom,
   markDisconnected,
   roomCode,
@@ -1354,6 +1356,22 @@ check('reconnecting can complete a campfire the table was waiting on', () => {
   apply(room, b.token, { kind: 'campfire', choices: { [b.playerId]: { choice: 'rest' } } })
   assertEqual(room.run.phase, 'map', 'the returning player completes it')
   assertDeepEqual(snapshotFor(room, a.token).campfireDecided, [], 'and the roster is cleared')
+})
+
+// A hostile client can send any shape it likes. `allocate` de-dupes uids with
+// indexOf inside a filter, which is quadratic, and the room layer handles
+// messages serially on one thread -- so an unbounded list is not merely rude,
+// it is a denial of service against every room in the process. Measured before
+// the cap: 40,000 junk uids blocked for 1.3 seconds.
+check('a uid list from the network is cut to a length a hand could hold', () => {
+  const huge = Array.from({ length: 50_000 }, (_unused, i) => `junk-${i}`)
+  assertEqual(uidList(huge).length, UID_LIMIT, 'the list should be truncated, not passed through')
+  assert(UID_LIMIT >= 12, 'and the cap must still exceed any hand a player can hold')
+
+  // Truncation keeps the FRONT of the list, so an honest short play is untouched.
+  assertDeepEqual(uidList(['a', 'b']), ['a', 'b'], 'a real play passes through whole')
+  assertEqual(uidList('not-an-array'), undefined, 'a non-array is still nothing')
+  assertDeepEqual(uidList([1, 'a', null]), ['a'], 'non-strings are still dropped')
 })
 
 report('co-op rooms')

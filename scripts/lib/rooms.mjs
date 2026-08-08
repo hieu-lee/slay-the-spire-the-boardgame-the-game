@@ -308,9 +308,19 @@ function settleCampfire(room) {
  *
  * Elements are filtered to strings as well: the engine looks cards up by uid,
  * and anything else is not a uid.
+ *
+ * The length cap is a denial-of-service fix, not tidiness. `allocate` de-dupes
+ * with `indexOf` inside a `filter`, which is quadratic, and the room layer
+ * handles messages one at a time on a single thread. A client sending 40,000
+ * junk uids blocked every room in the process for 1.3 seconds, repeatably, and
+ * 100,000 for about eight. No hand is anywhere near this size, so a longer list
+ * is never a real play.
  */
-const uidList = (value) =>
-  Array.isArray(value) ? value.filter((item) => typeof item === 'string') : undefined
+export const UID_LIMIT = 32
+export const uidList = (value) =>
+  Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string').slice(0, UID_LIMIT)
+    : undefined
 
 /**
  * A list of orb slot indices from the network.

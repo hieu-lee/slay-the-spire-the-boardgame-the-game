@@ -359,7 +359,303 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+
+  // ---------------------------------------------------------------------------
+  // Normal-tier cards, transcribed face by face from the scans.
+  //
+  // Two printing conventions, both confirmed against upgraded faces rather than
+  // assumed. A bare symbol means one: Deadly Poison prints a single poison skull
+  // with no numeral, and Poisoned Stab+ prints two skulls where the base card
+  // prints one. And a numeral multiplies the symbol it precedes, so Dagger
+  // Spray's "1⚔ 1⚔" is two separate one-damage hits, not a single hit for two —
+  // which matters, because each is checked against Block on its own.
+  //
+  // Only cards whose BOTH faces fit the current effect vocabulary are here. The
+  // rest are listed as deferred at the foot of this file, with what each needs.
+  // ---------------------------------------------------------------------------
+
+  cleave: card({
+    id: 'cleave',
+    name: 'Cleave',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    // The red burst is the area-of-effect symbol: one row, and always a boss.
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 2 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }] },
+  }),
+  clothesline: card({
+    id: 'clothesline',
+    name: 'Clothesline',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 2,
+    effects: [
+      { kind: 'hit', amount: 3 },
+      { kind: 'applyWeak', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 4 },
+        { kind: 'applyWeak', amount: 1 },
+      ],
+    },
+  }),
+  pommel_strike: card({
+    id: 'pommel_strike',
+    name: 'Pommel Strike',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'hit', amount: 2 },
+      { kind: 'draw', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'draw', amount: 2 },
+      ],
+    },
+  }),
+  shrug_it_off: card({
+    id: 'shrug_it_off',
+    name: 'Shrug It Off',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'block', amount: 2 },
+      { kind: 'draw', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: 3 },
+        { kind: 'draw', amount: 1 },
+      ],
+    },
+  }),
+
+  deadly_poison: card({
+    id: 'deadly_poison',
+    name: 'Deadly Poison',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'poison', amount: 1 }],
+    // The upgraded face prints the same single skull and costs nothing.
+    upgrade: { cost: 0 },
+  }),
+  poisoned_stab: card({
+    id: 'poisoned_stab',
+    name: 'Poisoned Stab',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    exhaust: true,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'poison', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 1 },
+        { kind: 'poison', amount: 2 },
+      ],
+    },
+  }),
+  dagger_spray: card({
+    id: 'dagger_spray',
+    name: 'Dagger Spray',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1, times: 2 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: 3 }] },
+  }),
+  backflip: card({
+    id: 'backflip',
+    name: 'Backflip',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'block', amount: 1 },
+      { kind: 'draw', amount: 2 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: 2 },
+        { kind: 'draw', amount: 2 },
+      ],
+    },
+  }),
+
+  ball_lightning: card({
+    id: 'ball_lightning',
+    name: 'Ball Lightning',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'channel', orb: 'lightning', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'channel', orb: 'lightning', amount: 1 },
+      ],
+    },
+  }),
+  cold_snap: card({
+    id: 'cold_snap',
+    name: 'Cold Snap',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 2,
+    effects: [
+      { kind: 'hit', amount: 2 },
+      { kind: 'channel', orb: 'frost', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 3 },
+        { kind: 'channel', orb: 'frost', amount: 1 },
+      ],
+    },
+  }),
+  coolheaded: card({
+    id: 'coolheaded',
+    name: 'Coolheaded',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'channel', orb: 'frost', amount: 1 }],
+    upgrade: {
+      effects: [
+        { kind: 'channel', orb: 'frost', amount: 1 },
+        { kind: 'draw', amount: 1 },
+      ],
+    },
+  }),
+
+  consecrate: card({
+    id: 'consecrate',
+    name: 'Consecrate',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }] },
+  }),
+  empty_body: card({
+    id: 'empty_body',
+    name: 'Empty Body',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'block', amount: 2 },
+      { kind: 'enterStance', stance: 'neutral' },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: 3 },
+        { kind: 'enterStance', stance: 'neutral' },
+      ],
+    },
+  }),
+  empty_fist: card({
+    id: 'empty_fist',
+    name: 'Empty Fist',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'hit', amount: 2 },
+      { kind: 'enterStance', stance: 'neutral' },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 3 },
+        { kind: 'enterStance', stance: 'neutral' },
+      ],
+    },
+  }),
 }
+
+/**
+ * Cards read off the scans that the engine cannot yet express, and what each
+ * one is waiting on. Kept as a list rather than as half-working definitions,
+ * because a card that silently drops a clause is worse than a missing card: it
+ * plays, it looks right, and it is wrong.
+ *
+ * - Retain (Crescendo, Tranquility, Protect): a card kept through the discard
+ *   step. `CardDef` deliberately has no flag for it yet.
+ * - Die-conditional effects (Go for the Eyes, base face): the effect depends
+ *   on a roll, which currently only enemies make. Its upgraded face prints no
+ *   dice and would be expressible on its own; a card ships only when BOTH
+ *   faces do, so that upgrading can never reveal a clause the engine drops.
+ * - Conditional bonuses (Slice, Deflect, Bane, Steam Barrier): a bonus gated
+ *   on a pile, a token count or a debuff. Mostly "+1 if ...", but Bane prints
+ *   +2, so the amount is per-card and not a fixed step.
+ * - Counting effects (Barrage, Charge Battery): something computed from board
+ *   state — Barrage's damage scales per Orb, and Charge Battery gains an extra
+ *   Frost orb only once you already hold three.
+ * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
+ * - Temporary Strength (Flex): a buff that expires at end of turn.
+ * - Deck manipulation (Anger): putting the played card on top of the draw pile.
+ * - A choice that can only be made AFTER the same card reveals cards
+ *   (Third Eye, Acrobatics). Both need a play to happen in two steps, and a
+ *   play is atomic here: one validated message carries every choice, which is
+ *   what lets the server check a move without holding half-resolved state
+ *   between round trips. Third Eye must show the top of the draw pile before
+ *   asking which of it to bin; Acrobatics reads "Draw 3 cards. Discard 1
+ *   card." and, played as the last card in hand, can only be paid from the
+ *   three it just drew. Shipping either means a card that looks right and
+ *   misbehaves — Third Eye becomes Block-and-nothing, and Acrobatics is
+ *   refused outright with no explanation. Note the local UI could technically
+ *   read ahead, since it holds the whole run in memory; it must not. The draw
+ *   pile is face down to everyone including its owner, which is why
+ *   `rooms.mjs` redacts it, and a client that peeks would be cheating locally
+ *   and broken the moment a real server enforces the same rule. Both come back
+ *   with a staging step that reveals first and asks second.
+ */
+export const DEFERRED_CARDS = [
+  'acrobatics',
+  'anger',
+  'bane',
+  'barrage',
+  'charge_battery',
+  'crescendo',
+  'deflect',
+  'flex',
+  'go_for_the_eyes',
+  'iron_wave',
+  'protect',
+  'slice',
+  'steam_barrier',
+  'third_eye',
+  'tranquility',
+] as const
 
 /**
  * Daze and the Status cards enemies inflict. They live in their own shared
