@@ -81,6 +81,32 @@ for pno in range(len(doc)):
         if not name or name in found:
             continue
         im = Image.open(io.BytesIO(data)).convert("RGBA")
+
+        # These are printed symbols on WHITE PAPER, and the paper is what has to
+        # go — on a dark board an opaque white rectangle reads as a tile, not a
+        # symbol. Key out the paper and keep the art: these are full-colour
+        # pieces (a blue shield, a yellow bicep, a pink heart), so converting
+        # them to a single-colour mask both threw the colour away and left the
+        # palest symbols almost entirely transparent.
+        pixels = im.load()
+        width, height = im.size
+        keyed = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        out_px = keyed.load()
+        for y in range(height):
+            for x in range(width):
+                r, g, b, a = pixels[x, y]
+                if a == 0:
+                    continue
+                # Distance from white: paper is 0, any coloured or dark pixel is
+                # opaque. Channel minimum rather than luminance, so a bright
+                # yellow counts as fully present rather than nearly-paper.
+                ink = 255 - min(r, g, b)
+                # A gentle knee keeps antialiased edges soft without fading the
+                # pale interiors of light symbols.
+                alpha = 255 if ink > 60 else (ink * 255) // 60
+                out_px[x, y] = (r, g, b, min(255, alpha * a // 255))
+        im = keyed
+
         # Trim fully transparent margins so every icon fills its box evenly.
         bbox = im.getbbox()
         if bbox:

@@ -21,6 +21,11 @@ type IconProps = {
 }
 
 export function Icon({ name, size = 20, decorative = true }: IconProps) {
+  // Drawn as an image, in its own colours. These are full-colour printed
+  // symbols — a blue shield, a gold bicep, an orange flame — so recolouring
+  // them from a single-channel mask both threw the colour away and left the
+  // palest of them almost invisible. What actually needed removing was the
+  // white PAPER behind them, which sync-icons.mjs now keys out.
   return (
     <img
       className="icon"

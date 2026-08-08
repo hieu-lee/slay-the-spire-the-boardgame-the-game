@@ -125,6 +125,17 @@ function describeSeat(player: Player): string {
   return parts.join(', ')
 }
 
+/**
+ * How far a card sits from the middle of the fan, from -1 to 1.
+ *
+ * A single card hangs straight; the spread narrows as the hand grows so a full
+ * hand still fits the width it is given.
+ */
+function fanOf(index: number, count: number): number {
+  if (count < 2) return 0
+  return (index - (count - 1) / 2) / ((count - 1) / 2)
+}
+
 function canAfford(player: Player, card: CardInstance): boolean {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   if (def.unplayable) return false
@@ -217,7 +228,11 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   // row you control, and the enemy you are fighting, out of view exactly when
   // you are meant to be reading them.
   useLayoutEffect(() => {
-    viewerRowRef.current?.scrollIntoView({ block: 'nearest' })
+    // Centred, not 'nearest': the row is shorter than the board, so centring
+    // leaves slack at both ends — 'nearest' parked it flush against an edge
+    // and clipped whichever end did not fit, which since the telegraph moved
+    // above the creature meant losing either the intent or the hit points.
+    viewerRowRef.current?.scrollIntoView({ block: 'center' })
   }, [viewerId, state.turn, state.phase])
 
   // And again whenever the viewport changes shape. The scroll position is
@@ -225,7 +240,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   // a window left the player's own row — and the enemy they are fighting —
   // scrolled off the board.
   useEffect(() => {
-    const reveal = () => viewerRowRef.current?.scrollIntoView({ block: 'nearest' })
+    const reveal = () => viewerRowRef.current?.scrollIntoView({ block: 'center' })
     window.addEventListener('resize', reveal)
     return () => window.removeEventListener('resize', reveal)
   }, [])
@@ -485,20 +500,35 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
           <span className="pip pip--energy" title="Energy">
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
-          <span className="pip" title="Draw pile">
-            <span className="pip__label">draw</span> {viewer.draw.length}
-          </span>
-          <span className="pip" title="Discard pile">
-            <span className="pip__label">discard</span> {viewer.discard.length}
-          </span>
-          <span className="pip" title="Exhaust pile">
-            <span className="pip__label">exhaust</span> {viewer.exhaust.length}
-          </span>
+          {/* The piles read as stacks of cards with a count, not as three
+              labelled fields. Their names live in the tooltip and the label. */}
+          {/* A hidden span rather than aria-label: `aria-label` is prohibited
+              on a generic role, so Chrome honoured it and other engines
+              dropped it — leaving the row announcing "3 Energy 5 0 0". */}
+          {(
+            [
+              ['draw', 'Draw pile', viewer.draw.length],
+              ['discard', 'Discard pile', viewer.discard.length],
+              ['exhaust', 'Exhaust pile', viewer.exhaust.length],
+            ] as const
+          ).map(([kind, label, count]) => (
+            <span className="pile" key={kind} title={label}>
+              <span className={`pile__stack pile__stack--${kind}`} aria-hidden="true" />
+              <span className="pile__count" aria-hidden="true">
+                {count}
+              </span>
+              <span className="visually-hidden">{`${label}, ${count}`}</span>
+            </span>
+          ))}
         </div>
-        <div className="hand">
-          {viewer.hand.map((card) => (
+        {/* Fanned, the way a hand is actually held: each card tilted and
+            lifted by its distance from the middle. The angle is set here
+            because only the component knows how many cards there are. */}
+        <div className="hand" data-count={viewer.hand.length}>
+          {viewer.hand.map((card, index) => (
             <Card
               key={card.uid}
+              fan={fanOf(index, viewer.hand.length)}
               card={card}
               playable={
                 state.phase === 'player' &&

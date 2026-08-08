@@ -136,15 +136,26 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
                   ]
                     .filter(Boolean)
                     .join(' ')}
-                  disabled={!canGo}
-                  onClick={() => onEnter(id)}
-                  aria-label={`${ROOM_LABEL[room.kind]}${isHere ? ', the party is here' : ''}${
-                    canGo ? ', reachable' : ''
-                  }`}
+                  // `aria-disabled` rather than `disabled`: a disabled button
+                  // is not focusable, and with the captions gone the only way
+                  // to learn what a room is would have been a mouse hover.
+                  aria-disabled={!canGo}
+                  onClick={() => canGo && onEnter(id)}
+                  aria-label={[
+                    ROOM_LABEL[room.kind],
+                    isHere ? 'the party is here' : '',
+                    room.visited && !isHere ? 'already cleared' : '',
+                    canGo ? 'reachable' : 'out of reach',
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
                   aria-current={isHere ? 'location' : undefined}
+                  title={ROOM_LABEL[room.kind]}
                 >
-                  <Icon name={ROOM_ICON[room.kind]} size={26} />
-                  <span className="room__label">{ROOM_LABEL[room.kind]}</span>
+                  {/* Icon only. The name is in the accessible label and in the
+                      tooltip; printing it under every node turned the Spire
+                      into a list of captioned boxes. */}
+                  <Icon name={ROOM_ICON[room.kind]} size={room.kind === 'boss' ? 34 : 24} />
                 </button>
               )
             })}

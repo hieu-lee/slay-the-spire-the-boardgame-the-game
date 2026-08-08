@@ -1,3 +1,4 @@
+import type React from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
@@ -10,6 +11,8 @@ type CardProps = {
   selected?: boolean
   /** Chosen as the subject of another card's discard or exhaust effect. */
   picked?: boolean
+  /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
+  fan?: number
   onClick?: (card: CardInstance) => void
 }
 
@@ -24,6 +27,7 @@ export function Card({
   playable = true,
   selected = false,
   picked = false,
+  fan = 0,
   onClick,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
@@ -40,6 +44,14 @@ export function Card({
     <button
       type="button"
       className={className}
+      style={{
+        // Tilt with distance from the middle, and drop the outer cards a
+        // little so the row reads as an arc rather than a shelf.
+        // The spread grows with the hand: a fixed angle made five cards look
+        // merely crooked and only became a fan at eight or more.
+        '--fan-angle': `${fan * 11}deg`,
+        '--fan-lift': `${Math.abs(fan) * 14}px`,
+      } as React.CSSProperties}
       disabled={!playable}
       onClick={() => onClick?.(card)}
       aria-label={`${def.name}, cost ${costLabel(def)}, ${def.type}`}

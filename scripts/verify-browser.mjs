@@ -737,6 +737,94 @@ check('a card that cannot resolve is not offered', () => {
   assert(emptyEvoke.disabled, 'Dual Cast with no orbs charged should be greyed out')
 })
 
+// The hand is fanned, not stacked: each card tilted by its distance from the
+// middle. Zeroing the angle and the lift left a flat row and passed everything.
+// Its own hand, because the check above deliberately leaves one card.
+await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = Array.from({ length: 5 }, (_unused, i) => ({
+    uid: `fan-${i}`,
+    defId: 'strike_ironclad',
+    upgraded: false,
+  }))
+  debug.setRun(run)
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+})
+const fanShape = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.hand .card')]
+  if (cards.length < 3) return { few: true }
+  const matrix = (card) => getComputedStyle(card).transform
+  return {
+    few: false,
+    count: cards.length,
+    first: matrix(cards[0]),
+    middle: matrix(cards[Math.floor(cards.length / 2)]),
+    last: matrix(cards[cards.length - 1]),
+  }
+})
+check('the hand is fanned rather than laid flat', () => {
+  assert(!fanShape.few, 'need at least three cards to see a fan')
+  assert(fanShape.first !== 'none', 'the outer cards should be transformed')
+  assert(
+    fanShape.first !== fanShape.last,
+    `the two ends of the fan should tilt opposite ways, both are ${fanShape.first}`,
+  )
+  assert(
+    fanShape.first !== fanShape.middle,
+    'the middle card should sit straighter than the ends',
+  )
+})
+
+// The telegraph belongs ABOVE the creature, the way the video game shows it.
+// Its position comes from the markup order, so swapping the two spans back
+// would silently undo it.
+const intentPlace = await page.evaluate(() => {
+  const enemy = document.querySelector('.enemy')
+  const intent = enemy?.querySelector('.enemy__intent')
+  const portrait = enemy?.querySelector('.enemy__portrait')
+  if (!intent || !portrait) return { missing: true }
+  return {
+    missing: false,
+    intentBottom: Math.round(intent.getBoundingClientRect().bottom),
+    portraitTop: Math.round(portrait.getBoundingClientRect().top),
+  }
+})
+check('an enemy telegraphs above itself', () => {
+  assert(!intentPlace.missing, 'expected an enemy with an intent')
+  assert(
+    intentPlace.intentBottom <= intentPlace.portraitTop + 1,
+    `the intent sits below the portrait (${intentPlace.intentBottom} vs ${intentPlace.portraitTop})`,
+  )
+})
+
+// The energy count sits ON the gold disc, so it cannot be gold.
+const energyContrast = await page.evaluate(() => {
+  const pip = document.querySelector('.pip--energy')
+  const number = pip?.querySelector('.icon-value__number')
+  if (!pip || !number) return { missing: true }
+  const parse = (value) => (value.match(/\d+/g) ?? []).slice(0, 3).map(Number)
+  const lum = ([r, g, b]) => {
+    const channel = (v) => {
+      const c = v / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+  }
+  const ink = lum(parse(getComputedStyle(number).color))
+  // The disc is a gradient; sample its lightest declared stop conservatively.
+  const plate = lum([255, 226, 150])
+  const ratio = (Math.max(ink, plate) + 0.05) / (Math.min(ink, plate) + 0.05)
+  return { missing: false, ratio }
+})
+check('the energy count is readable on its disc', () => {
+  assert(!energyContrast.missing, 'expected an energy pip')
+  assert(
+    energyContrast.ratio >= 4.5,
+    `the count contrasts at ${energyContrast.ratio.toFixed(2)}:1 against the disc`,
+  )
+})
+
 // Four players is the maximum the box supports and the layout most likely to
 // break, so it gets its own capture.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'four-player'))
@@ -1089,11 +1177,26 @@ check('every Power enlarges into full view at every size', () => {
 // Geometry alone cannot tell "on screen" from "painted behind the board", so
 // the same region is captured with and without the card and compared.
 await page.mouse.move(0, 0)
-const zoomRegion = { x: 40, y: 60, width: 300, height: 320 }
+// The region comes from where the card ACTUALLY lands, not a fixed rectangle:
+// a hardcoded clip silently stops covering the card the moment the layout
+// moves, and then compares two identical patches of background forever.
+await page.locator('.row__seat .power').first().hover()
+await page.waitForSelector('.power__zoom')
+const zoomRegion = await page.evaluate(() => {
+  const box = document.querySelector('.power__zoom').getBoundingClientRect()
+  return {
+    x: Math.max(0, Math.round(box.left)),
+    y: Math.max(0, Math.round(box.top)),
+    width: Math.round(box.width),
+    height: Math.round(box.height),
+  }
+})
+const withZoom = await page.screenshot({ clip: zoomRegion })
+await page.mouse.move(0, 0)
+await page.waitForFunction(() => !document.querySelector('.power__zoom'))
 const withoutZoom = await page.screenshot({ clip: zoomRegion })
 await page.locator('.row__seat .power').first().hover()
 await page.waitForSelector('.power__zoom')
-const withZoom = await page.screenshot({ clip: zoomRegion })
 check('the enlarged card is actually painted, not just positioned', () => {
   assert(
     !withoutZoom.equals(withZoom),

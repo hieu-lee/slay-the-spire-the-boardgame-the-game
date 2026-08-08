@@ -20,14 +20,38 @@ type EnemyCardProps = {
   onClick?: (enemy: Enemy) => void
 }
 
-type IntentPart = { icon: IconName; value?: number | string; prefix?: string; aoe?: boolean }
+type IntentPart = {
+  icon: IconName
+  value?: number | string
+  prefix?: string
+  aoe?: boolean
+  /**
+   * How many times this attack lands, when it is more than once.
+   *
+   * The symbol is REPEATED on screen, matching the printed card. Spoken, that
+   * became "attack, attack, attack" with nothing to say it is one attack of
+   * three — so only the first part carries the count, and only it is spoken.
+   */
+  times?: number
+  /** Silent to a screen reader: a later copy of a repeated symbol. */
+  echo?: boolean
+}
 
 /** An enemy's telegraphed intent, in the game's own symbols. */
 function intentParts(action: EnemyAction): IntentPart[] {
   switch (action.kind) {
     case 'attack': {
-      const value = action.times && action.times > 1 ? `${action.amount}×${action.times}` : action.amount
-      return [{ icon: 'attack', value, aoe: action.aoe }]
+      // Repeated symbols, not a formula. Twin Strike prints two swords side by
+      // side rather than "1x2", and the enemy cards do the same — the board
+      // game's own notation, and more symbol than text besides.
+      const times = action.times && action.times > 1 ? action.times : 1
+      return Array.from({ length: times }, (_unused, index) => ({
+        icon: 'attack' as const,
+        value: action.amount,
+        aoe: action.aoe,
+        times: index === 0 && times > 1 ? times : undefined,
+        echo: index > 0,
+      }))
     }
     case 'block':
       return [{ icon: 'block', value: action.amount }]
@@ -68,9 +92,11 @@ function describeEnemy(
   parts.push(`${enemy.hp} of ${enemy.maxHp} hit points`)
 
   const said = intent
+    .filter((part) => !part.echo)
     .map((part) => {
       const value = part.value === undefined || part.value === '' ? '' : `${part.value} `
-      return `${part.aoe ? 'all rows, ' : ''}to apply ${value}${part.icon}`
+      const repeat = part.times ? `, ${part.times} times` : ''
+      return `${part.aoe ? 'all rows, ' : ''}to apply ${value}${part.icon}${repeat}`
     })
     .join(', ')
   // "intends to apply 1 Vulnerable" rather than "vulnerable 1": the tokens the
@@ -120,23 +146,6 @@ export function EnemyCard({
       onClick={() => onClick?.(enemy)}
       aria-label={describeEnemy(enemy, def.name, rowLabel, intent)}
     >
-      <span className="enemy__portrait">
-        <img
-          src={`/assets/enemies/${enemy.defId}.webp`}
-          alt=""
-          loading="lazy"
-          onError={(event) => {
-            // Not every enemy has art extracted yet; fall back to the panel
-            // background rather than showing a broken image.
-            event.currentTarget.style.display = 'none'
-          }}
-        />
-        <span className="enemy__head">
-          <Icon name={enemy.isBoss ? 'boss' : 'monster'} size={16} />
-          <span className="enemy__name">{def.name}</span>
-        </span>
-      </span>
-
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.
           p.13: the dead are flipped over until the end of combat. */}
@@ -157,6 +166,23 @@ export function EnemyCard({
             </span>
           ))
         )}
+      </span>
+
+      <span className="enemy__portrait">
+        <img
+          src={`/assets/enemies/${enemy.defId}.webp`}
+          alt=""
+          loading="lazy"
+          onError={(event) => {
+            // Not every enemy has art extracted yet; fall back to the panel
+            // background rather than showing a broken image.
+            event.currentTarget.style.display = 'none'
+          }}
+        />
+        <span className="enemy__head">
+          <Icon name={enemy.isBoss ? 'boss' : 'monster'} size={16} />
+          <span className="enemy__name">{def.name}</span>
+        </span>
       </span>
 
       <span className="bar" aria-hidden="true">

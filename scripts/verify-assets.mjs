@@ -6,6 +6,7 @@
 // has none. Each group skips when it is entirely absent, but a PARTIAL sync is
 // a real problem and fails.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
@@ -165,6 +166,58 @@ check('every enemy the game can spawn has a portrait', () => {
     missing.length === 0,
     `enemies with no portrait — re-run \`pnpm sync:enemy-art\`: ${missing.join(', ')}`,
   )
+})
+
+// Bytes are not pixels. Every broken conversion this pipeline can produce —
+// keying disabled, luminance inverted, alpha left faint — yields a file well
+// over any size threshold while rendering as a white tile or as nothing at
+// all. An invisible icon does not look broken, and this pass removed the text
+// captions that used to cover for one.
+check('every icon is a symbol on transparent paper, not a tile', () => {
+  if (iconFiles.length === 0) return // not synced
+
+  // Measured with Pillow, which this pipeline already requires to build the
+  // icons in the first place. Hand-rolling a PNG decoder here would be more
+  // code than the check.
+  const probe = `
+import sys, json
+from PIL import Image
+faults = []
+for name in sys.argv[1:]:
+    im = Image.open(name).convert("RGBA")
+    w, h = im.size
+    px = im.load()
+    corners = [px[0, 0][3], px[w - 1, 0][3], px[0, h - 1][3], px[w - 1, h - 1][3]]
+    label = name.rsplit("/", 1)[-1]
+    if max(corners) > 8:
+        faults.append(f"{label}: corners are opaque {corners} - the paper was not keyed out")
+        continue
+    opaque = [px[x, y] for y in range(h) for x in range(w) if px[x, y][3] > 200]
+    fraction = len(opaque) / (w * h)
+    if fraction < 0.02:
+        faults.append(f"{label}: only {fraction * 100:.1f}% opaque - effectively invisible")
+        continue
+    # The paper is white, so ANY opaque near-white pixel means it survived the
+    # keying. Measured: a correctly keyed icon has none at all; leaving the
+    # paper in gives 50-67%. The corners alone cannot catch this, because the
+    # extracted images already have transparent margins.
+    paper = sum(1 for p in opaque if min(p[0], p[1], p[2]) > 230) / len(opaque)
+    if paper > 0.15:
+        faults.append(f"{label}: {paper * 100:.0f}% of the symbol is white paper - it renders as a tile")
+print(json.dumps(faults))
+`
+  const files = REQUIRED_ICONS.map((name) => join(iconRoot, `${name}.png`)).filter((file) =>
+    existsSync(file),
+  )
+  const result = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    // Pillow is only needed to BUILD these; a machine without it should not
+    // fail the suite, it should say why the check could not run.
+    console.log('· icon pixels not checked (needs python3 + Pillow)')
+    return
+  }
+  const faults = JSON.parse(result.stdout.trim().split('\n').pop())
+  assert(faults.length === 0, `icon conversion is wrong:\n    ${faults.join('\n    ')}`)
 })
 
 check('synced artwork is never truncated', () => {

@@ -18,7 +18,10 @@
   --motion-medium: 180ms;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --card-width: 104px;
+  /* Scaled to the window's HEIGHT, because the hand competes with the board
+     for it: a fixed 132px hand took 268px of a 620px-tall window and pushed
+     the enemy's hit points off the board. */
+  --card-width: clamp(88px, 15vh, 132px);
   --card-ratio: 1.395; /* 744 x 1039 scans */
 
   font-family: 'Trebuchet MS', 'Gill Sans', system-ui, sans-serif;
@@ -239,14 +242,30 @@ button:disabled {
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
-  gap: 0.6rem;
+  /* Sized to its contents and centred, rather than stretched across whatever
+     width the window happens to be: a row holding one seat and one enemy left
+     two thirds of a desktop board as empty panel. */
+  grid-template-columns: minmax(0, 190px) auto;
+  justify-content: center;
+  gap: 1.2rem;
   min-width: 0;
   align-items: stretch;
-  background: var(--bg-panel);
-  border: 1px solid var(--edge);
-  border-radius: 6px;
-  padding: 0.6rem;
+  /* No panel chrome. A bordered box per row is what made the board read as a
+     table of records; the rows are separated by space and a hairline instead. */
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgb(214 176 96 / 0.12);
+  border-radius: 0;
+  padding: 0.7rem 0.6rem;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* The row you control is lit, not boxed. */
+.row--viewer {
+  background: radial-gradient(ellipse at 50% 50%, rgb(214 176 96 / 0.07), transparent 70%);
 }
 
 .row__enemies {
@@ -463,13 +482,37 @@ button:disabled {
 }
 
 .pip--energy {
-  color: var(--energy);
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 32%, rgb(255 226 150 / 0.95), rgb(178 108 32 / 0.95)),
+    var(--bg-panel);
+  border: 2px solid rgb(255 226 150 / 0.55);
+  box-shadow:
+    inset 0 -4px 8px rgb(0 0 0 / 0.4),
+    0 0 14px rgb(214 176 96 / 0.4);
+  /* Dark on the gold disc: the previous rule painted it `--energy`, which is
+     the same gold, at 1.3:1. */
+  color: #241a0c;
+  font-weight: 700;
 }
 
 .hand {
   display: flex;
-  gap: 0.4rem;
+  /* Overlapped and centred: a held hand, not a shelf of boxes.
+     `safe` centring, because a centred flex line inside a scroll box overflows
+     BOTH edges and `scrollLeft` cannot go below zero — the leftmost cards
+     became unreachable at narrow widths. */
+  gap: 0;
+  justify-content: safe center;
   align-items: flex-end;
+  /* Padding, not min-height: the cards lift UP on hover and the fan pushes the
+     outer ones DOWN, so the box needs slack at both ends or it clips them. */
+  /* Just enough for the 16px lift and the fan's downward tilt — every pixel
+     here is taken from the board, where the enemy's hit points live. */
+  padding: 1.15rem 0 0.6rem;
   min-height: calc(var(--card-width) * var(--card-ratio));
   overflow-x: auto;
   padding-bottom: 0.2rem;
@@ -537,7 +580,7 @@ button:disabled {
   }
 
   :root {
-    --card-width: 84px;
+    --card-width: 92px;
   }
 }
 
@@ -552,10 +595,19 @@ button:disabled {
 
 .icon {
   display: inline-block;
-  vertical-align: middle;
-  image-rendering: auto;
-  /* Icons sit on dark panels; a slight lift keeps them from muddying. */
-  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.6));
+  flex: none;
+  object-fit: contain;
+  /* The art carries its own colour; the page only supplies the space. */
+}
+
+/* Images are exempt from forced-colour substitution, so the symbols keep their
+   own art. The rule only stops the browser adding a backplate behind them —
+   painting a background here put an opaque square behind every icon, which is
+   the tile this pass exists to remove. */
+@media (forced-colors: active) {
+  .icon {
+    forced-color-adjust: none;
+  }
 }
 
 .icon-value {
@@ -684,14 +736,9 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.pip__label {
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .pip--energy .icon-value__number {
-  color: var(--energy);
+  /* Dark on the gold disc. Painting it `--energy` put gold on gold at 1.3:1. */
+  color: #241a0c;
   font-size: 1.2rem;
 }
 
@@ -766,7 +813,6 @@ button:disabled {
 }
 
 .enemy__intent {
-  margin-top: 0.6rem;
 }
 
 .enemy .tokens {
@@ -831,6 +877,93 @@ button:disabled {
 
 }
 
+/* Each pile is a little stack of cards with a number on it — the same object
+   it is on the table, rather than a labelled field. */
+.pile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink-dim);
+}
+
+.pile__stack {
+  position: relative;
+  width: 15px;
+  height: 21px;
+  border-radius: 2px;
+  border: 1px solid rgb(214 176 96 / 0.5);
+  background: linear-gradient(160deg, rgb(72 58 44 / 0.95), rgb(30 24 20 / 0.95));
+  box-shadow:
+    2px -2px 0 -1px rgb(30 24 20 / 0.95),
+    2px -2px 0 rgb(214 176 96 / 0.35);
+}
+
+/* Shape, not just hue: face-down draw stack, face-up discard, a single spent
+   card for exhaust. Three identical rectangles in three shades of brown told
+   the player nothing. */
+.pile__stack--draw::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 1px;
+  border: 1px dashed rgb(214 176 96 / 0.45);
+}
+
+.pile__stack--discard {
+  border-color: rgb(160 120 80 / 0.6);
+  background: linear-gradient(160deg, rgb(120 92 64 / 0.95), rgb(58 44 32 / 0.95));
+  box-shadow:
+    2px -2px 0 -1px rgb(30 24 20 / 0.95),
+    2px -2px 0 rgb(160 120 80 / 0.35);
+}
+
+.pile__stack--exhaust {
+  border-color: rgb(120 100 96 / 0.5);
+  border-style: dashed;
+  background: linear-gradient(160deg, rgb(48 40 38 / 0.9), rgb(22 18 18 / 0.9));
+  box-shadow: none;
+  transform: rotate(-8deg);
+}
+
+.pile__count {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* A card sits in the fan at an angle set by its distance from the middle, and
+   lifts out of it when you reach for it. */
+.hand .card {
+  transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
+  transform-origin: 50% 130%;
+  margin-inline: -0.9rem;
+  transition:
+    transform var(--motion-fast) var(--ease),
+    filter var(--motion-fast) var(--ease);
+}
+
+/* Lift with transform alone. Changing the margin re-flowed the whole hand on
+   every hover, so the fan shuffled sideways as the pointer crossed it. */
+.hand .card:hover:not(:disabled),
+.hand .card:focus-visible {
+  transform: translateY(-16px) scale(1.07);
+  z-index: 5;
+  filter: drop-shadow(0 8px 14px rgb(0 0 0 / 0.6));
+}
+
+.hand .card--selected {
+  transform: translateY(-20px) scale(1.07);
+  z-index: 6;
+}
+
+/* A narrow screen has no room to overlap; let the hand scroll flat instead. */
+@media (max-width: 720px) {
+  .hand .card {
+    transform: none;
+    margin-inline: 0.15rem;
+  }
+}
+
 /* ---------- feedback ---------- */
 
 /* A hit should be felt, not just recorded in a log. */
@@ -877,6 +1010,14 @@ button:disabled {
   .seat--struck-alt {
     animation: none;
   }
+}
+
+/* Intent sits ABOVE the creature, the way the video game telegraphs it, and
+   several intents sit side by side rather than stacked. The order comes from
+   the markup, not from `order:` — a visual order that disagrees with the DOM
+   is one a keyboard walks in the wrong sequence. */
+.enemy__intent {
+  margin: 0 0 0.3rem;
 }
 
 /* A defeated enemy is flipped over on the table (p.13): still there, still
@@ -943,8 +1084,12 @@ button:disabled {
 .map {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.9rem;
   align-items: center;
+  /* Depth, so the climb reads as a place rather than a page. */
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(72 40 30 / 0.5), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgb(20 16 16 / 0.8), transparent 55%);
   overflow-y: auto;
   min-height: 0;
   flex: 1;
@@ -961,61 +1106,91 @@ button:disabled {
 
 .map__row {
   display: flex;
-  gap: 0.75rem;
+  gap: 1.6rem;
   justify-content: center;
   flex-wrap: wrap;
 }
 
+/* Out of reach, but still readable and still reachable by keyboard — it is
+   `aria-disabled`, not `disabled`. */
+.room[aria-disabled='true'] {
+  cursor: default;
+}
+
+/* A node on the climb, not a row in a list: a carved medallion carrying its
+   symbol and nothing else. The name lives in the accessible label and the
+   tooltip — captioning every node is what made the Spire read as an org chart. */
 .room {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  min-width: 88px;
-  padding: 0.45rem 0.6rem;
-  background: var(--bg-panel);
-  border: 1px solid var(--edge);
-  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 50%;
   color: var(--ink-dim);
+  background:
+    radial-gradient(circle at 50% 34%, rgb(58 48 40 / 0.95), rgb(24 20 18 / 0.95)),
+    var(--bg-panel);
+  border: 2px solid rgb(90 74 56 / 0.85);
+  box-shadow:
+    inset 0 2px 4px rgb(255 236 200 / 0.06),
+    inset 0 -3px 6px rgb(0 0 0 / 0.55),
+    0 2px 5px rgb(0 0 0 / 0.5);
   transition:
     border-color var(--motion-fast) var(--ease),
     transform var(--motion-fast) var(--ease),
-    opacity var(--motion-fast) var(--ease);
-  /* Rooms the party cannot reach stay legible but obviously inert. */
-  opacity: 0.45;
-}
-
-.room__label {
-  font-size: 0.65rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+    opacity var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease);
+  /* Rooms the party cannot reach are inert, but their SYMBOL stays legible —
+     it is the only thing telling you what lies ahead now the captions are
+     gone, so the plate dims and the glyph does not. */
+  opacity: 1;
+  border-color: rgb(90 74 56 / 0.4);
+  color: rgb(178 160 138);
 }
 
 .room--reachable {
   opacity: 1;
   color: var(--ink);
   border-color: var(--gold);
+  box-shadow:
+    inset 0 2px 4px rgb(255 236 200 / 0.1),
+    inset 0 -3px 6px rgb(0 0 0 / 0.5),
+    0 0 14px rgb(214 176 96 / 0.45);
   animation: targetable 1.8s ease-in-out infinite;
 }
 
 .room--reachable:hover {
-  transform: translateY(-3px);
+  transform: translateY(-3px) scale(1.06);
 }
 
+/* Already climbed: still on the map, plainly behind you. */
 .room--visited {
-  opacity: 0.8;
-  border-style: dashed;
+  border-color: rgb(90 74 56 / 0.35);
+  color: rgb(126 114 100);
 }
 
 .room--here {
   opacity: 1;
-  border-color: var(--ink);
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px rgb(236 229 216 / 0.25);
+  border-color: var(--ink);
+  box-shadow:
+    inset 0 0 0 2px rgb(236 229 216 / 0.3),
+    0 0 16px rgb(236 229 216 / 0.3);
 }
 
+/* The thing you are climbing towards. */
 .room--boss {
+  width: 74px;
+  height: 74px;
   border-color: var(--blood);
+  border-width: 3px;
+  background:
+    radial-gradient(circle at 50% 34%, rgb(96 34 30 / 0.95), rgb(30 14 14 / 0.96)),
+    var(--bg-panel);
+  box-shadow:
+    inset 0 -4px 8px rgb(0 0 0 / 0.55),
+    0 0 22px rgb(160 42 38 / 0.45);
 }
 
 /* ---------- run chrome ---------- */
@@ -1089,17 +1264,18 @@ button:disabled {
   overflow: visible;
 }
 
+/* Paths cut into the rock rather than pencilled on: solid and dark, with the
+   route you can actually take lit up. */
 .map__path {
-  stroke: var(--edge);
-  stroke-width: 2;
+  stroke: rgb(74 60 46 / 0.75);
+  stroke-width: 4;
   stroke-linecap: round;
-  stroke-dasharray: 3 5;
 }
 
 .map__path--live {
   stroke: var(--gold);
-  stroke-width: 2.5;
-  stroke-dasharray: none;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 5px rgb(214 176 96 / 0.6));
 }
 
 .room {
