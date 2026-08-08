@@ -208,8 +208,9 @@ Watcher: 4 Strike, 4 Defend, 1 Eruption, 1 Vigilance (10).
 "Starter Strike" (a Strike from the starter deck) and "contains Strike" (any card with
 Strike in its name) are different rules terms.
 
-**Pool sizes:** Ironclad 63 distinct / 85 physical; Silent 66 / 87; Defect 64 / 93;
-Watcher 66 / 85; Colorless 22 / 22; Curses 10 / 17; Status 36; Daze 10. **381 player cards.**
+**Pool sizes**, from the Components page (p.3): Ironclad 85, Silent 87, Defect 85,
+Watcher 85, Curses 17, Colorless 22 — **381 player cards** including unlocks. Distinct
+card counts are lower: 61/64/62/64 per character plus 22 colorless and 10 curses.
 
 ### Rewards
 
@@ -255,6 +256,26 @@ against board scans before treating them as final.
 **Cross-character cards.** Gaining stances or orbs from another character's card grants the
 Prismatic Shard relic. The Defect gains no extra orb slots this way, and the Watcher cannot
 enter stances via the Shard.
+
+## 6a. What a complete implementation contains
+
+Transcribed from the Components page (p.3). This is the concrete definition of done.
+
+| Component | Count |
+| --- | --- |
+| Player cards | 381 including unlocks |
+| 1st Encounters | 4 |
+| Encounters | 43 — Act I/II/III 12/12/10, plus 3/3/3 Ascension |
+| Summons | 89 — 35/31/20 by act |
+| Elites | 27 — 3/3/3 per act, plus 6/6/6 Ascension |
+| Bosses | 11 cards, 26 including unlocks |
+| Events | 51 — 12/14/11 by act, plus 6/5/2 Ascension, 1 in the unlock deck |
+| Status | 36 |
+| Daze | 10 |
+| Neow's Blessing | 14, 20 including unlocks |
+| Relics | 58, plus 20 Boss Relics, 4 Prismatic Shard, 1 Solo Relic |
+| Potions | 29 |
+| Tokens | 113 |
 
 ## 7. Enemies
 

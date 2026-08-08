@@ -284,6 +284,21 @@ export const CARDS: Record<string, CardDef> = {
   }),
 }
 
+/**
+ * Daze and the Status cards enemies inflict. They live in their own shared
+ * decks and leave your deck at the end of every combat (p.24).
+ */
+CARDS.daze = {
+  id: 'daze',
+  name: 'Daze',
+  owner: 'status',
+  type: 'status',
+  rarity: 'special',
+  cost: 0,
+  unplayable: true,
+  effects: [],
+}
+
 export function cardDef(id: string): CardDef {
   const def = CARDS[id]
   if (!def) throw new Error(`unknown card id: ${id}`)

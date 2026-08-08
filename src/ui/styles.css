@@ -782,3 +782,332 @@ button:disabled {
 
 /* Deliberately NOT applied to .card globally: the hand re-renders on every
    state change, and a blanket entry animation makes the whole hand flicker. */
+
+/* ---------- map ---------- */
+
+.map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0.5rem 0;
+}
+
+.map__hint {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+.map__row {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 88px;
+  padding: 0.45rem 0.6rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--ink-dim);
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease);
+  /* Rooms the party cannot reach stay legible but obviously inert. */
+  opacity: 0.45;
+}
+
+.room__label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.room--reachable {
+  opacity: 1;
+  color: var(--ink);
+  border-color: var(--gold);
+  animation: targetable 1.8s ease-in-out infinite;
+}
+
+.room--reachable:hover {
+  transform: translateY(-3px);
+}
+
+.room--visited {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+.room--here {
+  opacity: 1;
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgb(236 229 216 / 0.25);
+}
+
+.room--boss {
+  border-color: var(--blood);
+}
+
+/* ---------- run chrome ---------- */
+
+.run-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.room-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.room-screen h2 {
+  margin: 0;
+  text-transform: capitalize;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+}
+
+.room-screen button {
+  background: var(--bg-raised);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  padding: 0.4rem 0.9rem;
+}
+
+/* A name plate behind the art, shown when a card has no scan in the source set. */
+.card__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  background: var(--bg-raised);
+  border-radius: 6px;
+  z-index: -1;
+}
+
+/* ---------- map paths ---------- */
+
+.map__frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* The paths sit behind the rooms and never intercept clicks. */
+.map__paths {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.map__path {
+  stroke: var(--edge);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 3 5;
+}
+
+.map__path--live {
+  stroke: var(--gold);
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+
+.room {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- campfire ---------- */
+
+.campfire {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0.5rem 0;
+}
+
+.campfire h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--gold);
+  letter-spacing: 0.12em;
+}
+
+.campfire__players {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.campfire__player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.6rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  min-width: 200px;
+}
+
+.campfire__name {
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+}
+
+.campfire__choices {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.campfire__choices button,
+.campfire__leave {
+  background: var(--bg-raised);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.campfire__choices button.is-chosen {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.campfire__deck {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 460px;
+}
+
+.campfire__picked {
+  font-size: 0.75rem;
+  color: var(--gold);
+}
+
+.campfire__leave {
+  border-color: var(--gold);
+  color: var(--gold);
+  padding: 0.45rem 1rem;
+}
+
+.campfire__leave:disabled {
+  border-color: var(--edge);
+  color: var(--ink-dim);
+}
+
+.room-screen__defeat {
+  color: var(--blood);
+}
+
+/* ---------- compact board for a full party ---------- */
+
+/* Four rows do not fit a 900px viewport at full size, and a board you have to
+   scroll hides the enemy that is about to hit you. Shrink as the party grows. */
+.board[data-rows='3'] .enemy__portrait,
+.board[data-rows='4'] .enemy__portrait {
+  aspect-ratio: 16 / 7;
+}
+
+.board[data-rows='4'] .row {
+  padding: 0.35rem;
+  gap: 0.4rem;
+}
+
+.board[data-rows='4'] .enemy__head {
+  padding: 0.35rem 0.35rem 0.15rem;
+  font-size: 0.72rem;
+}
+
+.board[data-rows='4'] .enemy__intent {
+  min-height: 28px;
+  margin-top: 0.35rem;
+}
+
+.board[data-rows='4'] .seat {
+  padding: 0.35rem 0.45rem;
+}
+
+/* When the board does overflow, fade the bottom edge so it is obvious there is
+   more below rather than looking like a clean end. */
+.board {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
+
+.board:not(:hover) {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
+
+/* The row the player controls, so it is findable in a crowded board. */
+.row--viewer {
+  border-color: rgb(215 169 75 / 0.45);
+  background: linear-gradient(to right, rgb(215 169 75 / 0.05), transparent 40%), var(--bg-panel);
+}
+
+.campfire__preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  background: rgb(215 169 75 / 0.08);
+}
+
+.campfire__preview-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.campfire__preview .card--unplayable {
+  filter: none;
+}

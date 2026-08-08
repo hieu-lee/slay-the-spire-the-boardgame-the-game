@@ -262,4 +262,27 @@ check('every src/game module is reachable from the barrel', () => {
   }
 })
 
+// The "Not implemented yet" list in state.ts has drifted three times: it has
+// both under-reported (claiming things worked that did not) and over-reported
+// (claiming things were missing after they were built). A list nobody trusts is
+// worse than no list, so this pins it to something checkable: a room kind with
+// its own screen component is, by definition, no longer a placeholder.
+check('the not-implemented list does not call a built room a placeholder', () => {
+  const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
+  // Read only the room list, not the whole line: prose after the sentence may
+  // legitimately mention a room that IS built.
+  const listed = notes.match(/-\s*([^\n]*?)\s+rooms show a placeholder/)?.[1] ?? ''
+
+  const screens = readdirSync(join(srcRoot, 'ui')).filter((file) => file.endsWith('Screen.tsx'))
+  for (const screen of screens) {
+    const kind = screen.replace('Screen.tsx', '').toLowerCase()
+    // Combat and Map are not room kinds; only the room screens matter here.
+    if (kind === 'combat' || kind === 'map') continue
+    assert(
+      !listed.toLowerCase().includes(kind),
+      `${kind} has its own screen (${screen}) but state.ts still lists it as a placeholder`,
+    )
+  }
+})
+
 report('architecture')

@@ -45,7 +45,20 @@ export function Card({
       aria-label={`${def.name}, cost ${costLabel(def)}, ${def.type}`}
       title={def.name}
     >
-      <img className="card__art" src={cardImagePath(def, card.upgraded)} alt="" loading="lazy" />
+      <img
+        className="card__art"
+        src={cardImagePath(def, card.upgraded)}
+        alt=""
+        loading="lazy"
+        onError={(event) => {
+          // Not every card has a scan in the source set (Daze, for one). Fall
+          // back to the card frame rather than showing a broken image.
+          event.currentTarget.style.visibility = 'hidden'
+        }}
+      />
+      <span className="card__fallback" aria-hidden="true">
+        {def.name}
+      </span>
       <span className="card__cost" aria-hidden="true">
         {costLabel(def)}
       </span>

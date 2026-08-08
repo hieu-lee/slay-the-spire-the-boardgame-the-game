@@ -6,15 +6,22 @@
 // module that was written but never wired up.
 //
 // Not implemented yet, so that nobody mistakes silence for correctness:
-//   - Orbs (channel/evoke) and Scry resolve as no-ops, so Zap and Dual Cast do
-//     nothing useful.
-//   - Players cannot carry Weak or Vulnerable, so enemy actions applying them
-//     are no-ops.
-//   - A Power card plays and stays in front of the player, but nothing triggers
-//     off it, so a Power's ongoing effect never fires. No Power is transcribed.
-//   - Only the four starter decks plus Twin Strike and True Grit are transcribed;
-//     3 enemies of roughly 60, and no elites or bosses.
-//   - Relics, potions, gold, events, the map and the campaign do not exist.
+//   - Powers stay in front of the player but nothing triggers off them, so a
+//     Power's ongoing effect never fires. This is the single largest gap: it
+//     blocks roughly 20 cards per character.
+//   - Card effects cannot scale off game state (per Orb, per Miracle, per card
+//     in hand) and X-cost cards cannot read the energy spent.
+//   - Retain and Ethereal are not modelled.
+//   - Enemy special abilities are stored as prose on `unimplementedAbility` and
+//     do NOT resolve: Curl Up, Spore Cloud, Enraged.
+//   - There is no boss deck: a boss room stands up the toughest elite, marked
+//     as a boss so it acts last. Elite rooms draw from a two-entry elite list.
+//   - Event, treasure and merchant rooms show a placeholder screen.
+//   - Relics fire on their triggers, but there is no way to GAIN one during a
+//     run, and potions have no trigger and cannot be drunk at all.
+//   - Only the four starter decks plus Twin Strike and True Grit are
+//     transcribed; 9 enemies of roughly 60.
+//   - Ascension modifiers other than the Act-heal are not applied.
 
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
@@ -76,3 +83,14 @@ export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 export { ENEMIES, actionsFor, advanceCube, enemyDef, startingHp } from './enemies.ts'
 export type { CubeSlot, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
+
+export { ACT_SHAPE, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
+export type { MapShape, Room, RoomKind, SpireMap } from './map.ts'
+
+export { RELICS, POTIONS, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
+export type { PotionDef, RelicDef, RelicTrigger } from './relics.ts'
+
+export { MAX_HP, advanceAct, createPlayer, createRun, enterRoom, leaveRoom, resolveCombat, roomChoices } from './run.ts'
+export type { PartyMember, RunPhase, RunState } from './run.ts'
+export { resolveCampfire } from './run.ts'
+export type { CampfireChoice } from './run.ts'

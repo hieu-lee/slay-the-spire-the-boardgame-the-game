@@ -30,6 +30,8 @@ function intentParts(action: EnemyAction): IntentPart[] {
       return [{ icon: 'weak', value: action.amount, aoe: action.aoe }]
     case 'applyVulnerable':
       return [{ icon: 'vulnerable', value: action.amount, aoe: action.aoe }]
+    case 'daze':
+      return [{ icon: 'daze', value: action.amount, aoe: action.aoe }]
     case 'idle':
       return []
   }

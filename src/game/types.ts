@@ -32,8 +32,11 @@ export type CardInstance = {
   upgraded: boolean
 }
 
-// Relics, potions, gold and the reward decks are deliberately absent: nothing
-// reads them yet. They arrive with the campaign layer that gives them meaning.
+export type RelicInstance = {
+  defId: string
+  /** "Once per combat" and "once per room" relics flip face down when spent. */
+  spent: boolean
+}
 
 export type Player = {
   id: string
@@ -45,6 +48,8 @@ export type Player = {
   maxHp: number
   block: number
   energy: number
+  /** The only token kept through the end-of-combat reset (p.13). */
+  gold: number
 
   /** Piles hold instances; the master deck is what persists between combats. */
   deck: CardInstance[]
@@ -55,6 +60,9 @@ export type Player = {
   powers: CardInstance[]
 
   strength: number
+  /** Enemies can Weaken and make players Vulnerable, same caps as enemies. */
+  vulnerable: number
+  weak: number
   /** Silent. */
   shivs: number
   /** Watcher. */
@@ -62,6 +70,13 @@ export type Player = {
   stance: Stance
   /** Defect. `null` marks an empty slot; slot order carries no meaning. */
   orbs: (OrbType | null)[]
+
+  relics: RelicInstance[]
+  /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */
+  potions: string[]
+  /** Per-character reward decks, drawn from by card rewards and transforms. */
+  cardRewards: string[]
+  rareRewards: string[]
 
   dead: boolean
 }

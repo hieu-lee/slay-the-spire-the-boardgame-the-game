@@ -29,7 +29,14 @@ function makePlayer(over = {}) {
     discard: [],
     exhaust: [],
     powers: [],
+    gold: 0,
+    relics: [],
+    potions: [],
+    cardRewards: [],
+    rareRewards: [],
     strength: 0,
+    vulnerable: 0,
+    weak: 0,
     shivs: 0,
     miracles: 0,
     stance: 'neutral',
@@ -417,6 +424,30 @@ check('an Unplayable card cannot be played', () => {
   assert(
     playCard(state, 'p1', fixture.uid, { enemyUid: null, playerId: 'p1' }) === state,
     'an Unplayable card must be refused, returning the identical state reference',
+  )
+})
+
+// p.12 orders Start of Turn as Reset, Draw, Roll, then abilities. The order is
+// observable because drawing consumes RNG: a draw that has to reshuffle pulls
+// different values than one that does not, which shifts the roll that follows.
+check('the die is rolled AFTER the draw, in rulebook order', () => {
+  const deck = () => Array.from({ length: 10 }, () => instance('strike_ironclad'))
+
+  // Same seed, same cards — but one player must reshuffle to draw, which
+  // consumes extra RNG before the roll.
+  const noReshuffle = startPlayerTurn(
+    combat([makePlayer({ draw: deck(), discard: [] })], [makeEnemy()]),
+  )
+  const withReshuffle = startPlayerTurn(
+    combat([makePlayer({ draw: [], discard: deck() })], [makeEnemy()]),
+  )
+
+  assertEqual(noReshuffle.players[0].hand.length, 5, 'both draw a full hand')
+  assertEqual(withReshuffle.players[0].hand.length, 5)
+  assert(
+    noReshuffle.die !== withReshuffle.die,
+    'the roll must come after the draw, so a reshuffle shifts it; ' +
+      `both rolled ${noReshuffle.die}, which means the die was rolled first`,
   )
 })
 

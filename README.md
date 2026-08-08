@@ -72,8 +72,16 @@ Every random decision routes through the seeded RNG in `src/game/rng.ts`. A game
 described by `(seed, action log)`, which is what makes server-authoritative multiplayer,
 reconnection, and reproducible playtests all work off the same machinery.
 
-## Not built yet
+## What works, and what does not
 
-Online play over a `cloudflared` tunnel, voice chat, the map and campaign layer, relics,
-potions and events. `src/game/state.ts` carries an up-to-date list of what the engine
-does and does not yet implement.
+A run climbs a generated Spire map, fights through encounters, elites and a boss, and
+carries HP, gold and relics between rooms. Combat covers the full round: energy, draw,
+the shared die, card play with targeting and choices, orbs, stances, Scry, statuses, and
+the enemy turn.
+
+The authoritative list of what is **not** implemented lives at the top of
+[`src/game/state.ts`](src/game/state.ts) and is kept in step with the code. The largest
+gaps today are Power triggers, effects that scale off game state, non-combat rooms, and
+online play with voice chat.
+
+Duplicating that list here is how it goes stale, so this file does not repeat it.

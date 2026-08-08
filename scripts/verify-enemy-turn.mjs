@@ -18,7 +18,8 @@ const player = (over = {}) => ({
   id: 'p1', name: 'Ironclad', character: 'ironclad', row: 0,
   hp: 10, maxHp: 10, block: 0, energy: 3,
   deck: [], draw: [], hand: [], discard: [], exhaust: [], powers: [],
-  strength: 0, shivs: 0, miracles: 0, stance: 'neutral', orbs: [null, null, null],
+  gold: 0, relics: [], potions: [], cardRewards: [], rareRewards: [],
+  strength: 0, vulnerable: 0, weak: 0, shivs: 0, miracles: 0, stance: 'neutral', orbs: [null, null, null],
   dead: false, ...over,
 })
 
@@ -39,7 +40,7 @@ suite('enemy turn')
 check('enemies attack the player in their own row', () => {
   const state = inEnemyPhase(
     [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
-    [enemy({ row: 0 })],
+    [enemy({ defId: 'green_louse', row: 0 })],
   )
   const next = enemyTurn(state)
   assertEqual(next.players[0].hp, 9, 'the player sharing the row takes the hit')
@@ -47,42 +48,46 @@ check('enemies attack the player in their own row', () => {
 })
 
 check('player Block absorbs an enemy attack', () => {
-  const next = enemyTurn(inEnemyPhase([player({ block: 3 })], [enemy()]))
+  const next = enemyTurn(inEnemyPhase([player({ block: 3 })], [enemy({ defId: 'green_louse' })]))
   assertEqual(next.players[0].hp, 10, 'Block prevents the damage')
   assertEqual(next.players[0].block, 2, 'and one Block is spent doing so')
 })
 
 // p.13: enemy Block is cleared at the start of the ENEMY turn, not the player's.
 check('enemy Block clears at the start of the Enemy Turn', () => {
-  const next = enemyTurn(inEnemyPhase([player()], [enemy({ block: 4 })]))
+  const next = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse', block: 4 })]))
   assertEqual(next.enemies[0].block, 0, 'leftover enemy Block is removed before it acts')
 })
 
 check('player Block is NOT cleared by the Enemy Turn', () => {
-  const next = enemyTurn(inEnemyPhase([player({ block: 5 })], [enemy()]))
+  const next = enemyTurn(inEnemyPhase([player({ block: 5 })], [enemy({ defId: 'green_louse', block: 4 })]))
   assertEqual(next.players[0].block, 4, 'player Block persists into the Enemy Turn, minus what it absorbed')
 })
 
 check('an enemy gaining Block keeps it on itself, never on a player', () => {
-  const state = inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 8 })])
+  const state = inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })])
   const next = enemyTurn({ ...state, die: 5 })
-  assertEqual(next.enemies[0].block, 1, 'Jaw Worm blocks itself on a 5')
+  assertEqual(next.enemies[0].block, 2, 'on a 5 the Jaw Worm blocks itself for 2')
   assertEqual(next.players[0].block, 0, 'the player gains nothing')
-  assertEqual(next.enemies[0].strength, 1, 'and gains Strength on that roll')
+  assertEqual(next.enemies[0].strength, 1, 'and gains 1 Strength on that roll')
+  assertEqual(next.players[0].hp, 10, 'that roll carries no attack')
 })
 
+// Transcribed from the Jaw Worm card: 1-2 is 3 damage + 1 Block, 3-4 is 4
+// damage, 5-6 is 2 Block + 1 Strength.
 check('a die-pattern enemy acts on the shared roll', () => {
-  const state = inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 8 })])
+  const state = inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })])
   const rolled1 = enemyTurn({ ...state, die: 1 })
-  assertEqual(rolled1.players[0].hp, 8, 'on a 1 the Jaw Worm hits for 2')
+  assertEqual(rolled1.players[0].hp, 7, 'on a 1 the Jaw Worm hits for 3')
+  assertEqual(rolled1.enemies[0].block, 1, 'and blocks itself for 1')
 
   const rolled3 = enemyTurn({ ...state, die: 3 })
-  assertEqual(rolled3.players[0].hp, 9, 'on a 3 it hits for 1 and blocks')
-  assertEqual(rolled3.enemies[0].block, 1, 'and blocks itself for 1 on that roll')
+  assertEqual(rolled3.players[0].hp, 6, 'on a 3 it hits for 4')
+  assertEqual(rolled3.enemies[0].block, 0, 'with no Block on that roll')
 })
 
 check('enemy Strength adds to its attacks', () => {
-  const next = enemyTurn(inEnemyPhase([player()], [enemy({ strength: 2 })]))
+  const next = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse', strength: 2 })]))
   assertEqual(next.players[0].hp, 7, 'a 1-damage attack with 2 Strength deals 3')
 })
 
@@ -117,41 +122,51 @@ check('an area-of-effect enemy action hits every player', () => {
     [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 }), player({ id: 'p3', row: 2 })],
     [enemy({ row: 0 })],
   )
-  // Red Louse attacks its own row; force an AoE action to exercise the branch.
-  const aoe = { ...state, enemies: [{ ...state.enemies[0], defId: 'cultist', actionIndex: 1 }] }
+  // The Gremlin Nob's attack carries the area-of-effect symbol.
+  const aoe = {
+    ...state,
+    enemies: [{ ...state.enemies[0], defId: 'gremlin_nob', hp: 28, actionIndex: 1 }],
+  }
   const next = enemyTurn(aoe)
-  assertEqual(next.players[0].hp, 9, 'the row occupant is hit')
-  assertEqual(next.players[1].hp, 10, 'a non-AoE attack does not reach other rows')
-  assertEqual(next.enemies[0].uid, 'e1')
+  assertEqual(next.players[0].hp, 7, 'every player takes the 3 damage')
+  assertEqual(next.players[1].hp, 7, 'including those in other rows')
+  assertEqual(next.players[2].hp, 7)
 })
 
 // p.13: the cube walks down and loops to the topmost RED slot; grey slots fire once.
+// The Gremlin Nob sleeps on turn 1 (a grey slot) then attacks forever.
 check('a cube enemy runs its one-time slot then loops past it', () => {
-  const cultist = enemyDef('cultist')
-  assertDeepEqual(actionsFor(cultist, 1, 0), [{ kind: 'gainStrength', amount: 1 }], 'slot 0 is the ritual')
-  assertEqual(advanceCube(cultist, 0), 1, 'the cube moves down')
-  assertEqual(advanceCube(cultist, 1), 1, 'at the bottom it returns to the first repeating slot, skipping the grey one')
+  const nob = enemyDef('gremlin_nob')
+  assertDeepEqual(actionsFor(nob, 1, 0), [{ kind: 'idle' }], 'the grey slot does nothing')
+  assertEqual(advanceCube(nob, 0), 1, 'the cube moves down')
+  assertEqual(advanceCube(nob, 1), 1, 'at the bottom it returns to the topmost RED slot, skipping the grey one')
 })
 
-check('the Cultist buffs once then attacks forever', () => {
-  let state = inEnemyPhase([player()], [enemy({ defId: 'cultist', hp: 6 })])
+// The Blue Slaver alternates a plain attack with one that Weakens.
+check('a cube enemy walks its track and loops', () => {
+  let state = inEnemyPhase([player()], [enemy({ defId: 'blue_slaver', hp: 7 })])
   state = enemyTurn(state)
-  assertEqual(state.enemies[0].strength, 1, 'first turn is the ritual')
-  assertEqual(state.players[0].hp, 10, 'and deals no damage')
+  assertEqual(state.players[0].hp, 9, 'slot 0 is a plain 1-damage attack')
+  assertEqual(state.players[0].weak, 0, 'and applies no Weak')
 
   state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.players[0].hp, 8, 'second turn attacks for 1 + 1 Strength')
-  assertEqual(state.enemies[0].strength, 1, 'the ritual does not repeat')
+  assertEqual(state.players[0].weak, 1, 'slot 1 attacks and Weakens')
 
   state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.players[0].hp, 6, 'and keeps attacking')
+  assertEqual(state.enemies[0].actionIndex, 1, 'the cube loops back through the track')
 })
 
+// The Cultist card shows one action with no dice column: 1 damage and 1
+// Strength, every turn. Its damage therefore climbs as it buffs itself.
 check('a single-action enemy repeats the same action every turn', () => {
-  let state = inEnemyPhase([player()], [enemy()])
+  let state = inEnemyPhase([player()], [enemy({ defId: 'cultist', hp: 9 })])
   state = enemyTurn(state)
+  assertEqual(state.players[0].hp, 9, 'the first hit lands before the Strength does')
+  assertEqual(state.enemies[0].strength, 1)
+
   state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.players[0].hp, 8, 'two turns of 1 damage')
+  assertEqual(state.players[0].hp, 7, 'the second hit carries the Strength it gained')
+  assertEqual(state.enemies[0].strength, 2)
 })
 
 check('the Enemy Turn hands play back to the players', () => {
@@ -173,13 +188,43 @@ check('the Enemy Turn does not mutate the state handed in', () => {
 
 // A player at 0 HP ends the game for the whole party (p.13).
 check('a player dying loses the game for everyone', () => {
-  const next = enemyTurn(inEnemyPhase([player({ hp: 1 })], [enemy({ strength: 3 })]))
+  const next = enemyTurn(inEnemyPhase([player({ hp: 1 })], [enemy({ defId: 'green_louse', strength: 3 })]))
   assert(next.players[0].dead, 'the player should be dead')
   assertEqual(next.phase, 'lost', 'any death ends the run in defeat')
 })
 
+// The Spike Slime's 3-4 action inflicts a Daze. The pile helper was tested, but
+// nothing covered the enemy action that uses it, so putting the Daze on the
+// wrong pile went unnoticed.
+check('an enemy Daze lands on TOP of the draw pile, not the discard pile', () => {
+  const existing = instance('strike_ironclad')
+  const state = {
+    ...inEnemyPhase(
+      [player({ draw: [existing], discard: [] })],
+      [enemy({ defId: 'spike_slime', hp: 5 })],
+    ),
+    die: 3,
+  }
+  const next = enemyTurn(state)
+  const target = next.players[0]
+  assertEqual(target.draw.length, 2, 'the Daze joins the draw pile')
+  assertEqual(target.draw[0].defId, 'daze', 'and sits on top, so it is drawn next (p.24)')
+  assertEqual(target.draw[1].uid, existing.uid, 'the card that was there is pushed down')
+  assertEqual(target.discard.length, 0, 'nothing goes to the discard pile')
+})
+
+check('a Daze-free roll adds no Daze at all', () => {
+  const state = {
+    ...inEnemyPhase([player({ draw: [] })], [enemy({ defId: 'spike_slime', hp: 5 })]),
+    die: 5,
+  }
+  const next = enemyTurn(state)
+  assertEqual(next.players[0].draw.length, 0, 'the 5-6 action is a plain attack')
+  assertEqual(next.players[0].hp, 8, 'which deals 2')
+})
+
 check('HP scales with the party size', () => {
-  const nob = { id: 'nob', name: 'Gremlin Nob', hpByPlayers: [14, 28, 42, 56], pattern: { kind: 'single', actions: [] } }
+  const nob = enemyDef('gremlin_nob')
   assertEqual(startingHp(nob, 1), 14, 'solo uses the first HP column')
   assertEqual(startingHp(nob, 3), 42, 'three players use the third column')
   assertEqual(startingHp(nob, 4), 56, 'four players use the fourth column')

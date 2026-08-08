@@ -20,11 +20,13 @@ import {
   hitDamage,
   totalPoisonInPlay,
 } from './damage.ts'
-import { drawCards, discardHand } from './piles.ts'
+import { drawCards, discardHand, scry } from './piles.ts'
+import { relicDef } from './relics.ts'
+import type { RelicTrigger } from './relics.ts'
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
-import type { Enemy, Player } from './types.ts'
+import type { Enemy, OrbType, Player } from './types.ts'
 
 export type CombatPhase = 'player' | 'enemy' | 'won' | 'lost'
 
@@ -95,6 +97,13 @@ export type PlayContext = {
   discardUids?: string[]
   /** Cards chosen to exhaust from hand, for effects like True Grit. */
   exhaustUids?: string[]
+  /** Of the cards a Scry revealed, the ones the player bins. */
+  scryDiscardUids?: string[]
+  /**
+   * Which orb slot to evoke, when the player has a choice. The board game lets
+   * you evoke ANY orb, unlike the video game's fixed front slot (p.16).
+   */
+  evokeSlots?: number[]
 }
 
 /**
@@ -125,6 +134,9 @@ function applyEffect(
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
       }
+      // The attacker's own Weak is spent by attacking, exactly as an enemy's is
+      // (p.24). One token per attack, however many targets or hits it had.
+      if (targets.length > 0 && actor.weak > 0) actor.weak -= 1
       return
     }
     case 'damage': {
@@ -214,13 +226,23 @@ function applyEffect(
       actor.exhaust = [...actor.exhaust, ...moved]
       return
     }
-    case 'channel':
-    case 'evoke':
-    case 'scry':
-      // Orbs and Scry are not implemented yet. Zap, Dual Cast and any Watcher
-      // Scry card therefore resolve as no-ops rather than silently doing
-      // something wrong; see the note in state.ts.
+    case 'channel': {
+      for (let i = 0; i < effect.amount; i++) channelOrb(state, actor, effect.orb, context)
       return
+    }
+    case 'evoke': {
+      for (let i = 0; i < effect.times; i++) evokeOrb(state, actor, context)
+      return
+    }
+    case 'scry': {
+      // Scry shows the top X and lets the player bin any of them; the rest go
+      // back on top IN THE SAME ORDER (p.24).
+      const piles = scry({ draw: actor.draw, hand: actor.hand, discard: actor.discard },
+        effect.amount, context.scryDiscardUids ?? [])
+      actor.draw = piles.draw
+      actor.discard = piles.discard
+      return
+    }
   }
 }
 
@@ -290,9 +312,11 @@ export function startPlayerTurn(state: CombatState): CombatState {
   const next = clone(state)
   next.phase = 'player'
   next.turn += 1
-  // One roll per round; every die effect this round reads this value.
-  next.die = nextInt(next.rng, 6) + 1
 
+  // The Start of Turn phases run in the order the rulebook prints them (p.12):
+  // Reset, Draw, Roll, then start-of-turn abilities. The order matters even
+  // though the roll is independent of the draw today, because it decides which
+  // RNG values each step consumes — swapping them changes every seeded replay.
   for (const player of next.players) {
     if (player.dead) continue
     player.energy = 3
@@ -302,6 +326,16 @@ export function startPlayerTurn(state: CombatState): CombatState {
     player.hand = result.hand
     player.discard = result.discard
   }
+
+  // One roll per round; every die effect this round reads this value.
+  next.die = nextInt(next.rng, 6) + 1
+
+  // Start-of-combat abilities only fire on turn 1 (p.12).
+  if (next.turn === 1) fireRelics(next, 'startOfCombat')
+  fireRelics(next, 'startOfTurn')
+  // Die relics fire after the roll, during Start of Turn (p.19).
+  fireRelics(next, 'dieRelic')
+
   next.log = [...next.log, `-- turn ${next.turn} (die ${next.die}) --`]
   return next
 }
@@ -310,9 +344,12 @@ export function startPlayerTurn(state: CombatState): CombatState {
 export function endPlayerTurn(state: CombatState): CombatState {
   if (state.phase !== 'player') return state
   const next = clone(state)
+  fireRelics(next, 'endOfTurn')
 
   for (const player of next.players) {
     if (player.dead) continue
+    // Orbs fire before the hand is discarded, and before the Wrath bite.
+    resolveOrbsAtEndOfTurn(next, player)
     // Ending your turn in Wrath costs 1 damage, and it can be blocked (p.17).
     if (player.stance === 'wrath') damagePlayer(player, 1)
     const piles = discardHand(player)
@@ -387,14 +424,19 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       const targets = action.aoe ? living : playersInRowOf(state, enemy)
       const mods = attackerModsOfEnemy(enemy)
       for (const target of targets) {
-        const vulnerableAtStart = 0 // players do not carry Vulnerable in this build
+        // Every hit is modified, but only one Vulnerable token comes off after
+        // the whole action resolves (p.14).
+        const vulnerableAtStart = target.vulnerable
         for (let i = 0; i < (action.times ?? 1); i++) {
           if (target.dead) break
           damagePlayer(target, hitDamage(action.amount, mods, { vulnerable: vulnerableAtStart }))
         }
+        if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
       }
-      // One Weak token comes off after the whole action, not per hit.
-      if (enemy.weak > 0) enemy.weak -= 1
+      // One Weak token comes off after the whole action, not per hit — and only
+      // if the action actually attacked something. An enemy swinging at an
+      // empty row has not attacked (p.24), same rule as the player side.
+      if (targets.length > 0 && enemy.weak > 0) enemy.weak -= 1
       return
     }
     case 'block': {
@@ -405,14 +447,122 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       enemy.strength = gainStrength(enemy.strength, action.amount)
       return
     }
-    case 'applyWeak':
+    case 'applyWeak': {
+      for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        target.weak = gainWeak(target.weak, action.amount)
+      }
+      return
+    }
     case 'applyVulnerable': {
-      // Players cannot yet carry Weak or Vulnerable; these land nowhere until
-      // player-side tokens exist. Deliberately a no-op rather than a wrong guess.
+      for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        target.vulnerable = gainVulnerable(target.vulnerable, action.amount)
+      }
+      return
+    }
+    case 'daze': {
+      // Daze goes on TOP of the draw pile, so it is the very next card drawn.
+      for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        const cards = Array.from({ length: action.amount }, (_, i) => ({
+          uid: `daze-${state.turn}-${enemy.uid}-${target.id}-${i}`,
+          defId: 'daze',
+          upgraded: false,
+        }))
+        target.draw = [...cards, ...target.draw]
+      }
       return
     }
     case 'idle':
       return
+  }
+}
+
+
+/**
+ * Channels an orb into any OPEN slot. If every slot is full, an orb of the
+ * player's choice is evoked first and the new one takes its place (p.16).
+ * Running out of orb cubes is not modelled: the slots are the limit here.
+ */
+function channelOrb(
+  state: CombatState,
+  actor: Player,
+  orb: OrbType,
+  context: PlayContext,
+): void {
+  const open = actor.orbs.indexOf(null)
+  if (open >= 0) {
+    actor.orbs[open] = orb
+    return
+  }
+  evokeOrb(state, actor, context)
+  const freed = actor.orbs.indexOf(null)
+  if (freed >= 0) actor.orbs[freed] = orb
+}
+
+/**
+ * Evokes one orb and applies its effect. The board game lets you evoke ANY orb;
+ * there is no front slot and no rotation (p.16). Without an explicit choice the
+ * first occupied slot is used, which keeps a card playable without a prompt.
+ */
+function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void {
+  const chosen = context.evokeSlots?.find((slot) => actor.orbs[slot] != null)
+  const slot = chosen ?? actor.orbs.findIndex((orb) => orb != null)
+  if (slot < 0) return
+  const orb = actor.orbs[slot]
+  if (!orb) return
+  actor.orbs[slot] = null
+
+  const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
+  if (orb === 'lightning') {
+    if (target) damageEnemy(target, 2)
+  } else if (orb === 'frost') {
+    actor.block = gainBlock(actor.block, 1)
+  } else {
+    // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
+    // time and is not boosted by card effects (rulebook FAQ, p.18).
+    if (target) damageEnemy(target, 3 + actor.powers.length)
+  }
+}
+
+/**
+ * End of turn, each Lightning orb deals 1 and each Frost orb grants 1 Block.
+ * Dark orbs do nothing until evoked (p.16).
+ */
+function resolveOrbsAtEndOfTurn(state: CombatState, actor: Player): void {
+  for (const orb of actor.orbs) {
+    if (orb === 'lightning') {
+      const target = livingEnemies(state)[0]
+      if (target) damageEnemy(target, 1)
+    } else if (orb === 'frost') {
+      actor.block = gainBlock(actor.block, 1)
+    }
+  }
+}
+
+
+/**
+ * Fires every relic whose trigger matches. Relics are the first users of the
+ * trigger machinery that Powers will also need — the shape here is deliberately
+ * the one a Power trigger will reuse.
+ *
+ * A relic's effects resolve against the owner, targeting the first living enemy
+ * where a target is required, since a relic never asks the player to choose.
+ */
+function fireRelics(state: CombatState, when: RelicTrigger['kind']): void {
+  for (const player of state.players) {
+    if (player.dead) continue
+    for (const held of player.relics) {
+      const def = relicDef(held.defId)
+      const trigger = def.trigger
+      if (trigger.kind !== when) continue
+      // Die relics only fire on a matching roll (p.19).
+      if (trigger.kind === 'dieRelic' && !trigger.faces.includes(state.die)) continue
+
+      const target = livingEnemies(state)[0]
+      const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
+      for (const effect of def.effects) {
+        applyEffect(state, player, effect, 'enemy', 'self', context)
+      }
+    }
   }
 }
 
@@ -424,6 +574,7 @@ function settle(state: CombatState): CombatState {
   }
   if (state.enemies.every((enemy) => enemy.dead)) {
     state.phase = 'won'
+    fireRelics(state, 'endOfCombat')
     return state
   }
   return state

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { endPlayerTurn, enemyTurn, playCard, startPlayerTurn } from '../game/combat.ts'
@@ -62,9 +62,19 @@ function canAfford(player: Player, card: CardInstance): boolean {
 
 export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
+  const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const rows = useMemo(() => rowsOf(state), [state])
   const bosses = state.enemies.filter((enemy) => enemy.isBoss)
+
+  // With a full party the board can outgrow the viewport. Rather than shrink
+  // everything, keep the row the player actually controls on screen.
+  //
+  // A layout effect, not a plain one: this must run before paint, or the board
+  // is briefly drawn scrolled to the wrong row and then jumps.
+  useLayoutEffect(() => {
+    viewerRowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [viewerId, state.turn])
 
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
 
@@ -179,7 +189,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
         </p>
       ) : null}
 
-      <div className="board">
+      <div className="board" data-rows={rows.length}>
         {bosses.length > 0 ? (
           <div className="board__bosses">
             {bosses.map((enemy) => (
@@ -198,7 +208,11 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
           const occupant = state.players.find((player) => player.row === row)
           const foes = state.enemies.filter((enemy) => enemy.row === row && !enemy.isBoss)
           return (
-            <div className="row" key={row}>
+            <div
+              className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
+              key={row}
+              ref={occupant?.id === viewerId ? viewerRowRef : undefined}
+            >
               <div className="row__seat">
                 {occupant ? (
                   <button
@@ -227,6 +241,8 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
                     <TokenRow
                       block={occupant.block}
                       strength={occupant.strength}
+                      vulnerable={occupant.vulnerable}
+                      weak={occupant.weak}
                       shivs={occupant.shivs}
                       miracles={occupant.miracles}
                     />

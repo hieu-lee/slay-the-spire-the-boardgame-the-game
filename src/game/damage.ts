@@ -16,7 +16,7 @@ export type DefenderMods = {
 }
 
 export function attackerModsOfPlayer(player: Player): AttackerMods {
-  return { strength: player.strength, weak: 0, wrath: player.stance === 'wrath' }
+  return { strength: player.strength, weak: player.weak, wrath: player.stance === 'wrath' }
 }
 
 export function attackerModsOfEnemy(enemy: Enemy): AttackerMods {

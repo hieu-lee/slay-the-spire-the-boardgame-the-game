@@ -21,6 +21,10 @@ src/**/*.d.ts
 /test-*.mjs
 /scratch-*.mjs
 /tmp-*.mjs
+# ...and downloaded scans, which have landed here more than once.
+/*.png
+/*.jpg
+/*.webp
 artifacts/
 
 # All artwork is the publisher's. It is fetched into the working tree by the

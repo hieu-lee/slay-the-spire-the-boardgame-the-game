@@ -4,7 +4,7 @@
 // fails on any console error, page error, or failed request.
 //
 // Usage: node scripts/verify-browser.mjs [--headed] [--out=dir]
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
@@ -19,7 +19,9 @@ const outDir = join(
   (args.find((a) => a.startsWith('--out=')) ?? '--out=artifacts/browser').slice(6),
 )
 
-rmSync(outDir, { recursive: true, force: true })
+// Deliberately NOT wiped: a reviewer running this suite at the same time as
+// verify-all would delete the directory out from under the other run. Files are
+// overwritten in place instead, which is safe when two runs overlap.
 mkdirSync(outDir, { recursive: true })
 
 // Port 0 asks the OS for a free port. A fixed port collides whenever another
@@ -63,17 +65,38 @@ async function shot(label) {
   return state
 }
 
+const readRun = () => page.evaluate(() => window.__STS_DEBUG__.getRun())
 const readState = () => page.evaluate(() => window.__STS_DEBUG__.getState())
+
+/** Clicks the first reachable room, which starts whatever that room is. */
+async function enterFirstRoom() {
+  await page.locator('.room--reachable').first().click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+}
 
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
 
-check('the app boots into a playable combat', () => {})
-const booted = await shot('01-combat-start')
-check('combat starts with a full hand and three energy', () => {
-  assertEqual(booted.phase, 'player', 'the game should open on the Player Turn')
+// A run opens on the map with the boot beside the board (p.9).
+const opening = await readRun()
+await shot('01-map-start')
+check('a run opens on the map with one way in', () => {
+  assertEqual(opening.phase, 'map', 'the run should start on the map')
+  assertEqual(opening.act, 1)
+  assertEqual(opening.map.position, null, 'the boot starts beside the map')
+})
+
+const reachableAtStart = await page.locator('.room--reachable').count()
+check('exactly one room is reachable at the start', () => {
+  assertEqual(reachableAtStart, 1, 'the opening encounter is the only way in')
+})
+
+await enterFirstRoom()
+const booted = await shot('02-combat-start')
+check('the first room is an encounter and starts a combat', () => {
+  assertEqual(booted.phase, 'player', 'combat opens on the Player Turn')
   assertEqual(booted.players[0].hand.length, 5, 'five cards are dealt')
   assertEqual(booted.players[0].energy, 3, 'energy starts at 3')
   assert(booted.die >= 1 && booted.die <= 6, `die should be 1-6, got ${booted.die}`)
@@ -102,7 +125,7 @@ check('clicking a card then an enemy actually plays it', () => {
     `an enemy should have taken damage: ${totalEnemyHp(beforePlay)} -> ${totalEnemyHp(afterPlay)}`,
   )
 })
-await shot('02-after-card-played')
+await shot('03-after-card-played')
 
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
@@ -148,7 +171,7 @@ check('ending the turn discards the hand and hands over to the enemies', () => {
   assertEqual(afterEnd.players[0].hand.length, 0, 'the hand is discarded')
   assertEqual(afterEnd.phase, 'enemy', 'the Enemy Turn follows')
 })
-await shot('03-enemy-phase')
+await shot('04-enemy-phase')
 
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 const afterEnemies = await readState()
@@ -158,13 +181,15 @@ check('resolving enemies returns play to the party', () => {
     `expected the Player Turn or a loss, got ${afterEnemies.phase}`,
   )
 })
-await shot('04-after-enemy-turn')
+await shot('05-after-enemy-turn')
 
 // Four players is the maximum the box supports and the layout most likely to
 // break, so it gets its own capture.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'four-player'))
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().players.length === 4)
-const four = await shot('05-four-players')
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
+await shot('06a-four-player-map')
+await enterFirstRoom()
+const four = await shot('06-four-players')
 check('a four player game lays out one row per player', () => {
   assertEqual(four.players.length, 4, 'four seats')
   assertEqual(new Set(four.players.map((p) => p.row)).size, 4, 'each player gets their own row')
@@ -178,9 +203,9 @@ check('every player row is rendered on screen', () => {
 
 // Nothing should overflow horizontally at any supported width.
 for (const [label, width, height] of [
-  ['06-mobile', 390, 844],
-  ['07-tablet', 820, 1180],
-  ['08-desktop-wide', 1920, 1080],
+  ['07-mobile', 390, 844],
+  ['08-tablet', 820, 1180],
+  ['09-desktop-wide', 1920, 1080],
 ]) {
   await page.setViewportSize({ width, height })
   await page.waitForTimeout(60)
@@ -201,10 +226,14 @@ for (const [label, width, height] of [
 // rewrite: a wrong auto-commit silently skips the discard, exhaust or ally
 // selection and quietly breaks the printed rule.
 await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'choice-flows'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
-  debug.reset(2, 'choice-flows')
-  const state = structuredClone(debug.getState())
+  const run = structuredClone(debug.getRun())
+  const state = run.combat
   const p1 = state.players[0]
   // Deal a known hand: Survivor (discard 1), True Grit (exhaust 1 + block ally),
   // Defend+ (block ally), and two spare cards to choose.
@@ -216,9 +245,16 @@ await page.evaluate(() => {
     { uid: 'h-spare2', defId: 'strike_ironclad', upgraded: false },
   ]
   p1.energy = 6
-  debug.setState(state)
+  debug.setRun(run)
 })
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 5)
+// Wait for a card that ONLY the injected hand contains. Waiting on hand.length
+// is not enough: the natural opening hand is also five cards, so the condition
+// can be true before the injection lands. That raced about one run in eight.
+await page.waitForFunction(() =>
+  window.__STS_DEBUG__.getState()?.players[0].hand.some((card) => card.uid === 'h-survivor'),
+)
+// And wait for React to actually render that hand before clicking by index.
+await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 5)
 
 // The hand shrinks as cards are played, so the on-screen index has to be
 // derived from live state rather than from a fixed list.
@@ -246,7 +282,7 @@ check('Survivor requires a discard choice and actually discards', () => {
   )
   assert(!p1.hand.some((c) => c.uid === 'h-spare1'), 'and must leave hand')
 })
-await shot('09-survivor-choice')
+await shot('10-survivor-choice')
 
 // True Grit: exhaust a card, then choose which ally gets the Block.
 await clickCard('h-grit')
@@ -266,7 +302,77 @@ check('True Grit exhausts the chosen card and blocks the chosen ally', () => {
   const blocked = afterGrit.players.reduce((sum, p) => sum + p.block, 0)
   assert(blocked > 2, `some player should have gained True Grit's Block, total was ${blocked}`)
 })
-await shot('10-true-grit-ally')
+await shot('11-true-grit-ally')
+
+// Enemies can Weaken players and make them Vulnerable. If the seat panel does
+// not show those tokens, a player cannot see a debuff that is affecting them.
+// reset() goes through React state, so reading it back in the same tick would
+// see the old run. Wait for it to land before touching anything.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'debuff-display'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.locator('.room--reachable').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].weak = 2
+  run.combat.players[0].vulnerable = 1
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].weak === 2)
+const seatTokens = await page.evaluate(() =>
+  [...document.querySelectorAll('.seat .token')].map((el) => el.className),
+)
+check('a player can see the Weak and Vulnerable on their own seat', () => {
+  assert(
+    seatTokens.some((name) => name.includes('token--weak')),
+    `expected a Weak token on the seat, saw: ${seatTokens.join(', ') || 'none'}`,
+  )
+  assert(
+    seatTokens.some((name) => name.includes('token--vulnerable')),
+    `expected a Vulnerable token on the seat, saw: ${seatTokens.join(', ') || 'none'}`,
+  )
+})
+await shot('13-player-debuffs')
+
+// The campfire is the first non-combat room with real interaction: each player
+// independently Rests or Smiths, and nobody leaves until all have chosen.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  debug.reset(2, 'campfire')
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.map.position = run.map.rows[run.map.rows.length - 2][0]
+  run.players = run.players.map((player) => ({ ...player, hp: 4 }))
+  debug.setRun(run)
+})
+await page.waitForSelector('.campfire')
+const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
+check('a campfire will not let the party leave until everyone has chosen', () => {
+  assert(leaveLockedBefore, 'the leave button must be disabled while a choice is outstanding')
+})
+
+await page.locator('.campfire__player').nth(0).getByRole('button', { name: /Rest/ }).click()
+await page.locator('.campfire__player').nth(1).getByRole('button', { name: /Smith/ }).click()
+await page.waitForSelector('.campfire__deck .card')
+await shot('12-campfire')
+await page.locator('.campfire__deck .card').first().click()
+const leaveLockedAfter = await page.locator('.campfire__leave').isDisabled()
+await page.locator('.campfire__leave').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const afterCampfire = await readRun()
+
+check('Rest heals and Smith upgrades, and the party returns to the map', () => {
+  assert(!leaveLockedAfter, 'once every player has chosen, leaving is allowed')
+  assertEqual(afterCampfire.phase, 'map', 'the party returns to the map')
+  assertEqual(afterCampfire.players[0].hp, 7, 'the resting player heals 3 (p.9)')
+  assertEqual(afterCampfire.players[1].hp, 4, 'the smithing player does not heal')
+  assertEqual(
+    afterCampfire.players[1].deck.filter((card) => card.upgraded).length,
+    1,
+    'and upgrades exactly one card',
+  )
+})
 
 // A card whose width is unbounded turns aspect-ratio into runaway height. This
 // caught a real regression where one enemy portrait grew to ~560px tall and the
