@@ -306,13 +306,56 @@ try {
   })
   await replacementTab.close()
 
+  let queuedAscensionRequests = 0
+  let queuedAscensionStarted
+  const queuedAscensionStart = new Promise((resolve) => { queuedAscensionStarted = resolve })
+  let releaseQueuedAscension
+  const queuedAscensionGate = new Promise((resolve) => { releaseQueuedAscension = resolve })
+  await a.route(`**/api/rooms/${code}/ascension`, async (route) => {
+    queuedAscensionRequests += 1
+    const response = await route.fetch()
+    queuedAscensionStarted()
+    await queuedAscensionGate
+    await route.fulfill({ response })
+  })
+  await a.getByLabel('Ascension').fill('5')
+  await queuedAscensionStart
+  await a.getByLabel('Ascension').fill('4')
+  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
+  await a.locator('.connection--reconnecting').waitFor()
+  await a.locator('.connection--connected').waitFor()
+  releaseQueuedAscension()
+  await a.waitForTimeout(50)
+  await a.unroute(`**/api/rooms/${code}/ascension`)
+  const afterQueuedReconnect = await snapshot(a)
+  check('a queued write cannot start after its connection drops', () => {
+    assertEqual(queuedAscensionRequests, 1)
+    assertEqual(afterQueuedReconnect.ascension, 5)
+  })
+  await a.getByLabel('Ascension').fill('6')
+  await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
+
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
   await Promise.all([
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
   ])
+  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
+  await a.locator('.connection--reconnecting').waitFor()
+  const inertWhileReconnecting = await a.locator('.online-mutations').evaluate((table) => table.inert)
+  const positionBeforeReconnectClick = (await snapshot(a)).run.map.position
+  await a.locator('.app-shell--online .room--reachable').first().evaluate((room) => room.click())
+  await a.waitForTimeout(50)
+  const positionAfterReconnectClick = (await snapshot(a)).run.map.position
+  await a.locator('.connection--connected').waitFor()
+  const interactiveAfterReconnect = await a.locator('.online-mutations').evaluate((table) => !table.inert)
+  check('all room writes are disabled until a reconnect refresh succeeds', () => {
+    assert(inertWhileReconnecting)
+    assert(interactiveAfterReconnect)
+    assertEqual(positionAfterReconnectClick, positionBeforeReconnectClick)
+  })
   const liveRoom = rooms.store.rooms.get(code)
-  liveRoom.run.players.find((player) => player.name === 'Ann').potions = ['energy_potion', 'energy_potion']
+  liveRoom.run.players.find((player) => player.name === 'Ann').potions = ['energy_potion', 'energy_potion', 'energy_potion']
   liveRoom.run.players.find((player) => player.name === 'Bo').potions = ['block_potion']
   await a.locator('.app-shell--online .room--reachable').click()
   await Promise.all([
@@ -334,22 +377,258 @@ try {
     assertEqual(aView.run.players.find((player) => player.id === bId).deck, null)
   })
   check('every online seat shows every face-up potion without granting its controls', () => {
-    assert(annPotions.includes('Energy Potion ×2'))
+    assert(annPotions.includes('Energy Potion ×3'))
     assert(boPotions.includes('Block Potion'))
     assertEqual(foreignPotionControls, 0)
   })
-
-  const energyBeforePotion = aView.run.combat.players.find((player) => player.id === aView.you.playerId).energy
-  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).evaluate((button) => {
+  const annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  annLive.hand.push({ uid: 'online-overflow-dance', defId: 'blade_dance', upgraded: false })
+  annLive.energy = 1
+  annLive.shivs = 4
+  boLive.shivs = 1
+  boLive.miracles = 1
+  Object.assign(liveRoom.run.combat.enemies[0], { hp: 1, maxHp: 1, block: 0, dead: false })
+  Object.assign(liveRoom.run.combat.enemies[1], { hp: 5, maxHp: 5, block: 0, dead: false })
+  const bCredentials = await credentials(b)
+  const publishedFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishedFixture.ok, 'could not publish the online overflow fixture')
+  await a.getByRole('button', { name: /^Blade Dance,/ }).waitFor()
+  await a.getByRole('button', { name: /^Blade Dance,/ }).click()
+  await a.getByRole('button', { name: /5 of 5 hit points/ }).click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+  let overflowRequests = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    overflowRequests += 1
+    liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 0
+    await route.continue()
+  }, { times: 1 })
+  await a.getByRole('button', { name: /5 of 5 hit points/ }).evaluate((button) => {
     button.click()
     button.click()
   })
-  await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).waitFor()
+  await a.getByRole('alert').filter({ hasText: 'shared Shiv supply changed' }).waitFor()
+  const expectedConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedConflict >= 0, 'the refused card action did not surface as an HTTP conflict')
+  failures.splice(expectedConflict, 1)
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/1'))
+  const refusedOnlineOverflow = await snapshot(a)
+  check('an authoritative card overflow race restores targeting with an actionable error', () => {
+    const ann = refusedOnlineOverflow.run.combat.players.find((player) => player.id === refusedOnlineOverflow.you.playerId)
+    assert(ann.hand.some((card) => card.uid === 'online-overflow-dance'))
+    assertEqual(refusedOnlineOverflow.run.combat.enemies[1].hp, 5)
+    assertEqual(overflowRequests, 1, 'double-clicking the final target queued the card twice')
+  })
+  await a.getByRole('button', { name: /^Blade Dance,/ }).click()
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 1
+
+  const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
+    .find((player) => player.id === aView.you.playerId).energy
+  const boMiracleLogsBefore = await a.locator('.combat__log li')
+    .filter({ hasText: 'Bo spends a Miracle for 1 Energy' }).count()
+  const aResponseLossCredentials = await credentials(a)
+  let committedPotionStatus = 0
+  let postCommitted = false
+  let failedReconciliationGets = 0
+  let exhaustReconciliationRetries
+  const reconciliationRetriesExhausted = new Promise((resolve) => { exhaustReconciliationRetries = resolve })
+  let interleavedSnapshotSeen = false
+  let interleavedSnapshot
+  let socketClosedBeforeCommit = false
+  let releaseAuthoritativeRefresh
+  const authoritativeRefreshGate = new Promise((resolve) => { releaseAuthoritativeRefresh = resolve })
+  const roomPattern = `**/api/rooms/${code}`
+  const holdRoomRefresh = async (route) => {
+    if (route.request().method() !== 'GET' || !postCommitted) return route.continue()
+    if (failedReconciliationGets < 3) {
+      failedReconciliationGets += 1
+      if (failedReconciliationGets === 3) exhaustReconciliationRetries()
+      return route.abort('connectionreset')
+    }
+    await authoritativeRefreshGate
+    return route.continue()
+  }
+  await a.route(roomPattern, holdRoomRefresh)
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    socketClosedBeforeCommit = await a.evaluate(() => {
+      const socket = window.__ROOM_SOCKETS__.at(-1)
+      socket?.close()
+      return socket?.readyState === WebSocket.CLOSING || socket?.readyState === WebSocket.CLOSED
+    })
+    const bo = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+    bo.miracles = 1
+    bo.energy = Math.min(bo.energy, 5)
+    const interleaved = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+      body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+    })
+    assert(interleaved.ok, 'could not publish the interleaved teammate snapshot')
+    const interleavedForAnn = await fetch(`${roomOrigin}/api/rooms/${code}`, {
+      headers: { 'x-room-token': aResponseLossCredentials.token },
+    })
+    assert(interleavedForAnn.ok, 'could not capture the interleaved teammate snapshot')
+    interleavedSnapshot = await interleavedForAnn.json()
+    await a.evaluate((snapshot) => {
+      window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'snapshot', snapshot }),
+      }))
+    }, interleavedSnapshot)
+    await a.locator('.combat__log li').filter({ hasText: 'Bo spends a Miracle for 1 Energy' })
+      .nth(boMiracleLogsBefore).waitFor()
+    interleavedSnapshotSeen = true
+    const response = await route.fetch()
+    committedPotionStatus = response.status()
+    postCommitted = true
+    await route.abort('connectionreset')
+  }, { times: 1 })
+  const responseLossFailureStart = failures.length
+  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×3/ }).click()
+  await a.getByRole('alert').filter({ hasText: /fetch|network/i }).waitFor()
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion ×3') && button.disabled))
+  await reconciliationRetriesExhausted
+  await a.waitForTimeout(0)
+  await a.evaluate((snapshot) => {
+    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'snapshot', snapshot }),
+    }))
+  }, interleavedSnapshot)
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion ×3') && button.disabled))
+  const lockedAfterDelayedSnapshot = await a.locator('.combat__actions')
+    .getByRole('button', { name: /Energy Potion ×3/ }).isDisabled()
+  const afterLostResponse = await snapshot(a)
+  const annAfterLostResponse = afterLostResponse.run.combat.players.find((player) => player.id === aView.you.playerId)
+  const ghostPotionPrompt = await a.locator('.prompt').count()
+  check('a delayed pre-action snapshot cannot unlock an unknown committed action', () => {
+    assertEqual(committedPotionStatus, 200)
+    assert(interleavedSnapshotSeen, 'the response-loss probe did not deliver its pre-action teammate snapshot')
+    assert(socketClosedBeforeCommit, 'the response-loss probe left its WebSocket connected')
+    assertEqual(failedReconciliationGets, 3, 'the response-loss probe did not exhaust reconciliation retries')
+    assert(lockedAfterDelayedSnapshot, 'a delayed pre-action snapshot unlocked the unknown potion')
+    assertEqual(annAfterLostResponse.energy, energyBeforeLostResponse + 2)
+    assertDeepEqual(annAfterLostResponse.potions, ['energy_potion', 'energy_potion'])
+    assertEqual(ghostPotionPrompt, 0)
+  })
+  for (let index = failures.length - 1; index >= responseLossFailureStart; index -= 1) {
+    if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
+  }
+  await a.evaluate((snapshot) => {
+    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'snapshot', snapshot }),
+    }))
+  }, afterLostResponse)
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+  const committedSnapshotUnlocked = await a.locator('.combat__actions')
+    .getByRole('button', { name: /Energy Potion ×2/ }).isEnabled()
+  check('a committed snapshot arriving after unknown unlocks from exact inventory evidence', () => {
+    assert(committedSnapshotUnlocked)
+  })
+  releaseAuthoritativeRefresh()
+  await a.waitForFunction(() => window.__ROOM_SOCKETS__.at(-1)?.readyState === WebSocket.OPEN)
+  await a.unroute(roomPattern, holdRoomRefresh)
+
+  const energyBeforePotion = annAfterLostResponse.energy
+  const rateLimitFailureStart = failures.length
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.fulfill({
+    status: 429,
+    contentType: 'text/html',
+    body: '<h1>Rate limited</h1>',
+  }), { times: 1 })
+  await a.route(roomPattern, (route) => route.fulfill({
+    status: 429,
+    contentType: 'text/html',
+    body: '<h1>Rate limited</h1>',
+  }), { times: 1 })
+  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
+  await a.getByRole('alert').filter({ hasText: 'Request failed (429)' }).waitFor()
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+  const afterRateLimit = await snapshot(a)
+  let rateLimitErrors = 0
+  for (let index = failures.length - 1; index >= rateLimitFailureStart; index -= 1) {
+    if (failures[index].includes('429 (Too Many Requests)')) {
+      rateLimitErrors += 1
+      failures.splice(index, 1)
+    }
+  }
+  check('a definitive rate-limit refusal unlocks even when its refresh is also refused', () => {
+    assert(rateLimitErrors > 0, 'the rate-limit probe did not issue its refused requests')
+    const ann = afterRateLimit.run.combat.players.find((player) => player.id === aView.you.playerId)
+    assertEqual(ann.energy, energyBeforePotion)
+    assertDeepEqual(ann.potions, ['energy_potion', 'energy_potion'])
+  })
+
+  let boundedRefreshAttempts = 0
+  const boundedRetryFailureStart = failures.length
+  await a.route(roomPattern, async (route) => {
+    boundedRefreshAttempts += 1
+    if (boundedRefreshAttempts === 1) return route.abort('connectionreset')
+    return route.continue()
+  }, { times: 2 })
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
+  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+  for (let index = failures.length - 1; index >= boundedRetryFailureStart; index -= 1) {
+    if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
+  }
+  const afterBoundedRetry = await snapshot(a)
+  check('a bounded refresh retry reconciles an uncommitted transport failure', () => {
+    assertEqual(boundedRefreshAttempts, 2)
+    const ann = afterBoundedRetry.run.combat.players.find((player) => player.id === aView.you.playerId)
+    assertEqual(ann.energy, energyBeforePotion)
+    assertDeepEqual(ann.potions, ['energy_potion', 'energy_potion'])
+  })
+
+  let liveCommittedPotionStatus = 0
+  let failedLiveReconciliations = 0
+  const liveResponseLossFailureStart = failures.length
+  await a.route(roomPattern, async (route) => {
+    failedLiveReconciliations += 1
+    await route.abort('connectionreset')
+  }, { times: 3 })
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    liveCommittedPotionStatus = response.status()
+    await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).waitFor()
+    await route.abort('connectionreset')
+  }, { times: 1 })
+  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
+  await a.getByRole('alert').filter({ hasText: /fetch|network/i }).waitFor()
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion') && !button.textContent.includes('×') && !button.disabled))
+  const afterLiveResponseLoss = await snapshot(a)
+  const annAfterLiveResponseLoss = afterLiveResponseLoss.run.combat.players
+    .find((player) => player.id === aView.you.playerId)
+  check('a live authoritative commit unlocks without waiting for another snapshot', () => {
+    assertEqual(liveCommittedPotionStatus, 200)
+    assertEqual(failedLiveReconciliations, 3, 'the live response-loss probe did not exhaust reconciliation retries')
+    assertEqual(annAfterLiveResponseLoss.energy, energyBeforePotion + 2)
+    assertDeepEqual(annAfterLiveResponseLoss.potions, ['energy_potion'])
+  })
+  for (let index = failures.length - 1; index >= liveResponseLossFailureStart; index -= 1) {
+    if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
+  }
+
+  const energyBeforePotionDoubleClick = annAfterLiveResponseLoss.energy
+  await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).evaluate((button) => {
+    button.click()
+    button.click()
+  })
+  await a.waitForFunction(() => ![...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Energy Potion')))
   const afterPotionDoubleClick = await snapshot(a)
   const annAfterPotion = afterPotionDoubleClick.run.combat.players.find((player) => player.id === aView.you.playerId)
   check('one rapid double-click consumes only one physical potion', () => {
-    assertEqual(annAfterPotion.energy, energyBeforePotion + 2)
-    assertDeepEqual(annAfterPotion.potions, ['energy_potion'])
+    assertEqual(annAfterPotion.energy, Math.min(6, energyBeforePotionDoubleClick + 2))
+    assertDeepEqual(annAfterPotion.potions, [])
   })
 
   const hpBefore = aView.run.combat.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
@@ -410,12 +689,51 @@ try {
     assertEqual(preservedSeed, 'kept-local-run')
   })
 
-  await a.getByRole('button', { name: 'End turn' }).click()
-  await b.getByRole('button', { name: 'End turn' }).click()
+  await a.getByRole('button', { name: /^Blade Dance,/ }).click()
+  await a.locator('.enemy:not([disabled])').first().click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+  const aCredentials = await credentials(a)
+  const endTurnStatuses = []
+  await a.route(`**/api/rooms/${code}`, async (route) => {
+    const stalePlayerTurn = await route.fetch()
+    for (const token of [aCredentials.token, bCredentials.token]) {
+      const response = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-room-token': token },
+        body: JSON.stringify({ action: { kind: 'endTurn' } }),
+      })
+      endTurnStatuses.push(response.status)
+    }
+    await a.waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'discard')
+    await route.fulfill({ response: stalePlayerTurn })
+  }, { times: 1 })
+  let endTurnConflictStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 0
+    const response = await route.fetch()
+    endTurnConflictStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('.enemy:not([disabled])').nth(1).click()
   await Promise.all([
     a.locator('.combat[data-phase="discard"]').waitFor(),
     b.locator('.combat[data-phase="discard"]').waitFor(),
   ])
+  await a.waitForFunction(() => document.querySelector('.prompt') === null)
+  const expectedEndTurnConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedEndTurnConflict >= 0, 'the post-end-turn card action did not conflict')
+  failures.splice(expectedEndTurnConflict, 1)
+  const afterEndTurnRace = await snapshot(a)
+  const stalePhasePrompt = await a.locator('.prompt').count()
+  check('a stale conflict refresh after final end-turn cannot restore Player Turn targeting', () => {
+    assertDeepEqual(endTurnStatuses, [200, 200])
+    assertEqual(endTurnConflictStatus, 409)
+    assertEqual(afterEndTurnRace.run.combat.phase, 'discard')
+    assert(afterEndTurnRace.run.combat.players
+      .find((player) => player.id === afterEndTurnRace.you.playerId).hand
+      .some((card) => card.uid === 'online-overflow-dance'))
+    assertEqual(stalePhasePrompt, 0)
+  })
   const aDiscardTop = a.getByLabel('Top discard for Ann')
   if (await aDiscardTop.count()) await aDiscardTop.selectOption({ index: 0 })
   const selectedDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''

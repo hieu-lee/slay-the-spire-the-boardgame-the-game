@@ -130,6 +130,8 @@ type EffectKind =
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
+  /** Remove every Weak and Vulnerable token from the player. */
+  | { kind: 'clearDebuffs' }
   /**
    * Discard cards the player chooses. The choice travels with the action rather
    * than parking the game in a prompt state, which keeps a card play a single

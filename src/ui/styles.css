@@ -238,6 +238,10 @@ button:disabled {
   text-align: center;
 }
 
+.online-mutations {
+  display: contents;
+}
+
 .online-banner {
   color: var(--gold);
 }
@@ -473,6 +477,18 @@ button:disabled {
 
 .row:last-child {
   border-bottom: none;
+}
+
+.row__potion-target {
+  grid-column: 1 / -1;
+  justify-self: center;
+  color: var(--gold);
+  background: rgb(215 169 75 / 0.08);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  padding: 0.35rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* The row you control is lit, not boxed. */

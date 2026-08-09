@@ -83,6 +83,7 @@ function effectText(effect: Effect): string {
     case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
     case 'heal': return `heal ${effect.amount}${condition}`
+    case 'clearDebuffs': return `remove all Weak and Vulnerable${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
   }

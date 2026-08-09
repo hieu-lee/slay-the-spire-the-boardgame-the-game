@@ -122,6 +122,7 @@ check('the caps are the ones the rulebook prints', () => {
   assertEqual(CAPS.shivs, 5, 'Shivs')
   assertEqual(CAPS.miracles, 5, 'Miracles')
   assertEqual(CAPS.potions, 3, 'Potions')
+  assertEqual(CAPS.daze, 10, 'Daze deck')
 })
 
 check('tokens never go negative', () => {

@@ -31,8 +31,9 @@
 //     stand-in elite's reward. Elite rooms draw from a two-entry elite list.
 //   - Event, treasure and merchant rooms show a placeholder screen.
 //   - Relics fire on their triggers, but there is no way to GAIN one during a
-//     run. Held potions can be used in combat; reward draws, replacement at the
-//     limit, and outside-combat trading are not wired yet.
+//     run. Twelve potion types can be used in combat; reward draws, replacement
+//     at the limit, outside-combat trading, and the other nine effects are not
+//     wired yet.
 //   - Card rewards can be skipped unseen or reveal three live common/uncommon
 //     cards, allow one or a skip, return the rest to the bottom, and persist
 //     the pick into the deck.
@@ -122,13 +123,14 @@ export {
   endPlayerTurn,
   livingEnemies,
   enemyLabel,
+  overflowShivCount,
   playCard,
   resolveEnemyTargets,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
 } from './combat.ts'
-export type { CombatPhase, CombatState, DiscardOrders, PlayContext } from './combat.ts'
+export type { CombatPhase, CombatState, DiscardOrders, PlayContext, PotionContext } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

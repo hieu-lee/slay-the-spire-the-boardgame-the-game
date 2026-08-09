@@ -23,6 +23,8 @@ export const CAPS = {
   shivs: 5,
   miracles: 5,
   potions: 3,
+  /** The physical Daze deck is shared by the party. */
+  daze: 10,
 } as const
 
 /** Card definitions are static; instances are what live in a deck. */

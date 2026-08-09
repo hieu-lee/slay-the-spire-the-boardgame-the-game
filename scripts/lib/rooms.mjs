@@ -17,18 +17,23 @@ import { randomBytes } from 'node:crypto'
 import {
   activatePotion,
   advanceAct,
+  cardDef,
   beginEndPlayerTurn,
   createRun,
   currentRoom,
   endPlayerTurn,
   enemyTurn,
   enterRoom,
+  faceOf,
   leaveRoom,
+  overflowShivCount,
   playCard,
+  potionDef,
   revealCardReward,
   resolveCampfire,
   resolveCardRewards,
   resolveCombat,
+  resolveEnemyTargets,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
@@ -505,6 +510,33 @@ export const uidList = (value) =>
 const slotList = (value) =>
   Array.isArray(value) ? value.filter((item) => Number.isInteger(item) && item >= 0) : undefined
 
+function overflowChoices(combat, effects, action) {
+  const gained = effects.reduce(
+    (sum, effect) => sum + (effect.kind === 'gainShiv' ? effect.amount : 0),
+    0,
+  )
+  const targets = uidList(action.shivEnemyUids) ?? []
+  const overflow = overflowShivCount(combat, gained)
+  if (
+    action.expectedShivOverflow !== undefined &&
+    (!Number.isInteger(action.expectedShivOverflow) || action.expectedShivOverflow !== overflow)
+  ) {
+    fail('The shared Shiv supply changed; choose targets again')
+  }
+  if (overflow > 0) {
+    if (!Number.isInteger(action.expectedShivOverflow)) {
+      fail('The shared Shiv supply changed; choose targets again')
+    }
+    if (targets.length > overflow || (action.skipOverflow !== true && targets.length !== overflow)) {
+      fail('Choose every overflow Shiv target or explicitly skip the rest')
+    }
+    if (targets.some((uid) => resolveEnemyTargets(combat, 'enemy', uid).length === 0)) {
+      fail('An overflow Shiv target is no longer alive')
+    }
+  }
+  return { overflow, targets }
+}
+
 function dispatch(run, seat, action) {
   switch (action?.kind) {
     case 'playCard': {
@@ -515,7 +547,9 @@ function dispatch(run, seat, action) {
         .find((player) => player.id === seat.playerId)
         ?.hand.find((held) => held.uid === action.cardUid)
       if (!card) fail('That card is not in your hand')
-      const combat = playCard(run.combat, seat.playerId, action.cardUid, {
+      const def = faceOf(cardDef(card.defId), card.upgraded)
+      const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, action)
+      const context = {
         enemyUid: action.enemyUid ?? null,
         playerId: action.playerId ?? seat.playerId,
         // Coerced, not trusted: these arrive as JSON from a socket, and a
@@ -524,13 +558,26 @@ function dispatch(run, seat, action) {
         discardUids: uidList(action.discardUids),
         exhaustUids: uidList(action.exhaustUids),
         spendMiracle: action.spendMiracle === true,
-        shivEnemyUids: uidList(action.shivEnemyUids),
+        shivEnemyUids,
         // Both of these are real choices the rules grant (p.16, p.24). Dropping
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
         scryDiscardUids: uidList(action.scryDiscardUids),
         evokeSlots: slotList(action.evokeSlots),
-      })
+      }
+      const combat = playCard(run.combat, seat.playerId, action.cardUid, context)
+      if (combat === run.combat && overflow > 0 && shivEnemyUids.length > 0) {
+        const withoutOverflowTargets = playCard(run.combat, seat.playerId, action.cardUid, {
+          ...context,
+          shivEnemyUids: [],
+        })
+        if (withoutOverflowTargets !== run.combat) {
+          fail('An earlier overflow Shiv defeated a later target; choose targets again')
+        }
+      }
+      if (combat === run.combat && action.preflight === true) {
+        fail('That card play is no longer legal; choose again')
+      }
       return combat === run.combat ? run : { ...run, combat }
     }
 
@@ -563,13 +610,31 @@ function dispatch(run, seat, action) {
       if (typeof action.potionId !== 'string' || !player?.potions.includes(action.potionId)) {
         fail('That potion is not yours')
       }
+      const def = potionDef(action.potionId)
+      const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, action)
       const combat = activatePotion(
         run.combat,
         seat.playerId,
         action.potionId,
-        action.enemyUid ?? null,
-        action.targetPlayerId ?? null,
+        {
+          enemyUid: action.enemyUid ?? null,
+          targetPlayerId: action.targetPlayerId ?? null,
+          enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
+          shivEnemyUids,
+        },
       )
+      if (
+        combat === run.combat &&
+        overflow > 0 &&
+        shivEnemyUids.length > 0 &&
+        run.combat.phase === 'player' &&
+        !player.dead
+      ) {
+        fail('An earlier overflow Shiv defeated a later target; choose targets again')
+      }
+      if (combat === run.combat && action.preflight === true) {
+        fail('That potion use is no longer legal; choose again')
+      }
       return combat === run.combat ? run : { ...run, combat }
     }
     case 'enterRoom':

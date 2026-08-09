@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { CardDef } from '../game/cards.ts'
+import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePotion,
   beginEndPlayerTurn,
@@ -8,15 +8,17 @@ import {
   endPlayerTurn,
   enemyTurn,
   enemyLabel,
+  overflowShivCount,
   playCard,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
 } from '../game/combat.ts'
-import type { CombatState, DiscardOrders } from '../game/combat.ts'
+import type { CombatState, DiscardOrders, PotionContext } from '../game/combat.ts'
 import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
+import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
@@ -29,11 +31,18 @@ type CombatScreenProps = {
   /** The seat this client controls. Everyone sees the same board. */
   viewerId: string
   onChange?: (next: CombatState) => void
-  onAction?: (action: Record<string, unknown>) => void | Promise<unknown>
+  onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
   drawCount?: number
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
+  /** Room snapshot version; omitted for the local table. */
+  authoritativeVersion?: number
+  /** Successful REST refresh count; omitted for the local table. */
+  authoritativeRefresh?: number
 }
+
+type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
+type UnknownCardAction = { refreshAttempt: number; cardUid: string }
 
 /** What a card still needs before it can be played. */
 type Pending = {
@@ -106,12 +115,8 @@ function requirementsOf(
   // in because a counted attack with nothing to count reaches nobody, and
   // asking where to point it is asking a question with no consequence.
   const cardTarget = cardNeedsEnemy(def, viewer)
-  const shivsGained = def.effects.reduce(
-    (sum, effect) => sum + (effect.kind === 'gainShiv' ? effect.amount : 0),
-    0,
-  )
-  const shivsAvailable = CAPS.shivs - state.players.reduce((sum, player) => sum + player.shivs, 0)
-  const overflowShivs = Math.max(0, shivsGained - Math.max(0, shivsAvailable))
+  const shivsGained = gainedShivs(def.effects)
+  const overflowShivs = overflowShivCount(state, shivsGained)
   const needsEnemy = cardTarget || overflowShivs > 0
   // With one player on the board there is nobody to choose between, so asking
   // "who gets it" is a prompt with a single possible answer.
@@ -124,6 +129,10 @@ function requirementsOf(
       ? { kind: 'exhaust' as const, amount: exhaust.amount }
       : null
   return { needsEnemy, needsAlly, overflowShivs, hitsRow: def.target === 'row', choice }
+}
+
+function gainedShivs(effects: readonly Effect[]): number {
+  return effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv' ? effect.amount : 0), 0)
 }
 
 /**
@@ -271,12 +280,17 @@ export function CombatScreen({
   drawCount,
   decidedPlayerIds,
   savedDiscardOrder,
+  authoritativeVersion,
+  authoritativeRefresh,
 }: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
   const [spendingShiv, setSpendingShiv] = useState(false)
   const [pendingPotion, setPendingPotion] = useState<string | null>(null)
+  const [potionShivEnemyUids, setPotionShivEnemyUids] = useState<string[]>([])
+  const [potionOverflowRequired, setPotionOverflowRequired] = useState(0)
   const [usingPotion, setUsingPotion] = useState(false)
+  const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const boardRef = useRef<HTMLDivElement | null>(null)
@@ -285,11 +299,44 @@ export function CombatScreen({
   const programmaticScrollTop = useRef<number | null>(null)
   const manualBoardScroll = useRef(false)
   const potionActionPending = useRef(false)
+  const cardActionPending = useRef(false)
+  const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
+  const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const stateRef = useRef(state)
+  const versionRef = useRef(authoritativeVersion ?? -1)
+  const refreshRef = useRef(authoritativeRefresh)
+  stateRef.current = state
+  versionRef.current = authoritativeVersion ?? -1
+  refreshRef.current = authoritativeRefresh
   const rows = useMemo(() => rowsOf(state), [state])
   const savedDiscardKey = savedDiscardOrder?.join('\0')
 
   const { struck, beat } = useStruck(state)
+
+  // Unknown delivery with the item still visible stays locked until a causally
+  // later REST refresh. Exact inventory evidence can recognize a commit sooner.
+  useEffect(() => {
+    const current = state.players.find((player) => player.id === viewerId)
+    const potion = unknownPotionAction.current
+    if (potion && (
+      (authoritativeRefresh !== undefined && authoritativeRefresh > potion.refreshAttempt) ||
+      (current && current.potions.filter((held) => held === potion.potionId).length < potion.countBefore)
+    )) {
+      unknownPotionAction.current = null
+      potionActionPending.current = false
+      setUsingPotion(false)
+    }
+    const card = unknownCardAction.current
+    if (card && (
+      (authoritativeRefresh !== undefined && authoritativeRefresh > card.refreshAttempt) ||
+      (current && !current.hand.some((held) => held.uid === card.cardUid))
+    )) {
+      unknownCardAction.current = null
+      cardActionPending.current = false
+      setUsingCard(false)
+    }
+  }, [authoritativeRefresh, state, viewerId])
 
   function recenterViewerRow() {
     const board = boardRef.current
@@ -306,7 +353,62 @@ export function CombatScreen({
     setMiracleOnCard(false)
     setSpendingShiv(false)
     setPendingPotion(null)
+    setPotionShivEnemyUids([])
+    setPotionOverflowRequired(0)
   }, [state.phase, viewerId])
+
+  // A teammate can spend Shivs or kill a staged target while this client is
+  // choosing Cunning Potion's overflow attacks. Restart a changed count and
+  // drop dead targets instead of submitting choices for an older board.
+  useEffect(() => {
+    if (!pendingPotion) return
+    if (!viewer?.potions.includes(pendingPotion)) {
+      setPendingPotion(null)
+      setPotionShivEnemyUids([])
+      setPotionOverflowRequired(0)
+      return
+    }
+    const gained = gainedShivs(potionDef(pendingPotion).effects)
+    if (gained === 0) return
+    const liveRequired = overflowShivCount(state, gained)
+    if (liveRequired !== potionOverflowRequired) {
+      setPotionShivEnemyUids([])
+      setPotionOverflowRequired(liveRequired)
+      if (liveRequired === 0) setPendingPotion(null)
+      return
+    }
+    const alive = new Set(state.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
+    setPotionShivEnemyUids((current) => {
+      const valid = current.filter((uid) => alive.has(uid))
+      return valid.length === current.length ? current : valid
+    })
+  }, [state, viewer, pendingPotion, potionOverflowRequired])
+
+  // Card choices are made against a shared board too. Recompute overflow when
+  // teammates take or spend cubes, and discard targets that died meanwhile.
+  useEffect(() => {
+    if (!viewer) return
+    const alive = new Set(state.enemies.filter((enemy) => !enemy.dead).map((enemy) => enemy.uid))
+    setPending((current) => {
+      if (!current) return current
+      if (!viewer.hand.some((card) => card.uid === current.card.uid)) return null
+      const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
+      const overflowShivs = overflowShivCount(state, gainedShivs(def.effects))
+      const overflowChanged = overflowShivs !== current.overflowShivs
+      const enemyUid = current.enemyUid && alive.has(current.enemyUid) ? current.enemyUid : null
+      const shivEnemyUids = overflowChanged
+        ? []
+        : current.shivEnemyUids.filter((uid) => alive.has(uid))
+      const needsEnemy = cardNeedsEnemy(def, viewer) || overflowShivs > 0
+      if (overflowChanged && !needsEnemy && !current.needsAlly && !current.choice) return null
+      if (
+        overflowShivs === current.overflowShivs &&
+        enemyUid === current.enemyUid &&
+        shivEnemyUids.length === current.shivEnemyUids.length
+      ) return current
+      return { ...current, overflowShivs, needsEnemy, enemyUid, shivEnemyUids }
+    })
+  }, [state, viewer])
 
   useEffect(() => {
     if (onAction) return
@@ -422,6 +524,8 @@ export function CombatScreen({
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
 
   const over = state.phase === 'won' || state.phase === 'lost'
+  const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
+  const pendingPotionOverflow = potionOverflowRequired
   const livingPlayers = state.players.filter((player) => !player.dead)
   const confirmedDiscards = decidedPlayerIds
     ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
@@ -460,31 +564,88 @@ export function CombatScreen({
     }
   }
 
+  function reconciliation(outcome: ActionOutcome | void) {
+    const snapshot = outcome?.snapshot
+    if (!snapshot?.run?.combat || snapshot.version < versionRef.current) return null
+    const combat = snapshot.version === versionRef.current ? stateRef.current : snapshot.run.combat
+    const player = combat.players.find((candidate) => candidate.id === viewerId)
+    return combat.phase === 'player' && player ? { combat, player } : null
+  }
+
   function consumePotion(
     potionId: string,
-    enemyUid: string | null = null,
-    targetPlayerId: string | null = null,
+    context: PotionContext = {},
+    overflow?: { expected: number; skip: boolean },
   ) {
     if (potionActionPending.current) return
+    // Preview the atomic action against the visible board. Separate overflow
+    // attacks may kill a target selected again later; keep the potion staged
+    // and restart its choices instead of clearing the UI for a refused action.
+    const result = activatePotion(state, viewer!.id, potionId, context)
+    if (result === state) {
+      if (context.shivEnemyUids?.length) setPotionShivEnemyUids([])
+      return
+    }
     potionActionPending.current = true
     setUsingPotion(true)
     setPending(null)
     setSpendingShiv(false)
     setPendingPotion(null)
+    setPotionShivEnemyUids([])
+    setPotionOverflowRequired(0)
     if (onAction) {
-      const finish = () => {
+      const potionCountBefore = viewer!.potions.filter((held) => held === potionId).length
+      const unlock = () => {
+        unknownPotionAction.current = null
         potionActionPending.current = false
         setUsingPotion(false)
       }
-      Promise.resolve(onAction({ kind: 'usePotion', potionId, enemyUid, targetPlayerId })).then(finish, finish)
+      const awaitReconciliation = (refreshAttempt = refreshRef.current) => {
+        const current = stateRef.current.players.find((player) => player.id === viewerId)
+        if (
+          (current && current.potions.filter((held) => held === potionId).length < potionCountBefore) ||
+          (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)
+        ) unlock()
+        else if (refreshAttempt !== undefined) {
+          unknownPotionAction.current = { refreshAttempt, potionId, countBefore: potionCountBefore }
+        } else unlock()
+      }
+      const retry = (outcome: ActionOutcome | void) => {
+        if (outcome?.status !== 'refused' && outcome?.status !== 'reconciled') return
+        const authoritative = reconciliation(outcome)
+        if (!authoritative) return
+        const count = authoritative.player.potions.filter((held) => held === potionId).length
+        if (count === 0 || (outcome.status === 'reconciled' && count < potionCountBefore)) return
+        const def = potionDef(potionId)
+        const liveOverflow = overflowShivCount(authoritative.combat, gainedShivs(def.effects))
+        const needsTarget = Boolean(def.target) || (
+          def.supportTarget === 'anyPlayer' && authoritative.combat.players.filter((player) => !player.dead).length > 1
+        ) || liveOverflow > 0
+        if (!needsTarget) return
+        setPendingPotion(potionId)
+        setPotionShivEnemyUids([])
+        setPotionOverflowRequired(liveOverflow)
+      }
+      Promise.resolve(onAction({
+        kind: 'usePotion',
+        potionId,
+        ...context,
+        preflight: true,
+        expectedShivOverflow: overflow?.expected,
+        skipOverflow: overflow?.skip,
+      })).then((outcome) => {
+        if (outcome?.status === 'unknown') {
+          awaitReconciliation(outcome.refreshAttempt)
+          return
+        }
+        retry(outcome)
+        unlock()
+      }, () => {
+        awaitReconciliation()
+      })
       return
     }
-    const result = activatePotion(state, viewer!.id, potionId, enemyUid, targetPlayerId)
-    if (result !== state) onChange?.(result)
-    else {
-      potionActionPending.current = false
-      setUsingPotion(false)
-    }
+    onChange?.(result)
   }
   // The engine charges a consuming clause against the hand AS THAT CLAUSE
   // RESOLVES; this clamp measures the hand before the card is played. The two
@@ -505,42 +666,90 @@ export function CombatScreen({
     pending.shivEnemyUids.length >= pending.overflowShivs
   ) : true
 
-  function commit(next: Pending) {
+  function commit(next: Pending, skipOverflow = false) {
+    if (cardActionPending.current) return
+    const context = {
+      enemyUid: next.enemyUid,
+      playerId: next.playerId ?? viewer!.id,
+      discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
+      exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
+      spendMiracle: miracleOnCard,
+      shivEnemyUids: next.shivEnemyUids,
+    }
+    const result = playCard(state, viewer!.id, next.card.uid, context)
+    if (result === state) {
+      if (next.shivEnemyUids.length > 0) setPending({ ...next, shivEnemyUids: [] })
+      return
+    }
     const action = {
       kind: 'playCard',
       cardUid: next.card.uid,
-      enemyUid: next.enemyUid,
-      playerId: next.playerId ?? viewer!.id,
-      discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
-      exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
-      spendMiracle: miracleOnCard,
-      shivEnemyUids: next.shivEnemyUids,
+      ...context,
+      preflight: true,
+      expectedShivOverflow: next.overflowShivs > 0 ? next.overflowShivs : undefined,
+      skipOverflow: next.overflowShivs > 0 ? skipOverflow : undefined,
     }
     if (onAction) {
+      const usingMiracle = miracleOnCard
+      cardActionPending.current = true
+      setUsingCard(true)
       setMiracleOnCard(false)
       setPending(null)
-      onAction(action)
+      const unlock = () => {
+        unknownCardAction.current = null
+        cardActionPending.current = false
+        setUsingCard(false)
+      }
+      const finish = (outcome: ActionOutcome | void) => {
+        if (outcome?.status === 'unknown') {
+          const current = stateRef.current.players.find((player) => player.id === viewerId)
+          const refreshAttempt = outcome.refreshAttempt ?? refreshRef.current
+          if (
+            (current && !current.hand.some((card) => card.uid === next.card.uid)) ||
+            (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)
+          ) unlock()
+          else if (refreshAttempt !== undefined) {
+            unknownCardAction.current = { refreshAttempt, cardUid: next.card.uid }
+          } else unlock()
+          return
+        }
+        unlock()
+        if (outcome?.status === 'refused' || outcome?.status === 'reconciled') {
+          const authoritative = reconciliation(outcome)
+          if (!authoritative || !authoritative.player.hand?.some((card) => card.uid === next.card.uid)) return
+          const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+          const overflowShivs = overflowShivCount(authoritative.combat, gainedShivs(def.effects))
+          const needsEnemy = cardNeedsEnemy(def, viewer!) || overflowShivs > 0
+          const needsAlly = def.supportTarget === 'anyPlayer' &&
+            authoritative.combat.players.filter((player) => !player.dead).length > 1
+          setMiracleOnCard(usingMiracle)
+          if (needsEnemy || needsAlly || next.choice) {
+            setPending({
+              ...next,
+              needsEnemy,
+              needsAlly,
+              overflowShivs,
+              enemyUid: null,
+              playerId: null,
+              shivEnemyUids: [],
+            })
+          }
+        }
+      }
+      Promise.resolve(onAction(action)).then(finish, () => finish({ status: 'unknown' }))
       return
     }
-    const result = playCard(state, viewer!.id, next.card.uid, {
-      enemyUid: next.enemyUid,
-      playerId: next.playerId ?? viewer!.id,
-      discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
-      exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
-      spendMiracle: miracleOnCard,
-      shivEnemyUids: next.shivEnemyUids,
-    })
-    // Reference equality means the engine refused the play.
-    if (result !== state) {
-      setMiracleOnCard(false)
-      onChange?.(result)
-    }
+    setMiracleOnCard(false)
+    onChange?.(result)
     setPending(null)
   }
 
   function onCardClick(card: CardInstance) {
+    if (cardActionPending.current) return
     setSpendingShiv(false)
     setPendingPotion(null)
+    setPotionShivEnemyUids([])
+    setPotionOverflowRequired(0)
     // While a card is waiting on a choice, clicks in hand pick cards for it.
     if (pending?.choice && card.uid !== pending.card.uid) {
       const already = pending.picked.includes(card.uid)
@@ -585,7 +794,18 @@ export function CombatScreen({
 
   function onEnemyClick(enemy: Enemy) {
     if (pendingPotion) {
-      if (potionDef(pendingPotion).targetsEnemy) consumePotion(pendingPotion, enemy.uid)
+      if (pendingPotionDef?.target === 'enemy') {
+        consumePotion(pendingPotion, { enemyUid: enemy.uid })
+      } else if (!pendingPotionDef?.target && potionShivEnemyUids.length < pendingPotionOverflow) {
+        const next = [...potionShivEnemyUids, enemy.uid]
+        if (next.length === pendingPotionOverflow) {
+          consumePotion(
+            pendingPotion,
+            { shivEnemyUids: next },
+            { expected: pendingPotionOverflow, skip: false },
+          )
+        } else setPotionShivEnemyUids(next)
+      }
       return
     }
     if (spendingShiv) {
@@ -619,7 +839,7 @@ export function CombatScreen({
   function onAllyClick(ally: Player) {
     if (ally.dead) return
     if (pendingPotion && potionDef(pendingPotion).supportTarget === 'anyPlayer') {
-      consumePotion(pendingPotion, null, ally.id)
+      consumePotion(pendingPotion, { targetPlayerId: ally.id })
       return
     }
     if (!pending || !pending.needsAlly || !enemyChoicesDone || !choiceSatisfied) return
@@ -637,8 +857,12 @@ export function CombatScreen({
         ? 'Choose an enemy — its whole row is hit, and the boss'
         : 'Choose an enemy — its whole row is hit'
       : 'Choose an enemy'
-  const prompt = pendingPotion
-    ? `Choose ${potionDef(pendingPotion).targetsEnemy ? 'an enemy' : 'a player'} for ${potionDef(pendingPotion).name}`
+  const prompt = pendingPotionDef
+    ? pendingPotionDef.target === 'row'
+      ? `Choose a row for ${pendingPotionDef.name}`
+      : pendingPotionOverflow > 0
+        ? `Choose overflow Shiv target ${potionShivEnemyUids.length + 1}/${pendingPotionOverflow}, or skip the rest`
+        : `Choose ${pendingPotionDef.target ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
     : spendingShiv
     ? 'Choose an enemy for the Shiv'
     : pending?.choice && !choiceSatisfied
@@ -666,9 +890,10 @@ export function CombatScreen({
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
-                const needsTarget = potion.targetsEnemy || (
+                const shivs = gainedShivs(potion.effects)
+                const needsTarget = Boolean(potion.target) || (
                   potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
-                )
+                ) || overflowShivCount(state, shivs) > 0
                 return (
                   <button
                     type="button"
@@ -682,6 +907,8 @@ export function CombatScreen({
                         setSpendingShiv(false)
                         setMiracleOnCard(false)
                         setPendingPotion(staged ? null : potionId)
+                        setPotionShivEnemyUids([])
+                        setPotionOverflowRequired(staged ? 0 : overflowShivCount(state, shivs))
                       } else consumePotion(potionId)
                     }}
                   >
@@ -697,6 +924,8 @@ export function CombatScreen({
                     setPending(null)
                     setMiracleOnCard(false)
                     setPendingPotion(null)
+                    setPotionShivEnemyUids([])
+                    setPotionOverflowRequired(0)
                     setSpendingShiv((current) => !current)
                   }}
                 >
@@ -716,6 +945,8 @@ export function CombatScreen({
                       setPending(null)
                       setSpendingShiv(false)
                       setPendingPotion(null)
+                      setPotionShivEnemyUids([])
+                      setPotionOverflowRequired(0)
                       setMiracleOnCard((current) => !current)
                     }
                   }}
@@ -782,7 +1013,20 @@ export function CombatScreen({
         <p className="prompt" role="status">
           {prompt}
           {pending && overflowOnly ? (
-            <button type="button" className="prompt__cancel" onClick={() => commit(pending)}>
+            <button type="button" className="prompt__cancel" onClick={() => commit(pending, true)}>
+              Skip remaining overflow attacks
+            </button>
+          ) : null}
+          {pendingPotion && pendingPotionOverflow > 0 ? (
+            <button
+              type="button"
+              className="prompt__cancel"
+              onClick={() => consumePotion(
+                pendingPotion,
+                { shivEnemyUids: potionShivEnemyUids },
+                { expected: pendingPotionOverflow, skip: true },
+              )}
+            >
               Skip remaining overflow attacks
             </button>
           ) : null}
@@ -793,6 +1037,8 @@ export function CombatScreen({
               setPending(null)
               setSpendingShiv(false)
               setPendingPotion(null)
+              setPotionShivEnemyUids([])
+              setPotionOverflowRequired(0)
             }}
           >
             Cancel
@@ -811,7 +1057,7 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={((pendingPotion !== null && potionDef(pendingPotion).targetsEnemy) || spendingShiv || (
+                targeted={((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                   pending?.needsEnemy === true && !enemyChoicesDone && choiceSatisfied
                 )) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -829,6 +1075,15 @@ export function CombatScreen({
               key={row}
               ref={occupant?.id === viewerId ? viewerRowRef : undefined}
             >
+              {pendingPotionDef?.target === 'row' ? (
+                <button
+                  type="button"
+                  className="row__potion-target"
+                  onClick={() => consumePotion(pendingPotion!, { enemyRow: row })}
+                >
+                  Target row {row + 1}
+                </button>
+              ) : null}
               <div className="row__seat">
                 {occupant ? (
                   <>
@@ -902,7 +1157,7 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={((pendingPotion !== null && potionDef(pendingPotion).targetsEnemy) || spendingShiv || (
+                      targeted={((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                         pending?.needsEnemy === true && !enemyChoicesDone && choiceSatisfied
                       )) && !enemy.dead}
                       onClick={onEnemyClick}
@@ -986,6 +1241,7 @@ export function CombatScreen({
               fan={fanOf(index, viewer.hand.length)}
               card={card}
               playable={
+                !usingCard &&
                 state.phase === 'player' &&
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable

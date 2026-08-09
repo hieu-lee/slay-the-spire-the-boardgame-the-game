@@ -108,10 +108,10 @@ export function OnlineGame({ onLocal }: Props) {
 
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
-    if (phase !== 'won' && phase !== 'lost') return undefined
+    if (room.connection !== 'connected' || (phase !== 'won' && phase !== 'lost')) return undefined
     const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }), 900)
     return () => clearTimeout(timer)
-  }, [room.act, snapshot?.run?.combat?.phase])
+  }, [room.act, room.connection, snapshot?.run?.combat?.phase])
 
   if (!snapshot && room.activeCode) {
     return (
@@ -238,6 +238,7 @@ export function OnlineGame({ onLocal }: Props) {
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
+      <div className="online-mutations" inert={room.connection !== 'connected' || undefined} aria-disabled={room.connection !== 'connected' || undefined}>
       {run.phase === 'combat' && combat ? (
         <CombatScreen
           state={combat}
@@ -245,6 +246,8 @@ export function OnlineGame({ onLocal }: Props) {
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}
           savedDiscardOrder={snapshot.discardOrder}
+          authoritativeVersion={snapshot.version}
+          authoritativeRefresh={room.refreshEpoch}
           onAction={room.act}
         />
       ) : null}
@@ -279,6 +282,7 @@ export function OnlineGame({ onLocal }: Props) {
       <aside className="log" aria-label="Run log">
         {run.log.slice(-6).map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}
       </aside>
+      </div>
     </main>
   )
 }

@@ -68,10 +68,14 @@ export function resolveEnemyTargets(
   state: CombatState,
   scope: TargetScope,
   chosenUid: string | null,
+  chosenRow?: number | null,
 ): Enemy[] {
   const alive = livingEnemies(state)
   if (scope === 'allEnemies') return alive
   if (scope === 'row') {
+    if (chosenRow !== null && chosenRow !== undefined) {
+      return alive.filter((enemy) => enemy.row === chosenRow || enemy.isBoss)
+    }
     const anchor = alive.find((enemy) => enemy.uid === chosenUid)
     if (!anchor) return []
     return alive.filter((enemy) => enemy.row === anchor.row || enemy.isBoss)
@@ -188,6 +192,8 @@ function damagePlayer(player: Player, damage: number): void {
 export type PlayContext = {
   /** Enemy chosen for offensive effects. */
   enemyUid: string | null
+  /** A row chosen directly instead of through an enemy anchor. */
+  enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
   /** Cards chosen to discard, for effects like Survivor. */
@@ -229,6 +235,20 @@ export type PlayContext = {
   shortfall?: boolean
   /** Internal cursor while multiple gain-Shiv clauses consume target choices. */
   shivTargetIndex?: number
+  /** A queued overflow attack named an enemy killed by an earlier queued attack. */
+  invalidShivTarget?: boolean
+}
+
+export type PotionContext = {
+  enemyUid?: string | null
+  targetPlayerId?: string | null
+  enemyRow?: number | null
+  shivEnemyUids?: string[]
+}
+
+export function overflowShivCount(state: { players: readonly { shivs: number }[] }, amount: number): number {
+  const held = state.players.reduce((sum, player) => sum + player.shivs, 0)
+  return Math.max(0, amount - Math.max(0, CAPS.shivs - held))
 }
 
 /**
@@ -351,7 +371,7 @@ function applyEffect(
 
   switch (effect.kind) {
     case 'hit': {
-      const targets = resolveEnemyTargets(state, scope, context.enemyUid)
+      const targets = resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)
       // Barrage deals one hit per Orb, so the swing count is read off the board
       // once, before the first target — not per target, which would let an
       // area-of-effect card re-count between enemies.
@@ -416,13 +436,13 @@ function applyEffect(
     }
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
-      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         damageEnemyLogged(state, target, effect.amount, who)
       }
       return
     }
     case 'loseHp': {
-      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const name = enemyLabel(state.enemies, target)
         const wasAlive = !target.dead
         const outcome = applyHpLoss(target.hp, effect.amount)
@@ -452,7 +472,7 @@ function applyEffect(
       return
     }
     case 'applyVulnerable': {
-      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.vulnerable
         target.vulnerable = gainVulnerable(target.vulnerable, effect.amount)
         // Only when the token actually went on: at the cap nothing happened,
@@ -462,7 +482,7 @@ function applyEffect(
       return
     }
     case 'applyWeak': {
-      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
         if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
@@ -488,7 +508,7 @@ function applyEffect(
       return
     }
     case 'poison': {
-      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.poison
         target.poison = gainPoison(target.poison, effect.amount, totalPoisonInPlay(state.enemies))
         if (target.poison > before) {
@@ -533,6 +553,10 @@ function applyEffect(
           const enemyUid = context.shivEnemyUids?.[at]
           context.shivTargetIndex = at + 1
           if (!enemyUid) continue
+          if (resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) {
+            context.invalidShivTarget = true
+            continue
+          }
           applyEffect(
             state,
             target,
@@ -580,6 +604,12 @@ function applyEffect(
       }
       return
     }
+    case 'clearDebuffs': {
+      actor.weak = 0
+      actor.vulnerable = 0
+      note(`${actor.name} removes all Weak and Vulnerable`)
+      return
+    }
     case 'discard': {
       const chosen = allocate(actor, context.discardUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
@@ -611,14 +641,8 @@ function applyEffect(
       return
     }
     case 'addDaze': {
-      const cards = Array.from({ length: effect.amount }, (_, index) => ({
-        uid: `daze-${state.turn}-${actor.id}-${state.log.length}-${index}`,
-        defId: 'daze',
-        upgraded: false,
-      }))
-      if (effect.pile === 'draw') actor.draw = [...cards, ...actor.draw]
-      else actor.discard = [...actor.discard, ...cards]
-      note(`${actor.name} gains ${effect.amount} Daze`)
+      const gained = addDaze(state, actor, effect.amount, effect.pile, actor.id)
+      if (gained > 0) note(`${actor.name} gains ${gained} Daze`)
       return
     }
     case 'recoverDiscardTopCosts': {
@@ -698,6 +722,30 @@ function drawInto(state: CombatState, actor: Player, amount: number): void {
     }
     fireTriggers(state, { kind: 'onDraw' }, actor)
   }
+}
+
+/** Take Daze from the one physical ten-card deck shared by every source. */
+function addDaze(
+  state: CombatState,
+  target: Player,
+  amount: number,
+  pile: 'draw' | 'discard',
+  source: string,
+): number {
+  const inPlay = state.players.reduce((total, player) => total + [
+    ...player.draw,
+    ...player.hand,
+    ...player.discard,
+  ].filter((card) => card.defId === 'daze').length, 0)
+  const gained = Math.min(amount, Math.max(0, CAPS.daze - inPlay))
+  const cards = Array.from({ length: gained }, (_, index) => ({
+    uid: `daze-${state.turn}-${source}-${target.id}-${state.log.length}-${index}`,
+    defId: 'daze',
+    upgraded: false,
+  }))
+  if (pile === 'draw') target.draw = [...cards, ...target.draw]
+  else target.discard = [...target.discard, ...cards]
+  return gained
 }
 
 /**
@@ -918,6 +966,7 @@ export function playCard(
     spentUids: new Set<string>(),
     shortfall: false,
     shivTargetIndex: 0,
+    invalidShivTarget: false,
   }
   if (resolvesOnPlay) {
     for (const effect of def.effects) {
@@ -930,7 +979,7 @@ export function playCard(
   // card's effects for nothing. The whole play is resolved into a clone first,
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
-  if (ctx.shortfall) return state
+  if (ctx.shortfall || ctx.invalidShivTarget) return state
 
   if (def.exhaust) {
     actor.exhaust = [...actor.exhaust, held]
@@ -1303,18 +1352,10 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
     case 'daze': {
       // Daze goes on TOP of the draw pile, so it is the very next card drawn.
       for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
-        const cards = Array.from({ length: action.amount }, (_, i) => ({
-          uid: `daze-${state.turn}-${enemy.uid}-${target.id}-${i}`,
-          defId: 'daze',
-          upgraded: false,
-        }))
-        target.draw = [...cards, ...target.draw]
-        state.log = [
-          ...state.log,
-          // No enemy in the box deals more than one Daze, so the plural branch
-          // that used to sit here was unreachable. One card, one phrase.
-          `${name} slipped a Daze into ${target.name}'s deck`,
-        ]
+        const gained = addDaze(state, target, action.amount, 'draw', enemy.uid)
+        if (gained > 0) {
+          state.log = [...state.log, `${name} slipped ${gained === 1 ? 'a Daze' : `${gained} Daze`} into ${target.name}'s deck`]
+        }
       }
       return
     }
@@ -1605,33 +1646,48 @@ export function activatePotion(
   state: CombatState,
   playerId: string,
   potionId: string,
-  enemyUid: string | null = null,
-  targetPlayerId: string | null = null,
+  context: PotionContext = {},
 ): CombatState {
   if (state.phase !== 'player') return state
   const player = findPlayer(state, playerId)
   if (!player || player.dead || !player.potions.includes(potionId)) return state
   const def = potionDef(potionId)
-  if (def.targetsEnemy && resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
-  if (def.supportTarget === 'anyPlayer' && targetPlayerId !== null) {
-    const target = findPlayer(state, targetPlayerId)
-    if (!target || target.dead) return state
+  const target = def.target ?? 'enemy'
+  if (def.target === 'row') {
+    if (!Number.isInteger(context.enemyRow) || !state.players.some((seat) => seat.row === context.enemyRow)) {
+      return state
+    }
+  } else if (def.target && resolveEnemyTargets(state, target, context.enemyUid ?? null).length === 0) {
+    return state
+  }
+  if (def.supportTarget === 'anyPlayer' && context.targetPlayerId !== null && context.targetPlayerId !== undefined) {
+    const chosen = findPlayer(state, context.targetPlayerId)
+    if (!chosen || chosen.dead) return state
   }
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
   actor.potions.splice(actor.potions.indexOf(potionId), 1)
   next.log = [...next.log, `${actor.name} uses ${def.name}`]
+  const ctx: PlayContext = {
+    enemyUid: context.enemyUid ?? null,
+    enemyRow: context.enemyRow,
+    playerId: context.targetPlayerId ?? null,
+    shivEnemyUids: context.shivEnemyUids,
+    shivTargetIndex: 0,
+    invalidShivTarget: false,
+  }
   for (const effect of def.effects) {
     applyEffect(
       next,
       actor,
       effect,
-      def.targetsEnemy ? 'enemy' : 'self',
+      def.target ? target : 'self',
       def.supportTarget ?? 'self',
-      { enemyUid, playerId: targetPlayerId },
+      ctx,
       def.name,
     )
   }
+  if (ctx.invalidShivTarget) return state
   return settle(next)
 }

@@ -378,6 +378,19 @@ check('an online seat can use only its own potion with a valid target', () => {
   const untargeted = apply(room, a.token, { kind: 'usePotion', potionId: 'fire_potion' })
   assertEqual(untargeted.changed, false, 'a targeted potion was wasted without a target')
   assertDeepEqual(mine().potions, ['fire_potion'])
+  let previewedPotion = null
+  try {
+    apply(room, a.token, {
+      kind: 'usePotion',
+      potionId: 'fire_potion',
+      enemyUid: 'no-longer-alive',
+      preflight: true,
+    })
+  } catch (error) {
+    previewedPotion = error
+  }
+  assertEqual(previewedPotion?.name, 'RoomError', 'a previewed stale potion gets an actionable refusal')
+  assertDeepEqual(mine().potions, ['fire_potion'])
 
   let forged = null
   try {
@@ -405,6 +418,125 @@ check('an online seat can use only its own potion with a valid target', () => {
   assert(helped.changed)
   assertEqual(mine().block, 2, 'Block Potion can target another online seat')
   assertEqual(theirs().block, block)
+
+  mine().potions = ['cunning_potion']
+  mine().shivs = 4
+  theirs().shivs = 1
+  const overflowTarget = room.run.combat.enemies.find((candidate) => !candidate.dead && candidate.hp >= 4)
+  assert(overflowTarget, 'the online potion check needs a durable overflow target')
+  const overflowHp = overflowTarget.hp
+  for (const shivEnemyUids of [undefined, 'not-a-list']) {
+    let malformedTargets = null
+    try {
+      apply(room, a.token, {
+        kind: 'usePotion',
+        potionId: 'cunning_potion',
+        expectedShivOverflow: 3,
+        ...(shivEnemyUids === undefined ? {} : { shivEnemyUids }),
+      })
+    } catch (error) {
+      malformedTargets = error
+    }
+    assertEqual(malformedTargets?.name, 'RoomError', 'missing overflow targets stay inside the room boundary')
+    assert(
+      malformedTargets.message.includes('Choose every overflow Shiv target'),
+      'missing overflow targets return the actionable room error',
+    )
+  }
+  assertDeepEqual(mine().potions, ['cunning_potion'])
+  const laterTarget = room.run.combat.enemies.find((candidate) => !candidate.dead && candidate.uid !== overflowTarget.uid)
+  assert(laterTarget, 'the online sequential-target check needs two living enemies')
+  overflowTarget.hp = 1
+  let sequentialTarget = null
+  try {
+    apply(room, a.token, {
+      kind: 'usePotion',
+      potionId: 'cunning_potion',
+      expectedShivOverflow: 3,
+      shivEnemyUids: [overflowTarget.uid, overflowTarget.uid, laterTarget.uid],
+    })
+  } catch (error) {
+    sequentialTarget = error
+  }
+  assertEqual(sequentialTarget?.name, 'RoomError')
+  assert(
+    sequentialTarget.message.includes('earlier overflow Shiv defeated a later target'),
+    'a sequentially invalid target returns an actionable retry error',
+  )
+  assertEqual(overflowTarget.hp, 1, 'the refused target sequence stays atomic')
+  assertDeepEqual(mine().potions, ['cunning_potion'])
+  overflowTarget.hp = overflowHp
+  let staleOverflow = null
+  try {
+    apply(room, a.token, {
+      kind: 'usePotion',
+      potionId: 'cunning_potion',
+      expectedShivOverflow: 2,
+      shivEnemyUids: [overflowTarget.uid, overflowTarget.uid],
+    })
+  } catch (error) {
+    staleOverflow = error
+  }
+  assert(staleOverflow, 'a changed shared Shiv supply consumed Cunning Potion')
+  assertDeepEqual(mine().potions, ['cunning_potion'])
+  let staleTarget = null
+  try {
+    apply(room, a.token, {
+      kind: 'usePotion',
+      potionId: 'cunning_potion',
+      expectedShivOverflow: 3,
+      shivEnemyUids: ['dead-target', 'dead-target', 'dead-target'],
+    })
+  } catch (error) {
+    staleTarget = error
+  }
+  assert(staleTarget, 'a dead overflow target consumed Cunning Potion')
+  assertDeepEqual(mine().potions, ['cunning_potion'])
+  const cunning = apply(room, a.token, {
+    kind: 'usePotion',
+    potionId: 'cunning_potion',
+    expectedShivOverflow: 3,
+    shivEnemyUids: [overflowTarget.uid, overflowTarget.uid, overflowTarget.uid],
+  })
+  assert(cunning.changed)
+  const overflowAfter = room.run.combat.enemies.find((candidate) => candidate.uid === overflowTarget.uid)
+  assertEqual(overflowAfter.hp, overflowHp - 3, 'online Cunning Potion keeps every overflow target')
+  assertEqual(mine().potions.length, 0)
+
+  mine().potions = ['cunning_potion']
+  const skippedHp = overflowAfter.hp
+  const skipped = apply(room, a.token, {
+    kind: 'usePotion',
+    potionId: 'cunning_potion',
+    expectedShivOverflow: 3,
+    skipOverflow: true,
+    shivEnemyUids: [overflowAfter.uid],
+  })
+  assert(skipped.changed)
+  const afterSkip = room.run.combat.enemies.find((candidate) => candidate.uid === overflowAfter.uid)
+  assertEqual(afterSkip.hp, skippedHp - 1, 'explicit skip keeps the chosen overflow attacks')
+
+  mine().potions = ['explosive_potion']
+  const row = afterSkip.row
+  const rowBefore = new Map(room.run.combat.enemies.map((candidate) => [candidate.uid, candidate.hp]))
+  const malformedRow = apply(room, a.token, {
+    kind: 'usePotion',
+    potionId: 'explosive_potion',
+    enemyRow: String(row),
+  })
+  assertEqual(malformedRow.changed, false, 'network row ids stay typed')
+  assertDeepEqual(mine().potions, ['explosive_potion'])
+  const exploded = apply(room, a.token, {
+    kind: 'usePotion',
+    potionId: 'explosive_potion',
+    enemyRow: row,
+  })
+  assert(exploded.changed)
+  for (const candidate of room.run.combat.enemies) {
+    const beforeHp = rowBefore.get(candidate.uid)
+    const hit = candidate.row === row || candidate.isBoss
+    assertEqual(candidate.hp, hit ? Math.max(0, beforeHp - 2) : beforeHp)
+  }
 })
 
 check('online seats ready together, then submit only their own post-trigger discard order', () => {
@@ -834,18 +966,56 @@ check('the whole play context reaches the engine, not just the target', () => {
 
   const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
   mine().hand.push(dance)
+  mine().energy = 3
   mine().shivs = 4
   room.run.combat.players.find((player) => player.id === b.playerId).shivs = 1
   const [firstEnemy, secondEnemy] = room.run.combat.enemies
   Object.assign(firstEnemy, { hp: 1, maxHp: 1, block: 0, dead: false })
   Object.assign(secondEnemy, { hp: 5, maxHp: 5, block: 0, dead: false })
+  let changedSupply = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard',
+      cardUid: dance.uid,
+      expectedShivOverflow: 1,
+      shivEnemyUids: [firstEnemy.uid],
+    })
+  } catch (error) {
+    changedSupply = error
+  }
+  assertEqual(changedSupply?.name, 'RoomError', 'a changed shared supply must restart card targeting')
+  let refusedOverflow = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard',
+      cardUid: dance.uid,
+      expectedShivOverflow: 2,
+      shivEnemyUids: [firstEnemy.uid, firstEnemy.uid],
+    })
+  } catch (error) {
+    refusedOverflow = error
+  }
+  assertEqual(refusedOverflow?.name, 'RoomError', 'a queued Shiv cannot disappear into an already-killed target')
+  assert(refusedOverflow.message.includes('earlier overflow Shiv defeated a later target'))
   apply(room, a.token, {
     kind: 'playCard',
     cardUid: dance.uid,
+    expectedShivOverflow: 2,
     shivEnemyUids: [firstEnemy.uid, secondEnemy.uid],
   })
   assert(room.run.combat.enemies[0].dead, 'the first chosen overflow Shiv target survives the room boundary')
   assertEqual(room.run.combat.enemies[1].hp, 4, 'the second overflow Shiv keeps its own chosen target')
+
+  const skippedDance = { uid: 'fx-skipped-overflow-shivs', defId: 'blade_dance', upgraded: false }
+  mine().hand.push(skippedDance)
+  apply(room, a.token, {
+    kind: 'playCard',
+    cardUid: skippedDance.uid,
+    expectedShivOverflow: 2,
+    skipOverflow: true,
+    shivEnemyUids: [secondEnemy.uid],
+  })
+  assertEqual(room.run.combat.enemies[1].hp, 3, 'explicit skip keeps only the chosen card overflow attacks')
 })
 
 check('an unknown token cannot act at all', () => {
@@ -913,6 +1083,18 @@ check('an attack with no enemy chosen is refused, not silently wasted', () => {
   // play: the enemy died between the board rendering and the click landing.
   const stale = apply(room, a.token, { kind: 'playCard', cardUid: strike.uid, enemyUid: 'no-such-enemy' })
   assertEqual(stale.changed, false, 'an unknown enemy uid should be refused too')
+  let previewedCard = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard',
+      cardUid: strike.uid,
+      enemyUid: 'no-such-enemy',
+      preflight: true,
+    })
+  } catch (error) {
+    previewedCard = error
+  }
+  assertEqual(previewedCard?.name, 'RoomError', 'a previewed stale card gets an actionable refusal')
 
   const corpse = room.run.combat.enemies[0]
   corpse.dead = true

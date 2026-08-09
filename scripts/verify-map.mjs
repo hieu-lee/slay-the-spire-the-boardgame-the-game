@@ -388,7 +388,7 @@ check('a potion consumed to win does not reappear after combat', () => {
       ? { ...enemy, hp: 4, maxHp: 4, block: 0, dead: false }
       : { ...enemy, hp: 0, dead: true }),
   }
-  const won = activatePotion(prepared, 'p1', 'fire_potion', target.uid)
+  const won = activatePotion(prepared, 'p1', 'fire_potion', { enemyUid: target.uid })
   assertEqual(won.phase, 'won')
   const after = resolveCombat({ ...entered, combat: won })
   assertDeepEqual(after.players[0].potions, [], 'the used potion stays discarded on the map')

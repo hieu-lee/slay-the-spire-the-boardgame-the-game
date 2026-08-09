@@ -2176,7 +2176,7 @@ check('targeted potions require a living target and discard one copy', () => {
     [makeEnemy({ hp: 8, maxHp: 8, vulnerable: 1 })],
   )
   assert(activatePotion(state, 'p1', 'fire_potion') === state, 'a missing target must not waste the potion')
-  const used = activatePotion(state, 'p1', 'fire_potion', 'e1')
+  const used = activatePotion(state, 'p1', 'fire_potion', { enemyUid: 'e1' })
   assertEqual(used.enemies[0].hp, 4, 'Fire Potion deals 4 plain damage')
   assertEqual(used.players[0].weak, 1, 'plain damage does not spend the drinker\'s Weak')
   assertEqual(used.enemies[0].vulnerable, 1, 'plain damage does not spend Vulnerable')
@@ -2196,9 +2196,9 @@ check('support potions share the card effect resolver and obey caps', () => {
     }),
     makePlayer({ id: 'p2', name: 'Silent', character: 'silent', block: 1 }),
   ], [makeEnemy()])
-  const refused = activatePotion(state, 'p1', 'block_potion', null, 'missing')
+  const refused = activatePotion(state, 'p1', 'block_potion', { targetPlayerId: 'missing' })
   assert(refused === state, 'an invalid ally must not consume Block Potion')
-  state = activatePotion(state, 'p1', 'block_potion', null, 'p2')
+  state = activatePotion(state, 'p1', 'block_potion', { targetPlayerId: 'p2' })
   state = activatePotion(state, 'p1', 'energy_potion')
   state = activatePotion(state, 'p1', 'blood_potion')
   state = activatePotion(state, 'p1', 'flex_potion')
@@ -2221,8 +2221,107 @@ check('Weak Potion applies the three printed Weak tokens', () => {
     [makePlayer({ potions: ['weak_potion'] })],
     [makeEnemy()],
   )
-  const used = activatePotion(state, 'p1', 'weak_potion', 'e1')
+  const used = activatePotion(state, 'p1', 'weak_potion', { enemyUid: 'e1' })
   assertEqual(used.enemies[0].weak, 3)
+})
+
+check('simple printed potions resolve through the shared effect vocabulary', () => {
+  const draw = Array.from({ length: 5 }, () => instance('strike_ironclad'))
+  let state = combat(
+    [makePlayer({
+      weak: 3,
+      vulnerable: 2,
+      draw,
+      potions: ['ancient_potion', 'cunning_potion', 'snecko_oil'],
+    })],
+    [makeEnemy()],
+  )
+  state = activatePotion(state, 'p1', 'ancient_potion')
+  state = activatePotion(state, 'p1', 'cunning_potion')
+  state = activatePotion(state, 'p1', 'snecko_oil')
+  assertEqual(state.players[0].weak, 0)
+  assertEqual(state.players[0].vulnerable, 0)
+  assertEqual(state.players[0].shivs, 3)
+  assertEqual(state.players[0].hand.length, 5)
+  assertEqual(state.players[0].draw.filter((card) => card.defId === 'daze').length, 2)
+  assertEqual(state.players[0].potions.length, 0)
+})
+
+check('Snecko Oil puts Daze on top without exceeding the shared ten-card deck', () => {
+  const existing = Array.from({ length: 9 }, () => instance('daze'))
+  const state = combat(
+    [
+      makePlayer({ potions: ['snecko_oil'], draw: Array.from({ length: 5 }, () => instance('strike_ironclad')) }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, draw: existing }),
+    ],
+    [makeEnemy({ defId: 'spike_slime' })],
+  )
+  const used = activatePotion(state, 'p1', 'snecko_oil')
+  assertEqual(used.players[0].hand.length, 5)
+  assertEqual(used.players[0].draw.length, 1, 'only one Daze remains in the shared supply')
+  assertEqual(used.players[0].draw[0].defId, 'daze', 'Daze is the next card drawn')
+  const afterEnemy = enemyTurn({ ...used, phase: 'enemy', die: 3 })
+  const dazes = afterEnemy.players.reduce((total, player) => total + [
+    ...player.draw,
+    ...player.hand,
+    ...player.discard,
+  ].filter((card) => card.defId === 'daze').length, 0)
+  assertEqual(dazes, 10, 'an enemy cannot draw an eleventh card from the shared Daze deck')
+})
+
+check('Cunning Potion offers one immediate attack per unavailable Shiv cube', () => {
+  const state = combat(
+    [
+      makePlayer({ shivs: 4, potions: ['cunning_potion'] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, shivs: 1 }),
+    ],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  const used = activatePotion(state, 'p1', 'cunning_potion', {
+    shivEnemyUids: ['e1', 'e1', 'e1'],
+  })
+  assertEqual(used.players[0].shivs, 4, 'the full shared supply cannot grant another cube')
+  assertEqual(used.enemies[0].hp, 7, 'all three unavailable cubes became immediate attacks')
+  assertEqual(used.players[0].potions.length, 0)
+})
+
+check('overflow Shiv choices are atomic when an earlier attack kills a later target', () => {
+  const state = combat(
+    [
+      makePlayer({ shivs: 4, potions: ['cunning_potion'] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, shivs: 1 }),
+    ],
+    [
+      makeEnemy({ uid: 'fragile', hp: 1, maxHp: 1 }),
+      makeEnemy({ uid: 'durable', hp: 5, maxHp: 5 }),
+    ],
+  )
+  const refused = activatePotion(state, 'p1', 'cunning_potion', {
+    shivEnemyUids: ['fragile', 'fragile', 'durable'],
+  })
+  assert(refused === state, 'a later attack cannot silently disappear into a dead target')
+  const used = activatePotion(state, 'p1', 'cunning_potion', {
+    shivEnemyUids: ['fragile', 'durable', 'durable'],
+  })
+  assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [0, 3])
+})
+
+check('Explosive Potion damages only the chosen row and its boss', () => {
+  const state = combat(
+    [
+      makePlayer({ potions: ['explosive_potion'] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+    ],
+    [
+      makeEnemy({ uid: 'row-0', row: 0, hp: 6, maxHp: 6 }),
+      makeEnemy({ uid: 'row-1', row: 1, hp: 6, maxHp: 6 }),
+      makeEnemy({ uid: 'boss', row: 0, hp: 6, maxHp: 6, isBoss: true }),
+    ],
+  )
+  assert(activatePotion(state, 'p1', 'explosive_potion') === state, 'a row still needs a target')
+  const used = activatePotion(state, 'p1', 'explosive_potion', { enemyRow: 1 })
+  assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6, 4, 4])
+  assertEqual(used.players[0].potions.length, 0)
 })
 
 check('Flex Potion still loses its printed Strength when the gain hits the cap', () => {
@@ -2243,12 +2342,12 @@ check('a lethal potion ends combat immediately and cannot be used outside the Pl
     [makePlayer({ potions: ['fire_potion'] })],
     [makeEnemy({ hp: 4, maxHp: 4 })],
   )
-  const won = activatePotion(state, 'p1', 'fire_potion', 'e1')
+  const won = activatePotion(state, 'p1', 'fire_potion', { enemyUid: 'e1' })
   assertEqual(won.phase, 'won')
   assert(won.enemies[0].dead)
   const enemyTurnState = { ...state, phase: 'enemy' }
   assert(
-    activatePotion(enemyTurnState, 'p1', 'fire_potion', 'e1') === enemyTurnState,
+    activatePotion(enemyTurnState, 'p1', 'fire_potion', { enemyUid: 'e1' }) === enemyTurnState,
     'potions are not usable during the Enemy Turn',
   )
 })

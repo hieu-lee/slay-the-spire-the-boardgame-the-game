@@ -615,12 +615,66 @@ check('channelled orbs are visible on the seat', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.combat.players[0].potions = ['block_potion', 'fire_potion']
+  run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
+  run.combat.players[0].shivs = 3
+  run.combat.players[1].shivs = 2
+  const fragile = run.combat.enemies.find((enemy) => !enemy.dead && !enemy.isBoss)
+  const durable = run.combat.enemies.find((enemy) => !enemy.dead && enemy.uid !== fragile?.uid)
+  if (!fragile || !durable) throw new Error('potion browser fixture needs two living enemies')
   for (const enemy of run.combat.enemies) {
     enemy.block = 0
     enemy.abilityUsed = true
+    if (!enemy.dead) {
+      enemy.hp = Math.max(enemy.hp, 10)
+      enemy.maxHp = Math.max(enemy.maxHp, 10)
+    }
   }
+  Object.assign(fragile, { hp: 1, maxHp: 1 })
+  Object.assign(durable, { hp: 11, maxHp: 11 })
   debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => !enemy.dead && enemy.hp === 1))
+const cunningBefore = await readState()
+const fragilePotionTarget = cunningBefore.enemies.find((enemy) => !enemy.dead && enemy.hp === 1)
+const cunningTarget = cunningBefore.enemies.find((enemy) => !enemy.dead && enemy.hp === 11)
+assert(fragilePotionTarget && cunningTarget, 'the browser potion playtest needs fragile and durable targets')
+await page.locator('.combat__actions').getByRole('button', { name: /Cunning Potion/ }).click()
+await page.waitForSelector('.enemy--targeted')
+const fragilePotionButton = page.getByRole('button', { name: /1 of 1 hit points/ }).first()
+const cunningTargetButton = page.getByRole('button', {
+  name: new RegExp(`${cunningTarget.hp} of ${cunningTarget.maxHp} hit points`),
+}).first()
+await fragilePotionButton.click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/3'))
+await fragilePotionButton.click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('3/3'))
+await cunningTargetButton.click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/3'))
+const invalidPotionTargets = await readState()
+check('Cunning Potion keeps targeting open when a queued attack would hit a dead enemy', () => {
+  assert(invalidPotionTargets.players[0].potions.includes('cunning_potion'))
+  assertEqual(invalidPotionTargets.enemies.find((enemy) => enemy.uid === fragilePotionTarget.uid).hp, 1)
+})
+await cunningTargetButton.click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/3'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].shivs = 0
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/1'))
+await page.locator('.prompt').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished))
+})
+await shot('05fa-cunning-potion-overflow')
+await cunningTargetButton.click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('cunning_potion'))
+const cunningAfter = await readState()
+check('Cunning Potion restarts overflow targeting when a teammate frees shared Shivs', () => {
+  const after = cunningAfter.enemies.find((enemy) => enemy.uid === cunningTarget.uid)
+  assertEqual(after.hp, cunningTarget.hp - 1)
+  assertEqual(cunningAfter.players[0].shivs, 5, 'the full shared supply stays capped')
 })
 const blockBeforePotion = (await readState()).players[0].block
 await page.locator('.combat__actions').getByRole('button', { name: /Block Potion/ }).click()
@@ -654,6 +708,27 @@ check('a targeted potion waits for an enemy, then consumes itself', () => {
   const durability = firedPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
   assertEqual(durability, durabilityBeforePotion - 4)
   assertEqual(firedPotion.players[0].potions.includes('fire_potion'), false)
+})
+
+const explosiveTarget = firedPotion.enemies
+  .filter((enemy) => !enemy.dead && !enemy.isBoss)
+  .sort((a, b) => b.row - a.row)[0]
+assert(explosiveTarget, 'the browser potion playtest needs one living row target')
+await page.locator('.combat__actions').getByRole('button', { name: /Explosive Potion/ }).click()
+await page.waitForSelector('.row__potion-target')
+await page.locator('.prompt').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished))
+})
+await shot('05h-explosive-potion-row-targeting')
+await page.getByRole('button', { name: `Target row ${explosiveTarget.row + 1}` }).click()
+const explodedPotion = await readState()
+check('Explosive Potion damages the chosen row and any boss, but no other row', () => {
+  for (const [index, before] of firedPotion.enemies.entries()) {
+    const after = explodedPotion.enemies[index]
+    const shouldTakeDamage = !before.dead && (before.row === explosiveTarget.row || before.isBoss)
+    assertEqual(after.hp, shouldTakeDamage ? Math.max(0, before.hp - 2) : before.hp)
+  }
+  assertEqual(explodedPotion.players[0].potions.includes('explosive_potion'), false)
 })
 
 await page.evaluate(() => {
@@ -758,6 +833,37 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand[0]?.uid === 'overflow-dance')
 await page.locator('.hand .card').click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].shivs = 0
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/1'))
+const changedCardSupply = await readState()
+check('a gain-Shiv card restarts targeting when the shared supply changes', () => {
+  assertEqual(changedCardSupply.players[0].hand[0]?.uid, 'overflow-dance')
+  assertEqual(changedCardSupply.enemies[0].hp, 1)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].shivs = 1
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/2'))
+await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/2'))
+const refusedCardOverflow = await readState()
+check('a card keeps targeting open when a queued Shiv would hit a dead enemy', () => {
+  assertEqual(refusedCardOverflow.players[0].hand[0]?.uid, 'overflow-dance')
+  assertEqual(refusedCardOverflow.enemies[0].hp, 1)
+  assertEqual(refusedCardOverflow.enemies[1].hp, 5)
+})
 await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
 await page.getByRole('button', { name: /5 of 5 hit points/ }).click()
@@ -1481,13 +1587,37 @@ check('True Grit exhausts the chosen card and blocks the chosen ally', () => {
 await shot('11-true-grit-ally')
 
 // Predator needs two independent choices: who it attacks, then who draws.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const [stale, fallback] = run.combat.enemies.filter((enemy) => !enemy.dead)
+  if (!stale || !fallback) throw new Error('Predator retry fixture needs two living enemies')
+  Object.assign(stale, { hp: 7, maxHp: 7, block: 0 })
+  Object.assign(fallback, { hp: 9, maxHp: 9, block: 0 })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 7))
 const allyHandBeforePredator = (await readState()).players[1].hand.length
 await clickCard('h-predator')
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator('.enemy[aria-label*="7 of 7 hit points"]').click()
 const predatorPrompt = await page.locator('.prompt').textContent()
 check('Predator asks for its ally after its enemy is chosen', () => {
   assert(/Choose who gets it/i.test(predatorPrompt ?? ''), `expected an ally prompt, got ${predatorPrompt}`)
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const stale = run.combat.enemies.find((enemy) => enemy.hp === 7)
+  Object.assign(stale, { hp: 0, dead: true })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose an enemy'))
+const stalePredator = await readState()
+check('a staged card drops a primary target defeated by a teammate', () => {
+  assert(stalePredator.players[0].hand.some((card) => card.uid === 'h-predator'))
+})
+await page.locator('.enemy[aria-label*="9 of 9 hit points"]').click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose who gets it'))
 await page.locator('.seat:not(.seat--viewer)').click()
 const afterPredator = await readState()
 check('Predator draws two cards for the chosen ally', () => {

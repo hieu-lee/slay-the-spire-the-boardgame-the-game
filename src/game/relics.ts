@@ -116,14 +116,20 @@ export type PotionDef = {
   id: string
   name: string
   effects: Effect[]
-  /** Potions that need an enemy chosen, rather than landing on the drinker. */
-  targetsEnemy?: boolean
+  /** A potion may target one enemy or select a numbered board row directly. */
+  target?: Extract<TargetScope, 'enemy' | 'row'>
   /** Where a supportive potion may land. */
   supportTarget?: TargetScope
   text: string
 }
 
 export const POTIONS: Record<string, PotionDef> = {
+  ancient_potion: {
+    id: 'ancient_potion',
+    name: 'Ancient Potion',
+    effects: [{ kind: 'clearDebuffs' }],
+    text: 'Remove all Weak and Vulnerable from your character.',
+  },
   block_potion: {
     id: 'block_potion',
     name: 'Block Potion',
@@ -135,8 +141,14 @@ export const POTIONS: Record<string, PotionDef> = {
     id: 'fire_potion',
     name: 'Fire Potion',
     effects: [{ kind: 'damage', amount: 4 }],
-    targetsEnemy: true,
+    target: 'enemy',
     text: 'Deal 4 damage.',
+  },
+  cunning_potion: {
+    id: 'cunning_potion',
+    name: 'Cunning Potion',
+    effects: [{ kind: 'gainShiv', amount: 3 }],
+    text: 'Gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.',
   },
   energy_potion: {
     id: 'energy_potion',
@@ -160,14 +172,14 @@ export const POTIONS: Record<string, PotionDef> = {
     id: 'weak_potion',
     name: 'Weak Potion',
     effects: [{ kind: 'applyWeak', amount: 3 }],
-    targetsEnemy: true,
+    target: 'enemy',
     text: 'Apply 3 Weak.',
   },
   vulnerable_potion: {
     id: 'vulnerable_potion',
     name: 'Vulnerable Potion',
     effects: [{ kind: 'applyVulnerable', amount: 1 }],
-    targetsEnemy: true,
+    target: 'enemy',
     text: 'Apply 1 Vulnerable.',
   },
   flex_potion: {
@@ -175,6 +187,19 @@ export const POTIONS: Record<string, PotionDef> = {
     name: 'Flex Potion',
     effects: [{ kind: 'gainTemporaryStrength', amount: 1 }],
     text: 'Gain 1 Strength. Lose 1 Strength at end of turn.',
+  },
+  explosive_potion: {
+    id: 'explosive_potion',
+    name: 'Explosive Potion',
+    effects: [{ kind: 'damage', amount: 2 }],
+    target: 'row',
+    text: 'Deal 2 damage to any row.',
+  },
+  snecko_oil: {
+    id: 'snecko_oil',
+    name: 'Snecko Oil',
+    effects: [{ kind: 'draw', amount: 5 }, { kind: 'addDaze', amount: 2, pile: 'draw' }],
+    text: 'Draw 5 cards. Gain 2 Daze.',
   },
 }
 
