@@ -69,6 +69,7 @@ type Pending = {
   shivEnemyUids: string[]
   evokeSlots: number[]
   evokeEnemyUids: (string | null | undefined)[]
+  mode: number | null
   enemyUid: string | null
   playerId: string | null
   /**
@@ -120,7 +121,7 @@ function requirementsOf(
   allies: number,
   viewer: Player,
   state: CombatState,
-): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids'> {
+): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode'> {
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
   // an enemy and the engine would then throw the choice away. The viewer goes
@@ -732,11 +733,13 @@ export function CombatScreen({
   const choiceNeeded = pending?.choice
     ? Math.min(pending.choice.amount, Math.max(0, viewer.hand.length - 1))
     : 0
-  const choiceSatisfied = pending?.choice ? pending.picked.length === choiceNeeded : true
   const pendingDef = pending ? faceOf(cardDef(pending.card.defId), pending.card.upgraded) : null
+  const handChoiceSatisfied = pending?.choice ? pending.picked.length === choiceNeeded : true
+  const modeSatisfied = !pendingDef?.modes || pending?.mode !== null
+  const choiceSatisfied = handChoiceSatisfied && modeSatisfied
   const pendingNeedsCardEnemy = pendingDef ? cardNeedsEnemy(pendingDef, viewer, false) : false
   const pendingEvokeChoice = pendingDef && pending
-    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots)
+    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined)
     : null
   const pendingEvokeTarget = pending?.evokeEnemyUids.findIndex((target) => target === undefined) ?? -1
   const evokeChoicesDone = pendingEvokeChoice === null && pendingEvokeTarget < 0
@@ -751,6 +754,7 @@ export function CombatScreen({
     const context = {
       enemyUid: next.enemyUid,
       playerId: next.playerId ?? viewer!.id,
+      mode: next.mode ?? undefined,
       discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
       exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
@@ -807,7 +811,7 @@ export function CombatScreen({
           const needsAlly = def.supportTarget === 'anyPlayer' &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           setMiracleOnCard(usingMiracle)
-          if (needsEnemy || needsAlly || next.choice || nextEvokeChoice(def, authoritative.player, [])) {
+          if (needsEnemy || needsAlly || def.modes || next.choice || nextEvokeChoice(def, authoritative.player, [])) {
             setPending({
               ...next,
               needsEnemy,
@@ -818,6 +822,7 @@ export function CombatScreen({
               shivEnemyUids: [],
               evokeSlots: [],
               evokeEnemyUids: [],
+              mode: null,
             })
           }
         }
@@ -833,7 +838,8 @@ export function CombatScreen({
   function stageOrCommit(next: Pending) {
     const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
     const owed = next.choice ? Math.min(next.choice.amount, Math.max(0, viewer!.hand.length - 1)) : 0
-    const ready = next.picked.length === owed && !nextEvokeChoice(def, viewer!, next.evokeSlots) &&
+    const ready = next.picked.length === owed && (!def.modes || next.mode !== null) &&
+      !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
       (!cardNeedsEnemy(def, viewer!, false) || next.enemyUid !== null) &&
       next.shivEnemyUids.length >= next.overflowShivs && (!next.needsAlly || next.playerId !== null)
@@ -880,6 +886,7 @@ export function CombatScreen({
       shivEnemyUids: [],
       evokeSlots: [],
       evokeEnemyUids: [],
+      mode: null,
       picked: [],
     }
     setPending(next)
@@ -889,7 +896,7 @@ export function CombatScreen({
       ? Math.min(next.choice.amount, Math.max(0, viewer!.hand.length - 1))
       : 0
     if (!next.needsEnemy && !next.needsAlly && owed === 0 &&
-      !nextEvokeChoice(def, viewer!, next.evokeSlots)) commit(next)
+      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots)) commit(next)
   }
 
   function onEnemyClick(enemy: Enemy) {
@@ -954,6 +961,11 @@ export function CombatScreen({
     })
   }
 
+  function onModeClick(mode: number) {
+    if (!pending || !pendingDef?.modes?.[mode]) return
+    stageOrCommit({ ...pending, mode })
+  }
+
   function onAllyClick(ally: Player) {
     if (ally.dead) return
     if (pendingPotion && potionDef(pendingPotion).supportTarget === 'anyPlayer') {
@@ -983,7 +995,9 @@ export function CombatScreen({
         : `Choose ${pendingPotionDef.target ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
     : spendingShiv
     ? 'Choose an enemy for the Shiv'
-    : pending?.choice && !choiceSatisfied
+    : pendingDef?.modes && !modeSatisfied
+      ? `Choose how to play ${pendingDef.name}`
+    : pending?.choice && !handChoiceSatisfied
       ? `${pending.choice.kind === 'discard' ? 'Discard' : 'Exhaust'} ${choiceNeeded} card${
           choiceNeeded === 1 ? '' : 's'
         } — ${pending.picked.length}/${choiceNeeded} chosen`
@@ -1180,6 +1194,12 @@ export function CombatScreen({
               onClick={() => onEvokeClick(option.slot)}>
               <span className={`token token--orb token--orb-${option.orb}`} />
               {option.orb} slot {option.slot + 1}
+            </button>
+          )) : null}
+          {pendingDef?.modes && !modeSatisfied ? pendingDef.modes.map((mode, index) => (
+            <button type="button" className="prompt__mode" key={mode.label}
+              onClick={() => onModeClick(index)}>
+              {mode.label}
             </button>
           )) : null}
           {pendingPotion && pendingPotionOverflow > 0 ? (

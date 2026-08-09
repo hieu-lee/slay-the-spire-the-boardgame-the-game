@@ -1711,7 +1711,7 @@ check('every newly transcribed card does what its face prints', () => {
   // the original hand-built set must appear here, so adding a card without an
   // expected outcome fails rather than passing unnoticed.
   const LEGACY = new Set([
-    'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit', 'anger', 'flex',
+    'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit', 'anger', 'flex', 'iron_wave',
     'metallicize', 'demon_form', 'feel_no_pain', 'dark_embrace',
     'strike_silent', 'defend_silent', 'neutralize', 'survivor',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
@@ -1805,6 +1805,35 @@ check('Flex gains temporary Strength and only its base face Exhausts', () => {
     const ended = beginEndPlayerTurn(played)
     assertEqual(ended.players[0].strength, upgraded ? 8 : 7,
       `Flex${upgraded ? '+' : ''} should follow its printed loss wording at the cap`)
+  }
+})
+
+check('Iron Wave base gains both effects and its upgrade requires one printed mode', () => {
+  const base = instance('iron_wave')
+  const baseState = combat(
+    [makePlayer({ hand: [base] })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  const basePlayed = playCard(baseState, 'p1', base.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(basePlayed.enemies[0].hp, 19)
+  assertEqual(basePlayed.players[0].block, 1)
+  assertEqual(basePlayed.players[0].energy, 2)
+
+  for (const invalid of [undefined, -1, 2, '0']) {
+    const card = instance('iron_wave', true)
+    const state = combat([makePlayer({ hand: [card] })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const context = { enemyUid: 'e1', playerId: null }
+    if (invalid !== undefined) context.mode = invalid
+    assertEqual(playCard(state, 'p1', card.uid, context), state, `mode ${String(invalid)} should be refused`)
+  }
+
+  for (const [mode, damage, block] of [[0, 2, 1], [1, 1, 2]]) {
+    const card = instance('iron_wave', true)
+    const state = combat([makePlayer({ hand: [card] })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const played = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null, mode })
+    assertEqual(played.enemies[0].hp, 20 - damage, `mode ${mode} damage`)
+    assertEqual(played.players[0].block, block, `mode ${mode} Block`)
+    assertEqual(played.players[0].energy, 2, `mode ${mode} energy`)
   }
 })
 

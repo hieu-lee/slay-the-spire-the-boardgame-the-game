@@ -41,10 +41,10 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 73 of 259 unique character cards are live. Three more have been read off the scans and
+//   - 74 of 259 unique character cards are live. Two more have been read off the scans and
 //     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
-//     — modal faces and choices that can only be made after the
-//     same card reveals cards. The other 183 have not been transcribed at
+//     — choices that can only be made after the same card reveals cards. The
+//     other 183 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -109,7 +109,7 @@ export {
 export type { DrawResult, Piles } from './piles.ts'
 
 export { CARDS, STARTER_DECKS, cardDef, faceOf } from './cards.ts'
-export type { Amount, CardDef, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
+export type { Amount, CardDef, CardMode, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {
   activatePotion,

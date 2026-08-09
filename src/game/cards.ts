@@ -106,6 +106,7 @@ export type Amount =
 type Conditional = { when?: Condition }
 
 export type Effect = EffectKind & Conditional
+export type CardMode = { label: string; effects: Effect[] }
 
 /** Printed effects that fire only while this card is in hand at end of turn. */
 export type HandEndOfTurnEffect =
@@ -162,6 +163,8 @@ export type CardDef = {
   /** `'X'` spends any amount of energy; the effects read the amount spent. */
   cost: number | 'X'
   effects: Effect[]
+  /** Mutually exclusive printed effect lines chosen when this card is played. */
+  modes?: CardMode[]
   /** Where this card's offensive effects land. Defaults to a single enemy. */
   target?: TargetScope
   /** Where this card's supportive effects land. Defaults to the player. */
@@ -552,6 +555,16 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       exhaust: false,
       effects: [{ kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }],
+    },
+  }),
+  iron_wave: card({
+    id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'block', amount: 1 }],
+    upgrade: {
+      modes: [
+        { label: '2 damage and 1 Block', effects: [{ kind: 'hit', amount: 2 }, { kind: 'block', amount: 1 }] },
+        { label: '1 damage and 2 Block', effects: [{ kind: 'hit', amount: 1 }, { kind: 'block', amount: 2 }] },
+      ],
     },
   }),
 
@@ -1188,7 +1201,6 @@ export const CARDS: Record<string, CardDef> = {
  * because a card that silently drops a clause is worse than a missing card: it
  * plays, it looks right, and it is wrong.
  *
- * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
  * - A choice that can only be made AFTER the same card reveals cards
  *   (Third Eye, Acrobatics). Both need a play to happen in two steps, and a
  *   play is atomic here: one validated message carries every choice, which is
@@ -1207,7 +1219,6 @@ export const CARDS: Record<string, CardDef> = {
  */
 export const DEFERRED_CARDS = [
   'acrobatics',
-  'iron_wave',
   'third_eye',
 ] as const
 

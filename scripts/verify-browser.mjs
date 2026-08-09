@@ -412,7 +412,10 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  for (const foe of run.combat.enemies) foe.hp = 1
+  for (const foe of run.combat.enemies) {
+    foe.hp = 1
+    foe.cardReward = 'normal'
+  }
   debug.setRun(run)
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.every((foe) => foe.hp === 1))
@@ -702,6 +705,33 @@ check('Flex expires and Exhausts while Anger returns to draw top', () => {
   assert(player.exhaust.some((card) => card.uid === 'ui-flex'))
   assertEqual(player.draw[0].uid, 'ui-anger')
   assert(flexAnger.enemies.some((enemy) => enemy.hp === 18), 'Flex should strengthen Anger to 2 damage')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-iron-wave', defId: 'iron_wave', upgraded: true }]
+  player.energy = 3
+  player.block = 0
+  player.strength = 0
+  player.strengthLossAtEndOfTurn = 0
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Iron Wave\+,/ }).click()
+await page.getByRole('button', { name: '1 damage and 2 Block' }).waitFor()
+await page.waitForTimeout(250)
+await shot('06e-iron-wave-mode')
+await page.getByRole('button', { name: '1 damage and 2 Block' }).click()
+await page.getByText('Choose an enemy').waitFor()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const ironWave = await readState()
+check('Iron Wave+ commits its printed mode and target as one play', () => {
+  assert(ironWave.enemies.some((enemy) => enemy.hp === 19))
+  assertEqual(ironWave.players[0].block, 2)
+  assertEqual(ironWave.players[0].energy, 2)
 })
 
 await page.evaluate(() => {

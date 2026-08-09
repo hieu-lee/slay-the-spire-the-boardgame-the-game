@@ -617,6 +617,7 @@ function dispatch(run, seat, action) {
       const context = {
         enemyUid: action.enemyUid ?? null,
         playerId: action.playerId ?? seat.playerId,
+        mode: action.mode,
         // Coerced, not trusted: these arrive as JSON from a socket, and a
         // string where a list belongs threw a raw TypeError out of `apply`
         // instead of being refused like any other bad message.

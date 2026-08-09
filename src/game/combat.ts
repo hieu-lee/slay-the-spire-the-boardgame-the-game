@@ -213,6 +213,8 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
+  /** Zero-based printed mode for a modal card face. */
+  mode?: number
   /** Cards chosen to discard, for effects like Survivor. */
   discardUids?: string[]
   /** Cards chosen to exhaust from hand, for effects like True Grit. */
@@ -880,13 +882,14 @@ export function cardNeedsEnemy(
 ): boolean {
   if (def.type === 'power' && def.trigger) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
-  return def.effects.some((effect) =>
+  const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
+  return effects.some((effect) =>
     (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) && reachesEnemy(effect, actor))
 }
 
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
-function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[]) {
+function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[], mode?: number) {
   const orbs = [...actor.orbs]
   const chosen: OrbType[] = []
   let index = 0
@@ -912,7 +915,8 @@ function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly nu
     return true
   }
 
-  for (const effect of def.effects) {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  for (const effect of effects) {
     if (effect.when?.kind === 'orbsAtLeast' &&
       orbs.filter((orb) => orb !== null).length < effect.when.amount) continue
     if (effect.kind === 'channel' || effect.kind === 'channelDieOrb') {
@@ -941,8 +945,9 @@ export function nextEvokeChoice(
   def: CardDef,
   actor: Pick<Player, 'orbs'>,
   slots: readonly number[],
+  mode?: number,
 ): EvokeChoice | null {
-  return evokePlan(def, actor, slots).next
+  return evokePlan(def, actor, slots, mode).next
 }
 
 function needsChosenEnemy(
@@ -996,7 +1001,8 @@ function hasInvalidChosenPlayer(
   chosenId: unknown,
 ): boolean {
   if (def.supportTarget !== 'anyPlayer') return false
-  if (!def.effects.some((effect) => 'toChosen' in effect && effect.toChosen)) return false
+  const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
+  if (!effects.some((effect) => 'toChosen' in effect && effect.toChosen)) return false
   if (chosenId === null) return false
   if (typeof chosenId !== 'string' || chosenId.length === 0) return true
   const chosen = findPlayer(state, chosenId)
@@ -1022,13 +1028,17 @@ export function playCard(
 
   const def = faceOf(cardDef(held.defId), held.upgraded)
   if (def.unplayable) return state
+  if (def.modes) {
+    if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
+  } else if (context.mode !== undefined) return state
+  const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   const cost = def.cost === 'X' ? player.energy : def.cost
   const miracleOnCard = context.spendMiracle === true
   if (miracleOnCard && (
     player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
   )) return state
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
-  const plan = evokePlan(def, player, context.evokeSlots ?? [])
+  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode)
   if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return state
   if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return state
   if (context.evokeEnemyUids) {
@@ -1053,7 +1063,7 @@ export function playCard(
   if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
-  if (def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
+  if (effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
     player.orbs.every((orb) => !orb)) {
     return state
   }
@@ -1102,7 +1112,7 @@ export function playCard(
     invalidEvokeTarget: false,
   }
   if (resolvesOnPlay) {
-    for (const effect of def.effects) {
+    for (const effect of effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
     }
   }

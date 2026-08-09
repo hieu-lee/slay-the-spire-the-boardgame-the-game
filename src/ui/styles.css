@@ -981,7 +981,8 @@ button:disabled {
   font-size: 0.75rem;
 }
 
-.prompt__orb {
+.prompt__orb,
+.prompt__mode {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;

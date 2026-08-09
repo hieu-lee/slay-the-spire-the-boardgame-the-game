@@ -349,9 +349,16 @@ check('the fixed opening encounter uses its own printed rewards', () => {
   const run = createRun(2, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const enemy = entered.combat.enemies[0]
-  assertEqual(enemy.defId, 'red_louse', 'the regression seed should draw the opening Red Louse')
-  assertEqual(enemy.goldReward, 1, 'opening Red Louse grants its printed gold')
-  assertEqual(enemy.cardReward, null, 'opening Red Louse grants no card reward')
+  const printed = {
+    cultist: [1, 'normal'],
+    jaw_worm: [1, 'normal'],
+    red_louse: [1, null],
+    small_slime: [0, 'normal'],
+  }
+  const reward = printed[enemy.defId]
+  assert(reward, `${enemy.defId} is not a fixed-opening enemy`)
+  assertEqual(enemy.goldReward, reward[0], `${enemy.defId} grants its printed gold`)
+  assertEqual(enemy.cardReward, reward[1], `${enemy.defId} grants its printed card reward`)
 })
 
 check('winning a combat carries HP forward into the run', () => {

@@ -207,7 +207,9 @@ check('the version a client receives tracks the room', () => {
 check('online seats choose only their own revealed card reward', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
-  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 0, dead: true, cardReward: 'normal',
+  }))
   apply(room, a.token, { kind: 'resolveCombat' })
   assertEqual(room.run.phase, 'reward')
   const beforeA = room.run.players.find((player) => player.id === a.playerId).deck.length
@@ -260,6 +262,7 @@ check('Full Knowledge shares every revealed reward before final choices', () => 
 check('revising a reward choice invalidates every earlier confirmation', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' }))
   apply(room, a.token, { kind: 'resolveCombat' })
   apply(room, a.token, { kind: 'cardReward', choice: null })
   apply(room, b.token, { kind: 'cardReward', choice: null })
@@ -289,6 +292,7 @@ check('online reward messages reject unrevealed choices', () => {
 check('a disconnected seat keeps its undecided permanent reward', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' }))
   apply(room, a.token, { kind: 'resolveCombat' })
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, a.token, { kind: 'cardReward', choice: 0 })
@@ -346,6 +350,7 @@ check('online seats can spend capped Miracles and their own Shivs atomically', (
   const theirs = () => room.run.combat.players.find((player) => player.id === b.playerId)
   const enemy = () => room.run.combat.enemies[0]
   const card = { uid: 'fx-miracle-card', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(enemy(), { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
   mine().hand.push(card)
   mine().miracles = 1
   mine().energy = 6
@@ -374,7 +379,10 @@ check('an online seat can use only its own potion with a valid target', () => {
   const enemy = () => room.run.combat.enemies[0]
   mine().potions = ['fire_potion']
   theirs().potions = ['block_potion']
-  Object.assign(enemy(), { hp: 10, maxHp: 10, block: 0, dead: false })
+  for (const target of room.run.combat.enemies) {
+    Object.assign(target, { block: 0, abilityUsed: true })
+  }
+  Object.assign(enemy(), { hp: 10, maxHp: 10, dead: false })
 
   const untargeted = apply(room, a.token, { kind: 'usePotion', potionId: 'fire_potion' })
   assertEqual(untargeted.changed, false, 'a targeted potion was wasted without a target')
@@ -1164,6 +1172,30 @@ check('the whole play context reaches the engine, not just the target', () => {
   assertEqual(room.run.combat.enemies[0].hp, 18, 'Flex Strength should boost Anger')
   mine().strength = 0
   mine().strengthLossAtEndOfTurn = 0
+
+  const ironWave = { uid: 'fx-iron-wave', defId: 'iron_wave', upgraded: true }
+  mine().hand.push(ironWave)
+  mine().energy = 3
+  const ironWaveTarget = room.run.combat.enemies[0]
+  Object.assign(ironWaveTarget, { hp: 20, maxHp: 20, block: 0, dead: false })
+  const missingMode = apply(room, a.token, {
+    kind: 'playCard', cardUid: ironWave.uid, enemyUid: ironWaveTarget.uid,
+  })
+  assertEqual(missingMode.changed, false, 'a modal play without a choice must be refused')
+  const malformedMode = apply(room, a.token, {
+    kind: 'playCard', cardUid: ironWave.uid, enemyUid: ironWaveTarget.uid, mode: '1',
+  })
+  assertEqual(malformedMode.changed, false, 'a non-numeric mode must be refused')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: ironWave.uid, enemyUid: ironWaveTarget.uid, mode: 1,
+  })
+  assertEqual(
+    room.run.combat.enemies.find((enemy) => enemy.uid === ironWaveTarget.uid).hp,
+    19,
+    'the room forwarded Iron Wave damage mode',
+  )
+  assertEqual(mine().block, 2, 'the room forwarded Iron Wave Block mode')
+  assertEqual(mine().energy, 2, 'the room charged Iron Wave')
 
   const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
   mine().hand.push(dance)

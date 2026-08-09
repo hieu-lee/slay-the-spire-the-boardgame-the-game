@@ -144,7 +144,9 @@ function accessibleName(def: CardDef): string {
     def.target === 'allEnemies' ? 'hits every enemy' : '',
     def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
     def.trigger ? triggerText(def.trigger) : '',
-    ...def.effects.map(effectText),
+    ...(def.modes
+      ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
+      : def.effects.map(effectText)),
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
     def.toDrawTop ? 'returns to the top of your draw pile when played' : '',
     def.retain ? 'retain' : '',
