@@ -339,6 +339,11 @@ function holds(
   }
 }
 
+/** Whether a conditional printed clause applies to the current board. */
+export function effectIsActive(effect: Effect, state: CombatState, actor: Player): boolean {
+  return !effect.when || holds(effect.when, state, actor)
+}
+
 /** What a card counts off the board. */
 function countOf(count: CountOf, actor: Pick<Player, 'orbs' | 'block' | 'strength'>): number {
   switch (count) {
@@ -403,7 +408,7 @@ function applyEffect(
   // Conditions that read a TARGET are not usable here — there is no one target
   // yet — and the only one of those, `targetPoisoned`, is a damage bonus that
   // belongs inside an `Amount`. `verify-architecture.mjs` holds that line.
-  if (effect.when && !holds(effect.when, state, actor)) return
+  if (!effectIsActive(effect, state, actor)) return
 
   switch (effect.kind) {
     case 'hit': {
@@ -865,9 +870,10 @@ function allocate(
 }
 
 /** Whether playing this card reveals hidden cards before asking for a choice. */
-export function cardNeedsChoicePreview(def: CardDef): boolean {
+export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?: Player): boolean {
   let drew = false
   for (const effect of def.effects) {
+    if (state && actor && !effectIsActive(effect, state, actor)) continue
     if (effect.kind === 'draw') drew = true
     if (effect.kind === 'scry' || (drew && effect.kind === 'discard')) return true
   }
@@ -890,14 +896,14 @@ export function previewCardChoice(
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
   const cost = def.cost === 'X' ? player.energy : def.cost
-  if (def.unplayable || cost > player.energy || !cardNeedsChoicePreview(def)) return null
+  if (def.unplayable || cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
 
   const preview = clone(state)
   const actor = findPlayer(preview, playerId)!
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   let drew = false
   for (const effect of def.effects) {
-    if (effect.when && !holds(effect.when, preview, actor)) continue
+    if (!effectIsActive(effect, preview, actor)) continue
     if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor))
       drew = true

@@ -610,6 +610,17 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'applyVulnerable', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
     upgrade: { effects: [{ kind: 'applyVulnerable', amount: 1 }, { kind: 'applyWeak', amount: 2 }] },
   }),
+  bludgeon: card({
+    id: 'bludgeon', name: 'Bludgeon', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 3,
+    effects: [{ kind: 'hit', amount: 7 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 10 }] },
+  }),
+  impervious: card({
+    id: 'impervious', name: 'Impervious', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 2,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: 6 }],
+    upgrade: { effects: [{ kind: 'block', amount: 8 }] },
+  }),
 
   dagger_throw: card({
     id: 'dagger_throw', name: 'Dagger Throw', owner: 'silent', type: 'attack', rarity: 'common', cost: 1,
@@ -1121,6 +1132,28 @@ export const CARDS: Record<string, CardDef> = {
     id: 'third_eye', name: 'Third Eye', owner: 'watcher', type: 'skill', rarity: 'common', cost: 1,
     effects: [{ kind: 'block', amount: 2 }, { kind: 'scry', amount: 3 }],
     upgrade: { effects: [{ kind: 'block', amount: 3 }, { kind: 'scry', amount: 5 }] },
+  }),
+  cut_through_fate: card({
+    id: 'cut_through_fate', name: 'Cut Through Fate', owner: 'watcher', type: 'attack', rarity: 'common', cost: 1,
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'scry', amount: 2 }, { kind: 'draw', amount: 1 }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: 2 }, { kind: 'scry', amount: 3 }, { kind: 'draw', amount: 1 }],
+    },
+  }),
+  just_lucky: card({
+    id: 'just_lucky', name: 'Just Lucky', owner: 'watcher', type: 'attack', rarity: 'common', cost: 0,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'scry', amount: 1, when: { kind: 'dieShows', faces: [1, 2, 3] } },
+      { kind: 'block', amount: 1, when: { kind: 'dieShows', faces: [4, 5, 6] } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'scry', amount: 2, when: { kind: 'dieShows', faces: [1, 2, 3] } },
+        { kind: 'block', amount: 1, when: { kind: 'dieShows', faces: [4, 5, 6] } },
+      ],
+    },
   }),
   tranquility: card({
     id: 'tranquility',

@@ -316,7 +316,7 @@ export function apply(room, seatToken, action) {
 
   if (action?.kind === 'playCard') {
     const held = player?.hand.find((card) => card.uid === action.cardUid)
-    if (held && cardNeedsChoicePreview(faceOf(cardDef(held.defId), held.upgraded))) {
+    if (held && cardNeedsChoicePreview(faceOf(cardDef(held.defId), held.upgraded), room.run.combat, player)) {
       if (!locked || locked.cardUid !== action.cardUid) fail('Reveal this card before resolving its choice')
       if ((action.spendMiracle === true) !== locked.spendMiracle) {
         fail('The final card payment does not match its reveal')

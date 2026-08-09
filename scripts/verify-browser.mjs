@@ -970,6 +970,72 @@ await shot('06n-dash-row-switched')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-just-lucky', defId: 'just_lucky', upgraded: true }],
+    draw: [
+      { uid: 'ui-lucky-defend', defId: 'defend_watcher', upgraded: false },
+      { uid: 'ui-lucky-strike', defId: 'strike_watcher', upgraded: false },
+    ],
+    discard: [],
+    energy: 3,
+    block: 0,
+    strength: 0,
+    weak: 0,
+  })
+  run.combat.die = 1
+  for (const enemy of run.combat.enemies) {
+    if (!enemy.dead) Object.assign(enemy, { block: 0, vulnerable: 0 })
+  }
+  debug.setRun(run)
+})
+const luckyScryHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
+await page.getByRole('button', { name: /^Just Lucky\+,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+const luckyScryDialog = page.getByRole('dialog', { name: 'Scry 2' })
+await luckyScryDialog.waitFor()
+await luckyScryDialog.getByRole('button', { name: /^Defend,/ }).click()
+await shot('06o-just-lucky-scry-choice')
+await luckyScryDialog.getByRole('button', { name: 'Discard 1 and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const luckyScry = await readState()
+check('Just Lucky+ uses die 1 for its private Scry branch', () => {
+  assertEqual(luckyScryHpBefore - luckyScry.enemies.reduce((total, enemy) => total + enemy.hp, 0), 2)
+  assertEqual(luckyScry.players[0].block, 0)
+  assertDeepEqual(luckyScry.players[0].draw.map((card) => card.uid), ['ui-lucky-strike'])
+  assertDeepEqual(luckyScry.players[0].discard.map((card) => card.uid), ['ui-lucky-defend', 'ui-just-lucky'])
+  assertEqual(luckyScry.players[0].energy, 3)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-just-lucky-block', defId: 'just_lucky', upgraded: false }],
+    draw: [{ uid: 'ui-lucky-kept', defId: 'defend_watcher', upgraded: false }],
+    discard: [],
+    block: 0,
+  })
+  run.combat.die = 4
+  debug.setRun(run)
+})
+const luckyBlockHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
+await page.getByRole('button', { name: /^Just Lucky,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const luckyBlock = await readState()
+const luckyDialogCount = await page.getByRole('dialog').count()
+check('Just Lucky uses die 4 for its immediate Block branch without a Scry prompt', () => {
+  assertEqual(luckyBlockHpBefore - luckyBlock.enemies.reduce((total, enemy) => total + enemy.hp, 0), 1)
+  assertEqual(luckyBlock.players[0].block, 1)
+  assertDeepEqual(luckyBlock.players[0].draw.map((card) => card.uid), ['ui-lucky-kept'])
+  assertEqual(luckyDialogCount, 0)
+})
+await shot('06p-just-lucky-block-branch')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

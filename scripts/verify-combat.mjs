@@ -1,6 +1,7 @@
 import {
   activatePotion,
   beginEndPlayerTurn,
+  cardNeedsChoicePreview,
   cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
@@ -1725,6 +1726,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'machine_learning', powers: [1, 1] },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
+    { id: 'bludgeon', enemyHp: [13, 10] },
+    { id: 'impervious', block: [6, 8], exhaust: [1, 1] },
+    { id: 'cut_through_fate', enemyHp: [19, 18], hand: [1, 1] },
+    { id: 'just_lucky', enemyHp: [19, 18] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2178,6 +2183,57 @@ check('Third Eye previews only its Scry window and validates every chosen card',
       deck.filter((card) => !tossed.includes(card.uid)).map((card) => card.uid))
     assertDeepEqual(played.players[0].discard.slice(0, 2).map((card) => card.uid), tossed)
     assertEqual(played.players[0].discard.at(-1).uid, thirdEye.uid)
+  }
+})
+
+check('Cut Through Fate resolves its hit, Scry, then draw in printed order', () => {
+  for (const upgraded of [false, true]) {
+    const cut = instance('cut_through_fate', upgraded)
+    const deck = Array.from({ length: 4 }, () => instance('defend_watcher'))
+    const state = combat(
+      [makePlayer({ character: 'watcher', hand: [cut], draw: deck })],
+      [makeEnemy({ hp: 10, maxHp: 10 })],
+    )
+    const preview = previewCardChoice(state, 'p1', cut.uid)
+    assertEqual(preview?.kind, 'scry')
+    assertDeepEqual(preview?.cards.map((card) => card.uid),
+      deck.slice(0, upgraded ? 3 : 2).map((card) => card.uid))
+    const played = playCard(state, 'p1', cut.uid, {
+      enemyUid: 'e1', playerId: null, scryDiscardUids: [deck[0].uid],
+    })
+    assertEqual(played.enemies[0].hp, upgraded ? 8 : 9)
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [deck[1].uid])
+    assertDeepEqual(played.players[0].draw.map((card) => card.uid), deck.slice(2).map((card) => card.uid))
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [deck[0].uid, cut.uid])
+  }
+})
+
+check('Just Lucky reveals Scry only on die 1-3 and grants Block only on 4-6', () => {
+  for (const upgraded of [false, true]) {
+    for (const die of [1, 4]) {
+      const lucky = instance('just_lucky', upgraded)
+      const deck = Array.from({ length: 3 }, () => instance('defend_watcher'))
+      const state = {
+        ...combat(
+          [makePlayer({ character: 'watcher', hand: [lucky], draw: deck })],
+          [makeEnemy({ hp: 10, maxHp: 10 })],
+        ),
+        die,
+      }
+      const face = faceOf(cardDef('just_lucky'), upgraded)
+      const needsPreview = die <= 3
+      assertEqual(cardNeedsChoicePreview(face, state, state.players[0]), needsPreview)
+      const preview = previewCardChoice(state, 'p1', lucky.uid)
+      assertEqual(preview?.kind ?? null, needsPreview ? 'scry' : null)
+      if (preview) assertEqual(preview.cards.length, upgraded ? 2 : 1)
+      const played = playCard(state, 'p1', lucky.uid, {
+        enemyUid: 'e1', playerId: null,
+        scryDiscardUids: needsPreview ? [deck[0].uid] : undefined,
+      })
+      assertEqual(played.enemies[0].hp, upgraded ? 8 : 9)
+      assertEqual(played.players[0].block, die >= 4 ? 1 : 0)
+      assertEqual(played.players[0].draw.length, needsPreview ? 2 : 3)
+    }
   }
 })
 

@@ -1103,6 +1103,47 @@ check('post-reveal card choices stay private, survive reconnects, and lock the t
   assertDeepEqual(mine().draw.map((card) => card.uid),
     scryDeck.filter((_, index) => index !== 1 && index !== 3).map((card) => card.uid))
 
+  const luckyTarget = room.run.combat.enemies[0]
+  Object.assign(luckyTarget, { hp: 10, maxHp: 10, block: 0, dead: false })
+  const luckyNoScry = { uid: 'private-just-lucky-4', defId: 'just_lucky', upgraded: false }
+  mine().hand = [luckyNoScry]
+  mine().draw = [...scryDeck]
+  mine().discard = []
+  mine().energy = 3
+  mine().block = 0
+  room.run.combat.die = 4
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: luckyNoScry.uid, enemyUid: luckyTarget.uid, preflight: true,
+  })
+  assertEqual(mine().block, 1, 'die 4 Just Lucky was incorrectly forced through a Scry reveal')
+
+  const luckyScry = { uid: 'private-just-lucky-1', defId: 'just_lucky', upgraded: true }
+  mine().hand = [luckyScry]
+  mine().draw = [...scryDeck]
+  mine().discard = []
+  mine().energy = 3
+  room.run.combat.die = 1
+  let unrevealedLucky = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: luckyScry.uid, enemyUid: luckyTarget.uid,
+      scryDiscardUids: [], preflight: true,
+    })
+  } catch (error) {
+    unrevealedLucky = error
+  }
+  assertEqual(unrevealedLucky?.name, 'RoomError', 'die 1 Just Lucky bypassed its private Scry reveal')
+  const luckyPreview = apply(room, a.token, {
+    kind: 'previewCard', cardUid: luckyScry.uid, enemyUid: luckyTarget.uid,
+  }).snapshot.cardPreview
+  assertEqual(luckyPreview.kind, 'scry')
+  assertDeepEqual(luckyPreview.cards.map((card) => card.uid), scryDeck.slice(0, 2).map((card) => card.uid))
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: luckyScry.uid, enemyUid: luckyTarget.uid,
+    scryDiscardUids: [scryDeck[0].uid], preflight: true,
+  })
+  assertDeepEqual(mine().draw.map((card) => card.uid), scryDeck.slice(1).map((card) => card.uid))
+
   const dagger = { uid: 'private-dagger-throw', defId: 'dagger_throw', upgraded: false }
   const existing = { uid: 'private-dagger-existing', defId: 'defend_silent', upgraded: false }
   const daggerDraw = { uid: 'private-dagger-draw', defId: 'neutralize', upgraded: false }

@@ -14,6 +14,7 @@ import {
   endPlayerTurn,
   enemyTurn,
   enemyLabel,
+  effectIsActive,
   nextEvokeChoice,
   overflowShivCount,
   playCard,
@@ -136,8 +137,8 @@ const PHASE_LABEL: Record<CombatState['phase'], string> = {
 function requirementsOf(
   def: CardDef,
   allies: number,
-  viewer: Pick<Player, 'orbs' | 'block' | 'strength'>,
-  state: { players: readonly { shivs: number }[] },
+  viewer: Player,
+  state: CombatState,
 ): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
@@ -154,7 +155,8 @@ function requirementsOf(
   const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && allies > 1
   const discard = def.effects.find((effect) => effect.kind === 'discard')
   const exhaust = def.effects.find((effect) => effect.kind === 'exhaustFromHand')
-  const scried = def.effects.find((effect) => effect.kind === 'scry')
+  const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
+    effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
     ? { kind: 'discard' as const, amount: discard.amount }
     : exhaust
@@ -168,8 +170,8 @@ function requirementsOf(
 function pendingFor(
   card: CardInstance,
   choiceCards: CardInstance[] | null,
-  state: { players: readonly (Pick<Player, 'dead' | 'shivs'>)[] },
-  viewer: Pick<Player, 'orbs' | 'block' | 'strength'>,
+  state: CombatState,
+  viewer: Player,
 ): Pending {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   return {
@@ -1041,7 +1043,7 @@ export function CombatScreen({
     if (pending?.choiceCards) return
 
     const def = faceOf(cardDef(card.defId), card.upgraded)
-    if (cardNeedsChoicePreview(def)) {
+    if (cardNeedsChoicePreview(def, state, viewer!)) {
       if (cardNeedsEnemy(def, viewer!, false)) {
         const next = pendingFor(card, null, state, viewer!)
         setPending({ ...next, choice: null })
@@ -1116,7 +1118,7 @@ export function CombatScreen({
     if (!pending || !pending.needsEnemy || !choiceSatisfied) return
     const normalTargetNeeded = pendingNeedsCardEnemy && !pending.enemyUid
     if (normalTargetNeeded) {
-      if (pendingDef && cardNeedsChoicePreview(pendingDef)) {
+      if (pendingDef && cardNeedsChoicePreview(pendingDef, state, viewer!)) {
         requestChoicePreview(pending.card, enemy.uid)
         return
       }
