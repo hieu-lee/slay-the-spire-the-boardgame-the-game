@@ -650,6 +650,30 @@ check('the local UI collects a separate Orb and enemy for every evoke', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-recursion', defId: 'recursion', upgraded: false }]
+  player.energy = 3
+  player.orbs = ['lightning', 'frost', 'dark']
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Recursion,/ }).click()
+await page.getByRole('button', { name: /dark slot 3/i }).waitFor()
+await page.waitForTimeout(250)
+await shot('06c-recursion-choice')
+await page.getByRole('button', { name: /dark slot 3/i }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const recursed = await readState()
+check('Recursion uses the Orb picker and re-channels the chosen type', () => {
+  assertDeepEqual(recursed.players[0].orbs, ['lightning', 'frost', 'dark'])
+  assert(recursed.enemies.some((enemy) => enemy.hp === 17), 'the chosen Dark should evoke for 3')
+  assertEqual(recursed.players[0].energy, 2)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[1].shivs = 2
@@ -1208,11 +1232,23 @@ const emptyEvoke = await page.evaluate(async () => {
   me.energy = 3
   debug.setRun(run)
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  const card = document.querySelector('.hand .card')
-  return { disabled: card?.disabled ?? false }
+  const dualDisabled = document.querySelector('.hand .card')?.disabled ?? false
+  me.hand = [{ uid: 'solo-recursion', defId: 'recursion', upgraded: false }]
+  debug.setRun(structuredClone(run))
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const recursionDisabled = document.querySelector('.hand .card')?.disabled ?? false
+  me.hand = [{ uid: 'solo-chaos', defId: 'chaos', upgraded: false }]
+  debug.setRun(structuredClone(run))
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const chaosLabel = document.querySelector('.hand .card')?.getAttribute('aria-label') ?? ''
+  return { dualDisabled, recursionDisabled, chaosLabel }
 })
 check('a card that cannot resolve is not offered', () => {
-  assert(emptyEvoke.disabled, 'Dual Cast with no orbs charged should be greyed out')
+  assert(emptyEvoke.dualDisabled, 'Dual Cast with no orbs charged should be greyed out')
+  assert(emptyEvoke.recursionDisabled, 'Recursion with no orbs charged should be greyed out')
+  assert(emptyEvoke.chaosLabel.includes('Lightning on die 1 or 2') &&
+    emptyEvoke.chaosLabel.includes('Frost on 3 or 4') && emptyEvoke.chaosLabel.includes('Dark on 5 or 6'),
+  'Chaos should announce its full die mapping')
 })
 
 // A row card and a single-target card are the same interaction -- click one

@@ -135,6 +135,8 @@ type EffectKind =
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: number }
   | { kind: 'evoke'; times: number }
+  | { kind: 'channelDieOrb' }
+  | { kind: 'recurseOrb' }
   | { kind: 'scry'; amount: number }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
@@ -665,6 +667,16 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+  chaos: card({
+    id: 'chaos', name: 'Chaos', owner: 'defect', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'channelDieOrb' }],
+    upgrade: { cost: 0 },
+  }),
+  recursion: card({
+    id: 'recursion', name: 'Recursion', owner: 'defect', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'recurseOrb' }],
+    upgrade: { cost: 0 },
+  }),
 
   consecrate: card({
     id: 'consecrate',
@@ -1181,10 +1193,8 @@ export const CARDS: Record<string, CardDef> = {
 export const DEFERRED_CARDS = [
   'acrobatics',
   'anger',
-  'chaos',
   'flex',
   'iron_wave',
-  'recursion',
   'third_eye',
 ] as const
 

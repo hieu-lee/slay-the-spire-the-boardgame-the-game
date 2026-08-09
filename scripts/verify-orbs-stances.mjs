@@ -132,6 +132,41 @@ check('Charge Battery channels Frost only from a full Orb board', () => {
   assertDeepEqual(full.players[0].orbs, ['lightning', 'frost', 'dark'], 'Frost refills the chosen slot')
 })
 
+check('Chaos channels the Orb printed for the shared die', () => {
+  for (const [die, orb] of [[1, 'lightning'], [2, 'lightning'], [3, 'frost'], [4, 'frost'], [5, 'dark'], [6, 'dark']]) {
+    const card = instance('chaos')
+    const state = { ...combat([player({ hand: [card] })], [enemy()]), die }
+    const next = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(next.players[0].orbs[0], orb, `die ${die}`)
+    assertEqual(next.players[0].energy, 2, `Chaos costs 1 on die ${die}`)
+  }
+
+  const card = instance('chaos', true)
+  const state = { ...combat([player({ hand: [card], orbs: ['lightning', 'frost', 'dark'] })], [enemy()]), die: 6 }
+  const full = playCard(state, 'p1', card.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [1], evokeEnemyUids: [null],
+  })
+  assertDeepEqual(full.players[0].orbs, ['lightning', 'dark', 'dark'])
+  assertEqual(full.players[0].block, 1, 'the chosen Frost evokes before the die channels Dark')
+  assertEqual(full.players[0].energy, 3, 'Chaos+ costs 0')
+})
+
+check('Recursion re-channels the exact Orb it evoked', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('recursion', upgraded)
+    const state = combat(
+      [player({ hand: [card], orbs: ['lightning', 'frost', 'dark'] })],
+      [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 })],
+    )
+    const next = playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: 'p1', evokeSlots: [2], evokeEnemyUids: ['e2'],
+    })
+    assertDeepEqual(next.players[0].orbs, ['lightning', 'frost', 'dark'])
+    assertEqual(next.enemies[1].hp, 17, 'the chosen Dark evokes into the chosen enemy')
+    assertEqual(next.players[0].energy, upgraded ? 3 : 2, `Recursion${upgraded ? '+' : ''} cost`)
+  }
+})
+
 check('exact evoke choices reject malformed or stale plans atomically', () => {
   const make = () => {
     const dual = instance('dual_cast')

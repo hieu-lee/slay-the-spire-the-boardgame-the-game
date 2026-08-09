@@ -231,7 +231,8 @@ function canAfford(player: Player, card: CardInstance, spendMiracle = false): bo
   // An evoke with nothing charged is refused by the engine, and a refusal is
   // reference-equality — the UI has no way to explain it. Better to grey the
   // card out than to let the click land and appear to do nothing at all.
-  if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
+  if (def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
+    player.orbs.every((orb) => !orb)) {
     return false
   }
   if (spendMiracle && (def.cost === 'X' || def.cost === 0)) return false

@@ -81,6 +81,8 @@ function effectText(effect: Effect): string {
     case 'enterStance': return `enter ${effect.stance}${condition}`
     case 'channel': return `channel ${effect.amount} ${effect.orb} orbs${condition}`
     case 'evoke': return `evoke ${effect.times} orbs${condition}`
+    case 'channelDieOrb': return `channel Lightning on die 1 or 2, Frost on 3 or 4, Dark on 5 or 6${condition}`
+    case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`

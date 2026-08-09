@@ -1714,7 +1714,7 @@ check('every newly transcribed card does what its face prints', () => {
     'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit',
     'metallicize', 'demon_form', 'feel_no_pain', 'dark_embrace',
     'strike_silent', 'defend_silent', 'neutralize', 'survivor',
-    'strike_defect', 'defend_defect', 'zap', 'dual_cast',
+    'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
     'strike_watcher', 'defend_watcher', 'eruption', 'vigilance',
     'daze', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
     'shame', 'writhe', 'ascenders_bane',

@@ -662,6 +662,12 @@ function applyEffect(
       for (let i = 0; i < effect.amount; i++) channelOrb(state, actor, effect.orb, context)
       return
     }
+    case 'channelDieOrb': {
+      const orb: OrbType = state.die <= 2 ? 'lightning' : state.die <= 4 ? 'frost' : 'dark'
+      note(`${actor.name} channels 1 ${orb}`)
+      channelOrb(state, actor, orb, context)
+      return
+    }
     case 'addDaze': {
       const gained = addDaze(state, actor, effect.amount, effect.pile, actor.id)
       if (gained > 0) note(`${actor.name} gains ${gained} Daze`)
@@ -686,6 +692,14 @@ function applyEffect(
           break
         }
         evokeOrb(state, actor, context)
+      }
+      return
+    }
+    case 'recurseOrb': {
+      const orb = evokeOrb(state, actor, context)
+      if (orb) {
+        note(`${actor.name} channels 1 ${orb}`)
+        channelOrb(state, actor, orb, context)
       }
       return
     }
@@ -822,7 +836,7 @@ function allocate(
  * out, Dual Cast silently aimed at the first living enemy and the Defect could
  * not direct their biggest starter card.
  */
-const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke']
+const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke', 'recurseOrb']
 
 /**
  * Whether this clause can reach an enemy at all, for this player.
@@ -865,7 +879,8 @@ export function cardNeedsEnemy(
 ): boolean {
   if (def.type === 'power' && def.trigger) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
-  return def.effects.some((effect) => (includeEvokes || effect.kind !== 'evoke') && reachesEnemy(effect, actor))
+  return def.effects.some((effect) =>
+    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) && reachesEnemy(effect, actor))
 }
 
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
@@ -899,13 +914,21 @@ function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly nu
   for (const effect of def.effects) {
     if (effect.when?.kind === 'orbsAtLeast' &&
       orbs.filter((orb) => orb !== null).length < effect.when.amount) continue
-    if (effect.kind === 'channel') {
-      for (let count = 0; count < effect.amount; count++) {
+    if (effect.kind === 'channel' || effect.kind === 'channelDieOrb') {
+      const amount = effect.kind === 'channel' ? effect.amount : 1
+      for (let count = 0; count < amount; count++) {
         if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid }
         const open = orbs.indexOf(null)
-        if (open >= 0) orbs[open] = effect.orb
+        if (open >= 0) orbs[open] = effect.kind === 'channel' ? effect.orb : 'lightning'
       }
-    } else if (effect.kind === 'evoke') {
+    } else if (effect.kind === 'evoke' || effect.kind === 'recurseOrb') {
+      if (effect.kind === 'recurseOrb') {
+        if (!evoke()) return { chosen, index, next, invalid }
+        const open = orbs.indexOf(null)
+        const orb = chosen.at(-1)
+        if (open >= 0 && orb) orbs[open] = orb
+        continue
+      }
       for (let count = 0; count < effect.times; count++) if (!evoke()) return { chosen, index, next, invalid }
     }
   }
@@ -1029,7 +1052,8 @@ export function playCard(
   if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
-  if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
+  if (def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
+    player.orbs.every((orb) => !orb)) {
     return state
   }
 
@@ -1604,7 +1628,7 @@ function channelOrb(
  * rotation (p.16) — and the atomic context carries one slot and, where needed,
  * one enemy for each evoke.
  */
-function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void {
+function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbType | null {
   // The slot has to be a real array INDEX, not any property key. These values
   // arrive as JSON from a client, and `orbs['length']` was truthy — it evoked
   // a non-existent Dark orb for free damage and then assigned null to
@@ -1617,9 +1641,9 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
     chosen < actor.orbs.length && actor.orbs[chosen] != null
     ? chosen
     : actor.orbs.findIndex((orb) => orb != null)
-  if (slot < 0) return
+  if (slot < 0) return null
   const orb = actor.orbs[slot]
-  if (!orb) return
+  if (!orb) return null
   actor.orbs[slot] = null
   context.evokeIndex = index + 1
 
@@ -1644,6 +1668,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
     } else damageEnemyLogged(state, target, 3 + actor.powers.length, `${actor.name}'s Dark orb`)
   }
+  return orb
 }
 
 /** Resolves one Orb's end-turn effect; each Orb is separately ordered (p.16). */

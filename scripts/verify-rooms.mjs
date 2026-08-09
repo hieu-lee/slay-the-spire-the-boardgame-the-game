@@ -1135,6 +1135,19 @@ check('the whole play context reaches the engine, not just the target', () => {
     'each damaging evoke reached its own enemy',
   )
 
+  const recursion = { uid: 'fx-recursion', defId: 'recursion', upgraded: false }
+  mine().hand.push(recursion)
+  mine().orbs = ['lightning', 'frost', 'dark']
+  mine().energy = 3
+  const recursionTarget = room.run.combat.enemies[0]
+  Object.assign(recursionTarget, { hp: 20, maxHp: 20, block: 0, dead: false })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: recursion.uid, enemyUid: null,
+    evokeSlots: [2], evokeEnemyUids: [recursionTarget.uid],
+  })
+  assertDeepEqual(mine().orbs, ['lightning', 'frost', 'dark'], 'Recursion re-channelled the chosen Dark')
+  assertEqual(room.run.combat.enemies[0].hp, 17, 'the room forwarded Recursion\'s exact target')
+
   const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
   mine().hand.push(dance)
   mine().energy = 3

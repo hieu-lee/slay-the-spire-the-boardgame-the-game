@@ -41,10 +41,10 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 69 of 259 unique character cards are live. Seven more have been read off the scans and
+//   - 71 of 259 unique character cards are live. Five more have been read off the scans and
 //     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
-//     — modal faces, temporary Strength, deck manipulation, unresolved Orb
-//     effects, and choices that can only be made after the
+//     — modal faces, temporary Strength, deck manipulation, and choices that
+//     can only be made after the
 //     same card reveals cards. The other 183 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
