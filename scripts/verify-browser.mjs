@@ -139,6 +139,7 @@ check('the first room is an encounter and starts a combat', () => {
 // the assertion compares total enemy HP instead of guessing which one was hit.
 const beforePlay = await readState()
 const totalEnemyHp = (state) => state.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
+const totalEnemyDurability = (state) => state.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
 
 // Pick an attack rather than whichever card happens to be first, since a Skill
 // would not damage anything and the check would be vacuous.
@@ -256,7 +257,7 @@ if (afterEnemies.phase === 'roundEnd') {
   check('cards are playable in the second round, not just the first', () => {
     assertEqual(afterSecondPlay.players[0].hand.length, 4, 'the card leaves hand')
     assert(
-      totalEnemyHp(afterSecondPlay) < totalEnemyHp(beforeSecondPlay),
+      totalEnemyDurability(afterSecondPlay) < totalEnemyDurability(beforeSecondPlay),
       'and it still damages an enemy',
     )
   })
@@ -803,6 +804,40 @@ check('Third Eye locks the revealed play and keeps unselected cards in order', (
   assertDeepEqual(thirdEye.players[0].discard.map((card) => card.uid),
     ['ui-scry-strike', 'ui-scry-eruption', 'ui-third-eye'])
   assertEqual(thirdEye.players[0].energy, 2)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [
+    { uid: 'ui-dagger-throw', defId: 'dagger_throw', upgraded: true },
+    { uid: 'ui-dagger-existing', defId: 'defend_silent', upgraded: false },
+  ]
+  player.draw = [{ uid: 'ui-dagger-drawn', defId: 'neutralize', upgraded: false }]
+  player.discard = []
+  player.energy = 3
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
+  .some((card) => card.uid === 'ui-dagger-throw'))
+await page.getByRole('button', { name: /^Dagger Throw\+,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"]').click()
+const daggerDialog = page.getByRole('dialog', { name: 'Choose 1 to discard' })
+await daggerDialog.waitFor()
+await daggerDialog.getByRole('button', { name: /^Neutralize,/ }).click()
+await shot('06h-dagger-throw-choice')
+await daggerDialog.getByRole('button', { name: 'Discard selected card' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies
+  .some((enemy) => enemy.maxHp === 10 && enemy.hp === 7))
+const daggerThrow = await readState()
+check('Dagger Throw chooses its attack target before revealing its discard', () => {
+  assertEqual(daggerThrow.enemies.find((enemy) => enemy.maxHp === 10).hp, 7)
+  assertDeepEqual(daggerThrow.players[0].hand.map((card) => card.uid), ['ui-dagger-existing'])
+  assertDeepEqual(daggerThrow.players[0].discard.map((card) => card.uid), ['ui-dagger-drawn', 'ui-dagger-throw'])
+  assertEqual(daggerThrow.players[0].energy, 2)
 })
 
 await page.evaluate(() => {

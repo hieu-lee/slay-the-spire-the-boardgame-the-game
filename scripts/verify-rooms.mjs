@@ -1061,6 +1061,57 @@ check('post-reveal card choices stay private, survive reconnects, and lock the t
   assertDeepEqual(mine().draw.map((card) => card.uid),
     scryDeck.filter((_, index) => index !== 1 && index !== 3).map((card) => card.uid))
 
+  const dagger = { uid: 'private-dagger-throw', defId: 'dagger_throw', upgraded: false }
+  const existing = { uid: 'private-dagger-existing', defId: 'defend_silent', upgraded: false }
+  const daggerDraw = { uid: 'private-dagger-draw', defId: 'neutralize', upgraded: false }
+  mine().hand = [dagger, existing]
+  mine().draw = [daggerDraw]
+  mine().discard = []
+  mine().energy = 3
+  const daggerTarget = room.run.combat.enemies[0]
+  Object.assign(daggerTarget, { hp: 10, maxHp: 10, block: 0, dead: false })
+  const otherDaggerTarget = room.run.combat.enemies.find((enemy) => enemy.uid !== daggerTarget.uid)
+  assert(otherDaggerTarget, 'the Dagger Throw test needs a second enemy')
+  Object.assign(otherDaggerTarget, { hp: 10, maxHp: 10, block: 0, dead: false })
+  let untargetedPreview = null
+  try {
+    apply(room, a.token, { kind: 'previewCard', cardUid: dagger.uid })
+  } catch (error) {
+    untargetedPreview = error
+  }
+  assertEqual(untargetedPreview?.name, 'RoomError', 'Dagger Throw revealed its draw before choosing a target')
+  const daggerPreview = apply(room, a.token, {
+    kind: 'previewCard', cardUid: dagger.uid, enemyUid: daggerTarget.uid,
+  }).snapshot.cardPreview
+  assertDeepEqual(daggerPreview.cards.map((card) => card.uid), [existing.uid, daggerDraw.uid])
+  assertEqual(daggerPreview.enemyUid, daggerTarget.uid)
+  let retargetedPreview = null
+  try {
+    apply(room, a.token, {
+      kind: 'previewCard', cardUid: dagger.uid, enemyUid: otherDaggerTarget.uid,
+    })
+  } catch (error) {
+    retargetedPreview = error
+  }
+  assertEqual(retargetedPreview?.name, 'RoomError', 'Dagger Throw changed targets after seeing its draw')
+  let retargetedPlay = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: dagger.uid, enemyUid: otherDaggerTarget.uid,
+      discardUids: [daggerDraw.uid], preflight: true,
+    })
+  } catch (error) {
+    retargetedPlay = error
+  }
+  assertEqual(retargetedPlay?.name, 'RoomError', 'Dagger Throw resolved against a new target after its reveal')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: dagger.uid, enemyUid: daggerTarget.uid,
+    discardUids: [daggerDraw.uid], preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === daggerTarget.uid).hp, 8,
+    'the room lost Dagger Throw\'s target while resolving its private discard')
+  assertDeepEqual(mine().hand.map((card) => card.uid), [existing.uid])
+
   const racingAcrobatics = { uid: 'racing-acrobatics', defId: 'acrobatics', upgraded: false }
   const shuffled = Array.from({ length: 6 }, (_, index) => ({
     uid: `racing-draw-${index}`, defId: 'defend_silent', upgraded: false,
@@ -1140,6 +1191,25 @@ check('a disconnected reveal resolves without skipping a third connected player'
   assert(!snapshotFor(room, b.token).endTurnDecided.includes(c.playerId), 'the third player was marked done')
   joinRoom(room, { token: a.token })
   assertEqual(snapshotFor(room, a.token).cardPreview, undefined, 'reconnect restored an already resolved preview')
+})
+
+check('a disconnected Dagger Throw resolves against its committed target', () => {
+  const { room, a, b } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const dagger = { uid: 'abandoned-dagger', defId: 'dagger_throw', upgraded: false }
+  const held = { uid: 'abandoned-held', defId: 'defend_silent', upgraded: false }
+  const drawn = { uid: 'abandoned-drawn', defId: 'neutralize', upgraded: false }
+  Object.assign(player, { hand: [dagger, held], draw: [drawn], discard: [], energy: 3 })
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
+  apply(room, a.token, { kind: 'previewCard', cardUid: dagger.uid, enemyUid: target.uid })
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 8,
+    'the abandoned Dagger Throw lost its committed target')
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the abandoned targeted preview stayed locked')
+  const resolvedPlayer = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assert(!resolvedPlayer.hand.some((card) => card.uid === dagger.uid), 'the abandoned Dagger Throw stayed in hand')
 })
 
 check('the rng state never reaches a client', () => {

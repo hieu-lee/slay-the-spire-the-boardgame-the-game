@@ -538,6 +538,64 @@ try {
     assertDeepEqual(authoritativeScry.discard.map((card) => card.uid), ['online-scry-strike', 'online-third-eye'])
   })
 
+  const annBeforeDagger = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeDagger = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  annBeforeDagger.hand = [
+    { uid: 'online-dagger', defId: 'dagger_throw', upgraded: false },
+    { uid: 'online-dagger-held', defId: 'defend_silent', upgraded: false },
+    { uid: 'online-dagger-strike', defId: 'strike_silent', upgraded: false },
+  ]
+  annBeforeDagger.draw = [{ uid: 'online-dagger-drawn', defId: 'neutralize', upgraded: false }]
+  annBeforeDagger.discard = []
+  annBeforeDagger.energy = 3
+  boBeforeDagger.miracles = 1
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false })
+  }
+  const publishDaggerFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishDaggerFixture.ok, 'could not publish the online Dagger Throw fixture')
+  await a.getByRole('button', { name: /^Dagger Throw,/ }).click()
+  await a.locator('.enemy--targeted').first().click()
+  const onlineDagger = a.getByRole('dialog', { name: 'Choose 1 to discard' })
+  await onlineDagger.waitFor()
+  const targetedDagger = await snapshot(a)
+  const daggerTargetUid = targetedDagger.cardPreview?.enemyUid
+  assert(typeof daggerTargetUid === 'string', 'Dagger Throw did not commit its target before revealing cards')
+  await onlineDagger.getByRole('button', { name: /^Neutralize,/ }).click()
+  let daggerRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = JSON.parse(route.request().postData())
+    body.action.discardUids = ['not-in-the-revealed-hand']
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    daggerRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await onlineDagger.getByRole('button', { name: 'Discard selected card' }).click()
+  for (let attempt = 0; attempt < 50 && daggerRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(daggerRefusalStatus, 409, 'the forged Dagger Throw did not reach the room refusal path')
+  await onlineDagger.getByText(/^0\/1 selected/).waitFor()
+  await onlineDagger.getByRole('button', { name: /^Neutralize,/ }).click()
+  const recoveredDagger = await snapshot(a)
+  await onlineDagger.getByRole('button', { name: 'Discard selected card' }).click()
+  await onlineDagger.waitFor({ state: 'hidden' })
+  const completedDagger = await snapshot(a)
+  const expectedDaggerConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedDaggerConflict >= 0, 'the refused Dagger Throw did not surface as an HTTP conflict')
+  failures.splice(expectedDaggerConflict, 1)
+  check('a refused Dagger Throw keeps its pre-reveal target while restoring the private choice', () => {
+    assertEqual(daggerRefusalStatus, 409)
+    assertEqual(recoveredDagger.cardPreview?.enemyUid, daggerTargetUid)
+    assertEqual(completedDagger.run.combat.enemies.find((enemy) => enemy.uid === daggerTargetUid).hp, 8)
+    const ann = completedDagger.run.combat.players.find((player) => player.id === completedDagger.you.playerId)
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-dagger-held', 'online-dagger-strike'])
+  })
+
   const annAfterPreview = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boAfterPreview = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   annAfterPreview.hand.push({ uid: 'online-overflow-dance', defId: 'blade_dance', upgraded: false })

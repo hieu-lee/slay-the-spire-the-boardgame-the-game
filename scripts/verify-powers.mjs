@@ -373,12 +373,12 @@ check('a stance trigger narrows to that stance, or matches any', () => {
   assert(!triggerMatches(wrathOnly, { kind: 'onEnterStance', stance: 'calm' }))
 })
 
-check('every Power in the card table declares a trigger', () => {
+check('every Power declares exactly one way its effects resolve', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type !== 'power') continue
     assert(
-      def.trigger !== undefined,
-      `${def.id} is a Power with no trigger, so it would sit in play doing nothing`,
+      (def.trigger !== undefined) !== (def.resolvesOnPlay === true),
+      `${def.id} must either trigger later or resolve once when played`,
     )
   }
 })
@@ -387,8 +387,8 @@ check('no non-Power card carries a trigger', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type === 'power') continue
     assert(
-      def.trigger === undefined,
-      `${def.id} is a ${def.type} with a trigger; only Powers stay in play to fire one`,
+      def.trigger === undefined && def.resolvesOnPlay !== true,
+      `${def.id} is a ${def.type} with Power-only resolution metadata`,
     )
   }
 })

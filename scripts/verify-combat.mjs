@@ -528,6 +528,7 @@ CARDS.fixture_power = {
   type: 'power',
   rarity: 'common',
   cost: 0,
+  resolvesOnPlay: true,
   effects: [{ kind: 'gainStrength', amount: 1 }],
 }
 CARDS.fixture_unplayable = {
@@ -1706,6 +1707,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'barrage', enemyHp: [20, 19] },
     { id: 'go_for_the_eyes', enemyHp: [19, 19], weak: [0, 1] },
     { id: 'charge_battery', block: [2, 3] },
+    { id: 'inflame', strength: [1, 1] },
+    { id: 'disarm', weak: [2, 3], exhaust: [1, 1] },
+    { id: 'shockwave', vulnerable: [1, 1], weak: [1, 2], exhaust: [1, 1] },
+    { id: 'dagger_throw', enemyHp: [18, 17], hand: [0, 0], discardAfterDraw: true },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1756,10 +1761,14 @@ check('every newly transcribed card does what its face prints', () => {
         [makeEnemy({ hp: 20, maxHp: 20 })],
       )
       const face = faceOf(def, upgraded)
-      const next = playCard(state, 'p1', card.uid, {
+      const context = {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
-      })
+      }
+      if (spec.discardAfterDraw) {
+        context.discardUids = [previewCardChoice(state, 'p1', card.uid).cards[0].uid]
+      }
+      const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
       const me = next.players[0]
       const foe = next.enemies[0]
@@ -1774,6 +1783,7 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.orb) assertEqual(me.orbs[0], spec.orb[at], `${label}: orb channelled`)
       if (spec.miracles) assertEqual(me.miracles, spec.miracles[at], `${label}: Miracles gained`)
       if (spec.shivs) assertEqual(me.shivs, spec.shivs[at], `${label}: Shivs gained`)
+      if (spec.strength) assertEqual(me.strength, spec.strength[at], `${label}: Strength gained`)
       if (spec.vulnerable) assertEqual(foe.vulnerable, spec.vulnerable[at], `${label}: Vulnerable applied`)
       if (spec.daze) assertEqual(me.draw.filter((held) => held.defId === 'daze').length, spec.daze[at], `${label}: Daze gained`)
       if (spec.dazeDiscard) assertEqual(me.discard.filter((held) => held.defId === 'daze').length, spec.dazeDiscard[at], `${label}: Daze discarded`)
@@ -1835,6 +1845,68 @@ check('Iron Wave base gains both effects and its upgrade requires one printed mo
     assertEqual(played.enemies[0].hp, 20 - damage, `mode ${mode} damage`)
     assertEqual(played.players[0].block, block, `mode ${mode} Block`)
     assertEqual(played.players[0].energy, 2, `mode ${mode} energy`)
+  }
+})
+
+check('Inflame, Disarm, and Shockwave resolve both scan-read faces', () => {
+  for (const upgraded of [false, true]) {
+    const inflame = instance('inflame', upgraded)
+    const inflamed = playCard(
+      combat([makePlayer({ hand: [inflame] })], [makeEnemy()]),
+      'p1', inflame.uid, { enemyUid: null, playerId: null },
+    )
+    assertEqual(inflamed.players[0].strength, 1)
+    assertEqual(inflamed.players[0].energy, upgraded ? 2 : 1)
+    assert(inflamed.players[0].powers.some((card) => card.uid === inflame.uid))
+
+    const disarm = instance('disarm', upgraded)
+    const disarmed = playCard(
+      combat([makePlayer({ hand: [disarm] })], [makeEnemy()]),
+      'p1', disarm.uid, { enemyUid: 'e1', playerId: null },
+    )
+    assertEqual(disarmed.enemies[0].weak, upgraded ? 3 : 2)
+    assert(disarmed.players[0].exhaust.some((card) => card.uid === disarm.uid))
+
+    const shockwave = instance('shockwave', upgraded)
+    const shocked = playCard(
+      combat(
+        [makePlayer({ hand: [shockwave] })],
+        [
+          makeEnemy({ uid: 'other-row', row: 0 }),
+          makeEnemy({ uid: 'chosen-row', row: 1 }),
+          makeEnemy({ uid: 'boss', row: 0, isBoss: true }),
+        ],
+      ),
+      'p1', shockwave.uid, { enemyUid: 'chosen-row', playerId: null },
+    )
+    assertDeepEqual(shocked.enemies.map((enemy) => enemy.vulnerable), [0, 1, 1])
+    assertDeepEqual(shocked.enemies.map((enemy) => enemy.weak), [0, upgraded ? 2 : 1, upgraded ? 2 : 1])
+    assert(shocked.players[0].exhaust.some((card) => card.uid === shockwave.uid))
+  }
+})
+
+check('Dagger Throw binds its target to the post-draw discard choice', () => {
+  for (const upgraded of [false, true]) {
+    const dagger = instance('dagger_throw', upgraded)
+    const existing = instance('defend_silent')
+    const drawn = instance('neutralize')
+    const state = combat(
+      [makePlayer({ character: 'silent', hand: [dagger, existing], draw: [drawn] })],
+      [makeEnemy({ hp: 10, maxHp: 10 })],
+    )
+    const preview = previewCardChoice(state, 'p1', dagger.uid)
+    assertEqual(preview?.kind, 'discard')
+    assertDeepEqual(preview?.cards.map((card) => card.uid), [existing.uid, drawn.uid])
+    assertEqual(playCard(state, 'p1', dagger.uid, {
+      enemyUid: 'e1', playerId: null, discardUids: [],
+    }), state, 'Dagger Throw cannot skip its discard')
+    const played = playCard(state, 'p1', dagger.uid, {
+      enemyUid: 'e1', playerId: null, discardUids: [drawn.uid],
+    })
+    assertEqual(played.enemies[0].hp, upgraded ? 7 : 8)
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [existing.uid])
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [drawn.uid, dagger.uid])
+    assertEqual(played.players[0].energy, 2)
   }
 })
 

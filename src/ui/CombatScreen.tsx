@@ -45,7 +45,13 @@ type CombatScreenProps = {
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
   /** Private cards revealed by a staged online play, visible only to this seat. */
-  cardPreview?: { cardUid: string; kind: 'discard' | 'scry'; cards: CardInstance[]; spendMiracle: boolean }
+  cardPreview?: {
+    cardUid: string
+    kind: 'discard' | 'scry'
+    cards: CardInstance[]
+    spendMiracle: boolean
+    enemyUid: string | null
+  }
   partyEndTurnAbilities?: EndTurnAbility[]
   savedEndTurnOrder?: string[]
   endTurnCoordinatorId?: string | null
@@ -366,7 +372,7 @@ export function CombatScreen({
   const savedDiscardKey = savedDiscardOrder?.join('\0')
   const savedEndTurnKey = savedEndTurnOrder?.join('\0')
   const cardPreviewKey = cardPreview
-    ? `${cardPreview.cardUid}\0${cardPreview.kind}\0${cardPreview.spendMiracle}\0${cardPreview.cards.map((card) => card.uid).join('\0')}`
+    ? `${cardPreview.cardUid}\0${cardPreview.kind}\0${cardPreview.spendMiracle}\0${cardPreview.enemyUid ?? ''}\0${cardPreview.cards.map((card) => card.uid).join('\0')}`
     : ''
   const orderingStage = partyEndTurnAbilities !== undefined
 
@@ -441,11 +447,13 @@ export function CombatScreen({
     const next = pendingFor(card, cardPreview.cards, state, viewer)
     if (next.choice?.kind !== cardPreview.kind) return
     setMiracleOnCard(cardPreview.spendMiracle)
+    const restored = { ...next, enemyUid: cardPreview.enemyUid }
     setPending((current) => current?.card.uid === card.uid &&
       current.choice?.kind === cardPreview.kind &&
+      current.enemyUid === cardPreview.enemyUid &&
       current.choiceCards?.length === cardPreview.cards.length &&
       current.choiceCards?.every((held, index) => held.uid === cardPreview.cards[index]?.uid)
-      ? current : next)
+      ? current : restored)
   }, [cardPreviewKey, viewerId, usingCard, onAction])
 
   // Native modal semantics make every control behind a committed reveal inert
@@ -882,7 +890,7 @@ export function CombatScreen({
           if (!authoritative || !authoritative.player.hand?.some((card) => card.uid === next.card.uid)) return
           if (next.choiceCards) {
             setMiracleOnCard(usingMiracle)
-            requestChoicePreview(next.card)
+            requestChoicePreview(next.card, next.enemyUid)
             return
           }
           const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
@@ -930,19 +938,21 @@ export function CombatScreen({
     else setPending(next)
   }
 
-  function requestChoicePreview(card: CardInstance) {
+  function requestChoicePreview(card: CardInstance, enemyUid: string | null = null) {
     if (cardActionPending.current) return
     if (!onAction) {
       const preview = previewCardChoice(state, viewer!.id, card.uid)
       if (!preview) return
-      const next = pendingFor(card, preview.cards, state, viewer!)
+      const next = { ...pendingFor(card, preview.cards, state, viewer!), enemyUid }
       if (next.choice?.kind === preview.kind) setPending(next)
       return
     }
 
     cardActionPending.current = true
     setUsingCard(true)
-    Promise.resolve(onAction({ kind: 'previewCard', cardUid: card.uid, spendMiracle: miracleOnCard })).then((outcome) => {
+    Promise.resolve(onAction({
+      kind: 'previewCard', cardUid: card.uid, spendMiracle: miracleOnCard, enemyUid,
+    })).then((outcome) => {
       cardActionPending.current = false
       setUsingCard(false)
       const preview = outcome?.snapshot?.cardPreview
@@ -950,7 +960,7 @@ export function CombatScreen({
       const player = current.players.find((candidate) => candidate.id === viewerId)
       const held = player?.hand.find((candidate) => candidate.uid === card.uid)
       if (outcome?.status !== 'accepted' || !preview || preview.cardUid !== card.uid || !player || !held) return
-      const next = pendingFor(held, preview.cards, current, player)
+      const next = { ...pendingFor(held, preview.cards, current, player), enemyUid: preview.enemyUid }
       if (next.choice?.kind === preview.kind) setPending(next)
     }, () => {
       cardActionPending.current = false
@@ -993,6 +1003,11 @@ export function CombatScreen({
 
     const def = faceOf(cardDef(card.defId), card.upgraded)
     if (cardNeedsChoicePreview(def)) {
+      if (cardNeedsEnemy(def, viewer!, false)) {
+        const next = pendingFor(card, null, state, viewer!)
+        setPending({ ...next, choice: null })
+        return
+      }
       requestChoicePreview(card)
       return
     }
@@ -1062,6 +1077,10 @@ export function CombatScreen({
     if (!pending || !pending.needsEnemy || !choiceSatisfied) return
     const normalTargetNeeded = pendingNeedsCardEnemy && !pending.enemyUid
     if (normalTargetNeeded) {
+      if (pendingDef && cardNeedsChoicePreview(pendingDef)) {
+        requestChoicePreview(pending.card, enemy.uid)
+        return
+      }
       const next = { ...pending, enemyUid: enemy.uid }
       if (next.overflowShivs > 0 || next.needsAlly) setPending(next)
       else commit(next)

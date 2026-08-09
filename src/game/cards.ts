@@ -187,6 +187,8 @@ export type CardDef = {
    * happens when it is played — a Power with a trigger does nothing on play.
    */
   trigger?: Trigger
+  /** A Power whose printed effects happen once when played, as Inflame does. */
+  resolvesOnPlay?: boolean
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -442,6 +444,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 1 }],
     upgrade: { cost: 1 },
   }),
+  inflame: card({
+    id: 'inflame', name: 'Inflame', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainStrength', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
 
   bash: card({
     id: 'bash',
@@ -567,7 +575,27 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+  disarm: card({
+    id: 'disarm', name: 'Disarm', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'applyWeak', amount: 2 }],
+    upgrade: { effects: [{ kind: 'applyWeak', amount: 3 }] },
+  }),
+  shockwave: card({
+    id: 'shockwave', name: 'Shockwave', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 2,
+    target: 'row',
+    exhaust: true,
+    effects: [{ kind: 'applyVulnerable', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
+    upgrade: { effects: [{ kind: 'applyVulnerable', amount: 1 }, { kind: 'applyWeak', amount: 2 }] },
+  }),
 
+  dagger_throw: card({
+    id: 'dagger_throw', name: 'Dagger Throw', owner: 'silent', type: 'attack', rarity: 'common', cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'draw', amount: 1 }, { kind: 'discard', amount: 1 }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: 3 }, { kind: 'draw', amount: 1 }, { kind: 'discard', amount: 1 }],
+    },
+  }),
   deadly_poison: card({
     id: 'deadly_poison',
     name: 'Deadly Poison',

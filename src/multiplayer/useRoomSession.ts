@@ -66,7 +66,13 @@ export type RoomSnapshot = {
   endTurnOrder?: string[]
   endTurnCoordinatorId?: string | null
   discardOrder?: string[]
-  cardPreview?: { cardUid: string; kind: 'discard' | 'scry'; cards: CardInstance[]; spendMiracle: boolean }
+  cardPreview?: {
+    cardUid: string
+    kind: 'discard' | 'scry'
+    cards: CardInstance[]
+    spendMiracle: boolean
+    enemyUid: string | null
+  }
   cardChoicePlayerId?: string
   run: VisibleRun | null
 }

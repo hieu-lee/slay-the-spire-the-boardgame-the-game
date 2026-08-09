@@ -20,6 +20,7 @@ import {
   advanceAct,
   cardDef,
   cardNeedsChoicePreview,
+  cardNeedsEnemy,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
@@ -288,6 +289,13 @@ export function apply(room, seatToken, action) {
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
       def.cost === 'X' || def.cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
+    const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
+    const enemyUid = needsEnemy ? action.enemyUid : null
+    if (needsEnemy && (typeof enemyUid !== 'string' ||
+      resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
+      fail('Choose a living enemy before revealing this card')
+    }
+    if (locked && enemyUid !== locked.enemyUid) fail('The revealed card target is already committed')
     const preview = room.run.combat
       ? previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
       : null
@@ -300,7 +308,7 @@ export function apply(room, seatToken, action) {
     }
     room.cardPreviews = {
       ...room.cardPreviews,
-      [seat.playerId]: { cardUid: action.cardUid, spendMiracle, ...preview },
+      [seat.playerId]: { cardUid: action.cardUid, spendMiracle, enemyUid, ...preview },
     }
     room.version += 1
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -313,6 +321,7 @@ export function apply(room, seatToken, action) {
       if ((action.spendMiracle === true) !== locked.spendMiracle) {
         fail('The final card payment does not match its reveal')
       }
+      if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final target does not match its reveal')
       const preview = previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
       if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
         preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
@@ -425,7 +434,7 @@ function resolveAbandonedPreviews(room) {
       apply(room, seat.token, {
         kind: 'playCard',
         cardUid: preview.cardUid,
-        enemyUid: null,
+        enemyUid: preview.enemyUid,
         discardUids: preview.kind === 'discard' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
         spendMiracle: preview.spendMiracle,

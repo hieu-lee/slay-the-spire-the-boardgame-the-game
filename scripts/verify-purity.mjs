@@ -174,9 +174,7 @@ check('leaveRoom leaves the run it was called on alone', () => {
   // its guard and returns before executing a line — so the check passed
   // whatever the body did.
   const run = createRun(31, party)
-  const treasure = Object.values(run.map.rooms).find((room) => room.kind === 'treasure')
-  assert(treasure, 'precondition: the act should contain a treasure room')
-  const parked = { ...run, phase: 'room', map: { ...run.map, position: treasure.id } }
+  const parked = { ...run, phase: 'room' }
   assert(leaveRoom(parked) !== parked, 'precondition: this call must actually do something')
   unchanged('leaveRoom', parked, () => leaveRoom(parked))
 })

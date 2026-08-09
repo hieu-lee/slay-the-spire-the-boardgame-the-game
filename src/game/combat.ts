@@ -1154,7 +1154,7 @@ export function playCard(
   // A Power with a trigger does nothing when played: its effects are what the
   // trigger does, every time it fires. Resolving them here as well would pay
   // out Demon Form's Strength immediately AND at every Start of Turn.
-  const resolvesOnPlay = !(def.type === 'power' && def.trigger)
+  const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
   // `spentUids` and `shortfall` are this play's verdict, not the caller's
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
