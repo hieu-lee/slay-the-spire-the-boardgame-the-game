@@ -985,6 +985,27 @@ check('Offering self-HP loss ends the co-op run atomically when its owner falls'
   assertEqual(seen.players.find((player) => player.id === a.playerId).hp, 0)
 })
 
+check('Glacier+ publishes redirected Block and the caster\'s Frost together', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const glacier = { uid: 'room-glacier', defId: 'glacier', upgraded: true }
+  actor.hand = [glacier]
+  actor.energy = 2
+  actor.orbs = [null, null, null]
+  ally.block = 0
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: glacier.uid, playerId: b.playerId, preflight: true,
+  })
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const currentAlly = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertDeepEqual(currentActor.orbs, ['frost', null, null])
+  assertEqual(currentAlly.block, 3)
+  const seen = result.snapshot.run.combat.players
+  assertDeepEqual(seen.find((player) => player.id === a.playerId).orbs, ['frost', null, null])
+  assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

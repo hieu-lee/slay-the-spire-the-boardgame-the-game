@@ -1734,6 +1734,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'offering', player: { energy: 3 }, energy: [5, 5], hand: [3, 5], exhaust: [1, 1] },
     { id: 'die_die_die', enemyHp: [17, 16], exhaust: [1, 1] },
     { id: 'rainbow', orb: ['lightning', 'lightning'], exhaust: [1, 0] },
+    { id: 'immolate', enemyHp: [15, 13], daze: [2, 2] },
+    { id: 'piercing_wail', block: [1, 3], weak: [1, 1], exhaust: [1, 1] },
+    { id: 'crippling_cloud', poison: [1, 2], weak: [1, 1], exhaust: [1, 1] },
+    { id: 'glacier', block: [2, 3], orb: ['frost', 'frost'] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2308,6 +2312,57 @@ check('a lethal first evoke ends combat before Dual Cast removes the next Orb', 
   assertEqual(forced.phase, 'won')
   assertDeepEqual(forced.players[0].orbs, [null, 'frost', 'dark'])
   assert(!forced.log.includes('Defect channels 1 lightning'), 'an Orb that was never placed was logged as channeled')
+})
+
+check('Immolate and the Silent clouds reach every enemy before their later clauses', () => {
+  for (const upgraded of [false, true]) {
+    const enemies = [
+      makeEnemy({ uid: 'left', hp: 20, maxHp: 20, row: 0 }),
+      makeEnemy({ uid: 'right', hp: 20, maxHp: 20, row: 1 }),
+      makeEnemy({ uid: 'boss', hp: 20, maxHp: 20, row: 2, isBoss: true }),
+    ]
+    const immolate = instance('immolate', upgraded)
+    const burned = playCard(combat([makePlayer({ hand: [immolate] })], enemies), 'p1', immolate.uid, {
+      enemyUid: null, playerId: null,
+    })
+    assertDeepEqual(burned.enemies.map((enemy) => enemy.hp), Array(3).fill(upgraded ? 13 : 15))
+    assertEqual(burned.players[0].draw.filter((card) => card.defId === 'daze').length, 2)
+
+    const wail = instance('piercing_wail', upgraded)
+    const wailed = playCard(combat([makePlayer({ hand: [wail] })], enemies), 'p1', wail.uid, {
+      enemyUid: null, playerId: null,
+    })
+    assertDeepEqual(wailed.enemies.map((enemy) => enemy.weak), [1, 1, 1])
+    assertEqual(wailed.players[0].block, upgraded ? 3 : 1)
+
+    const cloud = instance('crippling_cloud', upgraded)
+    const clouded = playCard(combat([makePlayer({ hand: [cloud] })], enemies), 'p1', cloud.uid, {
+      enemyUid: null, playerId: null,
+    })
+    assertDeepEqual(clouded.enemies.map((enemy) => enemy.poison), Array(3).fill(upgraded ? 2 : 1))
+    assertDeepEqual(clouded.enemies.map((enemy) => enemy.weak), [1, 1, 1])
+  }
+
+  const lethal = instance('immolate')
+  const won = playCard(combat([makePlayer({ hand: [lethal] })], [makeEnemy({ hp: 5, maxHp: 5 })]),
+    'p1', lethal.uid, { enemyUid: null, playerId: null })
+  assertEqual(won.phase, 'won')
+  assertEqual(won.players[0].draw.filter((card) => card.defId === 'daze').length, 0,
+    'Immolate added Daze after its attack had already won combat')
+})
+
+check('Glacier+ redirects only its Block while its caster channels Frost', () => {
+  for (const upgraded of [false, true]) {
+    const glacier = instance('glacier', upgraded)
+    const state = combat([
+      makePlayer({ character: 'defect', hand: [glacier], orbs: [null, null, null] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+    ], [makeEnemy()])
+    const played = playCard(state, 'p1', glacier.uid, { enemyUid: null, playerId: 'p2' })
+    assertEqual(played.players[0].block, upgraded ? 0 : 2)
+    assertEqual(played.players[1].block, upgraded ? 3 : 0)
+    assertDeepEqual(played.players[0].orbs, ['frost', null, null])
+  }
 })
 
 check('Anger returns the played card itself to the top of draw', () => {

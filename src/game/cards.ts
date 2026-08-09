@@ -646,6 +646,12 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'loseOwnHp', amount: 1 }, { kind: 'gainEnergy', amount: 2 }, { kind: 'draw', amount: 5 }],
     },
   }),
+  immolate: card({
+    id: 'immolate', name: 'Immolate', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 2,
+    target: 'allEnemies',
+    effects: [{ kind: 'hit', amount: 5 }, { kind: 'addDaze', amount: 2, pile: 'draw' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 7 }, { kind: 'addDaze', amount: 2, pile: 'draw' }] },
+  }),
 
   dagger_throw: card({
     id: 'dagger_throw', name: 'Dagger Throw', owner: 'silent', type: 'attack', rarity: 'common', cost: 1,
@@ -677,6 +683,20 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'hit', amount: 3 }],
     upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
+  }),
+  piercing_wail: card({
+    id: 'piercing_wail', name: 'Piercing Wail', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
+    target: 'allEnemies',
+    exhaust: true,
+    effects: [{ kind: 'block', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 3 }, { kind: 'applyWeak', amount: 1 }] },
+  }),
+  crippling_cloud: card({
+    id: 'crippling_cloud', name: 'Crippling Cloud', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,
+    target: 'allEnemies',
+    exhaust: true,
+    effects: [{ kind: 'poison', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
+    upgrade: { effects: [{ kind: 'poison', amount: 2 }, { kind: 'applyWeak', amount: 1 }] },
   }),
   deadly_poison: card({
     id: 'deadly_poison',
@@ -1384,6 +1404,14 @@ export const CARDS: Record<string, CardDef> = {
     supportTarget: 'anyPlayer',
     effects: [{ kind: 'block', amount: 2, toChosen: true }, { kind: 'switchRows' }],
     upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'switchRows' }] },
+  }),
+  glacier: card({
+    id: 'glacier', name: 'Glacier', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'block', amount: 2 }, { kind: 'channel', orb: 'frost', amount: 1 }],
+    upgrade: {
+      supportTarget: 'anyPlayer',
+      effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'channel', orb: 'frost', amount: 1 }],
+    },
   }),
   rainbow: card({
     id: 'rainbow', name: 'Rainbow', owner: 'defect', type: 'skill', rarity: 'rare', cost: 2,

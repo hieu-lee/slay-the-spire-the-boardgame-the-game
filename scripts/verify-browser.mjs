@@ -1061,6 +1061,36 @@ await shot('06r-rainbow-orbs')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-glacier', defId: 'glacier', upgraded: true }],
+    discard: [],
+    energy: 3,
+    block: 0,
+    orbs: [null, null, null],
+  })
+  Object.assign(run.combat.players[1], { block: 0, dead: false, hp: Math.max(1, run.combat.players[1].hp) })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Glacier\+,/ }).click()
+await page.getByText('Choose who gets it').waitFor()
+const glacierAlly = page.locator('.seat--targetable').filter({ hasText: 'Silent' })
+assertEqual(await glacierAlly.count(), 1, 'Glacier+ did not expose the living ally as a Block target')
+await glacierAlly.scrollIntoViewIfNeeded()
+await shot('06s-glacier-ally-choice')
+await glacierAlly.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs[0] === 'frost')
+const glacier = await readState()
+check('Glacier+ gives the chosen ally Block while the caster channels Frost', () => {
+  assertEqual(glacier.players[0].block, 0)
+  assertEqual(glacier.players[1].block, 3)
+  assertDeepEqual(glacier.players[0].orbs, ['frost', null, null])
+  assertEqual(glacier.players[0].energy, 1)
+})
+await shot('06t-glacier-ally-frost')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
@@ -1858,6 +1888,13 @@ check('printed enemy special abilities are visible and announced', () => {
   const curl = enemyAbilities.find((ability) => ability.text.includes('Curl Up'))
   assert(curl, 'the Louse Curl Up ability is absent from the board')
   assert(curl.label.includes('after the first damage'), `the accessible rule is incomplete: ${curl.label}`)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = [{ uid: 'ui-curl-up-strike', defId: 'strike_ironclad', upgraded: false }]
+  run.combat.players[0].energy = 3
+  debug.setRun(run)
 })
 await page.locator('.hand .card[aria-label^="Strike,"]').first().click()
 await page.locator('.enemy').filter({ hasText: 'Red Louse' }).click()
