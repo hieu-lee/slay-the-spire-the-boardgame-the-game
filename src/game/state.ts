@@ -65,9 +65,8 @@
 //     players. `RelicInstance.spent` is declared for
 //     once-per-combat relics and is never read or written either — all of these
 //     are flags that read as implemented and are not.
-//   - There is no server yet. scripts/lib/rooms.mjs holds the co-op rules —
-//     seats, reconnection, who may do what, and what each seat is allowed to
-//     see — but nothing carries them over a socket, so play is local only.
+//   - The room server carries authoritative, per-seat snapshots over HTTP and
+//     WebSocket, but the browser lobby/client is not wired to it yet.
 
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'

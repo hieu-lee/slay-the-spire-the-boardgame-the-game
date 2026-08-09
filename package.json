@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:rooms": "node scripts/room-server.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "verify": "node scripts/verify-all.mjs",

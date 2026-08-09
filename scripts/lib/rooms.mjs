@@ -124,18 +124,24 @@ const fail = (message) => {
  * come back to the SAME seat, because their deck and HP live there. Without it
  * a flaky connection is a lost run.
  */
-export function joinRoom(room, { name, character, token: existing, random } = {}) {
+export function joinRoom(room, { name, character, token: existing, random, connected = true } = {}) {
   const returning = findSeat(room, existing)
   if (returning) {
-    returning.connected = true
-    if (name) returning.name = String(name).slice(0, 24)
+    const nextName = name ? String(name).slice(0, 24) : returning.name
+    if (room.phase !== 'lobby' && nextName !== returning.name) fail('Names are locked once the run starts')
+    const connectionChanged = returning.connected !== connected
+    if (!connectionChanged && nextName === returning.name) return returning
+    returning.connected = connected
+    returning.name = nextName
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
-    settleCampfire(room)
-    settleReward(room)
-    settleEndTurn(room)
-    settleDiscard(room)
+    if (connectionChanged) {
+      settleCampfire(room)
+      settleReward(room)
+      settleEndTurn(room)
+      settleDiscard(room)
+    }
     return returning
   }
 
@@ -152,7 +158,7 @@ export function joinRoom(room, { name, character, token: existing, random } = {}
     name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
     character: pick,
     token: token(random),
-    connected: true,
+    connected,
   }
   room.seats.push(seat)
   room.version += 1

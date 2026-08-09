@@ -1,0 +1,376 @@
+#!/usr/bin/env node
+import { createServer as createHttpServer } from 'node:http'
+import { WebSocketServer } from 'ws'
+import {
+  apply,
+  chooseCharacter,
+  createRoom,
+  createStore,
+  findSeat,
+  joinRoom,
+  markDisconnected,
+  snapshotFor,
+  startRun,
+} from './lib/rooms.mjs'
+
+const JSON_HEADERS = {
+  'content-type': 'application/json; charset=utf-8',
+  'cache-control': 'no-store',
+}
+const MAX_BODY = 64 * 1024
+const MAX_ROOMS = 100
+const ROOM_TTL_MS = 6 * 60 * 60 * 1000
+const HEARTBEAT_MS = 30_000
+const MAX_BUFFERED_BYTES = 256 * 1024
+const MESSAGE_WINDOW_MS = 10_000
+const MAX_MESSAGES_PER_WINDOW = 60
+const CREATE_WINDOW_MS = 60_000
+const MAX_CREATES_PER_WINDOW = 10
+const MAX_JOINS_PER_WINDOW = 30
+const MAX_UPGRADES_PER_WINDOW = 30
+const MAX_RATE_KEYS = 1024
+const MAX_ROOMS_PER_IP = 10
+const MAX_PENDING_AUTH = 32
+const MAX_PENDING_AUTH_PER_IP = 4
+
+function send(response, status, body) {
+  response.writeHead(status, JSON_HEADERS)
+  response.end(JSON.stringify(body))
+}
+
+async function readJson(request) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > MAX_BODY) throw Object.assign(new Error('Request body is too large'), { status: 413 })
+    chunks.push(chunk)
+  }
+  if (chunks.length === 0) return {}
+  try {
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!body || Array.isArray(body) || typeof body !== 'object') throw new Error('JSON body must be an object')
+    return body
+  } catch {
+    throw Object.assign(new Error('JSON body must be an object'), { status: 400 })
+  }
+}
+
+const tokenOf = (request) => request.headers['x-room-token']?.toString()
+const codeOf = (value) => value.trim().toUpperCase()
+const sourceOf = (request) => request.headers['cf-connecting-ip']?.toString()
+  ?? request.socket.remoteAddress
+  ?? 'unknown'
+
+export function createRoomServer() {
+  const store = createStore()
+  const sockets = new Map()
+  const roomActivity = new Map()
+  const roomOwners = new Map()
+  const createRates = new Map()
+  const joinRates = new Map()
+  const upgradeRates = new Map()
+  const seatRates = new Map()
+  const pendingAuth = new Map()
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY })
+
+  const touch = (room) => roomActivity.set(room.code, Date.now())
+
+  function consume(map, key, windowMs, maximum, now = Date.now()) {
+    const rate = map.get(key)
+    if (!rate || now - rate.startedAt >= windowMs) {
+      if (!rate && map.size >= MAX_RATE_KEYS) return false
+      map.set(key, { startedAt: now, count: 1 })
+      return true
+    }
+    rate.count += 1
+    return rate.count <= maximum
+  }
+
+  const mayAct = (room, token) => consume(
+    seatRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_MESSAGES_PER_WINDOW,
+  )
+
+  function sweepRooms(now = Date.now()) {
+    for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
+    for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
+    for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
+    for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
+    for (const [code, touchedAt] of roomActivity) {
+      if (now - touchedAt >= ROOM_TTL_MS) {
+        for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
+        store.rooms.delete(code)
+        roomActivity.delete(code)
+        roomOwners.delete(code)
+      }
+    }
+  }
+
+  function roomOrThrow(code) {
+    const room = store.rooms.get(codeOf(code))
+    if (!room) throw Object.assign(new Error('Room not found'), { status: 404 })
+    return room
+  }
+
+  function publish(room) {
+    for (const [socket, client] of sockets) {
+      if (client.code !== room.code || socket.readyState !== 1) continue
+      if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+        socket.terminate()
+        continue
+      }
+      socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token) }))
+    }
+  }
+
+  const server = createHttpServer(async (request, response) => {
+    try {
+      const url = new URL(request.url ?? '/', 'http://localhost')
+      if (request.method === 'GET' && url.pathname === '/api/health') {
+        return send(response, 200, { ok: true, rooms: store.rooms.size })
+      }
+      if (request.method === 'POST' && url.pathname === '/api/rooms') {
+        sweepRooms()
+        const source = sourceOf(request)
+        if (!consume(createRates, source, CREATE_WINDOW_MS, MAX_CREATES_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many rooms created' })
+        }
+        const body = await readJson(request)
+        if (store.rooms.size >= MAX_ROOMS) return send(response, 503, { error: 'Room capacity reached' })
+        if ([...roomOwners.values()].filter((owner) => owner === source).length >= MAX_ROOMS_PER_IP) {
+          return send(response, 429, { error: 'Too many active rooms' })
+        }
+        const room = createRoom(store)
+        roomOwners.set(room.code, source)
+        try {
+          const seat = joinRoom(room, { name: body.name, character: body.character, connected: false })
+          touch(room)
+          return send(response, 201, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
+        } catch (error) {
+          store.rooms.delete(room.code)
+          roomActivity.delete(room.code)
+          roomOwners.delete(room.code)
+          throw error
+        }
+      }
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|character|start|action))?$/)
+      if (!match) return send(response, 404, { error: 'Not found' })
+      const room = roomOrThrow(match[1])
+      const operation = match[2]
+      if (request.method === 'GET' && !operation) {
+        const token = tokenOf(request)
+        const seat = findSeat(room, token)
+        if (!seat) return send(response, 401, { error: 'Unknown seat' })
+        if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+        return send(response, 200, snapshotFor(room, token))
+      }
+      if (request.method !== 'POST') return send(response, 405, { error: 'Method not allowed' })
+      if (operation === 'join') {
+        if (!consume(joinRates, sourceOf(request), CREATE_WINDOW_MS, MAX_JOINS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many join attempts' })
+        }
+        const body = await readJson(request)
+        if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
+        const token = body.token ?? tokenOf(request)
+        const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
+        if (findSeat(room, token) && !mayAct(room, token)) {
+          return send(response, 429, { error: 'Rate limit exceeded' })
+        }
+        const beforeVersion = room.version
+        const seat = joinRoom(room, { name: body.name, character: body.character, token, connected: live })
+        touch(room)
+        if (room.version !== beforeVersion) publish(room)
+        return send(response, 200, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
+      }
+      const token = tokenOf(request)
+      if (!findSeat(room, token)) return send(response, 401, { error: 'Unknown seat' })
+      if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+      const body = await readJson(request)
+      if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
+      let changed = true
+      let snapshot = null
+      if (operation === 'character') snapshot = chooseCharacter(room, token, body.character)
+      else if (operation === 'start') {
+        if (room.seats.some((seat) => !seat.connected)) {
+          return send(response, 409, { error: 'Every seat must be connected before starting' })
+        }
+        const ascension = body.ascension ?? 0
+        if (!Number.isInteger(ascension) || ascension < 0 || ascension > 13) {
+          return send(response, 400, { error: 'Ascension must be an integer from 0 to 13' })
+        }
+        snapshot = startRun(room, token, { ascension })
+      }
+      else if (operation === 'action') {
+        const result = apply(room, token, body.action)
+        changed = result.changed
+        snapshot = result.snapshot
+      }
+      if (!snapshot) return send(response, 404, { error: 'Not found' })
+      if (changed) {
+        touch(room)
+        publish(room)
+      }
+      return send(response, 200, snapshot)
+    } catch (error) {
+      send(response, error.status ?? (error.name === 'RoomError' ? 409 : 500), {
+        error: error instanceof Error ? error.message : 'Server error',
+      })
+    }
+  })
+
+  server.on('upgrade', (request, socket, head) => {
+    try {
+      const url = new URL(request.url ?? '/', 'http://localhost')
+      if (url.pathname !== '/ws') throw new Error('Not found')
+      const source = sourceOf(request)
+      const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
+        || [...pendingAuth.values()].filter((pendingSource) => pendingSource === source).length >= MAX_PENDING_AUTH_PER_IP
+      if (tooManyPending || !consume(upgradeRates, source, CREATE_WINDOW_MS, MAX_UPGRADES_PER_WINDOW)) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n')
+        return socket.destroy()
+      }
+      const room = roomOrThrow(url.searchParams.get('room') ?? '')
+      wss.handleUpgrade(request, socket, head, (webSocket) => {
+        wss.emit('connection', webSocket, { code: room.code, source })
+      })
+    } catch {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+      socket.destroy()
+    }
+  })
+
+  wss.on('connection', (socket, context) => {
+    pendingAuth.set(socket, context.source)
+    socket.isAlive = true
+    socket.on('pong', () => { socket.isAlive = true })
+    const authTimer = setTimeout(() => {
+      if (!sockets.has(socket)) socket.close(4003, 'Authentication required')
+    }, 5000)
+    authTimer.unref?.()
+    socket.on('message', (raw) => {
+      try {
+        let client = sockets.get(socket)
+        let room
+        if (client) {
+          room = roomOrThrow(client.code)
+          if (!mayAct(room, client.token)) return socket.close(4008, 'Rate limit exceeded')
+        }
+        const message = JSON.parse(raw.toString())
+        if (!client) {
+          if (message.type !== 'authenticate' || typeof message.token !== 'string') {
+            return socket.close(4003, 'Authentication required')
+          }
+          room = roomOrThrow(context.code)
+          const seat = findSeat(room, message.token)
+          if (!seat) return socket.close(4003, 'Unknown seat')
+          if (!mayAct(room, message.token)) return socket.close(4008, 'Rate limit exceeded')
+          client = {
+            code: room.code,
+            token: message.token,
+            playerId: seat.playerId,
+          }
+          sockets.set(socket, client)
+          pendingAuth.delete(socket)
+          clearTimeout(authTimer)
+          for (const [otherSocket, other] of sockets) {
+            if (otherSocket !== socket && other.code === room.code && other.token === message.token) {
+              otherSocket.close(4001, 'Seat opened elsewhere')
+            }
+          }
+          if (!seat.connected) joinRoom(room, { token: message.token })
+          touch(room)
+          publish(room)
+          return
+        }
+        if (message.type === 'action') {
+          const result = apply(room, client.token, message.action)
+          if (result.changed) {
+            touch(room)
+            publish(room)
+          }
+        } else if (message.type === 'voice') {
+          if (JSON.stringify(message.signal).length > 32 * 1024) throw new Error('Voice signal is too large')
+          const target = room.seats.find((seat) => seat.playerId === message.to)
+          if (!target) throw new Error('Unknown voice peer')
+          for (const [peer, peerClient] of sockets) {
+            if (peerClient.code === room.code && peerClient.playerId === target.playerId && peer.readyState === 1) {
+              if (peer.bufferedAmount > MAX_BUFFERED_BYTES) {
+                peer.terminate()
+                continue
+              }
+              peer.send(JSON.stringify({
+                type: 'voice',
+                from: client.playerId,
+                signal: message.signal,
+              }))
+            }
+          }
+        } else {
+          throw new Error('Unknown message type')
+        }
+      } catch (error) {
+        if (!sockets.has(socket)) socket.close(4003, 'Authentication required')
+        else if (socket.readyState === 1) {
+          if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
+          else socket.send(JSON.stringify({ type: 'error', error: error instanceof Error ? error.message : 'Bad message' }))
+        }
+      }
+    })
+    socket.on('error', () => socket.terminate())
+    socket.on('close', () => {
+      clearTimeout(authTimer)
+      pendingAuth.delete(socket)
+      const client = sockets.get(socket)
+      sockets.delete(socket)
+      if (!client) return
+      if ([...sockets.values()].some((other) => other.code === client.code && other.token === client.token)) return
+      const room = store.rooms.get(client.code)
+      if (room) {
+        markDisconnected(room, client.token)
+        touch(room)
+        publish(room)
+      }
+    })
+  })
+
+  wss.on('error', () => {})
+  const heartbeat = setInterval(() => {
+    for (const socket of wss.clients) {
+      if (socket.isAlive === false) socket.terminate()
+      else {
+        socket.isAlive = false
+        socket.ping()
+      }
+    }
+  }, HEARTBEAT_MS)
+  heartbeat.unref()
+  const sweeper = setInterval(() => sweepRooms(), 60_000)
+  sweeper.unref()
+
+  return {
+    store,
+    server,
+    listen(port = 8787, host = '127.0.0.1') {
+      return new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(port, host, () => {
+          server.off('error', reject)
+          resolve(server.address())
+        })
+      })
+    },
+    close() {
+      clearInterval(heartbeat)
+      clearInterval(sweeper)
+      for (const socket of wss.clients) socket.close()
+      return new Promise((resolve) => server.close(resolve))
+    },
+  }
+}
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  const roomServer = createRoomServer()
+  const port = Number(process.env.PORT ?? 8787)
+  await roomServer.listen(port, process.env.HOST ?? '127.0.0.1')
+  console.log(`Room server listening on http://127.0.0.1:${port}`)
+}
