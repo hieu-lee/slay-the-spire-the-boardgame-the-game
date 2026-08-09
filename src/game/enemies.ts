@@ -47,8 +47,6 @@ export type EnemyDef = {
    * Anything listed here does NOT currently resolve.
    */
   unimplementedAbility?: string
-  /** Enemies pulled from the Summons deck when this one enters play. */
-  summons?: string[]
 }
 
 /** Die patterns pair the faces, so this keeps the tables readable. */
@@ -59,6 +57,31 @@ const byPairs = (
 ): Record<number, EnemyAction[]> => ({ 1: low, 2: low, 3: mid, 4: mid, 5: high, 6: high })
 
 export const ENEMIES: Record<string, EnemyDef> = {
+  small_slime: {
+    id: 'small_slime',
+    name: 'Small Slime',
+    // Fixed-opening variant photographed in the cited physical-game source;
+    // the later Act I encounter card is a distinct 3-HP card.
+    hpByPlayers: [2, 2, 2, 2],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
+  },
+
+  acid_slime: {
+    id: 'acid_slime',
+    name: 'Acid Slime',
+    // The fixed-opening photo shows this 4-HP summon with Weak on 1-2;
+    // other cards in the four-card Acid Slime summon stack are not live yet.
+    hpByPlayers: [4, 4, 4, 4],
+    pattern: {
+      kind: 'die',
+      byRoll: byPairs(
+        [{ kind: 'applyWeak', amount: 1 }],
+        [{ kind: 'attack', amount: 2 }],
+        [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      ),
+    },
+  },
+
   cultist: {
     id: 'cultist',
     name: 'Cultist',
@@ -70,7 +93,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
         { kind: 'gainStrength', amount: 1 },
       ],
     },
-    summons: ['green_louse'],
   },
 
   jaw_worm: {
@@ -115,7 +137,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
       ),
     },
     unimplementedAbility: 'Curl Up: the first time the Louse takes damage, it gains 2 Block.',
-    summons: ['green_louse', 'red_louse'],
   },
 
   spike_slime: {
@@ -147,7 +168,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
       ),
     },
     unimplementedAbility: 'Spore Cloud: on death, apply Vulnerable.',
-    summons: ['fungi_beast'],
   },
 
   blue_slaver: {

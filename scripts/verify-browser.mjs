@@ -424,9 +424,133 @@ check('a combat can actually be won', () => {
 })
 await shot('05d-victory')
 
-// The combat screen clears itself after a beat rather than making everyone
-// click through a screen that only says "you won".
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map', { timeout: 5000 })
+// The combat screen clears itself into the printed three-card reward (p.8).
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', { timeout: 5000 })
+const hiddenRewardRun = await readRun()
+const revealButtons = await page.getByRole('button', { name: /^Reveal 3 for/ }).count()
+check('card rewards stay face down until each player reveals or skips', () => {
+  assertEqual(hiddenRewardRun.rewards.length, 2)
+  assert(hiddenRewardRun.rewards.every((offer) => offer.choices === null), 'an offer leaked before reveal')
+  assertEqual(revealButtons, 2)
+})
+await shot('05e-card-rewards-hidden')
+for (const player of hiddenRewardRun.players) {
+  await page.getByRole('button', { name: `Reveal 3 for ${player.name}` }).click()
+}
+await page.waitForFunction(() => document.querySelectorAll('.reward-screen__cards .card').length === 6)
+// An upgraded reward still reveals base faces; only the card collected is
+// upgraded. Force that printed reward type so the UI contract stays covered.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.rewards[0].upgraded = true
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.reward-screen__upgrade') !== null)
+if (artSynced) {
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('.reward-screen__cards .card__art')]
+      .every((image) => image.complete && image.naturalWidth > 0),
+  )
+}
+const rewardRun = await readRun()
+const rewardCards = await page.locator('.reward-screen__cards .card').count()
+const rewardArt = await page.locator('.reward-screen__cards .card__art').evaluateAll((images) =>
+  images.map((image) => ({ src: image.getAttribute('src'), ok: image.complete && image.naturalWidth > 0 })),
+)
+const collectLocked = await page.getByRole('button', { name: 'Everyone must choose' }).isDisabled()
+check('victory reveals three card rewards to every living player', () => {
+  assertEqual(rewardRun.rewards.length, 2, 'both players receive their own reward')
+  assertEqual(rewardCards, 6, 'three choices are shown per player')
+  assert(collectLocked, 'the party cannot leave before everyone chooses')
+  if (artSynced) {
+    const broken = rewardArt.filter((entry) => !entry.ok)
+    assertEqual(broken.length, 0, `broken reward art: ${broken.map((entry) => entry.src).join(', ')}`)
+  }
+})
+await shot('05ea-card-rewards')
+const firstReward = page.locator('.reward-screen__choice').first()
+const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
+const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
+await firstReward.getByRole('button', { name: /^Show .* upgrade$/ }).click()
+const upgradedRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
+const upgradedRewardArt = await firstReward.locator('.card__art').getAttribute('src')
+const previewPressed = await firstReward.getByRole('button', { name: /^Show .* base$/ }).getAttribute('aria-pressed')
+const previewSelected = await firstReward.locator('.card').getAttribute('aria-pressed')
+check('Full Knowledge previews both faces even when the collected reward will be upgraded', () => {
+  assert(!(baseRewardLabel ?? '').includes('+,'), `the base face was not shown first: ${baseRewardLabel}`)
+  assert((upgradedRewardLabel ?? '').includes('+,'), `the upgraded face is not announced: ${upgradedRewardLabel}`)
+  assert(baseRewardArt !== upgradedRewardArt && upgradedRewardArt?.endsWith('+.webp'), 'the art did not flip')
+  assertEqual(previewPressed, 'true', 'the upgrade preview control is not announced as pressed')
+  assertEqual(previewSelected, 'false', 'previewing an upgrade must not choose the reward')
+})
+await shot('05eaa-card-reward-upgrade')
+await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
+await page.setViewportSize({ width: 390, height: 844 })
+const mobileRewardLayout = await page.locator('.reward-screen').evaluate((element) => ({
+  width: element.clientWidth,
+  scrollWidth: element.scrollWidth,
+  cards: [...element.querySelectorAll('.card')].slice(0, 3).map((card) => card.getBoundingClientRect().width),
+  rows: [...element.querySelectorAll('.reward-screen__cards')].map((row) => ({
+    width: row.clientWidth,
+    scrollWidth: row.scrollWidth,
+  })),
+  hints: [...element.querySelectorAll('.reward-screen__scroll-hint')].map((hint) => ({
+    text: hint.textContent,
+    display: getComputedStyle(hint).display,
+  })),
+  previewTargets: [...element.querySelectorAll('.reward-screen__choice > button')].map((button) => {
+    const rect = button.getBoundingClientRect()
+    return { width: rect.width, height: rect.height }
+  }),
+}))
+check('mobile reward cards stay readable inside their own horizontal tray', () => {
+  assert(mobileRewardLayout.scrollWidth <= mobileRewardLayout.width, 'the reward screen overflows sideways')
+  assert(mobileRewardLayout.cards.every((width) => width >= 145), 'reward cards became too small to read')
+  assert(mobileRewardLayout.rows.every((row) => row.scrollWidth > row.width), 'the card tray does not scroll')
+  assert(
+    mobileRewardLayout.hints.every((hint) => hint.display !== 'none' && hint.text?.includes('3 choices')),
+    'the horizontal tray has no visible scroll/count affordance',
+  )
+  assert(
+    mobileRewardLayout.previewTargets.every((target) => target.width >= 44 && target.height >= 44),
+    'an upgrade-preview touch target is smaller than 44px',
+  )
+})
+await shot('05eb-card-rewards-mobile')
+await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = element.scrollHeight })
+const mobileCollectVisible = await page.getByRole('button', { name: 'Everyone must choose' }).evaluate((button) => {
+  const box = button.getBoundingClientRect()
+  return box.top >= 0 && box.bottom <= window.innerHeight
+})
+check('the final reward decision remains reachable on a phone', () => {
+  assert(mobileCollectVisible, 'the collect control cannot be scrolled into view')
+})
+await shot('05ec-card-rewards-mobile-bottom')
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = 0 })
+
+const deckSizesBeforeReward = rewardRun.players.map((player) => player.deck.length)
+await page.locator('.reward-screen__player').nth(0).locator('.card').first().click()
+const selectedCardPressed = await page.locator('.reward-screen__player').nth(0).locator('.card').first().getAttribute('aria-pressed')
+await page.getByRole('button', { name: /Skip Silent's card/ }).click()
+const skipSelection = await page.getByRole('button', { name: /Skip Silent's card/ }).evaluate((button) => ({
+  pressed: button.getAttribute('aria-pressed'),
+  text: button.textContent,
+  background: getComputedStyle(button).backgroundColor,
+}))
+const unselectedSkipBackground = await page.getByRole('button', { name: /Skip Ironclad's card/ }).evaluate(
+  (button) => getComputedStyle(button).backgroundColor,
+)
+check('a chosen skip is visibly and accessibly selected', () => {
+  assertEqual(selectedCardPressed, 'true', 'the selected card is not exposed as pressed')
+  assertEqual(skipSelection.pressed, 'true')
+  assert(skipSelection.text.includes('✓'), 'the chosen skip has no visible checkmark')
+  assert(skipSelection.background !== unselectedSkipBackground, 'the chosen skip looks like the default button')
+})
+await shot('05ed-card-rewards-chosen')
+await page.getByRole('button', { name: 'Collect rewards' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const backOnMap = await readRun()
 check('winning hands the party back to the map with somewhere to go', () => {
   assertEqual(backOnMap.phase, 'map', 'the run continues on the map')
@@ -435,8 +559,11 @@ check('winning hands the party back to the map with somewhere to go', () => {
     backOnMap.map.rooms[backOnMap.map.position].visited,
     'the room just cleared is marked visited',
   )
+  assertEqual(backOnMap.players[0].deck.length, deckSizesBeforeReward[0] + 1, 'the chosen card persists')
+  assertEqual(backOnMap.players[0].deck.at(-1).upgraded, true, 'an upgraded reward upgrades only the collected card')
+  assertEqual(backOnMap.players[1].deck.length, deckSizesBeforeReward[1], 'skipping adds no card')
 })
-await shot('05e-back-on-map')
+await shot('05f-back-on-map')
 
 // Hit feedback has to survive the rest of the combat. The flinch class used to
 // stick forever the first time a state change landed inside its 380ms window
@@ -452,7 +579,16 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.combat.players[0].orbs = ['lightning', 'frost', null]
+  const viewer = run.combat.players[0]
+  viewer.miracles = 1
+  viewer.energy = 2
   debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Use Miracle (+1 Energy)' }).click()
+const miracleSpent = await readState()
+check('the local board can spend a Miracle for Energy', () => {
+  assertEqual(miracleSpent.players[0].miracles, 0)
+  assertEqual(miracleSpent.players[0].energy, 3)
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs[0] === 'lightning')
 const orbView = await page.evaluate(() => ({
@@ -474,6 +610,65 @@ check('channelled orbs are visible on the seat', () => {
   )
   assert(orbView.label.includes('lightning orb'), `and named to a screen reader: ${orbView.label}`)
   assert(orbView.label.includes('frost orb'), `both of them: ${orbView.label}`)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const viewer = run.combat.players[0]
+  viewer.hand = [{ uid: 'miracle-defend', defId: 'defend_ironclad', upgraded: false }]
+  viewer.energy = 6
+  viewer.miracles = 1
+  viewer.shivs = 1
+  viewer.weak = 0
+  for (const enemy of run.combat.enemies) {
+    enemy.block = 0
+    enemy.vulnerable = 0
+  }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 6)
+await page.getByRole('button', { name: 'Use Miracle on next card' }).click()
+const miracleToggle = await page.getByRole('button', { name: /Use Miracle on next card/ }).getAttribute('aria-pressed')
+await page.locator('.hand .card').click()
+const cappedMiracle = await readState()
+check('a capped Miracle can be spent atomically on the next card', () => {
+  assertEqual(miracleToggle, 'true', 'the pending Miracle payment is not exposed as pressed')
+  assertEqual(cappedMiracle.players[0].miracles, 0)
+  assertEqual(cappedMiracle.players[0].energy, 6, 'Defend immediately consumes the temporary seventh Energy')
+})
+
+const durabilityBeforeShiv = cappedMiracle.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
+await page.getByRole('button', { name: 'Use Shiv' }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy:not([disabled])').first().click()
+const shivSpent = await readState()
+check('the local board can aim and spend a Shiv', () => {
+  assertEqual(shivSpent.players[0].shivs, 0)
+  const durability = shivSpent.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
+  assertEqual(durability, durabilityBeforeShiv - 1)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = [{ uid: 'overflow-dance', defId: 'blade_dance', upgraded: false }]
+  run.combat.players[0].energy = 3
+  run.combat.players[0].shivs = 4
+  run.combat.players[1].shivs = 1
+  Object.assign(run.combat.enemies[0], { hp: 1, maxHp: 1, block: 0, dead: false })
+  Object.assign(run.combat.enemies[1], { hp: 5, maxHp: 5, block: 0, dead: false })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand[0]?.uid === 'overflow-dance')
+await page.locator('.hand .card').click()
+await page.getByRole('button', { name: /1 of 1 hit points/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+await page.getByRole('button', { name: /5 of 5 hit points/ }).click()
+const splitOverflow = await readState()
+check('overflow Shivs choose independent targets', () => {
+  assert(splitOverflow.enemies[0].dead, 'the first overflow Shiv should finish its target')
+  assertEqual(splitOverflow.enemies[1].hp, 4, 'the second overflow Shiv should hit another target')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -654,12 +849,16 @@ await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'fold-four'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await page.locator('.room--reachable').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+const crowdedState = await readState()
+const crowdedEnemyCount = crowdedState.enemies.length
+const crowdedViewerRow = crowdedState.players[0].row
+const crowdedViewerEnemyCount = crowdedState.enemies
+  .filter((enemy) => !enemy.isBoss && enemy.row === crowdedViewerRow).length
 const crowdedProbe = []
-// Phone widths are excluded deliberately: four stacked rows do not fit a
-// 360px screen and never will without the board redesign that is tracked
-// separately. What IS promised at every size is that the row you control is
-// scrolled into view — so this checks the sizes where the guarantee holds.
+// The whole four-row board scrolls, but the row you control — including every
+// summon in it — must fit at each supported size.
 for (const size of [
+  { width: 390, height: 844 },
   { width: 900, height: 620 },
   { width: 1440, height: 900 },
 ]) {
@@ -673,15 +872,16 @@ for (const size of [
       if (!board || bars.length === 0) return { label, missing: true }
       const b = board.getBoundingClientRect()
       // The row the viewer controls is the one scrolled into view, so its
-      // enemy is the one that must be readable.
-      const own = document.querySelector('.row--viewer .enemy .bar') ?? bars[0]
-      const r = own.getBoundingClientRect()
+      // main enemy AND every summon must be readable at once.
+      const own = [...document.querySelectorAll('.row--viewer .enemy .bar')]
+      const rects = own.map((bar) => bar.getBoundingClientRect())
       return {
         label,
         missing: false,
         rows: bars.length,
-        inside: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
-        onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
+        own: own.length,
+        inside: rects.every((r) => r.top >= b.top - 1 && r.bottom <= b.bottom + 1),
+        onScreen: rects.every((r) => r.top >= 0 && r.bottom <= window.innerHeight),
       }
     }, `4p ${size.width}x${size.height}`),
   )
@@ -691,7 +891,8 @@ await page.setViewportSize({ width: 1440, height: 900 })
 check("a four-player board still shows the viewer's own enemy", () => {
   for (const probe of crowdedProbe) {
     assert(!probe.missing, `${probe.label}: no enemy bar found`)
-    assertEqual(probe.rows, 4, `${probe.label}: expected four enemies`)
+    assertEqual(probe.rows, crowdedEnemyCount, `${probe.label}: every main enemy and summon is visible`)
+    assertEqual(probe.own, crowdedViewerEnemyCount, `${probe.label}: viewer-row summon count`)
     assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
     assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
   }
@@ -975,15 +1176,31 @@ await shot('06a-four-player-map')
 await enterFirstRoom()
 const four = await shot('06-four-players')
 check('a four player game lays out one row per player', () => {
+  const mainEnemies = four.enemies.filter((enemy) => !enemy.uid.includes('-summon'))
   assertEqual(four.players.length, 4, 'four seats')
   assertEqual(new Set(four.players.map((p) => p.row)).size, 4, 'each player gets their own row')
-  assertEqual(four.enemies.length, 4, 'a normal encounter draws one enemy per player')
+  assertEqual(mainEnemies.length, 4, 'a normal encounter draws one card per player')
+  assertEqual(new Set(mainEnemies.map((enemy) => enemy.defId)).size, 4, 'opening cards are not duplicated')
 })
 
 const rowCount = await page.locator('.row').count()
 check('every player row is rendered on screen', () => {
   assertEqual(rowCount, 4, 'the board should show four rows')
 })
+
+// A normal Red Louse encounter can put a main enemy plus two summons in one
+// row. The fixed opening only reaches two, so exercise the real wider case.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const state = run.combat
+  const row = state.players[0].row
+  const red = state.enemies.find((enemy) => enemy.defId === 'red_louse')
+  state.enemies.push({ ...red, uid: 'layout-third-enemy', row, isBoss: false })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.row--viewer .enemy').length === 3)
+const threeEnemyProbe = []
 
 // Nothing should overflow horizontally at any supported width.
 for (const [label, width, height] of [
@@ -1004,7 +1221,32 @@ for (const [label, width, height] of [
     )
   })
   await shot(label)
+  threeEnemyProbe.push(await page.evaluate((size) => {
+    const board = document.querySelector('.board')
+    const row = document.querySelector('.row--viewer')
+    const bars = [...document.querySelectorAll('.row--viewer .enemy .bar')]
+    if (!board || !row || bars.length !== 3) return { size, missing: true }
+    const boardRect = board.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    const rects = bars.map((bar) => bar.getBoundingClientRect())
+    return {
+      size,
+      missing: false,
+      insideRow: rects.every((rect) => rect.left >= rowRect.left - 1 && rect.right <= rowRect.right + 1),
+      insideBoard: rects.every((rect) => rect.top >= boardRect.top - 1 && rect.bottom <= boardRect.bottom + 1),
+      onScreen: rects.every((rect) => rect.top >= 0 && rect.bottom <= window.innerHeight),
+    }
+  }, `${width}x${height}`))
 }
+
+check('three enemies in one player row remain readable at every supported width', () => {
+  for (const probe of threeEnemyProbe) {
+    assert(!probe.missing, `${probe.size}: expected three enemy health bars`)
+    assert(probe.insideRow, `${probe.size}: an enemy clips outside its player row`)
+    assert(probe.insideBoard, `${probe.size}: an enemy health bar clips outside the board`)
+    assert(probe.onScreen, `${probe.size}: an enemy health bar is off screen`)
+  }
+})
 
 // Cards that need a choice or an ally are the ones most easily broken by a UI
 // rewrite: a wrong auto-commit silently skips the discard, exhaust or ally
@@ -1020,13 +1262,18 @@ await page.evaluate(() => {
   const state = run.combat
   const p1 = state.players[0]
   // Deal a known hand: Survivor (discard 1), True Grit (exhaust 1 + block ally),
-  // Defend+ (block ally), and two spare cards to choose.
+  // Predator (enemy + ally), and two spare cards to choose.
   p1.hand = [
     { uid: 'h-survivor', defId: 'survivor', upgraded: false },
     { uid: 'h-grit', defId: 'true_grit', upgraded: false },
-    { uid: 'h-defendplus', defId: 'defend_ironclad', upgraded: true },
+    { uid: 'h-predator', defId: 'predator', upgraded: false },
+    { uid: 'h-backstab', defId: 'backstab', upgraded: false },
+    { uid: 'h-sweeping', defId: 'sweeping_beam', upgraded: false },
     { uid: 'h-spare1', defId: 'strike_ironclad', upgraded: false },
     { uid: 'h-spare2', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'h-fnp', defId: 'feel_no_pain', upgraded: false },
+    { uid: 'h-heavy', defId: 'heavy_blade', upgraded: false },
+    { uid: 'h-heavy-plus', defId: 'heavy_blade', upgraded: true },
   ]
   p1.energy = 6
   debug.setRun(run)
@@ -1038,7 +1285,24 @@ await page.waitForFunction(() =>
   window.__STS_DEBUG__.getState()?.players[0].hand.some((card) => card.uid === 'h-survivor'),
 )
 // And wait for React to actually render that hand before clicking by index.
-await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 5)
+await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 10)
+const injectedLabels = await page.locator('.hand .card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label') ?? ''),
+)
+check('scanned card labels include conditional numbers and support targets', () => {
+  const backstab = injectedLabels.find((label) => label.startsWith('Backstab')) ?? ''
+  const predator = injectedLabels.find((label) => label.startsWith('Predator')) ?? ''
+  const sweeping = injectedLabels.find((label) => label.startsWith('Sweeping Beam')) ?? ''
+  const feelNoPain = injectedLabels.find((label) => label.startsWith('Feel No Pain')) ?? ''
+  const heavy = injectedLabels.find((label) => label.startsWith('Heavy Blade,')) ?? ''
+  const heavyPlus = injectedLabels.find((label) => label.startsWith('Heavy Blade+')) ?? ''
+  assert(backstab.includes('2 if the target is at full hit points'), `Backstab bonus is missing: ${backstab}`)
+  assert(predator.includes('support effect may target any player'), `Predator support target is missing: ${predator}`)
+  assert(sweeping.includes('hits every enemy'), `Sweeping Beam target is missing: ${sweeping}`)
+  assert(feelNoPain.includes('whenever you exhaust a card'), `Power trigger is missing: ${feelNoPain}`)
+  assert(heavy.includes('3 per Strength'), `Heavy Blade multiplier is wrong: ${heavy}`)
+  assert(heavyPlus.includes('5 per Strength'), `Heavy Blade+ multiplier is wrong: ${heavyPlus}`)
+})
 
 // The hand shrinks as cards are played, so the on-screen index has to be
 // derived from live state rather than from a fixed list.
@@ -1072,11 +1336,13 @@ await shot('10-survivor-choice')
 await clickCard('h-grit')
 await clickCard('h-spare2')
 const gritPrompt = await page.locator('.prompt').textContent()
+const pickedPressed = await page.locator('.hand .card--picked').getAttribute('aria-pressed')
 check('True Grit asks for an ally after the exhaust choice', () => {
   assert(
     /Choose who gets it/i.test(gritPrompt ?? ''),
     `after picking the exhaust target it must still ask for an ally, got ${gritPrompt}`,
   )
+  assertEqual(pickedPressed, 'true', 'the picked exhaust card is not announced as selected')
 })
 await page.locator('.seat').nth(0).click()
 const afterGrit = await readState()
@@ -1087,6 +1353,20 @@ check('True Grit exhausts the chosen card and blocks the chosen ally', () => {
   assert(blocked > 2, `some player should have gained True Grit's Block, total was ${blocked}`)
 })
 await shot('11-true-grit-ally')
+
+// Predator needs two independent choices: who it attacks, then who draws.
+const allyHandBeforePredator = (await readState()).players[1].hand.length
+await clickCard('h-predator')
+await page.locator('.enemy:not([disabled])').first().click()
+const predatorPrompt = await page.locator('.prompt').textContent()
+check('Predator asks for its ally after its enemy is chosen', () => {
+  assert(/Choose who gets it/i.test(predatorPrompt ?? ''), `expected an ally prompt, got ${predatorPrompt}`)
+})
+await page.locator('.seat:not(.seat--viewer)').click()
+const afterPredator = await readState()
+check('Predator draws two cards for the chosen ally', () => {
+  assertEqual(afterPredator.players[1].hand.length, allyHandBeforePredator + 2)
+})
 
 // Enemies can Weaken players and make them Vulnerable. If the seat panel does
 // not show those tokens, a player cannot see a debuff that is affecting them.
@@ -1561,6 +1841,7 @@ await page.evaluate(() => {
   run.combat.players[0].hand = [
     { uid: 'end-bash', defId: 'bash', upgraded: false },
     { uid: 'end-deflect', defId: 'deflect', upgraded: false },
+    { uid: 'end-protect', defId: 'protect', upgraded: false },
   ]
   debug.setRun(run)
 })
@@ -1576,6 +1857,10 @@ check('multiplayer discard controls fit a touch-sized screen', () => {
   assert(mobileDiscardControls.right <= mobileDiscardControls.width, 'discard controls spill off the right edge')
 })
 await shot('15a-mobile-discard-order')
+const discardOptions = await page.getByLabel('Top discard for Ironclad').locator('option').allTextContents()
+check('Retain cards are excluded from the top-discard choice', () => {
+  assert(!discardOptions.some((option) => option.includes('Protect')), `Retain leaked into: ${discardOptions.join(' | ')}`)
+})
 await page.getByLabel('Top discard for Ironclad').selectOption('end-deflect')
 await confirmAllDiscards()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')

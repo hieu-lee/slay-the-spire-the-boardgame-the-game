@@ -12,7 +12,8 @@ pnpm dev             # play at http://localhost:5173
 ```
 
 Pick a player count and a seed, then click a card and click its target. The app runs a
-full combat round: play cards, end the turn, resolve the enemies, repeat.
+full combat round: play cards, end the turn, resolve the enemies, repeat. After a win, each
+survivor whose enemy grants a card reward may reveal three character cards and add one, or skip unseen.
 
 ## Assets
 

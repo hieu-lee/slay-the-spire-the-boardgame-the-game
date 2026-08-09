@@ -11,6 +11,7 @@
 //      namespace, and constructor parameter properties.
 import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { CARDS, DEFERRED_CARDS } from '../src/game/cards.ts'
+import { ENEMIES } from '../src/game/enemies.ts'
 import { RELICS, POTIONS } from '../src/game/relics.ts'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -291,26 +292,40 @@ check('the not-implemented list does not call a built room a placeholder', () =>
 // number is checkable, so check it rather than trusting prose.
 check('the not-implemented list states the real card count', () => {
   const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
-  const claimed = notes.match(/(\d+) cards are live of (\d+)/)
-  assert(claimed !== null, 'the list should state how many cards are live out of the full set')
+  const claimed = notes.match(/(\d+) of (\d+) unique character cards are live/)
+  assert(claimed !== null, 'the list should state how many unique character cards are live')
 
   // Counted from the real table, not scraped: a regex over the source only
   // sees cards written the way it expects, so the one card declared without
   // the `card(...)` helper was invisible to it. Each verify script is its own
   // process, so fixtures other suites register at runtime cannot leak in.
   //
-  // PLAYER cards only. The 381 is the player-card count from the component
-  // list (p.3); Status and Curse cards are separate components and are not
-  // part of that total.
+  // Character cards only. Physical component counts include repeated copies,
+  // while CARDS holds one rule definition per unique face.
   const POOLED = new Set(['status', 'curse', 'colorless'])
   const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner)).length
+  const printed = new Set()
+  const rows = readFileSync(join(repoRoot, 'data/raw/player-cards.csv'), 'utf8')
+  const decks = new Set(['Ironclad', 'Silent', 'Defect', 'Watcher'])
+  for (const line of rows.split('\n').slice(1)) {
+    const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
+    if (decks.has(cells[0]) && cells[1]) printed.add(`${cells[0]}:${cells[1]}`)
+  }
 
   assertEqual(
     Number(claimed[1]),
     live,
     `state.ts claims ${claimed[1]} cards are live but cards.ts defines ${live}`,
   )
-  assertEqual(Number(claimed[2]), 381, 'the full set is 381 player cards (rulebook p.3)')
+  assertEqual(Number(claimed[2]), printed.size, 'the full set count should use unique printed definitions')
+
+  const untranscribed = notes.match(/other (\d+) have not been transcribed/)
+  assert(untranscribed !== null, 'the list should state how many player cards remain untranscribed')
+  assertEqual(
+    Number(untranscribed[1]),
+    printed.size - live - DEFERRED_CARDS.length,
+    'the untranscribed count should exclude both live and explicitly deferred cards',
+  )
 })
 
 // DEFERRED_CARDS is a promise about what is NOT in the game. A promise nothing
@@ -341,6 +356,17 @@ check('the not-implemented list states the real deferred count', () => {
     stated,
     DEFERRED_CARDS.length,
     `state.ts says ${claimed[1]} cards are held back but DEFERRED_CARDS lists ${DEFERRED_CARDS.length}`,
+  )
+})
+
+check('the not-implemented list states the real enemy count', () => {
+  const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
+  const claimed = notes.match(/(\d+) enemies of roughly 60/)
+  assert(claimed !== null, 'the list should state how many enemy definitions are live')
+  assertEqual(
+    Number(claimed[1]),
+    Object.keys(ENEMIES).length,
+    `state.ts claims ${claimed[1]} enemies but enemies.ts defines ${Object.keys(ENEMIES).length}`,
   )
 })
 
@@ -382,8 +408,10 @@ check('no live card asks for a card it has not dealt yet', () => {
 // the card would look wrong. Target-reading conditions belong inside an
 // `Amount`, where the resolver runs them per enemy.
 check('no condition reads a target that its reader was never handed', () => {
-  const TARGET_READING = new Set(['targetPoisoned'])
-  const BOARD_READING = new Set(['hasShiv', 'discardTopCosts', 'dieShows'])
+  const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp'])
+  const BOARD_READING = new Set([
+    'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'discardedThisTurn', 'stanceChangedThisTurn',
+  ])
   // A hardcoded list quietly stops covering the condition somebody adds next,
   // and this one is the whole check: an unclassified kind would be treated as
   // safe everywhere. So every variant of the `Condition` union has to be filed

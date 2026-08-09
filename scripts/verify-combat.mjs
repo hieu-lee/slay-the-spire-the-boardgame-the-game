@@ -6,6 +6,8 @@ import {
   livingEnemies,
   playCard,
   resolveEnemyTargets,
+  spendMiracle,
+  spendShiv,
   startPlayerTurn,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
@@ -15,11 +17,12 @@ import {
   createRun,
   enterRoom,
   resolveCampfire,
+  resolveCardRewards,
   resolveCombat,
   roomChoices,
 } from '../src/game/run.ts'
 import { readFileSync } from 'node:fs'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 let uid = 0
 const instance = (defId, upgraded = false) => ({ uid: `c${uid++}`, defId, upgraded })
@@ -865,6 +868,21 @@ check('a fallen player cannot play cards', () => {
   )
 })
 
+check('a stale or forged co-op target refuses the whole card play', () => {
+  const predator = instance('predator')
+  const state = combat(
+    [
+      makePlayer({ id: 'p1', character: 'silent', hand: [predator], energy: 3 }),
+      makePlayer({ id: 'p2', character: 'ironclad', hp: 0, dead: true }),
+    ],
+    [makeEnemy()],
+  )
+  for (const playerId of ['not-a-player', '', false, 0, 'p2']) {
+    const refused = playCard(state, 'p1', predator.uid, { enemyUid: 'e1', playerId })
+    assert(refused === state, `${playerId} redirected Predator to the caster`)
+  }
+})
+
 check('a bogus uid does not stand in for a real one when paying a cost', () => {
   // `allocate` is the sole validator: it re-checks that each uid is really in
   // hand as the clause resolves. Without that check it would take the bogus
@@ -1133,7 +1151,7 @@ check('a room already occupied cannot be re-entered to farm it', () => {
   // state the reachability guard actually has to refuse.
   const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
-  const won = resolveCombat({
+  const rewarded = resolveCombat({
     ...entered,
     combat: {
       ...entered.combat,
@@ -1141,6 +1159,10 @@ check('a room already occupied cannot be re-entered to farm it', () => {
       enemies: entered.combat.enemies.map((foe) => ({ ...foe, hp: 0, dead: true })),
     },
   })
+  const won = resolveCardRewards(
+    rewarded,
+    Object.fromEntries(rewarded.rewards.map((offer) => [offer.playerId, null])),
+  )
   assertEqual(won.phase, 'map', 'precondition: back on the map with a position')
   assert(won.map.position !== null, 'precondition: the boot has moved')
   assert(enterRoom(won, won.map.position) === won, 'the room just cleared cannot be re-entered')
@@ -1411,6 +1433,33 @@ check('every newly transcribed card does what its face prints', () => {
     // Started in Wrath (below), which is worth +1 damage (p.17), so the
     // printed 2 and 3 land as 3 and 4.
     { id: 'empty_fist', enemyHp: [17, 16], stance: ['neutral', 'neutral'] },
+    { id: 'collect', miracles: [2, 3], exhaust: [1, 1] },
+    { id: 'halt', block: [1, 1] },
+    { id: 'body_slam', enemyHp: [18, 18], player: { block: 2 }, energy: [E - 1, E] },
+    { id: 'heavy_blade', enemyHp: [17, 17] },
+    { id: 'seeing_red', energy: [4, 5], exhaust: [1, 1], player: { energy: 3 } },
+    { id: 'wild_strike', enemyHp: [17, 16], daze: [1, 1] },
+    { id: 'blade_dance', shivs: [2, 3] },
+    { id: 'cloak_and_dagger', block: [1, 1], shivs: [1, 2] },
+    { id: 'sneaky_strike', enemyHp: [17, 16] },
+    { id: 'terror', vulnerable: [1, 1], exhaust: [1, 0] },
+    { id: 'backstab', enemyHp: [16, 14], exhaust: [1, 1] },
+    { id: 'predator', enemyHp: [17, 16], hand: [2, 2] },
+    { id: 'leg_sweep', block: [3, 4], weak: [1, 1] },
+    { id: 'sweeping_beam', enemyHp: [19, 18], hand: [1, 1] },
+    { id: 'compile_driver', enemyHp: [19, 18] },
+    { id: 'scrape', enemyHp: [18, 17] },
+    { id: 'turbo', energy: [5, 6], exhaust: [1, 1], dazeDiscard: [1, 1], player: { energy: 3 } },
+    { id: 'skim', hand: [3, 4] },
+    { id: 'claw', enemyHp: [19, 19] },
+    { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
+    { id: 'flurry_of_blows', enemyHp: [19, 19] },
+    { id: 'flying_sleeves', enemyHp: [18, 17] },
+    { id: 'protect', block: [3, 4] },
+    { id: 'tranquility', stance: ['calm', 'calm'], initialStance: 'neutral', energy: [2, 3], player: { energy: 3 } },
+    { id: 'empty_mind', hand: [2, 3], stance: ['neutral', 'neutral'] },
+    { id: 'crush_joints', enemyHp: [19, 18], vulnerable: [0, 0] },
+    { id: 'fear_no_evil', enemyHp: [18, 17] },
 
     // The conditional cards, with their condition switched OFF: no shivs, no
     // orbs, an empty discard pile, and `createCombat`'s die showing 1. This is
@@ -1466,10 +1515,11 @@ check('every newly transcribed card does what its face prints', () => {
             // Entering Neutral is invisible from Neutral, so the stance cards
             // start in Wrath -- otherwise the clause could be deleted outright
             // and the check would still see the stance it expected.
-            stance: spec.stance ? 'wrath' : 'neutral',
+            stance: spec.initialStance ?? (spec.stance ? 'wrath' : 'neutral'),
+            ...spec.player,
           }),
         ],
-        [makeEnemy({ hp: 20 })],
+        [makeEnemy({ hp: 20, maxHp: 20 })],
       )
       const face = faceOf(def, upgraded)
       const next = playCard(state, 'p1', card.uid, {
@@ -1488,12 +1538,31 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.exhaust) assertEqual(me.exhaust.length, spec.exhaust[at], `${label}: cards exhausted`)
       if (spec.stance) assertEqual(me.stance, spec.stance[at], `${label}: stance entered`)
       if (spec.orb) assertEqual(me.orbs[0], spec.orb[at], `${label}: orb channelled`)
+      if (spec.miracles) assertEqual(me.miracles, spec.miracles[at], `${label}: Miracles gained`)
+      if (spec.shivs) assertEqual(me.shivs, spec.shivs[at], `${label}: Shivs gained`)
+      if (spec.vulnerable) assertEqual(foe.vulnerable, spec.vulnerable[at], `${label}: Vulnerable applied`)
+      if (spec.daze) assertEqual(me.draw.filter((held) => held.defId === 'daze').length, spec.daze[at], `${label}: Daze gained`)
+      if (spec.dazeDiscard) assertEqual(me.discard.filter((held) => held.defId === 'daze').length, spec.dazeDiscard[at], `${label}: Daze discarded`)
       // Every card charges its printed cost, and the cost is a balance number
       // nothing else pins.
       const cost = face.cost === 'X' ? 0 : face.cost
       assertEqual(me.energy, spec.energy ? spec.energy[at] : E - cost, `${label}: energy left`)
     }
   }
+})
+
+check('repeated status-producing cards mint distinct Daze instances', () => {
+  const first = instance('turbo')
+  const second = instance('turbo')
+  const state = combat(
+    [makePlayer({ character: 'defect', hand: [first, second], energy: 0 })],
+    [makeEnemy()],
+  )
+  const afterFirst = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: null })
+  const afterSecond = playCard(afterFirst, 'p1', second.uid, { enemyUid: null, playerId: null })
+  const dazes = afterSecond.players[0].discard.filter((card) => card.defId === 'daze')
+  assertEqual(dazes.length, 2, 'both TURBO plays add a Daze')
+  assertEqual(new Set(dazes.map((card) => card.uid)).size, 2, 'each Daze needs a unique card uid')
 })
 
 // The other half of the conditional cards. The CASES table above plays each of
@@ -1505,10 +1574,12 @@ check('a conditional bonus lands when the board satisfies it', () => {
   // only ever with the condition OFF, so it pins the printed base and nothing
   // else; dropping the bonus from an upgraded face left the whole suite green.
   // Every assertion below is therefore made against both faces.
-  const play = (cardId, { player = {}, enemy = {}, die, upgraded = false } = {}) => {
+  const play = (cardId, {
+    player = {}, enemy = {}, die, upgraded = false, discardedThisTurn = [], stanceChangedThisTurn = [],
+  } = {}) => {
     const card = instance(cardId, upgraded)
-    const base = combat([makePlayer({ hand: [card], energy: 3, ...player })], [makeEnemy({ hp: 20, ...enemy })])
-    const state = die === undefined ? base : { ...base, die }
+    const base = combat([makePlayer({ hand: [card], energy: 3, ...player })], [makeEnemy({ hp: 20, maxHp: 20, ...enemy })])
+    const state = { ...base, die: die ?? base.die, discardedThisTurn, stanceChangedThisTurn }
     const next = playCard(state, 'p1', card.uid, {
       enemyUid: cardNeedsEnemy(faceOf(CARDS[cardId], upgraded)) ? 'e1' : null,
       playerId: null,
@@ -1610,6 +1681,146 @@ check('a conditional bonus lands when the board satisfies it', () => {
     1,
     'Go for the Eyes+ applies the Weak whatever the die shows',
   )
+
+  assertEqual(
+    play('halt', { player: { stance: 'wrath' } }).players[0].block,
+    2,
+    'Halt in Wrath blocks 2',
+  )
+  assertEqual(
+    play('halt', { player: { stance: 'wrath' }, upgraded: true }).players[0].block,
+    3,
+    'Halt+ in Wrath blocks 3',
+  )
+
+  assertEqual(
+    play('heavy_blade', { player: { strength: 2 } }).enemies[0].hp,
+    11,
+    'Heavy Blade makes each Strength worth 3 damage',
+  )
+  assertEqual(
+    play('heavy_blade', { player: { strength: 2 }, upgraded: true }).enemies[0].hp,
+    7,
+    'Heavy Blade+ makes each Strength worth 5 damage',
+  )
+  assertEqual(
+    play('sneaky_strike', { discardedThisTurn: ['p1'] }).players[0].energy,
+    3,
+    'Sneaky Strike refunds 2 Energy after a discard this turn',
+  )
+  assertEqual(
+    play('backstab', { enemy: { hp: 19, maxHp: 20 } }).enemies[0].hp,
+    17,
+    'Backstab gets no bonus below full HP',
+  )
+  assertEqual(
+    play('compile_driver', {
+      player: {
+        orbs: ['lightning', 'frost', 'lightning'],
+        draw: [instance('strike_defect'), instance('strike_defect')],
+      },
+    }).players[0].hand.length,
+    2,
+    'Compile Driver draws once per distinct Orb type',
+  )
+  assertEqual(
+    play('claw', { player: { discard: [instance('deflect')] } }).enemies[0].hp,
+    18,
+    'Claw gets its bonus over a 0-cost discard top',
+  )
+  const recovered = instance('deflect')
+  assertEqual(
+    play('scrape', { player: { discard: [recovered] } }).players[0].hand.at(-1).uid,
+    recovered.uid,
+    'Scrape returns a 0-cost discard top to hand',
+  )
+  assertEqual(
+    play('flurry_of_blows', { stanceChangedThisTurn: ['p1'] }).enemies[0].hp,
+    18,
+    'Flurry of Blows adds one hit after switching stance',
+  )
+  assertEqual(
+    play('flurry_of_blows', { stanceChangedThisTurn: ['p1'], upgraded: true }).enemies[0].hp,
+    17,
+    'Flurry of Blows+ adds two hits after switching stance',
+  )
+  const weakFlurry = play('flurry_of_blows', {
+    player: { weak: 1 },
+    enemy: { hp: 20, maxHp: 20 },
+    stanceChangedThisTurn: ['p1'],
+  })
+  assertEqual(weakFlurry.enemies[0].hp, 20, 'Weak modifies every hit of one Flurry attack')
+  assertEqual(weakFlurry.players[0].weak, 0, 'one Flurry attack spends one Weak token')
+  const vulnerableFlurry = play('flurry_of_blows', {
+    enemy: { hp: 20, maxHp: 20, vulnerable: 1 },
+    stanceChangedThisTurn: ['p1'],
+  })
+  assertEqual(vulnerableFlurry.enemies[0].hp, 16, 'Vulnerable modifies every hit of one Flurry attack')
+  assertEqual(vulnerableFlurry.enemies[0].vulnerable, 0, 'one Flurry attack spends one Vulnerable token')
+  const crushed = play('crush_joints', { player: { stance: 'wrath' } })
+  assertEqual(crushed.enemies[0].vulnerable, 1, 'Crush Joints in Wrath applies Vulnerable')
+  const calmed = play('fear_no_evil', { player: { stance: 'wrath' } })
+  assertEqual(calmed.players[0].stance, 'calm', 'Fear No Evil leaves Wrath for Calm')
+})
+
+check('Retain cards survive the ordered end-of-turn discard', () => {
+  const retained = instance('protect')
+  const spent = instance('strike_watcher')
+  const state = combat([makePlayer({ character: 'watcher', hand: [retained, spent] })], [makeEnemy()])
+  const next = endPlayerTurn(state, { p1: [spent.uid, retained.uid] })
+  assertDeepEqual(next.players[0].hand.map((held) => held.uid), [retained.uid], 'Protect stays in hand')
+  assertDeepEqual(next.players[0].discard.map((held) => held.uid), [spent.uid], 'only non-Retain cards discard')
+})
+
+check('a Miracle can be spent for Energy only during the Player Turn', () => {
+  const state = combat([makePlayer({ miracles: 2, energy: 2 })], [makeEnemy()])
+  const spent = spendMiracle(state, 'p1')
+  assertEqual(spent.players[0].miracles, 1)
+  assertEqual(spent.players[0].energy, 3)
+  const enemyPhase = { ...spent, phase: 'enemy' }
+  assert(spendMiracle(enemyPhase, 'p1') === enemyPhase, 'a Miracle was spent outside the Player Turn')
+
+  const card = instance('bash')
+  const capped = combat([makePlayer({ hand: [card], miracles: 1, energy: 6 })], [makeEnemy()])
+  assert(spendMiracle(capped, 'p1') === capped, 'over-cap Energy must be spent atomically on a card')
+  const paid = playCard(capped, 'p1', card.uid, {
+    enemyUid: 'e1',
+    playerId: null,
+    spendMiracle: true,
+  })
+  assertEqual(paid.players[0].miracles, 0, 'the atomic payment spends the Miracle')
+  assertEqual(paid.players[0].energy, 5, 'the Miracle subsidises the card without storing 7 Energy')
+})
+
+check('Shivs are separate attacks and overflow may attack immediately', () => {
+  const armed = combat(
+    [makePlayer({ character: 'silent', shivs: 2, strength: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20, vulnerable: 2 })],
+  )
+  const thrown = spendShiv(armed, 'p1', 'e1')
+  assertEqual(thrown.players[0].shivs, 1, 'one Shiv token is spent')
+  assertEqual(thrown.enemies[0].hp, 16, 'Strength and Vulnerable modify the separate Shiv attack')
+  assertEqual(thrown.enemies[0].vulnerable, 1, 'a Shiv spends one Vulnerable')
+
+  const dance = instance('blade_dance')
+  const fullSupply = combat(
+    [
+      makePlayer({ id: 'p1', character: 'silent', hand: [dance], shivs: 4 }),
+      makePlayer({ id: 'p2', character: 'silent', shivs: 1 }),
+    ],
+    [
+      makeEnemy({ uid: 'e1', hp: 1, maxHp: 1 }),
+      makeEnemy({ uid: 'e2', row: 1, hp: 20, maxHp: 20 }),
+    ],
+  )
+  const overflow = playCard(fullSupply, 'p1', dance.uid, {
+    enemyUid: null,
+    playerId: null,
+    shivEnemyUids: ['e1', 'e2'],
+  })
+  assertEqual(overflow.players.reduce((sum, player) => sum + player.shivs, 0), 5, 'the Shiv supply stays capped globally')
+  assert(overflow.enemies[0].dead, 'the first overflow Shiv can kill its target')
+  assertEqual(overflow.enemies[1].hp, 19, 'the second overflow Shiv independently attacks another enemy')
 })
 
 // Weak and Vulnerable are spent by a hit LANDING (p.24). A counted attack that

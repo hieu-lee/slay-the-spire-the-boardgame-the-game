@@ -1,9 +1,11 @@
 import type React from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
+import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import { Icon } from './Icon.tsx'
 import type { CardInstance } from '../game/types.ts'
+import type { Trigger } from '../game/triggers.ts'
 
 type CardProps = {
   card: CardInstance
@@ -22,12 +24,90 @@ type CardProps = {
  *
  * The face is a scan, so the printed numbers are an IMAGE and are never read
  * out. This string carries the clauses that change HOW the card is played —
- * its reach, and whether playing it spends the card for good — which is what a
- * player needs before choosing a target. It does NOT carry the effects
- * themselves: "Cleave, cost 1, attack, hits a whole row and any boss" never
- * says 2 damage. Rendering `effects` into words is the fix, and it is a bigger
- * one than this; until then the label is a targeting aid, not a card reading.
+ * its effects, reach, and whether playing it spends the card for good.
  */
+const COUNT_LABEL: Record<CountOf, string> = {
+  orbs: 'charged orb',
+  orbTypes: 'different orb type',
+  block: 'Block',
+  strength: 'Strength',
+}
+
+function conditionText(condition: Condition): string {
+  switch (condition.kind) {
+    case 'hasShiv': return 'you have a Shiv'
+    case 'targetPoisoned': return 'the target has Poison'
+    case 'discardTopCosts': return `your discard top costs ${condition.cost}`
+    case 'dieShows': return `the die shows ${condition.faces.join(' or ')}`
+    case 'inStance': return `you are in ${condition.stance}`
+    case 'discardedThisTurn': return 'you discarded this turn'
+    case 'stanceChangedThisTurn': return 'you changed stance this turn'
+    case 'targetFullHp': return 'the target is at full hit points'
+  }
+}
+
+function amountText(amount: Amount, hit = false): string {
+  if (typeof amount === 'number') return String(amount)
+  const parts: string[] = []
+  if (amount.base || (!amount.bonus && !amount.per)) parts.push(String(amount.base))
+  if (amount.bonus) parts.push(`${amount.bonus.plus} if ${conditionText(amount.bonus.when)}`)
+  if (amount.per) {
+    // Hit arithmetic already adds Strength once. A hit's counted Strength is
+    // therefore the printed total multiplier, not only the stored extra scale.
+    const scale = (amount.scale ?? 1) + (hit && amount.per === 'strength' ? 1 : 0)
+    parts.push(`${scale} per ${COUNT_LABEL[amount.per]}`)
+  }
+  return parts.join(' plus ')
+}
+
+function effectText(effect: Effect): string {
+  const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
+  switch (effect.kind) {
+    case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${amountText(effect.times)} times` : ''}${condition}`
+    case 'damage': return `deal ${effect.amount} damage${condition}`
+    case 'loseHp': return `lose ${effect.amount} hit points${condition}`
+    case 'block': return `gain ${amountText(effect.amount)} Block${condition}`
+    case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
+    case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
+    case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
+    case 'poison': return `apply ${effect.amount} Poison${condition}`
+    case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
+    case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
+    case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
+    case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`
+    case 'enterStance': return `enter ${effect.stance}${condition}`
+    case 'channel': return `channel ${effect.amount} ${effect.orb} orbs${condition}`
+    case 'evoke': return `evoke ${effect.times} orbs${condition}`
+    case 'scry': return `scry ${effect.amount}${condition}`
+    case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
+    case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
+    case 'heal': return `heal ${effect.amount}${condition}`
+    case 'discard': return `discard ${effect.amount} cards${condition}`
+    case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
+  }
+}
+
+function triggerText(trigger: Trigger): string {
+  switch (trigger.kind) {
+    case 'startOfCombat': return 'at the start of combat'
+    case 'startOfTurn': return 'at the start of your turn'
+    case 'endOfTurn': return 'at the end of your turn'
+    case 'endOfCombat': return 'at the end of combat'
+    case 'dieRelic': return `when the die shows ${trigger.faces.join(' or ')}`
+    case 'onPlayCard': return trigger.cardType
+      ? `after you play a ${trigger.cardType} card`
+      : 'after you play a card'
+    case 'onExhaust': return 'whenever you exhaust a card'
+    case 'onDraw': return 'whenever you draw a card'
+    case 'onEnterStance': return trigger.stance
+      ? `whenever you enter ${trigger.stance}`
+      : 'whenever you enter a stance'
+    case 'onScry': return 'whenever you scry'
+    case 'onGainBlock': return 'whenever you gain Block'
+    case 'onShuffle': return 'whenever you shuffle your discard pile'
+  }
+}
+
 function accessibleName(def: CardDef): string {
   return [
     def.name,
@@ -41,6 +121,11 @@ function accessibleName(def: CardDef): string {
     // only "a whole row" tells a player picking a distant row that the boss is
     // safe from it, which is the opposite of the rule.
     def.target === 'row' ? 'hits a whole row and any boss' : '',
+    def.target === 'allEnemies' ? 'hits every enemy' : '',
+    def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
+    def.trigger ? triggerText(def.trigger) : '',
+    ...def.effects.map(effectText),
+    def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',
   ]
     .filter(Boolean)
@@ -86,6 +171,7 @@ export function Card({
       disabled={!playable}
       onClick={() => onClick?.(card)}
       aria-label={accessibleName(def)}
+      aria-pressed={selected || picked}
       title={def.name}
     >
       <img

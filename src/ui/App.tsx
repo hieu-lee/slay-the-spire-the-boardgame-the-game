@@ -6,6 +6,8 @@ import {
   enterRoom,
   leaveRoom,
   resolveCampfire,
+  revealCardReward,
+  resolveCardRewards,
   resolveCombat,
   roomChoices,
 } from '../game/run.ts'
@@ -15,6 +17,7 @@ import type { CharacterId } from '../game/types.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
+import { RewardScreen } from './RewardScreen.tsx'
 import { Icon, IconValue } from './Icon.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
@@ -165,6 +168,15 @@ export function App() {
           map={run.map}
           choices={roomChoices(run)}
           onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))}
+        />
+      ) : null}
+
+      {run.phase === 'reward' ? (
+        <RewardScreen
+          players={run.players}
+          rewards={run.rewards}
+          onReveal={(playerId) => setRun((current) => revealCardReward(current, playerId))}
+          onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
         />
       ) : null}
 

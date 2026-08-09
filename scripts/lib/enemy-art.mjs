@@ -14,6 +14,8 @@
 // not by eyeballing the creature: two were wrong on the first pass, because
 // several enemies share a colour scheme and the Cultist card appears twice.
 export const ENEMY_ART = {
+  small_slime: '8031700b',
+  acid_slime: 'f392242c',
   cultist: 'd189fa17',
   jaw_worm: 'd9506603',
   red_louse: 'c3f81e4f',

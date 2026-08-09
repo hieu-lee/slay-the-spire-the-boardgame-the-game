@@ -46,6 +46,8 @@ export type CombatState = {
   phase: CombatPhase
   players: Player[]
   enemies: Enemy[]
+  discardedThisTurn: string[]
+  stanceChangedThisTurn: string[]
   log: string[]
 }
 
@@ -166,6 +168,10 @@ export type PlayContext = {
   discardUids?: string[]
   /** Cards chosen to exhaust from hand, for effects like True Grit. */
   exhaustUids?: string[]
+  /** Spend one Miracle atomically with this card, which may take Energy above 6. */
+  spendMiracle?: boolean
+  /** One chosen target per overflow Shiv, because each is a separate attack. */
+  shivEnemyUids?: string[]
   /** Of the cards a Scry revealed, the ones the player bins. */
   scryDiscardUids?: string[]
   /**
@@ -195,6 +201,8 @@ export type PlayContext = {
    * callers never set it.
    */
   shortfall?: boolean
+  /** Internal cursor while multiple gain-Shiv clauses consume target choices. */
+  shivTargetIndex?: number
 }
 
 /**
@@ -238,6 +246,14 @@ function holds(
     }
     case 'dieShows':
       return condition.faces.includes(state.die)
+    case 'inStance':
+      return actor.stance === condition.stance
+    case 'discardedThisTurn':
+      return state.discardedThisTurn.includes(actor.id)
+    case 'stanceChangedThisTurn':
+      return state.stanceChangedThisTurn.includes(actor.id)
+    case 'targetFullHp':
+      return target?.hp === target?.maxHp
   }
 }
 
@@ -246,6 +262,12 @@ function countOf(count: CountOf, actor: Player): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
+    case 'orbTypes':
+      return new Set(actor.orbs.filter((orb) => orb !== null)).size
+    case 'block':
+      return actor.block
+    case 'strength':
+      return actor.strength
   }
 }
 
@@ -259,7 +281,7 @@ function amountOf(
   if (typeof amount === 'number') return amount
   let total = amount.base
   if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
-  if (amount.per) total += countOf(amount.per, actor)
+  if (amount.per) total += countOf(amount.per, actor) * (amount.scale ?? 1)
   return total
 }
 
@@ -439,7 +461,7 @@ function applyEffect(
         // Reserve the line before drawing: a draw can reshuffle and fire
         // triggers that log, and those belong under this line, not above it.
         const at = state.log.length
-        drawInto(state, target, effect.amount)
+        drawInto(state, target, amountOf(effect.amount, state, actor))
         const drawn = target.hand.length - before
         if (drawn > 0) {
           const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
@@ -458,9 +480,27 @@ function applyEffect(
     }
     case 'gainShiv': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
-        const before = target.shivs
-        target.shivs = Math.min(CAPS.shivs, target.shivs + effect.amount)
-        if (target.shivs > before) note(`${target.name} gains ${target.shivs - before} Shiv`)
+        const available = Math.max(0, CAPS.shivs - state.players.reduce((sum, player) => sum + player.shivs, 0))
+        const gained = Math.min(available, effect.amount)
+        target.shivs += gained
+        if (gained > 0) note(`${target.name} gains ${gained} Shiv`)
+        // The five cubes are a shared supply. A Shiv that cannot be taken may
+        // be thrown immediately instead, using the card's chosen enemy (p.17).
+        for (let i = gained; i < effect.amount; i++) {
+          const at = context.shivTargetIndex ?? 0
+          const enemyUid = context.shivEnemyUids?.[at]
+          context.shivTargetIndex = at + 1
+          if (!enemyUid) continue
+          applyEffect(
+            state,
+            target,
+            { kind: 'hit', amount: 1 },
+            'enemy',
+            'self',
+            { ...context, enemyUid },
+            'Shiv',
+          )
+        }
       }
       return
     }
@@ -486,6 +526,7 @@ function applyEffect(
         if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy from Calm`)
       }
       actor.stance = effect.stance
+      if (!state.stanceChangedThisTurn.includes(actor.id)) state.stanceChangedThisTurn.push(actor.id)
       fireTriggers(state, { kind: 'onEnterStance', stance: effect.stance }, actor)
       return
     }
@@ -502,7 +543,10 @@ function applyEffect(
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
       actor.discard = [...actor.discard, ...moved]
-      if (moved.length > 0) note(`${actor.name} discards ${moved.length}`)
+      if (moved.length > 0) {
+        if (!state.discardedThisTurn.includes(actor.id)) state.discardedThisTurn.push(actor.id)
+        note(`${actor.name} discards ${moved.length}`)
+      }
       return
     }
     case 'exhaustFromHand': {
@@ -522,6 +566,27 @@ function applyEffect(
       // channel that caused it.
       note(`${actor.name} channels ${effect.amount} ${effect.orb}`)
       for (let i = 0; i < effect.amount; i++) channelOrb(state, actor, effect.orb, context)
+      return
+    }
+    case 'addDaze': {
+      const cards = Array.from({ length: effect.amount }, (_, index) => ({
+        uid: `daze-${state.turn}-${actor.id}-${state.log.length}-${index}`,
+        defId: 'daze',
+        upgraded: false,
+      }))
+      if (effect.pile === 'draw') actor.draw = [...cards, ...actor.draw]
+      else actor.discard = [...actor.discard, ...cards]
+      note(`${actor.name} gains ${effect.amount} Daze`)
+      return
+    }
+    case 'recoverDiscardTopCosts': {
+      const top = actor.discard.at(-1)
+      if (!top) return
+      const face = faceOf(cardDef(top.defId), top.upgraded)
+      if (face.unplayable || face.cost !== effect.cost) return
+      actor.discard = actor.discard.slice(0, -1)
+      actor.hand = [...actor.hand, top]
+      note(`${actor.name} returns ${face.name} to hand`)
       return
     }
     case 'evoke': {
@@ -709,15 +774,29 @@ function supportTargets(
 function resolvePlayerTargets(
   state: CombatState,
   scope: TargetScope,
-  chosenId: string | null,
+  chosenId: unknown,
   actor: Player,
 ): Player[] {
   if (scope === 'allPlayers') return state.players.filter((player) => !player.dead)
   if (scope === 'anyPlayer') {
-    const chosen = chosenId ? findPlayer(state, chosenId) : undefined
-    return chosen && !chosen.dead ? [chosen] : [actor]
+    if (chosenId === null) return [actor]
+    const chosen = typeof chosenId === 'string' ? findPlayer(state, chosenId) : undefined
+    return chosen && !chosen.dead ? [chosen] : []
   }
   return [actor]
+}
+
+function hasInvalidChosenPlayer(
+  state: CombatState,
+  def: CardDef,
+  chosenId: unknown,
+): boolean {
+  if (def.supportTarget !== 'anyPlayer') return false
+  if (!def.effects.some((effect) => 'toChosen' in effect && effect.toChosen)) return false
+  if (chosenId === null) return false
+  if (typeof chosenId !== 'string' || chosenId.length === 0) return true
+  const chosen = findPlayer(state, chosenId)
+  return !chosen || chosen.dead
 }
 
 /**
@@ -740,12 +819,20 @@ export function playCard(
   const def = faceOf(cardDef(held.defId), held.upgraded)
   if (def.unplayable) return state
   const cost = def.cost === 'X' ? player.energy : def.cost
-  if (cost > player.energy) return state
+  const miracleOnCard = context.spendMiracle === true
+  if (miracleOnCard && (
+    player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
+  )) return state
+  if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
   // A card that must pick an enemy but was given none would otherwise spend the
   // Energy, discard itself and do nothing. The UI never allows it, but the room
   // server hands this function messages straight off the network, so the check
   // belongs here rather than in the client.
   if (needsChosenEnemy(state, def, context.enemyUid, player)) return state
+  // A co-op target can die or disconnect after the client stages the card.
+  // Refuse the stale command instead of silently redirecting its support
+  // effect to the caster.
+  if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
   if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
@@ -762,6 +849,11 @@ export function playCard(
   // which is what stops a card that draws from drawing itself (p.12).
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
+  if (miracleOnCard) {
+    actor.miracles -= 1
+    actor.energy += 1
+    next.log = [...next.log, `${actor.name} spends a Miracle toward ${def.name}`]
+  }
 
   // Logged before its effects resolve: appended afterwards, a kill the card
   // caused reads as OLDER than the card, which is nonsense in a newest-first
@@ -778,7 +870,13 @@ export function playCard(
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
   // would be a mutation from a function that is otherwise pure.
-  const ctx: PlayContext = { ...context, spentUids: new Set<string>(), shortfall: false }
+  const ctx: PlayContext = {
+    ...context,
+    shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
+    spentUids: new Set<string>(),
+    shortfall: false,
+    shivTargetIndex: 0,
+  }
   if (resolvesOnPlay) {
     for (const effect of def.effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
@@ -832,6 +930,8 @@ export function startPlayerTurn(state: CombatState): CombatState {
 function beginPlayerTurn(next: CombatState): CombatState {
   next.phase = 'player'
   next.turn += 1
+  next.discardedThisTurn = []
+  next.stanceChangedThisTurn = []
   // Where this round's log starts, so the divider can be placed above anything
   // the Start of Turn itself writes.
   const drewFrom = next.log.length
@@ -960,12 +1060,16 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
     const held = player.hand.length
     const order = discardOrders[player.id]
     const hand = order ? order.map((uid) => player.hand.find((card) => card.uid === uid)!) : player.hand
-    const piles = discardHand({ ...player, hand })
+    const keep = hand
+      .filter((held) => faceOf(cardDef(held.defId), held.upgraded).retain)
+      .map((held) => held.uid)
+    const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
     player.hand = piles.hand
     player.discard = piles.discard
-    if (held > 0) {
-      next.log = [...next.log, `${player.name} discards ${held} at end of turn`]
+    const discarded = held - keep.length
+    if (discarded > 0) {
+      next.log = [...next.log, `${player.name} discards ${discarded} at end of turn`]
     }
   }
 
@@ -1380,6 +1484,43 @@ export function createCombat(
     phase: 'player',
     players,
     enemies,
+    discardedThisTurn: [],
+    stanceChangedThisTurn: [],
     log: [],
   }
+}
+
+/** Spend one Miracle for one Energy during the shared Player Turn (p.17). */
+export function spendMiracle(state: CombatState, playerId: string): CombatState {
+  if (state.phase !== 'player') return state
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player || player.dead || player.miracles < 1 || player.energy >= CAPS.energy) return state
+  const next = clone(state)
+  const actor = next.players.find((candidate) => candidate.id === playerId)!
+  actor.miracles -= 1
+  actor.energy += 1
+  next.log = [...next.log, `${actor.name} spends a Miracle for 1 Energy`]
+  return next
+}
+
+/** Spend one Shiv as its own one-damage attack (p.17). */
+export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
+  if (state.phase !== 'player') return state
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player || player.dead || player.shivs < 1) return state
+  if (resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
+  const next = clone(state)
+  const actor = next.players.find((candidate) => candidate.id === playerId)!
+  actor.shivs -= 1
+  next.log = [...next.log, `${actor.name} spends a Shiv`]
+  applyEffect(
+    next,
+    actor,
+    { kind: 'hit', amount: 1 },
+    'enemy',
+    'self',
+    { enemyUid, playerId },
+    'Shiv',
+  )
+  return settle(next)
 }

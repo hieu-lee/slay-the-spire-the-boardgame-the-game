@@ -97,6 +97,10 @@ export type Enemy = {
   weak: number
   poison: number
 
+  /** Reward printed by the encounter card that spawned this enemy. */
+  goldReward: number
+  cardReward: 'normal' | 'upgraded' | null
+
   /** Position on a cube-action track. */
   actionIndex: number
 

@@ -165,11 +165,14 @@ check('maps carry their act number', () => {
 // A run crashed at runtime because the encounter pool named an enemy that was
 // never defined. Nothing caught it until the browser threw.
 import { ENEMIES, enemyDef, startingHp } from '../src/game/enemies.ts'
+import { CARDS } from '../src/game/cards.ts'
 import {
   advanceAct,
   createRun,
   enterRoom,
+  revealCardReward,
   resolveCampfire,
+  resolveCardRewards,
   roomChoices,
   resolveCombat,
   MAX_HP,
@@ -177,6 +180,10 @@ import {
 import { RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
 
 suite('run')
+
+const skipRewards = (run) => run.phase === 'reward'
+  ? resolveCardRewards(run, Object.fromEntries(run.rewards.map((offer) => [offer.playerId, null])))
+  : run
 
 check('every enemy the run can spawn actually exists', () => {
   // Reach into the module's pools by walking a lot of runs and spawning rooms.
@@ -204,10 +211,20 @@ check('every enemy the run can spawn actually exists', () => {
   }
 })
 
-check('every enemy summon names an enemy that exists', () => {
-  for (const def of Object.values(ENEMIES)) {
-    for (const summoned of def.summons ?? []) {
-      assert(ENEMIES[summoned] !== undefined, `${def.id} summons unknown enemy "${summoned}"`)
+check('reward stacks contain only live cards of their character and rarity', () => {
+  const run = createRun(100, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+    { id: 'p3', name: 'Defect', character: 'defect' },
+    { id: 'p4', name: 'Watcher', character: 'watcher' },
+  ])
+  for (const player of run.players) {
+    assert(player.cardRewards.length >= 3, `${player.name} cannot reveal three cards`)
+    for (const id of player.cardRewards) {
+      const def = CARDS[id]
+      assert(def, `reward card ${id} is not implemented`)
+      assertEqual(def.owner, player.character)
+      assert(def.rarity === 'common' || def.rarity === 'uncommon', `${id} has rarity ${def.rarity}`)
     }
   }
 })
@@ -289,9 +306,51 @@ check('the first room starts a combat with one enemy per player', () => {
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
   const entered = enterRoom(run, roomChoices(run)[0].id)
+  const mainEnemies = entered.combat.enemies.filter((enemy) => !enemy.uid.includes('-summon'))
   assertEqual(entered.phase, 'combat')
-  assertEqual(entered.combat.enemies.length, 2, 'one enemy per player row (p.10)')
-  assertEqual(new Set(entered.combat.enemies.map((e) => e.row)).size, 2, 'one per row')
+  assertEqual(mainEnemies.length, 2, 'one encounter card per player row (p.10)')
+  assertEqual(new Set(mainEnemies.map((e) => e.row)).size, 2, 'one main enemy per row')
+})
+
+check('the four fixed-opening cards are dealt once each, with their summons', () => {
+  const run = createRun(3, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+    { id: 'p3', name: 'Defect', character: 'defect' },
+    { id: 'p4', name: 'Watcher', character: 'watcher' },
+  ])
+  const enemies = enterRoom(run, roomChoices(run)[0].id).combat.enemies
+  const mains = enemies.filter((enemy) => !enemy.uid.includes('-summon'))
+  assertDeepEqual(
+    [...mains.map((enemy) => enemy.defId)].sort(),
+    ['cultist', 'jaw_worm', 'red_louse', 'small_slime'],
+    'the physical opening deck is dealt without replacement',
+  )
+  const expected = {
+    cultist: [],
+    jaw_worm: [],
+    red_louse: ['green_louse'],
+    small_slime: ['acid_slime'],
+  }
+  for (const main of mains) {
+    const summons = enemies
+      .filter((enemy) => enemy.uid.startsWith(`${main.uid}-summon`))
+    assertDeepEqual(summons.map((enemy) => enemy.defId), expected[main.defId], `${main.defId} summon box`)
+    for (const summon of summons) {
+      assertEqual(summon.row, main.row, 'the summon is placed to the right in the same row')
+      assertEqual(summon.goldReward, 0, 'summons do not add a second reward')
+      assertEqual(summon.cardReward, null, 'summons do not add a second card reward')
+    }
+  }
+})
+
+check('the fixed opening encounter uses its own printed rewards', () => {
+  const run = createRun(2, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const enemy = entered.combat.enemies[0]
+  assertEqual(enemy.defId, 'red_louse', 'the regression seed should draw the opening Red Louse')
+  assertEqual(enemy.goldReward, 1, 'opening Red Louse grants its printed gold')
+  assertEqual(enemy.cardReward, null, 'opening Red Louse grants no card reward')
 })
 
 check('winning a combat carries HP forward into the run', () => {
@@ -309,9 +368,90 @@ check('winning a combat carries HP forward into the run', () => {
   }
   const after = resolveCombat(wounded)
   assertEqual(after.players[0].hp, 4, 'damage taken in combat must persist into the run')
-  // An exact figure, not "more than before": a loose comparison lets the payout
-  // drift to any positive number without a test noticing.
-  assertEqual(after.players[0].gold, run.players[0].gold + 1, 'a won fight pays exactly 1 gold')
+  const foe = entered.combat.enemies.find((enemy) => enemy.row === entered.players[0].row)
+  const printedGold = foe.goldReward
+  assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
+})
+
+check('a combat card reward reveals three and persists exactly one chosen card', () => {
+  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+    },
+  })
+  assertEqual(won.phase, 'reward', 'rewards are chosen before returning to the map')
+  assertEqual(won.rewards.length, 1)
+  assertEqual(won.rewards[0].choices, null, 'the deck stays face down until the player reveals it')
+  const revealed = revealCardReward(won, 'p1')
+  assertEqual(revealed.rewards[0].choices.length, 3, 'the top three are revealed (p.8)')
+  const before = revealed.players[0]
+  const chosen = revealed.rewards[0].choices[1]
+  const after = resolveCardRewards(revealed, { p1: 1 })
+  assertEqual(after.phase, 'map')
+  assertEqual(after.players[0].deck.length, before.deck.length + 1)
+  assertEqual(after.players[0].deck.at(-1).defId, chosen, 'the selected copy enters the deck')
+  assertDeepEqual(
+    after.players[0].cardRewards.slice(-2),
+    [revealed.rewards[0].choices[0], revealed.rewards[0].choices[2]],
+    'unchosen cards return to the bottom in revealed order',
+  )
+})
+
+check('skipping a card reward unseen leaves the face-down deck untouched', () => {
+  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const won = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } })
+  const before = won.players[0]
+  const after = resolveCardRewards(won, { p1: null })
+  assertEqual(after.players[0].deck.length, before.deck.length, 'skip adds no card')
+  assertDeepEqual(after.players[0].cardRewards, before.cardRewards, 'an unseen skip draws no reward cards (p.8)')
+})
+
+check('skipping after reveal returns all three cards to the bottom', () => {
+  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const won = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } })
+  const revealed = revealCardReward(won, 'p1')
+  const shown = revealed.rewards[0].choices
+  const after = resolveCardRewards(revealed, { p1: null })
+  assertDeepEqual(after.players[0].cardRewards.slice(-3), shown, 'revealed cards return to the bottom in order')
+})
+
+check('every living player must make a valid card reward decision', () => {
+  const run = createRun(105, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' })),
+    },
+  })
+  assert(resolveCardRewards(won, { p1: null }) === won, 'one player cannot decide for the table')
+  assert(resolveCardRewards(won, { p1: 99, p2: null }) === won, 'an unrevealed card is refused')
+  assert(resolveCardRewards(won, { p1: undefined, p2: null }) === won, 'undefined is not an unseen skip')
+})
+
+check('reward card ids stay unique even when another run starts meanwhile', () => {
+  const first = createRun(106, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom(first, roomChoices(first)[0].id)
+  const offered = revealCardReward(
+    resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } }),
+    'p1',
+  )
+  createRun(107, [{ id: 'p1', name: 'Silent', character: 'silent' }])
+  const after = resolveCardRewards(offered, { p1: 0 })
+  const ids = after.players[0].deck.map((card) => card.uid)
+  assertEqual(new Set(ids).size, ids.length, 'another room rewound this run\'s card ids')
 })
 
 check('advancing an act heals the party and builds a new map', () => {
@@ -335,6 +475,12 @@ check('advancing an act heals the party and builds a new map', () => {
   }
   assert(next.map !== won.map, 'a new act builds a new map')
   assertEqual(next.map.position, null, 'and the boot starts beside it again')
+  assertDeepEqual(
+    [...next.players[0].cardRewards].sort(),
+    [...run.players[0].cardRewards].sort(),
+    'the same skipped reward cards are reshuffled into the next Act',
+  )
+  assertDeepEqual(next.players[0].rareRewards, run.players[0].rareRewards, 'rare rewards are not shuffled')
 })
 
 check('Ascension 6 heals 4 instead of to full', () => {
@@ -373,15 +519,29 @@ check('an elite room places one elite, not one per player', () => {
       { id: 'p2', name: 'Silent', character: 'silent' },
     ])
     const start = enterRoom(run, roomChoices(run)[0].id)
-    const afterFight = resolveCombat({
+  const afterFight = skipRewards(resolveCombat({
       ...start,
       combat: { ...start.combat, phase: 'won', enemies: start.combat.enemies.map((e) => ({ ...e, dead: true })) },
-    })
+    }))
     for (const choice of roomChoices(afterFight)) {
       if (choice.kind !== 'elite') continue
       const elite = enterRoom(afterFight, choice.id)
       assertEqual(elite.combat.enemies.length, 1, 'an elite is placed alone in the bottom row (p.11)')
       assert(!elite.combat.enemies[0].isBoss, 'an elite is not a boss')
+      assertEqual(elite.combat.enemies[0].goldReward, 2, 'an Act I elite grants 2 gold')
+      assertEqual(elite.combat.enemies[0].cardReward, 'normal', 'an Act I elite grants a normal card')
+
+      for (const act of [2, 3]) {
+        const later = enterRoom({ ...afterFight, act }, choice.id)
+        const foe = later.combat.enemies[0]
+        assertEqual(foe.goldReward, act === 3 ? 3 : 2, `Act ${act} elite gold`)
+        assertEqual(foe.cardReward, 'upgraded', `Act ${act} elite upgraded-card reward`)
+        const offered = resolveCombat({ ...later, combat: { ...later.combat, phase: 'won' } })
+        assert(offered.rewards.every((offer) => offer.upgraded), `Act ${act} offer is upgraded`)
+        const revealed = revealCardReward(offered, 'p1')
+        const collected = resolveCardRewards(revealed, { p1: 0, p2: null })
+        assert(collected.players[0].deck.at(-1).upgraded, `Act ${act} elite adds the upgraded face`)
+      }
       found = true
       break
     }
@@ -392,6 +552,8 @@ check('an elite room places one elite, not one per player', () => {
 // Transcribed from the enemy card scans. Comparing a definition to itself is a
 // tautology, so the numbers are pinned here against the printed cards instead.
 const PRINTED_HP = {
+  small_slime: [2, 2, 2, 2],
+  acid_slime: [4, 4, 4, 4],
   cultist: [9, 9, 9, 9],
   jaw_worm: [10, 10, 10, 10],
   green_louse: [3, 3, 3, 3],
@@ -402,6 +564,85 @@ const PRINTED_HP = {
   gremlin_nob: [14, 28, 42, 56],
   lagavulin: [22, 44, 66, 88],
 }
+
+check('main-enemy rewards come from the Act-specific encounter card', () => {
+  const firstCardReward = {
+    red_louse: null,
+    jaw_worm: 'normal',
+    cultist: 'normal',
+    small_slime: 'normal',
+  }
+  const actOneGold = {
+    red_louse: 1,
+    jaw_worm: 1,
+    cultist: 1,
+    small_slime: 0,
+    blue_slaver: 2,
+    fungi_beast: 1,
+  }
+  for (let seed = 0; seed < 30; seed++) {
+    const run = createRun(seed, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const enemy = enterRoom(run, roomChoices(run)[0].id).combat.enemies[0]
+    assertEqual(enemy.goldReward, actOneGold[enemy.defId], `${enemy.defId} Act I gold`)
+    assertEqual(enemy.cardReward, firstCardReward[enemy.defId], `${enemy.defId} opening card reward`)
+  }
+
+  const base = createRun(80, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+  const source = Object.values(base.map.rooms).find((room) =>
+    room.exits.some((id) => base.map.rooms[id]?.kind === 'encounter'))
+  const target = source?.exits.find((id) => base.map.rooms[id]?.kind === 'encounter')
+  assert(source && target, 'the regression map needs a reachable ordinary encounter')
+  const ordinary = enterRoom({ ...base, map: { ...base.map, position: source.id } }, target).combat.enemies[0]
+  assertEqual(ordinary.cardReward, 'normal', 'an ordinary Act I encounter grants its printed card reward')
+
+  for (const [act, defId] of [[2, 'cultist'], [3, 'jaw_worm']]) {
+    const base = createRun(71 + act, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const run = { ...base, act }
+    const enemy = enterRoom(run, roomChoices(run)[0].id).combat.enemies[0]
+    assertEqual(enemy.defId, defId, `Act ${act} uses an implemented main-enemy card`)
+    assertEqual(enemy.goldReward, 2, `Act ${act} printed gold`)
+    assertEqual(enemy.cardReward, 'normal', `Act ${act} normal card reward`)
+  }
+})
+
+check('the reduced live reward deck supports every reward fight across three Acts', () => {
+  let run = createRun(141, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+  for (let fight = 0; fight < 21; fight++) {
+    const fixture = createRun(200 + fight, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const entered = enterRoom(fixture, roomChoices(fixture)[0].id)
+    run = {
+      ...run,
+      phase: 'combat',
+      combat: {
+        ...entered.combat,
+        phase: 'won',
+        players: run.players,
+        enemies: [{
+          ...entered.combat.enemies[0],
+          goldReward: 1,
+          cardReward: 'normal',
+        }],
+      },
+    }
+    const offered = resolveCombat(run)
+    assertEqual(offered.phase, 'reward', `fight ${fight + 1} still reveals a reward`)
+    const revealed = revealCardReward(offered, 'p1')
+    assertEqual(revealed.rewards[0].choices.length, 3, `fight ${fight + 1} reveals three`)
+    run = resolveCardRewards(revealed, { p1: 0 })
+    if ((fight === 6 || fight === 13)) {
+      const bossId = run.map.rows.at(-1)[0]
+      run = advanceAct({
+        ...run,
+        phase: 'victory',
+        map: {
+          ...run.map,
+          position: bossId,
+          rooms: { ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true } },
+        },
+      })
+    }
+  }
+})
 
 check('every enemy HP track matches the number printed on its card', () => {
   for (const [id, expected] of Object.entries(PRINTED_HP)) {
@@ -548,8 +789,9 @@ check('a four player encounter draws one enemy per row at four-player HP', () =>
     { id: 'p4', name: 'Watcher', character: 'watcher' },
   ])
   const entered = enterRoom(run, roomChoices(run)[0].id)
-  assertEqual(entered.combat.enemies.length, 4, 'one enemy per player (p.10)')
-  assertEqual(new Set(entered.combat.enemies.map((e) => e.row)).size, 4, 'each in its own row')
+  const mainEnemies = entered.combat.enemies.filter((enemy) => !enemy.uid.includes('-summon'))
+  assertEqual(mainEnemies.length, 4, 'one encounter card per player (p.10)')
+  assertEqual(new Set(mainEnemies.map((e) => e.row)).size, 4, 'each main enemy in its own row')
   for (const spawned of entered.combat.enemies) {
     assertEqual(
       spawned.maxHp,
@@ -580,10 +822,10 @@ check('an elite stands in the bottom row, a boss in the top', () => {
   for (let seed = 0; seed < 60 && !checked; seed++) {
     const attempt = createRun(seed, party)
     const first = enterRoom(attempt, roomChoices(attempt)[0].id)
-    const cleared = resolveCombat({
+    const cleared = skipRewards(resolveCombat({
       ...first,
       combat: { ...first.combat, phase: 'won', enemies: first.combat.enemies.map((e) => ({ ...e, dead: true })) },
-    })
+    }))
     for (const choice of roomChoices(cleared)) {
       if (choice.kind !== 'elite') continue
       const elite = enterRoom(cleared, choice.id).combat.enemies[0]

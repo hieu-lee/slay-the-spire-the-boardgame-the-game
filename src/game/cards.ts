@@ -58,9 +58,14 @@ export type Condition =
   | { kind: 'discardTopCosts'; cost: number }
   /** Go for the Eyes: this round's shared die shows one of these faces. */
   | { kind: 'dieShows'; faces: number[] }
+  /** Halt: the Watcher is currently in the named stance. */
+  | { kind: 'inStance'; stance: Stance }
+  | { kind: 'discardedThisTurn' }
+  | { kind: 'stanceChangedThisTurn' }
+  | { kind: 'targetFullHp' }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
-export type CountOf = 'orbs'
+export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -88,6 +93,8 @@ export type Amount =
       bonus?: { plus: number; when: Condition }
       /** Adds one per unit of this count, on top of `base`. */
       per?: CountOf
+      /** Multiplies the counted units; Heavy Blade changes each Strength token. */
+      scale?: number
     }
 
 /**
@@ -110,7 +117,7 @@ type EffectKind =
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   | { kind: 'poison'; amount: number }
-  | ({ kind: 'draw'; amount: number } & Redirectable)
+  | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
@@ -118,6 +125,8 @@ type EffectKind =
   | { kind: 'channel'; orb: OrbType; amount: number }
   | { kind: 'evoke'; times: number }
   | { kind: 'scry'; amount: number }
+  | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
+  | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
   /**
    * Discard cards the player chooses. The choice travels with the action rather
@@ -144,6 +153,8 @@ export type CardDef = {
   supportTarget?: TargetScope
   /** The card exhausts itself when played, instead of going to the discard pile. */
   exhaust?: boolean
+  /** Kept in hand during the end-of-turn discard step. */
+  retain?: boolean
   /** Cannot be played at all; an effect that tries to play it is ignored (p.24). */
   unplayable?: boolean
   /**
@@ -152,9 +163,8 @@ export type CardDef = {
    * happens when it is played — a Power with a trigger does nothing on play.
    */
   trigger?: Trigger
-  // Ethereal and Retain are deliberately absent. No card here has them yet, and
-  // a declared-but-unhonoured flag is worse than a missing one: a card carrying
-  // it would silently play as though it were normal.
+  // Ethereal is deliberately absent. A declared-but-unhonoured flag is worse
+  // than a missing one: a card carrying it would silently play as normal.
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -670,6 +680,342 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+  collect: card({
+    id: 'collect',
+    name: 'Collect',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'gainMiracle', amount: 2 }],
+    upgrade: { effects: [{ kind: 'gainMiracle', amount: 3 }] },
+  }),
+  halt: card({
+    id: 'halt',
+    name: 'Halt',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [
+      { kind: 'block', amount: 1 },
+      { kind: 'block', amount: 1, when: { kind: 'inStance', stance: 'wrath' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: 1 },
+        { kind: 'block', amount: 2, when: { kind: 'inStance', stance: 'wrath' } },
+      ],
+    },
+  }),
+
+  body_slam: card({
+    id: 'body_slam',
+    name: 'Body Slam',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'block' } }],
+    upgrade: { cost: 0 },
+  }),
+  heavy_blade: card({
+    id: 'heavy_blade',
+    name: 'Heavy Blade',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 2,
+    // Normal hit arithmetic already adds Strength once; these extra two/four
+    // make each token worth the printed +3/+5 total.
+    effects: [{ kind: 'hit', amount: { base: 3, per: 'strength', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 3, per: 'strength', scale: 4 } }] },
+  }),
+  seeing_red: card({
+    id: 'seeing_red',
+    name: 'Seeing Red',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'gainEnergy', amount: 2 }],
+    upgrade: { cost: 0 },
+  }),
+  wild_strike: card({
+    id: 'wild_strike',
+    name: 'Wild Strike',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'hit', amount: 3 }, { kind: 'addDaze', amount: 1, pile: 'draw' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }, { kind: 'addDaze', amount: 1, pile: 'draw' }] },
+  }),
+
+  blade_dance: card({
+    id: 'blade_dance',
+    name: 'Blade Dance',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'gainShiv', amount: 2 }],
+    upgrade: { effects: [{ kind: 'gainShiv', amount: 3 }] },
+  }),
+  cloak_and_dagger: card({
+    id: 'cloak_and_dagger',
+    name: 'Cloak and Dagger',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'gainShiv', amount: 1 }, { kind: 'block', amount: 1 }],
+    upgrade: { effects: [{ kind: 'gainShiv', amount: 2 }, { kind: 'block', amount: 1 }] },
+  }),
+  sneaky_strike: card({
+    id: 'sneaky_strike',
+    name: 'Sneaky Strike',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'common',
+    cost: 2,
+    effects: [
+      { kind: 'hit', amount: 3 },
+      { kind: 'gainEnergy', amount: 2, when: { kind: 'discardedThisTurn' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 4 },
+        { kind: 'gainEnergy', amount: 2, when: { kind: 'discardedThisTurn' } },
+      ],
+    },
+  }),
+  terror: card({
+    id: 'terror',
+    name: 'Terror',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'applyVulnerable', amount: 1 }],
+    upgrade: { exhaust: false },
+  }),
+  backstab: card({
+    id: 'backstab',
+    name: 'Backstab',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'hit', amount: { base: 2, bonus: { plus: 2, when: { kind: 'targetFullHp' } } } }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: { base: 4, bonus: { plus: 2, when: { kind: 'targetFullHp' } } } }],
+    },
+  }),
+  predator: card({
+    id: 'predator',
+    name: 'Predator',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 2,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'hit', amount: 3 }, { kind: 'draw', amount: 2, toChosen: true }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }, { kind: 'draw', amount: 2, toChosen: true }] },
+  }),
+  leg_sweep: card({
+    id: 'leg_sweep',
+    name: 'Leg Sweep',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 2,
+    effects: [{ kind: 'applyWeak', amount: 1 }, { kind: 'block', amount: 3 }],
+    upgrade: { effects: [{ kind: 'applyWeak', amount: 1 }, { kind: 'block', amount: 4 }] },
+  }),
+
+  sweeping_beam: card({
+    id: 'sweeping_beam',
+    name: 'Sweeping Beam',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    target: 'allEnemies',
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'draw', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'draw', amount: 1 }] },
+  }),
+  compile_driver: card({
+    id: 'compile_driver',
+    name: 'Compile Driver',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'draw', amount: { base: 0, per: 'orbTypes' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'draw', amount: { base: 0, per: 'orbTypes' } }] },
+  }),
+  scrape: card({
+    id: 'scrape',
+    name: 'Scrape',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverDiscardTopCosts', cost: 0 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverDiscardTopCosts', cost: 0 }] },
+  }),
+  turbo: card({
+    id: 'turbo',
+    name: 'TURBO',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'gainEnergy', amount: 2 }, { kind: 'addDaze', amount: 1, pile: 'discard' }],
+    upgrade: { effects: [{ kind: 'gainEnergy', amount: 3 }, { kind: 'addDaze', amount: 1, pile: 'discard' }] },
+  }),
+  skim: card({
+    id: 'skim',
+    name: 'Skim',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [{ kind: 'draw', amount: 3 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 4 }] },
+  }),
+  claw: card({
+    id: 'claw',
+    name: 'Claw',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'hit', amount: { base: 1, bonus: { plus: 1, when: { kind: 'discardTopCosts', cost: 0 } } } }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: { base: 1, bonus: { plus: 3, when: { kind: 'discardTopCosts', cost: 0 } } } }],
+    },
+  }),
+
+  crescendo: card({
+    id: 'crescendo',
+    name: 'Crescendo',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    retain: true,
+    exhaust: true,
+    effects: [{ kind: 'enterStance', stance: 'wrath' }],
+    upgrade: { effects: [{ kind: 'enterStance', stance: 'wrath' }, { kind: 'draw', amount: 1 }] },
+  }),
+  flurry_of_blows: card({
+    id: 'flurry_of_blows',
+    name: 'Flurry of Blows',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [{
+      kind: 'hit',
+      amount: 1,
+      times: { base: 1, bonus: { plus: 1, when: { kind: 'stanceChangedThisTurn' } } },
+    }],
+    upgrade: {
+      effects: [{
+        kind: 'hit',
+        amount: 1,
+        times: { base: 1, bonus: { plus: 2, when: { kind: 'stanceChangedThisTurn' } } },
+      }],
+    },
+  }),
+  flying_sleeves: card({
+    id: 'flying_sleeves',
+    name: 'Flying Sleeves',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    retain: true,
+    effects: [{ kind: 'hit', amount: 1, times: 2 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: 3 }] },
+  }),
+  protect: card({
+    id: 'protect',
+    name: 'Protect',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 2,
+    retain: true,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 3, toChosen: true }],
+    upgrade: { effects: [{ kind: 'block', amount: 4, toChosen: true }] },
+  }),
+  tranquility: card({
+    id: 'tranquility',
+    name: 'Tranquility',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    retain: true,
+    exhaust: true,
+    effects: [{ kind: 'enterStance', stance: 'calm' }],
+    upgrade: { cost: 0 },
+  }),
+  empty_mind: card({
+    id: 'empty_mind',
+    name: 'Empty Mind',
+    owner: 'watcher',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'enterStance', stance: 'neutral' }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'enterStance', stance: 'neutral' }] },
+  }),
+  crush_joints: card({
+    id: 'crush_joints',
+    name: 'Crush Joints',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 1,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'applyVulnerable', amount: 1, when: { kind: 'inStance', stance: 'wrath' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'applyVulnerable', amount: 1, when: { kind: 'inStance', stance: 'wrath' } },
+      ],
+    },
+  }),
+  fear_no_evil: card({
+    id: 'fear_no_evil',
+    name: 'Fear No Evil',
+    owner: 'watcher',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 1,
+    effects: [
+      { kind: 'hit', amount: 2 },
+      { kind: 'enterStance', stance: 'calm', when: { kind: 'inStance', stance: 'wrath' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 3 },
+        { kind: 'enterStance', stance: 'calm', when: { kind: 'inStance', stance: 'wrath' } },
+      ],
+    },
+  }),
 
   // ---------------------------------------------------------------------------
   // Cards whose printed number is not a number: a bonus the board has to check,
@@ -780,8 +1126,6 @@ export const CARDS: Record<string, CardDef> = {
  * because a card that silently drops a clause is worse than a missing card: it
  * plays, it looks right, and it is wrong.
  *
- * - Retain (Crescendo, Tranquility, Protect): a card kept through the discard
- *   step. `CardDef` deliberately has no flag for it yet.
  * - An evoke the player is never asked about (Charge Battery). Its clause is
  *   "Gain [frost] if you have 3 or more Orbs", and 3 IS the full board, so the
  *   channel can only ever land by evoking something first. p.16 gives that
@@ -817,12 +1161,11 @@ export const DEFERRED_CARDS = [
   'acrobatics',
   'anger',
   'charge_battery',
-  'crescendo',
+  'chaos',
   'flex',
   'iron_wave',
-  'protect',
+  'recursion',
   'third_eye',
-  'tranquility',
 ] as const
 
 /**

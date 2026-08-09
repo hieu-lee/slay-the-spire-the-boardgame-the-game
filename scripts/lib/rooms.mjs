@@ -24,8 +24,12 @@ import {
   enterRoom,
   leaveRoom,
   playCard,
+  revealCardReward,
   resolveCampfire,
+  resolveCardRewards,
   resolveCombat,
+  spendMiracle,
+  spendShiv,
   startPlayerTurn,
 } from '../../src/game/state.ts'
 
@@ -129,6 +133,7 @@ export function joinRoom(room, { name, character, token: existing, random } = {}
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
     settleCampfire(room)
+    settleReward(room)
     settleEndTurn(room)
     settleDiscard(room)
     return returning
@@ -175,6 +180,7 @@ export function markDisconnected(room, seatToken) {
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
   // only unstuck if someone re-sent a choice they had already made.
   settleCampfire(room)
+  settleReward(room)
   settleEndTurn(room)
   settleDiscard(room)
   return snapshotFor(room, seatToken)
@@ -216,6 +222,7 @@ export function apply(room, seatToken, action) {
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
 
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
+  if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
 
@@ -233,6 +240,8 @@ export function apply(room, seatToken, action) {
   // was never asked.
   if (next.map.position !== before.map.position || next.phase !== before.phase) {
     room.campfireChoices = undefined
+    room.rewardChoices = undefined
+    room.rewardConfirmed = undefined
   }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -379,6 +388,68 @@ function settleCampfire(room) {
   return null
 }
 
+function cardReward(room, seat, action, seatToken) {
+  const run = room.run
+  if (run.phase !== 'reward') fail('The party is not choosing rewards')
+  const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
+  if (!offer) fail('This seat has no card reward')
+  const choice = action.choice
+  if (choice === 'reveal') {
+    const next = revealCardReward(run, seat.playerId)
+    if (next === run) fail('This reward is already revealed')
+    room.run = next
+    // Revealing changes the information every permanent choice is based on.
+    room.rewardConfirmed = undefined
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (choice === 'confirm') {
+    const undecided = run.rewards.filter((candidate) => !(candidate.playerId in (room.rewardChoices ?? {})))
+    if (undecided.length > 0) fail('Everyone must choose before rewards are confirmed')
+    room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
+    room.version += 1
+    const waiting = settleReward(room)
+    return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (choice !== null && (
+    offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
+  )) {
+    fail('Choose one of your revealed cards or skip')
+  }
+  room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: choice }
+  // Any changed decision reopens the final table confirmation for everyone.
+  room.rewardConfirmed = undefined
+  room.version += 1
+  const waiting = settleReward(room)
+  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+}
+
+function settleReward(room) {
+  const run = room.run
+  if (!run || run.phase !== 'reward' || !room.rewardChoices) return null
+  if (!room.seats.some((seat) => seat.connected)) return null
+  const waiting = run.rewards
+    .filter((offer) => !(offer.playerId in room.rewardChoices))
+    .map((offer) => offer.playerId)
+  if (waiting.length > 0) return waiting
+  const confirming = run.rewards
+    .filter((offer) => !(offer.playerId in (room.rewardConfirmed ?? {})))
+    .map((offer) => offer.playerId)
+  if (confirming.length > 0) return confirming
+  const decisions = Object.fromEntries(run.rewards.map((offer) => [
+    offer.playerId,
+    room.rewardChoices[offer.playerId],
+  ]))
+  const next = resolveCardRewards(run, decisions)
+  room.rewardChoices = undefined
+  room.rewardConfirmed = undefined
+  if (next !== run) {
+    room.run = next
+    room.version += 1
+  }
+  return null
+}
+
 /**
  * A list of card uids from the network, or nothing.
  *
@@ -427,6 +498,8 @@ function dispatch(run, seat, action) {
         // instead of being refused like any other bad message.
         discardUids: uidList(action.discardUids),
         exhaustUids: uidList(action.exhaustUids),
+        spendMiracle: action.spendMiracle === true,
+        shivEnemyUids: uidList(action.shivEnemyUids),
         // Both of these are real choices the rules grant (p.16, p.24). Dropping
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
@@ -449,6 +522,16 @@ function dispatch(run, seat, action) {
 
     case 'resolveCombat':
       return resolveCombat(run)
+    case 'spendMiracle': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = spendMiracle(run.combat, seat.playerId)
+      return combat === run.combat ? run : { ...run, combat }
+    }
+    case 'spendShiv': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = spendShiv(run.combat, seat.playerId, action.enemyUid)
+      return combat === run.combat ? run : { ...run, combat }
+    }
     case 'enterRoom':
       return enterRoom(run, action.roomId)
     case 'leaveRoom':
@@ -466,6 +549,8 @@ function dispatch(run, seat, action) {
     case 'campfire':
       // Handled outside `dispatch`: it has to accumulate across messages, so it
       // needs the room and not just the run.
+      return run
+    case 'cardReward':
       return run
     case 'advanceAct':
       return advanceAct(run)
@@ -504,6 +589,13 @@ export function snapshotFor(room, seatToken) {
     you: seat ? seatPublic(seat) : null,
     /** Seats that have chosen at the campfire, so the UI can show who is left. */
     campfireDecided: Object.keys(room.campfireChoices ?? {}),
+    // A reconnecting seat must be able to inspect its own pending permanent
+    // choice. `null` is meaningful (skip), so test ownership rather than truth.
+    rewardChoice: viewerId !== null && Object.hasOwn(room.rewardChoices ?? {}, viewerId)
+      ? room.rewardChoices[viewerId]
+      : undefined,
+    rewardDecided: Object.keys(room.rewardChoices ?? {}),
+    rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
@@ -520,6 +612,9 @@ function redactRun(run, viewerId) {
     log: run.log,
     players: run.players.map((player) => redactPlayer(player, viewerId)),
     combat: run.combat ? redactCombat(run.combat, viewerId) : null,
+    // Full Knowledge (p.8): once any reward is revealed, every player may see
+    // it before final decisions. Unrevealed offers still carry choices: null.
+    rewards: run.rewards,
   }
 }
 

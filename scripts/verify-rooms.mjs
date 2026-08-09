@@ -58,7 +58,7 @@ function twoSeatRoom() {
   const room = createRoom(store, { code: 'TESTAA' })
   const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
   const b = joinRoom(room, { name: 'Bo', character: 'silent' })
-  startRun(room, a.token, { seed: 1234 })
+  startRun(room, a.token, { seed: 2 })
   enterFirstCombat(room, a.token)
   return { store, room, a, b }
 }
@@ -202,6 +202,169 @@ check('the version a client receives tracks the room', () => {
     snapshotFor(room, a.token).version > seen,
     'and it should advance when the room does, or clients cannot drop stale frames',
   )
+})
+
+check('online seats choose only their own revealed card reward', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(room.run.phase, 'reward')
+  const beforeA = room.run.players.find((player) => player.id === a.playerId).deck.length
+  const revealed = apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  assertEqual(revealed.snapshot.run.rewards.find((offer) => offer.playerId === a.playerId).choices.length, 3)
+  const first = apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  assertEqual(room.run.phase, 'reward', 'one seat cannot drag the other past its reward')
+  assertDeepEqual(first.waitingOn, [b.playerId])
+  assertDeepEqual(first.snapshot.rewardDecided, [a.playerId], 'only completion, not the choice, is public')
+  assertEqual(first.snapshot.rewardChoice, 0, 'the deciding seat can inspect its own selected card')
+  assertEqual(snapshotFor(room, b.token).rewardChoice, undefined, 'another seat cannot inspect the selection')
+  const skipped = apply(room, b.token, { kind: 'cardReward', choice: null })
+  assertEqual(skipped.snapshot.rewardChoice, null, 'a private skip is preserved distinctly from no decision')
+  assertEqual(room.run.phase, 'reward', 'all choices remain revisable until the table confirms')
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'reward', 'one confirmation cannot finalize the table')
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'reward', 'revealing new information invalidates every earlier confirmation')
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map', 'the unchanged choices settle only after everyone reconfirms')
+  assertEqual(
+    room.run.players.find((player) => player.id === a.playerId).deck.length,
+    beforeA + 1,
+    'the chosen card persists in that seat\'s deck',
+  )
+})
+
+check('Full Knowledge shares every revealed reward before final choices', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy,
+    hp: 0,
+    dead: true,
+    cardReward: 'normal',
+  }))
+  apply(room, a.token, { kind: 'resolveCombat' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+
+  const mine = snapshotFor(room, a.token).run.rewards
+    .find((offer) => offer.playerId === a.playerId)
+  const theirs = snapshotFor(room, b.token).run.rewards
+    .find((offer) => offer.playerId === a.playerId)
+  assertEqual(mine.choices.length, 3, 'the owner can see the cards they revealed')
+  assertDeepEqual(theirs.choices, mine.choices, 'Full Knowledge shares the revealed reward with every seat')
+  assertEqual(room.run.rewards.find((offer) => offer.playerId === a.playerId).choices.length, 3)
+})
+
+check('revising a reward choice invalidates every earlier confirmation', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  apply(room, a.token, { kind: 'resolveCombat' })
+  apply(room, a.token, { kind: 'cardReward', choice: null })
+  apply(room, b.token, { kind: 'cardReward', choice: null })
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: 0 })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'reward', 'a revised choice invalidates every earlier confirmation')
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map')
+})
+
+check('online reward messages reject unrevealed choices', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  apply(room, a.token, { kind: 'resolveCombat' })
+  let error = null
+  try {
+    apply(room, a.token, { kind: 'cardReward', choice: 99 })
+  } catch (thrown) {
+    error = thrown
+  }
+  assert(error, 'an out-of-range reward choice was accepted')
+  assertEqual(error.name, 'RoomError')
+})
+
+check('a disconnected seat keeps its undecided permanent reward', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  apply(room, a.token, { kind: 'resolveCombat' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  assertEqual(snapshotFor(room, a.token).rewardChoice, 0, 'the deciding seat can inspect its pick')
+  assertEqual(
+    snapshotFor(room, b.token).rewardChoice,
+    undefined,
+    'another seat cannot inspect the private choice',
+  )
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  assertEqual(room.run.phase, 'reward', 'nobody connected means no choice is forfeited')
+  joinRoom(room, { token: a.token })
+  assertEqual(room.run.phase, 'reward', 'returning one seat cannot forfeit the other seat\'s reward')
+  assertEqual(snapshotFor(room, a.token).rewardChoice, 0, 'the reconnecting seat recovers its own choice')
+  joinRoom(room, { token: b.token })
+  assertEqual(room.run.phase, 'reward', 'reconnecting preserves the pending choice')
+  apply(room, b.token, { kind: 'cardReward', choice: null })
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map', 'the party continues after the returning seat decides and confirms')
+})
+
+check('a seat cannot confirm rewards before everyone has decided', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  apply(room, a.token, { kind: 'resolveCombat' })
+  let error = null
+  try {
+    apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  } catch (thrown) {
+    error = thrown
+  }
+  assert(error, 'an early confirmation was accepted')
+})
+
+check('a seat can spend only its own Miracle during the Player Turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = room.run.combat.players.find((player) => player.id === b.playerId)
+  mine.miracles = 1
+  mine.energy = 2
+  const theirEnergy = theirs.energy
+  apply(room, a.token, { kind: 'spendMiracle' })
+  const afterMine = room.run.combat.players.find((player) => player.id === a.playerId)
+  const afterTheirs = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(afterMine.miracles, 0, 'the token is spent')
+  assertEqual(afterMine.energy, 3, 'the owner gains the Energy')
+  assertEqual(afterTheirs.energy, theirEnergy, 'another seat was changed')
+})
+
+check('online seats can spend capped Miracles and their own Shivs atomically', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = () => room.run.combat.players.find((player) => player.id === b.playerId)
+  const enemy = () => room.run.combat.enemies[0]
+  const card = { uid: 'fx-miracle-card', defId: 'strike_ironclad', upgraded: false }
+  mine().hand.push(card)
+  mine().miracles = 1
+  mine().energy = 6
+  apply(room, a.token, {
+    kind: 'playCard',
+    cardUid: card.uid,
+    enemyUid: enemy().uid,
+    spendMiracle: true,
+  })
+  assertEqual(mine().miracles, 0, 'the capped Miracle is spent with the card')
+  assertEqual(mine().energy, 6, 'a one-cost card immediately consumes the over-cap Energy')
+
+  mine().shivs = 1
+  const theirShivs = theirs().shivs
+  const hp = enemy().hp
+  apply(room, a.token, { kind: 'spendShiv', enemyUid: enemy().uid })
+  assertEqual(mine().shivs, 0, 'the acting seat spends its Shiv')
+  assertEqual(theirs().shivs, theirShivs, 'the other seat cannot be charged')
+  assertEqual(enemy().hp, hp - 1, 'the Shiv attacks the chosen enemy')
 })
 
 check('online seats ready together, then submit only their own post-trigger discard order', () => {
@@ -414,7 +577,7 @@ check('a field added to Player later is NOT published by default', () => {
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
-    player.cardRewards = [{ uid: `rw-${player.id}`, defId: 'bash', upgraded: false }]
+    player.cardRewards = [`rw-${player.id}`]
   }
   const snapshot = snapshotFor(room, a.token)
   const seen = new Set(allStrings(snapshot))
@@ -580,7 +743,7 @@ check('the whole play context reaches the engine, not just the target', () => {
   // scryDiscardUids and evokeSlots are real choices the rules grant (p.24,
   // p.16). Dropped in dispatch, a Scry silently bins nothing and an orb evoke
   // always falls back to the first filled slot.
-  const { room, a } = twoSeatRoom()
+  const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
 
   CARDS.fixture_room_scry = {
@@ -625,6 +788,21 @@ check('the whole play context reaches the engine, not just the target', () => {
     evokeSlots: [1],
   })
   assertDeepEqual(mine().orbs, ['lightning', null, null], 'the CHOSEN slot was evoked, not the first')
+
+  const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
+  mine().hand.push(dance)
+  mine().shivs = 4
+  room.run.combat.players.find((player) => player.id === b.playerId).shivs = 1
+  const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  Object.assign(firstEnemy, { hp: 1, maxHp: 1, block: 0, dead: false })
+  Object.assign(secondEnemy, { hp: 5, maxHp: 5, block: 0, dead: false })
+  apply(room, a.token, {
+    kind: 'playCard',
+    cardUid: dance.uid,
+    shivEnemyUids: [firstEnemy.uid, secondEnemy.uid],
+  })
+  assert(room.run.combat.enemies[0].dead, 'the first chosen overflow Shiv target survives the room boundary')
+  assertEqual(room.run.combat.enemies[1].hp, 4, 'the second overflow Shiv keeps its own chosen target')
 })
 
 check('an unknown token cannot act at all', () => {
@@ -655,18 +833,13 @@ check('an action the engine refuses does NOT bump the version', () => {
   // The engine signals refusal by returning the same state reference. If that
   // still bumped the version, every illegal click would wake all four clients.
   //
-  // Spending every point of Energy is the cleanest refusal to provoke: the
-  // card is in hand and legal in every way except that it cannot be paid for.
+  // Zero Energy is the cleanest refusal to provoke: the card is in hand and
+  // legal in every way except that it cannot be paid for.
   const { room, a } = twoSeatRoom()
   const enemy = room.run.combat.enemies[0]
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
 
-  let guard = 0
-  while (mine().energy > 0 && guard++ < 20) {
-    const affordable = mine().hand.find((card) => card.defId.startsWith('strike'))
-    if (!affordable) break
-    apply(room, a.token, { kind: 'playCard', cardUid: affordable.uid, enemyUid: enemy.uid })
-  }
+  mine().energy = 0
   assertEqual(mine().energy, 0, 'precondition: energy should be spent')
 
   // Every card costs at least 1, so with no Energy left any of them is refused.
@@ -1254,7 +1427,7 @@ check('a combat in progress cannot be cashed in as a win', () => {
   assertEqual(room.run.players[0].gold, goldBefore, 'and nobody was paid for it')
 })
 
-check('beating the boss opens the next Act', () => {
+check('beating the placeholder boss opens the next Act without fake elite rewards', () => {
   // Without the victory phase the run silently dead-ends after Act 1: the boss
   // room has no exits and advanceAct only accepts a victory.
   const { room, a } = twoSeatRoom()
@@ -1266,11 +1439,18 @@ check('beating the boss opens the next Act', () => {
   room.run.combat = {
     ...room.run.combat,
     phase: 'won',
-    enemies: room.run.combat.enemies.map((foe) => ({ ...foe, hp: 0, dead: true })),
+    enemies: room.run.combat.enemies.map((foe) => ({
+      ...foe,
+      hp: 0,
+      dead: true,
+      isBoss: true,
+      goldReward: 0,
+      cardReward: null,
+    })),
   }
 
   apply(room, a.token, { kind: 'resolveCombat' })
-  assertEqual(room.run.phase, 'victory', 'a boss win is a victory, not just another map step')
+  assertEqual(room.run.phase, 'victory', 'an elite stand-in must not grant invented boss rewards')
 
   apply(room, a.token, { kind: 'advanceAct' })
   assertEqual(room.run.act, 2, 'and the next Act begins')
@@ -1411,6 +1591,28 @@ check('an ally target chosen by a client reaches the engine', () => {
   apply(room, a.token, { kind: 'playCard', cardUid: card.uid, enemyUid: null, playerId: b.playerId })
   assertEqual(ally().block, 2, 'the Block landed on the chosen ally')
   assertEqual(mine().block, 0, 'and not on the caster')
+})
+
+check('a stale or forged network ally target does not redirect to the caster', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = () => room.run.combat.players.find((player) => player.id === b.playerId)
+  const card = { uid: 'fx-stale-block', defId: 'defend_ironclad', upgraded: true }
+  mine().hand.push(card)
+  ally().hp = 0
+  ally().dead = true
+
+  for (const playerId of ['not-a-player', '', false, 0, b.playerId]) {
+    const result = apply(room, a.token, {
+      kind: 'playCard',
+      cardUid: card.uid,
+      enemyUid: null,
+      playerId,
+    })
+    assertEqual(result.changed, false, `${playerId} should be refused by the room boundary`)
+    assertEqual(mine().block, 0, 'the stale support effect was redirected to the caster')
+    assert(mine().hand.some((held) => held.uid === card.uid), 'the refused card left hand')
+  }
 })
 
 check('a Smith naming an already-upgraded card is refused', () => {

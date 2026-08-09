@@ -242,11 +242,13 @@ button:disabled {
 
 .row {
   display: grid;
-  /* Sized to its contents and centred, rather than stretched across whatever
-     width the window happens to be: a row holding one seat and one enemy left
-     two thirds of a desktop board as empty panel. */
-  grid-template-columns: minmax(0, 190px) auto;
+  /* Summons share their main enemy's row. Give that track the remaining width
+     so two or more cards stay side-by-side instead of making the row taller
+     than the board viewport. */
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
   justify-content: center;
+  width: 100%;
+  max-width: 1240px;
   gap: 1.2rem;
   min-width: 0;
   align-items: stretch;
@@ -270,6 +272,7 @@ button:disabled {
 
 .row__enemies {
   min-width: 0;
+  width: 100%;
   /* auto-fit rather than fixed widths: one enemy fills the row, four share it,
      and the same rule handles mobile without a breakpoint. */
   display: grid;
@@ -599,6 +602,19 @@ button:disabled {
 @media (max-width: 720px) {
   .row {
     grid-template-columns: 1fr;
+  }
+
+  .row__enemies {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .row__enemies[data-enemies='3'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .row__enemies .enemy {
+    width: 100%;
+    max-width: 250px;
   }
 
   :root {
@@ -1418,6 +1434,128 @@ button:disabled {
 
 .room-screen__defeat {
   color: var(--blood);
+}
+
+/* ---------- rewards ---------- */
+
+.reward-screen {
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(18px, 3vw, 42px);
+  background:
+    radial-gradient(circle at 50% 12%, rgb(205 151 56 / 18%), transparent 38%),
+    linear-gradient(180deg, #1d1811, #100e0b);
+  border: 1px solid var(--line);
+}
+
+.reward-screen__players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr));
+  gap: 22px;
+}
+
+.reward-screen__player {
+  padding: 14px;
+  border: 1px solid rgb(205 151 56 / 32%);
+  background: rgb(8 7 6 / 58%);
+}
+
+.reward-screen__cards {
+  display: flex;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 22px);
+  margin: 12px 0 18px;
+}
+
+.reward-screen__choice {
+  display: flex;
+  flex: 0 1 clamp(92px, 10vw, 165px);
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reward-screen__cards .card {
+  width: 100%;
+}
+
+.reward-screen__choice > button {
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-decoration: underline;
+}
+
+.reward-screen__scroll-hint {
+  display: none;
+}
+
+.reward-screen__unrevealed {
+  min-height: 190px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+}
+
+.reward-screen__unrevealed button {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--gold);
+}
+
+.reward-screen > button,
+.reward-screen__player > button {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--gold);
+}
+
+.reward-screen > button {
+  display: block;
+  margin: 20px auto 0;
+}
+
+.reward-screen button.is-chosen {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgb(205 151 56 / 20%);
+  box-shadow: inset 0 0 0 1px rgb(255 224 145 / 35%);
+}
+
+.reward-screen__upgrade {
+  color: var(--gold);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .reward-screen__cards {
+    max-width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding: 10px 2px 14px;
+    scroll-snap-type: x proximity;
+  }
+
+  .reward-screen__choice {
+    flex: 0 0 148px;
+    scroll-snap-align: start;
+  }
+
+  .reward-screen__scroll-hint {
+    display: block;
+    margin: -10px 0 12px;
+    font-size: 0.75rem;
+  }
 }
 
 /* ---------- compact board for a full party ---------- */

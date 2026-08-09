@@ -15,6 +15,7 @@
 // human reviewer stops noticing.
 import {
   advanceAct,
+  cardNeedsEnemy,
   createRun,
   endPlayerTurn,
   enemyTurn,
@@ -22,7 +23,9 @@ import {
   leaveRoom,
   moveTo,
   playCard,
+  revealCardReward,
   resolveCampfire,
+  resolveCardRewards,
   resolveCombat,
   roomChoices,
   startPlayerTurn,
@@ -112,7 +115,8 @@ check('a REFUSED playCard leaves the combat alone too', () => {
   // damage, because the caller has been told nothing happened.
   const run = inCombat()
   const combat = run.combat
-  const card = combat.players[0].hand[0]
+  const card = combat.players[0].hand.find((held) => cardNeedsEnemy(CARDS[held.defId], combat.players[0]))
+  assert(card, 'precondition: the hand needs a targeted card')
   unchanged('playCard (refused)', combat, () => {
     const result = playCard(combat, 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
     assert(result === combat, 'precondition: this play should have been refused')
@@ -143,6 +147,19 @@ check('resolveCombat leaves the run it was called on alone', () => {
   const won = { ...run, combat: { ...run.combat, phase: 'won' } }
   assert(resolveCombat(won) !== won, 'precondition: this call must actually do something')
   unchanged('resolveCombat', won, () => resolveCombat(won))
+})
+
+check('resolveCardRewards leaves the offer and reward stacks alone', () => {
+  const run = inCombat()
+  const hidden = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won' } })
+  const offered = hidden.rewards.reduce(
+    (current, offer) => revealCardReward(current, offer.playerId),
+    hidden,
+  )
+  const decisions = Object.fromEntries(offered.rewards.map((offer) => [offer.playerId, 0]))
+  assert(resolveCardRewards(offered, decisions) !== offered, 'precondition: the reward resolves')
+  unchanged('revealCardReward', hidden, () => revealCardReward(hidden, hidden.rewards[0].playerId))
+  unchanged('resolveCardRewards', offered, () => resolveCardRewards(offered, decisions))
 })
 
 check('moveTo leaves the map it was called on alone', () => {
