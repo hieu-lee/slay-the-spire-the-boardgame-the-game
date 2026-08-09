@@ -1212,6 +1212,25 @@ check('a disconnected Dagger Throw resolves against its committed target', () =>
   assert(!resolvedPlayer.hand.some((card) => card.uid === dagger.uid), 'the abandoned Dagger Throw stayed in hand')
 })
 
+check('a disconnected Prepared+ pays its complete committed discard', () => {
+  const { room, a, b } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const prepared = { uid: 'abandoned-prepared', defId: 'prepared', upgraded: true }
+  const held = { uid: 'abandoned-prepared-held', defId: 'defend_silent', upgraded: false }
+  const drawn = [0, 1].map((index) => ({
+    uid: `abandoned-prepared-draw-${index}`, defId: 'strike_silent', upgraded: false,
+  }))
+  Object.assign(player, { hand: [prepared, held], draw: drawn, discard: [], energy: 3 })
+  const preview = apply(room, a.token, { kind: 'previewCard', cardUid: prepared.uid }).snapshot.cardPreview
+  assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, ...drawn.map((card) => card.uid)])
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  const resolved = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the abandoned Prepared+ stayed locked')
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [drawn[1].uid])
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [held.uid, drawn[0].uid, prepared.uid])
+})
+
 check('the rng state never reaches a client', () => {
   // Leaking this predicts every future die roll and shuffle, and no player
   // could tell from the table that it had happened.

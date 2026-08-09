@@ -1711,6 +1711,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'disarm', weak: [2, 3], exhaust: [1, 1] },
     { id: 'shockwave', vulnerable: [1, 1], weak: [1, 2], exhaust: [1, 1] },
     { id: 'dagger_throw', enemyHp: [18, 17], hand: [0, 0], discardAfterDraw: true },
+    { id: 'carnage', enemyHp: [16, 14] },
+    { id: 'ghostly_armor', block: [2, 3] },
+    { id: 'prepared', hand: [0, 0], discardAfterDraw: [1, 2] },
+    { id: 'beam_cell', enemyHp: [19, 19], vulnerable: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1766,7 +1770,8 @@ check('every newly transcribed card does what its face prints', () => {
         playerId: null,
       }
       if (spec.discardAfterDraw) {
-        context.discardUids = [previewCardChoice(state, 'p1', card.uid).cards[0].uid]
+        const amount = Array.isArray(spec.discardAfterDraw) ? spec.discardAfterDraw[at] : 1
+        context.discardUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, amount).map((held) => held.uid)
       }
       const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
@@ -1907,6 +1912,63 @@ check('Dagger Throw binds its target to the post-draw discard choice', () => {
     assertDeepEqual(played.players[0].hand.map((card) => card.uid), [existing.uid])
     assertDeepEqual(played.players[0].discard.map((card) => card.uid), [drawn.uid, dagger.uid])
     assertEqual(played.players[0].energy, 2)
+  }
+})
+
+check('Carnage and Ghostly Armor exhaust only when Ethereal resolves at end of turn', () => {
+  const carnage = instance('carnage')
+  const ghostly = instance('ghostly_armor', true)
+  const state = combat([makePlayer({ hand: [carnage, ghostly] })], [makeEnemy()])
+  const ending = beginEndPlayerTurn(state)
+  assertDeepEqual(ending.players[0].exhaust.map((card) => card.uid), [carnage.uid, ghostly.uid])
+  assertEqual(ending.players[0].hand.length, 0)
+
+  const ally = makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 })
+  const played = playCard(
+    combat([makePlayer({ hand: [ghostly] }), ally], [makeEnemy()]),
+    'p1', ghostly.uid, { enemyUid: null, playerId: 'p2' },
+  )
+  assertEqual(played.players[1].block, 3)
+  assert(played.players[0].discard.some((card) => card.uid === ghostly.uid),
+    'a played Ethereal card should discard normally')
+})
+
+check('Prepared reveals its complete post-draw hand and pays the upgraded discard count', () => {
+  for (const upgraded of [false, true]) {
+    const prepared = instance('prepared', upgraded)
+    const existing = instance('defend_silent')
+    const drawn = [instance('neutralize'), instance('strike_silent')]
+    const state = combat(
+      [makePlayer({ character: 'silent', hand: [prepared, existing], draw: drawn })],
+      [makeEnemy()],
+    )
+    const preview = previewCardChoice(state, 'p1', prepared.uid)
+    const amount = upgraded ? 2 : 1
+    assertEqual(preview?.kind, 'discard')
+    assertDeepEqual(preview?.cards.map((card) => card.uid),
+      [existing, ...drawn.slice(0, amount)].map((card) => card.uid))
+    const discarded = upgraded ? [drawn[0].uid, existing.uid] : [drawn[0].uid]
+    const played = playCard(state, 'p1', prepared.uid, {
+      enemyUid: null, playerId: null, discardUids: discarded,
+    })
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid),
+      upgraded ? [drawn[1].uid] : [existing.uid])
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [...discarded, prepared.uid])
+  }
+})
+
+check('Beam Cell follows its printed die faces until upgraded', () => {
+  for (const die of [1, 4]) {
+    const base = instance('beam_cell')
+    const state = { ...combat([makePlayer({ hand: [base] })], [makeEnemy()]), die }
+    const played = playCard(state, 'p1', base.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, 5)
+    assertEqual(played.enemies[0].vulnerable, die === 1 ? 1 : 0)
+
+    const upgraded = instance('beam_cell', true)
+    const upgradedState = { ...combat([makePlayer({ hand: [upgraded] })], [makeEnemy()]), die }
+    const upgradedPlay = playCard(upgradedState, 'p1', upgraded.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(upgradedPlay.enemies[0].vulnerable, 1)
   }
 })
 

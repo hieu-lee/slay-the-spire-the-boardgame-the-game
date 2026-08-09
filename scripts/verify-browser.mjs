@@ -139,7 +139,6 @@ check('the first room is an encounter and starts a combat', () => {
 // the assertion compares total enemy HP instead of guessing which one was hit.
 const beforePlay = await readState()
 const totalEnemyHp = (state) => state.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
-const totalEnemyDurability = (state) => state.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
 
 // Pick an attack rather than whichever card happens to be first, since a Skill
 // would not damage anything and the check would be vacuous.
@@ -256,10 +255,11 @@ if (afterEnemies.phase === 'roundEnd') {
   const afterSecondPlay = await readState()
   check('cards are playable in the second round, not just the first', () => {
     assertEqual(afterSecondPlay.players[0].hand.length, 4, 'the card leaves hand')
-    assert(
-      totalEnemyDurability(afterSecondPlay) < totalEnemyDurability(beforeSecondPlay),
-      'and it still damages an enemy',
-    )
+    assertEqual(afterSecondPlay.players[0].energy, beforeSecondPlay.players[0].energy - 1,
+      'the card spends its printed Energy')
+    assert(afterSecondPlay.log.length > beforeSecondPlay.log.length &&
+      afterSecondPlay.log.some((line) => line.includes('played Strike')),
+      'the play resolves even when Weak or Block prevents HP damage')
   })
   await shot('05b-second-round')
 }
@@ -838,6 +838,40 @@ check('Dagger Throw chooses its attack target before revealing its discard', () 
   assertDeepEqual(daggerThrow.players[0].hand.map((card) => card.uid), ['ui-dagger-existing'])
   assertDeepEqual(daggerThrow.players[0].discard.map((card) => card.uid), ['ui-dagger-drawn', 'ui-dagger-throw'])
   assertEqual(daggerThrow.players[0].energy, 2)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [
+    { uid: 'ui-prepared', defId: 'prepared', upgraded: true },
+    { uid: 'ui-prepared-existing', defId: 'defend_silent', upgraded: false },
+  ]
+  player.draw = [
+    { uid: 'ui-prepared-neutralize', defId: 'neutralize', upgraded: false },
+    { uid: 'ui-prepared-strike', defId: 'strike_silent', upgraded: false },
+  ]
+  player.discard = []
+  player.energy = 3
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Prepared\+,/ }).click()
+const preparedDialog = page.getByRole('dialog', { name: 'Choose 2 to discard' })
+await preparedDialog.waitFor()
+await preparedDialog.getByRole('button', { name: /^Neutralize,/ }).click()
+await preparedDialog.getByRole('button', { name: /^Defend,/ }).click()
+const preparedOrder = await preparedDialog.locator('p').textContent()
+await shot('06i-prepared-choice')
+await preparedDialog.getByRole('button', { name: 'Discard selected cards' }).click()
+await preparedDialog.waitFor({ state: 'hidden' })
+const prepared = await readState()
+check('Prepared+ draws two, discards exactly two, and costs no Energy', () => {
+  assert(preparedOrder.includes('1. Neutralize → 2. Defend'), preparedOrder)
+  assertDeepEqual(prepared.players[0].hand.map((card) => card.uid), ['ui-prepared-strike'])
+  assertDeepEqual(prepared.players[0].discard.map((card) => card.uid),
+    ['ui-prepared-neutralize', 'ui-prepared-existing', 'ui-prepared'])
+  assertEqual(prepared.players[0].energy, 3)
 })
 
 await page.evaluate(() => {

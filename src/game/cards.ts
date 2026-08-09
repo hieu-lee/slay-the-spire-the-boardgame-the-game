@@ -450,6 +450,19 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainStrength', amount: 1 }],
     upgrade: { cost: 1 },
   }),
+  carnage: card({
+    id: 'carnage', name: 'Carnage', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 2,
+    ethereal: true,
+    effects: [{ kind: 'hit', amount: 4 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 6 }] },
+  }),
+  ghostly_armor: card({
+    id: 'ghostly_armor', name: 'Ghostly Armor', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    ethereal: true,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 2, toChosen: true }],
+    upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }] },
+  }),
 
   bash: card({
     id: 'bash',
@@ -595,6 +608,11 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'hit', amount: 3 }, { kind: 'draw', amount: 1 }, { kind: 'discard', amount: 1 }],
     },
+  }),
+  prepared: card({
+    id: 'prepared', name: 'Prepared', owner: 'silent', type: 'skill', rarity: 'common', cost: 0,
+    effects: [{ kind: 'draw', amount: 1 }, { kind: 'discard', amount: 1 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 2 }, { kind: 'discard', amount: 2 }] },
   }),
   deadly_poison: card({
     id: 'deadly_poison',
@@ -1229,6 +1247,16 @@ export const CARDS: Record<string, CardDef> = {
         { kind: 'hit', amount: 1 },
         { kind: 'applyWeak', amount: 1 },
       ],
+    },
+  }),
+  beam_cell: card({
+    id: 'beam_cell', name: 'Beam Cell', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'applyVulnerable', amount: 1, when: { kind: 'dieShows', faces: [1, 2, 3] } },
+    ],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }],
     },
   }),
 }

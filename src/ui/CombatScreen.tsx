@@ -1390,7 +1390,12 @@ export function CombatScreen({
             <p>
               {pending.choice.kind === 'scry'
                 ? 'Select any revealed cards to discard; unselected cards stay on top in order.'
-                : `${pending.picked.length}/${choiceNeeded} selected. The card is committed.`}
+                : `${pending.picked.length}/${choiceNeeded} selected.${pending.picked.length > 0
+                  ? ` Discard order (later is higher): ${pending.picked.map((uid, index) => {
+                    const card = pending.choiceCards!.find((held) => held.uid === uid)!
+                    return `${index + 1}. ${faceOf(cardDef(card.defId), card.upgraded).name}`
+                  }).join(' → ')}.`
+                  : ''} The card is committed.`}
             </p>
             <div className="choice-modal__cards">
               {pending.choiceCards.map((card) => (
@@ -1402,7 +1407,7 @@ export function CombatScreen({
             <button type="button" disabled={!handChoiceSatisfied} onClick={confirmChoice}>
               {pending.choice.kind === 'scry'
                 ? pending.picked.length === 0 ? 'Keep all' : `Discard ${pending.picked.length} and continue`
-                : choiceNeeded === 0 ? 'Continue' : 'Discard selected card'}
+                : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
           </div>
         </dialog>

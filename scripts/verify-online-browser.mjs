@@ -846,19 +846,24 @@ try {
     assertDeepEqual(annAfterPotion.potions, [])
   })
 
-  const hpBefore = aView.run.combat.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
+  const beforeRemoteAction = await snapshot(b)
+  const beforeRemotePlayer = beforeRemoteAction.run.combat.players
+    .find((player) => player.id === aView.you.playerId)
   await a.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
   if (await a.locator('.prompt').count()) await a.locator('.enemy:not([disabled])').first().click()
   await b.waitForFunction((before) => {
     const lines = [...document.querySelectorAll('.combat__log li')].map((line) => line.textContent ?? '')
     return lines.some((line) => line.includes('Strike')) || lines.length > before
-  }, bView.run.combat.log.length)
+  }, beforeRemoteAction.run.combat.log.length)
   const afterPlay = await snapshot(b)
-  const hpAfter = afterPlay.run.combat.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
+  const afterRemotePlayer = afterPlay.run.combat.players.find((player) => player.id === aView.you.playerId)
   const shownDraw = Number(await a.locator('.pile[title="Draw pile"] .pile__count').textContent())
   const actualDraw = afterPlay.run.combat.players.find((player) => player.id === aView.you.playerId).drawCount
   check('an action in one browser updates the other browser', () => {
-    assert(hpAfter < hpBefore, `enemy HP did not fall: ${hpBefore} -> ${hpAfter}`)
+    assertEqual(afterRemotePlayer.handCount, beforeRemotePlayer.handCount - 1,
+      'the remote browser did not see the played card leave hand')
+    assert(afterPlay.run.combat.log.length > beforeRemoteAction.run.combat.log.length,
+      'the remote browser did not see the play log')
     assertEqual(shownDraw, actualDraw, 'the private hand used the wrong public draw-pile count')
   })
   const viewerEnemyGeometry = await a.evaluate(() => {

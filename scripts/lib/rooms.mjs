@@ -435,7 +435,7 @@ function resolveAbandonedPreviews(room) {
         kind: 'playCard',
         cardUid: preview.cardUid,
         enemyUid: preview.enemyUid,
-        discardUids: preview.kind === 'discard' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
+        discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
         spendMiracle: preview.spendMiracle,
         preflight: true,

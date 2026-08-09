@@ -647,7 +647,7 @@ function applyEffect(
     }
     case 'discard': {
       const chosen = allocate(actor, context.discardUids, effect.amount, context)
-      const moved = actor.hand.filter((card) => chosen.includes(card.uid))
+      const moved = chosen.map((uid) => actor.hand.find((card) => card.uid === uid)!)
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
       actor.discard = [...actor.discard, ...moved]
       if (moved.length > 0) {
