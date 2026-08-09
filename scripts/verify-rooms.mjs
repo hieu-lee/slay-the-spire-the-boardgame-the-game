@@ -19,7 +19,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, roomChoices } from '../src/game/state.ts'
+import { CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -936,6 +936,212 @@ check('face-down reward stacks are counted, never listed', () => {
   }
 })
 
+check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = () => room.run.combat.players.find((player) => player.id === b.playerId)
+  const acrobatics = { uid: 'private-acrobatics', defId: 'acrobatics', upgraded: false }
+  const hidden = [0, 1, 2].map((index) => ({
+    uid: `private-draw-${index}`, defId: index === 0 ? 'neutralize' : 'defend_silent', upgraded: false,
+  }))
+  mine().hand = [acrobatics]
+  mine().draw = hidden
+  mine().discard = []
+  mine().energy = 3
+  const runBefore = JSON.stringify(room.run)
+
+  let stolen = null
+  try {
+    apply(room, b.token, { kind: 'previewCard', cardUid: acrobatics.uid })
+  } catch (error) {
+    stolen = error
+  }
+  assertEqual(stolen?.name, 'RoomError', 'another seat previewed a private draw')
+
+  let unpreviewed = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: acrobatics.uid, enemyUid: null,
+      discardUids: [hidden[0].uid], preflight: true,
+    })
+  } catch (error) {
+    unpreviewed = error
+  }
+  assertEqual(unpreviewed?.name, 'RoomError', 'a hidden choice could be probed without revealing the card')
+  assertEqual(JSON.stringify(room.run), runBefore, 'a refused hidden probe mutated the run')
+
+  const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: acrobatics.uid })
+  assert(revealed.changed, 'committing to a private reveal should publish its lock')
+  assertEqual(JSON.stringify(room.run), runBefore, 'previewing must not advance the real piles or RNG')
+  assertEqual(revealed.snapshot.cardPreview.kind, 'discard')
+  assertDeepEqual(revealed.snapshot.cardPreview.cards.map((card) => card.uid), hidden.map((card) => card.uid))
+  assertEqual(snapshotFor(room, b.token).cardPreview, undefined, 'a teammate saw the private preview')
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+
+  let escaped = null
+  try {
+    apply(room, a.token, { kind: 'endTurn' })
+  } catch (error) {
+    escaped = error
+  }
+  assertEqual(escaped?.name, 'RoomError', 'the revealing seat escaped its committed card')
+  let teammateEnded = null
+  try {
+    apply(room, b.token, { kind: 'endTurn' })
+  } catch (error) {
+    teammateEnded = error
+  }
+  assertEqual(teammateEnded?.name, 'RoomError', 'a teammate ended the turn around a revealed card')
+
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  theirs().shivs = 1
+  let teammateActed = null
+  try {
+    apply(room, b.token, { kind: 'spendShiv', enemyUid: target.uid })
+  } catch (error) {
+    teammateActed = error
+  }
+  assertEqual(teammateActed?.name, 'RoomError', 'a teammate changed the table during a private reveal')
+  assertEqual(target.hp, 10, 'the globally locked teammate action still dealt damage')
+  assert(snapshotFor(room, a.token).cardPreview, 'a teammate action erased the committed preview')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assert(snapshotFor(room, a.token).cardPreview, 'reconnecting lost the private preview')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: acrobatics.uid, enemyUid: null,
+    discardUids: [hidden[2].uid], preflight: true,
+  })
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined, 'a completed play kept the seat locked')
+  assertDeepEqual(mine().hand.map((card) => card.uid), hidden.slice(0, 2).map((card) => card.uid))
+
+  const thirdEye = { uid: 'private-third-eye', defId: 'third_eye', upgraded: true }
+  const scryDeck = Array.from({ length: 6 }, (_, index) => ({
+    uid: `private-scry-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  mine().hand = [thirdEye]
+  mine().draw = scryDeck
+  mine().discard = []
+  mine().energy = 3
+  const scried = apply(room, a.token, { kind: 'previewCard', cardUid: thirdEye.uid })
+  assertEqual(scried.snapshot.cardPreview.kind, 'scry')
+  assertDeepEqual(scried.snapshot.cardPreview.cards.map((card) => card.uid),
+    scryDeck.slice(0, 5).map((card) => card.uid))
+  let malformedScry = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: thirdEye.uid, enemyUid: null, scryDiscardUids: 'not-a-list',
+    })
+  } catch (error) {
+    malformedScry = error
+  }
+  assertEqual(malformedScry?.name, 'RoomError', 'a malformed Scry list became an implicit keep-all')
+  mine().draw = [scryDeck[1], scryDeck[0], ...scryDeck.slice(2)]
+  let staleKeepAll = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: thirdEye.uid, enemyUid: null, scryDiscardUids: [], preflight: true,
+    })
+  } catch (error) {
+    staleKeepAll = error
+  }
+  assertEqual(staleKeepAll?.name, 'RoomError', 'Scry kept a changed unseen window without a fresh reveal')
+  mine().draw = [...scryDeck]
+  const refreshedScry = apply(room, a.token, { kind: 'previewCard', cardUid: thirdEye.uid })
+  assertDeepEqual(refreshedScry.snapshot.cardPreview.cards.map((card) => card.uid),
+    scryDeck.slice(0, 5).map((card) => card.uid))
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: thirdEye.uid, enemyUid: null,
+    scryDiscardUids: [scryDeck[1].uid, scryDeck[3].uid], preflight: true,
+  })
+  assertEqual(mine().block, 3)
+  assertDeepEqual(mine().draw.map((card) => card.uid),
+    scryDeck.filter((_, index) => index !== 1 && index !== 3).map((card) => card.uid))
+
+  const racingAcrobatics = { uid: 'racing-acrobatics', defId: 'acrobatics', upgraded: false }
+  const shuffled = Array.from({ length: 6 }, (_, index) => ({
+    uid: `racing-draw-${index}`, defId: 'defend_silent', upgraded: false,
+  }))
+  mine().hand = [racingAcrobatics]
+  mine().draw = []
+  mine().discard = shuffled
+  mine().energy = 6
+  mine().miracles = 1
+  const firstPreview = apply(room, a.token, {
+    kind: 'previewCard', cardUid: racingAcrobatics.uid, spendMiracle: true,
+  })
+    .snapshot.cardPreview
+  assert(firstPreview.spendMiracle, 'the committed Miracle payment was not saved with the reveal')
+  const teammateDraw = { uid: 'teammate-backflip', defId: 'backflip', upgraded: false }
+  theirs().hand = [teammateDraw]
+  theirs().draw = []
+  theirs().discard = Array.from({ length: 6 }, (_, index) => ({
+    uid: `teammate-draw-${index}`, defId: 'defend_silent', upgraded: false,
+  }))
+  theirs().energy = 3
+  const rngBefore = JSON.stringify(room.run.combat.rng)
+  let raced = null
+  try {
+    apply(room, b.token, { kind: 'playCard', cardUid: teammateDraw.uid, enemyUid: null })
+  } catch (error) {
+    raced = error
+  }
+  assertEqual(raced?.name, 'RoomError', 'a teammate advanced shared RNG during a private reveal')
+  assertEqual(JSON.stringify(room.run.combat.rng), rngBefore, 'a refused teammate play advanced shared RNG')
+  const currentPreview = previewCardChoice(room.run.combat, a.playerId, racingAcrobatics.uid)
+  assertDeepEqual(currentPreview.cards.map((card) => card.uid), firstPreview.cards.map((card) => card.uid),
+    'the private preview changed despite the room action lock')
+  let changedPayment = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: racingAcrobatics.uid, enemyUid: null,
+      discardUids: [firstPreview.cards[0].uid], spendMiracle: false, preflight: true,
+    })
+  } catch (error) {
+    changedPayment = error
+  }
+  assertEqual(changedPayment?.name, 'RoomError', 'the player changed Miracle payment after seeing the draw')
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.cardPreviews?.[a.playerId], undefined,
+    'a disconnected private reveal permanently blocked the connected party')
+  assert(!mine().hand.some((card) => card.uid === racingAcrobatics.uid),
+    'the disconnected committed card was not resolved before end turn')
+  assertEqual(mine().miracles, 0, 'the disconnected fallback ignored the committed Miracle payment')
+  assertEqual(mine().energy, 6, 'the committed Miracle did not pay toward Acrobatics')
+})
+
+check('a disconnected reveal resolves without skipping a third connected player', () => {
+  const room = createRoom(createStore(), { code: 'THREEA' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  const c = joinRoom(room, { name: 'Cy', character: 'defect' })
+  startRun(room, a.token, { seed: 19 })
+  enterFirstCombat(room, a.token)
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  mine().hand = [{ uid: 'three-acrobatics', defId: 'acrobatics', upgraded: false }]
+  mine().draw = [0, 1, 2].map((index) => ({
+    uid: `three-draw-${index}`, defId: 'defend_silent', upgraded: false,
+  }))
+  mine().discard = []
+  mine().energy = 3
+  apply(room, a.token, { kind: 'previewCard', cardUid: 'three-acrobatics' })
+  assertEqual(snapshotFor(room, b.token).cardChoicePlayerId, a.playerId,
+    'teammates were not told whose private reveal paused the table')
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'player', 'the disconnected fallback skipped the third player')
+  assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the disconnected preview stayed locked')
+  assert(!mine().hand.some((card) => card.uid === 'three-acrobatics'), 'the committed card was not resolved')
+  assert(snapshotFor(room, b.token).endTurnDecided.includes(b.playerId), 'the connected end-turn vote was lost')
+  assert(!snapshotFor(room, b.token).endTurnDecided.includes(c.playerId), 'the third player was marked done')
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined, 'reconnect restored an already resolved preview')
+})
+
 check('the rng state never reaches a client', () => {
   // Leaking this predicts every future die roll and shuffle, and no player
   // could tell from the table that it had happened.
@@ -1106,6 +1312,7 @@ check('the whole play context reaches the engine, not just the target', () => {
   const topTwo = mine().draw.slice(0, 2).map((card) => card.uid)
   const discardBefore = mine().discard.length
 
+  apply(room, a.token, { kind: 'previewCard', cardUid: scryCard.uid })
   apply(room, a.token, {
     kind: 'playCard',
     cardUid: scryCard.uid,

@@ -348,14 +348,14 @@ check('the not-implemented list states the real deferred count', () => {
     ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
     fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
   }
-  const claimed = notes.match(/(\w+) more[^.]*?held back/i)
+  const claimed = notes.match(/(?:(\w+) more|No scan-read cards are)[^.]*?held back/i)
   assert(claimed !== null, 'the list should say how many cards are held back')
-  const stated = WORDS[claimed[1].toLowerCase()] ?? Number(claimed[1])
-  assert(Number.isFinite(stated), `could not read "${claimed[1]}" as a number`)
+  const stated = claimed[1] ? WORDS[claimed[1].toLowerCase()] ?? Number(claimed[1]) : 0
+  assert(Number.isFinite(stated), `could not read "${claimed[1] ?? 'No'}" as a number`)
   assertEqual(
     stated,
     DEFERRED_CARDS.length,
-    `state.ts says ${claimed[1]} cards are held back but DEFERRED_CARDS lists ${DEFERRED_CARDS.length}`,
+    `state.ts says ${claimed[1] ?? 'no'} cards are held back but DEFERRED_CARDS lists ${DEFERRED_CARDS.length}`,
   )
 })
 
@@ -371,34 +371,23 @@ check('the not-implemented list states the real enemy count', () => {
 })
 
 
-// The bug this exists to prevent: a card whose consuming clause comes AFTER a
-// clause that draws. The player nominates what to give up when they commit the
-// play, but the cards a draw puts in their hand do not exist yet at that
-// moment -- so a card asking for one of them can never be paid, and the play is
-// refused with nothing shown to explain it. Acrobatics ("Draw 3 cards. Discard
-// 1 card.") is exactly this and is held back in DEFERRED_CARDS until a play can
-// happen in two steps. Nothing stopped it being added, so this does.
-check('no live card asks for a card it has not dealt yet', () => {
-  const CONSUMING = new Set(['discard', 'exhaustFromHand'])
+// Post-draw discard now has a private two-step protocol. Post-draw exhaust does
+// not: allowing one into the live table would silently make it unplayable.
+check('no live card draws before exhausting from hand', () => {
   const offenders = []
   for (const def of Object.values(CARDS)) {
     for (const face of [def, def.upgrade ? { ...def, ...def.upgrade } : null]) {
-      if (!face?.effects) continue
       let drewFirst = false
-      for (const effect of face.effects) {
+      for (const effect of face?.effects ?? []) {
         if (effect.kind === 'draw') drewFirst = true
-        if (drewFirst && CONSUMING.has(effect.kind)) {
-          offenders.push(`${def.id} (${effect.kind} after draw)`)
-        }
+        if (drewFirst && effect.kind === 'exhaustFromHand') offenders.push(def.id)
       }
     }
   }
-  assertEqual(
-    offenders.length,
-    0,
-    `these cards cannot be paid for at the moment the player commits: ${offenders.join(', ')}`,
-  )
+  assertEqual(offenders.length, 0,
+    `these cards need a post-draw exhaust protocol: ${offenders.join(', ')}`)
 })
+
 
 // A condition that reads the enemy being struck can only be answered once a
 // target is chosen. `applyEffect` checks an effect-level `when` BEFORE it

@@ -387,11 +387,164 @@ try {
   })
   const annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
-  annLive.hand.push({ uid: 'online-overflow-dance', defId: 'blade_dance', upgraded: false })
-  annLive.energy = 1
-  annLive.shivs = 4
-  boLive.shivs = 1
+  annLive.hand = [
+    { uid: 'online-acrobatics', defId: 'acrobatics', upgraded: false },
+    { uid: 'online-existing-defend', defId: 'defend_ironclad', upgraded: false },
+  ]
+  annLive.draw = [
+    { uid: 'online-private-neutralize', defId: 'neutralize', upgraded: false },
+    { uid: 'online-private-defend', defId: 'defend_silent', upgraded: false },
+    { uid: 'online-private-strike', defId: 'strike_silent', upgraded: false },
+  ]
+  annLive.discard = []
+  annLive.energy = 6
+  annLive.miracles = 1
   boLive.miracles = 1
+  boLive.energy = 2
+  const previewCredentials = await credentials(b)
+  const publishPreviewFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishPreviewFixture.ok, 'could not publish the online preview fixture')
+  await a.getByRole('button', { name: 'Use Miracle on next card' }).click()
+  await a.getByRole('button', { name: /^Acrobatics,/ }).click()
+  const onlineAcrobatics = a.getByRole('dialog', { name: 'Choose 1 to discard' })
+  await onlineAcrobatics.waitFor()
+  const [privatePreview, teammatePreview] = await Promise.all([snapshot(a), snapshot(b)])
+  await b.getByRole('status').filter({ hasText: 'Ann is resolving a revealed card' }).waitFor()
+  const teammatePaused = await b.locator('.online-mutations').evaluate((table) => table.inert)
+  const ownerPaused = await a.locator('.online-mutations').evaluate((table) => table.inert)
+  const lockedEndTurn = await a.getByRole('button', { name: 'End turn' }).isDisabled()
+  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'preview reconnect'))
+  await a.locator('.connection--reconnecting').waitFor()
+  await a.locator('.connection--connected').waitFor()
+  await a.getByRole('dialog', { name: 'Choose 1 to discard' }).waitFor()
+  await a.getByRole('dialog', { name: 'Choose 1 to discard' })
+    .getByRole('button', { name: /^Neutralize,/ }).click()
+  let stagedRefreshAttempts = 0
+  let exhaustStagedRefreshes
+  const stagedRefreshesExhausted = new Promise((resolve) => { exhaustStagedRefreshes = resolve })
+  const stagedFailureStart = failures.length
+  await a.route(`**/api/rooms/${code}`, async (route) => {
+    stagedRefreshAttempts += 1
+    if (stagedRefreshAttempts === 3) exhaustStagedRefreshes()
+    await route.abort('connectionreset')
+  }, { times: 3 })
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
+  await a.getByRole('dialog', { name: 'Choose 1 to discard' })
+    .getByRole('button', { name: 'Discard selected card' }).click()
+  await stagedRefreshesExhausted
+  await onlineAcrobatics.waitFor()
+  await onlineAcrobatics.getByRole('button', { name: /^Neutralize,/ }).click()
+  for (let index = failures.length - 1; index >= stagedFailureStart; index -= 1) {
+    if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
+  }
+  await a.screenshot({ path: join(outDir, '02a-private-post-draw-choice.png'), fullPage: true })
+  await a.getByRole('dialog', { name: 'Choose 1 to discard' })
+    .getByRole('button', { name: 'Discard selected card' }).click()
+  await a.waitForFunction(() => document.querySelector('[role="dialog"]') === null)
+  const completedPreview = await snapshot(a)
+  check('online post-draw choices stay private, committed, and reconnectable', () => {
+    assertEqual(privatePreview.cardPreview?.kind, 'discard')
+    assert(privatePreview.cardPreview?.spendMiracle, 'the private reveal lost its committed Miracle')
+    assertEqual(teammatePreview.cardPreview, undefined)
+    assertEqual(teammatePreview.cardChoicePlayerId, privatePreview.you.playerId)
+    assert(!JSON.stringify(teammatePreview).includes('online-private-neutralize'), 'a private draw leaked')
+    assert(teammatePaused, 'teammate controls stayed enabled during the revealed choice')
+    assert(!ownerPaused, 'the revealing player could not resolve their own choice')
+    assert(lockedEndTurn, 'the revealing seat could abandon its committed card')
+    assertEqual(stagedRefreshAttempts, 3, 'the unknown staged play did not exhaust immediate reconciliation')
+    assertEqual(completedPreview.cardPreview, undefined)
+    const ann = completedPreview.run.combat.players.find((player) => player.id === completedPreview.you.playerId)
+    assertEqual(ann.energy, 6)
+    assertEqual(ann.miracles, 0)
+    assertDeepEqual(ann.hand.map((card) => card.uid),
+      ['online-existing-defend', 'online-private-defend', 'online-private-strike'])
+  })
+
+  const annBeforeScry = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeScry = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  annBeforeScry.hand = [
+    { uid: 'online-third-eye', defId: 'third_eye', upgraded: true },
+    ...annBeforeScry.hand,
+  ]
+  annBeforeScry.draw = [
+    { uid: 'online-scry-defend', defId: 'defend_watcher', upgraded: false },
+    { uid: 'online-scry-strike', defId: 'strike_watcher', upgraded: false },
+    { uid: 'online-scry-vigilance', defId: 'vigilance', upgraded: false },
+    { uid: 'online-scry-eruption', defId: 'eruption', upgraded: false },
+    { uid: 'online-scry-protect', defId: 'protect', upgraded: false },
+    { uid: 'online-scry-spare', defId: 'tranquility', upgraded: false },
+  ]
+  annBeforeScry.discard = []
+  annBeforeScry.energy = 3
+  annBeforeScry.block = 0
+  boBeforeScry.miracles = 1
+  const publishScryFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishScryFixture.ok, 'could not publish the online Scry fixture')
+  await a.getByRole('button', { name: /^Third Eye\+,/ }).click()
+  const onlineScry = a.getByRole('dialog', { name: 'Scry 5' })
+  await onlineScry.waitFor()
+  const [privateScry, teammateScry] = await Promise.all([snapshot(a), snapshot(b)])
+  const remotelyResolvedFrame = structuredClone(privateScry)
+  delete remotelyResolvedFrame.cardPreview
+  delete remotelyResolvedFrame.cardChoicePlayerId
+  const remotelyResolvedPlayer = remotelyResolvedFrame.run.combat.players
+    .find((player) => player.id === remotelyResolvedFrame.you.playerId)
+  remotelyResolvedPlayer.hand = remotelyResolvedPlayer.hand.filter((card) => card.uid !== 'online-third-eye')
+  await a.evaluate((frame) => {
+    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'snapshot', snapshot: frame }),
+    }))
+  }, remotelyResolvedFrame)
+  await onlineScry.waitFor({ state: 'hidden' })
+  await a.evaluate((frame) => {
+    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'snapshot', snapshot: frame }),
+    }))
+  }, privateScry)
+  await onlineScry.waitFor()
+  await onlineScry.getByRole('button', { name: /^Strike,/ }).click()
+  const changedScry = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  changedScry.draw = [changedScry.draw[1], changedScry.draw[0], ...changedScry.draw.slice(2)]
+  const scryOwnerCredentials = await credentials(a)
+  const refreshScry = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': scryOwnerCredentials.token },
+    body: JSON.stringify({ action: { kind: 'previewCard', cardUid: 'online-third-eye' } }),
+  })
+  assert(refreshScry.ok, 'could not refresh the changed online Scry window')
+  await onlineScry.getByRole('button', { name: 'Keep all' }).waitFor()
+  await onlineScry.getByRole('button', { name: /^Strike,/ }).click()
+  await a.screenshot({ path: join(outDir, '02b-private-scry-choice.png'), fullPage: true })
+  await onlineScry.getByRole('button', { name: 'Discard 1 and continue' }).click()
+  await onlineScry.waitFor({ state: 'hidden' })
+  const completedScry = await snapshot(a)
+  const authoritativeScry = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  check('online Scry is private and resolves against the authoritative draw pile', () => {
+    assertEqual(privateScry.cardPreview?.kind, 'scry')
+    assertEqual(teammateScry.cardPreview, undefined)
+    assertEqual(completedScry.cardPreview, undefined)
+    assert(!JSON.stringify(teammateScry).includes('online-scry-strike'), 'a private Scry leaked')
+    assertEqual(authoritativeScry.block, 3)
+    assertDeepEqual(authoritativeScry.draw.map((card) => card.uid),
+      ['online-scry-defend', 'online-scry-vigilance', 'online-scry-eruption', 'online-scry-protect', 'online-scry-spare'])
+    assertDeepEqual(authoritativeScry.discard.map((card) => card.uid), ['online-scry-strike', 'online-third-eye'])
+  })
+
+  const annAfterPreview = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boAfterPreview = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  annAfterPreview.hand.push({ uid: 'online-overflow-dance', defId: 'blade_dance', upgraded: false })
+  annAfterPreview.energy = 1
+  annAfterPreview.shivs = 4
+  boAfterPreview.shivs = 1
+  boAfterPreview.miracles = 1
   Object.assign(liveRoom.run.combat.enemies[0], { hp: 1, maxHp: 1, block: 0, dead: false })
   Object.assign(liveRoom.run.combat.enemies[1], { hp: 5, maxHp: 5, block: 0, dead: false })
   const bCredentials = await credentials(b)
@@ -866,6 +1019,50 @@ try {
   await recoveryTab.screenshot({ path: join(outDir, '07-durable-seat-recovery.png'), fullPage: true })
   await b.close()
   b = recoveryTab
+
+  const abandonedCombat = liveRoom.run.combat
+  const abandonedAnn = abandonedCombat.players.find((player) => player.name === 'Ann')
+  const abandonedBo = abandonedCombat.players.find((player) => player.name === 'Bo')
+  abandonedCombat.phase = 'player'
+  abandonedAnn.dead = false
+  abandonedAnn.hp = Math.max(1, abandonedAnn.hp)
+  abandonedAnn.hand = [{ uid: 'abandoned-acrobatics', defId: 'acrobatics', upgraded: false }]
+  abandonedAnn.draw = [0, 1, 2].map((index) => ({
+    uid: `abandoned-draw-${index}`, defId: 'defend_silent', upgraded: false,
+  }))
+  abandonedAnn.discard = []
+  abandonedAnn.energy = 2
+  abandonedAnn.miracles = 1
+  abandonedBo.dead = false
+  abandonedBo.hp = Math.max(1, abandonedBo.hp)
+  liveRoom.cardPreviews = undefined
+  liveRoom.endTurnReady = undefined
+  liveRoom.endTurnAbilities = undefined
+  liveRoom.endTurnOrders = undefined
+  const abandonedCredentials = await credentials(a)
+  const publishAbandonedFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': abandonedCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishAbandonedFixture.ok, 'could not publish the disconnected reveal fixture')
+  await a.getByRole('button', { name: /^Acrobatics,/ }).click()
+  await b.getByRole('status').filter({ hasText: 'Ann is resolving a revealed card' }).waitFor()
+  await a.close()
+  const recoveryButton = b.getByRole('button', { name: 'Resolve card and end turn' })
+  await recoveryButton.waitFor()
+  const lockedBeforeRecovery = await b.locator('.online-mutations').evaluate((table) => table.inert)
+  await b.screenshot({ path: join(outDir, '08-disconnected-reveal-recovery.png'), fullPage: true })
+  await recoveryButton.click()
+  await recoveryButton.waitFor({ state: 'hidden' })
+  const afterAbandonedRecovery = await snapshot(b)
+  check('a teammate can resolve a reveal abandoned by a disconnected player', () => {
+    assert(lockedBeforeRecovery, 'ordinary game controls unlocked around an abandoned private reveal')
+    assertEqual(afterAbandonedRecovery.cardChoicePlayerId, undefined)
+    assertEqual(liveRoom.cardPreviews?.[abandonedAnn.id], undefined)
+    assert(!liveRoom.run.combat.players.find((player) => player.id === abandonedAnn.id).hand
+      .some((card) => card.uid === 'abandoned-acrobatics'))
+  })
 
   check('the online flow has no browser errors', () => {
     assertEqual(failures.length, 0, failures.join('\n'))

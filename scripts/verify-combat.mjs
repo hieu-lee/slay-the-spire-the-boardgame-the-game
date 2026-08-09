@@ -7,6 +7,7 @@ import {
   enemyTurn,
   livingEnemies,
   playCard,
+  previewCardChoice,
   resolveEnemyTargets,
   spendMiracle,
   spendShiv,
@@ -1713,9 +1714,9 @@ check('every newly transcribed card does what its face prints', () => {
   const LEGACY = new Set([
     'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit', 'anger', 'flex', 'iron_wave',
     'metallicize', 'demon_form', 'feel_no_pain', 'dark_embrace',
-    'strike_silent', 'defend_silent', 'neutralize', 'survivor',
+    'strike_silent', 'defend_silent', 'neutralize', 'survivor', 'acrobatics',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
-    'strike_watcher', 'defend_watcher', 'eruption', 'vigilance',
+    'strike_watcher', 'defend_watcher', 'eruption', 'vigilance', 'third_eye',
     'daze', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
     'shame', 'writhe', 'ascenders_bane',
   ])
@@ -1834,6 +1835,83 @@ check('Iron Wave base gains both effects and its upgrade requires one printed mo
     assertEqual(played.enemies[0].hp, 20 - damage, `mode ${mode} damage`)
     assertEqual(played.players[0].block, block, `mode ${mode} Block`)
     assertEqual(played.players[0].energy, 2, `mode ${mode} energy`)
+  }
+})
+
+check('Acrobatics privately previews its draw, then atomically discards from the drawn hand', () => {
+  for (const upgraded of [false, true]) {
+    const acrobatics = instance('acrobatics', upgraded)
+    const deck = Array.from({ length: 4 }, () => instance('defend_silent'))
+    const state = combat(
+      [makePlayer({ character: 'silent', hand: [acrobatics], draw: deck })],
+      [makeEnemy()],
+    )
+    const before = JSON.stringify(state)
+    const preview = previewCardChoice(state, 'p1', acrobatics.uid)
+    const drawn = upgraded ? 4 : 3
+    assertEqual(JSON.stringify(state), before, 'previewing must not change piles or RNG')
+    assertEqual(preview?.kind, 'discard')
+    assertDeepEqual(preview?.cards.map((card) => card.uid), deck.slice(0, drawn).map((card) => card.uid))
+
+    assertEqual(
+      playCard(state, 'p1', acrobatics.uid, { enemyUid: null, playerId: null, discardUids: [] }),
+      state,
+      'the play cannot skip its post-draw discard',
+    )
+    const discarded = deck[drawn - 1]
+    const played = playCard(state, 'p1', acrobatics.uid, {
+      enemyUid: null, playerId: null, discardUids: [discarded.uid],
+    })
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid),
+      deck.slice(0, drawn - 1).map((card) => card.uid))
+    assertEqual(played.players[0].discard[0].uid, discarded.uid)
+    assertEqual(played.players[0].discard[1].uid, acrobatics.uid)
+    assertEqual(played.players[0].energy, 2)
+  }
+
+  const acrobatics = instance('acrobatics')
+  const top = instance('strike_silent')
+  const shuffled = [instance('defend_silent'), instance('neutralize')]
+  const state = combat([makePlayer({ hand: [acrobatics], draw: [top], discard: shuffled })], [makeEnemy()])
+  const preview = previewCardChoice(state, 'p1', acrobatics.uid)
+  const chosen = preview.cards.at(-1)
+  const played = playCard(state, 'p1', acrobatics.uid, {
+    enemyUid: null, playerId: null, discardUids: [chosen.uid],
+  })
+  assertDeepEqual(played.players[0].hand.map((card) => card.uid),
+    preview.cards.filter((card) => card.uid !== chosen.uid).map((card) => card.uid),
+    'preview and play must perform the same reshuffle')
+})
+
+check('Third Eye previews only its Scry window and validates every chosen card', () => {
+  for (const upgraded of [false, true]) {
+    const thirdEye = instance('third_eye', upgraded)
+    const deck = Array.from({ length: 6 }, () => instance('defend_watcher'))
+    const state = combat(
+      [makePlayer({ character: 'watcher', hand: [thirdEye], draw: deck })],
+      [makeEnemy()],
+    )
+    const before = JSON.stringify(state)
+    const preview = previewCardChoice(state, 'p1', thirdEye.uid)
+    const looked = upgraded ? 5 : 3
+    assertEqual(JSON.stringify(state), before, 'Scry preview must not expose itself by mutating state')
+    assertEqual(preview?.kind, 'scry')
+    assertDeepEqual(preview?.cards.map((card) => card.uid), deck.slice(0, looked).map((card) => card.uid))
+
+    for (const bad of [['not-revealed'], [deck[0].uid, deck[0].uid]]) {
+      assertEqual(playCard(state, 'p1', thirdEye.uid, {
+        enemyUid: null, playerId: null, scryDiscardUids: bad,
+      }), state, 'Scry must refuse a forged or duplicate reveal choice')
+    }
+    const tossed = [deck[1].uid, deck[looked - 1].uid]
+    const played = playCard(state, 'p1', thirdEye.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: tossed,
+    })
+    assertEqual(played.players[0].block, upgraded ? 3 : 2)
+    assertDeepEqual(played.players[0].draw.map((card) => card.uid),
+      deck.filter((card) => !tossed.includes(card.uid)).map((card) => card.uid))
+    assertDeepEqual(played.players[0].discard.slice(0, 2).map((card) => card.uid), tossed)
+    assertEqual(played.players[0].discard.at(-1).uid, thirdEye.uid)
   }
 })
 

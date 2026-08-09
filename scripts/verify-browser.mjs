@@ -737,6 +737,77 @@ check('Iron Wave+ commits its printed mode and target as one play', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-acrobatics', defId: 'acrobatics', upgraded: false }]
+  player.draw = [
+    { uid: 'ui-acro-neutralize', defId: 'neutralize', upgraded: false },
+    { uid: 'ui-acro-defend', defId: 'defend_silent', upgraded: false },
+    { uid: 'ui-acro-strike', defId: 'strike_silent', upgraded: false },
+    { uid: 'ui-acro-spare', defId: 'backflip', upgraded: false },
+  ]
+  player.discard = []
+  player.energy = 3
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Acrobatics,/ }).click()
+const acrobaticsDialog = page.getByRole('dialog', { name: 'Choose 1 to discard' })
+await acrobaticsDialog.waitFor()
+await acrobaticsDialog.getByRole('button', { name: /^Neutralize,/ }).click()
+await page.waitForTimeout(250)
+await shot('06f-acrobatics-post-draw-choice')
+await acrobaticsDialog.getByRole('button', { name: 'Discard selected card' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 2)
+const acrobatics = await readState()
+check('Acrobatics reveals its draw before committing the chosen discard', () => {
+  assertDeepEqual(acrobatics.players[0].hand.map((card) => card.uid), ['ui-acro-defend', 'ui-acro-strike'])
+  assertDeepEqual(acrobatics.players[0].discard.map((card) => card.uid), ['ui-acro-neutralize', 'ui-acrobatics'])
+  assertEqual(acrobatics.players[0].energy, 2)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-third-eye', defId: 'third_eye', upgraded: true }]
+  player.draw = [
+    { uid: 'ui-scry-defend', defId: 'defend_watcher', upgraded: false },
+    { uid: 'ui-scry-strike', defId: 'strike_watcher', upgraded: false },
+    { uid: 'ui-scry-vigilance', defId: 'vigilance', upgraded: false },
+    { uid: 'ui-scry-eruption', defId: 'eruption', upgraded: false },
+    { uid: 'ui-scry-protect', defId: 'protect', upgraded: false },
+    { uid: 'ui-scry-spare', defId: 'tranquility', upgraded: false },
+  ]
+  player.discard = []
+  player.energy = 3
+  player.block = 0
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Third Eye\+,/ }).click()
+const scryDialog = page.getByRole('dialog', { name: 'Scry 5' })
+await scryDialog.waitFor()
+await scryDialog.getByRole('button', { name: /^Strike,/ }).click()
+await scryDialog.getByRole('button', { name: /^Eruption,/ }).click()
+const endTurnLocked = await page.getByRole('button', { name: 'End turn' }).isDisabled()
+const cancelHidden = await page.getByRole('button', { name: 'Cancel' }).count()
+await page.waitForTimeout(250)
+await shot('06g-third-eye-scry-choice')
+await scryDialog.getByRole('button', { name: 'Discard 2 and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const thirdEye = await readState()
+check('Third Eye locks the revealed play and keeps unselected cards in order', () => {
+  assert(endTurnLocked, 'a revealed card could be abandoned by ending the turn')
+  assertEqual(cancelHidden, 0, 'a revealed draw could be peeked and cancelled')
+  assertEqual(thirdEye.players[0].block, 3)
+  assertDeepEqual(thirdEye.players[0].draw.map((card) => card.uid),
+    ['ui-scry-defend', 'ui-scry-vigilance', 'ui-scry-protect', 'ui-scry-spare'])
+  assertDeepEqual(thirdEye.players[0].discard.map((card) => card.uid),
+    ['ui-scry-strike', 'ui-scry-eruption', 'ui-third-eye'])
+  assertEqual(thirdEye.players[0].energy, 2)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

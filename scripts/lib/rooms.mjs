@@ -15,9 +15,11 @@
 // single writer — Node's single thread does the rest.
 import { randomBytes } from 'node:crypto'
 import {
+  CAPS,
   activatePotion,
   advanceAct,
   cardDef,
+  cardNeedsChoicePreview,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
@@ -33,6 +35,7 @@ import {
   leaveRoom,
   overflowShivCount,
   playCard,
+  previewCardChoice,
   potionDef,
   revealCardReward,
   resolveCampfire,
@@ -257,6 +260,67 @@ export function apply(room, seatToken, action) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
 
+  const staged = room.cardPreviews?.[seat.playerId]
+  const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
+  if (staged && (!player?.hand.some((card) => card.uid === staged.cardUid) || room.run.combat?.phase !== 'player')) {
+    room.cardPreviews = { ...room.cardPreviews }
+    delete room.cardPreviews[seat.playerId]
+  }
+  const locked = room.cardPreviews?.[seat.playerId]
+  if (locked && !(
+    (action?.kind === 'previewCard' || action?.kind === 'playCard') && action.cardUid === locked.cardUid
+  )) fail('Finish the revealed card before taking another action')
+  const foreignLocks = Object.keys(room.cardPreviews ?? {}).filter((playerId) => playerId !== seat.playerId)
+  if (foreignLocks.length > 0 && !(
+    action?.kind === 'endTurn' && foreignLocks.every((playerId) =>
+      room.seats.find((candidate) => candidate.playerId === playerId)?.connected === false)
+  )) {
+    // ponytail: this global lock avoids alternate shared-RNG reveals; narrow it
+    // to RNG-mutating actions only if simultaneous-play latency becomes a problem.
+    fail('Wait for the revealed card to finish')
+  }
+
+  if (action?.kind === 'previewCard') {
+    if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
+    const held = player?.hand.find((card) => card.uid === action.cardUid)
+    const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
+    const spendMiracle = action.spendMiracle === true
+    if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
+      def.cost === 'X' || def.cost === 0)) fail('That Miracle cannot pay for this card')
+    if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
+    const preview = room.run.combat
+      ? previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
+      : null
+    if (!preview) {
+      if (locked) {
+        room.cardPreviews = { ...room.cardPreviews }
+        delete room.cardPreviews[seat.playerId]
+      }
+      fail('That card cannot reveal a choice now')
+    }
+    room.cardPreviews = {
+      ...room.cardPreviews,
+      [seat.playerId]: { cardUid: action.cardUid, spendMiracle, ...preview },
+    }
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+
+  if (action?.kind === 'playCard') {
+    const held = player?.hand.find((card) => card.uid === action.cardUid)
+    if (held && cardNeedsChoicePreview(faceOf(cardDef(held.defId), held.upgraded))) {
+      if (!locked || locked.cardUid !== action.cardUid) fail('Reveal this card before resolving its choice')
+      if ((action.spendMiracle === true) !== locked.spendMiracle) {
+        fail('The final card payment does not match its reveal')
+      }
+      const preview = previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
+      if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
+        preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
+        fail('The revealed cards changed; reveal them again')
+      }
+    }
+  }
+
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
@@ -269,6 +333,16 @@ export function apply(room, seatToken, action) {
   if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
 
   room.run = next
+  if (action?.kind === 'playCard' && locked?.cardUid === action.cardUid) {
+    room.cardPreviews = { ...room.cardPreviews }
+    delete room.cardPreviews[seat.playerId]
+  }
+  if (room.cardPreviews) {
+    const combat = next.combat
+    room.cardPreviews = Object.fromEntries(Object.entries(room.cardPreviews).filter(([playerId, preview]) =>
+      combat?.phase === 'player' && combat.players
+        .find((candidate) => candidate.id === playerId)?.hand.some((card) => card.uid === preview.cardUid)))
+  }
   // Any accepted combat action can change a hand, including an ally's. Orders
   // collected before that action are stale, so everyone confirms again.
   room.endTurnOrders = undefined
@@ -289,8 +363,17 @@ export function apply(room, seatToken, action) {
 }
 
 function endTurn(room, seat, _action, seatToken) {
-  const combat = room.run?.combat
+  let combat = room.run?.combat
   if (!combat) fail('No combat in progress')
+  const previewOwners = Object.keys(room.cardPreviews ?? {})
+  if (previewOwners.some((playerId) =>
+    room.seats.find((candidate) => candidate.playerId === playerId)?.connected !== false)) {
+    fail('Finish every revealed card before ending the turn')
+  }
+  if (previewOwners.length > 0) {
+    if (!resolveAbandonedPreviews(room)) fail('The disconnected revealed card could not be resolved')
+    combat = room.run?.combat
+  }
   if (room.endTurnAbilities) fail('The party is already ordering end-of-turn abilities')
   if (combat.phase !== 'player') fail('The party is not taking its turn')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
@@ -302,11 +385,19 @@ function endTurn(room, seat, _action, seatToken) {
 }
 
 function settleEndTurn(room) {
-  const combat = room.run?.combat
+  let combat = room.run?.combat
   if (!combat || combat.phase !== 'player' || !room.endTurnReady) return null
+  const previewOwners = Object.keys(room.cardPreviews ?? {})
+  const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
+  if (previewOwners.length > 0) {
+    if (previewOwners.some((playerId) => connected.has(playerId)) || connected.size === 0 ||
+      [...connected].some((playerId) => !room.endTurnReady[playerId])) return previewOwners
+    if (!resolveAbandonedPreviews(room)) return previewOwners
+    combat = room.run?.combat
+    if (!combat || !room.endTurnReady) return null
+  }
   if (room.endTurnAbilities) return null
   if (!room.seats.some((seat) => seat.connected)) return null
-  const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
   const waiting = combat.players
     .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnReady[player.id])
     .map((player) => player.id)
@@ -324,6 +415,27 @@ function settleEndTurn(room) {
   }
   room.endTurnOrders = undefined
   return null
+}
+
+function resolveAbandonedPreviews(room) {
+  for (const [playerId, preview] of Object.entries(room.cardPreviews ?? {})) {
+    const seat = room.seats.find((candidate) => candidate.playerId === playerId)
+    if (!seat || seat.connected) continue
+    try {
+      apply(room, seat.token, {
+        kind: 'playCard',
+        cardUid: preview.cardUid,
+        enemyUid: null,
+        discardUids: preview.kind === 'discard' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
+        scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
+        spendMiracle: preview.spendMiracle,
+        preflight: true,
+      })
+    } catch {
+      return false
+    }
+  }
+  return true
 }
 
 function endTurnCoordinator(room) {
@@ -614,6 +726,10 @@ function dispatch(run, seat, action) {
       if (!card) fail('That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, action)
+      const scryDiscardUids = uidList(action.scryDiscardUids)
+      if (action.scryDiscardUids !== undefined && (
+        !Array.isArray(action.scryDiscardUids) || scryDiscardUids.length !== action.scryDiscardUids.length
+      )) fail('Scry choices must be a list of card ids')
       const context = {
         enemyUid: action.enemyUid ?? null,
         playerId: action.playerId ?? seat.playerId,
@@ -628,7 +744,7 @@ function dispatch(run, seat, action) {
         // Both of these are real choices the rules grant (p.16, p.24). Dropping
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
-        scryDiscardUids: uidList(action.scryDiscardUids),
+        scryDiscardUids,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
@@ -779,6 +895,10 @@ export function snapshotFor(room, seatToken) {
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,
+    cardPreview: viewerId !== null && room.cardPreviews?.[viewerId]
+      ? structuredClone(room.cardPreviews[viewerId])
+      : undefined,
+    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0],
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }

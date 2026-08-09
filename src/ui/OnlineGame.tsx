@@ -208,6 +208,8 @@ export function OnlineGame({ onLocal }: Props) {
 
   const run = snapshot.run
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
+  const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
+  const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const combat = run.combat ? {
@@ -237,9 +239,19 @@ export function OnlineGame({ onLocal }: Props) {
       </header>
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
+      {foreignCardChoice && cardChoiceSeat?.connected
+        ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving a revealed card…</p>
+        : null}
+      {foreignCardChoice && cardChoiceSeat && !cardChoiceSeat.connected ? (
+        <p className="online-banner" role="status">
+          {cardChoiceSeat.name} disconnected during a revealed card.{' '}
+          <button type="button" onClick={() => room.act({ kind: 'endTurn' })}>Resolve card and end turn</button>
+        </p>
+      ) : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={room.connection !== 'connected' || undefined} aria-disabled={room.connection !== 'connected' || undefined}>
+      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || undefined}
+        aria-disabled={room.connection !== 'connected' || foreignCardChoice || undefined}>
       {run.phase === 'combat' && combat ? (
         <CombatScreen
           state={combat}
@@ -250,6 +262,7 @@ export function OnlineGame({ onLocal }: Props) {
           savedEndTurnOrder={snapshot.endTurnOrder}
           endTurnCoordinatorId={snapshot.endTurnCoordinatorId}
           savedDiscardOrder={snapshot.discardOrder}
+          cardPreview={snapshot.cardPreview}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}
           onAction={room.act}

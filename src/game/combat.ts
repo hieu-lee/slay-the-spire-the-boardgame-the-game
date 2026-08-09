@@ -27,7 +27,7 @@ import type { Trigger, TriggerEvent } from './triggers.ts'
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
-import type { Enemy, OrbType, Player } from './types.ts'
+import type { CardInstance, Enemy, OrbType, Player } from './types.ts'
 
 export type CombatPhase =
   | 'player'
@@ -262,6 +262,13 @@ export type PlayContext = {
   evokeIndex?: number
   /** A queued evoke named an enemy killed by an earlier effect. */
   invalidEvokeTarget?: boolean
+  /** A Scry named a card outside the cards it actually revealed. */
+  invalidScryChoice?: boolean
+}
+
+export type CardChoicePreview = {
+  kind: 'discard' | 'scry'
+  cards: CardInstance[]
 }
 
 export type PotionContext = {
@@ -709,9 +716,16 @@ function applyEffect(
     case 'scry': {
       // Scry shows the top X and lets the player bin any of them; the rest go
       // back on top IN THE SAME ORDER (p.24).
-      const looked = Math.min(effect.amount, actor.draw.length)
+      const revealed = actor.draw.slice(0, Math.max(0, effect.amount))
+      const chosen = context.scryDiscardUids ?? []
+      if (new Set(chosen).size !== chosen.length ||
+        chosen.some((uid) => !revealed.some((card) => card.uid === uid))) {
+        context.invalidScryChoice = true
+        return
+      }
+      const looked = revealed.length
       const piles = scry({ draw: actor.draw, hand: actor.hand, discard: actor.discard },
-        effect.amount, context.scryDiscardUids ?? [])
+        effect.amount, chosen)
       actor.draw = piles.draw
       actor.discard = piles.discard
       // An empty draw pile means no cards were looked at, so nothing scried.
@@ -830,6 +844,52 @@ function allocate(
   if (taken.length < required) context.shortfall = true
   for (const uid of taken) spent.add(uid)
   return taken
+}
+
+/** Whether playing this card reveals hidden cards before asking for a choice. */
+export function cardNeedsChoicePreview(def: CardDef): boolean {
+  let drew = false
+  for (const effect of def.effects) {
+    if (effect.kind === 'draw') drew = true
+    if (effect.kind === 'scry' || (drew && effect.kind === 'discard')) return true
+  }
+  return false
+}
+
+/**
+ * Privately previews a post-reveal choice without advancing the real RNG or
+ * changing combat. The played card is held outside every pile, as it will be
+ * during the eventual atomic play.
+ */
+export function previewCardChoice(
+  state: CombatState,
+  playerId: string,
+  cardUid: string,
+): CardChoicePreview | null {
+  if (state.phase !== 'player') return null
+  const player = findPlayer(state, playerId)
+  const held = player?.hand.find((card) => card.uid === cardUid)
+  if (!player || player.dead || !held) return null
+  const def = faceOf(cardDef(held.defId), held.upgraded)
+  const cost = def.cost === 'X' ? player.energy : def.cost
+  if (def.unplayable || cost > player.energy || !cardNeedsChoicePreview(def)) return null
+
+  const preview = clone(state)
+  const actor = findPlayer(preview, playerId)!
+  actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
+  let drew = false
+  for (const effect of def.effects) {
+    if (effect.when && !holds(effect.when, preview, actor)) continue
+    if (effect.kind === 'draw') {
+      drawInto(preview, actor, amountOf(effect.amount, preview, actor))
+      drew = true
+    } else if (effect.kind === 'scry') {
+      return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+    } else if (drew && effect.kind === 'discard') {
+      return { kind: 'discard', cards: actor.hand }
+    }
+  }
+  return null
 }
 
 /**
@@ -1110,6 +1170,7 @@ export function playCard(
     invalidShivTarget: false,
     evokeIndex: 0,
     invalidEvokeTarget: false,
+    invalidScryChoice: false,
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -1122,7 +1183,7 @@ export function playCard(
   // card's effects for nothing. The whole play is resolved into a clone first,
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
-  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget) return state
+  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget || ctx.invalidScryChoice) return state
 
   if (def.exhaust) {
     exhaustCards(next, actor, [held])

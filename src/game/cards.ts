@@ -627,6 +627,11 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+  acrobatics: card({
+    id: 'acrobatics', name: 'Acrobatics', owner: 'silent', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'draw', amount: 3 }, { kind: 'discard', amount: 1 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'discard', amount: 1 }] },
+  }),
 
   ball_lightning: card({
     id: 'ball_lightning',
@@ -1033,6 +1038,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 3, toChosen: true }],
     upgrade: { effects: [{ kind: 'block', amount: 4, toChosen: true }] },
   }),
+  third_eye: card({
+    id: 'third_eye', name: 'Third Eye', owner: 'watcher', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'block', amount: 2 }, { kind: 'scry', amount: 3 }],
+    upgrade: { effects: [{ kind: 'block', amount: 3 }, { kind: 'scry', amount: 5 }] },
+  }),
   tranquility: card({
     id: 'tranquility',
     name: 'Tranquility',
@@ -1195,32 +1205,8 @@ export const CARDS: Record<string, CardDef> = {
   }),
 }
 
-/**
- * Cards read off the scans that the engine cannot yet express, and what each
- * one is waiting on. Kept as a list rather than as half-working definitions,
- * because a card that silently drops a clause is worse than a missing card: it
- * plays, it looks right, and it is wrong.
- *
- * - A choice that can only be made AFTER the same card reveals cards
- *   (Third Eye, Acrobatics). Both need a play to happen in two steps, and a
- *   play is atomic here: one validated message carries every choice, which is
- *   what lets the server check a move without holding half-resolved state
- *   between round trips. Third Eye must show the top of the draw pile before
- *   asking which of it to bin; Acrobatics reads "Draw 3 cards. Discard 1
- *   card." and, played as the last card in hand, can only be paid from the
- *   three it just drew. Shipping either means a card that looks right and
- *   misbehaves — Third Eye becomes Block-and-nothing, and Acrobatics is
- *   refused outright with no explanation. Note the local UI could technically
- *   read ahead, since it holds the whole run in memory; it must not. The draw
- *   pile is face down to everyone including its owner, which is why
- *   `rooms.mjs` redacts it, and a client that peeks would be cheating locally
- *   and broken the moment a real server enforces the same rule. Both come back
- *   with a staging step that reveals first and asks second.
- */
-export const DEFERRED_CARDS = [
-  'acrobatics',
-  'third_eye',
-] as const
+/** Scan-read cards whose complete printed effect is not live yet. */
+export const DEFERRED_CARDS = [] as const
 
 /** The nine base Curses plus the Ascension 5 setup Curse. */
 Object.assign(CARDS, {
