@@ -11,6 +11,7 @@
 //      namespace, and constructor parameter properties.
 import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { CARDS, DEFERRED_CARDS } from '../src/game/cards.ts'
+import { RELICS, POTIONS } from '../src/game/relics.ts'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -370,6 +371,68 @@ check('no live card asks for a card it has not dealt yet', () => {
     offenders.length,
     0,
     `these cards cannot be paid for at the moment the player commits: ${offenders.join(', ')}`,
+  )
+})
+
+// A condition that reads the enemy being struck can only be answered once a
+// target is chosen. `applyEffect` checks an effect-level `when` BEFORE it
+// resolves the target scope -- it has to, since a clause that does not happen
+// picks no target -- so `targetPoisoned` there has no enemy to read and comes
+// back false every time. The clause would simply never fire, and nothing about
+// the card would look wrong. Target-reading conditions belong inside an
+// `Amount`, where the resolver runs them per enemy.
+check('no condition reads a target that its reader was never handed', () => {
+  const TARGET_READING = new Set(['targetPoisoned'])
+  const BOARD_READING = new Set(['hasShiv', 'discardTopCosts', 'dieShows'])
+  // A hardcoded list quietly stops covering the condition somebody adds next,
+  // and this one is the whole check: an unclassified kind would be treated as
+  // safe everywhere. So every variant of the `Condition` union has to be filed
+  // under exactly one of the two sets above, read off the source rather than
+  // remembered. The engine's own `holds` switch is exhaustive by type; this is
+  // the same guarantee for a list TypeScript cannot see.
+  const union = readFileSync(new URL('../src/game/cards.ts', import.meta.url), 'utf8')
+    .split('export type Condition =')[1]
+    .split('export type CountOf')[0]
+  const declared = [...union.matchAll(/kind: '(\w+)'/g)].map((match) => match[1])
+  assert(declared.length > 0, 'the Condition union should have parsed')
+  const unfiled = declared.filter((kind) => !TARGET_READING.has(kind) && !BOARD_READING.has(kind))
+  assertEqual(
+    unfiled.length,
+    0,
+    `these conditions are not classified as target- or board-reading: ${unfiled.join(', ')}`,
+  )
+
+  // `hit.amount` is the ONLY place the resolver passes an enemy through. The
+  // clause-level `when` runs before a target is picked; `hit.times` is read
+  // once for the whole attack; `block.amount` is worked out off the caster's
+  // board. A target-reading condition in any of those returns false for ever.
+  const offenders = []
+  const blame = (def, where, condition) => {
+    if (condition && TARGET_READING.has(condition.kind)) {
+      offenders.push(`${def.id} (${where} gated on ${condition.kind})`)
+    }
+  }
+  const inspect = (def, effects) => {
+    for (const effect of effects ?? []) {
+      blame(def, `${effect.kind} clause`, effect.when)
+      if (effect.kind === 'hit') blame(def, 'hit times', effect.times?.bonus?.when)
+      if (effect.kind === 'block') blame(def, 'block amount', effect.amount?.bonus?.when)
+    }
+  }
+  for (const def of Object.values(CARDS)) {
+    for (const face of [def, def.upgrade ? { ...def, ...def.upgrade } : null]) {
+      inspect(def, face?.effects)
+    }
+  }
+  // Relics and potions carry the same `Effect` list through the same resolver,
+  // so the same condition in the same place fails the same way. Checking only
+  // cards left the other two thirds of the vocabulary's users unguarded.
+  for (const def of Object.values(RELICS)) inspect(def, def.effects)
+  for (const def of Object.values(POTIONS)) inspect(def, def.effects)
+  assertEqual(
+    offenders.length,
+    0,
+    `these conditions would silently never fire: ${offenders.join(', ')}`,
   )
 })
 

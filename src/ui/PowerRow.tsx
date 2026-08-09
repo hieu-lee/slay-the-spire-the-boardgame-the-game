@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { CardDef } from '../game/cards.ts'
+import type { Amount, CardDef } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
 
@@ -235,17 +235,35 @@ const WHEN: Record<string, string> = {
   onShuffle: 'whenever you shuffle',
 }
 
+/**
+ * A printed number, or a description of the one the board works out.
+ *
+ * `hit` and `block` amounts are no longer plain numbers, and a template literal
+ * accepts an object without complaint — so the compiler stopped being able to
+ * catch this and the row would have read "[object Object] Block". No Power
+ * carries a computed amount today; this is here so that the first one to do so
+ * reads as something rather than as a bug.
+ */
+function amountLabel(amount: Amount): string {
+  if (typeof amount === 'number') return String(amount)
+  const parts = [String(amount.base)]
+  if (amount.per) parts.push(`per ${amount.per}`)
+  if (amount.bonus) parts.push(`+${amount.bonus.plus} conditional`)
+  return parts.join(' ')
+}
+
 function describeEffect(effect: CardDef['effects'][number]): string {
   switch (effect.kind) {
     case 'block':
-      return `${effect.amount} Block`
+      return `${amountLabel(effect.amount)} Block`
     case 'gainStrength':
       return `${effect.amount} Strength`
     case 'draw':
       return `draw ${effect.amount}`
     case 'damage':
-    case 'hit':
       return `${effect.amount} damage`
+    case 'hit':
+      return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':
       return `${effect.amount} Energy`
     case 'heal':

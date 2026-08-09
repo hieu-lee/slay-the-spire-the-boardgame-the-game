@@ -13,10 +13,16 @@
 //   - A trigger chain is cut off after 8 levels and the rest are dropped in
 //     silence. No printed card chains that deep; a future one would look like
 //     a Power quietly under-performing.
-//   - Card effects cannot scale off game state (per Orb, per Miracle, per card
-//     in hand) and X-cost cards cannot read the energy spent. Two of the
-//     fifteen held-back cards need it outright (Barrage, Charge Battery), and
-//     it is the single mechanic that blocks the most of the untranscribed set.
+//   - Effects can now read the board: a clause can carry a condition, and an
+//     amount can carry a bonus or a count. Four questions are transcribed
+//     (`Condition` in cards.ts) and one count, Orbs. Per-Miracle, per-card-in-
+//     hand and per-Strength counts are not there yet, and neither is X-cost.
+//     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
+//     well, because the readers disagree about what it means: `playCard`
+//     charges the player's whole energy pool, the hand always shows the card
+//     as affordable, the cost badge prints "X", and a `discardTopCosts` check
+//     matches it against no number at all. Spending X needs the player to
+//     choose an amount and nothing collects one.
 //   - Retain and Ethereal are not modelled.
 //   - Enemy special abilities are stored as prose on `unimplementedAbility` and
 //     do NOT resolve: Curl Up, Spore Cloud, Enraged.
@@ -25,12 +31,18 @@
 //   - Event, treasure and merchant rooms show a placeholder screen.
 //   - Relics fire on their triggers, but there is no way to GAIN one during a
 //     run, and potions have no trigger and cannot be drunk at all.
-//   - 35 cards are live of 381. Fifteen more have been read off the scans and
+//   - There are no card reward decks. `cardRewards` and `rareRewards` are
+//     declared on Player, initialised empty, and never written, so the only
+//     cards that ever enter a deck are the starters. "Live" below means the
+//     engine resolves the card correctly, NOT that a run can draw it; most
+//     live reward cards are reachable only from verify scripts and the debug
+//     bridge. A campfire can upgrade starters; nothing adds to the deck.
+//   - 41 cards are live of 381. Nine more have been read off the scans and
 //     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
-//     — Retain, die-conditionals, conditional bonuses, counting effects, modal
-//     faces, temporary Strength, deck manipulation, and choices that can only
-//     be made after the same card reveals cards. The other ~330 have not been
-//     transcribed at all: their names and printed costs are known from
+//     — Retain, modal faces, temporary Strength, deck manipulation, an evoke
+//     the UI cannot ask about, and choices that can only be made after the
+//     same card reveals cards. The other ~331 have not been transcribed at
+//     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 9 enemies of roughly 60; no events, no shops.
 //   - Ascension modifiers other than the Act-heal are not applied.
@@ -38,7 +50,7 @@
 //     the choice, but the local UI never collects it, so a client-side play
 //     always evokes the first occupied slot. Nor can the two evokes of one
 //     card pick different targets, which p.16 allows. End-of-turn Lightning
-//     orbs are worse: `endPlayerTurn` takes no context at all, so every one of
+//     orbs are worse: `beginEndPlayerTurn` takes no orb-target context, so every one of
 //     them hits the first living enemy, and p.16 says explicitly that they
 //     "can each have a different target".
 //   - Abilities triggered BY a card fire during its resolution rather than
@@ -48,11 +60,15 @@
 //     the case that would is a Power that draws when you gain Block, played
 //     alongside a card whose discard cost is sized against the hand before the
 //     draw. Fix this when the cards that reach it are transcribed.
-//   - Shivs and Miracles can be GAINED but never spent, so the Watcher's own
-//     starting relic hands her a Miracle every combat that she can never turn
-//     into Energy (p.192). `RelicInstance.spent` is declared for once-per-combat
-//     relics and is never read or written either — both are flags that read as
-//     implemented and are not.
+//   - Miracles can be gained but never spent, so the Watcher's own starting
+//     relic hands her one every combat that she can never turn into Energy
+//     (p.192). Shivs are worse off: `gainShiv` resolves, but NOTHING in the
+//     game produces one — no card, relic, potion or enemy action — so a player
+//     holds zero for the whole run. That is now visible rather than academic,
+//     because Slice and Deflect both print "+1 if you have a shiv" and neither
+//     bonus can currently fire. `RelicInstance.spent` is declared for
+//     once-per-combat relics and is never read or written either — all of these
+//     are flags that read as implemented and are not.
 //   - There is no server yet. scripts/lib/rooms.mjs holds the co-op rules —
 //     seats, reconnection, who may do what, and what each seat is allowed to
 //     see — but nothing carries them over a socket, so play is local only.
@@ -100,9 +116,10 @@ export {
 export type { DrawResult, Piles } from './piles.ts'
 
 export { CARDS, STARTER_DECKS, cardDef, faceOf } from './cards.ts'
-export type { CardDef, Effect, TargetScope } from './cards.ts'
+export type { Amount, CardDef, Condition, CountOf, Effect, TargetScope } from './cards.ts'
 
 export {
+  beginEndPlayerTurn,
   cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
@@ -112,7 +129,7 @@ export {
   resolveEnemyTargets,
   startPlayerTurn,
 } from './combat.ts'
-export type { CombatPhase, CombatState, PlayContext } from './combat.ts'
+export type { CombatPhase, CombatState, DiscardOrders, PlayContext } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

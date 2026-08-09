@@ -4,7 +4,7 @@
 // action returns the SAME REFERENCE, which is how callers and the server tell
 // "not allowed" from "allowed but nothing changed".
 import { faceOf, cardDef } from './cards.ts'
-import type { CardDef, Effect, TargetScope } from './cards.ts'
+import type { Amount, CardDef, Condition, CountOf, Effect, TargetScope } from './cards.ts'
 import { actionsFor, advanceCube, enemyDef } from './enemies.ts'
 import type { EnemyAction } from './enemies.ts'
 import {
@@ -31,6 +31,7 @@ import type { Enemy, OrbType, Player } from './types.ts'
 
 export type CombatPhase =
   | 'player'
+  | 'discard'
   | 'enemy'
   /** The Enemy Turn is done and the next Start of Turn has not been taken. */
   | 'roundEnd'
@@ -47,6 +48,8 @@ export type CombatState = {
   enemies: Enemy[]
   log: string[]
 }
+
+export type DiscardOrders = Readonly<Record<string, readonly string[]>>
 
 const clone = <T,>(value: T): T => structuredClone(value)
 
@@ -195,6 +198,72 @@ export type PlayContext = {
 }
 
 /**
+ * Whether a conditional clause's condition holds right now.
+ *
+ * "Right now" is load-bearing: this is read as the clause resolves, not when
+ * the card is played, so an earlier clause of the same card can change the
+ * answer. No printed card does that yet — every condition here reads something
+ * its own card leaves alone — but resolving them all up front would be a
+ * decision, not a simplification, and the wrong one: the table reads a card
+ * top to bottom.
+ */
+function holds(
+  condition: Condition,
+  state: CombatState,
+  actor: Player,
+  /** The enemy this clause is landing on, for conditions that read the target. */
+  target?: Enemy,
+): boolean {
+  switch (condition.kind) {
+    case 'hasShiv':
+      return actor.shivs > 0
+    case 'targetPoisoned':
+      return (target?.poison ?? 0) > 0
+    case 'discardTopCosts': {
+      // The topmost card is the one most recently discarded, which is the end
+      // of the array — the pile is stored bottom-first.
+      const top = actor.discard.at(-1)
+      if (!top) return false
+      // The UPGRADED face's cost, when that is the face in the pile: upgrading
+      // a card to 0 is the ordinary way a player turns Steam Barrier on.
+      const face = faceOf(cardDef(top.defId), top.upgraded)
+      // An unplayable card has NO cost -- p.24, and the scans print no energy
+      // gem at all on one. `CARDS.daze` stores 0 because the field is not
+      // optional, and that placeholder made a Daze read as a 0-cost card and
+      // pay out Steam Barrier's bonus. Reachable in ordinary play: an enemy
+      // deals a Daze, it cannot be played, and it is left on top of the discard
+      // by the end-of-turn sweep precisely because everything else WAS played.
+      if (face.unplayable) return false
+      return face.cost === condition.cost
+    }
+    case 'dieShows':
+      return condition.faces.includes(state.die)
+  }
+}
+
+/** What a card counts off the board. */
+function countOf(count: CountOf, actor: Player): number {
+  switch (count) {
+    case 'orbs':
+      return actor.orbs.filter((orb) => orb !== null).length
+  }
+}
+
+/** The number a clause actually uses, once the board has been read. */
+function amountOf(
+  amount: Amount,
+  state: CombatState,
+  actor: Player,
+  target?: Enemy,
+): number {
+  if (typeof amount === 'number') return amount
+  let total = amount.base
+  if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
+  if (amount.per) total += countOf(amount.per, actor)
+  return total
+}
+
+/**
  * Applies one effect. Mutates the draft state, which is always a clone owned by
  * the caller — never the state handed in from outside.
  */
@@ -223,10 +292,34 @@ function applyEffect(
     state.log = [...state.log, source ? `${source}: ${text}` : text]
   }
 
+  // A whole clause that the board can switch off, as the Weak on Go for the
+  // Eyes is. Checked before the target scope is resolved, because a clause that
+  // does not happen does not pick a target either.
+  //
+  // Conditions that read a TARGET are not usable here — there is no one target
+  // yet — and the only one of those, `targetPoisoned`, is a damage bonus that
+  // belongs inside an `Amount`. `verify-architecture.mjs` holds that line.
+  if (effect.when && !holds(effect.when, state, actor)) return
+
   switch (effect.kind) {
     case 'hit': {
       const targets = resolveEnemyTargets(state, scope, context.enemyUid)
-      const times = effect.times ?? 1
+      // Barrage deals one hit per Orb, so the swing count is read off the board
+      // once, before the first target — not per target, which would let an
+      // area-of-effect card re-count between enemies.
+      const times = effect.times === undefined ? 1 : amountOf(effect.times, state, actor)
+      // A counted attack can come to nothing — Barrage held with no Orbs. It is
+      // a legal play and still costs the Energy, but it lands no hits, and both
+      // Weak and Vulnerable are spent by a hit LANDING (p.24). Paying them out
+      // anyway laundered the attacker's own Weak off for 1 Energy. Such a card
+      // also asks for no target, so `targets` is empty and the loop below would
+      // leave the log silent about a card the player just spent.
+      if (times === 0) {
+        // `note` prefixes the source itself, so this names the player, not
+        // `who` -- which already carries the source and would print it twice.
+        note(`${actor.name} had nothing to attack with`)
+        return
+      }
       for (const target of targets) {
         // Every hit of a multi-hit is modified, but only ONE token comes off
         // after the whole thing resolves (p.14).
@@ -234,9 +327,12 @@ function applyEffect(
         const hpBefore = target.hp
         const blockBefore = target.block
         const wasAlive = !target.dead
+        // Bane's bonus reads the enemy being struck, so the printed number is
+        // worked out per target rather than once for the card.
+        const each = amountOf(effect.amount, state, actor, target)
         for (let i = 0; i < times; i++) {
           if (target.dead) break
-          damageEnemy(target, hitDamage(effect.amount, mods, { vulnerable: vulnerableAtStart }))
+          damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
         // One line for the whole attack, not one per swing: a five-hit card
@@ -289,9 +385,12 @@ function applyEffect(
       return
     }
     case 'block': {
+      // Deflect and Steam Barrier both read the CASTER's board, not the ally
+      // they may be handing the Block to, so this is worked out once.
+      const amount = amountOf(effect.amount, state, actor)
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
-        grantBlock(state, target, effect.amount)
+        grantBlock(state, target, amount)
         if (target.block > before) note(`${target.name} gains ${target.block - before} Block`)
       }
       return
@@ -542,27 +641,49 @@ function allocate(
 const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke']
 
 /**
- * Whether this play is missing the enemy it needs.
+ * Whether this clause can reach an enemy at all, for this player.
+ *
+ * Conservative on purpose: it answers "no" only when the clause CERTAINLY
+ * touches nobody. A counted attack is the case that matters — Barrage swings
+ * once per Orb, and with none charged it swings zero times, so asking the
+ * player to point it at something is asking for a decision that changes
+ * nothing. A bonus reads board state this function is not given, so any bonus
+ * counts as "might swing".
+ */
+function reachesEnemy(effect: Effect, actor: Player | undefined): boolean {
+  if (!ENEMY_EFFECTS.includes(effect.kind)) return false
+  if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
+  const times = effect.times
+  if (typeof times === 'number') return times > 0
+  if (times.bonus) return true
+  return times.base + (times.per ? countOf(times.per, actor) : 0) > 0
+}
+
+/**
+ * Whether this card asks the player to point at an enemy.
  *
  * Only single-target scopes need a choice: `allEnemies` hits everything, and a
  * card with no enemy-facing effect needs nothing. A `row` scope does need one,
  * since the chosen enemy is what picks the row.
- */
-/**
- * Whether this card asks the player to point at an enemy.
  *
  * Exported so the UI prompts for exactly what the engine will require. Two
  * copies of this rule drifted apart once: the UI collected a target the engine
- * then discarded.
+ * then discarded. `actor` is what lets both sides agree that a zero-swing
+ * attack needs no target; without it the UI asked, and then nothing happened.
  */
-export function cardNeedsEnemy(def: CardDef): boolean {
+export function cardNeedsEnemy(def: CardDef, actor?: Player): boolean {
   if (def.type === 'power' && def.trigger) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
-  return def.effects.some((effect) => ENEMY_EFFECTS.includes(effect.kind))
+  return def.effects.some((effect) => reachesEnemy(effect, actor))
 }
 
-function needsChosenEnemy(state: CombatState, def: CardDef, chosenUid: string | null): boolean {
-  if (!cardNeedsEnemy(def)) return false
+function needsChosenEnemy(
+  state: CombatState,
+  def: CardDef,
+  chosenUid: string | null,
+  actor: Player,
+): boolean {
+  if (!cardNeedsEnemy(def, actor)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 
@@ -624,7 +745,7 @@ export function playCard(
   // Energy, discard itself and do nothing. The UI never allows it, but the room
   // server hands this function messages straight off the network, so the check
   // belongs here rather than in the client.
-  if (needsChosenEnemy(state, def, context.enemyUid)) return state
+  if (needsChosenEnemy(state, def, context.enemyUid, player)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
   if (def.effects.some((effect) => effect.kind === 'evoke') && player.orbs.every((orb) => !orb)) {
@@ -758,8 +879,8 @@ function beginPlayerTurn(next: CombatState): CombatState {
   return settle(next)
 }
 
-/** End of Turn: end-of-turn effects, then discard every hand (p.12). */
-export function endPlayerTurn(state: CombatState): CombatState {
+/** Resolves end-of-turn effects before players choose their discard order. */
+export function beginEndPlayerTurn(state: CombatState): CombatState {
   if (state.phase !== 'player') return state
   const next = clone(state)
   fireTriggers(next, { kind: 'endOfTurn' })
@@ -809,8 +930,37 @@ export function endPlayerTurn(state: CombatState): CombatState {
       ]
       if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
     }
+  }
+
+  next.phase = 'discard'
+  return settle(next)
+}
+
+/** End of Turn: resolve effects, then discard every hand in chosen order. */
+export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders = {}): CombatState {
+  if (state.phase !== 'player' && state.phase !== 'discard') return state
+  for (const order of Object.values(discardOrders)) {
+    if (!Array.isArray(order) || order.some((uid) => typeof uid !== 'string')) return state
+  }
+  const prepared = state.phase === 'player' ? beginEndPlayerTurn(state) : state
+  if (prepared.phase !== 'discard') return prepared
+  // Validate against the hand AFTER triggers, which may have drawn or removed
+  // cards. An old order leaves the state parked at the discard prompt.
+  for (const player of prepared.players) {
+    const order = discardOrders[player.id]
+    if (!order) continue
+    const hand = new Set(player.hand.map((card) => card.uid))
+    if (order.length !== hand.size || new Set(order).size !== hand.size || order.some((uid) => !hand.has(uid))) {
+      return prepared
+    }
+  }
+  const next = clone(prepared)
+  for (const player of next.players) {
+    if (player.dead) continue
     const held = player.hand.length
-    const piles = discardHand(player)
+    const order = discardOrders[player.id]
+    const hand = order ? order.map((uid) => player.hand.find((card) => card.uid === uid)!) : player.hand
+    const piles = discardHand({ ...player, hand })
     player.draw = piles.draw
     player.hand = piles.hand
     player.discard = piles.discard

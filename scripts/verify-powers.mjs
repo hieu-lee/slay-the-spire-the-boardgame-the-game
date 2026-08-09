@@ -5,6 +5,7 @@
 // share one dispatcher, so these also cover the relic side reacting to events.
 import {
   MAX_TRIGGER_DEPTH,
+  beginEndPlayerTurn,
   createCombat,
   endPlayerTurn,
   enemyTurn,
@@ -906,6 +907,33 @@ check('a Power is never asked for a target it will not use', () => {
   assert(next !== state, 'the Power should be playable with no enemy chosen')
   assertEqual(next.players[0].powers.length, 1, 'and it enters play')
   assertEqual(next.enemies[0].hp, 5, 'while dealing nothing yet')
+})
+
+check('an end-of-turn draw is preserved when a discard order was submitted', () => {
+  CARDS.fixture_end_draw = {
+    id: 'fixture_end_draw',
+    name: 'Fixture End Draw',
+    owner: 'ironclad',
+    type: 'power',
+    rarity: 'rare',
+    cost: 0,
+    trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'draw', amount: 1 }],
+  }
+  const bash = instance('bash')
+  const defend = instance('defend_ironclad')
+  const drawn = instance('strike_ironclad')
+  const state = combat([
+    player({ hand: [defend, bash], draw: [drawn], powers: [instance('fixture_end_draw')] }),
+  ], [enemy()])
+  const prepared = beginEndPlayerTurn(state)
+  assertEqual(prepared.phase, 'discard', 'the post-trigger hand is offered for ordering')
+  assertEqual(prepared.players[0].hand.length, 3, 'the drawn card is present in that choice')
+  const next = endPlayerTurn(prepared, { p1: [bash.uid, drawn.uid, defend.uid] })
+  assertEqual(next.players[0].hand.length, 0, 'the post-trigger hand is discarded')
+  assertEqual(next.players[0].discard.length, 3, 'the drawn card is not lost')
+  assertEqual(next.players[0].discard.at(-1).uid, defend.uid, 'the post-trigger choice controls the top')
+  delete CARDS.fixture_end_draw
 })
 
 check('relics resolve before Powers on the same event', () => {

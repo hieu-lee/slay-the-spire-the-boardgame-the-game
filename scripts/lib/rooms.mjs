@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto'
 import {
   advanceAct,
+  beginEndPlayerTurn,
   createRun,
   currentRoom,
   endPlayerTurn,
@@ -126,8 +127,10 @@ export function joinRoom(room, { name, character, token: existing, random } = {}
     if (name) returning.name = String(name).slice(0, 24)
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
-    // back to a campfire that stalled while nobody was connected.
+    // back to a decision that stalled while nobody was connected.
     settleCampfire(room)
+    settleEndTurn(room)
+    settleDiscard(room)
     return returning
   }
 
@@ -172,6 +175,8 @@ export function markDisconnected(room, seatToken) {
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
   // only unstuck if someone re-sent a choice they had already made.
   settleCampfire(room)
+  settleEndTurn(room)
+  settleDiscard(room)
   return snapshotFor(room, seatToken)
 }
 
@@ -211,12 +216,18 @@ export function apply(room, seatToken, action) {
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
 
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
+  if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
+  if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
 
   const before = room.run
   const next = dispatch(before, seat, action)
   if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
 
   room.run = next
+  // Any accepted combat action can change a hand, including an ally's. Orders
+  // collected before that action are stale, so everyone confirms again.
+  room.endTurnOrders = undefined
+  room.endTurnReady = undefined
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
@@ -225,6 +236,71 @@ export function apply(room, seatToken, action) {
   }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function endTurn(room, seat, _action, seatToken) {
+  const combat = room.run?.combat
+  if (!combat) fail('No combat in progress')
+  if (combat.phase !== 'player') fail('The party is not taking its turn')
+  const player = combat.players.find((candidate) => candidate.id === seat.playerId)
+  if (!player || player.dead) fail('This seat cannot end the turn')
+  room.endTurnReady = { ...room.endTurnReady, [seat.playerId]: true }
+  room.version += 1
+  const waiting = settleEndTurn(room)
+  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+}
+
+function settleEndTurn(room) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'player' || !room.endTurnReady) return null
+  if (!room.seats.some((seat) => seat.connected)) return null
+  const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
+  const waiting = combat.players
+    .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnReady[player.id])
+    .map((player) => player.id)
+  if (waiting.length > 0) return waiting
+  room.run = { ...room.run, combat: beginEndPlayerTurn(combat) }
+  room.endTurnReady = undefined
+  room.endTurnOrders = undefined
+  return null
+}
+
+function submitDiscard(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'discard') fail('The party is not ordering discards')
+  const player = combat.players.find((candidate) => candidate.id === seat.playerId)
+  if (!player || player.dead) fail('This seat cannot discard')
+  if (!Array.isArray(action.discardOrder) || action.discardOrder.length !== player.hand.length ||
+      action.discardOrder.some((uid) => typeof uid !== 'string')) fail('Discard order must match your hand')
+  const order = [...action.discardOrder]
+  const hand = new Set(player.hand.map((card) => card.uid))
+  if (new Set(order).size !== hand.size || order.some((uid) => !hand.has(uid))) {
+    fail('Discard order must contain each card in your hand exactly once')
+  }
+  room.endTurnOrders = { ...room.endTurnOrders, [seat.playerId]: order }
+  room.version += 1
+  const waiting = settleDiscard(room)
+  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+}
+
+function settleDiscard(room) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'discard' || !room.endTurnOrders) return null
+  if (!room.seats.some((seat) => seat.connected)) return null
+  const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
+  const waiting = combat.players
+    .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnOrders[player.id])
+    .map((player) => player.id)
+  if (waiting.length > 0) return waiting
+  const orders = Object.fromEntries(combat.players.map((player) => [
+    player.id,
+    room.endTurnOrders[player.id] ?? player.hand.map((card) => card.uid),
+  ]))
+  const next = endPlayerTurn(combat, orders)
+  if (next === combat) fail('Discard order is no longer valid')
+  room.run = { ...room.run, combat: next }
+  room.endTurnOrders = undefined
+  return null
 }
 
 /**
@@ -313,8 +389,9 @@ function settleCampfire(room) {
  * with `indexOf` inside a `filter`, which is quadratic, and the room layer
  * handles messages one at a time on a single thread. A client sending 40,000
  * junk uids blocked every room in the process for 1.3 seconds, repeatably, and
- * 100,000 for about eight. No hand is anywhere near this size, so a longer list
- * is never a real play.
+ * 100,000 for about eight. This helper only handles card-effect choices, whose
+ * printed amounts fit comfortably under the cap. End-turn discard orders can
+ * span an unbounded hand and are validated separately against that hand.
  */
 export const UID_LIMIT = 32
 export const uidList = (value) =>
@@ -362,11 +439,10 @@ function dispatch(run, seat, action) {
     // The turn is shared, so any seat may advance it — at the table this is
     // one player asking "everyone done?" and nobody objecting.
     case 'startTurn':
-    case 'endTurn':
     case 'resolveEnemies': {
       if (!run.combat) fail('No combat in progress')
       const step =
-        action.kind === 'startTurn' ? startPlayerTurn : action.kind === 'endTurn' ? endPlayerTurn : enemyTurn
+        action.kind === 'startTurn' ? startPlayerTurn : enemyTurn
       const combat = step(run.combat)
       return combat === run.combat ? run : { ...run, combat }
     }
@@ -428,6 +504,7 @@ export function snapshotFor(room, seatToken) {
     you: seat ? seatPublic(seat) : null,
     /** Seats that have chosen at the campfire, so the UI can show who is left. */
     campfireDecided: Object.keys(room.campfireChoices ?? {}),
+    endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }

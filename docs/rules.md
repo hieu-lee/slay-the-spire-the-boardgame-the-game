@@ -78,7 +78,8 @@ Nob 14/28/42/56).
    choose targets → resolve printed effects top to bottom → cleanup. **Abilities triggered
    by a card do not fire until that card has completely finished resolving.** A card being
    played is in neither hand nor discard pile.
-6. **End of turn.** End-of-turn abilities, then discard the entire hand. Retained cards stay.
+6. **End of turn.** End-of-turn abilities, then discard the entire hand **in any order**.
+   Retained cards stay.
 
 "End of turn" and "start of turn" *always* mean the Player Turn. The Enemy Turn has no
 start- or end-of-turn phase.

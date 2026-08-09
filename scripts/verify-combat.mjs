@@ -247,6 +247,18 @@ check('end of turn discards every hand', () => {
   assertEqual(next.phase, 'enemy', 'the Enemy Turn follows')
 })
 
+check('players choose which card is on top when discarding their hand', () => {
+  const bash = instance('bash')
+  const deflect = instance('deflect')
+  const state = combat([makePlayer({ hand: [deflect, bash] })], [makeEnemy()])
+  const next = endPlayerTurn(state, { p1: [bash.uid, deflect.uid] })
+  assertEqual(next.players[0].discard.at(-1)?.uid, deflect.uid, 'the chosen 0-cost card lands on top')
+
+  const refused = endPlayerTurn(state, { p1: [deflect.uid, deflect.uid] })
+  assertEqual(refused.phase, 'discard', 'a stale order leaves the post-trigger choice open')
+  assertEqual(refused.players[0].hand.length, 2, 'and discards nothing')
+})
+
 // p.17: Poison is HP loss at end of turn, so Block cannot stop it, and the
 // tokens are never removed while the enemy lives.
 check('poison costs HP at end of turn, ignores Block, and does not decay', () => {
@@ -887,6 +899,32 @@ check('an evoke with no orbs is refused rather than wasted', () => {
   )
 })
 
+// An attack that cannot land should not send the player hunting for a target.
+// The UI and the engine ask the same function, so this is one rule rather than
+// two that can drift -- which they already did once, in the other direction.
+check('an attack that will swing zero times asks for no target', () => {
+  const barrage = cardDef('barrage')
+  const empty = makePlayer({ character: 'defect', orbs: [null, null, null] })
+  const armed = makePlayer({ character: 'defect', orbs: ['frost', null, null] })
+  assertEqual(cardNeedsEnemy(barrage, empty), false, 'no orbs, no target to choose')
+  assertEqual(cardNeedsEnemy(barrage, armed), true, 'one orb makes it a real attack')
+  // The upgraded face prints "+1", so it always swings and always needs one.
+  assertEqual(cardNeedsEnemy(faceOf(barrage, true), empty), true, 'Barrage+ always swings')
+  // Without a player to ask, the answer has to be the cautious one: a card that
+  // might swing still needs its target collected.
+  assertEqual(cardNeedsEnemy(barrage), true, 'unknown board means assume it swings')
+  // And the engine must then ACCEPT the play with no target, or the UI would
+  // stop asking for something the engine still demands.
+  const card = instance('barrage')
+  const state = combat(
+    [makePlayer({ character: 'defect', hand: [card], energy: 3, orbs: [null, null, null] })],
+    [makeEnemy({ hp: 20 })],
+  )
+  const next = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: null })
+  assert(next !== state, 'a zero-swing attack with no target was refused')
+  assertEqual(next.players[0].energy, 2, 'and still cost its Energy')
+})
+
 check('an evoke card asks for a target, and hits the one chosen', () => {
   // cardNeedsEnemy is exported so the UI prompts for exactly what the engine
   // requires; without evoke in that list the UI stops asking and the engine
@@ -1373,6 +1411,19 @@ check('every newly transcribed card does what its face prints', () => {
     // Started in Wrath (below), which is worth +1 damage (p.17), so the
     // printed 2 and 3 land as 3 and 4.
     { id: 'empty_fist', enemyHp: [17, 16], stance: ['neutral', 'neutral'] },
+
+    // The conditional cards, with their condition switched OFF: no shivs, no
+    // orbs, an empty discard pile, and `createCombat`'s die showing 1. This is
+    // the printed number alone, which is the half a bonus must not leak into.
+    // The block below turns each condition on.
+    { id: 'slice', enemyHp: [19, 18] },
+    { id: 'deflect', block: [1, 2] },
+    { id: 'bane', enemyHp: [18, 17] },
+    { id: 'steam_barrier', block: [1, 2] },
+    // No orbs charged, so the base face swings zero times and the upgraded face
+    // -- which prints "+1" -- swings once.
+    { id: 'barrage', enemyHp: [20, 19] },
+    { id: 'go_for_the_eyes', enemyHp: [19, 19], weak: [0, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1445,6 +1496,230 @@ check('every newly transcribed card does what its face prints', () => {
   }
 })
 
+// The other half of the conditional cards. The CASES table above plays each of
+// these with its condition FALSE, which a card that had silently lost its bonus
+// would also pass. These plays make each condition true and assert the bonus
+// actually arrives.
+check('a conditional bonus lands when the board satisfies it', () => {
+  // `upgraded` is not optional decoration. The CASES table plays both faces but
+  // only ever with the condition OFF, so it pins the printed base and nothing
+  // else; dropping the bonus from an upgraded face left the whole suite green.
+  // Every assertion below is therefore made against both faces.
+  const play = (cardId, { player = {}, enemy = {}, die, upgraded = false } = {}) => {
+    const card = instance(cardId, upgraded)
+    const base = combat([makePlayer({ hand: [card], energy: 3, ...player })], [makeEnemy({ hp: 20, ...enemy })])
+    const state = die === undefined ? base : { ...base, die }
+    const next = playCard(state, 'p1', card.uid, {
+      enemyUid: cardNeedsEnemy(faceOf(CARDS[cardId], upgraded)) ? 'e1' : null,
+      playerId: null,
+    })
+    assert(next !== state, `${cardId}${upgraded ? '+' : ''} was refused`)
+    return next
+  }
+
+  // Slice and Deflect both read "if you have a shiv" — the token, not a card.
+  const shivved = { player: { shivs: 1 } }
+  assertEqual(play('slice', shivved).enemies[0].hp, 18, 'Slice with a shiv hits for 2')
+  assertEqual(
+    play('slice', { ...shivved, upgraded: true }).enemies[0].hp,
+    17,
+    'Slice+ with a shiv hits for 3',
+  )
+  assertEqual(play('deflect', shivved).players[0].block, 2, 'Deflect with a shiv blocks 2')
+  assertEqual(
+    play('deflect', { ...shivved, upgraded: true }).players[0].block,
+    3,
+    'Deflect+ with a shiv blocks 3',
+  )
+
+  // Bane reads the ENEMY, so the bonus is the only thing separating a poisoned
+  // target from a clean one.
+  const poisoned = { enemy: { poison: 1 } }
+  assertEqual(play('bane', poisoned).enemies[0].hp, 16, 'Bane into Poison hits for 4')
+  assertEqual(
+    play('bane', { ...poisoned, upgraded: true }).enemies[0].hp,
+    15,
+    'Bane+ into Poison hits for 5',
+  )
+
+  // Steam Barrier reads the TOPMOST card of the discard pile, which is the most
+  // recently discarded and so the END of the array. Both piles below hold the
+  // same two cards in opposite orders, which is what makes this a test of the
+  // end rather than of the contents: a resolver reading `at(0)` passes a
+  // one-card pile and swaps these two answers.
+  const zeroOnTop = [instance('bash'), instance('deflect')]
+  const twoOnTop = [instance('deflect'), instance('bash')]
+  assertEqual(
+    play('steam_barrier', { player: { discard: zeroOnTop } }).players[0].block,
+    2,
+    'Steam Barrier over a 0-cost top card blocks 2',
+  )
+  assertEqual(
+    play('steam_barrier', { player: { discard: zeroOnTop }, upgraded: true }).players[0].block,
+    3,
+    'Steam Barrier+ over a 0-cost top card blocks 3',
+  )
+  assertEqual(
+    play('steam_barrier', { player: { discard: twoOnTop } }).players[0].block,
+    1,
+    'Steam Barrier over a 2-cost top card blocks 1',
+  )
+  // An unplayable card has NO cost (p.24) -- it prints no energy gem at all --
+  // so it satisfies "costs 0" at no number. `CARDS.daze` stores 0 because the
+  // field is required, and that placeholder paid the bonus out. This is not a
+  // contrived board: an enemy deals a Daze, it cannot be played, and the
+  // end-of-turn sweep leaves it on top precisely because everything else was.
+  assertEqual(
+    play('steam_barrier', { player: { discard: [instance('daze')] } }).players[0].block,
+    1,
+    'a Daze on top of the discard pile is not a 0-cost card',
+  )
+  // The cost read has to be the face actually in the pile. Zap costs 1 and
+  // Zap+ costs 0, so upgrading a card is an ordinary way to turn Steam Barrier
+  // on -- and reading the base face of an upgraded card silently switches it
+  // back off.
+  assertEqual(
+    play('steam_barrier', { player: { discard: [instance('zap', true)] } }).players[0].block,
+    2,
+    'an upgraded 0-cost card on top satisfies the condition',
+  )
+  assertEqual(
+    play('steam_barrier', { player: { discard: [instance('zap')] } }).players[0].block,
+    1,
+    'and its un-upgraded face, costing 1, does not',
+  )
+
+  // Barrage counts orbs as SWINGS. Two orbs is two separate one-damage hits,
+  // which is why this is `times` and not `amount`.
+  const twoOrbs = { player: { orbs: ['lightning', 'frost', null] } }
+  assertEqual(play('barrage', twoOrbs).enemies[0].hp, 18, 'Barrage with two orbs swings twice')
+  // The upgraded face prints "+1", so the same board is one more swing.
+  assertEqual(
+    play('barrage', { ...twoOrbs, upgraded: true }).enemies[0].hp,
+    17,
+    'Barrage+ with two orbs swings three times',
+  )
+
+  // One shared die per round drives the base face of Go for the Eyes: the Weak
+  // is printed against 4-5-6 only.
+  assertEqual(play('go_for_the_eyes', { die: 4 }).enemies[0].weak, 1, 'die 4 applies the Weak')
+  assertEqual(play('go_for_the_eyes', { die: 3 }).enemies[0].weak, 0, 'die 3 does not')
+  // The upgraded face prints no dice at all, so the roll stops mattering.
+  assertEqual(
+    play('go_for_the_eyes', { die: 3, upgraded: true }).enemies[0].weak,
+    1,
+    'Go for the Eyes+ applies the Weak whatever the die shows',
+  )
+})
+
+// Weak and Vulnerable are spent by a hit LANDING (p.24). A counted attack that
+// comes to nothing lands none, and Barrage at zero orbs is that attack — a
+// legal play the Defect can make on turn 1 of every combat, since they start
+// with no orbs charged. Paying the tokens out anyway cleansed the attacker's
+// own Weak for 1 Energy and binned a Vulnerable the party had just set up.
+check('an attack that swings zero times spends no Weak and strips no Vulnerable', () => {
+  const card = instance('barrage')
+  const state = combat(
+    [makePlayer({ character: 'defect', hand: [card], energy: 3, weak: 2, orbs: [null, null, null] })],
+    [makeEnemy({ hp: 20, vulnerable: 2 })],
+  )
+  const next = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+  assert(next !== state, 'the play was refused')
+  assertEqual(next.enemies[0].hp, 20, 'no orbs means no damage')
+  assertEqual(next.enemies[0].vulnerable, 2, 'the Vulnerable token stays on the enemy')
+  assertEqual(next.players[0].weak, 2, 'the attacker keeps their Weak')
+  // A zero-swing attack takes no target, so the per-target loop prints nothing.
+  // Without a line of its own the player clicks a card, loses the Energy, and
+  // the log says only that the card was played.
+  assert(
+    next.log.some((line) => line.includes('had nothing to attack with')),
+    `the wasted attack should say so, log was: ${next.log.join(' | ')}`,
+  )
+  // The card is still played and still paid for: this is a wasted turn, not an
+  // illegal move, and refusing it would be a different rule.
+  assertEqual(next.players[0].energy, 2, 'the Energy is still spent')
+
+  // One orb is enough to make it a real attack again, and then both tokens move.
+  const armed = combat(
+    [makePlayer({ character: 'defect', hand: [card], energy: 3, weak: 2, orbs: ['frost', null, null] })],
+    [makeEnemy({ hp: 20, vulnerable: 2 })],
+  )
+  const swung = playCard(armed, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(swung.players[0].weak, 1, 'a landed hit does spend a Weak')
+  assertEqual(swung.enemies[0].vulnerable, 1, 'and does strip a Vulnerable')
+})
+
+// `Amount` can carry a bonus and a count at once, and the two are additive.
+// No printed card does both, so nothing pins the combination and an `else if`
+// between them passes the whole suite. The fixture is what says which of the
+// two readings the vocabulary means, before a card arrives that depends on it.
+check('an amount carrying both a bonus and a count adds both', () => {
+  CARDS.fixture_bonus_and_count = {
+    id: 'fixture_bonus_and_count',
+    name: 'Fixture Bonus And Count',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'block', amount: { base: 1, per: 'orbs', bonus: { plus: 4, when: { kind: 'hasShiv' } } } },
+    ],
+  }
+  try {
+    const play = (player) => {
+      const card = instance('fixture_bonus_and_count')
+      const state = combat([makePlayer({ hand: [card], energy: 3, ...player })], [makeEnemy({})])
+      const next = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: null })
+      assert(next !== state, 'the fixture was refused')
+      return next.players[0].block
+    }
+    assertEqual(play({ orbs: ['frost', 'frost', null], shivs: 0 }), 3, 'base 1 plus two orbs')
+    assertEqual(play({ orbs: ['frost', 'frost', null], shivs: 1 }), 7, 'and the bonus on top of that')
+    assertEqual(play({ orbs: [null, null, null], shivs: 1 }), 5, 'the bonus alone, with nothing to count')
+  } finally {
+    delete CARDS.fixture_bonus_and_count
+  }
+})
+
+// A bonus that reads the target has to be re-read for each enemy an
+// area-of-effect card reaches. Reading it once — off the first enemy, or off
+// nothing at all — is the natural way to write this and is wrong the moment a
+// row holds one poisoned enemy and one clean one. No printed card does both
+// yet, so the fixture is what keeps the resolver honest until one does.
+check('a per-target bonus is re-read for every enemy in the row', () => {
+  CARDS.fixture_row_bane = {
+    id: 'fixture_row_bane',
+    name: 'Fixture Row Bane',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: { base: 1, bonus: { plus: 2, when: { kind: 'targetPoisoned' } } } }],
+  }
+  const card = instance('fixture_row_bane')
+  const state = combat(
+    [makePlayer({ hand: [card], energy: 3 })],
+    [
+      makeEnemy({ uid: 'e1', row: 0, hp: 20, poison: 1 }),
+      makeEnemy({ uid: 'e2', row: 0, hp: 20, poison: 0 }),
+    ],
+  )
+  try {
+    const next = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+    assert(next !== state, 'the row attack was refused')
+    const [struck, clean] = next.enemies
+    assertEqual(struck.hp, 17, 'the poisoned enemy takes the bonus')
+    assertEqual(clean.hp, 19, 'the clean enemy in the same row does not')
+  } finally {
+    // `CARDS` is module-level and every later check in this process sees it.
+    // The fixture is not a printed card, so it has no scan, no CSV row and no
+    // entry in the card index -- it is safe here only because the checks that
+    // would trip over it happen to skip names they do not recognise.
+    delete CARDS.fixture_row_bane
+  }
+})
+
 // The scans and the component CSV are two independent transcriptions of the
 // same physical cards. Cost and type are printed on both, so disagreement means
 // one of them was read wrong -- and neither is checkable from the other side of
@@ -1457,8 +1732,8 @@ check('every card agrees with the printed component list', () => {
   for (const line of lines) {
     const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
     if (cells.length < 6) continue
-    const [, name, cost, , , type] = cells
-    byName.set(name, { cost, type })
+    const [, name, cost, rarity, , type] = cells
+    byName.set(name, { cost, rarity, type })
   }
   assert(byName.size > 250, `the component list should have parsed, got ${byName.size} rows`)
 
@@ -1473,6 +1748,13 @@ check('every card agrees with the printed component list', () => {
     }
     if (def.type !== printed.type.toLowerCase()) {
       disagreements.push(`${def.id}: code says ${def.type}, the list prints ${printed.type}`)
+    }
+    // Rarity is the card's BANNER COLOUR, and it decides which reward deck the
+    // card sits in and how many copies the box holds. It went unchecked, and
+    // Bane -- blue-bannered, one copy -- was transcribed as a common. Starters
+    // are not listed with a rarity of their own.
+    if (def.rarity !== 'starter' && printed.rarity && def.rarity !== printed.rarity.toLowerCase()) {
+      disagreements.push(`${def.id}: code says ${def.rarity}, the list prints ${printed.rarity}`)
     }
   }
   assertEqual(disagreements.length, 0, disagreements.join(' | '))

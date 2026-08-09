@@ -77,6 +77,29 @@ async function shot(label) {
 const readRun = () => page.evaluate(() => window.__STS_DEBUG__.getRun())
 const readState = () => page.evaluate(() => window.__STS_DEBUG__.getState())
 
+async function confirmDiscard(player) {
+  await page.getByLabel('Seat').selectOption(player.id)
+  const name = player.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  await page.getByRole('button', { name: new RegExp(`^Confirm ${name}`) }).click()
+}
+
+async function confirmAllDiscards() {
+  const selectedSeat = await page.getByLabel('Seat').inputValue()
+  const state = await readState()
+  for (const player of state.players.filter((candidate) => !candidate.dead)) {
+    await confirmDiscard(player)
+  }
+  await page.getByLabel('Seat').selectOption(selectedSeat)
+}
+
+async function endTurn() {
+  await page.getByRole('button', { name: 'End turn' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
+  if ((await readState()).phase === 'discard') {
+    await confirmAllDiscards()
+  }
+}
+
 /** Clicks the first reachable room, which starts whatever that room is. */
 async function enterFirstRoom() {
   await page.locator('.room--reachable').first().click()
@@ -175,6 +198,23 @@ check('every card image in hand actually loaded', () => {
 })
 
 await page.getByRole('button', { name: 'End turn' }).click()
+const beforeDiscard = await readState()
+check('end-of-turn effects resolve before the hand order is confirmed', () => {
+  assertEqual(beforeDiscard.phase, 'discard', 'the game pauses for the post-trigger hand')
+  assertEqual(beforeDiscard.players[0].hand.length, 4, 'the hand is still present for ordering')
+})
+await shot('03b-discard-order')
+const discardPlayers = beforeDiscard.players.filter((player) => !player.dead)
+await confirmDiscard(discardPlayers[0])
+if (discardPlayers.length > 1) {
+  const waitingForDiscards = await readState()
+  check('one local seat cannot finalize another living player\'s hand', () => {
+    assertEqual(waitingForDiscards.phase, 'discard', 'the other seat must confirm its own order')
+    assertEqual(waitingForDiscards.players[0].hand.length, 4, 'no hand is discarded early')
+  })
+}
+for (const player of discardPlayers.slice(1)) await confirmDiscard(player)
+await page.getByLabel('Seat').selectOption(discardPlayers[0].id)
 const afterEnd = await readState()
 check('ending the turn discards the hand and hands over to the enemies', () => {
   assertEqual(afterEnd.players[0].hand.length, 0, 'the hand is discarded')
@@ -258,7 +298,7 @@ async function playOutCombat(limit = 40) {
       }
       continue
     }
-    await page.getByRole('button', { name: 'End turn' }).click()
+    await endTurn()
   }
   throw new Error('the combat never ended')
 }
@@ -271,7 +311,7 @@ await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'log-round'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await page.locator('.room--reachable').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
-await page.getByRole('button', { name: 'End turn' }).click()
+await endTurn()
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 await page.waitForFunction(() =>
   ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
@@ -578,7 +618,7 @@ await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'pause'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
 await page.locator('.room--reachable').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
-await page.getByRole('button', { name: 'End turn' }).click()
+await endTurn()
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 await page.waitForFunction(() =>
   ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
@@ -1511,6 +1551,73 @@ check('the seat button contains no other interactive element', () => {
   assertEqual(nested, 0, 'nested interactive elements break the seat button')
 })
 await shot('14-powers-in-play')
+
+// Steam Barrier reads the top discard card, and p.13 lets each player choose
+// the order. Exercise the actual end-turn control rather than injecting the
+// pile behind it.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = [
+    { uid: 'end-bash', defId: 'bash', upgraded: false },
+    { uid: 'end-deflect', defId: 'deflect', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 390, height: 844 })
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+const mobileDiscardControls = await page.locator('.combat__actions').evaluate((element) => {
+  const box = element.getBoundingClientRect()
+  return { left: box.left, right: box.right, width: window.innerWidth }
+})
+check('multiplayer discard controls fit a touch-sized screen', () => {
+  assert(mobileDiscardControls.left >= 0, 'discard controls spill off the left edge')
+  assert(mobileDiscardControls.right <= mobileDiscardControls.width, 'discard controls spill off the right edge')
+})
+await shot('15a-mobile-discard-order')
+await page.getByLabel('Top discard for Ironclad').selectOption('end-deflect')
+await confirmAllDiscards()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+await page.waitForFunction(() => document.querySelector('.pile__top')?.textContent?.includes('Deflect'))
+const mobilePileTop = await page.locator('.pile__top').first().evaluate((element) => {
+  const box = element.getBoundingClientRect()
+  return {
+    text: element.textContent ?? '',
+    visible: box.width > 0 && box.height > 0,
+    onScreen: box.left >= 0 && box.right <= window.innerWidth,
+  }
+})
+check('the top discard card and cost are visible on touch-sized screens', () => {
+  assert(mobilePileTop.visible, 'the top card should be painted')
+  assert(mobilePileTop.onScreen, 'the top card should fit on screen')
+  assert(/0 · Deflect/.test(mobilePileTop.text), `expected Deflect and its cost, got ${mobilePileTop.text}`)
+})
+await shot('15-mobile-discard-top')
+
+// A card keeps its uid when it cycles through the deck. A top-card choice from
+// one turn must not silently select that same card when it comes back later.
+await page.getByLabel('Seat').selectOption('p1')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [
+    { uid: 'end-deflect', defId: 'deflect', upgraded: false },
+    { uid: 'end-bash', defId: 'bash', upgraded: false },
+  ]
+  run.combat.phase = 'player'
+  run.combat.turn += 1
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await page.waitForFunction(() => document.querySelector('[aria-label="Top discard for Ironclad"]')?.value === 'end-bash')
+const freshDiscardTop = await page.getByLabel('Top discard for Ironclad').inputValue()
+check('a prior turn\'s top-card choice is cleared when that card returns', () => {
+  assertEqual(freshDiscardTop, 'end-bash', 'the new hand defaults to its current top')
+})
+await page.setViewportSize({ width: 1440, height: 900 })
 
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.

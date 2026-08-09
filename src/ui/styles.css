@@ -476,6 +476,7 @@ button:disabled {
 
 .hand-area__stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 0.8rem;
   color: var(--ink-dim);
@@ -786,6 +787,18 @@ button:disabled {
   align-items: center;
 }
 
+.discard-order {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+
+.discard-order select {
+  max-width: 9rem;
+}
+
 /* ---------- enemy portrait ---------- */
 
 .enemy {
@@ -950,6 +963,15 @@ button:disabled {
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+}
+
+.pile__top {
+  max-width: 9rem;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A card sits in the fan at an angle set by its distance from the middle, and

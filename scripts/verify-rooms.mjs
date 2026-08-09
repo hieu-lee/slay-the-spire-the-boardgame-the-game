@@ -204,6 +204,96 @@ check('the version a client receives tracks the room', () => {
   )
 })
 
+check('online seats ready together, then submit only their own post-trigger discard order', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  const firstOrder = first.hand.map((card) => card.uid).reverse()
+  const waiting = apply(room, a.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'player', 'one ready seat cannot end the shared turn')
+  assertDeepEqual(waiting.waitingOn, [b.playerId], 'the other living connected seat must answer')
+  assertDeepEqual(waiting.snapshot.endTurnDecided, [a.playerId], 'only readiness, not hand order, is public')
+
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'discard', 'effects resolve before discard choices are collected')
+
+  let forged = null
+  try {
+    apply(room, b.token, { kind: 'discardHand', discardOrder: firstOrder })
+  } catch (error) {
+    forged = error
+  }
+  assert(forged, 'a seat cannot submit another player\'s hand as its order')
+
+  apply(room, a.token, { kind: 'discardHand', discardOrder: firstOrder })
+  apply(room, b.token, { kind: 'discardHand', discardOrder: second.hand.map((card) => card.uid) })
+  assertEqual(room.run.combat.phase, 'enemy', 'the turn ends once every connected seat is ready')
+  assertDeepEqual(
+    room.run.combat.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid),
+    firstOrder,
+    'the authoritative room forwards the chosen order',
+  )
+})
+
+check('a malformed online discard order is refused as a room error', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  let error = null
+  try {
+    apply(room, a.token, { kind: 'discardHand', discardOrder: 'not-a-list' })
+  } catch (thrown) {
+    error = thrown
+  }
+  assert(error, 'the malformed action should be refused')
+  assertEqual(error.name, 'RoomError', `got ${error?.name}: ${error?.message}`)
+})
+
+check('an unbounded hand can submit its full discard order online', () => {
+  const { room, a, b } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  player.hand = Array.from({ length: 33 }, (_, index) => ({
+    ...player.hand[0],
+    uid: `large-hand-${index}`,
+  }))
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const order = player.hand.map((card) => card.uid).reverse()
+  apply(room, a.token, { kind: 'discardHand', discardOrder: order })
+  const other = room.run.combat.players.find((candidate) => candidate.id === b.playerId)
+  apply(room, b.token, { kind: 'discardHand', discardOrder: other.hand.map((card) => card.uid) })
+  assertEqual(room.run.combat.players[0].discard.length, 33, 'all 33 cards were accepted')
+})
+
+check('disconnecting every seat never advances a partially-readied turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'endTurn' })
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  assertEqual(room.run.combat.phase, 'player', 'nobody is connected to approve the transition')
+})
+
+check('reconnecting a ready seat resumes a turn paused with nobody connected', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'endTurn' })
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(room.run.combat.phase, 'discard', 'the only connected seat had already readied')
+})
+
+check('reconnecting a decided seat resumes discard settlement', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  apply(room, a.token, { kind: 'discardHand', discardOrder: player.hand.map((card) => card.uid) })
+  markDisconnected(room, a.token)
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(room.run.combat.phase, 'enemy', 'the only connected seat had already ordered its hand')
+})
+
 check('characters lock once the run starts', () => {
   const { room, a } = twoSeatRoom()
   let threw = false
@@ -1363,10 +1453,10 @@ check('reconnecting can complete a campfire the table was waiting on', () => {
 // messages serially on one thread -- so an unbounded list is not merely rude,
 // it is a denial of service against every room in the process. Measured before
 // the cap: 40,000 junk uids blocked for 1.3 seconds.
-check('a uid list from the network is cut to a length a hand could hold', () => {
+check('a card-effect uid list is capped above every supported printed choice', () => {
   const huge = Array.from({ length: 50_000 }, (_unused, i) => `junk-${i}`)
   assertEqual(uidList(huge).length, UID_LIMIT, 'the list should be truncated, not passed through')
-  assert(UID_LIMIT >= 12, 'and the cap must still exceed any hand a player can hold')
+  assert(UID_LIMIT >= 12, 'and the cap must still cover the largest transcribed effect choice')
 
   // Truncation keeps the FRONT of the list, so an honest short play is untouched.
   assertDeepEqual(uidList(['a', 'b']), ['a', 'b'], 'a real play passes through whole')

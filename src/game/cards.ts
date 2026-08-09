@@ -28,14 +28,84 @@ export type TargetScope =
  */
 type Redirectable = { toChosen?: boolean }
 
-export type Effect =
+/**
+ * What a conditional clause reads off the board.
+ *
+ * Each one is a printed sentence, not a general expression language. The cards
+ * ask a small, closed set of questions and a new card adds a case here; an
+ * expression tree would let a transcription say things no card says, which is
+ * the kind of freedom that turns a typo into a rule.
+ */
+export type Condition =
+  /** Slice, Deflect: "if you have a [shiv]". */
+  | { kind: 'hasShiv' }
+  /**
+   * Bane: "+2 damage if the enemy has [poison]".
+   *
+   * Read against the enemy being struck, so an area-of-effect card carrying
+   * this would pay the bonus on the poisoned enemies in the row and not on the
+   * rest. Nothing printed does both yet, but the alternative — reading it once
+   * for the whole card — is wrong the day one does.
+   */
+  | { kind: 'targetPoisoned' }
+  /**
+   * Steam Barrier: "if the topmost card of your discard pile costs 0".
+   *
+   * An UNPLAYABLE card does not satisfy this at any number: it has no cost at
+   * all (p.24) and its scan prints no energy gem. `CARDS.daze` stores 0 only
+   * because the field is required.
+   */
+  | { kind: 'discardTopCosts'; cost: number }
+  /** Go for the Eyes: this round's shared die shows one of these faces. */
+  | { kind: 'dieShows'; faces: number[] }
+
+/** Something on the board a card can count. Barrage deals one hit per Orb. */
+export type CountOf = 'orbs'
+
+/**
+ * A number the board works out as the card resolves, rather than one printed
+ * flat on the face.
+ *
+ * Deliberately NOT interchangeable with a conditional clause (`when` below).
+ * Slice's "+1 damage if you have a shiv" has to fold into a single hit, because
+ * two hits are checked against Block separately and one hit for 2 gets through
+ * a Block of 1 where two hits for 1 do not. A bonus is part of an amount; a
+ * whole clause that may not happen is a `when`.
+ */
+export type Amount =
+  | number
+  | {
+      /** The number printed before any bonus. */
+      base: number
+      /**
+       * The bonus and the question that switches it on, as one object because
+       * neither half means anything alone. Written as two optional fields, a
+       * transcription that supplied only `plus` typechecked and then quietly
+       * dealt the base number — the exact silent-underperformance this
+       * vocabulary exists to prevent. Slice prints +1 and Bane +2, so the size
+       * is per card and not a fixed step.
+       */
+      bonus?: { plus: number; when: Condition }
+      /** Adds one per unit of this count, on top of `base`. */
+      per?: CountOf
+    }
+
+/**
+ * A clause that only happens when the board says so, as the Weak on Go for the
+ * Eyes does: the base face prints it against the die rows 4-5-6 only.
+ */
+type Conditional = { when?: Condition }
+
+export type Effect = EffectKind & Conditional
+
+type EffectKind =
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
-  | { kind: 'hit'; amount: number; times?: number }
+  | { kind: 'hit'; amount: Amount; times?: Amount }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
   | { kind: 'damage'; amount: number }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
-  | ({ kind: 'block'; amount: number } & Redirectable)
+  | ({ kind: 'block'; amount: Amount } & Redirectable)
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
@@ -600,6 +670,108 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+
+  // ---------------------------------------------------------------------------
+  // Cards whose printed number is not a number: a bonus the board has to check,
+  // or a count it has to take.
+  //
+  // Note which of the two each card uses, because they are not interchangeable.
+  // Slice prints "1 damage, +1 damage if you have a shiv" as ONE attack, so the
+  // bonus lives inside the amount; splitting it into two hits would let a Block
+  // of 1 stop what a single hit for 2 gets through. Go for the Eyes' Weak is a
+  // whole clause instead, and carries `when` on the effect.
+  // ---------------------------------------------------------------------------
+
+  slice: card({
+    id: 'slice',
+    name: 'Slice',
+    owner: 'silent',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'hit', amount: { base: 1, bonus: { plus: 1, when: { kind: 'hasShiv' } } } }],
+    // Only the printed number moves; the bonus clause is the same on both faces.
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 2, bonus: { plus: 1, when: { kind: 'hasShiv' } } } }] },
+  }),
+  deflect: card({
+    id: 'deflect',
+    name: 'Deflect',
+    owner: 'silent',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [{ kind: 'block', amount: { base: 1, bonus: { plus: 1, when: { kind: 'hasShiv' } } } }],
+    upgrade: {
+      effects: [{ kind: 'block', amount: { base: 2, bonus: { plus: 1, when: { kind: 'hasShiv' } } } }],
+    },
+  }),
+  bane: card({
+    id: 'bane',
+    name: 'Bane',
+    owner: 'silent',
+    type: 'attack',
+    // Blue banner on the scan, and one copy in the box, not two.
+    rarity: 'uncommon',
+    cost: 1,
+    // The one card whose bonus reads the ENEMY rather than the player's board.
+    effects: [{ kind: 'hit', amount: { base: 2, bonus: { plus: 2, when: { kind: 'targetPoisoned' } } } }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: { base: 3, bonus: { plus: 2, when: { kind: 'targetPoisoned' } } } }],
+    },
+  }),
+
+  steam_barrier: card({
+    id: 'steam_barrier',
+    name: 'Steam Barrier',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 0,
+    effects: [
+      { kind: 'block', amount: { base: 1, bonus: { plus: 1, when: { kind: 'discardTopCosts', cost: 0 } } } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: { base: 2, bonus: { plus: 1, when: { kind: 'discardTopCosts', cost: 0 } } } },
+      ],
+    },
+  }),
+  barrage: card({
+    id: 'barrage',
+    name: 'Barrage',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 1,
+    // "Deal 1 damage for each Orb you have" — the ORB COUNT is the number of
+    // swings, not the size of one. Each is checked against Block separately,
+    // which is why holding four orbs is not the same as one hit for four.
+    effects: [{ kind: 'hit', amount: 1, times: { base: 0, per: 'orbs' } }],
+    // The upgraded face prints "for each Orb you have +1", so it swings once
+    // even with no orbs charged.
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'orbs' } }] },
+  }),
+  go_for_the_eyes: card({
+    id: 'go_for_the_eyes',
+    name: 'Go for the Eyes',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      // The base face prints two die rows: 1-2-3 is the hit alone, 4-5-6 adds
+      // the Weak. One shared roll per round decides it for every player (p.12).
+      { kind: 'applyWeak', amount: 1, when: { kind: 'dieShows', faces: [4, 5, 6] } },
+    ],
+    // The upgraded face prints no dice at all: the Weak always lands.
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 1 },
+        { kind: 'applyWeak', amount: 1 },
+      ],
+    },
+  }),
 }
 
 /**
@@ -610,16 +782,18 @@ export const CARDS: Record<string, CardDef> = {
  *
  * - Retain (Crescendo, Tranquility, Protect): a card kept through the discard
  *   step. `CardDef` deliberately has no flag for it yet.
- * - Die-conditional effects (Go for the Eyes, base face): the effect depends
- *   on a roll, which currently only enemies make. Its upgraded face prints no
- *   dice and would be expressible on its own; a card ships only when BOTH
- *   faces do, so that upgrading can never reveal a clause the engine drops.
- * - Conditional bonuses (Slice, Deflect, Bane, Steam Barrier): a bonus gated
- *   on a pile, a token count or a debuff. Mostly "+1 if ...", but Bane prints
- *   +2, so the amount is per-card and not a fixed step.
- * - Counting effects (Barrage, Charge Battery): something computed from board
- *   state — Barrage's damage scales per Orb, and Charge Battery gains an extra
- *   Frost orb only once you already hold three.
+ * - An evoke the player is never asked about (Charge Battery). Its clause is
+ *   "Gain [frost] if you have 3 or more Orbs", and 3 IS the full board, so the
+ *   channel can only ever land by evoking something first. p.16 gives that
+ *   choice to the player — "evoke any orb of your choice" — and the local UI
+ *   does not collect it, so the engine falls back to the first occupied slot
+ *   and the first living enemy. Every other channel card can dodge this by
+ *   having a slot free; this one cannot, so it would make an unasked decision
+ *   on 100% of its successful plays. The engine side is ready (`evokeSlots` is
+ *   plumbed through `PlayContext`); the card comes back with the picker, and
+ *   `Condition` gets its `orbsAtLeast` variant back at the same time — a
+ *   deferred card leaves no vocabulary behind, or the branch sits unreachable
+ *   and untested until somebody trusts it.
  * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
  * - Temporary Strength (Flex): a buff that expires at end of turn.
  * - Deck manipulation (Anger): putting the played card on top of the draw pile.
@@ -642,17 +816,11 @@ export const CARDS: Record<string, CardDef> = {
 export const DEFERRED_CARDS = [
   'acrobatics',
   'anger',
-  'bane',
-  'barrage',
   'charge_battery',
   'crescendo',
-  'deflect',
   'flex',
-  'go_for_the_eyes',
   'iron_wave',
   'protect',
-  'slice',
-  'steam_barrier',
   'third_eye',
   'tranquility',
 ] as const

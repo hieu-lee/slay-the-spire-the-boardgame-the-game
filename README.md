@@ -80,8 +80,9 @@ the shared die, card play with targeting and choices, orbs, stances, Scry, statu
 the enemy turn.
 
 The authoritative list of what is **not** implemented lives at the top of
-[`src/game/state.ts`](src/game/state.ts) and is kept in step with the code. The largest
-gaps today are Power triggers, effects that scale off game state, non-combat rooms, and
-online play with voice chat.
+[`src/game/state.ts`](src/game/state.ts) and is kept in step with the code.
 
-Duplicating that list here is how it goes stale, so this file does not repeat it.
+Duplicating that list here is how it goes stale, so this file does not repeat it — not
+even a summary of it. The summary that used to sit here named "effects that scale off
+game state" as a largest gap for two commits after it was implemented, which is exactly
+the failure the list exists to prevent.

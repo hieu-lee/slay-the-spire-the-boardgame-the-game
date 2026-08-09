@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import {
+  beginEndPlayerTurn,
   cardNeedsEnemy,
   endPlayerTurn,
   enemyTurn,
@@ -9,7 +10,7 @@ import {
   playCard,
   startPlayerTurn,
 } from '../game/combat.ts'
-import type { CombatState } from '../game/combat.ts'
+import type { CombatState, DiscardOrders } from '../game/combat.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
@@ -72,17 +73,20 @@ function roundLog(log: readonly string[]): string[] {
 /** The engine's phase names are for the engine; players get words. */
 const PHASE_LABEL: Record<CombatState['phase'], string> = {
   player: 'Your turn',
+  discard: 'Order discards',
   enemy: 'Enemies act',
   roundEnd: 'Round over',
   won: 'Victory',
   lost: 'Defeat',
 }
 
-function requirementsOf(def: CardDef, allies: number): Omit<Pending, 'card' | 'picked'> {
+function requirementsOf(def: CardDef, allies: number, viewer: Player): Omit<Pending, 'card' | 'picked'> {
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
-  // an enemy and the engine would then throw the choice away.
-  const needsEnemy = cardNeedsEnemy(def)
+  // an enemy and the engine would then throw the choice away. The viewer goes
+  // in because a counted attack with nothing to count reaches nobody, and
+  // asking where to point it is asking a question with no consequence.
+  const needsEnemy = cardNeedsEnemy(def, viewer)
   // With one player on the board there is nobody to choose between, so asking
   // "who gets it" is a prompt with a single possible answer.
   const needsAlly = !needsEnemy && def.supportTarget === 'anyPlayer' && allies > 1
@@ -94,6 +98,19 @@ function requirementsOf(def: CardDef, allies: number): Omit<Pending, 'card' | 'p
       ? { kind: 'exhaust' as const, amount: exhaust.amount }
       : null
   return { needsEnemy, needsAlly, hitsRow: def.target === 'row', choice }
+}
+
+/**
+ * The name and cost of the card on top of a face-up pile.
+ *
+ * The end of the array is the top: piles are stored bottom-first, and the most
+ * recently discarded card is the one a card like Steam Barrier reads.
+ */
+function topOf(pile: readonly CardInstance[]): string | null {
+  const top = pile.at(-1)
+  if (!top) return null
+  const def = faceOf(cardDef(top.defId), top.upgraded)
+  return `${def.unplayable ? '—' : def.cost} · ${def.name}`
 }
 
 /** Rows are the board's spatial unit: one per player, enemies sit in them. */
@@ -203,6 +220,8 @@ function useStruck(state: CombatState): { struck: Set<string>; beat: number } {
 
 export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
+  const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
+  const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const rows = useMemo(() => rowsOf(state), [state])
@@ -216,6 +235,13 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   useEffect(() => {
     setPending(null)
   }, [state.phase, viewerId])
+
+  useEffect(() => {
+    if (state.phase !== 'discard') {
+      setDiscardTops({})
+      setDiscardOrders({})
+    }
+  }, [state.phase])
 
   // Newest-first means a scrolled log stays where the player left it, so a new
   // line lands above the visible area and is never seen.
@@ -255,6 +281,34 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
 
   const over = state.phase === 'won' || state.phase === 'lost'
+  const livingPlayers = state.players.filter((player) => !player.dead)
+  const confirmedDiscards = livingPlayers.filter((player) => discardOrders[player.id]).length
+  const viewerDiscardTop = discardTops[viewer.id] && viewer.hand.some((card) => card.uid === discardTops[viewer.id])
+    ? discardTops[viewer.id]
+    : viewer.hand.at(-1)?.uid ?? ''
+
+  function finishTurn() {
+    if (!viewer) return
+    if (state.phase === 'player') {
+      onChange(beginEndPlayerTurn(state))
+      return
+    }
+    const selected = discardTops[viewer.id]
+    const top = selected && viewer.hand.some((card) => card.uid === selected)
+      ? selected
+      : viewer.hand.at(-1)?.uid
+    const order = top
+      ? [...viewer.hand.filter((card) => card.uid !== top), viewer.hand.find((card) => card.uid === top)!]
+      : viewer.hand
+    const orders = { ...discardOrders, [viewer.id]: order.map((card) => card.uid) }
+    if (livingPlayers.every((player) => orders[player.id])) {
+      setDiscardTops({})
+      setDiscardOrders({})
+      onChange(endPlayerTurn(state, orders))
+    } else {
+      setDiscardOrders(orders)
+    }
+  }
   // The engine charges a consuming clause against the hand AS THAT CLAUSE
   // RESOLVES; this clamp measures the hand before the card is played. The two
   // agree for every shipped card only because none of them draws before it
@@ -304,7 +358,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
 
     const def = faceOf(cardDef(card.defId), card.upgraded)
     const living = state.players.filter((player) => !player.dead).length
-    const next: Pending = { card, ...requirementsOf(def, living), picked: [] }
+    const next: Pending = { card, ...requirementsOf(def, living, viewer!), picked: [] }
     setPending(next)
     // Only resolve on the spot when there is genuinely nothing left to pick —
     // including a cost the hand is too small to pay anything towards.
@@ -354,10 +408,32 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
-          {state.phase === 'player' ? (
-            <button type="button" onClick={() => onChange(endPlayerTurn(state))}>
-              End turn
-            </button>
+          {state.phase === 'player' || (state.phase === 'discard' && !viewer.dead) ? (
+            <>
+              {state.phase === 'discard' && viewer.hand.length > 1 ? (
+                <label className="discard-order">
+                  Top discard
+                  <select
+                    aria-label={`Top discard for ${viewer.name}`}
+                    value={viewerDiscardTop}
+                    onChange={(event) => setDiscardTops((current) => ({
+                      ...current,
+                      [viewer.id]: event.target.value,
+                    }))}
+                  >
+                    {viewer.hand.map((card) => {
+                      const def = faceOf(cardDef(card.defId), card.upgraded)
+                      return <option key={card.uid} value={card.uid}>{`${def.unplayable ? '—' : def.cost} · ${def.name}`}</option>
+                    })}
+                  </select>
+                </label>
+              ) : null}
+              <button type="button" onClick={finishTurn}>
+                {state.phase === 'discard'
+                  ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
+                  : 'End turn'}
+              </button>
+            </>
           ) : null}
           {state.phase === 'enemy' ? (
             <button type="button" onClick={() => onChange(enemyTurn(state))}>
@@ -524,17 +600,27 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
               dropped it — leaving the row announcing "3 Energy 5 0 0". */}
           {(
             [
-              ['draw', 'Draw pile', viewer.draw.length],
-              ['discard', 'Discard pile', viewer.discard.length],
-              ['exhaust', 'Exhaust pile', viewer.exhaust.length],
+              ['draw', 'Draw pile', viewer.draw.length, null],
+              // Both of these are face UP on the table, so their top card is
+              // public and worth naming. On the discard pile it is not even
+              // decoration: Steam Barrier's Block depends on what that card
+              // costs, and there was no way to tell in advance whether the card
+              // in hand was worth 1 Block or 2. The draw pile gets no such name
+              // -- it is face down to everyone, its owner included, which is
+              // why the room layer redacts it.
+              ['discard', 'Discard pile', viewer.discard.length, topOf(viewer.discard)],
+              ['exhaust', 'Exhaust pile', viewer.exhaust.length, topOf(viewer.exhaust)],
             ] as const
-          ).map(([kind, label, count]) => (
-            <span className="pile" key={kind} title={label}>
+          ).map(([kind, label, count, top]) => (
+            <span className="pile" key={kind} title={top ? `${label} — ${top} on top` : label}>
               <span className={`pile__stack pile__stack--${kind}`} aria-hidden="true" />
               <span className="pile__count" aria-hidden="true">
                 {count}
               </span>
-              <span className="visually-hidden">{`${label}, ${count}`}</span>
+              {top ? <span className="pile__top" aria-hidden="true">{top}</span> : null}
+              <span className="visually-hidden">
+                {top ? `${label}, ${count}, ${top} on top` : `${label}, ${count}`}
+              </span>
             </span>
           ))}
         </div>
