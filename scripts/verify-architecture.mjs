@@ -305,11 +305,13 @@ check('the not-implemented list states the real card count', () => {
   const POOLED = new Set(['status', 'curse', 'colorless'])
   const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner)).length
   const printed = new Set()
+  const colorlessPrinted = new Set()
   const rows = readFileSync(join(repoRoot, 'data/raw/player-cards.csv'), 'utf8')
   const decks = new Set(['Ironclad', 'Silent', 'Defect', 'Watcher'])
   for (const line of rows.split('\n').slice(1)) {
     const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
     if (decks.has(cells[0]) && cells[1]) printed.add(`${cells[0]}:${cells[1]}`)
+    if (cells[0] === 'Colorless' && cells[1]) colorlessPrinted.add(cells[1])
   }
 
   assertEqual(
@@ -318,6 +320,11 @@ check('the not-implemented list states the real card count', () => {
     `state.ts claims ${claimed[1]} cards are live but cards.ts defines ${live}`,
   )
   assertEqual(Number(claimed[2]), printed.size, 'the full set count should use unique printed definitions')
+
+  const colorlessClaimed = notes.match(/(\d+) of (\d+) colorless cards are live/)
+  assert(colorlessClaimed !== null, 'the list should state how many unique colorless cards are live')
+  assertEqual(Number(colorlessClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless').length)
+  assertEqual(Number(colorlessClaimed[2]), colorlessPrinted.size)
 
   const untranscribed = notes.match(/other (\d+) have not been transcribed/)
   assert(untranscribed !== null, 'the list should state how many player cards remain untranscribed')

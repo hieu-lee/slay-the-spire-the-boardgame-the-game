@@ -1423,6 +1423,30 @@ export const CARDS: Record<string, CardDef> = {
     ],
     upgrade: { exhaust: false },
   }),
+
+  finesse: card({
+    id: 'finesse', name: 'Finesse', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: 1 }, { kind: 'draw', amount: 1 }],
+    upgrade: { exhaust: false },
+  }),
+  flash_of_steel: card({
+    id: 'flash_of_steel', name: 'Flash of Steel', owner: 'colorless', type: 'attack', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'draw', amount: 1 }],
+    upgrade: { exhaust: false },
+  }),
+  good_instincts: card({
+    id: 'good_instincts', name: 'Good Instincts', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 1, toChosen: true }],
+    upgrade: { effects: [{ kind: 'block', amount: 2, toChosen: true }] },
+  }),
+  swift_strike: card({
+    id: 'swift_strike', name: 'Swift Strike', owner: 'colorless', type: 'attack', rarity: 'uncommon', cost: 0,
+    effects: [{ kind: 'hit', amount: 1 }, { kind: 'switchRows' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'switchRows' }] },
+  }),
 }
 
 /** Scan-read cards whose complete printed effect is not live yet. */

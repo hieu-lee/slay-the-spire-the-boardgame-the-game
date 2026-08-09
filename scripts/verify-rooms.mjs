@@ -1006,6 +1006,28 @@ check('Glacier+ publishes redirected Block and the caster\'s Frost together', ()
   assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
 })
 
+check('Good Instincts+ publishes its zero-cost ally Block without exposing hidden piles', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const instincts = { uid: 'room-good-instincts', defId: 'good_instincts', upgraded: true }
+  actor.hand = [instincts]
+  actor.energy = 0
+  actor.draw = [{ uid: 'still-hidden', defId: 'strike_ironclad', upgraded: false }]
+  ally.block = 0
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: instincts.uid, playerId: b.playerId, preflight: true,
+  })
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const currentAlly = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(currentActor.energy, 0)
+  assertEqual(currentAlly.block, 2)
+  assertEqual(currentActor.discard.some((card) => card.uid === instincts.uid), true)
+  const seen = result.snapshot.run.combat.players
+  assertEqual(seen.find((player) => player.id === b.playerId).block, 2)
+  assert(!allStrings(result.snapshot).includes('still-hidden'), 'the untouched draw pile leaked through the card update')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

@@ -1091,6 +1091,36 @@ await shot('06t-glacier-ally-frost')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-good-instincts', defId: 'good_instincts', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    block: 0,
+  })
+  Object.assign(run.combat.players[1], { block: 0, dead: false, hp: Math.max(1, run.combat.players[1].hp) })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Good Instincts\+,/ }).click()
+await page.getByText('Choose who gets it').waitFor()
+const instinctsAlly = page.locator('.seat--targetable').filter({ hasText: 'Silent' })
+assertEqual(await instinctsAlly.count(), 1, 'Good Instincts+ did not expose the living ally as a Block target')
+await instinctsAlly.scrollIntoViewIfNeeded()
+await shot('06u-good-instincts-ally-choice')
+await instinctsAlly.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[1].block === 2)
+const instincts = await readState()
+check('Good Instincts+ gives a chosen ally 2 Block for zero Energy', () => {
+  assertEqual(instincts.players[0].block, 0)
+  assertEqual(instincts.players[1].block, 2)
+  assertEqual(instincts.players[0].energy, 0)
+  assertEqual(instincts.players[0].discard.some((card) => card.uid === 'ui-good-instincts'), true)
+})
+await shot('06v-good-instincts-ally-block')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

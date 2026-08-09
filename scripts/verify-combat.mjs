@@ -1738,6 +1738,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'piercing_wail', block: [1, 3], weak: [1, 1], exhaust: [1, 1] },
     { id: 'crippling_cloud', poison: [1, 2], weak: [1, 1], exhaust: [1, 1] },
     { id: 'glacier', block: [2, 3], orb: ['frost', 'frost'] },
+    { id: 'finesse', block: [1, 1], hand: [1, 1], exhaust: [1, 0] },
+    { id: 'flash_of_steel', enemyHp: [19, 19], hand: [1, 1], exhaust: [1, 0] },
+    { id: 'good_instincts', block: [1, 2] },
+    { id: 'swift_strike', enemyHp: [19, 18] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2363,6 +2367,41 @@ check('Glacier+ redirects only its Block while its caster channels Frost', () =>
     assertEqual(played.players[1].block, upgraded ? 3 : 0)
     assertDeepEqual(played.players[0].orbs, ['frost', null, null])
   }
+})
+
+check('colorless support and movement cards preserve their chosen-player clauses', () => {
+  for (const upgraded of [false, true]) {
+    const instincts = instance('good_instincts', upgraded)
+    const supported = playCard(combat([
+      makePlayer({ hand: [instincts], energy: 0 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+    ], [makeEnemy()]), 'p1', instincts.uid, { enemyUid: null, playerId: 'p2' })
+    assertEqual(supported.players[0].block, 0)
+    assertEqual(supported.players[1].block, upgraded ? 2 : 1)
+
+    const swift = instance('swift_strike', upgraded)
+    const moved = playCard(combat([
+      makePlayer({ hand: [swift], energy: 0, row: 0 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+    ], [makeEnemy({ hp: 5, maxHp: 5 })]), 'p1', swift.uid, {
+      enemyUid: 'e1', playerId: null, switchWithPlayerId: 'p2',
+    })
+    assertEqual(moved.enemies[0].hp, upgraded ? 3 : 4)
+    assertEqual(moved.players[0].row, 1)
+    assertEqual(moved.players[1].row, 0)
+  }
+})
+
+check('a lethal Flash of Steel stops before drawing its later clause', () => {
+  const flash = instance('flash_of_steel')
+  const draw = instance('defend_ironclad')
+  const won = playCard(combat([
+    makePlayer({ hand: [flash], draw: [draw], energy: 0 }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })]), 'p1', flash.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(won.phase, 'won')
+  assertEqual(won.players[0].hand.length, 0)
+  assertEqual(won.players[0].draw[0].uid, draw.uid)
+  assertEqual(won.players[0].exhaust.length, 0, 'terminal card cleanup ran after combat ended')
 })
 
 check('Anger returns the played card itself to the top of draw', () => {
