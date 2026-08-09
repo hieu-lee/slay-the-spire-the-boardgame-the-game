@@ -1050,6 +1050,26 @@ check('Master of Strategy draws privately while its Exhaust stays public', () =>
   assert(allStrings(teammate).includes(strategy.uid), 'the public Exhaust pile hid Master of Strategy')
 })
 
+check('Panacea+ clears every living player in the shared snapshot', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const panacea = { uid: 'room-panacea', defId: 'panacea', upgraded: true }
+  Object.assign(actor, { hand: [panacea], energy: 0, weak: 1, vulnerable: 1 })
+  Object.assign(ally, { weak: 2, vulnerable: 2 })
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: panacea.uid, preflight: true })
+  for (const player of room.run.combat.players) {
+    assertEqual(player.weak, 0)
+    assertEqual(player.vulnerable, 0)
+  }
+  for (const player of result.snapshot.run.combat.players) {
+    assertEqual(player.weak, 0)
+    assertEqual(player.vulnerable, 0)
+  }
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(currentActor.exhaust.some((card) => card.uid === panacea.uid), true)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

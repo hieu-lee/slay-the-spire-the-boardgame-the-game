@@ -1169,6 +1169,46 @@ await shot('06x-dramatic-entrance-row-hit')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-panacea', defId: 'panacea', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    weak: 1,
+    vulnerable: 1,
+  })
+  Object.assign(run.combat.players[1], {
+    dead: false,
+    hp: Math.max(1, run.combat.players[1].hp),
+    weak: 2,
+    vulnerable: 2,
+  })
+  debug.setRun(run)
+})
+const panaceaCard = page.getByRole('button', { name: /^Panacea\+,/ })
+await panaceaCard.waitFor()
+const panaceaLabel = await panaceaCard.getAttribute('aria-label')
+await panaceaCard.scrollIntoViewIfNeeded()
+await shot('06y-panacea-party-debuffs')
+await panaceaCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players.every((player) => player.weak === 0 && player.vulnerable === 0))
+const panacea = await readState()
+check('Panacea+ clears Weak and Vulnerable from every player and Exhausts', () => {
+  for (const player of panacea.players) {
+    assertEqual(player.weak, 0)
+    assertEqual(player.vulnerable, 0)
+  }
+  assertEqual(panacea.players[0].energy, 0)
+  assertEqual(panacea.players[0].exhaust.some((card) => card.uid === 'ui-panacea'), true)
+  assert(panaceaLabel.includes('support effect applies to all players'),
+    `Panacea+ accessible name hid its party-wide scope: ${panaceaLabel}`)
+})
+await page.locator('.seat').first().scrollIntoViewIfNeeded()
+await shot('06z-panacea-party-cleansed')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

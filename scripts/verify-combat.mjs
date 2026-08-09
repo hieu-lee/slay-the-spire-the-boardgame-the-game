@@ -1746,6 +1746,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'dramatic_entrance', enemyHp: [17, 15], exhaust: [1, 1] },
     { id: 'master_of_strategy', hand: [3, 4], exhaust: [1, 1] },
     { id: 'trip', vulnerable: [2, 3], exhaust: [1, 1] },
+    { id: 'impatience', hand: [2, 3] },
+    { id: 'mind_blast', enemyHp: [20, 19] },
+    { id: 'hand_of_greed', enemyHp: [16, 16] },
+    { id: 'panacea', exhaust: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2433,6 +2437,44 @@ check('Dramatic Entrance gets its first-turn bonus and hits one row plus the bos
       turn: 2,
     }, 'p1', laterCard.uid, { enemyUid: 'left', playerId: null })
     assertDeepEqual(later.enemies.map((enemy) => enemy.hp), [18, 20, 18])
+  }
+})
+
+check('Impatience, Mind Blast, and Hand of Greed read the current hand and gold', () => {
+  const impatient = instance('impatience', true)
+  const attack = instance('strike_ironclad')
+  const blocked = playCard(combat([
+    makePlayer({ hand: [impatient, attack], draw: [instance('defend_ironclad')], energy: 0 }),
+  ], [makeEnemy()]), 'p1', impatient.uid, { enemyUid: null, playerId: null })
+  assertDeepEqual(blocked.players[0].hand.map((card) => card.uid), [attack.uid])
+
+  for (const upgraded of [false, true]) {
+    const blast = instance('mind_blast', upgraded)
+    const otherCards = Array.from({ length: 3 }, () => instance('defend_ironclad'))
+    const blasted = playCard(combat([
+      makePlayer({ hand: [blast, ...otherCards] }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', blast.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(blasted.enemies[0].hp, upgraded ? 16 : 17)
+
+    const greedy = instance('hand_of_greed', upgraded)
+    const enriched = playCard(combat([
+      makePlayer({ hand: [greedy], gold: 10 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', greedy.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(enriched.enemies[0].hp, upgraded ? 11 : 13)
+  }
+})
+
+check('Panacea redirects its base face and clears every player when upgraded', () => {
+  for (const upgraded of [false, true]) {
+    const panacea = instance('panacea', upgraded)
+    const cured = playCard(combat([
+      makePlayer({ hand: [panacea], energy: 0, weak: 1, vulnerable: 1 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', weak: 2, vulnerable: 2 }),
+    ], [makeEnemy()]), 'p1', panacea.uid, { enemyUid: null, playerId: upgraded ? null : 'p2' })
+    assertEqual(cured.players[0].weak, upgraded ? 0 : 1)
+    assertEqual(cured.players[0].vulnerable, upgraded ? 0 : 1)
+    assertEqual(cured.players[1].weak, 0)
+    assertEqual(cured.players[1].vulnerable, 0)
   }
 })
 

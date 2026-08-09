@@ -336,6 +336,10 @@ function holds(
       return target?.hp === target?.maxHp
     case 'firstTurnOfCombat':
       return state.turn === 1
+    case 'hasNoAttacksInHand':
+      return actor.hand.every((card) => cardDef(card.defId).type !== 'attack')
+    case 'goldAtLeast':
+      return actor.gold >= condition.amount
     case 'orbsAtLeast':
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
   }
@@ -346,8 +350,12 @@ export function effectIsActive(effect: Effect, state: CombatState, actor: Player
   return !effect.when || holds(effect.when, state, actor)
 }
 
+type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength'> & {
+  hand: readonly CardInstance[] | null
+}
+
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: Pick<Player, 'orbs' | 'block' | 'strength'>): number {
+function countOf(count: CountOf, actor: CountablePlayer): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -357,6 +365,8 @@ function countOf(count: CountOf, actor: Pick<Player, 'orbs' | 'block' | 'strengt
       return actor.block
     case 'strength':
       return actor.strength
+    case 'cardsInHand':
+      return actor.hand?.length ?? 0
   }
 }
 
@@ -679,9 +689,11 @@ function applyEffect(
       return
     }
     case 'clearDebuffs': {
-      actor.weak = 0
-      actor.vulnerable = 0
-      note(`${actor.name} removes all Weak and Vulnerable`)
+      for (const target of supportTargets(state, effect, supportScope, context, actor)) {
+        target.weak = 0
+        target.vulnerable = 0
+        note(`${target.name} removes all Weak and Vulnerable`)
+      }
       return
     }
     case 'discard': {
@@ -960,7 +972,7 @@ const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak'
  */
 function reachesEnemy(
   effect: Effect,
-  actor: Pick<Player, 'orbs' | 'block' | 'strength'> | undefined,
+  actor: CountablePlayer | undefined,
 ): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
@@ -984,7 +996,7 @@ function reachesEnemy(
  */
 export function cardNeedsEnemy(
   def: CardDef,
-  actor?: Pick<Player, 'orbs' | 'block' | 'strength'>,
+  actor?: CountablePlayer,
   includeEvokes = true,
 ): boolean {
   if (def.type === 'power' && def.trigger) return false

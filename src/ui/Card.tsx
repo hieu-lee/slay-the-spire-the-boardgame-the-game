@@ -32,6 +32,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   orbTypes: 'different orb type',
   block: 'Block',
   strength: 'Strength',
+  cardsInHand: 'other card in hand',
 }
 
 function conditionText(condition: Condition): string {
@@ -45,6 +46,8 @@ function conditionText(condition: Condition): string {
     case 'stanceChangedThisTurn': return 'you changed stance this turn'
     case 'targetFullHp': return 'the target is at full hit points'
     case 'firstTurnOfCombat': return 'it is the first turn of combat'
+    case 'hasNoAttacksInHand': return 'you have no Attacks in hand'
+    case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
   }
 }
@@ -147,6 +150,7 @@ function accessibleName(def: CardDef): string {
     def.target === 'row' ? 'hits a whole row and any boss' : '',
     def.target === 'allEnemies' ? 'hits every enemy' : '',
     def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
+    def.supportTarget === 'allPlayers' ? 'support effect applies to all players' : '',
     def.trigger ? triggerText(def.trigger) : '',
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)

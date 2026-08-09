@@ -64,11 +64,13 @@ export type Condition =
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
   | { kind: 'firstTurnOfCombat' }
+  | { kind: 'hasNoAttacksInHand' }
+  | { kind: 'goldAtLeast'; amount: number }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
-export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength'
+export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength' | 'cardsInHand'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -150,7 +152,7 @@ type EffectKind =
   | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
   /** Remove every Weak and Vulnerable token from the player. */
-  | { kind: 'clearDebuffs' }
+  | ({ kind: 'clearDebuffs' } & Redirectable)
   /**
    * Discard cards the player chooses. The choice travels with the action rather
    * than parking the game in a prompt state, which keeps a card play a single
@@ -1478,6 +1480,31 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'applyVulnerable', amount: 2 }],
     upgrade: { effects: [{ kind: 'applyVulnerable', amount: 3 }] },
+  }),
+  impatience: card({
+    id: 'impatience', name: 'Impatience', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    effects: [{ kind: 'draw', amount: 2, when: { kind: 'hasNoAttacksInHand' } }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3, when: { kind: 'hasNoAttacksInHand' } }] },
+  }),
+  mind_blast: card({
+    id: 'mind_blast', name: 'Mind Blast', owner: 'colorless', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'cardsInHand' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 1, per: 'cardsInHand' } }] },
+  }),
+  hand_of_greed: card({
+    id: 'hand_of_greed', name: 'Hand of Greed', owner: 'colorless', type: 'attack', rarity: 'rare', cost: 2,
+    effects: [{ kind: 'hit', amount: { base: 4, bonus: { plus: 3, when: { kind: 'goldAtLeast', amount: 10 } } } }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: { base: 4, bonus: { plus: 5, when: { kind: 'goldAtLeast', amount: 10 } } } }],
+    },
+  }),
+  panacea: card({
+    id: 'panacea', name: 'Panacea', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    supportTarget: 'anyPlayer',
+    retain: true,
+    exhaust: true,
+    effects: [{ kind: 'clearDebuffs', toChosen: true }],
+    upgrade: { supportTarget: 'allPlayers' },
   }),
 }
 
