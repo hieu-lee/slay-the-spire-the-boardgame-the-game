@@ -226,6 +226,7 @@ export function OnlineGame({ onLocal }: Props) {
           <span className="pip">Room {snapshot.code}</span>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
           <span className="pip">Act {run.act}</span>
+          {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
         </div>
         <div className="setup">

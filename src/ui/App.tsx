@@ -29,13 +29,13 @@ const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'watcher', name: 'Watcher' },
 ]
 
-function newRun(playerCount: number, seedText: string): RunState {
+function newRun(playerCount: number, seedText: string, ascension = 0): RunState {
   const party = ROSTER.slice(0, playerCount).map((entry, index) => ({
     id: `p${index + 1}`,
     name: entry.name,
     character: entry.character,
   }))
-  return createRun(seedFromString(seedText), party)
+  return createRun(seedFromString(seedText), party, ascension)
 }
 
 export function App() {
@@ -51,18 +51,20 @@ export function App() {
 function LocalGame({ onOnline }: { onOnline: () => void }) {
   const [playerCount, setPlayerCount] = useState(2)
   const [seedText, setSeedText] = useState('spire')
+  const [ascension, setAscension] = useState(0)
   const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
   const [viewerId, setViewerId] = useState('p1')
 
   /** The settings the run in progress was actually built from. */
-  const [built, setBuilt] = useState({ count: 2, seed: 'spire' })
+  const [built, setBuilt] = useState({ count: 2, seed: 'spire', ascension: 0 })
 
-  function restart(count: number, seed: string) {
+  function restart(count: number, seed: string, nextAscension = 0) {
     setPlayerCount(count)
     setSeedText(seed)
+    setAscension(nextAscension)
     setViewerId('p1')
-    setBuilt({ count, seed })
-    setRun(newRun(count, seed))
+    setBuilt({ count, seed, ascension: nextAscension })
+    setRun(newRun(count, seed, nextAscension))
   }
 
   /**
@@ -72,15 +74,16 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
    * away the combat in progress — no change to the value required, no warning.
    * Now it only acts on a real change, and asks first if a run is underway.
    */
-  function restartIfWanted(count: number, seed: string) {
-    if (count === built.count && seed === built.seed) return
+  function restartIfWanted(count: number, seed: string, nextAscension: number) {
+    if (count === built.count && seed === built.seed && nextAscension === built.ascension) return
     const underway = run.phase !== 'map' || run.map.position !== null
     if (underway && !window.confirm('Start a new run? The one in progress will be lost.')) {
       setPlayerCount(built.count)
       setSeedText(built.seed)
+      setAscension(built.ascension)
       return
     }
-    restart(count, seed)
+    restart(count, seed, nextAscension)
   }
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
@@ -91,7 +94,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
       /** The combat state, or null outside a fight. */
       getState: () => run.combat,
       setRun: (next: RunState) => setRun(next),
-      reset: (count: number, seed: string) => restart(count, seed),
+      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension),
       setViewer: (id: string) => setViewerId(id),
     }
     ;(window as unknown as { __STS_DEBUG__?: typeof bridge }).__STS_DEBUG__ = bridge
@@ -116,6 +119,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
         <h1>Slay the Spire</h1>
         <div className="run-status">
           <span className="pip">Act {run.act}</span>
+          {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {viewer ? (
             <>
               <span className="pip" title="Gold">
@@ -134,7 +138,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
             Players
             <select
               value={playerCount}
-              onChange={(event) => restartIfWanted(Number(event.target.value), seedText)}
+              onChange={(event) => restartIfWanted(Number(event.target.value), seedText, ascension)}
             >
               {[1, 2, 3, 4].map((n) => (
                 <option key={n} value={n}>
@@ -148,8 +152,15 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
             <input
               value={seedText}
               onChange={(event) => setSeedText(event.target.value)}
-              onBlur={() => restartIfWanted(playerCount, seedText)}
+              onBlur={() => restartIfWanted(playerCount, seedText, ascension)}
             />
+          </label>
+          <label>
+            Ascension
+            <select value={ascension}
+              onChange={(event) => restartIfWanted(playerCount, seedText, Number(event.target.value))}>
+              {Array.from({ length: 14 }, (_, level) => <option key={level}>{level}</option>)}
+            </select>
           </label>
           <label>
             Seat
@@ -161,7 +172,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => restart(playerCount, seedText)}>
+          <button type="button" onClick={() => restart(playerCount, seedText, ascension)}>
             New run
           </button>
           <button type="button" onClick={onOnline}>Play online</button>
@@ -225,7 +236,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
       {run.phase === 'defeat' ? (
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
-          <button type="button" onClick={() => restart(playerCount, seedText)}>
+          <button type="button" onClick={() => restart(playerCount, seedText, ascension)}>
             Try again
           </button>
         </section>

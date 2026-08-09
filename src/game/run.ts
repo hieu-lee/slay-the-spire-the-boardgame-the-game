@@ -199,6 +199,13 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
     solo.gold += 2
     solo.relics = [...solo.relics, { defId: 'loaded_die', spent: false }]
   }
+  if (ascension >= 2) {
+    for (const player of players) {
+      player.maxHp -= 1
+      player.hp -= 1
+    }
+  }
+  if (ascension >= 9) for (const player of players) player.hp -= 1
 
   return {
     rng,

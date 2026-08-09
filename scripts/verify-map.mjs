@@ -533,6 +533,24 @@ check("Ascension 5 adds Ascender's Bane to every starter deck", () => {
   }
 })
 
+check('Ascension 2 and 9 apply their cumulative setup HP losses', () => {
+  const party = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+    { id: 'p3', name: 'Defect', character: 'defect' },
+    { id: 'p4', name: 'Watcher', character: 'watcher' },
+  ]
+  const base = createRun(12, party, 0)
+  const a2 = createRun(12, party, 2)
+  const a9 = createRun(12, party, 9)
+  for (let index = 0; index < party.length; index++) {
+    assertEqual(a2.players[index].maxHp, base.players[index].maxHp - 1, 'A2 loses 1 max HP')
+    assertEqual(a2.players[index].hp, a2.players[index].maxHp, 'A2 still starts at full HP')
+    assertEqual(a9.players[index].maxHp, a2.players[index].maxHp, 'A9 does not lose more max HP')
+    assertEqual(a9.players[index].hp, a9.players[index].maxHp - 1, 'A9 starts 1 HP damaged')
+  }
+})
+
 check('a boss room stands up a single boss that acts last', () => {
   const run = createRun(4, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },

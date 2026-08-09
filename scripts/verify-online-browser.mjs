@@ -254,7 +254,7 @@ try {
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
   })
-  await a.getByLabel('Ascension').fill('3')
+  await a.locator('.online-lobby').getByLabel('Ascension').fill('3')
   await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '3')
   const sharedLobby = await snapshot(a)
   check('lobby leave and ascension are authoritative for the party', () => {
@@ -279,9 +279,9 @@ try {
     await mutationReleased
     await route.fulfill({ response })
   }, { times: 1 })
-  await b.getByLabel('Ascension').fill('4')
+  await b.locator('.online-lobby').getByLabel('Ascension').fill('4')
   await mutationStarted
-  await b.getByLabel('Ascension').fill('5')
+  await b.locator('.online-lobby').getByLabel('Ascension').fill('5')
   const replacementTabPromise = bContext.waitForEvent('page')
   await b.evaluate(() => window.open(location.href, '_blank'))
   const replacementTab = await replacementTabPromise
@@ -292,7 +292,7 @@ try {
   await b.locator('.online-entry').waitFor()
   await b.getByRole('button', { name: `Resume ${code}` }).click()
   await b.locator('.online-lobby').waitFor()
-  await b.getByLabel('Ascension').fill('6')
+  await b.locator('.online-lobby').getByLabel('Ascension').fill('6')
   await a.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
   releaseMutation()
   await b.waitForTimeout(300)
@@ -318,9 +318,9 @@ try {
     await queuedAscensionGate
     await route.fulfill({ response })
   })
-  await a.getByLabel('Ascension').fill('5')
+  await a.locator('.online-lobby').getByLabel('Ascension').fill('5')
   await queuedAscensionStart
-  await a.getByLabel('Ascension').fill('4')
+  await a.locator('.online-lobby').getByLabel('Ascension').fill('4')
   await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
   await a.locator('.connection--reconnecting').waitFor()
   await a.locator('.connection--connected').waitFor()
@@ -332,7 +332,7 @@ try {
     assertEqual(queuedAscensionRequests, 1)
     assertEqual(afterQueuedReconnect.ascension, 5)
   })
-  await a.getByLabel('Ascension').fill('6')
+  await a.locator('.online-lobby').getByLabel('Ascension').fill('6')
   await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
@@ -362,6 +362,10 @@ try {
     a.locator('.app-shell--online .combat').waitFor(),
     b.locator('.app-shell--online .combat').waitFor(),
   ])
+  const onlineRunStatus = await a.locator('.app-shell--online .run-status').textContent()
+  check('the online table keeps the chosen Ascension visible during the run', () => {
+    assert(onlineRunStatus.includes('Ascension 6'), `missing Ascension status: ${onlineRunStatus}`)
+  })
 
   const [aView, bView] = await Promise.all([snapshot(a), snapshot(b)])
   const annPotions = await a.locator('.seat', { hasText: 'Ann' }).locator('.seat__potions').textContent()

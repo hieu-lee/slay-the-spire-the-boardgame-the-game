@@ -2303,6 +2303,33 @@ check('enemy cards stay a sane size and the page does not run away', () => {
   )
 })
 
+page.once('dialog', (dialog) => dialog.accept())
+await page.getByLabel('Ascension').selectOption('9')
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().ascension === 9)
+const ascendedSetup = await readRun()
+const ascensionHeader = await page.locator('.run-status').textContent()
+check('the solo table starts and labels a cumulative Ascension 9 run', () => {
+  assertEqual(ascendedSetup.players[0].maxHp, 9, 'A2 reduces Ironclad max HP')
+  assertEqual(ascendedSetup.players[0].hp, 8, 'A9 starts Ironclad 1 HP below the reduced maximum')
+  assert(ascendedSetup.players.every((player) =>
+    player.deck.some((card) => card.defId === 'ascenders_bane')), 'A5 remains cumulative at A9')
+  assert(ascensionHeader.includes('Ascension 9'), `missing Ascension status: ${ascensionHeader}`)
+})
+await shot('16-ascension-9-setup')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  debug.setRun({ ...structuredClone(debug.getRun()), phase: 'defeat' })
+})
+await page.getByRole('button', { name: 'Try again' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const ascensionRetry = await readRun()
+check('Try again preserves every Ascension setup modifier', () => {
+  assertEqual(ascensionRetry.ascension, 9)
+  assertEqual(ascensionRetry.players[0].maxHp, 9)
+  assertEqual(ascensionRetry.players[0].hp, 8)
+  assert(ascensionRetry.players[0].deck.some((card) => card.defId === 'ascenders_bane'))
+})
+
 writeFileSync(
   join(outDir, 'summary.json'),
   JSON.stringify(

@@ -49,8 +49,10 @@
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
-//   - Ascension 5's starter Curse and Ascension 6's Act heal are applied. The
-//     other eleven modifiers are not yet applied.
+//   - Ascension 2's max-HP loss, Ascension 5's starter Curse, Ascension 6's Act
+//     heal and Ascension 9's starting damage are applied. Ascension 4's potion
+//     limit waits on potion rewards; the others wait on their elite, event,
+//     merchant, boss or Act IV content.
 //   - Orbs: the engine lets a player evoke ANY orb and the room layer forwards
 //     the choice, but the local UI never collects it, so a client-side play
 //     always evokes the first occupied slot. Nor can the two evokes of one
@@ -68,9 +70,6 @@
 //     players. `RelicInstance.spent` is declared for
 //     once-per-combat relics and is never read or written either — all of these
 //     are flags that read as implemented and are not.
-//   - The room server carries authoritative, per-seat snapshots over HTTP and
-//     WebSocket, but the browser lobby/client is not wired to it yet.
-
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 
