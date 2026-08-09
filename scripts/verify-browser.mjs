@@ -1209,6 +1209,40 @@ await shot('06z-panacea-party-cleansed')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-melter', defId: 'melter', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 1,
+    strength: 0,
+    weak: 0,
+  })
+  const target = run.combat.enemies.find((enemy) => !enemy.isBoss)
+  if (!target) throw new Error('Melter browser fixture needs a non-boss enemy')
+  Object.assign(target, { dead: false, hp: 19, maxHp: 20, block: 4, vulnerable: 0 })
+  debug.setRun(run)
+})
+const melterCard = page.getByRole('button', { name: /^Melter\+,/ })
+await melterCard.waitFor()
+await melterCard.click()
+const melterTarget = page.locator('.enemy--targeted[aria-label*="19 of 20 hit points"]').first()
+await melterTarget.scrollIntoViewIfNeeded()
+await shot('07a-melter-blocked-target')
+await melterTarget.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 16 && enemy.block === 0))
+const melter = await readState()
+check('Melter+ removes all target Block before dealing 3 damage', () => {
+  const target = melter.enemies.find((enemy) => enemy.hp === 16)
+  assert(target, 'Melter+ did not deal its full hit through Block')
+  assertEqual(target.block, 0)
+  assertEqual(melter.players[0].energy, 0)
+})
+await page.locator('.enemy[aria-label*="16 of 20 hit points"]').scrollIntoViewIfNeeded()
+await shot('07b-melter-block-cleared')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

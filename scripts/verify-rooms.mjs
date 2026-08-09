@@ -1070,6 +1070,17 @@ check('Panacea+ clears every living player in the shared snapshot', () => {
   assertEqual(currentActor.exhaust.some((card) => card.uid === panacea.uid), true)
 })
 
+check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const reprogram = { uid: 'room-reprogram', defId: 'reprogram', upgraded: true }
+  Object.assign(actor, { hand: [reprogram], energy: 0, strength: 0, orbs: ['lightning', 'frost', 'dark'] })
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: reprogram.uid, preflight: true })
+  const seen = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(seen.strength, 1)
+  assertDeepEqual(seen.orbs, [null, null, null])
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

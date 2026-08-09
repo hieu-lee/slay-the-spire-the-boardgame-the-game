@@ -1750,6 +1750,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'mind_blast', enemyHp: [20, 19] },
     { id: 'hand_of_greed', enemyHp: [16, 16] },
     { id: 'panacea', exhaust: [1, 1] },
+    { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
+    { id: 'melter', enemyHp: [18, 17] },
+    { id: 'hyperbeam', enemyHp: [15, 13] },
+    { id: 'sunder', enemyHp: [15, 13] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2475,6 +2479,44 @@ check('Panacea redirects its base face and clears every player when upgraded', (
     assertEqual(cured.players[0].vulnerable, upgraded ? 0 : 1)
     assertEqual(cured.players[1].weak, 0)
     assertEqual(cured.players[1].vulnerable, 0)
+  }
+})
+
+check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {
+  for (const upgraded of [false, true]) {
+    const reprogram = instance('reprogram', upgraded)
+    const reset = playCard(combat([
+      makePlayer({ character: 'defect', hand: [reprogram], orbs: ['lightning', 'frost', 'dark'] }),
+    ], [makeEnemy()]), 'p1', reprogram.uid, { enemyUid: null, playerId: null })
+    assertEqual(reset.players[0].strength, 1)
+    assertDeepEqual(reset.players[0].orbs, [null, null, null])
+
+    const melter = instance('melter', upgraded)
+    const melted = playCard(combat([
+      makePlayer({ character: 'defect', hand: [melter] }),
+    ], [makeEnemy({ hp: 10, maxHp: 10, block: 4 })]), 'p1', melter.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(melted.enemies[0].block, 0)
+    assertEqual(melted.enemies[0].hp, upgraded ? 7 : 8)
+
+    const beam = instance('hyperbeam', upgraded)
+    const beamed = playCard(combat([
+      makePlayer({ character: 'defect', hand: [beam], orbs: ['lightning', 'frost', 'dark'] }),
+    ], [
+      makeEnemy({ uid: 'left', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', row: 2, hp: 20, maxHp: 20, isBoss: true }),
+    ]), 'p1', beam.uid, { enemyUid: 'left', playerId: null })
+    const damage = upgraded ? 7 : 5
+    assertDeepEqual(beamed.enemies.map((enemy) => enemy.hp), [20 - damage, 20, 20 - damage])
+    assertDeepEqual(beamed.players[0].orbs, [null, null, null])
+
+    const sunder = instance('sunder', upgraded)
+    const sundered = playCard(combat([
+      makePlayer({ character: 'defect', hand: [sunder], energy: 3 }),
+    ], [makeEnemy({ uid: 'victim', hp: damage, maxHp: damage }), makeEnemy({ uid: 'spare', row: 1 })]),
+    'p1', sunder.uid, { enemyUid: 'victim', playerId: null })
+    assertEqual(sundered.enemies[0].dead, true)
+    assertEqual(sundered.players[0].energy, 3)
   }
 })
 

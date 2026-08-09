@@ -696,6 +696,13 @@ function applyEffect(
       }
       return
     }
+    case 'clearTargetBlock': {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid)) {
+        if (target.block > 0) note(`${enemyLabel(state.enemies, target)} loses ${target.block} Block`)
+        target.block = 0
+      }
+      return
+    }
     case 'discard': {
       const chosen = allocate(actor, context.discardUids, effect.amount, context)
       const moved = chosen.map((uid) => actor.hand.find((card) => card.uid === uid)!)
@@ -768,6 +775,22 @@ function applyEffect(
         note(`${actor.name} channels 1 ${orb}`)
         channelOrb(state, actor, orb, context)
       }
+      return
+    }
+    case 'removeAllOrbs': {
+      const removed = actor.orbs.filter((orb) => orb !== null).length
+      actor.orbs = actor.orbs.map(() => null)
+      if (removed > 0) note(`${actor.name} removes ${removed} Orbs`)
+      return
+    }
+    case 'gainEnergyIfTargetDead': {
+      const target = typeof context.enemyUid === 'string'
+        ? state.enemies.find((enemy) => enemy.uid === context.enemyUid)
+        : undefined
+      if (!target?.dead) return
+      const before = actor.energy
+      actor.energy = Math.min(CAPS.energy, actor.energy + effect.amount)
+      if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy`)
       return
     }
     case 'scry': {
@@ -958,7 +981,9 @@ export function previewCardChoice(
  * out, Dual Cast silently aimed at the first living enemy and the Defect could
  * not direct their biggest starter card.
  */
-const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke', 'recurseOrb']
+const ENEMY_EFFECTS = [
+  'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke', 'recurseOrb', 'clearTargetBlock',
+]
 
 /**
  * Whether this clause can reach an enemy at all, for this player.

@@ -147,6 +147,9 @@ type EffectKind =
   | { kind: 'evoke'; times: number }
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
+  | { kind: 'removeAllOrbs' }
+  | { kind: 'clearTargetBlock' }
+  | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
@@ -1505,6 +1508,27 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'clearDebuffs', toChosen: true }],
     upgrade: { supportTarget: 'allPlayers' },
+  }),
+  reprogram: card({
+    id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'removeAllOrbs' }],
+    upgrade: { cost: 0 },
+  }),
+  melter: card({
+    id: 'melter', name: 'Melter', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'clearTargetBlock' }, { kind: 'hit', amount: 2 }],
+    upgrade: { effects: [{ kind: 'clearTargetBlock' }, { kind: 'hit', amount: 3 }] },
+  }),
+  hyperbeam: card({
+    id: 'hyperbeam', name: 'Hyperbeam', owner: 'defect', type: 'attack', rarity: 'rare', cost: 2,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 5 }, { kind: 'removeAllOrbs' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 7 }, { kind: 'removeAllOrbs' }] },
+  }),
+  sunder: card({
+    id: 'sunder', name: 'Sunder', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 3,
+    effects: [{ kind: 'hit', amount: 5 }, { kind: 'gainEnergyIfTargetDead', amount: 3 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 7 }, { kind: 'gainEnergyIfTargetDead', amount: 3 }] },
   }),
 }
 

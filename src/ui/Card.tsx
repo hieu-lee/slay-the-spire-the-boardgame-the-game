@@ -97,6 +97,9 @@ function effectText(effect: Effect): string {
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
     case 'heal': return `heal ${effect.amount}${condition}`
     case 'clearDebuffs': return `remove all Weak and Vulnerable${condition}`
+    case 'clearTargetBlock': return `remove all Block from the target${condition}`
+    case 'removeAllOrbs': return `remove all of your Orbs${condition}`
+    case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
   }
