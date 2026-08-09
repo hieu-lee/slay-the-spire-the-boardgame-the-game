@@ -643,7 +643,9 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
 const chosenEvokes = await readState()
 check('the local UI collects a separate Orb and enemy for every evoke', () => {
   assertDeepEqual(chosenEvokes.players[0].orbs, [null, 'frost', null])
-  assertDeepEqual(chosenEvokes.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [17, 18, 20, 20])
+  const hp = chosenEvokes.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b)
+  assertDeepEqual(hp.slice(0, 2), [17, 18])
+  assert(hp.slice(2).every((value) => value === 20), 'only the two chosen enemies should take damage')
   assertEqual(chosenEvokes.players[0].energy, 2)
 })
 
@@ -674,8 +676,41 @@ check('Recursion uses the Orb picker and re-channels the chosen type', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [
+    { uid: 'ui-flex', defId: 'flex', upgraded: false },
+    { uid: 'ui-anger', defId: 'anger', upgraded: false },
+  ]
+  player.draw = [{ uid: 'ui-spare', defId: 'defend_ironclad', upgraded: false }]
+  player.energy = 3
+  player.strength = 0
+  player.strengthLossAtEndOfTurn = 0
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 2)
+await shot('06d-flex-anger-hand')
+await page.getByRole('button', { name: /^Flex,/ }).click()
+await page.getByRole('button', { name: /^Anger,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const flexAnger = await readState()
+check('Flex expires and Exhausts while Anger returns to draw top', () => {
+  const player = flexAnger.players[0]
+  assertEqual(player.strength, 1)
+  assertEqual(player.strengthLossAtEndOfTurn, 1)
+  assert(player.exhaust.some((card) => card.uid === 'ui-flex'))
+  assertEqual(player.draw[0].uid, 'ui-anger')
+  assert(flexAnger.enemies.some((enemy) => enemy.hp === 18), 'Flex should strengthen Anger to 2 damage')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
+  run.combat.players[0].strength = 0
+  run.combat.players[0].strengthLossAtEndOfTurn = 0
   run.combat.players[1].shivs = 2
   const fragile = run.combat.enemies.find((enemy) => !enemy.dead && !enemy.isBoss)
   const durable = run.combat.enemies.find((enemy) => !enemy.dead && enemy.uid !== fragile?.uid)
@@ -2245,7 +2280,11 @@ await page.evaluate(() => {
   player.hp = 8
   player.block = 1
   player.orbs = ['lightning', 'lightning', null]
-  run.combat.enemies[0].hp = 1
+  const enemy = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...enemy, uid: 'curse-fragile', hp: 1, maxHp: 1, block: 0, dead: false, row: 0 },
+    { ...enemy, uid: 'curse-safe', defId: 'acid_slime', hp: 4, maxHp: 4, block: 0, dead: false, row: 1 },
+  ]
   player.hand = [
     { uid: 'curse-clumsy', defId: 'clumsy', upgraded: false },
     { uid: 'curse-decay', defId: 'decay', upgraded: false },

@@ -1711,7 +1711,7 @@ check('every newly transcribed card does what its face prints', () => {
   // the original hand-built set must appear here, so adding a card without an
   // expected outcome fails rather than passing unnoticed.
   const LEGACY = new Set([
-    'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit',
+    'strike_ironclad', 'defend_ironclad', 'bash', 'twin_strike', 'true_grit', 'anger', 'flex',
     'metallicize', 'demon_form', 'feel_no_pain', 'dark_embrace',
     'strike_silent', 'defend_silent', 'neutralize', 'survivor',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
@@ -1781,6 +1781,43 @@ check('every newly transcribed card does what its face prints', () => {
       const cost = face.cost === 'X' ? 0 : face.cost
       assertEqual(me.energy, spec.energy ? spec.energy[at] : E - cost, `${label}: energy left`)
     }
+  }
+})
+
+check('Flex gains temporary Strength and only its base face Exhausts', () => {
+  for (const upgraded of [false, true]) {
+    const flex = instance('flex', upgraded)
+    const state = combat([makePlayer({ hand: [flex] })], [makeEnemy()])
+    const played = playCard(state, 'p1', flex.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(played.players[0].strength, 1)
+    assertEqual(played.players[0].strengthLossAtEndOfTurn, 1)
+    assertEqual(played.players[0].exhaust.some((card) => card.uid === flex.uid), !upgraded)
+    assertEqual(played.players[0].discard.some((card) => card.uid === flex.uid), upgraded)
+    const ended = beginEndPlayerTurn(played)
+    assertEqual(ended.players[0].strength, 0, 'the gained Strength expires this turn')
+  }
+
+  for (const upgraded of [false, true]) {
+    const flex = instance('flex', upgraded)
+    const state = combat([makePlayer({ hand: [flex], strength: 8 })], [makeEnemy()])
+    const played = playCard(state, 'p1', flex.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(played.players[0].strengthLossAtEndOfTurn, upgraded ? 0 : 1)
+    const ended = beginEndPlayerTurn(played)
+    assertEqual(ended.players[0].strength, upgraded ? 8 : 7,
+      `Flex${upgraded ? '+' : ''} should follow its printed loss wording at the cap`)
+  }
+})
+
+check('Anger returns the played card itself to the top of draw', () => {
+  for (const upgraded of [false, true]) {
+    const anger = instance('anger', upgraded)
+    const spare = instance('defend_ironclad')
+    const state = combat([makePlayer({ hand: [anger], draw: [spare] })], [makeEnemy({ hp: 20 })])
+    const played = playCard(state, 'p1', anger.uid, { enemyUid: 'e1', playerId: 'p1' })
+    assertEqual(played.enemies[0].hp, upgraded ? 18 : 19)
+    assertEqual(played.players[0].draw[0].uid, anger.uid)
+    assertEqual(played.players[0].draw[1].uid, spare.uid)
+    assert(!played.players[0].discard.some((card) => card.uid === anger.uid))
   }
 })
 

@@ -374,6 +374,7 @@ check('an online seat can use only its own potion with a valid target', () => {
   const enemy = () => room.run.combat.enemies[0]
   mine().potions = ['fire_potion']
   theirs().potions = ['block_potion']
+  Object.assign(enemy(), { hp: 10, maxHp: 10, block: 0, dead: false })
 
   const untargeted = apply(room, a.token, { kind: 'usePotion', potionId: 'fire_potion' })
   assertEqual(untargeted.changed, false, 'a targeted potion was wasted without a target')
@@ -1147,6 +1148,22 @@ check('the whole play context reaches the engine, not just the target', () => {
   })
   assertDeepEqual(mine().orbs, ['lightning', 'frost', 'dark'], 'Recursion re-channelled the chosen Dark')
   assertEqual(room.run.combat.enemies[0].hp, 17, 'the room forwarded Recursion\'s exact target')
+
+  const flex = { uid: 'fx-flex', defId: 'flex', upgraded: false }
+  const anger = { uid: 'fx-anger', defId: 'anger', upgraded: false }
+  mine().hand.push(flex, anger)
+  mine().draw = [{ uid: 'fx-spare', defId: 'defend_ironclad', upgraded: false }]
+  mine().strength = 0
+  mine().strengthLossAtEndOfTurn = 0
+  apply(room, a.token, { kind: 'playCard', cardUid: flex.uid, enemyUid: null })
+  const angerTarget = room.run.combat.enemies[0]
+  Object.assign(angerTarget, { hp: 20, maxHp: 20, block: 0, dead: false })
+  apply(room, a.token, { kind: 'playCard', cardUid: anger.uid, enemyUid: angerTarget.uid })
+  assert(mine().exhaust.some((card) => card.uid === flex.uid), 'Flex did not Exhaust through the room')
+  assertEqual(mine().draw[0].uid, anger.uid, 'Anger did not return to draw top through the room')
+  assertEqual(room.run.combat.enemies[0].hp, 18, 'Flex Strength should boost Anger')
+  mine().strength = 0
+  mine().strengthLossAtEndOfTurn = 0
 
   const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
   mine().hand.push(dance)

@@ -20,7 +20,7 @@ import {
   hitDamage,
   totalPoisonInPlay,
 } from './damage.ts'
-import { drawCards, discardHand, scry } from './piles.ts'
+import { addToDrawTop, drawCards, discardHand, scry } from './piles.ts'
 import { potionDef, relicDef } from './relics.ts'
 import { triggerMatches } from './triggers.ts'
 import type { Trigger, TriggerEvent } from './triggers.ts'
@@ -528,7 +528,8 @@ function applyEffect(
       const before = actor.strength
       actor.strength = gainStrength(actor.strength, effect.amount)
       const gained = actor.strength - before
-      actor.strengthLossAtEndOfTurn = (actor.strengthLossAtEndOfTurn ?? 0) + effect.amount
+      actor.strengthLossAtEndOfTurn = (actor.strengthLossAtEndOfTurn ?? 0) +
+        (effect.loseGainedOnly ? gained : effect.amount)
       if (gained > 0) note(`${actor.name} gains ${gained} Strength`)
       return
     }
@@ -1117,6 +1118,8 @@ export function playCard(
     exhaustCards(next, actor, [held])
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, held]
+  } else if (def.toDrawTop) {
+    actor.draw = addToDrawTop(actor, [held]).draw
   } else {
     actor.discard = [...actor.discard, held]
   }

@@ -72,7 +72,9 @@ function effectText(effect: Effect): string {
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
-    case 'gainTemporaryStrength': return `gain ${effect.amount} Strength until end of turn${condition}`
+    case 'gainTemporaryStrength': return effect.loseGainedOnly
+      ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
+      : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
     case 'poison': return `apply ${effect.amount} Poison${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
@@ -144,6 +146,7 @@ function accessibleName(def: CardDef): string {
     def.trigger ? triggerText(def.trigger) : '',
     ...def.effects.map(effectText),
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
+    def.toDrawTop ? 'returns to the top of your draw pile when played' : '',
     def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',
     def.ethereal ? 'ethereal, exhausts at end of turn if still in hand' : '',

@@ -126,7 +126,7 @@ type EffectKind =
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   /** Strength that is removed during this Player Turn's end-of-turn step. */
-  | { kind: 'gainTemporaryStrength'; amount: number }
+  | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -168,6 +168,8 @@ export type CardDef = {
   supportTarget?: TargetScope
   /** The card exhausts itself when played, instead of going to the discard pile. */
   exhaust?: boolean
+  /** The played card returns to the top of its owner's draw pile instead of discard. */
+  toDrawTop?: boolean
   /** Kept in hand during the end-of-turn discard step. */
   retain?: boolean
   /** Cannot be played at all; an effect that tries to play it is ignored (p.24). */
@@ -535,6 +537,21 @@ export const CARDS: Record<string, CardDef> = {
         { kind: 'block', amount: 3 },
         { kind: 'draw', amount: 1 },
       ],
+    },
+  }),
+  anger: card({
+    id: 'anger', name: 'Anger', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 0,
+    toDrawTop: true,
+    effects: [{ kind: 'hit', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }] },
+  }),
+  flex: card({
+    id: 'flex', name: 'Flex', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'gainTemporaryStrength', amount: 1 }],
+    upgrade: {
+      exhaust: false,
+      effects: [{ kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }],
     },
   }),
 
@@ -1172,8 +1189,6 @@ export const CARDS: Record<string, CardDef> = {
  * plays, it looks right, and it is wrong.
  *
  * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
- * - Temporary Strength (Flex): a buff that expires at end of turn.
- * - Deck manipulation (Anger): putting the played card on top of the draw pile.
  * - A choice that can only be made AFTER the same card reveals cards
  *   (Third Eye, Acrobatics). Both need a play to happen in two steps, and a
  *   play is atomic here: one validated message carries every choice, which is
@@ -1192,8 +1207,6 @@ export const CARDS: Record<string, CardDef> = {
  */
 export const DEFERRED_CARDS = [
   'acrobatics',
-  'anger',
-  'flex',
   'iron_wave',
   'third_eye',
 ] as const

@@ -402,7 +402,9 @@ check('a combat card reward reveals three and persists exactly one chosen card',
     combat: {
       ...entered.combat,
       phase: 'won',
-      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+      enemies: entered.combat.enemies.map((enemy) => ({
+        ...enemy, hp: 0, dead: true, cardReward: 'normal',
+      })),
     },
   })
   assertEqual(won.phase, 'reward', 'rewards are chosen before returning to the map')
@@ -426,7 +428,15 @@ check('a combat card reward reveals three and persists exactly one chosen card',
 check('skipping a card reward unseen leaves the face-down deck untouched', () => {
   const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
-  const won = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } })
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' })),
+    },
+  })
+  assertEqual(won.phase, 'reward', 'precondition: this test is skipping a real reward')
   const before = won.players[0]
   const after = resolveCardRewards(won, { p1: null })
   assertEqual(after.players[0].deck.length, before.deck.length, 'skip adds no card')
@@ -436,7 +446,14 @@ check('skipping a card reward unseen leaves the face-down deck untouched', () =>
 check('skipping after reveal returns all three cards to the bottom', () => {
   const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
-  const won = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } })
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' })),
+    },
+  })
   const revealed = revealCardReward(won, 'p1')
   const shown = revealed.rewards[0].choices
   const after = resolveCardRewards(revealed, { p1: null })
@@ -466,7 +483,14 @@ check('reward card ids stay unique even when another run starts meanwhile', () =
   const first = createRun(106, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(first, roomChoices(first)[0].id)
   const offered = revealCardReward(
-    resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } }),
+    resolveCombat({
+      ...entered,
+      combat: {
+        ...entered.combat,
+        phase: 'won',
+        enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' })),
+      },
+    }),
     'p1',
   )
   createRun(107, [{ id: 'p1', name: 'Silent', character: 'silent' }])
