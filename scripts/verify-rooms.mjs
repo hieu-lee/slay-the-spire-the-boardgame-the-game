@@ -1077,7 +1077,7 @@ check('a dropped seat is actually marked disconnected', () => {
 })
 
 check('the whole play context reaches the engine, not just the target', () => {
-  // scryDiscardUids and evokeSlots are real choices the rules grant (p.24,
+  // Scry and per-evoke Orb/enemy picks are real choices the rules grant (p.24,
   // p.16). Dropped in dispatch, a Scry silently bins nothing and an orb evoke
   // always falls back to the first filled slot.
   const { room, a, b } = twoSeatRoom()
@@ -1112,19 +1112,28 @@ check('the whole play context reaches the engine, not just the target', () => {
     type: 'skill',
     rarity: 'common',
     cost: 0,
-    effects: [{ kind: 'evoke', times: 1 }],
+    effects: [{ kind: 'evoke', times: 2 }],
   }
   const evokeCard = { uid: 'fx-evoke', defId: 'fixture_room_evoke', upgraded: false }
   mine().hand.push(evokeCard)
-  mine().orbs = ['lightning', 'frost', null]
+  mine().orbs = ['lightning', 'frost', 'dark']
+  const [lightningTarget, darkTarget] = room.run.combat.enemies
+  Object.assign(lightningTarget, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(darkTarget, { hp: 20, maxHp: 20, block: 0, dead: false })
 
   apply(room, a.token, {
     kind: 'playCard',
     cardUid: evokeCard.uid,
-    enemyUid: room.run.combat.enemies[0].uid,
-    evokeSlots: [1],
+    enemyUid: null,
+    evokeSlots: [2, 0],
+    evokeEnemyUids: [darkTarget.uid, lightningTarget.uid],
   })
-  assertDeepEqual(mine().orbs, ['lightning', null, null], 'the CHOSEN slot was evoked, not the first')
+  assertDeepEqual(mine().orbs, [null, 'frost', null], 'each chosen Orb slot reached the engine')
+  assertDeepEqual(
+    room.run.combat.enemies.slice(0, 2).map((target) => target.hp),
+    [18, 17],
+    'each damaging evoke reached its own enemy',
+  )
 
   const dance = { uid: 'fx-overflow-shivs', defId: 'blade_dance', upgraded: false }
   mine().hand.push(dance)
@@ -1529,6 +1538,7 @@ check('a malformed message is refused, not crashed on', () => {
         discardUids: bad,
         exhaustUids: bad,
         evokeSlots: bad,
+        evokeEnemyUids: bad,
         scryDiscardUids: bad,
       })
     } catch (thrown) {
@@ -1580,14 +1590,8 @@ check('a crafted orb slot cannot reach anything but a real orb', () => {
     const label = String(crafted[0])
     assert(error === null || error.name === 'RoomError', `${label} threw ${error?.name}`)
     assertEqual(mine().orbs.length, 3, `${label} changed the number of orb slots`)
-    // A crafted slot falls back to the real orb, so the Lightning orb is the
-    // one spent. A phantom slot used to leave it sitting there while dealing
-    // the Dark orb's damage for free.
-    assert(!mine().orbs.includes('lightning'), `${label} evoked something other than the real orb`)
-    assert(
-      mine().orbs.every((orb) => orb === null),
-      `${label} left the orbs in a strange state: ${JSON.stringify(mine().orbs)}`,
-    )
+    assertDeepEqual(mine().orbs, ['lightning', null, null], `${label} changed an Orb on a refused play`)
+    assert(mine().hand.some((held) => held.uid === card.uid), `${label} spent the refused card`)
   }
 })
 

@@ -981,6 +981,18 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.prompt__orb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  padding: 0.2rem 0.5rem;
+  text-transform: capitalize;
+}
+
 @keyframes prompt-in {
   from {
     opacity: 0;

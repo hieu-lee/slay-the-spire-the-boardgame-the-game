@@ -43,8 +43,8 @@
 //     are included, Golden Tickets are absent, and rare rewards never surface.
 //   - 68 of 259 unique character cards are live. Eight more have been read off the scans and
 //     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
-//     — modal faces, temporary Strength, deck manipulation, an evoke the UI
-//     cannot ask about, and choices that can only be made after the
+//     — modal faces, temporary Strength, deck manipulation, a conditional Orb
+//     channel, and choices that can only be made after the
 //     same card reveals cards. The other 183 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
@@ -53,11 +53,9 @@
 //     heal and Ascension 9's starting damage are applied. Ascension 4's potion
 //     limit waits on potion rewards; the others wait on their elite, event,
 //     merchant, boss or Act IV content.
-//   - Orbs: the engine lets a player evoke ANY orb and the room layer forwards
-//     the choice, but the local UI never collects it, so a client-side play
-//     always evokes the first occupied slot. Nor can the two evokes of one
-//     card pick different targets, which p.16 allows. End-of-turn Orbs are
-//     separately orderable and each Lightning collects its own target.
+//   - Orbs can be individually chosen and targeted for card evokes, forced
+//     full-slot channels and end-of-turn resolution. Charge Battery remains
+//     deferred because its conditional channel is not represented yet.
 //   - Abilities triggered BY a card fire during its resolution rather than
 //     after it, which p.12 forbids ("don't take effect until after the card is
 //     finished resolving all of its text"). Only the on-play trigger is
@@ -127,6 +125,7 @@ export {
   createCombat,
   endPlayerTurn,
   livingEnemies,
+  nextEvokeChoice,
   enemyLabel,
   overflowShivCount,
   playCard,
@@ -136,7 +135,7 @@ export {
   startPlayerTurn,
   validEndTurnOrder,
 } from './combat.ts'
-export type { CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PlayContext, PotionContext } from './combat.ts'
+export type { CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

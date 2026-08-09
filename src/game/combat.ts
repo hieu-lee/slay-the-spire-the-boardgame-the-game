@@ -228,6 +228,8 @@ export type PlayContext = {
    * you evoke ANY orb, unlike the video game's fixed front slot (p.16).
    */
   evokeSlots?: number[]
+  /** One enemy per evoke; Frost uses null so choices stay aligned. */
+  evokeEnemyUids?: (string | null)[]
   /**
    * Cards already given up by an earlier clause of the SAME card.
    *
@@ -254,6 +256,10 @@ export type PlayContext = {
   shivTargetIndex?: number
   /** A queued overflow attack named an enemy killed by an earlier queued attack. */
   invalidShivTarget?: boolean
+  /** Internal cursor while a card resolves its ordered evokes. */
+  evokeIndex?: number
+  /** A queued evoke named an enemy killed by an earlier effect. */
+  invalidEvokeTarget?: boolean
 }
 
 export type PotionContext = {
@@ -321,7 +327,7 @@ function holds(
 }
 
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: Player): number {
+function countOf(count: CountOf, actor: Pick<Player, 'orbs' | 'block' | 'strength'>): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -826,7 +832,10 @@ const ENEMY_EFFECTS = ['hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak'
  * nothing. A bonus reads board state this function is not given, so any bonus
  * counts as "might swing".
  */
-function reachesEnemy(effect: Effect, actor: Player | undefined): boolean {
+function reachesEnemy(
+  effect: Effect,
+  actor: Pick<Player, 'orbs' | 'block' | 'strength'> | undefined,
+): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
   const times = effect.times
@@ -847,10 +856,65 @@ function reachesEnemy(effect: Effect, actor: Player | undefined): boolean {
  * then discarded. `actor` is what lets both sides agree that a zero-swing
  * attack needs no target; without it the UI asked, and then nothing happened.
  */
-export function cardNeedsEnemy(def: CardDef, actor?: Player): boolean {
+export function cardNeedsEnemy(
+  def: CardDef,
+  actor?: Pick<Player, 'orbs' | 'block' | 'strength'>,
+  includeEvokes = true,
+): boolean {
   if (def.type === 'power' && def.trigger) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
-  return def.effects.some((effect) => reachesEnemy(effect, actor))
+  return def.effects.some((effect) => (includeEvokes || effect.kind !== 'evoke') && reachesEnemy(effect, actor))
+}
+
+export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
+
+function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[]) {
+  const orbs = [...actor.orbs]
+  const chosen: OrbType[] = []
+  let index = 0
+  let next: EvokeChoice | null = null
+  let invalid = false
+
+  const evoke = () => {
+    const options = orbs.flatMap((orb, slot) => orb ? [{ slot, orb }] : [])
+    if (options.length === 0) return true
+    const slot = slots[index]
+    if (slot === undefined) {
+      next = { index, options }
+      return false
+    }
+    const picked = options.find((option) => option.slot === slot)
+    if (!picked) {
+      invalid = true
+      return false
+    }
+    chosen.push(picked.orb)
+    orbs[slot] = null
+    index += 1
+    return true
+  }
+
+  for (const effect of def.effects) {
+    if (effect.kind === 'channel') {
+      for (let count = 0; count < effect.amount; count++) {
+        if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid }
+        const open = orbs.indexOf(null)
+        if (open >= 0) orbs[open] = effect.orb
+      }
+    } else if (effect.kind === 'evoke') {
+      for (let count = 0; count < effect.times; count++) if (!evoke()) return { chosen, index, next, invalid }
+    }
+  }
+  return { chosen, index, next, invalid }
+}
+
+/** The next Orb choice a staged card needs, after its earlier choices. */
+export function nextEvokeChoice(
+  def: CardDef,
+  actor: Pick<Player, 'orbs'>,
+  slots: readonly number[],
+): EvokeChoice | null {
+  return evokePlan(def, actor, slots).next
 }
 
 function needsChosenEnemy(
@@ -858,8 +922,9 @@ function needsChosenEnemy(
   def: CardDef,
   chosenUid: string | null,
   actor: Player,
+  includeEvokes = true,
 ): boolean {
-  if (!cardNeedsEnemy(def, actor)) return false
+  if (!cardNeedsEnemy(def, actor, includeEvokes)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 
@@ -935,11 +1000,25 @@ export function playCard(
     player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
   )) return state
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
+  const plan = evokePlan(def, player, context.evokeSlots ?? [])
+  if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return state
+  if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return state
+  if (context.evokeEnemyUids) {
+    if (!context.evokeSlots || context.evokeEnemyUids.length !== plan.chosen.length) return state
+    for (let index = 0; index < plan.chosen.length; index++) {
+      const target = context.evokeEnemyUids[index]
+      if (plan.chosen[index] === 'frost') {
+        if (target !== null) return state
+      } else if (typeof target !== 'string' || !livingEnemies(state).some((enemy) => enemy.uid === target)) {
+        return state
+      }
+    }
+  }
   // A card that must pick an enemy but was given none would otherwise spend the
   // Energy, discard itself and do nothing. The UI never allows it, but the room
   // server hands this function messages straight off the network, so the check
   // belongs here rather than in the client.
-  if (needsChosenEnemy(state, def, context.enemyUid, player)) return state
+  if (needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids)) return state
   // A co-op target can die or disconnect after the client stages the card.
   // Refuse the stale command instead of silently redirecting its support
   // effect to the caster.
@@ -984,10 +1063,14 @@ export function playCard(
   const ctx: PlayContext = {
     ...context,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
+    evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
+    evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
     spentUids: new Set<string>(),
     shortfall: false,
     shivTargetIndex: 0,
     invalidShivTarget: false,
+    evokeIndex: 0,
+    invalidEvokeTarget: false,
   }
   if (resolvesOnPlay) {
     for (const effect of def.effects) {
@@ -1000,7 +1083,7 @@ export function playCard(
   // card's effects for nothing. The whole play is resolved into a clone first,
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
-  if (ctx.shortfall || ctx.invalidShivTarget) return state
+  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget) return state
 
   if (def.exhaust) {
     exhaustCards(next, actor, [held])
@@ -1514,10 +1597,8 @@ function channelOrb(
  * Evokes one orb and applies its effect.
  *
  * The board game lets you evoke ANY orb — there is no front slot and no
- * rotation (p.16) — and `context.evokeSlots` carries that choice, which the
- * room layer forwards. The LOCAL UI does not yet collect it, so playing from
- * this client always takes the first occupied slot. That gap is listed in
- * state.ts rather than papered over here.
+ * rotation (p.16) — and the atomic context carries one slot and, where needed,
+ * one enemy for each evoke.
  */
 function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void {
   // The slot has to be a real array INDEX, not any property key. These values
@@ -1526,19 +1607,26 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
   // `length`, truncating the array to zero slots for the rest of the combat.
   // `orbs['__proto__']` was worse: it nulled the prototype and the next call
   // threw straight out of the room layer.
-  const chosen = context.evokeSlots?.find(
-    (slot) =>
-      Number.isInteger(slot) && slot >= 0 && slot < actor.orbs.length && actor.orbs[slot] != null,
-  )
-  const slot = chosen ?? actor.orbs.findIndex((orb) => orb != null)
+  const index = context.evokeIndex ?? 0
+  const chosen = context.evokeSlots?.[index]
+  const slot = chosen !== undefined && Number.isInteger(chosen) && chosen >= 0 &&
+    chosen < actor.orbs.length && actor.orbs[chosen] != null
+    ? chosen
+    : actor.orbs.findIndex((orb) => orb != null)
   if (slot < 0) return
   const orb = actor.orbs[slot]
   if (!orb) return
   actor.orbs[slot] = null
+  context.evokeIndex = index + 1
 
-  const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
+  const chosenTarget = context.evokeEnemyUids?.[index]
+  const target = context.evokeEnemyUids
+    ? livingEnemies(state).find((enemy) => enemy.uid === chosenTarget)
+    : resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
   if (orb === 'lightning') {
-    if (target) damageEnemyLogged(state, target, 2, `${actor.name}'s Lightning orb`)
+    if (!target) {
+      if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
+    } else damageEnemyLogged(state, target, 2, `${actor.name}'s Lightning orb`)
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1)
@@ -1548,7 +1636,9 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
   } else {
     // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
     // time and is not boosted by card effects (rulebook FAQ, p.18).
-    if (target) damageEnemyLogged(state, target, 3 + actor.powers.length, `${actor.name}'s Dark orb`)
+    if (!target) {
+      if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
+    } else damageEnemyLogged(state, target, 3 + actor.powers.length, `${actor.name}'s Dark orb`)
   }
 }
 

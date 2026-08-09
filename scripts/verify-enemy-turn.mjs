@@ -723,7 +723,7 @@ check('an evoked orb names itself', () => {
     ),
     'p1',
     lightning.uid,
-    { enemyUid: 'e1', playerId: 'p1' },
+    { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'] },
   )
   assert(
     zap.log.some((line) => /Lightning orb/.test(line)),
@@ -739,7 +739,7 @@ check('an evoked orb names itself', () => {
     ),
     'p1',
     frostCard.uid,
-    { enemyUid: 'e1', playerId: 'p1' },
+    { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null] },
   )
   assert(
     frost.log.some((line) => /Frost orb gives 1 Block/.test(line)),
@@ -891,7 +891,7 @@ check('damage dealt by an orb is reported in full, including the kill', () => {
     ),
     'p1',
     killer.uid,
-    { enemyUid: 'e1', playerId: 'p1' },
+    { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'] },
   )
   assert(killed.enemies[0].dead, 'precondition: the orb should kill it')
   assert(
@@ -914,7 +914,7 @@ check('damage dealt by an orb is reported in full, including the kill', () => {
     ),
     'p1',
     blocked.uid,
-    { enemyUid: 'e1', playerId: 'p1' },
+    { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'] },
   )
   assert(
     partly.log.some((line) => /for 1 \(1 blocked\)/.test(line)),

@@ -1139,18 +1139,10 @@ export const CARDS: Record<string, CardDef> = {
  * because a card that silently drops a clause is worse than a missing card: it
  * plays, it looks right, and it is wrong.
  *
- * - An evoke the player is never asked about (Charge Battery). Its clause is
- *   "Gain [frost] if you have 3 or more Orbs", and 3 IS the full board, so the
- *   channel can only ever land by evoking something first. p.16 gives that
- *   choice to the player — "evoke any orb of your choice" — and the local UI
- *   does not collect it, so the engine falls back to the first occupied slot
- *   and the first living enemy. Every other channel card can dodge this by
- *   having a slot free; this one cannot, so it would make an unasked decision
- *   on 100% of its successful plays. The engine side is ready (`evokeSlots` is
- *   plumbed through `PlayContext`); the card comes back with the picker, and
- *   `Condition` gets its `orbsAtLeast` variant back at the same time — a
- *   deferred card leaves no vocabulary behind, or the branch sits unreachable
- *   and untested until somebody trusts it.
+ * - A conditional Orb channel (Charge Battery): "Gain [frost] if you have 3 or
+ *   more Orbs". The picker now handles the forced evoke, but `Condition` and
+ *   the picker still need the same `orbsAtLeast` question; otherwise the UI
+ *   would ask for an evoke even when the clause does not happen.
  * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
  * - Temporary Strength (Flex): a buff that expires at end of turn.
  * - Deck manipulation (Anger): putting the played card on top of the draw pile.

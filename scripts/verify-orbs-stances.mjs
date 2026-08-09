@@ -54,7 +54,9 @@ check('channelling into a full board evokes an orb to make room', () => {
     [player({ hand: [zap], orbs: ['frost', 'frost', 'frost'] })],
     [enemy()],
   )
-  const next = playCard(state, 'p1', zap.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const next = playCard(state, 'p1', zap.uid, {
+    enemyUid: 'e1', playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null],
+  })
   const orbs = next.players[0].orbs
   assertEqual(orbs.filter((orb) => orb === null).length, 0, 'the board stays full')
   assert(orbs.includes('lightning'), 'the new orb is placed')
@@ -68,9 +70,103 @@ check('Dual Cast evokes twice', () => {
     [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
     [enemy({ hp: 20 })],
   )
-  const next = playCard(state, 'p1', dual.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const next = playCard(state, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+  })
   assertEqual(next.enemies[0].hp, 16, 'two Lightning evokes deal 2 damage each')
   assertDeepEqual(next.players[0].orbs, [null, null, null], 'both orbs are spent')
+})
+
+check('each evoke chooses its own Orb and enemy', () => {
+  const dual = instance('dual_cast')
+  const state = combat(
+    [player({ hand: [dual], orbs: ['lightning', 'frost', 'dark'] })],
+    [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 })],
+  )
+  const next = playCard(state, 'p1', dual.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    evokeSlots: [2, 0],
+    evokeEnemyUids: ['e2', 'e1'],
+  })
+  assertDeepEqual(next.players[0].orbs, [null, 'frost', null], 'the chosen Dark and Lightning are spent')
+  assertDeepEqual(next.enemies.map((target) => target.hp), [18, 17], 'each damage Orb uses its own enemy')
+})
+
+check('a forced full-board channel uses the chosen Orb slot', () => {
+  const zap = instance('zap')
+  const state = combat(
+    [player({ hand: [zap], orbs: ['lightning', 'frost', 'dark'] })],
+    [enemy()],
+  )
+  const next = playCard(state, 'p1', zap.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    evokeSlots: [1],
+    evokeEnemyUids: [null],
+  })
+  assertDeepEqual(next.players[0].orbs, ['lightning', 'lightning', 'dark'])
+  assertEqual(next.players[0].block, 1, 'the chosen Frost evokes before Lightning fills its slot')
+})
+
+check('exact evoke choices reject malformed or stale plans atomically', () => {
+  const make = () => {
+    const dual = instance('dual_cast')
+    return {
+      dual,
+      state: combat(
+        [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
+        [enemy({ uid: 'e1', hp: 2, maxHp: 2 }), enemy({ uid: 'e2', row: 1 })],
+      ),
+    }
+  }
+  for (const context of [
+    {},
+    { evokeSlots: [0, 1] },
+    { evokeEnemyUids: ['e1', 'e2'] },
+  ]) {
+    const { dual, state } = make()
+    assert(playCard(state, 'p1', dual.uid, {
+      enemyUid: 'e1', playerId: 'p1', ...context,
+    }) === state, `accepted incomplete plan ${JSON.stringify(context)}`)
+  }
+  for (const context of [
+    { evokeSlots: [0, 0], evokeEnemyUids: ['e1', 'e2'] },
+    { evokeSlots: [0, 1], evokeEnemyUids: ['e1'] },
+    { evokeSlots: [0, 1], evokeEnemyUids: [null, 'e2'] },
+  ]) {
+    const { dual, state } = make()
+    assert(playCard(state, 'p1', dual.uid, {
+      enemyUid: null, playerId: 'p1', ...context,
+    }) === state, `accepted ${JSON.stringify(context)}`)
+  }
+
+  const { dual, state } = make()
+  const stale = playCard(state, 'p1', dual.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    evokeSlots: [0, 1],
+    evokeEnemyUids: ['e1', 'e1'],
+  })
+  assert(stale === state, 'a later evoke silently retargeted after the first defeated its enemy')
+  assertDeepEqual(state.enemies.map((target) => target.hp), [2, 20], 'the refused plan leaked damage')
+})
+
+check('a later damaging evoke may fizzle after an earlier evoke wins combat', () => {
+  const dual = instance('dual_cast')
+  const state = combat(
+    [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
+    [enemy({ uid: 'e1', hp: 2, maxHp: 2 })],
+  )
+  const next = playCard(state, 'p1', dual.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    evokeSlots: [0, 1],
+    evokeEnemyUids: ['e1', 'e1'],
+  })
+  assert(next !== state, 'the winning play was rolled back when no target remained')
+  assertEqual(next.phase, 'won')
+  assertDeepEqual(next.players[0].orbs, [null, null, null], 'both chosen Orbs were evoked')
 })
 
 // p.16: Lightning evokes for 2, Frost for 1 Block, Dark for 3 plus one per Power.
@@ -78,12 +174,14 @@ check('each orb type evokes for its printed effect', () => {
   const dual = instance('dual_cast')
   const frost = playCard(
     combat([player({ hand: [dual], orbs: ['frost', null, null] })], [enemy()]),
-    'p1', dual.uid, { enemyUid: 'e1', playerId: 'p1' },
+    'p1', dual.uid, { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null] },
   )
   assertEqual(frost.players[0].block, 1, 'Frost evokes for 1 Block')
 
   const darkState = combat([player({ hand: [dual], orbs: ['dark', null, null] })], [enemy({ hp: 20 })])
-  const dark = playCard(darkState, 'p1', dual.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const dark = playCard(darkState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
   assertEqual(dark.enemies[0].hp, 17, 'Dark evokes for 3 with no Powers in play')
 })
 
@@ -100,7 +198,9 @@ check('a Dark orb evokes for 3 plus one per Power in play', () => {
     })],
     [enemy({ hp: 20 })],
   )
-  const next = playCard(state, 'p1', dual.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const next = playCard(state, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
   assertEqual(next.enemies[0].hp, 15, '3 base plus 1 for each of the two Powers')
 })
 

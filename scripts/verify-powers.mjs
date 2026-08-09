@@ -572,7 +572,9 @@ check('a Frost orb evoked for Block fires a Block Power', () => {
     [player({ hand: [card], orbs: ['frost', null, null], powers: [blockWatcher()] })],
     [enemy()],
   )
-  const next = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: 'p1' })
+  const next = playCard(state, 'p1', card.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null],
+  })
   assertEqual(next.players[0].block, 1, 'the Frost orb granted its Block')
   assertEqual(next.players[0].strength, 1, 'and the Block Power saw it')
 })

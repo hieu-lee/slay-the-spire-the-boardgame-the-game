@@ -567,7 +567,13 @@ export const uidList = (value) =>
  * the array, and `'__proto__'` crashed the room layer outright.
  */
 const slotList = (value) =>
-  Array.isArray(value) ? value.filter((item) => Number.isInteger(item) && item >= 0) : undefined
+  Array.isArray(value)
+    ? value.slice(0, UID_LIMIT).map((item) => Number.isInteger(item) && item >= 0 ? item : -1)
+    : undefined
+
+const targetList = (value) => Array.isArray(value)
+  ? value.slice(0, UID_LIMIT).map((item) => item === null || typeof item === 'string' ? item : '')
+  : undefined
 
 function overflowChoices(combat, effects, action) {
   const gained = effects.reduce(
@@ -623,6 +629,7 @@ function dispatch(run, seat, action) {
         // fall back to the first filled slot.
         scryDiscardUids: uidList(action.scryDiscardUids),
         evokeSlots: slotList(action.evokeSlots),
+        evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
       const combat = playCard(run.combat, seat.playerId, action.cardUid, context)
       if (combat === run.combat && overflow > 0 && shivEnemyUids.length > 0) {

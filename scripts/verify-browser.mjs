@@ -612,6 +612,41 @@ check('channelled orbs are visible on the seat', () => {
   assert(orbView.label.includes('frost orb'), `both of them: ${orbView.label}`)
 })
 
+// p.16 makes every evoke two real choices: any occupied Orb, then an enemy
+// for Lightning or Dark. Exercise the staged picker through the rendered UI,
+// not by passing a context directly to the engine.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-dual-cast', defId: 'dual_cast', upgraded: false }]
+  player.energy = 3
+  player.orbs = ['lightning', 'frost', 'dark']
+  run.combat.phase = 'player'
+  for (const enemy of run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Dual Cast,/ }).click()
+await page.getByRole('button', { name: /dark slot 3/i }).waitFor()
+await page.waitForTimeout(250)
+await shot('06-orb-evoke-choice')
+await page.getByRole('button', { name: /dark slot 3/i }).click()
+await page.getByText('Choose an enemy for this evoke').waitFor()
+await page.waitForTimeout(250)
+await shot('06b-orb-evoke-target')
+await page.locator('.enemy--targeted').nth(1).click()
+await page.getByRole('button', { name: /lightning slot 1/i }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const chosenEvokes = await readState()
+check('the local UI collects a separate Orb and enemy for every evoke', () => {
+  assertDeepEqual(chosenEvokes.players[0].orbs, [null, 'frost', null])
+  assertDeepEqual(chosenEvokes.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [17, 18, 20, 20])
+  assertEqual(chosenEvokes.players[0].energy, 2)
+})
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

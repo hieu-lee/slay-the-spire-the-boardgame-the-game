@@ -1170,10 +1170,9 @@ check('an attack that will swing zero times asks for no target', () => {
   assertEqual(next.players[0].energy, 2, 'and still cost its Energy')
 })
 
-check('an evoke card asks for a target, and hits the one chosen', () => {
-  // cardNeedsEnemy is exported so the UI prompts for exactly what the engine
-  // requires; without evoke in that list the UI stops asking and the engine
-  // silently aims at the first living enemy.
+check('an evoke card hits the exact target carried with its Orb choice', () => {
+  // The broad predicate still reports that an evoke can damage an enemy; the
+  // UI splits this into its Orb picker and per-evoke target picker.
   assertEqual(cardNeedsEnemy(cardDef('dual_cast')), true, 'Dual Cast needs a target')
 
   const card = instance('dual_cast')
@@ -1181,7 +1180,12 @@ check('an evoke card asks for a target, and hits the one chosen', () => {
     [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: ['lightning', null, null] })],
     [makeEnemy({ uid: 'e1', row: 0, hp: 20 }), makeEnemy({ uid: 'e2', row: 1, hp: 20 })],
   )
-  const next = playCard(state, 'p1', card.uid, { enemyUid: 'e2', playerId: 'p1' })
+  const next = playCard(state, 'p1', card.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    evokeSlots: [0],
+    evokeEnemyUids: ['e2'],
+  })
   assertEqual(next.enemies[1].hp, 18, 'the chosen enemy took the orb')
   assertEqual(next.enemies[0].hp, 20, 'and the other did not')
 })
@@ -1353,13 +1357,13 @@ check('a crafted orb slot is refused by the ENGINE, not just the transport', () 
       threw = error
     }
     assertEqual(threw, null, `${String(crafted[0])} threw ${threw?.message}`)
+    assert(next === state, `${String(crafted[0])} was not refused atomically`)
     assertEqual(next.players[0].orbs.length, 3, `${String(crafted[0])} changed the slot count`)
-    // It falls back to the real orb rather than evoking a phantom one.
-    assertEqual(next.enemies[0].hp, 18, `${String(crafted[0])} did not fall back to the real orb`)
+    assertEqual(next.enemies[0].hp, 20, `${String(crafted[0])} damaged an enemy on a refused play`)
   }
 })
 
-check('an empty but valid slot falls back to a charged orb', () => {
+check('an empty but valid slot is refused instead of changing the choice', () => {
   const card = instance('dual_cast')
   const state = combat(
     [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: ['lightning', null, null] })],
@@ -1370,7 +1374,7 @@ check('an empty but valid slot falls back to a charged orb', () => {
     playerId: 'p1',
     evokeSlots: [2],
   })
-  assertEqual(next.enemies[0].hp, 18, 'naming an empty slot must not waste the card')
+  assert(next === state, 'naming an empty slot must leave the card available for a corrected choice')
 })
 
 check('a room already occupied cannot be re-entered to farm it', () => {
