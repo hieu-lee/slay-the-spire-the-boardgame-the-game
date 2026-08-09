@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import {
+  activatePotion,
   beginEndPlayerTurn,
   cardNeedsEnemy,
   endPlayerTurn,
@@ -13,6 +14,7 @@ import {
   startPlayerTurn,
 } from '../game/combat.ts'
 import type { CombatState, DiscardOrders } from '../game/combat.ts'
+import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
 import { Card } from './Card.tsx'
@@ -27,7 +29,7 @@ type CombatScreenProps = {
   /** The seat this client controls. Everyone sees the same board. */
   viewerId: string
   onChange?: (next: CombatState) => void
-  onAction?: (action: Record<string, unknown>) => void
+  onAction?: (action: Record<string, unknown>) => void | Promise<unknown>
   drawCount?: number
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
@@ -171,13 +173,24 @@ function describeSeat(player: Player): string {
     ['Miracles', player.miracles],
   ]
   for (const [label, value] of tokens) if (value > 0) parts.push(`${label} ${value}`)
+  if (player.strengthLossAtEndOfTurn > 0) {
+    parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
+  }
   for (const orb of player.orbs) if (orb) parts.push(`${orb} orb`)
+  if (player.potions.length > 0) parts.push(`potions ${potionSummary(player)}`)
   if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
   // Powers are deliberately NOT listed here. They render as a sibling list
   // outside this button, with their own labels — naming them here as well had
   // a screen reader announce every Power twice.
   if (player.dead) parts.push('defeated')
   return parts.join(', ')
+}
+
+function potionSummary(player: Player): string {
+  return [...new Set(player.potions)].map((potionId) => {
+    const count = player.potions.filter((held) => held === potionId).length
+    return `${potionDef(potionId).name}${count > 1 ? ` ×${count}` : ''}`
+  }).join(', ')
 }
 
 /**
@@ -262,15 +275,27 @@ export function CombatScreen({
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
   const [spendingShiv, setSpendingShiv] = useState(false)
+  const [pendingPotion, setPendingPotion] = useState<string | null>(null)
+  const [usingPotion, setUsingPotion] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const boardRef = useRef<HTMLDivElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
+  const followViewerRow = useRef(true)
+  const programmaticScrollTop = useRef<number | null>(null)
+  const manualBoardScroll = useRef(false)
+  const potionActionPending = useRef(false)
   const viewer = state.players.find((player) => player.id === viewerId)
   const rows = useMemo(() => rowsOf(state), [state])
   const savedDiscardKey = savedDiscardOrder?.join('\0')
 
   const { struck, beat } = useStruck(state)
+
+  function recenterViewerRow() {
+    const board = boardRef.current
+    revealViewerRow(board, viewerRowRef.current)
+    programmaticScrollTop.current = board?.scrollTop ?? null
+  }
 
   // A card staged but never targeted would otherwise keep prompting "Choose an
   // enemy" into the Enemy Turn, highlighting enemies that cannot be clicked —
@@ -280,7 +305,14 @@ export function CombatScreen({
     setPending(null)
     setMiracleOnCard(false)
     setSpendingShiv(false)
+    setPendingPotion(null)
   }, [state.phase, viewerId])
+
+  useEffect(() => {
+    if (onAction) return
+    potionActionPending.current = false
+    setUsingPotion(false)
+  }, [onAction, state])
 
   useEffect(() => {
     if (state.phase !== 'discard') {
@@ -314,15 +346,75 @@ export function CombatScreen({
   // row you control, and the enemy you are fighting, out of view exactly when
   // you are meant to be reading them.
   useLayoutEffect(() => {
-    revealViewerRow(boardRef.current, viewerRowRef.current)
+    followViewerRow.current = true
+    recenterViewerRow()
   }, [viewerId, state.turn, state.phase])
+
+  useLayoutEffect(() => {
+    if (followViewerRow.current) recenterViewerRow()
+  }, [state.log.length])
+
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (followViewerRow.current) recenterViewerRow()
+    })
+    observer.observe(board)
+    for (const row of board.querySelectorAll('.row')) observer.observe(row)
+    return () => observer.disconnect()
+  }, [viewerId])
+
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    const inspectElsewhere = () => {
+      if (
+        programmaticScrollTop.current !== null &&
+        Math.abs(board.scrollTop - programmaticScrollTop.current) < 1
+      ) {
+        programmaticScrollTop.current = null
+        return
+      }
+      programmaticScrollTop.current = null
+      if (manualBoardScroll.current) {
+        manualBoardScroll.current = false
+        followViewerRow.current = false
+      }
+    }
+    const armScroll = () => { manualBoardScroll.current = true }
+    const armKeyboardScroll = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) armScroll()
+    }
+    const armScrollbar = (event: PointerEvent) => {
+      if (event.target === board) armScroll()
+    }
+    const releasePointer = () => requestAnimationFrame(() => { manualBoardScroll.current = false })
+    board.addEventListener('wheel', armScroll, { passive: true })
+    board.addEventListener('touchmove', armScroll, { passive: true })
+    board.addEventListener('pointerdown', armScrollbar)
+    board.addEventListener('pointerup', releasePointer)
+    board.addEventListener('keydown', armKeyboardScroll)
+    board.addEventListener('scroll', inspectElsewhere, { passive: true })
+    return () => {
+      board.removeEventListener('wheel', armScroll)
+      board.removeEventListener('touchmove', armScroll)
+      board.removeEventListener('pointerdown', armScrollbar)
+      board.removeEventListener('pointerup', releasePointer)
+      board.removeEventListener('keydown', armKeyboardScroll)
+      board.removeEventListener('scroll', inspectElsewhere)
+    }
+  }, [viewerId])
 
   // And again whenever the viewport changes shape. The scroll position is
   // measured in pixels against the old layout, so rotating a phone or resizing
   // a window left the player's own row — and the enemy they are fighting —
   // scrolled off the board.
   useEffect(() => {
-    const reveal = () => revealViewerRow(boardRef.current, viewerRowRef.current)
+    const reveal = () => {
+      followViewerRow.current = true
+      recenterViewerRow()
+    }
     window.addEventListener('resize', reveal)
     return () => window.removeEventListener('resize', reveal)
   }, [])
@@ -365,6 +457,33 @@ export function CombatScreen({
       onChange?.(endPlayerTurn(state, orders))
     } else {
       setDiscardOrders(orders)
+    }
+  }
+
+  function consumePotion(
+    potionId: string,
+    enemyUid: string | null = null,
+    targetPlayerId: string | null = null,
+  ) {
+    if (potionActionPending.current) return
+    potionActionPending.current = true
+    setUsingPotion(true)
+    setPending(null)
+    setSpendingShiv(false)
+    setPendingPotion(null)
+    if (onAction) {
+      const finish = () => {
+        potionActionPending.current = false
+        setUsingPotion(false)
+      }
+      Promise.resolve(onAction({ kind: 'usePotion', potionId, enemyUid, targetPlayerId })).then(finish, finish)
+      return
+    }
+    const result = activatePotion(state, viewer!.id, potionId, enemyUid, targetPlayerId)
+    if (result !== state) onChange?.(result)
+    else {
+      potionActionPending.current = false
+      setUsingPotion(false)
     }
   }
   // The engine charges a consuming clause against the hand AS THAT CLAUSE
@@ -421,6 +540,7 @@ export function CombatScreen({
 
   function onCardClick(card: CardInstance) {
     setSpendingShiv(false)
+    setPendingPotion(null)
     // While a card is waiting on a choice, clicks in hand pick cards for it.
     if (pending?.choice && card.uid !== pending.card.uid) {
       const already = pending.picked.includes(card.uid)
@@ -464,6 +584,10 @@ export function CombatScreen({
   }
 
   function onEnemyClick(enemy: Enemy) {
+    if (pendingPotion) {
+      if (potionDef(pendingPotion).targetsEnemy) consumePotion(pendingPotion, enemy.uid)
+      return
+    }
     if (spendingShiv) {
       if (onAction) {
         setSpendingShiv(false)
@@ -493,6 +617,11 @@ export function CombatScreen({
   }
 
   function onAllyClick(ally: Player) {
+    if (ally.dead) return
+    if (pendingPotion && potionDef(pendingPotion).supportTarget === 'anyPlayer') {
+      consumePotion(pendingPotion, null, ally.id)
+      return
+    }
     if (!pending || !pending.needsAlly || !enemyChoicesDone || !choiceSatisfied) return
     commit({ ...pending, playerId: ally.id })
   }
@@ -508,7 +637,9 @@ export function CombatScreen({
         ? 'Choose an enemy — its whole row is hit, and the boss'
         : 'Choose an enemy — its whole row is hit'
       : 'Choose an enemy'
-  const prompt = spendingShiv
+  const prompt = pendingPotion
+    ? `Choose ${potionDef(pendingPotion).targetsEnemy ? 'an enemy' : 'a player'} for ${potionDef(pendingPotion).name}`
+    : spendingShiv
     ? 'Choose an enemy for the Shiv'
     : pending?.choice && !choiceSatisfied
       ? `${pending.choice.kind === 'discard' ? 'Discard' : 'Exhaust'} ${choiceNeeded} card${
@@ -529,8 +660,35 @@ export function CombatScreen({
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
-          {state.phase === 'player' || (state.phase === 'discard' && !viewer.dead) ? (
+          {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
             <>
+              {state.phase === 'player' ? [...new Set(viewer.potions)].map((potionId) => {
+                const potion = potionDef(potionId)
+                const staged = pendingPotion === potionId
+                const count = viewer.potions.filter((held) => held === potionId).length
+                const needsTarget = potion.targetsEnemy || (
+                  potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
+                )
+                return (
+                  <button
+                    type="button"
+                    key={potionId}
+                    disabled={usingPotion}
+                    aria-pressed={needsTarget ? staged : undefined}
+                    title={potion.text}
+                    onClick={() => {
+                      if (needsTarget) {
+                        setPending(null)
+                        setSpendingShiv(false)
+                        setMiracleOnCard(false)
+                        setPendingPotion(staged ? null : potionId)
+                      } else consumePotion(potionId)
+                    }}
+                  >
+                    <Icon name="potion" size={16} /> {staged ? '✓ ' : ''}{potion.name}{count > 1 ? ` ×${count}` : ''}
+                  </button>
+                )
+              }) : null}
               {state.phase === 'player' && viewer.shivs > 0 ? (
                 <button
                   type="button"
@@ -538,6 +696,7 @@ export function CombatScreen({
                   onClick={() => {
                     setPending(null)
                     setMiracleOnCard(false)
+                    setPendingPotion(null)
                     setSpendingShiv((current) => !current)
                   }}
                 >
@@ -556,6 +715,7 @@ export function CombatScreen({
                     else {
                       setPending(null)
                       setSpendingShiv(false)
+                      setPendingPotion(null)
                       setMiracleOnCard((current) => !current)
                     }
                   }}
@@ -632,6 +792,7 @@ export function CombatScreen({
             onClick={() => {
               setPending(null)
               setSpendingShiv(false)
+              setPendingPotion(null)
             }}
           >
             Cancel
@@ -639,7 +800,7 @@ export function CombatScreen({
         </p>
       ) : null}
 
-      <div className="board" data-rows={rows.length} ref={boardRef}>
+      <div className="board" data-rows={rows.length} ref={boardRef} tabIndex={0} aria-label="Combat board">
         {bosses.length > 0 ? (
           <div className="board__bosses">
             {bosses.map((enemy) => (
@@ -650,7 +811,7 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={(spendingShiv || (
+                targeted={((pendingPotion !== null && potionDef(pendingPotion).targetsEnemy) || spendingShiv || (
                   pending?.needsEnemy === true && !enemyChoicesDone && choiceSatisfied
                 )) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -678,7 +839,9 @@ export function CombatScreen({
                         occupant.id === viewerId ? 'seat--viewer' : '',
                         occupant.dead ? 'seat--dead' : '',
                         struck.has(occupant.id) ? strikeClass('seat', beat) : '',
-                        pending?.needsAlly && enemyChoicesDone && choiceSatisfied
+                        (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
+                          (pending?.needsAlly && enemyChoicesDone && choiceSatisfied))
+                        )
                           ? 'seat--targetable'
                           : '',
                       ]
@@ -707,6 +870,16 @@ export function CombatScreen({
                         shivs={occupant.shivs}
                         miracles={occupant.miracles}
                       />
+                      {occupant.strengthLossAtEndOfTurn > 0 ? (
+                        <span className="seat__pending">
+                          −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
+                        </span>
+                      ) : null}
+                      {occupant.potions.length > 0 ? (
+                        <span className="seat__potions" title="Held potions">
+                          <Icon name="potion" size={14} /> {potionSummary(occupant)}
+                        </span>
+                      ) : null}
                       {occupant.stance !== 'neutral' ? (
                         <span className={`stance stance--${occupant.stance}`}>{occupant.stance}</span>
                       ) : null}
@@ -729,7 +902,7 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={(spendingShiv || (
+                      targeted={((pendingPotion !== null && potionDef(pendingPotion).targetsEnemy) || spendingShiv || (
                         pending?.needsEnemy === true && !enemyChoicesDone && choiceSatisfied
                       )) && !enemy.dead}
                       onClick={onEnemyClick}

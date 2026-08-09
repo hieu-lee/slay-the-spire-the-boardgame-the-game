@@ -3,7 +3,7 @@
 // A relic is a permanent, always-on effect; a potion is single-use. Both are
 // modelled as triggers rather than as code so the campaign can hold them as
 // plain data alongside everything else.
-import type { Effect } from './cards.ts'
+import type { Effect, TargetScope } from './cards.ts'
 import type { Trigger } from './triggers.ts'
 
 /** Relics and Powers share one trigger vocabulary; see triggers.ts. */
@@ -118,6 +118,8 @@ export type PotionDef = {
   effects: Effect[]
   /** Potions that need an enemy chosen, rather than landing on the drinker. */
   targetsEnemy?: boolean
+  /** Where a supportive potion may land. */
+  supportTarget?: TargetScope
   text: string
 }
 
@@ -125,15 +127,16 @@ export const POTIONS: Record<string, PotionDef> = {
   block_potion: {
     id: 'block_potion',
     name: 'Block Potion',
-    effects: [{ kind: 'block', amount: 3 }],
-    text: 'Gain 3 Block.',
+    effects: [{ kind: 'block', amount: 2, toChosen: true }],
+    supportTarget: 'anyPlayer',
+    text: '2 Block to any player.',
   },
   fire_potion: {
     id: 'fire_potion',
     name: 'Fire Potion',
-    effects: [{ kind: 'hit', amount: 3 }],
+    effects: [{ kind: 'damage', amount: 4 }],
     targetsEnemy: true,
-    text: 'Deal 3 damage.',
+    text: 'Deal 4 damage.',
   },
   energy_potion: {
     id: 'energy_potion',
@@ -156,9 +159,9 @@ export const POTIONS: Record<string, PotionDef> = {
   weak_potion: {
     id: 'weak_potion',
     name: 'Weak Potion',
-    effects: [{ kind: 'applyWeak', amount: 1 }],
+    effects: [{ kind: 'applyWeak', amount: 3 }],
     targetsEnemy: true,
-    text: 'Apply 1 Weak.',
+    text: 'Apply 3 Weak.',
   },
   vulnerable_potion: {
     id: 'vulnerable_potion',
@@ -170,8 +173,8 @@ export const POTIONS: Record<string, PotionDef> = {
   flex_potion: {
     id: 'flex_potion',
     name: 'Flex Potion',
-    effects: [{ kind: 'gainStrength', amount: 2 }],
-    text: 'Gain 2 Strength.',
+    effects: [{ kind: 'gainTemporaryStrength', amount: 1 }],
+    text: 'Gain 1 Strength. Lose 1 Strength at end of turn.',
   },
 }
 

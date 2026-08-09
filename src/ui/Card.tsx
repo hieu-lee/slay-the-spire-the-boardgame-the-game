@@ -70,6 +70,7 @@ function effectText(effect: Effect): string {
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
+    case 'gainTemporaryStrength': return `gain ${effect.amount} Strength until end of turn${condition}`
     case 'poison': return `apply ${effect.amount} Poison${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`

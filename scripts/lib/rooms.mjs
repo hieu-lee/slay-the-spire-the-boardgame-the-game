@@ -15,6 +15,7 @@
 // single writer — Node's single thread does the rest.
 import { randomBytes } from 'node:crypto'
 import {
+  activatePotion,
   advanceAct,
   beginEndPlayerTurn,
   createRun,
@@ -556,6 +557,21 @@ function dispatch(run, seat, action) {
       const combat = spendShiv(run.combat, seat.playerId, action.enemyUid)
       return combat === run.combat ? run : { ...run, combat }
     }
+    case 'usePotion': {
+      if (!run.combat) fail('No combat in progress')
+      const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
+      if (typeof action.potionId !== 'string' || !player?.potions.includes(action.potionId)) {
+        fail('That potion is not yours')
+      }
+      const combat = activatePotion(
+        run.combat,
+        seat.playerId,
+        action.potionId,
+        action.enemyUid ?? null,
+        action.targetPlayerId ?? null,
+      )
+      return combat === run.combat ? run : { ...run, combat }
+    }
     case 'enterRoom':
       return enterRoom(run, action.roomId)
     case 'leaveRoom':
@@ -684,6 +700,7 @@ function redactPlayer(player, viewerId) {
     energy: player.energy,
     gold: player.gold,
     strength: player.strength,
+    strengthLossAtEndOfTurn: player.strengthLossAtEndOfTurn,
     vulnerable: player.vulnerable,
     weak: player.weak,
     shivs: player.shivs,

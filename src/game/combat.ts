@@ -21,7 +21,7 @@ import {
   totalPoisonInPlay,
 } from './damage.ts'
 import { drawCards, discardHand, scry } from './piles.ts'
-import { relicDef } from './relics.ts'
+import { potionDef, relicDef } from './relics.ts'
 import { triggerMatches } from './triggers.ts'
 import type { Trigger, TriggerEvent } from './triggers.ts'
 import { nextInt } from './rng.ts'
@@ -477,6 +477,14 @@ function applyEffect(
           note(`${target.name} gains ${target.strength - before} Strength`)
         }
       }
+      return
+    }
+    case 'gainTemporaryStrength': {
+      const before = actor.strength
+      actor.strength = gainStrength(actor.strength, effect.amount)
+      const gained = actor.strength - before
+      actor.strengthLossAtEndOfTurn = (actor.strengthLossAtEndOfTurn ?? 0) + effect.amount
+      if (gained > 0) note(`${actor.name} gains ${gained} Strength`)
       return
     }
     case 'poison': {
@@ -1042,6 +1050,15 @@ export function beginEndPlayerTurn(state: CombatState): CombatState {
   const next = clone(state)
   fireTriggers(next, { kind: 'endOfTurn' })
 
+  for (const player of next.players) {
+    const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
+    if (loss > 0) {
+      player.strength -= loss
+      next.log = [...next.log, `${player.name} loses ${loss} Strength at end of turn`]
+    }
+    player.strengthLossAtEndOfTurn = 0
+  }
+
   // Poison is HP loss at end of turn and ignores Block; tokens never decrement.
   // Resolved before the players' own end-of-turn damage: p.12 lets end-of-turn
   // abilities go in any order, and a party that would have won on the poison
@@ -1580,5 +1597,41 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
     { enemyUid, playerId },
     'Shiv',
   )
+  return settle(next)
+}
+
+/** Use and discard one held potion during the shared Player Turn (p.8, p.12). */
+export function activatePotion(
+  state: CombatState,
+  playerId: string,
+  potionId: string,
+  enemyUid: string | null = null,
+  targetPlayerId: string | null = null,
+): CombatState {
+  if (state.phase !== 'player') return state
+  const player = findPlayer(state, playerId)
+  if (!player || player.dead || !player.potions.includes(potionId)) return state
+  const def = potionDef(potionId)
+  if (def.targetsEnemy && resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
+  if (def.supportTarget === 'anyPlayer' && targetPlayerId !== null) {
+    const target = findPlayer(state, targetPlayerId)
+    if (!target || target.dead) return state
+  }
+
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  actor.potions.splice(actor.potions.indexOf(potionId), 1)
+  next.log = [...next.log, `${actor.name} uses ${def.name}`]
+  for (const effect of def.effects) {
+    applyEffect(
+      next,
+      actor,
+      effect,
+      def.targetsEnemy ? 'enemy' : 'self',
+      def.supportTarget ?? 'self',
+      { enemyUid, playerId: targetPlayerId },
+      def.name,
+    )
+  }
   return settle(next)
 }

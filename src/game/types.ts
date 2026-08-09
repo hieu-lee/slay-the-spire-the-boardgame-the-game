@@ -60,6 +60,8 @@ export type Player = {
   powers: CardInstance[]
 
   strength: number
+  /** Strength Flex Potion requires this player to lose at end of turn. */
+  strengthLossAtEndOfTurn: number
   /** Enemies can Weaken and make players Vulnerable, same caps as enemies. */
   vulnerable: number
   weak: number

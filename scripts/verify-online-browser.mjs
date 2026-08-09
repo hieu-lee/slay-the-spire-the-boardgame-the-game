@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(repoRoot, 'artifacts/online-browser')
@@ -311,6 +311,9 @@ try {
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
   ])
+  const liveRoom = rooms.store.rooms.get(code)
+  liveRoom.run.players.find((player) => player.name === 'Ann').potions = ['energy_potion', 'energy_potion']
+  liveRoom.run.players.find((player) => player.name === 'Bo').potions = ['block_potion']
   await a.locator('.app-shell--online .room--reachable').click()
   await Promise.all([
     a.locator('.app-shell--online .combat').waitFor(),
@@ -318,6 +321,9 @@ try {
   ])
 
   const [aView, bView] = await Promise.all([snapshot(a), snapshot(b)])
+  const annPotions = await a.locator('.seat', { hasText: 'Ann' }).locator('.seat__potions').textContent()
+  const boPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
+  const foreignPotionControls = await a.locator('.combat__actions').getByRole('button', { name: /Block Potion/ }).count()
   check('each browser receives only its own hidden cards', () => {
     const aId = aView.you.playerId
     const bId = bView.you.playerId
@@ -326,6 +332,24 @@ try {
     assert(Array.isArray(bView.run.combat.players.find((player) => player.id === bId).hand))
     assertEqual(bView.run.combat.players.find((player) => player.id === aId).hand, null)
     assertEqual(aView.run.players.find((player) => player.id === bId).deck, null)
+  })
+  check('every online seat shows every face-up potion without granting its controls', () => {
+    assert(annPotions.includes('Energy Potion ×2'))
+    assert(boPotions.includes('Block Potion'))
+    assertEqual(foreignPotionControls, 0)
+  })
+
+  const energyBeforePotion = aView.run.combat.players.find((player) => player.id === aView.you.playerId).energy
+  await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).evaluate((button) => {
+    button.click()
+    button.click()
+  })
+  await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).waitFor()
+  const afterPotionDoubleClick = await snapshot(a)
+  const annAfterPotion = afterPotionDoubleClick.run.combat.players.find((player) => player.id === aView.you.playerId)
+  check('one rapid double-click consumes only one physical potion', () => {
+    assertEqual(annAfterPotion.energy, energyBeforePotion + 2)
+    assertDeepEqual(annAfterPotion.potions, ['energy_potion'])
   })
 
   const hpBefore = aView.run.combat.enemies.reduce((sum, enemy) => sum + enemy.hp, 0)
@@ -343,7 +367,39 @@ try {
     assert(hpAfter < hpBefore, `enemy HP did not fall: ${hpBefore} -> ${hpAfter}`)
     assertEqual(shownDraw, actualDraw, 'the private hand used the wrong public draw-pile count')
   })
+  const viewerEnemyGeometry = await a.evaluate(() => {
+    const board = document.querySelector('.board')?.getBoundingClientRect()
+    const bar = document.querySelector('.row--viewer .enemy .bar')?.getBoundingClientRect()
+    const element = document.querySelector('.board')
+    return {
+      visible: Boolean(board && bar && bar.top >= board.top && bar.bottom <= board.bottom),
+      board: board ? { top: board.top, bottom: board.bottom } : null,
+      bar: bar ? { top: bar.top, bottom: bar.bottom } : null,
+      scrollTop: element?.scrollTop ?? null,
+      scrollHeight: element?.scrollHeight ?? null,
+    }
+  })
+  check('in-turn updates keep the viewer row enemy HP bar inside the board', () => {
+    assert(viewerEnemyGeometry.visible, `the viewer row moved outside the board: ${JSON.stringify(viewerEnemyGeometry)}`)
+  })
   await a.screenshot({ path: join(outDir, '02-authoritative-combat.png'), fullPage: true })
+
+  const manualScroll = await a.locator('.board').evaluate(async (board) => {
+    board.focus()
+    board.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    board.scrollTop = 0
+    await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame))
+    return board.scrollTop
+  })
+  await b.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
+  if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().click()
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__log li')]
+    .some((line) => /Bo played/.test(line.textContent ?? '')))
+  await a.waitForTimeout(100)
+  const afterRemoteScroll = await a.locator('.board').evaluate((board) => board.scrollTop)
+  check('a teammate action preserves deliberate inspection of another row', () => {
+    assertEqual(afterRemoteScroll, manualScroll)
+  })
 
   await a.getByRole('button', { name: 'Solo table' }).click()
   await a.getByLabel('Seed').waitFor()
@@ -379,9 +435,13 @@ try {
     b.locator('.combat[data-phase="enemy"]').waitFor(),
   ])
   const enemyTurn = await snapshot(a)
+  const enemyTurnPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
   check('each seat independently confirms the shared end of turn', () => {
     assert(enemyTurn.run.combat.players.every((player) => player.handCount === 0))
     assertEqual(enemyTurn.run.combat.phase, 'enemy')
+  })
+  check('face-up potion summaries remain visible outside the Player Turn', () => {
+    assert(enemyTurnPotions.includes('Block Potion'))
   })
   await b.getByRole('button', { name: 'Resolve enemies' }).click()
   await a.waitForFunction(() => ['roundEnd', 'lost'].includes(document.querySelector('.app-shell--online .combat')?.dataset.phase))

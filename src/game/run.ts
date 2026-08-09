@@ -162,6 +162,7 @@ export function createPlayer(
     exhaust: [],
     powers: [],
     strength: 0,
+    strengthLossAtEndOfTurn: 0,
     vulnerable: 0,
     weak: 0,
     shivs: 0,
@@ -306,6 +307,7 @@ function readyForCombat(rng: RngState, player: Player): Player {
     exhaust: [],
     powers: [],
     strength: 0,
+    strengthLossAtEndOfTurn: 0,
     vulnerable: 0,
     weak: 0,
     shivs: 0,
@@ -389,7 +391,13 @@ export function resolveCombat(state: RunState): RunState {
     if (!after) return player
     const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
     const gold = source?.goldReward ?? 0
-    return { ...player, hp: after.hp, gold: after.gold + gold, dead: after.dead }
+    return {
+      ...player,
+      hp: after.hp,
+      gold: after.gold + gold,
+      potions: after.potions,
+      dead: after.dead,
+    }
   })
 
   const rewards = players.flatMap((player) => {

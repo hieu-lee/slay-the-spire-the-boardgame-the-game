@@ -367,6 +367,46 @@ check('online seats can spend capped Miracles and their own Shivs atomically', (
   assertEqual(enemy().hp, hp - 1, 'the Shiv attacks the chosen enemy')
 })
 
+check('an online seat can use only its own potion with a valid target', () => {
+  const { room, a, b } = twoSeatRoom()
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = () => room.run.combat.players.find((player) => player.id === b.playerId)
+  const enemy = () => room.run.combat.enemies[0]
+  mine().potions = ['fire_potion']
+  theirs().potions = ['block_potion']
+
+  const untargeted = apply(room, a.token, { kind: 'usePotion', potionId: 'fire_potion' })
+  assertEqual(untargeted.changed, false, 'a targeted potion was wasted without a target')
+  assertDeepEqual(mine().potions, ['fire_potion'])
+
+  let forged = null
+  try {
+    apply(room, b.token, { kind: 'usePotion', potionId: 'fire_potion', enemyUid: enemy().uid })
+  } catch (error) {
+    forged = error
+  }
+  assert(forged, 'one seat used another player\'s potion')
+
+  const hp = enemy().hp
+  const before = room.version
+  const used = apply(room, a.token, { kind: 'usePotion', potionId: 'fire_potion', enemyUid: enemy().uid })
+  assert(used.changed)
+  assertEqual(enemy().hp, hp - 4)
+  assertEqual(mine().potions.length, 0)
+  assertDeepEqual(theirs().potions, ['block_potion'])
+  assert(room.version > before, 'using a potion did not publish the new board')
+
+  const block = theirs().block
+  const helped = apply(room, b.token, {
+    kind: 'usePotion',
+    potionId: 'block_potion',
+    targetPlayerId: mine().id,
+  })
+  assert(helped.changed)
+  assertEqual(mine().block, 2, 'Block Potion can target another online seat')
+  assertEqual(theirs().block, block)
+})
+
 check('online seats ready together, then submit only their own post-trigger discard order', () => {
   const { room, a, b } = twoSeatRoom()
   const first = room.run.combat.players.find((player) => player.id === a.playerId)

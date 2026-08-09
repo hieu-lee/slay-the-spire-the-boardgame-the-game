@@ -1,4 +1,5 @@
 import {
+  activatePotion,
   beginEndPlayerTurn,
   cardNeedsEnemy,
   createCombat,
@@ -2166,6 +2167,89 @@ check('two of the same enemy in ONE row can still be told apart', () => {
   assert(
     !apart.log.some((line) => /#\d/.test(line)),
     `the row alone already separates these: ${apart.log.join(' | ')}`,
+  )
+})
+
+check('targeted potions require a living target and discard one copy', () => {
+  const state = combat(
+    [makePlayer({ strength: 3, weak: 1, potions: ['fire_potion', 'fire_potion'] })],
+    [makeEnemy({ hp: 8, maxHp: 8, vulnerable: 1 })],
+  )
+  assert(activatePotion(state, 'p1', 'fire_potion') === state, 'a missing target must not waste the potion')
+  const used = activatePotion(state, 'p1', 'fire_potion', 'e1')
+  assertEqual(used.enemies[0].hp, 4, 'Fire Potion deals 4 plain damage')
+  assertEqual(used.players[0].weak, 1, 'plain damage does not spend the drinker\'s Weak')
+  assertEqual(used.enemies[0].vulnerable, 1, 'plain damage does not spend Vulnerable')
+  assertDeepEqual(used.players[0].potions, ['fire_potion'], 'only one physical copy is discarded')
+  assert(used.log.some((line) => line === 'Ironclad uses Fire Potion'), 'using the item is named in the log')
+})
+
+check('support potions share the card effect resolver and obey caps', () => {
+  const draw = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash')]
+  let state = combat([
+    makePlayer({
+      hp: 5,
+      energy: 5,
+      strength: 7,
+      draw,
+      potions: ['block_potion', 'energy_potion', 'blood_potion', 'flex_potion', 'swift_potion'],
+    }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', block: 1 }),
+  ], [makeEnemy()])
+  const refused = activatePotion(state, 'p1', 'block_potion', null, 'missing')
+  assert(refused === state, 'an invalid ally must not consume Block Potion')
+  state = activatePotion(state, 'p1', 'block_potion', null, 'p2')
+  state = activatePotion(state, 'p1', 'energy_potion')
+  state = activatePotion(state, 'p1', 'blood_potion')
+  state = activatePotion(state, 'p1', 'flex_potion')
+  state = activatePotion(state, 'p1', 'swift_potion')
+  assertEqual(state.players[0].block, 0)
+  assertEqual(state.players[1].block, 3, 'Block Potion grants its printed 2 Block to any player')
+  assertEqual(state.players[0].energy, 6, 'Energy remains capped')
+  assertEqual(state.players[0].hp, 7)
+  assertEqual(state.players[0].strength, 8, 'Strength remains capped')
+  assertEqual(state.players[0].strengthLossAtEndOfTurn, 1)
+  assertEqual(state.players[0].hand.length, 3)
+  assertEqual(state.players[0].potions.length, 0, 'every used potion is discarded')
+  const ended = beginEndPlayerTurn(state)
+  assertEqual(ended.players[0].strength, 7, 'Flex Potion Strength expires at end of turn')
+  assertEqual(ended.players[0].strengthLossAtEndOfTurn, 0)
+})
+
+check('Weak Potion applies the three printed Weak tokens', () => {
+  const state = combat(
+    [makePlayer({ potions: ['weak_potion'] })],
+    [makeEnemy()],
+  )
+  const used = activatePotion(state, 'p1', 'weak_potion', 'e1')
+  assertEqual(used.enemies[0].weak, 3)
+})
+
+check('Flex Potion still loses its printed Strength when the gain hits the cap', () => {
+  const state = combat(
+    [makePlayer({ strength: 8, potions: ['flex_potion'] })],
+    [makeEnemy()],
+  )
+  const used = activatePotion(state, 'p1', 'flex_potion')
+  assertEqual(used.players[0].strength, 8, 'the unavailable gain is ignored at the cap')
+  assertEqual(used.players[0].strengthLossAtEndOfTurn, 1, 'the separate end-of-turn loss is still scheduled')
+  const ended = beginEndPlayerTurn(used)
+  assertEqual(ended.players[0].strength, 7)
+  assert(ended.log.includes('Ironclad loses 1 Strength at end of turn'))
+})
+
+check('a lethal potion ends combat immediately and cannot be used outside the Player Turn', () => {
+  const state = combat(
+    [makePlayer({ potions: ['fire_potion'] })],
+    [makeEnemy({ hp: 4, maxHp: 4 })],
+  )
+  const won = activatePotion(state, 'p1', 'fire_potion', 'e1')
+  assertEqual(won.phase, 'won')
+  assert(won.enemies[0].dead)
+  const enemyTurnState = { ...state, phase: 'enemy' }
+  assert(
+    activatePotion(enemyTurnState, 'p1', 'fire_potion', 'e1') === enemyTurnState,
+    'potions are not usable during the Enemy Turn',
   )
 })
 

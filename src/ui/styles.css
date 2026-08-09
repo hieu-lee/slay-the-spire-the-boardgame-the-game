@@ -405,6 +405,8 @@ button:disabled {
   margin-left: auto;
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .combat__result {
@@ -530,6 +532,12 @@ button:disabled {
 .seat__name {
   font-size: 0.85rem;
   letter-spacing: 0.06em;
+}
+
+.seat__potions,
+.seat__pending {
+  color: var(--ink-dim);
+  font-size: 0.65rem;
 }
 
 .stance {

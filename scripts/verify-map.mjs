@@ -178,6 +178,7 @@ import {
   MAX_HP,
 } from '../src/game/run.ts'
 import { RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
+import { activatePotion } from '../src/game/combat.ts'
 
 suite('run')
 
@@ -371,6 +372,26 @@ check('winning a combat carries HP forward into the run', () => {
   const foe = entered.combat.enemies.find((enemy) => enemy.row === entered.players[0].row)
   const printedGold = foe.goldReward
   assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
+})
+
+check('a potion consumed to win does not reappear after combat', () => {
+  const run = createRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const stocked = {
+    ...run,
+    players: run.players.map((player) => ({ ...player, potions: ['fire_potion'] })),
+  }
+  const entered = enterRoom(stocked, roomChoices(stocked)[0].id)
+  const target = entered.combat.enemies[0]
+  const prepared = {
+    ...entered.combat,
+    enemies: entered.combat.enemies.map((enemy, index) => index === 0
+      ? { ...enemy, hp: 4, maxHp: 4, block: 0, dead: false }
+      : { ...enemy, hp: 0, dead: true }),
+  }
+  const won = activatePotion(prepared, 'p1', 'fire_potion', target.uid)
+  assertEqual(won.phase, 'won')
+  const after = resolveCombat({ ...entered, combat: won })
+  assertDeepEqual(after.players[0].potions, [], 'the used potion stays discarded on the map')
 })
 
 check('a combat card reward reveals three and persists exactly one chosen card', () => {

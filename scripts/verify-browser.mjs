@@ -615,6 +615,100 @@ check('channelled orbs are visible on the seat', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.combat.players[0].potions = ['block_potion', 'fire_potion']
+  for (const enemy of run.combat.enemies) {
+    enemy.block = 0
+    enemy.abilityUsed = true
+  }
+  debug.setRun(run)
+})
+const blockBeforePotion = (await readState()).players[0].block
+await page.locator('.combat__actions').getByRole('button', { name: /Block Potion/ }).click()
+await page.waitForSelector('.seat--targetable')
+await page.locator('.prompt').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished))
+})
+await shot('05f-block-potion-targeting')
+await page.locator('.enemy:not([disabled])').first().click()
+const wrongBlockTarget = await readState()
+check('a support potion ignores enemy clicks while waiting for a player', () => {
+  assertEqual(wrongBlockTarget.players[0].block, blockBeforePotion)
+  assert(wrongBlockTarget.players[0].potions.includes('block_potion'))
+})
+await page.locator('.seat--viewer').click()
+const blockedByPotion = await readState()
+check('a support potion chooses a player from the combat board', () => {
+  assertEqual(blockedByPotion.players[0].block, blockBeforePotion + 2)
+  assertEqual(blockedByPotion.players[0].potions.includes('block_potion'), false)
+})
+const durabilityBeforePotion = blockedByPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
+await page.locator('.combat__actions').getByRole('button', { name: /Fire Potion/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.prompt').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished))
+})
+await shot('05g-potion-targeting')
+await page.locator('.enemy:not([disabled])').first().click()
+const firedPotion = await readState()
+check('a targeted potion waits for an enemy, then consumes itself', () => {
+  const durability = firedPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
+  assertEqual(durability, durabilityBeforePotion - 4)
+  assertEqual(firedPotion.players[0].potions.includes('fire_potion'), false)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].dead = true
+  run.combat.players[0].potions = ['energy_potion']
+  debug.setRun(run)
+})
+const deadPotionControls = await page.locator('.combat__actions').getByRole('button', { name: /Energy Potion/ }).count()
+const deadPotionSummary = await page.locator('.seat--viewer .seat__potions').textContent()
+check('a dead seat keeps public potion information but gets no Player Turn controls', () => {
+  assertEqual(deadPotionControls, 0)
+  assert(deadPotionSummary.includes('Energy Potion'))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].dead = false
+  run.combat.players[0].potions = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].dead === false)
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].strength = 8
+  run.combat.players[0].strengthLossAtEndOfTurn = 0
+  run.combat.players[0].potions = ['flex_potion']
+  debug.setRun(run)
+})
+await page.locator('.combat__actions').getByRole('button', { name: /Flex Potion/ }).click()
+const cappedFlex = await readState()
+const cappedFlexReminder = await page.locator('.seat--viewer .seat__pending').textContent()
+const cappedFlexSeatName = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('capped Flex shows its pending end-of-turn Strength loss', () => {
+  assertEqual(cappedFlex.players[0].strength, 8)
+  assertEqual(cappedFlex.players[0].strengthLossAtEndOfTurn, 1)
+  assert(cappedFlexReminder.includes('−1 Strength at end of turn'))
+  assert(cappedFlexSeatName.includes('Strength loss at end of turn 1'))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].strength = 0
+  run.combat.players[0].strengthLossAtEndOfTurn = 0
+  run.combat.players[0].potions = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].strength === 0)
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   const viewer = run.combat.players[0]
   viewer.hand = [{ uid: 'miracle-defend', defId: 'defend_ironclad', upgraded: false }]
   viewer.energy = 6

@@ -116,6 +116,8 @@ type EffectKind =
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
+  /** Strength that is removed during this Player Turn's end-of-turn step. */
+  | { kind: 'gainTemporaryStrength'; amount: number }
   | { kind: 'poison'; amount: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
