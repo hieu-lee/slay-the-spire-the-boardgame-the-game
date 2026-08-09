@@ -77,6 +77,7 @@ function effectText(effect: Effect): string {
       : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
     case 'poison': return `apply ${effect.amount} Poison${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
+    case 'preventDraw': return 'cannot draw more cards this turn'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`

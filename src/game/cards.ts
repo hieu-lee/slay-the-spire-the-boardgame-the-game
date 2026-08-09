@@ -130,6 +130,8 @@ type EffectKind =
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
+  /** Prevent this player from drawing again until the next Player Turn. */
+  | { kind: 'preventDraw' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
@@ -462,6 +464,11 @@ export const CARDS: Record<string, CardDef> = {
     supportTarget: 'anyPlayer',
     effects: [{ kind: 'block', amount: 2, toChosen: true }],
     upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }] },
+  }),
+  battle_trance: card({
+    id: 'battle_trance', name: 'Battle Trance', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 0,
+    effects: [{ kind: 'draw', amount: 3 }, { kind: 'preventDraw' }],
+    upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'preventDraw' }] },
   }),
 
   bash: card({
@@ -1094,6 +1101,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 1 }, { kind: 'gainMiracle', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 2 }, { kind: 'gainMiracle', amount: 1 }] },
   }),
+  pray: card({
+    id: 'pray', name: 'Pray', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'gainMiracle', amount: 1 }, { kind: 'draw', amount: 2 }, { kind: 'preventDraw' }],
+    upgrade: {
+      effects: [{ kind: 'gainMiracle', amount: 2 }, { kind: 'draw', amount: 2 }, { kind: 'preventDraw' }],
+    },
+  }),
   third_eye: card({
     id: 'third_eye', name: 'Third Eye', owner: 'watcher', type: 'skill', rarity: 'common', cost: 1,
     effects: [{ kind: 'block', amount: 2 }, { kind: 'scry', amount: 3 }],
@@ -1279,6 +1293,17 @@ export const CARDS: Record<string, CardDef> = {
     id: 'overclock', name: 'Overclock', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 0,
     effects: [{ kind: 'draw', amount: 2 }, { kind: 'addDaze', amount: 1, pile: 'discard' }],
     upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'addDaze', amount: 1, pile: 'discard' }] },
+  }),
+  darkness: card({
+    id: 'darkness', name: 'Darkness', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'channel', orb: 'dark', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
+  machine_learning: card({
+    id: 'machine_learning', name: 'Machine Learning', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'draw', amount: 1 }],
+    upgrade: { cost: 0 },
   }),
 }
 

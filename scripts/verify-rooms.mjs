@@ -920,6 +920,14 @@ check('a field added to Player later is NOT published by default', () => {
   }
 })
 
+check('a draw lock is public to the whole co-op table', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.players.find((player) => player.id === a.playerId).drawLocked = true
+  const seen = snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertEqual(seen.drawLocked, true, 'a teammate could not see that further draw effects are blocked')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

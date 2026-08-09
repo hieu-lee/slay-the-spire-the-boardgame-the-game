@@ -1719,6 +1719,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
     { id: 'riddle_with_holes', shivs: [4, 5] },
+    { id: 'battle_trance', hand: [3, 4] },
+    { id: 'pray', hand: [2, 2], miracles: [1, 2] },
+    { id: 'darkness', orb: ['dark', 'dark'] },
+    { id: 'machine_learning', powers: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1793,6 +1797,7 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.miracles) assertEqual(me.miracles, spec.miracles[at], `${label}: Miracles gained`)
       if (spec.shivs) assertEqual(me.shivs, spec.shivs[at], `${label}: Shivs gained`)
       if (spec.strength) assertEqual(me.strength, spec.strength[at], `${label}: Strength gained`)
+      if (spec.powers) assertEqual(me.powers.length, spec.powers[at], `${label}: Powers in play`)
       if (spec.vulnerable) assertEqual(foe.vulnerable, spec.vulnerable[at], `${label}: Vulnerable applied`)
       if (spec.daze) assertEqual(me.draw.filter((held) => held.defId === 'daze').length, spec.daze[at], `${label}: Daze gained`)
       if (spec.dazeDiscard) assertEqual(me.discard.filter((held) => held.defId === 'daze').length, spec.dazeDiscard[at], `${label}: Daze discarded`)
@@ -2003,6 +2008,47 @@ check('Overclock draws before putting its Daze into the discard pile', () => {
     assertDeepEqual(played.players[0].hand.map((held) => held.uid), deck.slice(0, amount).map((held) => held.uid))
     assertDeepEqual(played.players[0].discard.map((held) => held.defId), ['daze', 'overclock'])
   }
+})
+
+check('Battle Trance and Pray draw first, then block later draws until next turn', () => {
+  for (const id of ['battle_trance', 'pray']) {
+    const lock = instance(id)
+    const followup = instance('pommel_strike')
+    const deck = Array.from({ length: 8 }, () => instance('strike_ironclad'))
+    const state = combat([makePlayer({ hand: [lock, followup], draw: deck })], [makeEnemy()])
+    const locked = playCard(state, 'p1', lock.uid, { enemyUid: null, playerId: null })
+    const firstDraw = id === 'battle_trance' ? 3 : 2
+    assertEqual(locked.players[0].hand.length, firstDraw + 1)
+    assert(locked.players[0].drawLocked, `${id} did not lock later draws`)
+    const drawCount = locked.players[0].draw.length
+    const followed = playCard(locked, 'p1', followup.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(followed.players[0].draw.length, drawCount, `${id} allowed Pommel Strike to draw`)
+    assertEqual(followed.players[0].hand.length, firstDraw)
+
+    const nextDeck = Array.from({ length: 6 }, () => instance('defend_ironclad'))
+    const nextTurn = startPlayerTurn({
+      ...followed,
+      phase: 'roundEnd',
+      players: [{ ...followed.players[0], hand: [], draw: nextDeck, discard: [] }],
+    })
+    assert(!nextTurn.players[0].drawLocked, `${id} draw lock survived the next Player Turn`)
+    assertEqual(nextTurn.players[0].hand.length, 5)
+  }
+})
+
+check('Machine Learning draws after the normal five-card start-of-turn draw', () => {
+  const machine = instance('machine_learning')
+  const state = combat([makePlayer({ character: 'defect', hand: [machine] })], [makeEnemy()])
+  const powered = playCard(state, 'p1', machine.uid, { enemyUid: null, playerId: null })
+  const deck = Array.from({ length: 6 }, () => instance('strike_defect'))
+  const next = startPlayerTurn({
+    ...powered,
+    phase: 'roundEnd',
+    players: [{ ...powered.players[0], hand: [], draw: deck, discard: [], drawLocked: true }],
+  })
+  assertEqual(next.players[0].hand.length, 6)
+  assert(!next.players[0].drawLocked)
+  assert(next.log.some((line) => line.includes('Machine Learning:') && line.includes('draws 1')))
 })
 
 check('Acrobatics privately previews its draw, then atomically discards from the drawn hand', () => {

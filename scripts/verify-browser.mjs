@@ -898,10 +898,40 @@ await shot('06k-riddle-shiv-supply')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-pray', defId: 'pray', upgraded: true }]
+  player.draw = [
+    { uid: 'ui-pray-draw-1', defId: 'strike_watcher', upgraded: false },
+    { uid: 'ui-pray-draw-2', defId: 'defend_watcher', upgraded: false },
+  ]
+  player.discard = []
+  player.energy = 3
+  player.miracles = 0
+  player.drawLocked = false
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Pray\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].drawLocked === true)
+const prayed = await readState()
+const drawLockLabel = await page.locator('.seat--viewer .seat__pending')
+  .filter({ hasText: 'Cannot draw more cards this turn' }).textContent()
+check('Pray+ grants two Miracles, draws two, and visibly locks later draws', () => {
+  assertEqual(prayed.players[0].miracles, 2)
+  assertEqual(prayed.players[0].hand.length, 2)
+  assertEqual(prayed.players[0].energy, 2)
+  assert(prayed.players[0].drawLocked)
+  assertEqual(drawLockLabel, 'Cannot draw more cards this turn')
+})
+await shot('06l-pray-draw-lock')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
   run.combat.players[0].strengthLossAtEndOfTurn = 0
+  run.combat.players[0].drawLocked = false
   run.combat.players[1].shivs = 2
   const fragile = run.combat.enemies.find((enemy) => !enemy.dead && !enemy.isBoss)
   const durable = run.combat.enemies.find((enemy) => !enemy.dead && enemy.uid !== fragile?.uid)

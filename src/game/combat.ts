@@ -567,6 +567,11 @@ function applyEffect(
       }
       return
     }
+    case 'preventDraw': {
+      actor.drawLocked = true
+      note(`${actor.name} cannot draw more cards this turn`)
+      return
+    }
     case 'gainEnergy': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.energy
@@ -760,6 +765,7 @@ function grantBlock(state: CombatState, target: Player, amount: number): void {
  * the Start of Turn draw is the usual cause of.
  */
 function drawInto(state: CombatState, actor: Player, amount: number): void {
+  if (actor.drawLocked) return
   const result = drawCards(state.rng, actor, amount)
   actor.draw = result.draw
   actor.hand = result.hand
@@ -1266,6 +1272,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     if (player.dead) continue
     player.energy = 3
     player.block = 0
+    player.drawLocked = false
   }
   for (const player of next.players) {
     if (player.dead) continue

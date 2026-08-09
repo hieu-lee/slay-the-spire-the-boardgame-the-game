@@ -69,6 +69,8 @@ export type Player = {
   /** Enemies can Weaken and make players Vulnerable, same caps as enemies. */
   vulnerable: number
   weak: number
+  /** Battle Trance and Pray prevent further draws until the next Player Turn. */
+  drawLocked: boolean
   /** Silent. */
   shivs: number
   /** Watcher. */

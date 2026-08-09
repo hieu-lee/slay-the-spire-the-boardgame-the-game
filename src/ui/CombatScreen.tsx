@@ -236,6 +236,7 @@ function describeSeat(player: Player): string {
   if (player.strengthLossAtEndOfTurn > 0) {
     parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
   }
+  if (player.drawLocked) parts.push('cannot draw more cards this turn')
   for (const orb of player.orbs) if (orb) parts.push(`${orb} orb`)
   if (player.potions.length > 0) parts.push(`potions ${potionSummary(player)}`)
   if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
@@ -1496,6 +1497,9 @@ export function CombatScreen({
                         <span className="seat__pending">
                           −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
                         </span>
+                      ) : null}
+                      {occupant.drawLocked ? (
+                        <span className="seat__pending">Cannot draw more cards this turn</span>
                       ) : null}
                       {occupant.potions.length > 0 ? (
                         <span className="seat__potions" title="Held potions">

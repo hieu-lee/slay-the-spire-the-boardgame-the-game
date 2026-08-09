@@ -993,6 +993,7 @@ function redactPlayer(player, viewerId) {
     strengthLossAtEndOfTurn: player.strengthLossAtEndOfTurn,
     vulnerable: player.vulnerable,
     weak: player.weak,
+    drawLocked: player.drawLocked === true,
     shivs: player.shivs,
     miracles: player.miracles,
     stance: player.stance,
