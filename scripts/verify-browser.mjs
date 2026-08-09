@@ -927,6 +927,49 @@ await shot('06l-pray-draw-lock')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  Object.assign(actor, {
+    row: 0,
+    hand: [{ uid: 'ui-dash', defId: 'dash', upgraded: true }],
+    energy: 3,
+    block: 0,
+    drawLocked: false,
+    dead: false,
+    strength: 0,
+    weak: 0,
+  })
+  Object.assign(ally, { row: 1, dead: false, hp: Math.max(1, ally.hp) })
+  const target = run.combat.enemies.find((enemy) => !enemy.dead)
+  if (!target) throw new Error('Dash browser fixture needs a living enemy')
+  for (const enemy of run.combat.enemies) {
+    if (!enemy.dead) Object.assign(enemy, { block: 0, vulnerable: 0 })
+  }
+  debug.setRun(run)
+})
+const dashHpBefore = (await readState()).enemies.reduce((total, enemy) => total + enemy.hp, 0)
+await page.getByRole('button', { name: /^Dash\+,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.getByText('Choose another player to switch rows with, or keep rows').waitFor()
+const dashSwitchTarget = page.locator('.seat--targetable')
+assertEqual(await dashSwitchTarget.count(), 1, 'Dash did not expose exactly one other player as a switch target')
+assertEqual(await page.getByRole('button', { name: 'Keep rows' }).count(), 1,
+  'Dash did not expose its printed optional skip')
+await shot('06m-dash-row-switch-choice')
+await dashSwitchTarget.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].row === 1)
+const dashed = await readState()
+check('Dash+ resolves damage and Block before optionally switching player rows', () => {
+  assertDeepEqual(dashed.players.slice(0, 2).map((player) => player.row), [1, 0])
+  assertEqual(dashed.players[0].block, 3)
+  assertEqual(dashHpBefore - dashed.enemies.reduce((total, enemy) => total + enemy.hp, 0), 3)
+  assertEqual(dashed.players[0].energy, 1)
+})
+await shot('06n-dash-row-switched')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

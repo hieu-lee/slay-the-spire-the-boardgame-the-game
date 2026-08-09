@@ -1723,6 +1723,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
+    { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
+    { id: 'leap', block: [2, 3] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2049,6 +2051,57 @@ check('Machine Learning draws after the normal five-card start-of-turn draw', ()
   assertEqual(next.players[0].hand.length, 6)
   assert(!next.players[0].drawLocked)
   assert(next.log.some((line) => line.includes('Machine Learning:') && line.includes('draws 1')))
+})
+
+check('Dash and Leap optionally switch rows independently of their other targets', () => {
+  for (const upgraded of [false, true]) {
+    const dash = instance('dash', upgraded)
+    const players = [
+      makePlayer({ hand: [dash], row: 0 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+      makePlayer({ id: 'p3', name: 'Defect', character: 'defect', row: 2 }),
+    ]
+    const dashed = playCard(combat(players, [makeEnemy({ hp: 10, maxHp: 10 })]), 'p1', dash.uid, {
+      enemyUid: 'e1', playerId: 'p1', switchWithPlayerId: 'p3',
+    })
+    assertEqual(dashed.enemies[0].hp, upgraded ? 7 : 8)
+    assertEqual(dashed.players[0].block, upgraded ? 3 : 2)
+    assertDeepEqual(dashed.players.map((player) => player.row), [2, 1, 0])
+
+    const leap = instance('leap', upgraded)
+    const leaped = playCard(combat([
+      makePlayer({ hand: [leap], row: 0 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+      makePlayer({ id: 'p3', name: 'Defect', character: 'defect', row: 2 }),
+    ], [makeEnemy()]), 'p1', leap.uid, {
+      enemyUid: null, playerId: 'p2', switchWithPlayerId: 'p3',
+    })
+    assertEqual(leaped.players[1].block, upgraded ? 3 : 2)
+    assertDeepEqual(leaped.players.map((player) => player.row), [2, 1, 0])
+  }
+})
+
+check('row switching can be skipped but refuses self, dead, missing, and malformed targets', () => {
+  for (const switchWithPlayerId of ['p1', 'p2', 'missing', 7]) {
+    const dash = instance('dash')
+    const state = combat([
+      makePlayer({ hand: [dash], row: 0 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, dead: true }),
+    ], [makeEnemy()])
+    assertEqual(playCard(state, 'p1', dash.uid, {
+      enemyUid: 'e1', playerId: 'p1', switchWithPlayerId,
+    }), state, `invalid row switch ${switchWithPlayerId} was accepted`)
+  }
+
+  const dash = instance('dash')
+  const state = combat([
+    makePlayer({ hand: [dash], row: 0 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+  ], [makeEnemy()])
+  const skipped = playCard(state, 'p1', dash.uid, {
+    enemyUid: 'e1', playerId: 'p1', switchWithPlayerId: null,
+  })
+  assertDeepEqual(skipped.players.map((player) => player.row), [0, 1])
 })
 
 check('Acrobatics privately previews its draw, then atomically discards from the drawn hand', () => {

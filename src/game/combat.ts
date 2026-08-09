@@ -213,6 +213,8 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
+  /** Another living player whose row is optionally exchanged with the caster's. */
+  switchWithPlayerId?: string | null
   /** Zero-based printed mode for a modal card face. */
   mode?: number
   /** Cards chosen to discard, for effects like Survivor. */
@@ -570,6 +572,16 @@ function applyEffect(
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
+      return
+    }
+    case 'switchRows': {
+      if (context.switchWithPlayerId === null || context.switchWithPlayerId === undefined) return
+      const other = findPlayer(state, context.switchWithPlayerId)
+      if (!other || other.dead || other.id === actor.id) return
+      const row = actor.row
+      actor.row = other.row
+      other.row = row
+      note(`${actor.name} switches rows with ${other.name}`)
       return
     }
     case 'gainEnergy': {
@@ -1075,6 +1087,20 @@ function hasInvalidChosenPlayer(
   return !chosen || chosen.dead
 }
 
+function hasInvalidRowSwitch(
+  state: CombatState,
+  effects: readonly Effect[],
+  chosenId: unknown,
+  actor: Player,
+): boolean {
+  if (!effects.some((effect) => effect.kind === 'switchRows') || chosenId === null || chosenId === undefined) {
+    return false
+  }
+  if (typeof chosenId !== 'string') return true
+  const chosen = findPlayer(state, chosenId)
+  return !chosen || chosen.dead || chosen.id === actor.id
+}
+
 /**
  * Plays a card from a player's hand. Returns the same state reference when the
  * play is illegal: not that player's card, not enough energy, wrong phase.
@@ -1127,6 +1153,7 @@ export function playCard(
   // Refuse the stale command instead of silently redirecting its support
   // effect to the caster.
   if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
+  if (hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)) return state
   // Evoking with no orbs charged the Energy, discarded the card and did
   // nothing at all — with the UI still asking which enemy to point it at.
   if (effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&

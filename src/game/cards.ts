@@ -132,6 +132,8 @@ type EffectKind =
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
+  /** Optionally exchange the caster's row with another living player. */
+  | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
@@ -625,6 +627,13 @@ export const CARDS: Record<string, CardDef> = {
     id: 'riddle_with_holes', name: 'Riddle with Holes', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,
     effects: [{ kind: 'gainShiv', amount: 4 }],
     upgrade: { effects: [{ kind: 'gainShiv', amount: 5 }] },
+  }),
+  dash: card({
+    id: 'dash', name: 'Dash', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'block', amount: 2 }, { kind: 'switchRows' }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: 3 }, { kind: 'block', amount: 3 }, { kind: 'switchRows' }],
+    },
   }),
   deadly_poison: card({
     id: 'deadly_poison',
@@ -1304,6 +1313,12 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'startOfTurn' },
     effects: [{ kind: 'draw', amount: 1 }],
     upgrade: { cost: 0 },
+  }),
+  leap: card({
+    id: 'leap', name: 'Leap', owner: 'defect', type: 'skill', rarity: 'common', cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 2, toChosen: true }, { kind: 'switchRows' }],
+    upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'switchRows' }] },
   }),
 }
 

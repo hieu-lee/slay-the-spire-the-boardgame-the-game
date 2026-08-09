@@ -928,6 +928,40 @@ check('a draw lock is public to the whole co-op table', () => {
   assertEqual(seen.drawLocked, true, 'a teammate could not see that further draw effects are blocked')
 })
 
+check('a room validates and publishes an optional row switch atomically with its card', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const dash = { uid: 'room-dash', defId: 'dash', upgraded: true }
+  actor.hand = [dash]
+  actor.energy = 3
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0 })
+  const before = JSON.stringify(room.run)
+  let malformed = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: dash.uid, enemyUid: target.uid,
+      switchWithPlayerId: 7, preflight: true,
+    })
+  } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError', 'a malformed row-switch target reached the engine')
+  assertEqual(JSON.stringify(room.run), before, 'a refused row switch partially resolved the card')
+
+  const actorRow = actor.row
+  const allyRow = ally.row
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: dash.uid, enemyUid: target.uid,
+    switchWithPlayerId: b.playerId, preflight: true,
+  })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).row, allyRow)
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).row, actorRow)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 7)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).row, allyRow)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
