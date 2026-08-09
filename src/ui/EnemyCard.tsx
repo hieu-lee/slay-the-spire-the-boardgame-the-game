@@ -1,4 +1,4 @@
-import { actionsFor, enemyDef } from '../game/enemies.ts'
+import { abilityText, actionsFor, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
 import { Icon, IconValue } from './Icon.tsx'
@@ -76,7 +76,7 @@ function intentParts(action: EnemyAction): IntentPart[] {
  * for players. The intent especially: it is the one thing choosing a target
  * depends on, and it was not being announced at all.
  */
-function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[]): string {
+function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], ability: string | null): string {
   // The label is built by the engine and is the SAME string the log prints --
   // "Cultist (row 0, #2)" when two of them share a row. Two identically named
   // buttons would leave a screen-reader user unable to match log to board, and
@@ -100,6 +100,7 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[]): strin
   // enemy CARRIES are announced below in the same shape, and case alone is not
   // something a screen reader conveys.
   parts.push(said ? `intends ${said}` : 'no intent')
+  if (ability) parts.push(ability)
 
   const tokens: [string, number][] = [
     ['Block', enemy.block],
@@ -123,6 +124,10 @@ export function EnemyCard({
 }: EnemyCardProps) {
   const def = enemyDef(enemy.defId)
   const intent = actionsFor(def, die, enemy.actionIndex).flatMap(intentParts)
+  const spentAbility = def.ability?.kind === 'curlUp' && enemy.abilityUsed
+  const ability = def.ability
+    ? `${abilityText(def.ability)}${spentAbility ? ', spent' : ''}`
+    : null
   const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
 
   const className = [
@@ -141,7 +146,7 @@ export function EnemyCard({
       className={className}
       disabled={enemy.dead}
       onClick={() => onClick?.(enemy)}
-      aria-label={describeEnemy(enemy, label, intent)}
+      aria-label={describeEnemy(enemy, label, intent, ability)}
     >
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.
@@ -164,6 +169,14 @@ export function EnemyCard({
           ))
         )}
       </span>
+      {def.ability ? (
+        <span
+          className={`enemy__ability${spentAbility ? ' enemy__ability--spent' : ''}`}
+          title={ability ?? undefined}
+        >
+          {spentAbility ? 'Curl Up · spent' : abilityText(def.ability, true)}
+        </span>
+      ) : null}
 
       <span className="enemy__portrait">
         <img

@@ -24,8 +24,8 @@
 //     matches it against no number at all. Spending X needs the player to
 //     choose an amount and nothing collects one.
 //   - Ethereal is not modelled.
-//   - Enemy special abilities are stored as prose on `unimplementedAbility` and
-//     do NOT resolve: Curl Up, Spore Cloud, Enraged.
+//   - The live enemies resolve Curl Up, Spore Cloud and Enraged. Special
+//     abilities on enemies not yet transcribed remain absent with those cards.
 //   - There is no boss deck: a boss room stands up the toughest elite, marked
 //     as a boss so it acts last. It grants no reward rather than inventing the
 //     stand-in elite's reward. Elite rooms draw from a two-entry elite list.
@@ -131,8 +131,8 @@ export type { CombatPhase, CombatState, DiscardOrders, PlayContext } from './com
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 
-export { ENEMIES, actionsFor, advanceCube, enemyDef, startingHp } from './enemies.ts'
-export type { CubeSlot, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
+export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } from './enemies.ts'
+export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
 
 export { ACT_SHAPE, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'

@@ -104,5 +104,8 @@ export type Enemy = {
   /** Position on a cube-action track. */
   actionIndex: number
 
+  /** Whether this enemy's once-per-combat special ability has fired. */
+  abilityUsed: boolean
+
   dead: boolean
 }

@@ -1,4 +1,5 @@
 import {
+  beginEndPlayerTurn,
   cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
@@ -74,6 +75,7 @@ function makeEnemy(over = {}) {
     weak: 0,
     poison: 0,
     actionIndex: 0,
+    abilityUsed: false,
     dead: false,
     ...over,
   }
@@ -91,6 +93,102 @@ check('playing Strike damages the chosen enemy', () => {
   assertEqual(next.players[0].energy, 2, 'Strike costs 1 energy')
   assertEqual(next.players[0].hand.length, 0, 'the card leaves hand')
   assertEqual(next.players[0].discard.length, 1, 'and lands in the discard pile')
+})
+
+check('Curl Up fires once, only after HP damage, and can block later hits', () => {
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  const state = combat(
+    [makePlayer({ hand: [first, second] })],
+    [makeEnemy({ defId: 'green_louse', hp: 6, maxHp: 6 })],
+  )
+  const curled = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(curled.enemies[0].hp, 5, 'the first hit deals damage before Curl Up')
+  assertEqual(curled.enemies[0].block, 2, 'Curl Up grants its printed Block')
+  assertEqual(curled.enemies[0].abilityUsed, true, 'the once-per-combat trigger is remembered')
+  const again = playCard(curled, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(again.enemies[0].hp, 5, 'the later hit is absorbed by Curl Up Block')
+  assertEqual(again.enemies[0].block, 1, 'Curl Up does not fire a second time')
+
+  const blocked = instance('strike_ironclad')
+  const noDamage = playCard(
+    combat([makePlayer({ hand: [blocked] })], [makeEnemy({ defId: 'red_louse', block: 1 })]),
+    'p1',
+    blocked.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(noDamage.enemies[0].abilityUsed, false, 'a fully blocked hit dealt no damage')
+  assertEqual(noDamage.enemies[0].block, 0, 'and therefore did not Curl Up')
+})
+
+check('Curl Up resolves between the hits of a multi-hit attack', () => {
+  const spray = instance('dagger_spray')
+  const next = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hand: [spray] })],
+      [makeEnemy({ defId: 'green_louse', hp: 6, maxHp: 6 })],
+    ),
+    'p1',
+    spray.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(next.enemies[0].hp, 5, 'the first dagger deals damage')
+  assertEqual(next.enemies[0].block, 1, 'Curl Up blocks the second dagger immediately')
+})
+
+check('Spore Cloud applies Vulnerable to its row however the Fungi Beast dies', () => {
+  const strike = instance('strike_ironclad')
+  const hit = playCard(
+    combat(
+      [
+        makePlayer({ hand: [strike] }),
+        makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+      ],
+      [makeEnemy({ defId: 'fungi_beast', hp: 1, maxHp: 6 })],
+    ),
+    'p1',
+    strike.uid,
+    { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(hit.players[0].vulnerable, 1, 'the player in the defeated Beast\'s row is vulnerable')
+  assertEqual(hit.players[1].vulnerable, 0, 'another row is untouched')
+
+  const poisoned = beginEndPlayerTurn(combat(
+    [makePlayer()],
+    [makeEnemy({ defId: 'fungi_beast', hp: 1, maxHp: 6, poison: 1 })],
+  ))
+  assertEqual(poisoned.enemies[0].dead, true, 'Poison defeats the Beast')
+  assertEqual(poisoned.players[0].vulnerable, 1, 'a Poison defeat still fires Spore Cloud')
+})
+
+check('Gremlin Nob becomes Enraged on turn 2 after a Skill finishes', () => {
+  const early = instance('seeing_red')
+  const turnOne = playCard(
+    { ...combat([makePlayer({ hand: [early] })], [makeEnemy({ defId: 'gremlin_nob' })]), turn: 1 },
+    'p1',
+    early.uid,
+    { enemyUid: null, playerId: null },
+  )
+  assertEqual(turnOne.players[0].hp, 10, 'Enraged is dormant on turn 1')
+
+  const late = instance('seeing_red')
+  const turnTwo = playCard(
+    { ...combat([makePlayer({ hand: [late] })], [makeEnemy({ defId: 'gremlin_nob' })]), turn: 2 },
+    'p1',
+    late.uid,
+    { enemyUid: null, playerId: null },
+  )
+  assertEqual(turnTwo.players[0].hp, 9, 'a turn-2 Skill triggers 1 Enraged damage')
+
+  const defend = instance('defend_ironclad')
+  const blocked = playCard(
+    { ...combat([makePlayer({ hand: [defend] })], [makeEnemy({ defId: 'gremlin_nob' })]), turn: 2 },
+    'p1',
+    defend.uid,
+    { enemyUid: null, playerId: null },
+  )
+  assertEqual(blocked.players[0].hp, 10, 'the Skill resolves before Enraged')
+  assertEqual(blocked.players[0].block, 0, 'its Block can absorb the Enraged damage')
 })
 
 check('an illegal play returns the very same state reference', () => {

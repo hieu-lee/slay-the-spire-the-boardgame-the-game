@@ -26,7 +26,7 @@ const player = (over = {}) => ({
 const enemy = (over = {}) => ({
   uid: 'e1', defId: 'red_louse', row: 0, isBoss: false,
   hp: 6, maxHp: 6, block: 0,
-  strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, dead: false, ...over,
+  strength: 0, vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: true, dead: false, ...over,
 })
 
 /** Puts a combat straight into the Enemy Turn without playing a Player Turn. */

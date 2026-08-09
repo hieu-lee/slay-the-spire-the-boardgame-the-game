@@ -624,6 +624,8 @@ await page.evaluate(() => {
   for (const enemy of run.combat.enemies) {
     enemy.block = 0
     enemy.vulnerable = 0
+    // This probe measures one Shiv, not a first-damage special ability.
+    enemy.abilityUsed = true
   }
   debug.setRun(run)
 })
@@ -1187,6 +1189,28 @@ const rowCount = await page.locator('.row').count()
 check('every player row is rendered on screen', () => {
   assertEqual(rowCount, 4, 'the board should show four rows')
 })
+const enemyAbilities = await page.locator('.enemy').evaluateAll((enemies) => enemies.map((enemy) => ({
+  text: enemy.querySelector('.enemy__ability')?.textContent ?? '',
+  label: enemy.getAttribute('aria-label') ?? '',
+})))
+check('printed enemy special abilities are visible and announced', () => {
+  const curl = enemyAbilities.find((ability) => ability.text.includes('Curl Up'))
+  assert(curl, 'the Louse Curl Up ability is absent from the board')
+  assert(curl.label.includes('after the first damage'), `the accessible rule is incomplete: ${curl.label}`)
+})
+await page.locator('.hand .card[aria-label^="Strike,"]').first().click()
+await page.locator('.enemy').filter({ hasText: 'Red Louse' }).click()
+await page.waitForFunction(() => document.querySelector('.enemy__ability--spent') !== null)
+const spentCurl = await page.locator('.enemy__ability--spent').evaluate((ability) => ({
+  text: ability.textContent ?? '',
+  label: ability.closest('.enemy')?.getAttribute('aria-label') ?? '',
+  decoration: getComputedStyle(ability).textDecorationLine,
+}))
+check('a used Curl Up is visibly and accessibly spent', () => {
+  assert(spentCurl.text.includes('spent'), `the visible ability still looks active: ${spentCurl.text}`)
+  assert(spentCurl.label.includes('spent'), `the accessible ability still sounds active: ${spentCurl.label}`)
+  assert(spentCurl.decoration.includes('line-through'), 'the spent state has no non-colour visual treatment')
+})
 
 // A normal Red Louse encounter can put a main enemy plus two summons in one
 // row. The fixed opening only reaches two, so exercise the real wider case.
@@ -1196,7 +1220,15 @@ await page.evaluate(() => {
   const state = run.combat
   const row = state.players[0].row
   const red = state.enemies.find((enemy) => enemy.defId === 'red_louse')
-  state.enemies.push({ ...red, uid: 'layout-third-enemy', row, isBoss: false })
+  state.enemies.push({
+    ...red,
+    uid: 'layout-third-enemy',
+    row,
+    isBoss: false,
+    hp: red.maxHp,
+    block: 0,
+    abilityUsed: false,
+  })
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelectorAll('.row--viewer .enemy').length === 3)

@@ -100,12 +100,36 @@ export function enemyLabel(enemies: readonly Enemy[], enemy: Enemy): string {
   return `${name} (row ${enemy.row}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
 }
 
-/** Deals `damage` to an enemy, spending its Block first. */
-function damageEnemy(enemy: Enemy, damage: number): void {
+/** Deals `damage` to an enemy, spending Block and firing Curl Up immediately. */
+function damageEnemy(enemy: Enemy, damage: number): { blocked: number; curled: boolean } {
+  const hpBefore = enemy.hp
+  const blockBefore = enemy.block
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
   enemy.block = outcome.block
   enemy.hp = outcome.hp
   if (enemy.hp === 0) enemy.dead = true
+  const ability = enemyDef(enemy.defId).ability
+  if (
+    enemy.hp < hpBefore && !enemy.dead && !enemy.abilityUsed && ability?.kind === 'curlUp'
+  ) {
+    enemy.abilityUsed = true
+    enemy.block = gainBlock(enemy.block, ability.block)
+    return { blocked: blockBefore - outcome.block, curled: true }
+  }
+  return { blocked: blockBefore - outcome.block, curled: false }
+}
+
+function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
+  const ability = enemyDef(enemy.defId).ability
+  if (ability?.kind !== 'sporeCloud') return
+  const name = enemyLabel(state.enemies, enemy)
+  for (const target of playersInRowOf(state, enemy)) {
+    const before = target.vulnerable
+    target.vulnerable = gainVulnerable(target.vulnerable, ability.vulnerable)
+    if (target.vulnerable > before) {
+      state.log = [...state.log, `${name}'s Spore Cloud left ${target.name} vulnerable`]
+    }
+  }
 }
 
 /**
@@ -123,12 +147,11 @@ function damageEnemyLogged(
 ): void {
   const wasAlive = !enemy.dead
   const hpBefore = enemy.hp
-  const blockBefore = enemy.block
-  damageEnemy(enemy, damage)
+  const result = damageEnemy(enemy, damage)
   const name = enemyLabel(state.enemies, enemy)
   if (source) {
     const lost = hpBefore - enemy.hp
-    const blocked = blockBefore - enemy.block
+    const blocked = result.blocked
     state.log = [
       ...state.log,
       lost > 0
@@ -144,6 +167,9 @@ function damageEnemyLogged(
   }
   if (wasAlive && enemy.dead) {
     state.log = [...state.log, `${name} is dead`]
+    triggerEnemyDeathAbility(state, enemy)
+  } else if (result.curled) {
+    state.log = [...state.log, `${name}'s Curl Up gained Block`]
   }
 }
 
@@ -347,21 +373,23 @@ function applyEffect(
         // after the whole thing resolves (p.14).
         const vulnerableAtStart = target.vulnerable
         const hpBefore = target.hp
-        const blockBefore = target.block
         const wasAlive = !target.dead
         // Bane's bonus reads the enemy being struck, so the printed number is
         // worked out per target rather than once for the card.
         const each = amountOf(effect.amount, state, actor, target)
+        let blocked = 0
+        let curled = false
         for (let i = 0; i < times; i++) {
           if (target.dead) break
-          damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
+          const result = damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
+          blocked += result.blocked
+          curled = result.curled || curled
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
         // One line for the whole attack, not one per swing: a five-hit card
         // would otherwise bury the round in near-identical lines.
         const name = enemyLabel(state.enemies, target)
         const lost = hpBefore - target.hp
-        const blocked = blockBefore - target.block
         state.log = [
           ...state.log,
           lost > 0
@@ -370,7 +398,12 @@ function applyEffect(
               ? `${name} blocked ${who} completely (${blocked} spent)`
               : `${who} did no damage to ${name}`,
         ]
-        if (wasAlive && target.dead) state.log = [...state.log, `${name} is dead`]
+        if (wasAlive && target.dead) {
+          state.log = [...state.log, `${name} is dead`]
+          triggerEnemyDeathAbility(state, target)
+        } else if (curled) {
+          state.log = [...state.log, `${name}'s Curl Up gained Block`]
+        }
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
@@ -402,6 +435,7 @@ function applyEffect(
           // Every other kill in the game announces itself; this one used to
           // write `dead` inline and skip the line.
           if (wasAlive) state.log = [...state.log, `${name} is dead`]
+          if (wasAlive) triggerEnemyDeathAbility(state, target)
         }
       }
       return
@@ -907,6 +941,29 @@ export function playCard(
   // in front of you when THIS card was played, so it does not see it.
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
 
+  if (def.type === 'skill') {
+    for (const enemy of next.enemies) {
+      const ability = enemyDef(enemy.defId).ability
+      if (enemy.dead || ability?.kind !== 'enraged' || next.turn < ability.fromTurn) continue
+      const hpBefore = actor.hp
+      const blockBefore = actor.block
+      damagePlayer(actor, ability.damage)
+      const name = enemyLabel(next.enemies, enemy)
+      const lost = hpBefore - actor.hp
+      const blocked = blockBefore - actor.block
+      next.log = [
+        ...next.log,
+        lost > 0
+          ? `${name}'s Enraged hit ${actor.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+          : `${actor.name} blocked ${name}'s Enraged (${blocked} spent)`,
+      ]
+      if (actor.dead) {
+        next.log = [...next.log, `${actor.name} has fallen`]
+        break
+      }
+    }
+  }
+
   return settle(next)
 }
 
@@ -1000,6 +1057,7 @@ export function beginEndPlayerTurn(state: CombatState): CombatState {
     if (enemy.hp === 0) {
       enemy.dead = true
       next.log = [...next.log, `${name} is dead`]
+      triggerEnemyDeathAbility(next, enemy)
     }
   }
 

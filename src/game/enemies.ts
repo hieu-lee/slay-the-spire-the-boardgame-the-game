@@ -31,6 +31,11 @@ export type EnemyPattern =
   | { kind: 'die'; byRoll: Record<number, EnemyAction[]> }
   | { kind: 'cube'; slots: CubeSlot[] }
 
+export type EnemyAbility =
+  | { kind: 'curlUp'; block: number }
+  | { kind: 'sporeCloud'; vulnerable: number }
+  | { kind: 'enraged'; damage: number; fromTurn: number }
+
 export type EnemyDef = {
   id: string
   name: string
@@ -41,12 +46,8 @@ export type EnemyDef = {
   elite?: boolean
   /** Bosses act last, as do enemies whose card says "acts last" (p.13). */
   actsLast?: boolean
-  /**
-   * The yellow special ability printed on the card. Recorded as prose because
-   * triggered abilities are not implemented yet — see the note in state.ts.
-   * Anything listed here does NOT currently resolve.
-   */
-  unimplementedAbility?: string
+  /** The yellow special ability printed on the card (p.13). */
+  ability?: EnemyAbility
 }
 
 /** Die patterns pair the faces, so this keeps the tables readable. */
@@ -121,7 +122,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
         [{ kind: 'attack', amount: 2 }],
       ),
     },
-    unimplementedAbility: 'Curl Up: the first time the Louse takes damage, it gains 2 Block.',
+    ability: { kind: 'curlUp', block: 2 },
   },
 
   red_louse: {
@@ -136,7 +137,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
         [{ kind: 'attack', amount: 2 }],
       ),
     },
-    unimplementedAbility: 'Curl Up: the first time the Louse takes damage, it gains 2 Block.',
+    ability: { kind: 'curlUp', block: 2 },
   },
 
   spike_slime: {
@@ -167,7 +168,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
         [{ kind: 'gainStrength', amount: 2 }],
       ),
     },
-    unimplementedAbility: 'Spore Cloud: on death, apply Vulnerable.',
+    ability: { kind: 'sporeCloud', vulnerable: 1 },
   },
 
   blue_slaver: {
@@ -196,7 +197,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
         { actions: [{ kind: 'attack', amount: 3, aoe: true }] },
       ],
     },
-    unimplementedAbility: 'Enraged: after you play a Skill, you take 1 damage. Starts on turn 2.',
+    ability: { kind: 'enraged', damage: 1, fromTurn: 2 },
   },
 
   lagavulin: {
@@ -215,6 +216,20 @@ export const ENEMIES: Record<string, EnemyDef> = {
       ],
     },
   },
+}
+
+export function abilityText(ability: EnemyAbility, compact = false): string {
+  switch (ability.kind) {
+    case 'curlUp': return compact
+      ? `Curl Up · first damage: +${ability.block} Block`
+      : `Curl Up: after the first damage, gain ${ability.block} Block`
+    case 'sporeCloud': return compact
+      ? `Spore Cloud · defeat: row +${ability.vulnerable} Vulnerable`
+      : `Spore Cloud: on defeat, apply ${ability.vulnerable} Vulnerable to this row`
+    case 'enraged': return compact
+      ? `Enraged · turn ${ability.fromTurn}+: Skills hurt ${ability.damage}`
+      : `Enraged: from turn ${ability.fromTurn}, a Skill deals ${ability.damage} damage to its player`
+  }
 }
 
 export function enemyDef(id: string): EnemyDef {

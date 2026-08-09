@@ -232,6 +232,7 @@ function spawn(
     goldReward,
     cardReward,
     actionIndex: 0,
+    abilityUsed: false,
     dead: false,
   }
 }

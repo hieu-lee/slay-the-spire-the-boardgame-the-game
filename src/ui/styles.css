@@ -394,6 +394,18 @@ button:disabled {
   color: var(--gold);
 }
 
+.enemy__ability {
+  margin: 0 0.5rem;
+  color: #e2b34f;
+  font-size: 0.65rem;
+  line-height: 1.2;
+}
+
+.enemy__ability--spent {
+  color: var(--ink-dim);
+  text-decoration: line-through;
+}
+
 /* ---------- bars and tokens ---------- */
 
 .bar {
