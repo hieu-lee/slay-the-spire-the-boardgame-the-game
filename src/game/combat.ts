@@ -400,6 +400,10 @@ function applyEffect(
   const note = (text: string) => {
     state.log = [...state.log, source ? `${source}: ${text}` : text]
   }
+  const noteAt = (at: number, text: string) => {
+    const line = source ? `${source}: ${text}` : text
+    state.log = [...state.log.slice(0, at), line, ...state.log.slice(at)]
+  }
 
   // A whole clause that the board can switch off, as the Weak on Go for the
   // Eyes is. Checked before the target scope is resolved, because a clause that
@@ -465,6 +469,7 @@ function applyEffect(
         } else if (curled) {
           state.log = [...state.log, `${name}'s Curl Up gained Block`]
         }
+        if (combatIsOver(state)) return
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
@@ -479,6 +484,7 @@ function applyEffect(
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         damageEnemyLogged(state, target, effect.amount, who)
+        if (combatIsOver(state)) return
       }
       return
     }
@@ -498,7 +504,15 @@ function applyEffect(
           if (wasAlive) state.log = [...state.log, `${name} is dead`]
           if (wasAlive) triggerEnemyDeathAbility(state, target)
         }
+        if (combatIsOver(state)) return
       }
+      return
+    }
+    case 'loseOwnHp': {
+      const outcome = applyHpLoss(actor.hp, effect.amount)
+      actor.hp = outcome.hp
+      if (actor.hp === 0) actor.dead = true
+      note(`${actor.name} loses ${outcome.hpLost} HP`)
       return
     }
     case 'block': {
@@ -623,6 +637,7 @@ function applyEffect(
             { ...context, enemyUid },
             'Shiv',
           )
+          if (combatIsOver(state)) return
         }
       }
       return
@@ -687,17 +702,21 @@ function applyEffect(
       return
     }
     case 'channel': {
-      // Written BEFORE the channel: a full orb array forces an evoke, and that
-      // evoke logs. Written afterwards, the forced evoke printed above the
-      // channel that caused it.
-      note(`${actor.name} channels ${effect.amount} ${effect.orb}`)
-      for (let i = 0; i < effect.amount; i++) channelOrb(state, actor, effect.orb, context)
+      // Reserve the line's position before forced evokes log, but write it only
+      // after an Orb was really placed: a lethal forced evoke ends combat first.
+      const at = state.log.length
+      let channeled = 0
+      for (let i = 0; i < effect.amount; i++) {
+        if (channelOrb(state, actor, effect.orb, context)) channeled += 1
+        if (combatIsOver(state)) break
+      }
+      if (channeled > 0) noteAt(at, `${actor.name} channels ${channeled} ${effect.orb}`)
       return
     }
     case 'channelDieOrb': {
       const orb: OrbType = state.die <= 2 ? 'lightning' : state.die <= 4 ? 'frost' : 'dark'
-      note(`${actor.name} channels 1 ${orb}`)
-      channelOrb(state, actor, orb, context)
+      const at = state.log.length
+      if (channelOrb(state, actor, orb, context)) noteAt(at, `${actor.name} channels 1 ${orb}`)
       return
     }
     case 'addDaze': {
@@ -724,11 +743,13 @@ function applyEffect(
           break
         }
         evokeOrb(state, actor, context)
+        if (combatIsOver(state)) return
       }
       return
     }
     case 'recurseOrb': {
       const orb = evokeOrb(state, actor, context)
+      if (combatIsOver(state)) return
       if (orb) {
         note(`${actor.name} channels 1 ${orb}`)
         channelOrb(state, actor, orb, context)
@@ -1214,6 +1235,9 @@ export function playCard(
   if (resolvesOnPlay) {
     for (const effect of effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
+      // Combat endings are immediate (p.13), including halfway through a
+      // card. Nothing printed later, nor cleanup or play triggers, resolves.
+      if (combatIsOver(next)) return settle(next)
     }
   }
 
@@ -1721,18 +1745,22 @@ function channelOrb(
   actor: Player,
   orb: OrbType,
   context: PlayContext,
-): void {
+): boolean {
+  if (combatIsOver(state)) return false
   const open = actor.orbs.indexOf(null)
   if (open >= 0) {
     actor.orbs[open] = orb
-    return
+    return true
   }
   // A full set forces an evoke to make room (p.16). Unsaid, the evoke's line
   // appeared with nothing to explain why an orb had vanished.
   state.log = [...state.log, `${actor.name} has no free orb slot, and must evoke to make room`]
   evokeOrb(state, actor, context)
+  if (combatIsOver(state)) return false
   const freed = actor.orbs.indexOf(null)
-  if (freed >= 0) actor.orbs[freed] = orb
+  if (freed < 0) return false
+  actor.orbs[freed] = orb
+  return true
 }
 
 /**

@@ -1036,6 +1036,31 @@ await shot('06p-just-lucky-block-branch')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-rainbow', defId: 'rainbow', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 3,
+    orbs: [null, null, null],
+  })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Rainbow\+,/ }).waitFor()
+await shot('06q-rainbow-card')
+await page.getByRole('button', { name: /^Rainbow\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.join(',') === 'lightning,frost,dark')
+const rainbow = await readState()
+check('Rainbow+ channels Lightning, Frost, and Dark in order without Exhausting', () => {
+  assertDeepEqual(rainbow.players[0].orbs, ['lightning', 'frost', 'dark'])
+  assertEqual(rainbow.players[0].energy, 1)
+  assertEqual(rainbow.players[0].discard.some((card) => card.uid === 'ui-rainbow'), true)
+  assertEqual(rainbow.players[0].exhaust.some((card) => card.uid === 'ui-rainbow'), false)
+})
+await shot('06r-rainbow-orbs')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

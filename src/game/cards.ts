@@ -122,6 +122,8 @@ type EffectKind =
   | { kind: 'damage'; amount: number }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
+  /** The caster loses HP, ignoring Block, as a printed card effect. */
+  | { kind: 'loseOwnHp'; amount: number }
   | ({ kind: 'block'; amount: Amount } & Redirectable)
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
@@ -621,6 +623,29 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 6 }],
     upgrade: { effects: [{ kind: 'block', amount: 8 }] },
   }),
+  uppercut: card({
+    id: 'uppercut', name: 'Uppercut', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 2,
+    effects: [
+      { kind: 'hit', amount: 3 },
+      { kind: 'applyVulnerable', amount: 1 },
+      { kind: 'applyWeak', amount: 1 },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 3 },
+        { kind: 'applyVulnerable', amount: 2 },
+        { kind: 'applyWeak', amount: 1 },
+      ],
+    },
+  }),
+  offering: card({
+    id: 'offering', name: 'Offering', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'loseOwnHp', amount: 1 }, { kind: 'gainEnergy', amount: 2 }, { kind: 'draw', amount: 3 }],
+    upgrade: {
+      effects: [{ kind: 'loseOwnHp', amount: 1 }, { kind: 'gainEnergy', amount: 2 }, { kind: 'draw', amount: 5 }],
+    },
+  }),
 
   dagger_throw: card({
     id: 'dagger_throw', name: 'Dagger Throw', owner: 'silent', type: 'attack', rarity: 'common', cost: 1,
@@ -645,6 +670,13 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'hit', amount: 3 }, { kind: 'block', amount: 3 }, { kind: 'switchRows' }],
     },
+  }),
+  die_die_die: card({
+    id: 'die_die_die', name: 'Die Die Die', owner: 'silent', type: 'attack', rarity: 'rare', cost: 1,
+    target: 'allEnemies',
+    exhaust: true,
+    effects: [{ kind: 'hit', amount: 3 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
   }),
   deadly_poison: card({
     id: 'deadly_poison',
@@ -1352,6 +1384,16 @@ export const CARDS: Record<string, CardDef> = {
     supportTarget: 'anyPlayer',
     effects: [{ kind: 'block', amount: 2, toChosen: true }, { kind: 'switchRows' }],
     upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'switchRows' }] },
+  }),
+  rainbow: card({
+    id: 'rainbow', name: 'Rainbow', owner: 'defect', type: 'skill', rarity: 'rare', cost: 2,
+    exhaust: true,
+    effects: [
+      { kind: 'channel', orb: 'lightning', amount: 1 },
+      { kind: 'channel', orb: 'frost', amount: 1 },
+      { kind: 'channel', orb: 'dark', amount: 1 },
+    ],
+    upgrade: { exhaust: false },
   }),
 }
 

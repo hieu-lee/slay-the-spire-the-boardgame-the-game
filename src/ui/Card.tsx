@@ -68,6 +68,7 @@ function effectText(effect: Effect): string {
     case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${amountText(effect.times)} times` : ''}${condition}`
     case 'damage': return `deal ${effect.amount} damage${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
+    case 'loseOwnHp': return `lose ${effect.amount} hit points${condition}`
     case 'block': return `gain ${amountText(effect.amount)} Block${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`

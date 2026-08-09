@@ -210,7 +210,7 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
   assertDeepEqual(state.enemies.map((target) => target.hp), [2, 20], 'the refused plan leaked damage')
 })
 
-check('a later damaging evoke may fizzle after an earlier evoke wins combat', () => {
+check('a winning evoke ends combat before a later damaging evoke resolves', () => {
   const dual = instance('dual_cast')
   const state = combat(
     [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
@@ -224,7 +224,7 @@ check('a later damaging evoke may fizzle after an earlier evoke wins combat', ()
   })
   assert(next !== state, 'the winning play was rolled back when no target remained')
   assertEqual(next.phase, 'won')
-  assertDeepEqual(next.players[0].orbs, [null, null, null], 'both chosen Orbs were evoked')
+  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'the later Orb resolved after combat ended')
 })
 
 // p.16: Lightning evokes for 2, Frost for 1 Block, Dark for 3 plus one per Power.

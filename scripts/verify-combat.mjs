@@ -1730,6 +1730,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'impervious', block: [6, 8], exhaust: [1, 1] },
     { id: 'cut_through_fate', enemyHp: [19, 18], hand: [1, 1] },
     { id: 'just_lucky', enemyHp: [19, 18] },
+    { id: 'uppercut', enemyHp: [17, 17], vulnerable: [1, 2], weak: [1, 1] },
+    { id: 'offering', player: { energy: 3 }, energy: [5, 5], hand: [3, 5], exhaust: [1, 1] },
+    { id: 'die_die_die', enemyHp: [17, 16], exhaust: [1, 1] },
+    { id: 'rainbow', orb: ['lightning', 'lightning'], exhaust: [1, 0] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2235,6 +2239,75 @@ check('Just Lucky reveals Scry only on die 1-3 and grants Block only on 4-6', ()
       assertEqual(played.players[0].draw.length, needsPreview ? 2 : 3)
     }
   }
+})
+
+check('Offering pays HP before its Energy and draw, and Exhausts both faces', () => {
+  for (const upgraded of [false, true]) {
+    const offering = instance('offering', upgraded)
+    const deck = Array.from({ length: 6 }, () => instance('defend_ironclad'))
+    const state = combat([makePlayer({ hand: [offering], draw: deck, hp: 7, energy: 1 })], [makeEnemy()])
+    const played = playCard(state, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].hp, 6)
+    assertEqual(played.players[0].energy, 3)
+    assertEqual(played.players[0].hand.length, upgraded ? 5 : 3)
+    assertEqual(played.players[0].exhaust[0].uid, offering.uid)
+  }
+
+  const fatal = instance('offering')
+  const deck = Array.from({ length: 3 }, () => instance('defend_ironclad'))
+  const state = combat([makePlayer({ hand: [fatal], draw: deck, hp: 1, energy: 1 })], [makeEnemy()])
+  const lost = playCard(state, 'p1', fatal.uid, { enemyUid: null, playerId: null })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.players[0].energy, 1, 'Energy after the fatal clause still resolved')
+  assertEqual(lost.players[0].hand.length, 0, 'cards were drawn after the fatal clause')
+  assertDeepEqual(lost.players[0].draw.map((card) => card.uid), deck.map((card) => card.uid))
+  assertEqual(lost.players[0].exhaust.length, 0, 'Offering Exhausted after combat had already ended')
+})
+
+check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {
+  for (const upgraded of [false, true]) {
+    const die = instance('die_die_die', upgraded)
+    const died = playCard(combat([makePlayer({ hand: [die] })], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10, row: 0 }),
+      makeEnemy({ uid: 'right', hp: 10, maxHp: 10, row: 1 }),
+      makeEnemy({ uid: 'boss', hp: 10, maxHp: 10, row: 2, isBoss: true }),
+    ]), 'p1', die.uid, { enemyUid: null, playerId: null })
+    assertDeepEqual(died.enemies.map((enemy) => enemy.hp), Array(3).fill(upgraded ? 6 : 7))
+    assertEqual(died.players[0].exhaust[0].uid, die.uid)
+
+    const rainbow = instance('rainbow', upgraded)
+    const charged = playCard(combat([
+      makePlayer({ character: 'defect', hand: [rainbow], orbs: [null, null, null] }),
+    ], [makeEnemy()]), 'p1', rainbow.uid, { enemyUid: null, playerId: null })
+    assertDeepEqual(charged.players[0].orbs, ['lightning', 'frost', 'dark'])
+    assertEqual(charged.players[0].exhaust.some((card) => card.uid === rainbow.uid), !upgraded)
+    assertEqual(charged.players[0].discard.some((card) => card.uid === rainbow.uid), upgraded)
+  }
+})
+
+check('a lethal first evoke ends combat before Dual Cast removes the next Orb', () => {
+  const dualCast = instance('dual_cast')
+  const state = combat([
+    makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', 'frost', null], block: 0 }),
+  ], [makeEnemy({ hp: 2, maxHp: 2 })])
+  const won = playCard(state, 'p1', dualCast.uid, {
+    enemyUid: 'e1', playerId: null,
+    evokeSlots: [0, 1], evokeEnemyUids: ['e1', null],
+  })
+  assertEqual(won.phase, 'won')
+  assertDeepEqual(won.players[0].orbs, [null, 'frost', null])
+  assertEqual(won.players[0].block, 0, 'the second Frost evoke resolved after combat ended')
+
+  const rainbow = instance('rainbow')
+  const forced = playCard(combat([
+    makePlayer({ name: 'Defect', character: 'defect', hand: [rainbow], orbs: ['lightning', 'frost', 'dark'] }),
+  ], [makeEnemy({ hp: 2, maxHp: 2 })]), 'p1', rainbow.uid, {
+    enemyUid: null, playerId: null,
+    evokeSlots: [0, 1, 2], evokeEnemyUids: ['e1', null, 'e1'],
+  })
+  assertEqual(forced.phase, 'won')
+  assertDeepEqual(forced.players[0].orbs, [null, 'frost', 'dark'])
+  assert(!forced.log.includes('Defect channels 1 lightning'), 'an Orb that was never placed was logged as channeled')
 })
 
 check('Anger returns the played card itself to the top of draw', () => {

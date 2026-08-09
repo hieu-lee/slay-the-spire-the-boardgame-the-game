@@ -962,6 +962,29 @@ check('a room validates and publishes an optional row switch atomically with its
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).row, allyRow)
 })
 
+check('Offering self-HP loss ends the co-op run atomically when its owner falls', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const offering = { uid: 'room-offering', defId: 'offering', upgraded: false }
+  actor.hand = [offering]
+  actor.draw = Array.from({ length: 3 }, (_, index) => ({
+    uid: `room-offering-draw-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  actor.hp = 1
+  actor.energy = 0
+  apply(room, a.token, { kind: 'playCard', cardUid: offering.uid, preflight: true })
+  assertEqual(room.run.combat.phase, 'lost')
+  const fallen = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(fallen.dead, true)
+  assertEqual(fallen.energy, 0, 'Offering granted Energy after its owner died')
+  assertEqual(fallen.hand.length, 0, 'Offering drew after its owner died')
+  assertEqual(fallen.draw.length, 3, 'Offering changed the hidden draw pile after its owner died')
+  assertEqual(fallen.exhaust.length, 0, 'Offering Exhausted after the run had ended')
+  const seen = snapshotFor(room, b.token).run.combat
+  assertEqual(seen.phase, 'lost', 'the teammate did not receive the terminal state')
+  assertEqual(seen.players.find((player) => player.id === a.playerId).hp, 0)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
