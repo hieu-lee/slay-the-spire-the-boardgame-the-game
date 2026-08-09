@@ -246,6 +246,9 @@ function describeSeat(player: Player): string {
     parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
   }
   if (player.drawLocked) parts.push('cannot draw more cards this turn')
+  if (player.character === 'defect') {
+    parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
+  }
   for (const orb of player.orbs) if (orb) parts.push(`${orb} orb`)
   if (player.potions.length > 0) parts.push(`potions ${potionSummary(player)}`)
   if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
@@ -1540,7 +1543,9 @@ export function CombatScreen({
                         </span>
                       </span>
                       <TokenRow
-                        orbs={occupant.orbs}
+                        orbs={occupant.character === 'defect'
+                          ? occupant.orbs
+                          : occupant.orbs.filter((orb) => orb !== null)}
                         block={occupant.block}
                         strength={occupant.strength}
                         vulnerable={occupant.vulnerable}

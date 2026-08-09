@@ -99,6 +99,7 @@ function effectText(effect: Effect): string {
     case 'clearDebuffs': return `remove all Weak and Vulnerable${condition}`
     case 'clearTargetBlock': return `remove all Block from the target${condition}`
     case 'removeAllOrbs': return `remove all of your Orbs${condition}`
+    case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`

@@ -1081,6 +1081,21 @@ check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
   assertDeepEqual(seen.orbs, [null, null, null])
 })
 
+check('Stack+ publishes Orb-count Block only to the chosen ally', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const stack = { uid: 'room-stack', defId: 'stack', upgraded: true }
+  Object.assign(actor, { hand: [stack], energy: 1, block: 0, orbs: ['lightning', 'frost', null] })
+  ally.block = 0
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: stack.uid, playerId: b.playerId, preflight: true,
+  })
+  const seen = result.snapshot.run.combat.players
+  assertEqual(seen.find((player) => player.id === a.playerId).block, 0)
+  assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

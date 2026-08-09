@@ -148,6 +148,7 @@ type EffectKind =
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
   | { kind: 'removeAllOrbs' }
+  | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
@@ -1529,6 +1530,30 @@ export const CARDS: Record<string, CardDef> = {
     id: 'sunder', name: 'Sunder', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 3,
     effects: [{ kind: 'hit', amount: 5 }, { kind: 'gainEnergyIfTargetDead', amount: 3 }],
     upgrade: { effects: [{ kind: 'hit', amount: 7 }, { kind: 'gainEnergyIfTargetDead', amount: 3 }] },
+  }),
+  fusion: card({
+    id: 'fusion', name: 'Fusion', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'gainEnergy', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+  heatsinks: card({
+    id: 'heatsinks', name: 'Heatsinks', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onPlayCard', cardType: 'power' },
+    effects: [{ kind: 'draw', amount: 2 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }] },
+  }),
+  stack: card({
+    id: 'stack', name: 'Stack', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: { base: 0, per: 'orbs' }, toChosen: true }],
+    upgrade: { effects: [{ kind: 'block', amount: { base: 1, per: 'orbs' }, toChosen: true }] },
+  }),
+  capacitor: card({
+    id: 'capacitor', name: 'Capacitor', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainOrbSlots', amount: 2 }],
+    upgrade: { effects: [{ kind: 'gainOrbSlots', amount: 3 }] },
   }),
 }
 

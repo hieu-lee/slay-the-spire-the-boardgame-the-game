@@ -514,7 +514,7 @@ check('an end-of-combat relic fires when the last enemy dies', () => {
   assertEqual(next.players[0].hp, 6, 'Burning Blood heals 1 at the end of combat')
 })
 
-check('a dead player\'s relics do not fire', () => {
+check('a dead player ends combat before any relics fire', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
   const state = startPlayerTurn(
     createCombat(
@@ -527,7 +527,8 @@ check('a dead player\'s relics do not fire', () => {
     ),
   )
   assertEqual(state.players[0].strength, 0, 'the dead gain nothing from their relics')
-  assertEqual(state.players[1].strength, 1, 'the living player still benefits from their own')
+  assertEqual(state.players[1].strength, 0, 'nothing resolves after the party loses')
+  assertEqual(state.phase, 'lost')
 })
 
 check('one player\'s relic never fires for another', () => {

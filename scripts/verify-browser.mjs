@@ -596,11 +596,13 @@ check('the local board can spend a Miracle for Energy', () => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs[0] === 'lightning')
 const orbView = await page.evaluate(() => ({
-  beads: document.querySelectorAll('.seat--viewer .token--orb').length,
+  slots: document.querySelectorAll('.seat--viewer .token--orb').length,
+  beads: document.querySelectorAll('.seat--viewer .token--orb:not(.token--orb-empty)').length,
   classes: [...document.querySelectorAll('.seat--viewer .token--orb')].map((b) => b.className),
   label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
 }))
 check('channelled orbs are visible on the seat', () => {
+  assertEqual(orbView.slots, 2, 'non-Defect seats show occupied Orbs without empty capacity')
   assertEqual(orbView.beads, 2, 'one bead per channelled orb')
   // The per-type class is what colours them; without it all three orb kinds
   // render as the same bead and the board stops telling you which is which.
@@ -1239,6 +1241,74 @@ check('Melter+ removes all target Block before dealing 3 damage', () => {
 })
 await page.locator('.enemy[aria-label*="16 of 20 hit points"]').scrollIntoViewIfNeeded()
 await shot('07b-melter-block-cleared')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-heatsinks', defId: 'heatsinks', upgraded: true },
+      { uid: 'ui-fusion', defId: 'fusion', upgraded: true },
+    ],
+    draw: Array.from({ length: 3 }, (_, index) => ({
+      uid: `ui-heatsinks-draw-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 2,
+  })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Heatsinks\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 1)
+await page.getByRole('button', { name: /^Fusion\+,/ }).scrollIntoViewIfNeeded()
+await shot('07c-heatsinks-before-power-trigger')
+await page.getByRole('button', { name: /^Fusion\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
+const heatsinks = await readState()
+const heatsinksLabel = await page.locator('.powers .power').first().getAttribute('aria-label')
+check('Heatsinks+ ignores itself then draws 3 when Fusion+ is played', () => {
+  assertEqual(heatsinks.players[0].powers.length, 2)
+  assertEqual(heatsinks.players[0].hand.length, 3)
+  assertEqual(heatsinks.players[0].energy, 0)
+  assert(
+    heatsinksLabel?.includes('whenever you play a power card'),
+    `Heatsinks announces the wrong trigger: ${heatsinksLabel}`,
+  )
+})
+await shot('07d-heatsinks-power-draw')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.players[0], { name: 'Defect', character: 'defect' })
+  Object.assign(run.combat.players[0], {
+    name: 'Defect',
+    character: 'defect',
+    hand: [{ uid: 'ui-capacitor', defId: 'capacitor', upgraded: false }],
+    powers: [],
+    orbs: [null, null, null],
+    energy: 1,
+    shivs: 0,
+    miracles: 0,
+  })
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Capacitor,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.length === 5)
+const capacitorView = await page.evaluate(() => ({
+  slots: document.querySelectorAll('.seat--viewer .token--orb').length,
+  label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
+  power: document.querySelector('.powers .power')?.getAttribute('aria-label') ?? '',
+}))
+check('Capacitor exposes all gained Orb slots visually and accessibly', () => {
+  assertEqual(capacitorView.slots, 5)
+  assert(capacitorView.label.includes('0 of 5 Orb slots occupied'), capacitorView.label)
+  assert(capacitorView.power.includes('gain 2 Orb slots'), capacitorView.power)
+})
+await shot('07e-capacitor-orb-slots')
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

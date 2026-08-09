@@ -25,10 +25,10 @@ const TOKENS: { key: CountKey; icon: IconName; label: string }[] = [
   { key: 'miracles', icon: 'miracle', label: 'Miracles' },
 ]
 
-/** Shows only the tokens actually present, so an empty board stays quiet. */
+/** Shows tokens and every Defect Orb slot, including empty capacity. */
 export function TokenRow(props: TokenRowProps) {
   const present = TOKENS.filter(({ key }) => (props[key] ?? 0) > 0)
-  const orbs = (props.orbs ?? []).filter((orb): orb is string => orb != null)
+  const orbs = props.orbs ?? []
   if (present.length === 0 && orbs.length === 0) return null
 
   return (
@@ -39,7 +39,11 @@ export function TokenRow(props: TokenRowProps) {
         // No hidden label here: the seat is a button with an aria-label, which
         // replaces its contents wholesale, so the announcement comes from
         // describeSeat. A span here would simply never be read.
-        <span className={`token token--orb token--orb-${orb}`} key={`${orb}-${index}`} title={orb} />
+        <span
+          className={`token token--orb token--orb-${orb ?? 'empty'}`}
+          key={index}
+          title={orb ?? 'Empty Orb slot'}
+        />
       ))}
       {present.map(({ key, icon, label }) => (
         <span key={key} className={`token token--${key}`} title={`${label} ${props[key]}`}>

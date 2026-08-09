@@ -532,6 +532,17 @@ CARDS.fixture_power = {
   resolvesOnPlay: true,
   effects: [{ kind: 'gainStrength', amount: 1 }],
 }
+CARDS.fixture_terminal_power = {
+  id: 'fixture_terminal_power',
+  name: 'Fixture Terminal Power',
+  owner: 'defect',
+  type: 'power',
+  rarity: 'special',
+  cost: 0,
+  target: 'allEnemies',
+  trigger: { kind: 'startOfTurn' },
+  effects: [{ kind: 'damage', amount: 1 }],
+}
 CARDS.fixture_unplayable = {
   id: 'fixture_unplayable',
   name: 'Fixture Unplayable',
@@ -559,6 +570,18 @@ check('a Power stays in front of the player instead of being discarded', () => {
   assertEqual(next.players[0].powers.length, 1, 'Powers stay in play for the combat')
   assertEqual(next.players[0].discard.length, 0, 'and do not go to the discard pile')
   assertEqual(next.players[0].strength, 1, 'its effect still resolves')
+})
+
+check('a terminal trigger stops later Powers immediately', () => {
+  const terminal = instance('fixture_terminal_power')
+  const fusion = instance('fusion')
+  const state = combat([
+    makePlayer({ character: 'defect', powers: [terminal, fusion], energy: 0 }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })])
+  const won = startPlayerTurn(state)
+  assertEqual(won.phase, 'won')
+  assertEqual(won.players[0].energy, 3, 'Fusion fired after an earlier trigger ended combat')
+  assert(!won.log.some((line) => line.includes('Fusion')), 'a post-combat Fusion trigger was logged')
 })
 
 check('an Unplayable card cannot be played', () => {
@@ -1754,6 +1777,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
     { id: 'sunder', enemyHp: [15, 13] },
+    { id: 'fusion', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'heatsinks', powers: [1, 1] },
+    { id: 'stack', block: [0, 1] },
+    { id: 'capacitor', powers: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2517,6 +2544,38 @@ check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup cl
     'p1', sunder.uid, { enemyUid: 'victim', playerId: null })
     assertEqual(sundered.enemies[0].dead, true)
     assertEqual(sundered.players[0].energy, 3)
+  }
+})
+
+check('Fusion, Heatsinks, Stack, and Capacitor fire only on their printed triggers', () => {
+  for (const upgraded of [false, true]) {
+    const fusion = instance('fusion', upgraded)
+    const heat = instance('heatsinks', upgraded)
+    const draw = Array.from({ length: 3 }, () => instance('defend_defect'))
+    let state = combat([
+      makePlayer({ character: 'defect', hand: [heat, fusion], draw, energy: 3, orbs: [null, null, null] }),
+    ], [makeEnemy()])
+    state = playCard(state, 'p1', heat.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hand.length, 1, 'Heatsinks triggered from its own play')
+    state = playCard(state, 'p1', fusion.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hand.length, upgraded ? 3 : 2)
+
+    const started = startPlayerTurn(state)
+    assertEqual(started.players[0].energy, 4, 'Fusion did not grant start-of-turn Energy')
+
+    const capacitor = instance('capacitor', upgraded)
+    const expanded = playCard(combat([
+      makePlayer({ character: 'defect', hand: [capacitor], orbs: [null, null, null] }),
+    ], [makeEnemy()]), 'p1', capacitor.uid, { enemyUid: null, playerId: null })
+    assertEqual(expanded.players[0].orbs.length, upgraded ? 6 : 5)
+
+    const stack = instance('stack', upgraded)
+    const blocked = playCard(combat([
+      makePlayer({ character: 'defect', hand: [stack], orbs: ['lightning', 'frost', null] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+    ], [makeEnemy()]), 'p1', stack.uid, { enemyUid: null, playerId: 'p2' })
+    assertEqual(blocked.players[0].block, 0)
+    assertEqual(blocked.players[1].block, upgraded ? 3 : 2)
   }
 })
 

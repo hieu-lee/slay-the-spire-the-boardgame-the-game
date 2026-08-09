@@ -783,6 +783,11 @@ function applyEffect(
       if (removed > 0) note(`${actor.name} removes ${removed} Orbs`)
       return
     }
+    case 'gainOrbSlots': {
+      actor.orbs = [...actor.orbs, ...Array<null>(effect.amount).fill(null)]
+      note(`${actor.name} gains ${effect.amount} Orb slots`)
+      return
+    }
     case 'gainEnergyIfTargetDead': {
       const target = typeof context.enemyUid === 'string'
         ? state.enemies.find((enemy) => enemy.uid === context.enemyUid)
@@ -1951,11 +1956,17 @@ function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string
   return sources
 }
 
-function resolveTriggerSource(state: CombatState, player: Player, source: TriggerSource): void {
+function resolveTriggerSource(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  allowCombatOver = false,
+): void {
   const target = livingEnemies(state)[0]
   const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
+    if (!allowCombatOver && combatIsOver(state)) return
   }
 }
 
@@ -1965,12 +1976,15 @@ function fireTriggersInner(
   only?: Player,
   excludeUid?: string,
 ): void {
+  const allowCombatOver = event.kind === 'endOfCombat'
   for (const player of state.players) {
+    if (!allowCombatOver && combatIsOver(state)) return
     if (player.dead) continue
     if (only && player.id !== only.id) continue
 
     for (const source of triggerSources(player, event, excludeUid)) {
-      resolveTriggerSource(state, player, source)
+      resolveTriggerSource(state, player, source, allowCombatOver)
+      if (!allowCombatOver && combatIsOver(state)) return
     }
   }
 }

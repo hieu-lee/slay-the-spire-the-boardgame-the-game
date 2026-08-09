@@ -1267,6 +1267,12 @@ button:disabled {
   background: radial-gradient(circle at 35% 30%, #b28ad6, #4a2a70);
 }
 
+.token--orb-empty {
+  background: rgb(135 190 220 / 0.1);
+  border-color: rgb(165 215 240 / 0.55);
+  border-style: dashed;
+}
+
 /* On a narrow screen the row stacks the seat above the enemy, so the row needs
    more height than one enemy tile — and the enemy's hit-point bar, the number
    the whole turn is planned around, fell below the fold. The portrait gives up

@@ -214,7 +214,9 @@ export function PowerRow({ powers }: PowerRowProps) {
 
 /** "Metallicize: 1 Block at the end of each turn" — name, effect, and when. */
 export function describePower(def: CardDef): string {
-  const when = def.trigger ? WHEN[def.trigger.kind] : undefined
+  const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
+    ? `whenever you play a ${def.trigger.cardType} card`
+    : def.trigger ? WHEN[def.trigger.kind] : undefined
   const what = def.effects.map(describeEffect).filter(Boolean).join(', ')
   if (!what) return def.name
   return when ? `${def.name}: ${what} ${when}` : `${def.name}: ${what}`
@@ -266,6 +268,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':
       return `${effect.amount} Energy`
+    case 'gainOrbSlots':
+      return `gain ${effect.amount} Orb slots`
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':
