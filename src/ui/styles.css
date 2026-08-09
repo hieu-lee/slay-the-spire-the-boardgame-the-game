@@ -231,6 +231,7 @@ button:disabled {
   color: #7fb879;
 }
 
+.combat-error,
 .online-error,
 .online-banner {
   margin: 0.5rem 0;
@@ -1057,6 +1058,58 @@ button:disabled {
 
 .discard-order select {
   max-width: 9rem;
+}
+
+.end-turn-order {
+  position: relative;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+
+.end-turn-order > summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.end-turn-order[open] > ol {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  min-width: min(22rem, calc(100vw - 2rem));
+  margin: 0.25rem 0 0;
+  padding: 0.45rem;
+  list-style: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+
+.end-turn-order li {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0;
+}
+
+.end-turn-order li > span {
+  white-space: nowrap;
+}
+
+.end-turn-order li select {
+  max-width: 8rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  color-scheme: dark;
+  font: inherit;
+}
+
+.end-turn-order li button {
+  min-width: 1.8rem;
+  padding: 0.1rem 0.35rem;
 }
 
 /* ---------- enemy portrait ---------- */

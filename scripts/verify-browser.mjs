@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -2160,11 +2160,95 @@ check('a prior turn\'s top-card choice is cleared when that card returns', () =>
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 
-// The campfire is the first non-combat room with real interaction: each player
-// independently Rests or Smiths, and nobody leaves until all have chosen.
+// Curses are full card faces, not hidden counters: verify their scans, spoken
+// rules, end-turn effects, Ethereal cleanup and Retain through the real UI.
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'curse-playtest'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await enterFirstRoom()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
-  debug.reset(2, 'campfire')
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hp = 8
+  player.block = 1
+  player.orbs = ['lightning', 'lightning', null]
+  run.combat.enemies[0].hp = 1
+  player.hand = [
+    { uid: 'curse-clumsy', defId: 'clumsy', upgraded: false },
+    { uid: 'curse-decay', defId: 'decay', upgraded: false },
+    { uid: 'curse-doubt', defId: 'doubt', upgraded: false },
+    { uid: 'curse-pain', defId: 'pain', upgraded: false },
+    { uid: 'curse-regret', defId: 'regret', upgraded: false },
+    { uid: 'curse-shame', defId: 'shame', upgraded: false },
+    { uid: 'curse-bane', defId: 'ascenders_bane', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 7)
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const curseCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artLoaded: card.querySelector('img')?.naturalWidth > 0,
+})))
+check('Curse scans and spoken keyword rules render in hand', () => {
+  assert(curseCards.every((card) => card.artLoaded), 'every Curse scan should load')
+  assert(curseCards.some((card) => card.label.startsWith('Clumsy') && card.label.includes('ethereal')),
+    'Clumsy should announce Ethereal')
+  assert(curseCards.some((card) => card.label.startsWith('Pain') && card.label.includes('2 or fewer')),
+    'Pain should announce its hand-size condition')
+})
+await shot('15b-curse-hand')
+await page.locator('.end-turn-order > summary').click()
+for (let step = 0; step < 6; step++) {
+  await page.getByRole('button', { name: /Move Ironclad — Shame earlier/ }).click()
+}
+const visibleEndTurnOrder = await page.locator('.end-turn-order li span').allTextContents()
+check('the player can order end-of-turn abilities before committing', () => {
+  assert(visibleEndTurnOrder.findIndex((label) => label.endsWith('Shame')) <
+    visibleEndTurnOrder.findIndex((label) => label.endsWith('Decay')),
+    `expected Shame before Decay: ${visibleEndTurnOrder.join(' → ')}`)
+  assert(visibleEndTurnOrder.some((label) => label.endsWith('Lightning Orb 1')),
+    'each Orb should appear as its own ability')
+})
+await shot('15bb-end-turn-order')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.getByRole('alert').filter({ hasText: 'living target' }).waitFor()
+const rejectedOrbPlan = await readState()
+check('a stale Lightning target keeps the whole end-turn plan editable', () => {
+  assertEqual(rejectedOrbPlan.phase, 'player')
+  assertDeepEqual(rejectedOrbPlan.enemies.map((enemy) => enemy.hp), [1, 4],
+    'the rejected plan must not leak partial Orb damage')
+})
+await shot('15bba-stale-orb-target')
+await page.getByLabel('Target for Ironclad — Lightning Orb 2').selectOption({ label: 'Acid Slime' })
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+const cursePrepared = await readState()
+check('the Curse end-turn step resolves before discard ordering', () => {
+  const player = cursePrepared.players[0]
+  assertEqual(player.hp, 7, 'the chosen Shame-before-Decay order exposes one damage')
+  assertEqual(player.block, 0, 'Shame removes the only Block before Decay')
+  assertEqual(player.weak, 1, 'Doubt grants Weak')
+  assertDeepEqual(cursePrepared.enemies.map((enemy) => enemy.hp), [0, 3],
+    'each Lightning Orb uses its selected target')
+  assertDeepEqual(player.exhaust.map((card) => card.uid).sort(), ['curse-bane', 'curse-clumsy'])
+  assertEqual(player.hand.length, 5, 'Ethereal cards leave before the discard picker')
+})
+await shot('15c-ethereal-discard')
+await confirmAllDiscards()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+const curseDiscarded = await readState()
+check('Regret stays retained after the rest of the Curse hand is discarded', () => {
+  assertDeepEqual(curseDiscarded.players[0].hand.map((card) => card.uid), ['curse-regret'])
+})
+
+// The campfire is the first non-combat room with real interaction: each player
+// independently Rests or Smiths, and nobody leaves until all have chosen.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 2)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.phase = 'room'
   run.map.position = run.map.rows[run.map.rows.length - 2][0]

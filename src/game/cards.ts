@@ -105,6 +105,13 @@ type Conditional = { when?: Condition }
 
 export type Effect = EffectKind & Conditional
 
+/** Printed effects that fire only while this card is in hand at end of turn. */
+export type HandEndOfTurnEffect =
+  | { kind: 'damage'; amount: number }
+  | { kind: 'loseHp'; amount: number; handSizeAtMost?: number }
+  | { kind: 'gainWeak'; amount: number }
+  | { kind: 'loseBlock'; amount: number }
+
 type EffectKind =
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
   | { kind: 'hit'; amount: Amount; times?: Amount }
@@ -161,14 +168,16 @@ export type CardDef = {
   retain?: boolean
   /** Cannot be played at all; an effect that tries to play it is ignored (p.24). */
   unplayable?: boolean
+  /** Exhaust this card if it was in hand when the end-of-turn step began (p.24). */
+  ethereal?: boolean
+  /** Effects printed as "End of turn: If this card is in your hand...". */
+  handEndOfTurn?: HandEndOfTurnEffect[]
   /**
    * For Powers: when the ongoing effect fires once the card is in play. The
    * `effects` list is what the Power DOES each time it triggers, not what
    * happens when it is played — a Power with a trigger does nothing on play.
    */
   trigger?: Trigger
-  // Ethereal is deliberately absent. A declared-but-unhonoured flag is worse
-  // than a missing one: a card carrying it would silently play as normal.
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -1172,6 +1181,54 @@ export const DEFERRED_CARDS = [
   'third_eye',
 ] as const
 
+/** The nine base Curses plus the Ascension 5 setup Curse. */
+Object.assign(CARDS, {
+  clumsy: card({
+    id: 'clumsy', name: 'Clumsy', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true, ethereal: true,
+  }),
+  decay: card({
+    id: 'decay', name: 'Decay', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+    handEndOfTurn: [{ kind: 'damage', amount: 1 }],
+  }),
+  doubt: card({
+    id: 'doubt', name: 'Doubt', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+    handEndOfTurn: [{ kind: 'gainWeak', amount: 1 }],
+  }),
+  injury: card({
+    id: 'injury', name: 'Injury', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+  }),
+  pain: card({
+    id: 'pain', name: 'Pain', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+    handEndOfTurn: [{ kind: 'loseHp', amount: 1, handSizeAtMost: 2 }],
+  }),
+  parasite: card({
+    id: 'parasite', name: 'Parasite', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+  }),
+  regret: card({
+    id: 'regret', name: 'Regret', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true, retain: true,
+  }),
+  shame: card({
+    id: 'shame', name: 'Shame', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true,
+    handEndOfTurn: [{ kind: 'loseBlock', amount: 1 }],
+  }),
+  writhe: card({
+    id: 'writhe', name: 'Writhe', owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 1, effects: [], exhaust: true,
+  }),
+  ascenders_bane: card({
+    id: 'ascenders_bane', name: "Ascender's Bane", owner: 'curse', type: 'curse', rarity: 'common',
+    cost: 0, effects: [], unplayable: true, ethereal: true,
+  }),
+})
+
 /**
  * Daze and the Status cards enemies inflict. They live in their own shared
  * decks and leave your deck at the end of every combat (p.24).
@@ -1184,6 +1241,7 @@ CARDS.daze = {
   rarity: 'special',
   cost: 0,
   unplayable: true,
+  ethereal: true,
   effects: [],
 }
 

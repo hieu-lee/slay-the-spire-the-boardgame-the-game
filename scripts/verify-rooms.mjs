@@ -570,6 +570,168 @@ check('online seats ready together, then submit only their own post-trigger disc
   )
 })
 
+check('online discard orders are validated after Ethereal leaves the hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  first.hand = [
+    { uid: 'online-clumsy', defId: 'clumsy', upgraded: false },
+    { uid: 'online-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  const staleOrder = first.hand.map((card) => card.uid)
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const preparedFirst = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(preparedFirst.hand.map((card) => card.uid), ['online-strike'],
+    'the authoritative end-turn step exhausts Clumsy before asking for an order')
+
+  let error = null
+  try {
+    apply(room, a.token, { kind: 'discardHand', discardOrder: staleOrder })
+  } catch (thrown) {
+    error = thrown
+  }
+  assertEqual(error?.name, 'RoomError', 'a pre-Ethereal hand order must be rejected')
+  apply(room, a.token, { kind: 'discardHand', discardOrder: ['online-strike'] })
+  apply(room, b.token, { kind: 'discardHand', discardOrder: second.hand.map((card) => card.uid) })
+  assertEqual(room.run.combat.phase, 'enemy')
+})
+
+check('online seats globally order abilities only after everyone ends the turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const shame = { uid: 'room-shame', defId: 'shame', upgraded: false }
+  const decay = { uid: 'room-decay', defId: 'decay', upgraded: false }
+  first.hand = [shame, decay]
+  first.block = 1
+  first.hp = 5
+  apply(room, a.token, { kind: 'endTurn' })
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined,
+    'hand-derived abilities stay hidden while another player can still act')
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'player', 'the room pauses for a party-wide order')
+  const ownerSnapshot = snapshotFor(room, a.token)
+  const otherSnapshot = snapshotFor(room, b.token)
+  const shameId = ownerSnapshot.endTurnAbilities.find((ability) => ability.label.includes('Shame')).id
+  const decayId = ownerSnapshot.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
+  const order = [decayId, shameId]
+  assertDeepEqual(ownerSnapshot.endTurnOrder, [shameId, decayId])
+  assertDeepEqual(otherSnapshot.endTurnOrder, ownerSnapshot.endTurnOrder,
+    'every seat and reconnect sees the same stage-local ordering IDs')
+  assertEqual(ownerSnapshot.endTurnCoordinatorId, a.playerId)
+  assert(ownerSnapshot.endTurnAbilities.some((ability) => ability.label.includes('Shame')),
+    'the owner can identify their own hand ability')
+  assert(otherSnapshot.endTurnAbilities.every((ability) =>
+    !ability.label.includes('Shame') && !ability.label.includes('Decay')),
+    'another seat cannot identify private cards from the ordering stage')
+  assert(!JSON.stringify(otherSnapshot).includes(shame.uid) && !JSON.stringify(otherSnapshot).includes(decay.uid),
+    'opaque stage IDs never serialize another player\'s hidden card UID')
+  let malformed = null
+  try {
+    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [order[0]] })
+  } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError', 'an incomplete network order is rejected')
+  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: order })
+  const prepared = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(prepared.hp, 5, 'the authoritative room resolves Decay before Shame')
+  assertEqual(prepared.block, 0)
+})
+
+check('the online coordinator can interleave a later seat\'s winning ability first', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  first.hp = 1
+  first.stance = 'wrath'
+  second.orbs = ['lightning', null, null]
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  for (const enemy of room.run.combat.enemies) enemy.dead = enemy.uid !== target.uid
+  target.hp = 1
+  target.maxHp = 1
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const abilities = snapshotFor(room, a.token).endTurnAbilities
+  const orbId = abilities.find((ability) => ability.label.includes('Lightning Orb')).id
+  const wrathId = abilities.find((ability) => ability.label.includes('Wrath')).id
+  let badTarget = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveEndTurn',
+      abilityOrder: [`${orbId}@not-an-enemy`, wrathId],
+    })
+  } catch (error) {
+    badTarget = error
+  }
+  assertEqual(badTarget?.name, 'RoomError', 'a crafted Lightning target is rejected')
+  let inheritedId = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveEndTurn',
+      abilityOrder: [`toString@${target.uid}`, wrathId],
+    })
+  } catch (error) {
+    inheritedId = error
+  }
+  assertEqual(inheritedId?.name, 'RoomError', 'an inherited object key is not an opaque ability ID')
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: [`${orbId}@${target.uid}`, wrathId],
+  })
+  assertEqual(room.run.combat.phase, 'won')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hp, 2,
+    'Wrath is skipped, then Burning Blood heals 1 at end of combat')
+})
+
+check('one Lightning Orb still pauses online when its enemy target is a choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  second.orbs = ['lightning', null, null]
+  const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  const secondHp = secondEnemy.hp
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'player', 'the target picker must not auto-hit the first enemy')
+  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: [`${orbId}@${secondEnemy.uid}`],
+  })
+  assertEqual(firstEnemy.hp, room.run.combat.enemies[0].hp)
+  assertEqual(room.run.combat.enemies[1].hp, secondHp - 1)
+})
+
+check('an online Lightning plan with a dynamically dead target stays editable', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  room.run.combat.players.find((player) => player.id === b.playerId).orbs = ['lightning', 'lightning', null]
+  room.run.combat.enemies[0].hp = 1
+  const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const [firstOrb, secondOrb] = snapshotFor(room, a.token).endTurnAbilities
+  let rejected = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveEndTurn',
+      abilityOrder: [`${firstOrb.id}@${firstEnemy.uid}`, `${secondOrb.id}@${firstEnemy.uid}`],
+    })
+  } catch (error) {
+    rejected = error
+  }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.run.combat.phase, 'player', 'the choice stage remains open for a replacement target')
+  assertEqual(room.run.combat.enemies[0].hp, 1, 'the rejected plan is atomic')
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: [`${firstOrb.id}@${firstEnemy.uid}`, `${secondOrb.id}@${secondEnemy.uid}`],
+  })
+  assertEqual(room.run.combat.enemies[0].hp, 0)
+  assertEqual(room.run.combat.enemies[1].hp, secondEnemy.hp - 1)
+})
+
 check('a malformed online discard order is refused as a room error', () => {
   const { room, a, b } = twoSeatRoom()
   apply(room, a.token, { kind: 'endTurn' })

@@ -61,7 +61,7 @@ const indexedKeys = new Set(
  * path builder made every card skip itself and the check passed while pointing
  * every single card at one nonexistent file.
  */
-const UNSCANNED_POOLS = new Set(['status', 'curse'])
+const UNSCANNED_POOLS = new Set(['status'])
 
 check('every defined card resolves to an image that exists', () => {
   if (cardFiles.length === 0) return // not synced

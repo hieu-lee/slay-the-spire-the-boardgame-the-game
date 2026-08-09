@@ -33,6 +33,7 @@ function slugify(name: string): string {
  * reward decks are built from it.
  */
 export function tierOf(def: CardDef): string {
+  if (def.id === 'ascenders_bane') return 'ascension'
   const pooled = POOL_TIERS[def.owner]
   if (pooled) return pooled
   if (def.rarity === 'starter') return `${def.owner}/starter`

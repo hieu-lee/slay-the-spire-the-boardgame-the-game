@@ -142,8 +142,9 @@ export function createPlayer(
   name: string,
   character: CharacterId,
   row: number,
+  addedCards: readonly string[] = [],
 ): Player {
-  const deck = STARTER_DECKS[character].map(makeInstance)
+  const deck = [...STARTER_DECKS[character], ...addedCards].map(makeInstance)
   const maxHp = MAX_HP[character]
   return {
     id,
@@ -183,7 +184,14 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
   instanceCounter = 0
   const rng = createRng(seed)
   const players = party.map((member, index) =>
-    createPlayer(rng, member.id, member.name, member.character, index),
+    createPlayer(
+      rng,
+      member.id,
+      member.name,
+      member.character,
+      index,
+      ascension >= 5 ? ['ascenders_bane'] : [],
+    ),
   )
   // Solo starts with 2 extra gold and the Loaded Die (p.4, step 12).
   const solo = players.length === 1 ? players[0] : undefined

@@ -32,6 +32,8 @@ export type CardInstance = {
   uid: string
   defId: string
   upgraded: boolean
+  /** Dark Embrace drew this during Ethereal cleanup; keep it through this discard step. */
+  endTurnProtected?: boolean
 }
 
 export type RelicInstance = {

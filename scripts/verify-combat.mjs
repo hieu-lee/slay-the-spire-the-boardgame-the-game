@@ -432,6 +432,21 @@ check('a card can exhaust another card out of hand', () => {
   assertEqual(next.players[0].discard.length, 1, 'True Grit itself goes to the discard pile')
 })
 
+check('exhausting Daze returns it to the shared supply and still fires exhaust triggers', () => {
+  const grit = instance('true_grit')
+  const daze = instance('daze')
+  const state = combat([
+    makePlayer({ hand: [grit, daze], powers: [instance('feel_no_pain')] }),
+  ], [makeEnemy()])
+  const next = playCard(state, 'p1', grit.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    exhaustUids: [daze.uid],
+  })
+  assertEqual(next.players[0].exhaust.length, 0, 'Daze returns instead of entering the exhaust pile')
+  assertEqual(next.players[0].block, 2, 'Feel No Pain still sees the Daze exhaust')
+})
+
 check('Survivor discards a chosen card', () => {
   const survivor = instance('survivor')
   const spare = instance('strike_silent')
@@ -550,6 +565,119 @@ check('an Unplayable card cannot be played', () => {
     playCard(state, 'p1', fixture.uid, { enemyUid: null, playerId: 'p1' }) === state,
     'an Unplayable card must be refused, returning the identical state reference',
   )
+})
+
+check('Curses resolve their printed end-of-turn rules before discard', () => {
+  const decay = instance('decay')
+  const doubt = instance('doubt')
+  const shame = instance('shame')
+  const pain = instance('pain')
+  const state = combat([
+    makePlayer({ hand: [decay, doubt, shame, pain], hp: 8, block: 2 }),
+  ], [makeEnemy()])
+  const next = beginEndPlayerTurn(state)
+  assertEqual(next.players[0].hp, 8, 'Decay damage is absorbed by Block')
+  assertEqual(next.players[0].block, 0, 'Decay spends one Block and Shame removes one')
+  assertEqual(next.players[0].weak, 1, 'Doubt gives Weak')
+  assertEqual(next.players[0].hand.length, 4, 'the curses stay available for discard ordering')
+  assert(!next.log.some((line) => line.startsWith('Pain:')), 'Pain is inactive above two cards')
+
+  const painful = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('pain'), instance('injury')], hp: 8, block: 20 }),
+  ], [makeEnemy()]))
+  assertEqual(painful.players[0].hp, 7, 'Pain loses HP through Block at two cards')
+  assertEqual(painful.players[0].block, 20, 'Pain does not spend Block')
+})
+
+check('players choose the order of Power and Curse end-of-turn abilities', () => {
+  const shame = instance('shame')
+  const metallicize = instance('metallicize')
+  const powered = combat([
+    makePlayer({ hand: [shame], powers: [metallicize], block: 0 }),
+  ], [makeEnemy()])
+  assertEqual(beginEndPlayerTurn(powered).players[0].block, 0,
+    'the default Power-then-Shame order spends Metallicize Block')
+  const powerChosen = beginEndPlayerTurn(powered, [
+    `p1/card:${shame.uid}`, `p1/power:${metallicize.uid}`,
+  ])
+  assertEqual(powerChosen.players[0].block, 1, 'Shame then Metallicize preserves the gained Block')
+
+  const decay = instance('decay')
+  const curseState = combat([
+    makePlayer({ hand: [shame, decay], hp: 5, block: 1 }),
+  ], [makeEnemy()])
+  assertEqual(beginEndPlayerTurn(curseState).players[0].hp, 4,
+    'the default Shame-then-Decay order loses HP')
+  const curseChosen = beginEndPlayerTurn(curseState, [
+    `p1/card:${decay.uid}`, `p1/card:${shame.uid}`,
+  ])
+  assertEqual(curseChosen.players[0].hp, 5, 'Decay then Shame spends Block instead')
+  assert(beginEndPlayerTurn(curseState, [`p1/card:${shame.uid}`]) === curseState,
+    'an incomplete order is rejected without mutating the turn')
+})
+
+check('the party can interleave end-of-turn abilities across co-op seats', () => {
+  const state = combat([
+    makePlayer({ hp: 1, stance: 'wrath' }),
+    makePlayer({ id: 'p2', name: 'Defect', character: 'defect', row: 1, orbs: ['lightning', null, null] }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })])
+  assertEqual(beginEndPlayerTurn(state).phase, 'lost', 'seat order would resolve lethal Wrath first')
+  const chosen = beginEndPlayerTurn(state, [`p2/orb:0@${state.enemies[0].uid}`, 'p1/wrath'])
+  assertEqual(chosen.phase, 'won', 'the legal cross-seat Orb-first order wins immediately')
+  assertEqual(chosen.players[0].hp, 1, 'Wrath never resolves after immediate victory')
+})
+
+check('a lethal Curse immediately defeats the co-op party', () => {
+  const next = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('pain'), instance('injury')], hp: 1 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, hand: [instance('doubt')] }),
+  ], [makeEnemy()]))
+  assert(next.players[0].dead, 'Pain defeats the first player')
+  assertEqual(next.players[1].weak, 0, 'later end-turn effects stop after the immediate defeat')
+  assertEqual(next.phase, 'lost', 'one fallen player ends the co-op combat (p.13)')
+})
+
+check('Ethereal uses the hand at end-turn start and returns Daze to its supply', () => {
+  const clumsy = instance('clumsy')
+  const daze = instance('daze')
+  const drawnClumsy = instance('clumsy')
+  const state = combat([
+    makePlayer({
+      hand: [clumsy, daze],
+      draw: [drawnClumsy],
+      powers: [instance('dark_embrace')],
+    }),
+  ], [makeEnemy()])
+  const next = beginEndPlayerTurn(state)
+  assertDeepEqual(next.players[0].exhaust.map((held) => held.uid), [clumsy.uid],
+    'the Curse remains exhausted but the shared Daze returns to its supply')
+  assertEqual(next.players[0].hand.length, 1, 'Dark Embrace draws once per exhausted card')
+  assertEqual(next.players[0].hand[0].uid, drawnClumsy.uid,
+    'an Ethereal card drawn during this step waits until the next end turn')
+  const discarded = endPlayerTurn(next, { p1: [drawnClumsy.uid] })
+  assertEqual(discarded.players[0].hand[0].uid, drawnClumsy.uid,
+    'Dark Embrace draws are not discarded during this discard step')
+  assertEqual(discarded.players[0].hand[0].endTurnProtected, undefined,
+    'the one-turn protection is cleared after it is used')
+})
+
+check('Regret retains while Writhe can be paid to exhaust itself', () => {
+  const regret = instance('regret')
+  const strike = instance('strike_ironclad')
+  const discarded = endPlayerTurn(
+    combat([makePlayer({ hand: [regret, strike] })], [makeEnemy()]),
+    { p1: [strike.uid, regret.uid] },
+  )
+  assertDeepEqual(discarded.players[0].hand.map((held) => held.uid), [regret.uid])
+  assertDeepEqual(discarded.players[0].discard.map((held) => held.uid), [strike.uid])
+
+  const writhe = instance('writhe')
+  const played = playCard(
+    combat([makePlayer({ hand: [writhe], energy: 1 })], [makeEnemy()]),
+    'p1', writhe.uid, { enemyUid: null, playerId: null },
+  )
+  assertEqual(played.players[0].energy, 0)
+  assertDeepEqual(played.players[0].exhaust.map((held) => held.uid), [writhe.uid])
 })
 
 // p.12 orders Start of Turn as Reset, Draw, Roll, then abilities. The order is
@@ -1583,7 +1711,8 @@ check('every newly transcribed card does what its face prints', () => {
     'strike_silent', 'defend_silent', 'neutralize', 'survivor',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast',
     'strike_watcher', 'defend_watcher', 'eruption', 'vigilance',
-    'daze',
+    'daze', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
+    'shame', 'writhe', 'ascenders_bane',
   ])
   const covered = new Set(CASES.map((spec) => spec.id))
   // Checks earlier in THIS process register `fixture_*` cards into the table;

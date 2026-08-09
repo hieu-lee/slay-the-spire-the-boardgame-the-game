@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase } from '../game/combat.ts'
+import type { CombatPhase, EndTurnAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, RunPhase } from '../game/run.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
@@ -62,6 +62,9 @@ export type RoomSnapshot = {
   rewardDecided: string[]
   rewardConfirmed: string[]
   endTurnDecided: string[]
+  endTurnAbilities?: EndTurnAbility[]
+  endTurnOrder?: string[]
+  endTurnCoordinatorId?: string | null
   discardOrder?: string[]
   run: VisibleRun | null
 }

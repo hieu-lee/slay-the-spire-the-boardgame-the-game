@@ -692,8 +692,18 @@ try {
   await a.getByRole('button', { name: /^Blade Dance,/ }).click()
   await a.locator('.enemy:not([disabled])').first().click()
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
+    .push({ uid: 'online-order-shame', defId: 'shame', upgraded: false })
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').block = 1
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
+    .push({ uid: 'online-order-decay', defId: 'decay', upgraded: false })
   const aCredentials = await credentials(a)
   const endTurnStatuses = []
+  let publishedEndTurnOrder
+  let teammateOrderButtonDisabled
+  let teammateReorderControlsDisabled
+  let coordinatorAbilityLabels
+  let decayAbilityId
   await a.route(`**/api/rooms/${code}`, async (route) => {
     const stalePlayerTurn = await route.fetch()
     for (const token of [aCredentials.token, bCredentials.token]) {
@@ -704,6 +714,21 @@ try {
       })
       endTurnStatuses.push(response.status)
     }
+    await a.getByRole('button', { name: 'Resolve end turn' }).waitFor()
+    const [coordinatorStage, boStage] = await Promise.all([snapshot(a), snapshot(b)])
+    publishedEndTurnOrder = coordinatorStage.endTurnOrder
+    decayAbilityId = boStage.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
+    teammateOrderButtonDisabled = await b.getByRole('button', { name: 'Waiting for end-turn order' }).isDisabled()
+    const teammateArrows = b.locator('.end-turn-order li button')
+    teammateReorderControlsDisabled = await teammateArrows.evaluateAll((buttons) =>
+      buttons.length > 0 && buttons.every((button) => button.disabled))
+    await a.locator('.end-turn-order > summary').click()
+    coordinatorAbilityLabels = await a.locator('.end-turn-order li span').allTextContents()
+    for (let index = publishedEndTurnOrder.indexOf(decayAbilityId); index > 0; index -= 1) {
+      await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
+    }
+    await a.screenshot({ path: join(outDir, '03-party-end-turn-order.png'), fullPage: true })
+    await a.getByRole('button', { name: 'Resolve end turn' }).click()
     await a.waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'discard')
     await route.fulfill({ response: stalePlayerTurn })
   }, { times: 1 })
@@ -733,6 +758,20 @@ try {
       .find((player) => player.id === afterEndTurnRace.you.playerId).hand
       .some((card) => card.uid === 'online-overflow-dance'))
     assertEqual(stalePhasePrompt, 0)
+  })
+  check('the coordinator can publish, reorder, and resolve party-wide end-turn abilities', () => {
+    assert(publishedEndTurnOrder.includes(decayAbilityId), JSON.stringify(publishedEndTurnOrder))
+    assert(publishedEndTurnOrder.every((id) => !id.includes('card:') && !id.includes('online-order')),
+      `private card UIDs leaked through ${JSON.stringify(publishedEndTurnOrder)}`)
+    assert(teammateOrderButtonDisabled, 'the non-coordinator end-turn button remained enabled')
+    assert(teammateReorderControlsDisabled, 'the non-coordinator could change an order they cannot submit')
+    assert(coordinatorAbilityLabels.filter((label) => label.startsWith('Bo — '))
+      .every((label) => label.includes('Private hand ability')),
+      `the coordinator saw private cards: ${JSON.stringify(coordinatorAbilityLabels)}`)
+    const decay = afterEndTurnRace.run.combat.log.findIndex((line) => line.startsWith('Decay damages Bo'))
+    const shame = afterEndTurnRace.run.combat.log.findIndex((line) => line.startsWith('Shame: Ann'))
+    assert(decay >= 0 && shame >= 0 && decay < shame,
+      `Decay log ${decay}, Shame log ${shame}: ${JSON.stringify(afterEndTurnRace.run.combat.log)}`)
   })
   const aDiscardTop = a.getByLabel('Top discard for Ann')
   if (await aDiscardTop.count()) await aDiscardTop.selectOption({ index: 0 })
@@ -767,7 +806,7 @@ try {
   check('combat row centering never scrolls the page chrome away', () => {
     assertEqual(pageScroll, 0)
   })
-  await a.screenshot({ path: join(outDir, '03-shared-enemy-turn.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '04-shared-enemy-turn.png'), fullPage: true })
 
   const reconnectCredentials = await credentials(b)
   await b.close()
@@ -805,13 +844,13 @@ try {
     assertEqual(restored.phase, 'run')
     assertEqual(createWhileReconnecting, 0, 'reconnect exposed a destructive fresh-room form')
   })
-  await b.screenshot({ path: join(outDir, '04-reconnected-seat.png'), fullPage: true })
+  await b.screenshot({ path: join(outDir, '05-reconnected-seat.png'), fullPage: true })
 
   const recoveryTab = await bContext.newPage()
   recoveryTab.on('pageerror', (error) => failures.push(String(error)))
   recoveryTab.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
   await recoveryTab.goto(origin, { waitUntil: 'networkidle' })
-  await recoveryTab.screenshot({ path: join(outDir, '05-saved-expedition.png'), fullPage: true })
+  await recoveryTab.screenshot({ path: join(outDir, '06-saved-expedition.png'), fullPage: true })
   await recoveryTab.getByRole('button', { name: `Resume ${code}` }).click()
   await recoveryTab.locator('.app-shell--online .combat').waitFor()
   await b.locator('.online-entry').waitFor()
@@ -820,7 +859,7 @@ try {
     assertEqual(recoveredSeat.you.name, 'Bo')
     assertEqual(recoveredSeat.phase, 'run')
   })
-  await recoveryTab.screenshot({ path: join(outDir, '06-durable-seat-recovery.png'), fullPage: true })
+  await recoveryTab.screenshot({ path: join(outDir, '07-durable-seat-recovery.png'), fullPage: true })
   await b.close()
   b = recoveryTab
 

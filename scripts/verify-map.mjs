@@ -517,6 +517,22 @@ check('Ascension 6 heals 4 instead of to full', () => {
   assertEqual(next.players[0].hp, 6, 'Ascension 6 heals 4 HP rather than to full')
 })
 
+check("Ascension 5 adds Ascender's Bane to every starter deck", () => {
+  const party = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+    { id: 'p3', name: 'Defect', character: 'defect' },
+    { id: 'p4', name: 'Watcher', character: 'watcher' },
+  ]
+  const below = createRun(5, party, 4)
+  const ascended = createRun(5, party, 5)
+  for (let index = 0; index < party.length; index++) {
+    assertEqual(below.players[index].deck.some((card) => card.defId === 'ascenders_bane'), false)
+    assertEqual(ascended.players[index].deck.filter((card) => card.defId === 'ascenders_bane').length, 1)
+    assertEqual(ascended.players[index].draw.filter((card) => card.defId === 'ascenders_bane').length, 1)
+  }
+})
+
 check('a boss room stands up a single boss that acts last', () => {
   const run = createRun(4, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },

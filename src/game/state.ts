@@ -23,7 +23,9 @@
 //     as affordable, the cost badge prints "X", and a `discardTopCosts` check
 //     matches it against no number at all. Spending X needs the player to
 //     choose an amount and nothing collects one.
-//   - Ethereal is not modelled.
+//   - Ethereal and every Curse's in-combat text are live. Parasite's removal
+//     penalty and Ascender's Bane's removal protection wait on card removal,
+//     which arrives with the Merchant rather than as an unreachable API.
 //   - The live enemies resolve Curl Up, Spore Cloud and Enraged. Special
 //     abilities on enemies not yet transcribed remain absent with those cards.
 //   - There is no boss deck: a boss room stands up the toughest elite, marked
@@ -47,14 +49,13 @@
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
-//   - Ascension modifiers other than the Act-heal are not applied.
+//   - Ascension 5's starter Curse and Ascension 6's Act heal are applied. The
+//     other eleven modifiers are not yet applied.
 //   - Orbs: the engine lets a player evoke ANY orb and the room layer forwards
 //     the choice, but the local UI never collects it, so a client-side play
 //     always evokes the first occupied slot. Nor can the two evokes of one
-//     card pick different targets, which p.16 allows. End-of-turn Lightning
-//     orbs are worse: `beginEndPlayerTurn` takes no orb-target context, so every one of
-//     them hits the first living enemy, and p.16 says explicitly that they
-//     "can each have a different target".
+//     card pick different targets, which p.16 allows. End-of-turn Orbs are
+//     separately orderable and each Lightning collects its own target.
 //   - Abilities triggered BY a card fire during its resolution rather than
 //     after it, which p.12 forbids ("don't take effect until after the card is
 //     finished resolving all of its text"). Only the on-play trigger is
@@ -113,12 +114,17 @@ export {
 export type { DrawResult, Piles } from './piles.ts'
 
 export { CARDS, STARTER_DECKS, cardDef, faceOf } from './cards.ts'
-export type { Amount, CardDef, Condition, CountOf, Effect, TargetScope } from './cards.ts'
+export type { Amount, CardDef, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {
   activatePotion,
   beginEndPlayerTurn,
   cardNeedsEnemy,
+  chooseEndTurnTarget,
+  defaultEndTurnOrder,
+  endTurnAbilities,
+  endTurnChoiceId,
+  endTurnChoiceTarget,
   createCombat,
   endPlayerTurn,
   livingEnemies,
@@ -129,8 +135,9 @@ export {
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  validEndTurnOrder,
 } from './combat.ts'
-export type { CombatPhase, CombatState, DiscardOrders, PlayContext, PotionContext } from './combat.ts'
+export type { CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PlayContext, PotionContext } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

@@ -5,6 +5,11 @@ import {
   activatePotion,
   beginEndPlayerTurn,
   cardNeedsEnemy,
+  chooseEndTurnTarget,
+  defaultEndTurnOrder,
+  endTurnAbilities,
+  endTurnChoiceId,
+  endTurnChoiceTarget,
   endPlayerTurn,
   enemyTurn,
   enemyLabel,
@@ -13,8 +18,9 @@ import {
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  validEndTurnOrder,
 } from '../game/combat.ts'
-import type { CombatState, DiscardOrders, PotionContext } from '../game/combat.ts'
+import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext } from '../game/combat.ts'
 import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
@@ -35,6 +41,9 @@ type CombatScreenProps = {
   drawCount?: number
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
+  partyEndTurnAbilities?: EndTurnAbility[]
+  savedEndTurnOrder?: string[]
+  endTurnCoordinatorId?: string | null
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */
@@ -280,6 +289,9 @@ export function CombatScreen({
   drawCount,
   decidedPlayerIds,
   savedDiscardOrder,
+  partyEndTurnAbilities,
+  savedEndTurnOrder,
+  endTurnCoordinatorId,
   authoritativeVersion,
   authoritativeRefresh,
 }: CombatScreenProps) {
@@ -293,6 +305,8 @@ export function CombatScreen({
   const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
+  const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
+  const [endTurnError, setEndTurnError] = useState('')
   const boardRef = useRef<HTMLDivElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const followViewerRow = useRef(true)
@@ -311,6 +325,8 @@ export function CombatScreen({
   refreshRef.current = authoritativeRefresh
   const rows = useMemo(() => rowsOf(state), [state])
   const savedDiscardKey = savedDiscardOrder?.join('\0')
+  const savedEndTurnKey = savedEndTurnOrder?.join('\0')
+  const orderingStage = partyEndTurnAbilities !== undefined
 
   const { struck, beat } = useStruck(state)
 
@@ -356,6 +372,16 @@ export function CombatScreen({
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
   }, [state.phase, viewerId])
+
+  useEffect(() => {
+    if (!orderingStage) return
+    setPending(null)
+    setMiracleOnCard(false)
+    setSpendingShiv(false)
+    setPendingPotion(null)
+    setPotionShivEnemyUids([])
+    setPotionOverflowRequired(0)
+  }, [orderingStage])
 
   // A teammate can spend Shivs or kill a staged target while this client is
   // choosing Cunning Potion's overflow attacks. Restart a changed count and
@@ -421,6 +447,7 @@ export function CombatScreen({
       setDiscardTops({})
       setDiscardOrders({})
     }
+    if (state.phase !== 'player') setEndTurnOrder([])
   }, [state.phase])
 
   useEffect(() => {
@@ -429,6 +456,11 @@ export function CombatScreen({
     const top = savedDiscardOrder.at(-1)
     if (top) setDiscardTops({ [viewerId]: top })
   }, [savedDiscardKey, state.phase, viewerId])
+
+  useEffect(() => {
+    if (state.phase !== 'player' || !savedEndTurnOrder) return
+    setEndTurnOrder(savedEndTurnOrder)
+  }, [savedEndTurnKey, state.phase, viewerId])
 
   // Newest-first means a scrolled log stays where the player left it, so a new
   // line lands above the visible area and is never seen.
@@ -531,16 +563,49 @@ export function CombatScreen({
     ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
     : livingPlayers.filter((player) => discardOrders[player.id]).length
   const discardableHand = viewer.hand.filter((card) =>
-    !faceOf(cardDef(card.defId), card.upgraded).retain)
+    !card.endTurnProtected && !faceOf(cardDef(card.defId), card.upgraded).retain)
   const viewerDiscardTop = discardTops[viewer.id] && discardableHand.some((card) => card.uid === discardTops[viewer.id])
     ? discardTops[viewer.id]
     : discardableHand.at(-1)?.uid ?? ''
+  const abilities = onAction ? (partyEndTurnAbilities ?? []) : endTurnAbilities(state)
+  const defaultOrder = defaultEndTurnOrder(abilities)
+  const viewerEndTurnOrder = validEndTurnOrder(abilities, endTurnOrder)
+    ? endTurnOrder
+    : defaultOrder
+  const canOrderEndTurn = !orderingStage || viewer.id === endTurnCoordinatorId
+
+  function moveEndTurnAbility(id: string, delta: -1 | 1) {
+    const from = viewerEndTurnOrder.indexOf(id)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= viewerEndTurnOrder.length) return
+    const order = [...viewerEndTurnOrder]
+    ;[order[from], order[to]] = [order[to]!, order[from]!]
+    setEndTurnOrder(order)
+    setEndTurnError('')
+  }
+
+  function targetEndTurnAbility(choice: string, targetUid: string) {
+    setEndTurnOrder(viewerEndTurnOrder.map((candidate) => candidate === choice
+      ? chooseEndTurnTarget(candidate, targetUid)
+      : candidate))
+    setEndTurnError('')
+  }
 
   function finishTurn() {
     if (!viewer) return
     if (state.phase === 'player') {
-      if (onAction) onAction({ kind: 'endTurn' })
-      else onChange?.(beginEndPlayerTurn(state))
+      const order: EndTurnOrder = viewerEndTurnOrder
+      if (orderingStage) {
+        if (viewer.id === endTurnCoordinatorId) onAction?.({ kind: 'resolveEndTurn', abilityOrder: order })
+      } else if (onAction) onAction({ kind: 'endTurn' })
+      else {
+        const next = beginEndPlayerTurn(state, order)
+        if (next === state) setEndTurnError('Choose a living target for every Lightning Orb, then try again.')
+        else {
+          setEndTurnError('')
+          onChange?.(next)
+        }
+      }
       return
     }
     const selected = discardTops[viewer.id]
@@ -745,7 +810,7 @@ export function CombatScreen({
   }
 
   function onCardClick(card: CardInstance) {
-    if (cardActionPending.current) return
+    if (cardActionPending.current || orderingStage) return
     setSpendingShiv(false)
     setPendingPotion(null)
     setPotionShivEnemyUids([])
@@ -886,7 +951,7 @@ export function CombatScreen({
         <span className="combat__actions">
           {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
             <>
-              {state.phase === 'player' ? [...new Set(viewer.potions)].map((potionId) => {
+              {state.phase === 'player' && !orderingStage ? [...new Set(viewer.potions)].map((potionId) => {
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
@@ -916,7 +981,7 @@ export function CombatScreen({
                   </button>
                 )
               }) : null}
-              {state.phase === 'player' && viewer.shivs > 0 ? (
+              {state.phase === 'player' && !orderingStage && viewer.shivs > 0 ? (
                 <button
                   type="button"
                   aria-pressed={spendingShiv}
@@ -932,7 +997,7 @@ export function CombatScreen({
                   {spendingShiv ? '✓ ' : ''}Use Shiv
                 </button>
               ) : null}
-              {state.phase === 'player' && viewer.miracles > 0 ? (
+              {state.phase === 'player' && !orderingStage && viewer.miracles > 0 ? (
                 <button
                   type="button"
                   aria-pressed={viewer.energy === CAPS.energy ? miracleOnCard : undefined}
@@ -974,10 +1039,46 @@ export function CombatScreen({
                   </select>
                 </label>
               ) : null}
-              <button type="button" onClick={finishTurn}>
+              {state.phase === 'player' && (abilities.length > 1 ||
+                abilities.some((ability) => (ability.targets?.length ?? 0) > 1)) ? (
+                <details className="end-turn-order">
+                  <summary>End-turn order ({abilities.length})</summary>
+                  <ol>
+                    {viewerEndTurnOrder.map((choice, index) => {
+                      const ability = abilities.find((candidate) => candidate.id === endTurnChoiceId(choice))!
+                      return (
+                        <li key={ability.id}>
+                          <span>{ability.label}</span>
+                          {ability.targets ? (
+                            <select aria-label={`Target for ${ability.label}`}
+                              disabled={!canOrderEndTurn}
+                              value={endTurnChoiceTarget(choice) ?? ability.targets[0]?.uid}
+                              onChange={(event) => targetEndTurnAbility(choice, event.target.value)}>
+                              {ability.targets.map((target) => (
+                                <option key={target.uid} value={target.uid}>{target.label}</option>
+                              ))}
+                            </select>
+                          ) : null}
+                          <button type="button" disabled={!canOrderEndTurn || index === 0}
+                            aria-label={`Move ${ability.label} earlier`}
+                            onClick={() => moveEndTurnAbility(choice, -1)}>↑</button>
+                          <button type="button" disabled={!canOrderEndTurn || index === viewerEndTurnOrder.length - 1}
+                            aria-label={`Move ${ability.label} later`}
+                            onClick={() => moveEndTurnAbility(choice, 1)}>↓</button>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </details>
+              ) : null}
+              {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
+              <button type="button" onClick={finishTurn}
+                disabled={orderingStage && viewer.id !== endTurnCoordinatorId}>
                 {state.phase === 'discard'
                   ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
-                  : 'End turn'}
+                  : orderingStage
+                    ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
+                    : 'End turn'}
               </button>
             </>
           ) : null}
@@ -1242,6 +1343,7 @@ export function CombatScreen({
               card={card}
               playable={
                 !usingCard &&
+                !orderingStage &&
                 state.phase === 'player' &&
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable

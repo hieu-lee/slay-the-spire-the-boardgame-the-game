@@ -1,7 +1,15 @@
 // Defect orbs, Watcher stances, Scry, and the player-side status tokens that
 // enemies apply. These were no-ops until now, so Zap and Dual Cast sat in the
 // Defect's starter deck doing nothing.
-import { createCombat, endPlayerTurn, enemyTurn, playCard, startPlayerTurn } from '../src/game/combat.ts'
+import {
+  beginEndPlayerTurn,
+  createCombat,
+  endPlayerTurn,
+  endTurnAbilities,
+  enemyTurn,
+  playCard,
+  startPlayerTurn,
+} from '../src/game/combat.ts'
 import { gainVulnerable, gainWeak } from '../src/game/damage.ts'
 import { STARTING_RELIC } from '../src/game/relics.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -112,6 +120,29 @@ check('orbs fire their passive at the end of the turn', () => {
   assertEqual(next.enemies[0].hp, 19, 'the Lightning orb deals 1')
   assertEqual(next.players[0].block, 1, 'the Frost orb grants 1 Block')
   assertDeepEqual(next.players[0].orbs, ['lightning', 'frost', 'dark'], 'passives do not consume orbs')
+})
+
+check('each Orb can be targeted and interleaved as its own end-turn ability', () => {
+  const shame = instance('shame')
+  const state = combat([
+    player({ orbs: ['lightning', 'frost', 'lightning'], hand: [shame], block: 1 }),
+  ], [enemy({ uid: 'e1', hp: 2 }), enemy({ uid: 'e2', hp: 2, row: 1 })])
+  const abilities = endTurnAbilities(state)
+  assertEqual(abilities.filter((ability) => ability.id.includes('/orb:')).length, 3)
+  const next = beginEndPlayerTurn(state, [
+    'p1/orb:2@e2', `p1/card:${shame.uid}`, 'p1/orb:1', 'p1/orb:0@e1',
+  ])
+  assertDeepEqual(next.enemies.map((target) => target.hp), [1, 1], 'each Lightning uses its chosen target')
+  assertEqual(next.players[0].block, 1, 'Frost can resolve after Shame instead of in one atomic Orb block')
+})
+
+check('a later Lightning never silently retargets after its chosen enemy dies', () => {
+  const state = combat([
+    player({ orbs: ['lightning', 'lightning', null] }),
+  ], [enemy({ uid: 'e1', hp: 1 }), enemy({ uid: 'e2', hp: 2, row: 1 })])
+  const rejected = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1@e1'])
+  assert(rejected === state, 'the whole plan is rejected atomically so the player can choose again')
+  assertDeepEqual(state.enemies.map((target) => target.hp), [1, 2], 'no partial damage escapes the rejected plan')
 })
 
 check('a Dark orb does nothing at end of turn', () => {

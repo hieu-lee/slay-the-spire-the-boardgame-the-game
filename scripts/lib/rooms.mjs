@@ -19,6 +19,11 @@ import {
   advanceAct,
   cardDef,
   beginEndPlayerTurn,
+  chooseEndTurnTarget,
+  defaultEndTurnOrder,
+  endTurnAbilities,
+  endTurnChoiceId,
+  endTurnChoiceTarget,
   createRun,
   currentRoom,
   endPlayerTurn,
@@ -37,6 +42,7 @@ import {
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  validEndTurnOrder,
 } from '../../src/game/state.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
@@ -254,7 +260,9 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
+  if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
+  if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
 
   const before = room.run
   const next = dispatch(before, seat, action)
@@ -265,6 +273,9 @@ export function apply(room, seatToken, action) {
   // collected before that action are stale, so everyone confirms again.
   room.endTurnOrders = undefined
   room.endTurnReady = undefined
+  room.endTurnAbilities = undefined
+  room.endTurnOrder = undefined
+  room.endTurnPublicIds = undefined
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
@@ -280,6 +291,7 @@ export function apply(room, seatToken, action) {
 function endTurn(room, seat, _action, seatToken) {
   const combat = room.run?.combat
   if (!combat) fail('No combat in progress')
+  if (room.endTurnAbilities) fail('The party is already ordering end-of-turn abilities')
   if (combat.phase !== 'player') fail('The party is not taking its turn')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
   if (!player || player.dead) fail('This seat cannot end the turn')
@@ -292,16 +304,63 @@ function endTurn(room, seat, _action, seatToken) {
 function settleEndTurn(room) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'player' || !room.endTurnReady) return null
+  if (room.endTurnAbilities) return null
   if (!room.seats.some((seat) => seat.connected)) return null
   const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
   const waiting = combat.players
     .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnReady[player.id])
     .map((player) => player.id)
   if (waiting.length > 0) return waiting
-  room.run = { ...room.run, combat: beginEndPlayerTurn(combat) }
-  room.endTurnReady = undefined
+  const abilities = endTurnAbilities(combat)
+  const order = defaultEndTurnOrder(abilities)
+  const needsChoice = abilities.length > 1 || abilities.some((ability) => (ability.targets?.length ?? 0) > 1)
+  if (!needsChoice) {
+    room.run = { ...room.run, combat: beginEndPlayerTurn(combat, order) }
+    room.endTurnReady = undefined
+  } else {
+    room.endTurnAbilities = abilities
+    room.endTurnOrder = order
+    room.endTurnPublicIds = Object.fromEntries(abilities.map((ability, index) => [`a${index + 1}`, ability.id]))
+  }
   room.endTurnOrders = undefined
   return null
+}
+
+function endTurnCoordinator(room) {
+  const alive = new Set(room.run?.combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
+  return room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
+}
+
+function resolveEndTurn(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  if (!combat || !room.endTurnAbilities || !room.endTurnPublicIds) {
+    fail('The party is not ordering end-of-turn abilities')
+  }
+  if (seat.playerId !== endTurnCoordinator(room)) fail('Only the end-turn coordinator can resolve the order')
+  const publicOrder = action.abilityOrder
+  if (!Array.isArray(publicOrder) || publicOrder.some((id) => typeof id !== 'string')) {
+    fail('End-turn order must contain each ability exactly once with valid targets')
+  }
+  const order = publicOrder.map((choice) => {
+    const publicId = endTurnChoiceId(choice)
+    const id = Object.hasOwn(room.endTurnPublicIds, publicId) ? room.endTurnPublicIds[publicId] : undefined
+    const target = endTurnChoiceTarget(choice)
+    if (choice !== (target ? chooseEndTurnTarget(publicId, target) : publicId)) return undefined
+    return id && target ? chooseEndTurnTarget(id, target) : id
+  })
+  if (order.some((choice) => typeof choice !== 'string') || !validEndTurnOrder(room.endTurnAbilities, order)) {
+    fail('End-turn order must contain each ability exactly once with valid targets')
+  }
+  const next = beginEndPlayerTurn(combat, order)
+  if (next === combat) fail('End-turn order is stale')
+  room.run = { ...room.run, combat: next }
+  room.endTurnReady = undefined
+  room.endTurnAbilities = undefined
+  room.endTurnOrder = undefined
+  room.endTurnPublicIds = undefined
+  room.endTurnOrders = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
 function submitDiscard(room, seat, action, seatToken) {
@@ -706,12 +765,41 @@ export function snapshotFor(room, seatToken) {
     rewardDecided: Object.keys(room.rewardChoices ?? {}),
     rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
+    endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
+    endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
+    endTurnCoordinatorId: room.endTurnAbilities ? endTurnCoordinator(room) : undefined,
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }
+}
+
+function visibleEndTurnAbilities(room, viewerId) {
+  if (!room.endTurnAbilities) return undefined
+  const privateCounts = new Map()
+  return room.endTurnAbilities.map((ability) => {
+    const visible = {
+      ...ability,
+      id: publicEndTurnChoice(room, ability.id),
+      targets: ability.targets?.map((target) => ({ ...target })),
+    }
+    if (ability.playerId === viewerId || !ability.id.includes('/card:')) return visible
+    const number = (privateCounts.get(ability.playerId) ?? 0) + 1
+    privateCounts.set(ability.playerId, number)
+    const owner = room.seats.find((seat) => seat.playerId === ability.playerId)?.name ?? 'Teammate'
+    return { ...visible, label: `${owner} — Private hand ability ${number}` }
+  })
+}
+
+function publicEndTurnChoice(room, choice) {
+  const id = endTurnChoiceId(choice)
+  const publicId = Object.entries(room.endTurnPublicIds ?? {})
+    .find(([, realId]) => realId === id)?.[0]
+  if (!publicId) fail('End-turn ability mapping is stale')
+  const target = endTurnChoiceTarget(choice)
+  return target ? chooseEndTurnTarget(publicId, target) : publicId
 }
 
 function redactRun(run, viewerId) {

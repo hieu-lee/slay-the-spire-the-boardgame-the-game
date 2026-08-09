@@ -245,6 +245,9 @@ export function OnlineGame({ onLocal }: Props) {
           viewerId={snapshot.you.playerId}
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}
+          partyEndTurnAbilities={snapshot.endTurnAbilities}
+          savedEndTurnOrder={snapshot.endTurnOrder}
+          endTurnCoordinatorId={snapshot.endTurnCoordinatorId}
           savedDiscardOrder={snapshot.discardOrder}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}

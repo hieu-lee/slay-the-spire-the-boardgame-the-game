@@ -52,6 +52,23 @@ export type CombatState = {
 }
 
 export type DiscardOrders = Readonly<Record<string, readonly string[]>>
+export type EndTurnOrder = readonly string[]
+export type EndTurnAbility = {
+  id: string
+  playerId: string | null
+  label: string
+  targets?: { uid: string; label: string }[]
+}
+
+const END_TURN_TARGET = '@'
+export const endTurnChoiceId = (choice: string): string => choice.split(END_TURN_TARGET, 1)[0]!
+export const endTurnChoiceTarget = (choice: string): string | undefined => choice.split(END_TURN_TARGET)[1]
+export const chooseEndTurnTarget = (id: string, targetUid: string): string =>
+  `${endTurnChoiceId(id)}${END_TURN_TARGET}${targetUid}`
+export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTurnOrder =>
+  abilities.map((ability) => ability.targets?.[0]
+    ? chooseEndTurnTarget(ability.id, ability.targets[0].uid)
+    : ability.id)
 
 const clone = <T,>(value: T): T => structuredClone(value)
 
@@ -625,11 +642,8 @@ function applyEffect(
       const chosen = allocate(actor, context.exhaustUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
-      actor.exhaust = [...actor.exhaust, ...moved]
+      exhaustCards(state, actor, moved)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
-      // Once per card exhausted, which is what the Ironclad's exhaust synergy
-      // counts.
-      for (let i = 0; i < moved.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
       return
     }
     case 'channel': {
@@ -746,6 +760,13 @@ function addDaze(
   if (pile === 'draw') target.draw = [...cards, ...target.draw]
   else target.discard = [...target.discard, ...cards]
   return gained
+}
+
+/** Exhaust cards once, returning Status cards to their shared supply (p.24). */
+function exhaustCards(state: CombatState, actor: Player, cards: readonly Player['hand'][number][]): void {
+  const lasting = cards.filter((held) => cardDef(held.defId).owner !== 'status')
+  actor.exhaust = [...actor.exhaust, ...lasting]
+  for (let i = 0; i < cards.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
 }
 
 /**
@@ -982,10 +1003,7 @@ export function playCard(
   if (ctx.shortfall || ctx.invalidShivTarget) return state
 
   if (def.exhaust) {
-    actor.exhaust = [...actor.exhaust, held]
-    // A card that exhausts itself is still a card being exhausted, which is
-    // what Feel No Pain and Dark Embrace count.
-    fireTriggers(next, { kind: 'onExhaust' }, actor)
+    exhaustCards(next, actor, [held])
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, held]
   } else {
@@ -1093,67 +1111,168 @@ function beginPlayerTurn(next: CombatState): CombatState {
   return settle(next)
 }
 
-/** Resolves end-of-turn effects before players choose their discard order. */
-export function beginEndPlayerTurn(state: CombatState): CombatState {
+function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
+  const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
+    .map((source) => ({ id: source.id, label: source.name.replace(`${player.name}'s `, '') }))
+  if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
+    abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
+  }
+  player.orbs.forEach((orb, slot) => {
+    if (orb === 'lightning') {
+      abilities.push({
+        id: `orb:${slot}`,
+        label: `Lightning Orb ${slot + 1}`,
+        targets: livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })),
+      })
+    } else if (orb === 'frost') abilities.push({ id: `orb:${slot}`, label: `Frost Orb ${slot + 1}` })
+  })
+  if (player.stance === 'wrath') abilities.push({ id: 'wrath', label: 'Wrath damage' })
+  for (const held of player.hand) {
+    const def = faceOf(cardDef(held.defId), held.upgraded)
+    if ((def.handEndOfTurn?.length ?? 0) > 0 || def.ethereal) {
+      abilities.push({ id: `card:${held.uid}`, label: `${def.name}${def.ethereal ? ' — Exhaust' : ''}` })
+    }
+  }
+  return abilities
+}
+
+/** Every ability the party may interleave at end of turn (p.12). */
+export function endTurnAbilities(state: CombatState): EndTurnAbility[] {
+  if (state.phase !== 'player') return []
+  const poison = state.enemies.flatMap((enemy) => enemy.dead || enemy.poison === 0 ? [] : [{
+    id: `poison:${enemy.uid}`,
+    playerId: null,
+    label: `${enemyLabel(state.enemies, enemy)} — Poison`,
+  }])
+  return [
+    ...poison,
+    ...state.players.flatMap((player) => player.dead ? [] : playerEndTurnAbilities(state, player).map((ability) => ({
+      ...ability,
+      id: `${player.id}/${ability.id}`,
+      playerId: player.id,
+      label: `${player.name} — ${ability.label}`,
+    }))),
+  ]
+}
+
+export function validEndTurnOrder(abilities: readonly EndTurnAbility[], order: readonly string[]): boolean {
+  const expected = new Set(abilities.map((ability) => ability.id))
+  const ids = order.map(endTurnChoiceId)
+  return order.length === expected.size && new Set(ids).size === expected.size && order.every((choice) => {
+    const ability = abilities.find((candidate) => candidate.id === endTurnChoiceId(choice))
+    const target = endTurnChoiceTarget(choice)
+    return ability !== undefined && (ability.targets
+      ? target !== undefined && choice === chooseEndTurnTarget(ability.id, target) &&
+        ability.targets.some((candidate) => candidate.uid === target)
+      : target === undefined && choice === ability.id)
+  })
+}
+
+function resolveHandEndTurn(state: CombatState, player: Player, uid: string): void {
+  const held = player.hand.find((card) => card.uid === uid)
+  if (!held) return
+  const def = faceOf(cardDef(held.defId), held.upgraded)
+  for (const effect of def.handEndOfTurn ?? []) {
+    if ('handSizeAtMost' in effect && effect.handSizeAtMost !== undefined &&
+      player.hand.length > effect.handSizeAtMost) continue
+    if (effect.kind === 'damage') {
+      const hp = player.hp
+      const block = player.block
+      damagePlayer(player, effect.amount)
+      const lost = hp - player.hp
+      const blocked = block - player.block
+      state.log = [...state.log, lost > 0
+        ? `${def.name} damages ${player.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+        : `${player.name} blocks ${def.name}${blocked > 0 ? ` (${blocked} spent)` : ''}`]
+    } else if (effect.kind === 'loseHp') {
+      const outcome = applyHpLoss(player.hp, effect.amount)
+      state.log = [...state.log, `${def.name}: ${player.name} loses ${outcome.hpLost} HP`]
+      player.hp = outcome.hp
+      if (player.hp === 0) player.dead = true
+    } else if (effect.kind === 'gainWeak') {
+      const before = player.weak
+      player.weak = gainWeak(player.weak, effect.amount)
+      if (player.weak > before) {
+        state.log = [...state.log, `${def.name}: ${player.name} gains ${player.weak - before} Weak`]
+      }
+    } else {
+      const lost = Math.min(player.block, effect.amount)
+      player.block -= lost
+      if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} Block`]
+    }
+    if (player.dead) {
+      state.log = [...state.log, `${player.name} has fallen`]
+      return
+    }
+  }
+  if (!def.ethereal) return
+
+  player.hand = player.hand.filter((card) => card.uid !== uid)
+  const before = new Set(player.hand.map((card) => card.uid))
+  exhaustCards(state, player, [held])
+  // FAQ: Dark Embrace draws caused by an end-turn Ethereal Exhaust ignore
+  // end-turn/Ethereal text and are not discarded during this step.
+  for (const card of player.hand) if (!before.has(card.uid)) card.endTurnProtected = true
+  state.log = [...state.log, `${player.name} exhausts ${def.name} (Ethereal)`]
+}
+
+/** Resolves end-of-turn effects in each player's chosen order, then asks for discards. */
+export function beginEndPlayerTurn(
+  state: CombatState,
+  order: EndTurnOrder = defaultEndTurnOrder(endTurnAbilities(state)),
+): CombatState {
   if (state.phase !== 'player') return state
+  const abilities = endTurnAbilities(state)
+  if (!validEndTurnOrder(abilities, order)) return state
+
   const next = clone(state)
-  fireTriggers(next, { kind: 'endOfTurn' })
-
-  for (const player of next.players) {
-    const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
-    if (loss > 0) {
-      player.strength -= loss
-      next.log = [...next.log, `${player.name} loses ${loss} Strength at end of turn`]
+  for (const choice of order) {
+    const id = endTurnChoiceId(choice)
+    if (id.startsWith('poison:')) {
+      const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
+      if (enemy && !enemy.dead && enemy.poison > 0) {
+        const outcome = applyHpLoss(enemy.hp, enemy.poison)
+        const name = enemyLabel(next.enemies, enemy)
+        next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
+        enemy.hp = outcome.hp
+        if (enemy.hp === 0) {
+          enemy.dead = true
+          next.log = [...next.log, `${name} is dead`]
+          triggerEnemyDeathAbility(next, enemy)
+        }
+      }
+    } else {
+      const slash = id.indexOf('/')
+      const player = findPlayer(next, id.slice(0, slash))
+      const localId = id.slice(slash + 1)
+      if (!player || player.dead) continue
+      if (localId.startsWith('relic:') || localId.startsWith('power:')) {
+        const source = triggerSources(player, { kind: 'endOfTurn' })
+          .find((candidate) => candidate.id === localId)
+        if (source) resolveTriggerSource(next, player, source)
+      } else if (localId === 'strength') {
+        const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
+        if (loss > 0) {
+          player.strength -= loss
+          next.log = [...next.log, `${player.name} loses ${loss} Strength at end of turn`]
+        }
+        player.strengthLossAtEndOfTurn = 0
+      } else if (localId.startsWith('orb:')) {
+        if (!resolveOrbAtEndOfTurn(next, player, Number(localId.slice(4)), endTurnChoiceTarget(choice))) {
+          return state
+        }
+      } else if (localId === 'wrath') {
+        const hp = player.hp
+        damagePlayer(player, 1)
+        next.log = [...next.log, hp > player.hp
+          ? `${player.name} takes 1 from Wrath`
+          : `${player.name} blocks the bite of Wrath`]
+        if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
+      } else if (localId.startsWith('card:')) {
+        resolveHandEndTurn(next, player, localId.slice(5))
+      }
     }
-    player.strengthLossAtEndOfTurn = 0
-  }
-
-  // Poison is HP loss at end of turn and ignores Block; tokens never decrement.
-  // Resolved before the players' own end-of-turn damage: p.12 lets end-of-turn
-  // abilities go in any order, and a party that would have won on the poison
-  // tick should not lose to its own Wrath bite first.
-  for (const enemy of next.enemies) {
-    if (enemy.dead || enemy.poison === 0) continue
-    const outcome = applyHpLoss(enemy.hp, enemy.poison)
-    const name = enemyLabel(next.enemies, enemy)
-    // The hit points actually lost, not the token count: an enemy on 2 HP with
-    // 5 Poison loses 2, and saying "loses 5" is simply untrue.
-    next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
-    enemy.hp = outcome.hp
-    if (enemy.hp === 0) {
-      enemy.dead = true
-      next.log = [...next.log, `${name} is dead`]
-      triggerEnemyDeathAbility(next, enemy)
-    }
-  }
-
-  for (const player of next.players) {
-    if (player.dead) continue
-    // Checked in TWO places, because the combat can end at either point and
-    // both endings are immediate (p.13):
-    //   here — a previous player's orb or bite already ended it, so this
-    //   player takes no end-of-turn step at all;
-    //   again below — this player's own orb ended it, so their own Wrath bite
-    //   must not then land.
-    // Guarding only one of the two left a mirror hole each time: first a bite
-    // landing after victory, then a later player's orb reporting victory in a
-    // combat a death had already lost.
     if (combatIsOver(next)) break
-    // Orbs fire before the hand is discarded, and before the Wrath bite.
-    resolveOrbsAtEndOfTurn(next, player)
-    if (combatIsOver(next)) break
-    // Ending your turn in Wrath costs 1 damage, and it can be blocked (p.17).
-    // Logged, because otherwise the seat flinches with nothing to explain it.
-    if (player.stance === 'wrath') {
-      const hpBefore = player.hp
-      damagePlayer(player, 1)
-      const lost = hpBefore - player.hp
-      next.log = [
-        ...next.log,
-        lost > 0 ? `${player.name} takes 1 from Wrath` : `${player.name} blocks the bite of Wrath`,
-      ]
-      if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
-    }
   }
 
   next.phase = 'discard'
@@ -1185,11 +1304,13 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
     const order = discardOrders[player.id]
     const hand = order ? order.map((uid) => player.hand.find((card) => card.uid === uid)!) : player.hand
     const keep = hand
-      .filter((held) => faceOf(cardDef(held.defId), held.upgraded).retain)
+      .filter((held) => held.endTurnProtected || faceOf(cardDef(held.defId), held.upgraded).retain)
       .map((held) => held.uid)
     const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
-    player.hand = piles.hand
+    player.hand = piles.hand.map((held) => held.endTurnProtected
+      ? { ...held, endTurnProtected: undefined }
+      : held)
     player.discard = piles.discard
     const discarded = held - keep.length
     if (discarded > 0) {
@@ -1431,30 +1552,21 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): void
   }
 }
 
-/**
- * End of turn, each Lightning orb deals 1 and each Frost orb grants 1 Block.
- * Dark orbs do nothing until evoked (p.16).
- */
-function resolveOrbsAtEndOfTurn(state: CombatState, actor: Player): void {
-  for (const orb of actor.orbs) {
-    // The orbs behind the one that ended the fight never fire (p.13). The
-    // caller guards around this loop; without a guard INSIDE it, a Frost orb
-    // sitting after a lethal Lightning orb still handed out Block — and fired
-    // its triggers — in a combat that was already over.
-    if (combatIsOver(state)) return
-    if (orb === 'lightning') {
-      const target = livingEnemies(state)[0]
-      // Named as the orb, not the player: an enemy's hit points dropping with
-      // no line at all was the only silent end-of-turn effect left.
-      if (target) damageEnemyLogged(state, target, 1, `${actor.name}'s Lightning orb`)
-    } else if (orb === 'frost') {
-      const before = actor.block
-      grantBlock(state, actor, 1)
-      if (actor.block > before) {
-        state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
-      }
+/** Resolves one Orb's end-turn effect; each Orb is separately ordered (p.16). */
+function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, targetUid?: string): boolean {
+  const orb = actor.orbs[slot]
+  if (orb === 'lightning') {
+    const target = livingEnemies(state).find((enemy) => enemy.uid === targetUid)
+    if (!target) return false
+    damageEnemyLogged(state, target, 1, `${actor.name}'s Lightning orb`)
+  } else if (orb === 'frost') {
+    const before = actor.block
+    grantBlock(state, actor, 1)
+    if (actor.block > before) {
+      state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }
   }
+  return true
 }
 
 
@@ -1499,6 +1611,7 @@ function fireTriggers(
 }
 
 type TriggerSource = {
+  id: string
   trigger: Trigger
   effects: Effect[]
   /** Named in the log, so a recurring effect is attributable. */
@@ -1506,6 +1619,44 @@ type TriggerSource = {
   /** The card's own declared scopes, so a Power hits what it says it hits. */
   scope: TargetScope
   supportScope: TargetScope
+}
+
+function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string): TriggerSource[] {
+  const sources: TriggerSource[] = []
+  for (const [index, held] of player.relics.entries()) {
+    const def = relicDef(held.defId)
+    if (!triggerMatches(def.trigger, event)) continue
+    sources.push({
+      id: `relic:${index}`,
+      trigger: def.trigger,
+      effects: def.effects,
+      name: `${player.name}'s ${def.name}`,
+      scope: 'enemy',
+      supportScope: 'self',
+    })
+  }
+  for (const held of player.powers) {
+    if (held.uid === excludeUid) continue
+    const def = faceOf(cardDef(held.defId), held.upgraded)
+    if (!def.trigger || !triggerMatches(def.trigger, event)) continue
+    sources.push({
+      id: `power:${held.uid}`,
+      trigger: def.trigger,
+      effects: def.effects,
+      name: `${player.name}'s ${def.name}`,
+      scope: def.target ?? 'enemy',
+      supportScope: def.supportTarget ?? 'self',
+    })
+  }
+  return sources
+}
+
+function resolveTriggerSource(state: CombatState, player: Player, source: TriggerSource): void {
+  const target = livingEnemies(state)[0]
+  const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
+  for (const effect of source.effects) {
+    applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
+  }
 }
 
 function fireTriggersInner(
@@ -1518,41 +1669,8 @@ function fireTriggersInner(
     if (player.dead) continue
     if (only && player.id !== only.id) continue
 
-    const sources: TriggerSource[] = []
-    for (const held of player.relics) {
-      const def = relicDef(held.defId)
-      // Relics declare no scope, so they keep the defaults they always had.
-      sources.push({
-        trigger: def.trigger,
-        effects: def.effects,
-        name: `${player.name}'s ${def.name}`,
-        scope: 'enemy',
-        supportScope: 'self',
-      })
-    }
-    for (const card of player.powers) {
-      if (card.uid === excludeUid) continue
-      const def = faceOf(cardDef(card.defId), card.upgraded)
-      if (!def.trigger) continue
-      // A Power carries the same target fields as any other card, and a
-      // declared-but-unhonoured flag is worse than a missing one: it reads as
-      // implemented. Honour them rather than assuming single-target.
-      sources.push({
-        trigger: def.trigger,
-        effects: def.effects,
-        name: `${player.name}'s ${def.name}`,
-        scope: def.target ?? 'enemy',
-        supportScope: def.supportTarget ?? 'self',
-      })
-    }
-
-    for (const source of sources) {
-      if (!triggerMatches(source.trigger, event)) continue
-      const target = livingEnemies(state)[0]
-      const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
-      for (const effect of source.effects) {
-        applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
-      }
+    for (const source of triggerSources(player, event, excludeUid)) {
+      resolveTriggerSource(state, player, source)
     }
   }
 }

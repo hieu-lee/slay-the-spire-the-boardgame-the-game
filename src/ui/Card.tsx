@@ -2,6 +2,7 @@ import type React from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
+import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import { Icon } from './Icon.tsx'
 import type { CardInstance } from '../game/types.ts'
@@ -110,6 +111,18 @@ function triggerText(trigger: Trigger): string {
   }
 }
 
+function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
+  const when = 'handSizeAtMost' in effect && effect.handSizeAtMost !== undefined
+    ? ` if you have ${effect.handSizeAtMost} or fewer cards in hand`
+    : ''
+  switch (effect.kind) {
+    case 'damage': return `at end of turn, take ${effect.amount} damage${when}`
+    case 'loseHp': return `at end of turn, lose ${effect.amount} hit points${when}`
+    case 'gainWeak': return `at end of turn, gain ${effect.amount} Weak${when}`
+    case 'loseBlock': return `at end of turn, lose ${effect.amount} Block${when}`
+  }
+}
+
 function accessibleName(def: CardDef): string {
   return [
     def.name,
@@ -127,8 +140,10 @@ function accessibleName(def: CardDef): string {
     def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
     def.trigger ? triggerText(def.trigger) : '',
     ...def.effects.map(effectText),
+    ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
     def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',
+    def.ethereal ? 'ethereal, exhausts at end of turn if still in hand' : '',
   ]
     .filter(Boolean)
     .join(', ')
