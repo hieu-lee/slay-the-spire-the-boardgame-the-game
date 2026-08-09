@@ -809,9 +809,18 @@ button:disabled {
 .card__cost {
   position: absolute;
   top: 2px;
-  left: 4px;
-  font-size: 0.7rem;
-  color: var(--energy);
+  left: 2px;
+  display: grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border: 1px solid #73c7eb;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3e9dcc, #103b66 72%);
+  box-shadow: 0 1px 4px #000;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
   text-shadow: 0 1px 3px #000;
 }
 

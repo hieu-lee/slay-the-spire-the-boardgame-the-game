@@ -1096,6 +1096,26 @@ check('Stack+ publishes Orb-count Block only to the chosen ally', () => {
   assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
 })
 
+check('Power discounts publish a zero-Energy Streamline atomically', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const streamline = { uid: 'room-streamline', defId: 'streamline', upgraded: false }
+  Object.assign(actor, {
+    hand: [streamline], energy: 0,
+    powers: [
+      { uid: 'room-power-1', defId: 'capacitor', upgraded: false },
+      { uid: 'room-power-2', defId: 'fusion', upgraded: false },
+    ],
+  })
+  const before = target.hp
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: streamline.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(result.snapshot.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, Math.max(0, before - 3))
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).energy, 0)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

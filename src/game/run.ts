@@ -171,6 +171,7 @@ export function createPlayer(
     miracles: 0,
     stance: 'neutral',
     orbs: [null, null, null],
+    orbEvokeBonus: 0,
     relics: [{ defId: STARTING_RELIC[character] ?? 'burning_blood', spent: false }],
     potions: [],
     cardRewards: shuffle(rng, rewardDeck(character, false)),
@@ -331,6 +332,7 @@ function readyForCombat(rng: RngState, player: Player): Player {
     miracles: 0,
     stance: 'neutral',
     orbs: [null, null, null],
+    orbEvokeBonus: 0,
   }
 }
 

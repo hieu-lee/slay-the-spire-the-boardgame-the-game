@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { cardDef, faceOf } from '../game/cards.ts'
+import { cardCost, cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePotion,
@@ -201,11 +201,11 @@ function gainedShivs(effects: readonly Effect[]): number {
  * The end of the array is the top: piles are stored bottom-first, and the most
  * recently discarded card is the one a card like Steam Barrier reads.
  */
-function topOf(pile: readonly CardInstance[]): string | null {
+function topOf(pile: readonly CardInstance[], powersInPlay: number): string | null {
   const top = pile.at(-1)
   if (!top) return null
   const def = faceOf(cardDef(top.defId), top.upgraded)
-  return `${def.unplayable ? '—' : def.cost} · ${def.name}`
+  return `${def.unplayable ? '—' : cardCost(def, powersInPlay)} · ${def.name}`
 }
 
 /** Rows are the board's spatial unit: one per player, enemies sit in them. */
@@ -287,8 +287,9 @@ function canAfford(player: Player, card: CardInstance, spendMiracle = false): bo
     player.orbs.every((orb) => !orb)) {
     return false
   }
-  if (spendMiracle && (def.cost === 'X' || def.cost === 0)) return false
-  return def.cost === 'X' || def.cost <= player.energy + (spendMiracle ? 1 : 0)
+  const cost = cardCost(def, player.powers.length)
+  if (spendMiracle && (cost === 'X' || cost === 0)) return false
+  return cost === 'X' || cost <= player.energy + (spendMiracle ? 1 : 0)
 }
 
 /**
@@ -1306,7 +1307,7 @@ export function CombatScreen({
                   >
                     {discardableHand.map((card) => {
                       const def = faceOf(cardDef(card.defId), card.upgraded)
-                      return <option key={card.uid} value={card.uid}>{`${def.unplayable ? '—' : def.cost} · ${def.name}`}</option>
+                      return <option key={card.uid} value={card.uid}>{`${def.unplayable ? '—' : cardCost(def, viewer.powers.length)} · ${def.name}`}</option>
                     })}
                   </select>
                 </label>
@@ -1646,8 +1647,8 @@ export function CombatScreen({
               // in hand was worth 1 Block or 2. The draw pile gets no such name
               // -- it is face down to everyone, its owner included, which is
               // why the room layer redacts it.
-              ['discard', 'Discard pile', viewer.discard.length, topOf(viewer.discard)],
-              ['exhaust', 'Exhaust pile', viewer.exhaust.length, topOf(viewer.exhaust)],
+              ['discard', 'Discard pile', viewer.discard.length, topOf(viewer.discard, viewer.powers.length)],
+              ['exhaust', 'Exhaust pile', viewer.exhaust.length, topOf(viewer.exhaust, viewer.powers.length)],
             ] as const
           ).map(([kind, label, count, top]) => (
             <span className="pile" key={kind} title={top ? `${label} — ${top} on top` : label}>
@@ -1671,6 +1672,7 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
+              cost={cardCost(faceOf(cardDef(card.defId), card.upgraded), viewer.powers.length)}
               playable={
                 !usingCard &&
                 !orderingStage &&

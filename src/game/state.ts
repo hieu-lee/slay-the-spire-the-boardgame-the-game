@@ -7,7 +7,7 @@
 //
 // Not implemented yet, so that nobody mistakes silence for correctness:
 //   - Powers fire on their triggers, honouring the target scope they declare,
-//     but only nine are transcribed. "Once per turn" is not modelled, so a
+//     but only ten are transcribed. "Once per turn" is not modelled, so a
 //     Power carrying that clause would fire every time instead.
 //   - A trigger chain is cut off after 8 levels and the rest are dropped in
 //     silence. No printed card chains that deep; a future one would look like
@@ -40,9 +40,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 114 of 259 unique character cards are live.
+//   - 118 of 259 unique character cards are live.
 //     12 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 145 have not been transcribed at
+//     The other 141 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -106,7 +106,7 @@ export {
 } from './piles.ts'
 export type { DrawResult, Piles } from './piles.ts'
 
-export { CARDS, STARTER_DECKS, cardDef, faceOf } from './cards.ts'
+export { CARDS, STARTER_DECKS, cardCost, cardDef, faceOf } from './cards.ts'
 export type { Amount, CardDef, CardMode, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {

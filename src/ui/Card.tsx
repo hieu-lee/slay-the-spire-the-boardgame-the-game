@@ -10,6 +10,8 @@ import type { Trigger } from '../game/triggers.ts'
 
 type CardProps = {
   card: CardInstance
+  /** Current cost after board-state reductions. */
+  cost?: number | 'X'
   playable?: boolean
   /** Staged for play, waiting on a target or a choice. */
   selected?: boolean
@@ -100,6 +102,8 @@ function effectText(effect: Effect): string {
     case 'clearTargetBlock': return `remove all Block from the target${condition}`
     case 'removeAllOrbs': return `remove all of your Orbs${condition}`
     case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
+    case 'gainOrbEvokeBonus': return `Orb Evoke effects get +${effect.amount}${condition}`
+    case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
@@ -139,14 +143,14 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
   }
 }
 
-function accessibleName(def: CardDef): string {
+function accessibleName(def: CardDef, cost = def.cost): string {
   return [
     def.name,
     // "cost —" reads as a dangling "cost" once a screen reader drops the dash
     // at its default punctuation setting. An unplayable card and one you merely
     // cannot afford are both greyed out, so the name is the only thing that can
     // tell them apart.
-    def.unplayable ? 'unplayable' : `cost ${costLabel(def)}`,
+    def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`,
     def.type,
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
@@ -155,6 +159,9 @@ function accessibleName(def: CardDef): string {
     def.target === 'allEnemies' ? 'hits every enemy' : '',
     def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
     def.supportTarget === 'allPlayers' ? 'support effect applies to all players' : '',
+    def.powerCostReduction
+      ? `costs ${def.powerCostReduction} less for each Power you have in play`
+      : '',
     def.trigger ? triggerText(def.trigger) : '',
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
@@ -170,13 +177,14 @@ function accessibleName(def: CardDef): string {
 }
 
 /** The energy cost badge, or nothing at all for an unplayable card (p.24). */
-function costLabel(def: CardDef): string {
+function costLabel(def: CardDef, cost = def.cost): string {
   if (def.unplayable) return '—'
-  return def.cost === 'X' ? 'X' : String(def.cost)
+  return cost === 'X' ? 'X' : String(cost)
 }
 
 export function Card({
   card,
+  cost,
   playable = true,
   selected = false,
   picked = false,
@@ -207,7 +215,7 @@ export function Card({
       } as React.CSSProperties}
       disabled={!playable}
       onClick={() => onClick?.(card)}
-      aria-label={accessibleName(def)}
+      aria-label={accessibleName(def, cost)}
       aria-pressed={selected || picked}
       title={def.name}
     >
@@ -234,7 +242,7 @@ export function Card({
         </span>
       ) : null}
       <span className="card__cost" aria-hidden="true">
-        {costLabel(def)}
+        {costLabel(def, cost)}
       </span>
     </button>
   )

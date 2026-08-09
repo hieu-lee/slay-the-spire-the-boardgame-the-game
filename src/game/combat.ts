@@ -3,7 +3,7 @@
 // Every exported function takes a state and returns a new one. An illegal
 // action returns the SAME REFERENCE, which is how callers and the server tell
 // "not allowed" from "allowed but nothing changed".
-import { faceOf, cardDef } from './cards.ts'
+import { cardCost, faceOf, cardDef } from './cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect, TargetScope } from './cards.ts'
 import { actionsFor, advanceCube, enemyDef } from './enemies.ts'
 import type { EnemyAction } from './enemies.ts'
@@ -322,7 +322,7 @@ function holds(
       // deals a Daze, it cannot be played, and it is left on top of the discard
       // by the end-of-turn sweep precisely because everything else WAS played.
       if (face.unplayable) return false
-      return face.cost === condition.cost
+      return cardCost(face, actor.powers.length) === condition.cost
     }
     case 'dieShows':
       return condition.faces.includes(state.die)
@@ -749,7 +749,7 @@ function applyEffect(
       const top = actor.discard.at(-1)
       if (!top) return
       const face = faceOf(cardDef(top.defId), top.upgraded)
-      if (face.unplayable || face.cost !== effect.cost) return
+      if (face.unplayable || cardCost(face, actor.powers.length) !== effect.cost) return
       actor.discard = actor.discard.slice(0, -1)
       actor.hand = [...actor.hand, top]
       note(`${actor.name} returns ${face.name} to hand`)
@@ -786,6 +786,17 @@ function applyEffect(
     case 'gainOrbSlots': {
       actor.orbs = [...actor.orbs, ...Array<null>(effect.amount).fill(null)]
       note(`${actor.name} gains ${effect.amount} Orb slots`)
+      return
+    }
+    case 'gainOrbEvokeBonus': {
+      actor.orbEvokeBonus = (actor.orbEvokeBonus ?? 0) + effect.amount
+      note(`${actor.name}'s Orb Evoke effects get +${effect.amount}`)
+      return
+    }
+    case 'doubleEnergy': {
+      const before = actor.energy
+      actor.energy = Math.min(effect.max, actor.energy * 2)
+      if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy`)
       return
     }
     case 'gainEnergyIfTargetDead': {
@@ -958,7 +969,8 @@ export function previewCardChoice(
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const cost = def.cost === 'X' ? player.energy : def.cost
+  const printedCost = cardCost(def, player.powers.length)
+  const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
 
   const preview = clone(state)
@@ -1195,7 +1207,8 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
-  const cost = def.cost === 'X' ? player.energy : def.cost
+  const printedCost = cardCost(def, player.powers.length)
+  const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
   if (miracleOnCard && (
     player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
@@ -1840,10 +1853,10 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
   if (orb === 'lightning') {
     if (!target) {
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else damageEnemyLogged(state, target, 2, `${actor.name}'s Lightning orb`)
+    } else damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
   } else if (orb === 'frost') {
     const before = actor.block
-    grantBlock(state, actor, 1)
+    grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
     if (actor.block > before) {
       state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }
@@ -1852,7 +1865,12 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
     // time and is not boosted by card effects (rulebook FAQ, p.18).
     if (!target) {
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else damageEnemyLogged(state, target, 3 + actor.powers.length, `${actor.name}'s Dark orb`)
+    } else damageEnemyLogged(
+      state,
+      target,
+      3 + actor.powers.length + (actor.orbEvokeBonus ?? 0),
+      `${actor.name}'s Dark orb`,
+    )
   }
   return orb
 }

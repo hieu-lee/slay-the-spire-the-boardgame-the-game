@@ -270,6 +270,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${effect.amount} Energy`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
+    case 'gainOrbEvokeBonus':
+      return `Orb Evoke effects get +${effect.amount}`
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':

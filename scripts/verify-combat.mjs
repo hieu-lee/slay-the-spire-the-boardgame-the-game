@@ -1781,6 +1781,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'heatsinks', powers: [1, 1] },
     { id: 'stack', block: [0, 1] },
     { id: 'capacitor', powers: [1, 1] },
+    { id: 'consume', powers: [1, 1] },
+    { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
+    { id: 'streamline', enemyHp: [17, 16] },
+    { id: 'meteor_strike', enemyHp: [10, 8] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2579,6 +2583,56 @@ check('Fusion, Heatsinks, Stack, and Capacitor fire only on their printed trigge
   }
 })
 
+check('Consume, Double Energy, Streamline, and Meteor Strike use their printed board modifiers', () => {
+  for (const upgraded of [false, true]) {
+    const consume = instance('consume', upgraded)
+    const consumed = playCard(combat([
+      makePlayer({ character: 'defect', hand: [consume], energy: 3 }),
+    ], [makeEnemy()]), 'p1', consume.uid, { enemyUid: null, playerId: null })
+    assertEqual(consumed.players[0].orbEvokeBonus, 1)
+    assertEqual(consumed.players[0].powers.length, 1)
+
+    const double = instance('double_energy', upgraded)
+    const doubled = playCard(combat([
+      makePlayer({ character: 'defect', hand: [double], energy: 3 }),
+    ], [makeEnemy()]), 'p1', double.uid, { enemyUid: null, playerId: null })
+    assertEqual(doubled.players[0].energy, upgraded ? 6 : 4)
+    assertEqual(doubled.players[0].exhaust.length, 1)
+
+    const powers = Array.from({ length: 4 }, () => instance('capacitor'))
+    const meteor = instance('meteor_strike', upgraded)
+    const struck = playCard(combat([
+      makePlayer({ character: 'defect', hand: [meteor], powers, energy: 1 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', meteor.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(struck.players[0].energy, 0)
+    assertEqual(struck.enemies[0].hp, upgraded ? 8 : 10)
+
+    const streamline = instance('streamline', upgraded)
+    const streamlined = playCard(combat([
+      makePlayer({ character: 'defect', hand: [streamline], powers: powers.slice(0, 1), energy: 1 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', streamline.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(streamlined.players[0].energy, 0)
+    assertEqual(streamlined.enemies[0].hp, upgraded ? 16 : 17)
+  }
+
+  for (const [orb, expected] of [['lightning', 14], ['frost', 4], ['dark', 10]]) {
+    const dual = instance('dual_cast')
+    const powers = [instance('consume')]
+    const state = combat([
+      makePlayer({
+        character: 'defect', hand: [dual], energy: 1, powers,
+        orbs: [orb, orb, null], orbEvokeBonus: 1,
+      }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const context = orb === 'frost'
+      ? { enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'] }
+    const evoked = playCard(state, 'p1', dual.uid, context)
+    if (orb === 'frost') assertEqual(evoked.players[0].block, expected)
+    else assertEqual(evoked.enemies[0].hp, expected)
+  }
+})
+
 check('Anger returns the played card itself to the top of draw', () => {
   for (const upgraded of [false, true]) {
     const anger = instance('anger', upgraded)
@@ -2700,6 +2754,15 @@ check('a conditional bonus lands when the board satisfies it', () => {
     1,
     'and its un-upgraded face, costing 1, does not',
   )
+  const discountedStreamline = instance('streamline')
+  const discountingPowers = [instance('capacitor'), instance('fusion')]
+  assertEqual(
+    play('steam_barrier', {
+      player: { discard: [discountedStreamline], powers: discountingPowers },
+    }).players[0].block,
+    2,
+    'Streamline costs 0 in discard while two Powers are in play (FAQ)',
+  )
 
   // Barrage counts orbs as SWINGS. Two orbs is two separate one-damage hits,
   // which is why this is `times` and not `amount`.
@@ -2769,11 +2832,26 @@ check('a conditional bonus lands when the board satisfies it', () => {
     18,
     'Claw gets its bonus over a 0-cost discard top',
   )
+  assertEqual(
+    play('claw', {
+      player: { discard: [instance('streamline')], powers: discountingPowers },
+    }).enemies[0].hp,
+    18,
+    'Claw gets its bonus over a power-discounted Streamline',
+  )
   const recovered = instance('deflect')
   assertEqual(
     play('scrape', { player: { discard: [recovered] } }).players[0].hand.at(-1).uid,
     recovered.uid,
     'Scrape returns a 0-cost discard top to hand',
+  )
+  const recoveredStreamline = instance('streamline')
+  assertEqual(
+    play('scrape', {
+      player: { discard: [recoveredStreamline], powers: discountingPowers },
+    }).players[0].hand.at(-1).uid,
+    recoveredStreamline.uid,
+    'Scrape returns a power-discounted Streamline from discard (FAQ)',
   )
   assertEqual(
     play('flurry_of_blows', { stanceChangedThisTurn: ['p1'] }).enemies[0].hp,

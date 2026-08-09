@@ -149,6 +149,8 @@ type EffectKind =
   | { kind: 'recurseOrb' }
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
+  | { kind: 'gainOrbEvokeBonus'; amount: number }
+  | { kind: 'doubleEnergy'; max: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
@@ -175,6 +177,8 @@ export type CardDef = {
   rarity: Rarity
   /** `'X'` spends any amount of energy; the effects read the amount spent. */
   cost: number | 'X'
+  /** Reduce this card's Energy cost for each Power its owner has in play. */
+  powerCostReduction?: number
   effects: Effect[]
   /** Mutually exclusive printed effect lines chosen when this card is played. */
   modes?: CardMode[]
@@ -210,6 +214,11 @@ export type CardDef = {
 export function faceOf(def: CardDef, upgraded: boolean): CardDef {
   if (!upgraded || !def.upgrade) return def
   return { ...def, ...def.upgrade, name: `${def.name}+` }
+}
+
+export function cardCost(def: CardDef, powersInPlay: number): number | 'X' {
+  if (def.cost === 'X') return 'X'
+  return Math.max(0, def.cost - (def.powerCostReduction ?? 0) * powersInPlay)
 }
 
 const card = (def: CardDef): CardDef => def
@@ -1554,6 +1563,30 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainOrbSlots', amount: 2 }],
     upgrade: { effects: [{ kind: 'gainOrbSlots', amount: 3 }] },
+  }),
+  consume: card({
+    id: 'consume', name: 'Consume', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainOrbEvokeBonus', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+  double_energy: card({
+    id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'doubleEnergy', max: 6 }],
+    upgrade: { cost: 0 },
+  }),
+  streamline: card({
+    id: 'streamline', name: 'Streamline', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 2,
+    powerCostReduction: 1,
+    effects: [{ kind: 'hit', amount: 3 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
+  }),
+  meteor_strike: card({
+    id: 'meteor_strike', name: 'Meteor Strike', owner: 'defect', type: 'attack', rarity: 'rare', cost: 5,
+    powerCostReduction: 1,
+    effects: [{ kind: 'hit', amount: 10 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 12 }] },
   }),
 }
 

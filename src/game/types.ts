@@ -78,6 +78,8 @@ export type Player = {
   stance: Stance
   /** Defect. `null` marks an empty slot; slot order carries no meaning. */
   orbs: (OrbType | null)[]
+  /** Added to each Orb's printed Evoke effect for this combat. */
+  orbEvokeBonus?: number
 
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */

@@ -1313,6 +1313,51 @@ await shot('07e-capacitor-orb-slots')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-meteor', defId: 'meteor_strike', upgraded: true },
+      { uid: 'ui-streamline', defId: 'streamline', upgraded: true },
+    ],
+    powers: [
+      { uid: 'ui-capacitor-power', defId: 'capacitor', upgraded: false },
+      { uid: 'ui-heatsinks-power', defId: 'heatsinks', upgraded: false },
+      { uid: 'ui-fusion-power', defId: 'fusion', upgraded: false },
+      { uid: 'ui-machine-power', defId: 'machine_learning', upgraded: false },
+    ],
+    orbs: [null, null, null, null, null],
+    energy: 1,
+  })
+  run.combat.log = []
+  debug.setRun(run)
+})
+const discountedCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  cost: card.querySelector('.card__cost')?.textContent,
+  label: card.getAttribute('aria-label'),
+})))
+check('Power discounts update both visible and accessible card costs', () => {
+  assertDeepEqual(discountedCards.map((card) => card.cost), ['1', '0'])
+  assert(discountedCards[0].label?.includes('cost 1'), discountedCards[0].label)
+  assert(discountedCards[1].label?.includes('cost 0'), discountedCards[1].label)
+  assert(discountedCards.every((card) => card.label?.includes('costs 1 less for each Power')), discountedCards)
+})
+await shot('07f-power-discounted-cards')
+await page.getByRole('button', { name: /^Meteor Strike\+, cost 1,/ }).click()
+await page.locator('.enemy').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
+await page.getByRole('button', { name: /^Streamline\+, cost 0,/ }).click()
+await page.locator('.enemy').first().click()
+const discountedPlay = await readState()
+const discountedDiscardTop = await page.locator('.pile__top').filter({ hasText: 'Streamline+' }).textContent()
+check('discounted attacks spend their current cost and still resolve', () => {
+  assertEqual(discountedPlay.players[0].energy, 0)
+  assertEqual(discountedPlay.players[0].hand.length, 0)
+  assertEqual(discountedDiscardTop, '0 · Streamline+')
+})
+await shot('07g-power-discounted-attacks')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
