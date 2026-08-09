@@ -1742,6 +1742,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'flash_of_steel', enemyHp: [19, 19], hand: [1, 1], exhaust: [1, 0] },
     { id: 'good_instincts', block: [1, 2] },
     { id: 'swift_strike', enemyHp: [19, 18] },
+    { id: 'blind', weak: [1, 2], exhaust: [1, 1] },
+    { id: 'dramatic_entrance', enemyHp: [17, 15], exhaust: [1, 1] },
+    { id: 'master_of_strategy', hand: [3, 4], exhaust: [1, 1] },
+    { id: 'trip', vulnerable: [2, 3], exhaust: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1775,22 +1779,26 @@ check('every newly transcribed card does what its face prints', () => {
       const at = upgraded ? 1 : 0
       const label = `${spec.id}${upgraded ? '+' : ''}`
       const card = instance(spec.id, upgraded)
-      const state = combat(
-        [
-          makePlayer({
-            character: def.owner,
-            hand: [card],
-            draw: Array.from({ length: 6 }, () => instance('strike_ironclad')),
-            energy: E,
-            // Entering Neutral is invisible from Neutral, so the stance cards
-            // start in Wrath -- otherwise the clause could be deleted outright
-            // and the check would still see the stance it expected.
-            stance: spec.initialStance ?? (spec.stance ? 'wrath' : 'neutral'),
-            ...spec.player,
-          }),
-        ],
-        [makeEnemy({ hp: 20, maxHp: 20 })],
-      )
+      const state = {
+        ...combat(
+          [
+            makePlayer({
+              character: def.owner,
+              hand: [card],
+              draw: Array.from({ length: 6 }, () => instance('strike_ironclad')),
+              energy: E,
+              // Entering Neutral is invisible from Neutral, so the stance cards
+              // start in Wrath -- otherwise the clause could be deleted outright
+              // and the check would still see the stance it expected.
+              stance: spec.initialStance ?? (spec.stance ? 'wrath' : 'neutral'),
+              ...spec.player,
+            }),
+          ],
+          [makeEnemy({ hp: 20, maxHp: 20 })],
+        ),
+        // Real play calls startPlayerTurn before cards can be used.
+        turn: 1,
+      }
       const face = faceOf(def, upgraded)
       const context = {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
@@ -2402,6 +2410,30 @@ check('a lethal Flash of Steel stops before drawing its later clause', () => {
   assertEqual(won.players[0].hand.length, 0)
   assertEqual(won.players[0].draw[0].uid, draw.uid)
   assertEqual(won.players[0].exhaust.length, 0, 'terminal card cleanup ran after combat ended')
+})
+
+check('Dramatic Entrance gets its first-turn bonus and hits one row plus the boss', () => {
+  for (const upgraded of [false, true]) {
+    const firstCard = instance('dramatic_entrance', upgraded)
+    const enemies = [
+      makeEnemy({ uid: 'left', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', row: 2, hp: 20, maxHp: 20, isBoss: true }),
+    ]
+    const first = playCard({
+      ...combat([makePlayer({ hand: [firstCard], energy: 0 })], enemies),
+      turn: 1,
+    }, 'p1', firstCard.uid, { enemyUid: 'left', playerId: null })
+    const firstDamage = upgraded ? 5 : 3
+    assertDeepEqual(first.enemies.map((enemy) => enemy.hp), [20 - firstDamage, 20, 20 - firstDamage])
+
+    const laterCard = instance('dramatic_entrance', upgraded)
+    const later = playCard({
+      ...combat([makePlayer({ hand: [laterCard], energy: 0 })], enemies),
+      turn: 2,
+    }, 'p1', laterCard.uid, { enemyUid: 'left', playerId: null })
+    assertDeepEqual(later.enemies.map((enemy) => enemy.hp), [18, 20, 18])
+  }
 })
 
 check('Anger returns the played card itself to the top of draw', () => {

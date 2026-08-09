@@ -1028,6 +1028,28 @@ check('Good Instincts+ publishes its zero-cost ally Block without exposing hidde
   assert(!allStrings(result.snapshot).includes('still-hidden'), 'the untouched draw pile leaked through the card update')
 })
 
+check('Master of Strategy draws privately while its Exhaust stays public', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const strategy = { uid: 'room-master-strategy', defId: 'master_of_strategy', upgraded: true }
+  const hidden = Array.from({ length: 4 }, (_, index) => ({
+    uid: `room-strategy-draw-${index}`, defId: 'strike_ironclad', upgraded: false,
+  }))
+  actor.hand = [strategy]
+  actor.draw = hidden
+  actor.energy = 0
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: strategy.uid, preflight: true })
+  const owner = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(owner.hand.map((card) => card.uid), hidden.map((card) => card.uid))
+  assertEqual(owner.exhaust.some((card) => card.uid === strategy.uid), true)
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).handCount, 4)
+  for (const card of hidden) {
+    assert(!allStrings(teammate).includes(card.uid), `Master of Strategy leaked ${card.uid} to a teammate`)
+  }
+  assert(allStrings(teammate).includes(strategy.uid), 'the public Exhaust pile hid Master of Strategy')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

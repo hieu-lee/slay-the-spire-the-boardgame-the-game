@@ -1121,6 +1121,54 @@ await shot('06v-good-instincts-ally-block')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { turn: 1 })
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-dramatic-entrance', defId: 'dramatic_entrance', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    strength: 0,
+    weak: 0,
+  })
+  for (const enemy of run.combat.enemies) {
+    enemy.dead = false
+    enemy.hp = 20
+    enemy.maxHp = 20
+    enemy.block = 0
+    enemy.vulnerable = 0
+  }
+  const target = run.combat.enemies.find((enemy) => !enemy.isBoss)
+  if (!target) throw new Error('Dramatic Entrance browser fixture needs a non-boss enemy')
+  target.hp = 19
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Dramatic Entrance\+,/ }).waitFor()
+const entranceBefore = await readState()
+const entranceTarget = entranceBefore.enemies.find((enemy) => !enemy.dead && !enemy.isBoss)
+assert(entranceTarget, 'Dramatic Entrance browser fixture needs a non-boss enemy')
+await page.getByRole('button', { name: /^Dramatic Entrance\+,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+const entranceEnemy = page.locator(`.enemy--targeted[aria-label*="${entranceTarget.hp} of ${entranceTarget.maxHp} hit points"]`).first()
+await entranceEnemy.scrollIntoViewIfNeeded()
+await shot('06w-dramatic-entrance-row-target')
+await entranceEnemy.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const entrance = await readState()
+check('Dramatic Entrance+ deals 5 to its chosen row on turn 1 and Exhausts', () => {
+  for (const before of entranceBefore.enemies) {
+    const after = entrance.enemies.find((enemy) => enemy.uid === before.uid)
+    const expected = before.row === entranceTarget.row || before.isBoss ? before.hp - 5 : before.hp
+    assertEqual(after.hp, expected, `${before.uid} took the wrong row damage`)
+  }
+  assertEqual(entrance.players[0].energy, 0)
+  assertEqual(entrance.players[0].exhaust.some((card) => card.uid === 'ui-dramatic-entrance'), true)
+})
+await page.locator(`.enemy[aria-label*="${entranceTarget.hp - 5} of ${entranceTarget.maxHp} hit points"]`).scrollIntoViewIfNeeded()
+await shot('06x-dramatic-entrance-row-hit')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

@@ -334,6 +334,8 @@ function holds(
       return state.stanceChangedThisTurn.includes(actor.id)
     case 'targetFullHp':
       return target?.hp === target?.maxHp
+    case 'firstTurnOfCombat':
+      return state.turn === 1
     case 'orbsAtLeast':
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
   }

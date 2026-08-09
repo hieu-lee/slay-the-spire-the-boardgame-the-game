@@ -14,7 +14,7 @@
 //     silence. No printed card chains that deep; a future one would look like
 //     a Power quietly under-performing.
 //   - Effects can now read the board: a clause can carry a condition, and an
-//     amount can carry a bonus or a count. Nine questions are transcribed
+//     amount can carry a bonus or a count. Ten questions are transcribed
 //     (`Condition` in cards.ts), plus Orb, Orb-type, Block and Strength counts.
 //     Per-Miracle and per-card-in-hand counts are not there yet, nor is X-cost.
 //     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
@@ -42,7 +42,7 @@
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
 //   - 106 of 259 unique character cards are live.
-//     4 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
+//     8 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
 //     The other 153 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their

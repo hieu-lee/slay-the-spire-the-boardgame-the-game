@@ -44,6 +44,7 @@ function conditionText(condition: Condition): string {
     case 'discardedThisTurn': return 'you discarded this turn'
     case 'stanceChangedThisTurn': return 'you changed stance this turn'
     case 'targetFullHp': return 'the target is at full hit points'
+    case 'firstTurnOfCombat': return 'it is the first turn of combat'
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
   }
 }

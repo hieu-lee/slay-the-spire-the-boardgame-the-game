@@ -63,6 +63,7 @@ export type Condition =
   | { kind: 'discardedThisTurn' }
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
+  | { kind: 'firstTurnOfCombat' }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
 
@@ -1446,6 +1447,37 @@ export const CARDS: Record<string, CardDef> = {
     id: 'swift_strike', name: 'Swift Strike', owner: 'colorless', type: 'attack', rarity: 'uncommon', cost: 0,
     effects: [{ kind: 'hit', amount: 1 }, { kind: 'switchRows' }],
     upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'switchRows' }] },
+  }),
+  blind: card({
+    id: 'blind', name: 'Blind', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'applyWeak', amount: 1 }],
+    upgrade: { effects: [{ kind: 'applyWeak', amount: 2 }] },
+  }),
+  dramatic_entrance: card({
+    id: 'dramatic_entrance', name: 'Dramatic Entrance', owner: 'colorless', type: 'attack', rarity: 'uncommon', cost: 0,
+    target: 'row',
+    exhaust: true,
+    effects: [{
+      kind: 'hit',
+      amount: { base: 2, bonus: { plus: 1, when: { kind: 'firstTurnOfCombat' } } },
+    }],
+    upgrade: { effects: [{
+      kind: 'hit',
+      amount: { base: 2, bonus: { plus: 3, when: { kind: 'firstTurnOfCombat' } } },
+    }] },
+  }),
+  master_of_strategy: card({
+    id: 'master_of_strategy', name: 'Master of Strategy', owner: 'colorless', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'draw', amount: 3 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 4 }] },
+  }),
+  trip: card({
+    id: 'trip', name: 'Trip', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 2,
+    exhaust: true,
+    effects: [{ kind: 'applyVulnerable', amount: 2 }],
+    upgrade: { effects: [{ kind: 'applyVulnerable', amount: 3 }] },
   }),
 }
 
