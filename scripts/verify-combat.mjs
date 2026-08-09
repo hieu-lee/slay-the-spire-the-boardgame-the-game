@@ -1715,6 +1715,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'ghostly_armor', block: [2, 3] },
     { id: 'prepared', hand: [0, 0], discardAfterDraw: [1, 2] },
     { id: 'beam_cell', enemyHp: [19, 19], vulnerable: [1, 1] },
+    { id: 'doom_and_gloom', enemyHp: [18, 17], orb: ['dark', 'dark'] },
+    { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
+    { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
+    { id: 'riddle_with_holes', shivs: [4, 5] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1969,6 +1973,35 @@ check('Beam Cell follows its printed die faces until upgraded', () => {
     const upgradedState = { ...combat([makePlayer({ hand: [upgraded] })], [makeEnemy()]), die }
     const upgradedPlay = playCard(upgradedState, 'p1', upgraded.uid, { enemyUid: 'e1', playerId: null })
     assertEqual(upgradedPlay.enemies[0].vulnerable, 1)
+  }
+})
+
+check('Doom and Gloom hits one row plus the boss before channeling Dark', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('doom_and_gloom', upgraded)
+    const state = combat(
+      [makePlayer({ character: 'defect', hand: [card] })],
+      [
+        makeEnemy({ uid: 'other-row', row: 0, hp: 10, maxHp: 10 }),
+        makeEnemy({ uid: 'chosen-row', row: 1, hp: 10, maxHp: 10 }),
+        makeEnemy({ uid: 'boss', row: 0, hp: 10, maxHp: 10, isBoss: true }),
+      ],
+    )
+    const played = playCard(state, 'p1', card.uid, { enemyUid: 'chosen-row', playerId: null })
+    assertDeepEqual(played.enemies.map((enemy) => enemy.hp), [10, upgraded ? 7 : 8, upgraded ? 7 : 8])
+    assertDeepEqual(played.players[0].orbs, ['dark', null, null])
+  }
+})
+
+check('Overclock draws before putting its Daze into the discard pile', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('overclock', upgraded)
+    const deck = Array.from({ length: 3 }, () => instance('strike_defect'))
+    const state = combat([makePlayer({ character: 'defect', hand: [card], draw: deck })], [makeEnemy()])
+    const played = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: null })
+    const amount = upgraded ? 3 : 2
+    assertDeepEqual(played.players[0].hand.map((held) => held.uid), deck.slice(0, amount).map((held) => held.uid))
+    assertDeepEqual(played.players[0].discard.map((held) => held.defId), ['daze', 'overclock'])
   }
 })
 

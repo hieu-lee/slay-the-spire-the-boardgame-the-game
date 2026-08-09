@@ -614,6 +614,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 1 }, { kind: 'discard', amount: 1 }],
     upgrade: { effects: [{ kind: 'draw', amount: 2 }, { kind: 'discard', amount: 2 }] },
   }),
+  riddle_with_holes: card({
+    id: 'riddle_with_holes', name: 'Riddle with Holes', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'gainShiv', amount: 4 }],
+    upgrade: { effects: [{ kind: 'gainShiv', amount: 5 }] },
+  }),
   deadly_poison: card({
     id: 'deadly_poison',
     name: 'Deadly Poison',
@@ -1084,6 +1089,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 3, toChosen: true }],
     upgrade: { effects: [{ kind: 'block', amount: 4, toChosen: true }] },
   }),
+  prostrate: card({
+    id: 'prostrate', name: 'Prostrate', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'block', amount: 1 }, { kind: 'gainMiracle', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 2 }, { kind: 'gainMiracle', amount: 1 }] },
+  }),
   third_eye: card({
     id: 'third_eye', name: 'Third Eye', owner: 'watcher', type: 'skill', rarity: 'common', cost: 1,
     effects: [{ kind: 'block', amount: 2 }, { kind: 'scry', amount: 3 }],
@@ -1258,6 +1268,17 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'hit', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }],
     },
+  }),
+  doom_and_gloom: card({
+    id: 'doom_and_gloom', name: 'Doom and Gloom', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 2,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'channel', orb: 'dark', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'channel', orb: 'dark', amount: 1 }] },
+  }),
+  overclock: card({
+    id: 'overclock', name: 'Overclock', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 0,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'addDaze', amount: 1, pile: 'discard' }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'addDaze', amount: 1, pile: 'discard' }] },
   }),
 }
 

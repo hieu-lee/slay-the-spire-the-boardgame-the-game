@@ -877,6 +877,27 @@ check('Prepared+ draws two, discards exactly two, and costs no Energy', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.hand = [{ uid: 'ui-riddle', defId: 'riddle_with_holes', upgraded: true }]
+  player.energy = 3
+  for (const member of run.combat.players) member.shivs = 0
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Riddle with Holes\+,/ }).waitFor()
+await shot('06j-riddle-with-holes-card')
+await page.getByRole('button', { name: /^Riddle with Holes\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].shivs === 5)
+const riddle = await readState()
+check('Riddle with Holes+ fills the shared Shiv supply with five Shivs', () => {
+  assertEqual(riddle.players[0].shivs, 5)
+  assertEqual(riddle.players[0].energy, 1)
+  assertEqual(riddle.players[0].hand.length, 0)
+})
+await shot('06k-riddle-shiv-supply')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
