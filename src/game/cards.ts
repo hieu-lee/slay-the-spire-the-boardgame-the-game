@@ -63,6 +63,8 @@ export type Condition =
   | { kind: 'discardedThisTurn' }
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
+  /** Charge Battery: the player has at least this many occupied Orb slots. */
+  | { kind: 'orbsAtLeast'; amount: number }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
 export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength'
@@ -645,6 +647,24 @@ export const CARDS: Record<string, CardDef> = {
       ],
     },
   }),
+  charge_battery: card({
+    id: 'charge_battery',
+    name: 'Charge Battery',
+    owner: 'defect',
+    type: 'skill',
+    rarity: 'common',
+    cost: 1,
+    effects: [
+      { kind: 'block', amount: 2 },
+      { kind: 'channel', orb: 'frost', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'block', amount: 3 },
+        { kind: 'channel', orb: 'frost', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
+      ],
+    },
+  }),
 
   consecrate: card({
     id: 'consecrate',
@@ -1139,10 +1159,6 @@ export const CARDS: Record<string, CardDef> = {
  * because a card that silently drops a clause is worse than a missing card: it
  * plays, it looks right, and it is wrong.
  *
- * - A conditional Orb channel (Charge Battery): "Gain [frost] if you have 3 or
- *   more Orbs". The picker now handles the forced evoke, but `Condition` and
- *   the picker still need the same `orbsAtLeast` question; otherwise the UI
- *   would ask for an evoke even when the clause does not happen.
  * - Modal faces (Iron Wave+): "2⚔ 1🛡 - or - 1⚔ 2🛡", a choice made on play.
  * - Temporary Strength (Flex): a buff that expires at end of turn.
  * - Deck manipulation (Anger): putting the played card on top of the draw pile.
@@ -1165,7 +1181,6 @@ export const CARDS: Record<string, CardDef> = {
 export const DEFERRED_CARDS = [
   'acrobatics',
   'anger',
-  'charge_battery',
   'chaos',
   'flex',
   'iron_wave',

@@ -14,7 +14,7 @@
 //     silence. No printed card chains that deep; a future one would look like
 //     a Power quietly under-performing.
 //   - Effects can now read the board: a clause can carry a condition, and an
-//     amount can carry a bonus or a count. Eight questions are transcribed
+//     amount can carry a bonus or a count. Nine questions are transcribed
 //     (`Condition` in cards.ts), plus Orb, Orb-type, Block and Strength counts.
 //     Per-Miracle and per-card-in-hand counts are not there yet, nor is X-cost.
 //     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
@@ -41,10 +41,10 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 68 of 259 unique character cards are live. Eight more have been read off the scans and
+//   - 69 of 259 unique character cards are live. Seven more have been read off the scans and
 //     are held back in `DEFERRED_CARDS`, each named with the mechanic it needs
-//     — modal faces, temporary Strength, deck manipulation, a conditional Orb
-//     channel, and choices that can only be made after the
+//     — modal faces, temporary Strength, deck manipulation, unresolved Orb
+//     effects, and choices that can only be made after the
 //     same card reveals cards. The other 183 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
@@ -54,8 +54,7 @@
 //     limit waits on potion rewards; the others wait on their elite, event,
 //     merchant, boss or Act IV content.
 //   - Orbs can be individually chosen and targeted for card evokes, forced
-//     full-slot channels and end-of-turn resolution. Charge Battery remains
-//     deferred because its conditional channel is not represented yet.
+//     full-slot channels and end-of-turn resolution.
 //   - Abilities triggered BY a card fire during its resolution rather than
 //     after it, which p.12 forbids ("don't take effect until after the card is
 //     finished resolving all of its text"). Only the on-play trigger is

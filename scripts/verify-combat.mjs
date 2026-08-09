@@ -1704,6 +1704,7 @@ check('every newly transcribed card does what its face prints', () => {
     // -- which prints "+1" -- swings once.
     { id: 'barrage', enemyHp: [20, 19] },
     { id: 'go_for_the_eyes', enemyHp: [19, 19], weak: [0, 1] },
+    { id: 'charge_battery', block: [2, 3] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside

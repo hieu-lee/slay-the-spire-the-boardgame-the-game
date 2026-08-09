@@ -323,6 +323,8 @@ function holds(
       return state.stanceChangedThisTurn.includes(actor.id)
     case 'targetFullHp':
       return target?.hp === target?.maxHp
+    case 'orbsAtLeast':
+      return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
   }
 }
 
@@ -895,6 +897,8 @@ function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly nu
   }
 
   for (const effect of def.effects) {
+    if (effect.when?.kind === 'orbsAtLeast' &&
+      orbs.filter((orb) => orb !== null).length < effect.when.amount) continue
     if (effect.kind === 'channel') {
       for (let count = 0; count < effect.amount; count++) {
         if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid }

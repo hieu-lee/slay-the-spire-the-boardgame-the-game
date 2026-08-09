@@ -1455,12 +1455,14 @@ await page.evaluate(() => {
   const state = run.combat
   const row = state.players[0].row
   const red = state.enemies.find((enemy) => enemy.defId === 'red_louse')
-  state.enemies.push({
+  state.enemies = state.enemies.filter((enemy) => enemy.isBoss || enemy.row !== row)
+  for (let index = 0; index < 3; index++) state.enemies.push({
     ...red,
-    uid: 'layout-third-enemy',
+    uid: `layout-enemy-${index}`,
     row,
     isBoss: false,
     hp: red.maxHp,
+    dead: false,
     block: 0,
     abilityUsed: false,
   })
