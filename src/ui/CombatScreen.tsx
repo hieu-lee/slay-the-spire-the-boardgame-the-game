@@ -26,7 +26,11 @@ type CombatScreenProps = {
   state: CombatState
   /** The seat this client controls. Everyone sees the same board. */
   viewerId: string
-  onChange: (next: CombatState) => void
+  onChange?: (next: CombatState) => void
+  onAction?: (action: Record<string, unknown>) => void
+  drawCount?: number
+  decidedPlayerIds?: string[]
+  savedDiscardOrder?: string[]
 }
 
 /** What a card still needs before it can be played. */
@@ -141,6 +145,13 @@ function rowsOf(state: CombatState): number[] {
   return [...rows].sort((a, b) => b - a)
 }
 
+function revealViewerRow(board: HTMLElement | null, row: HTMLElement | null) {
+  if (!board || !row) return
+  const boardBox = board.getBoundingClientRect()
+  const rowBox = row.getBoundingClientRect()
+  board.scrollTop += rowBox.top - boardBox.top - (board.clientHeight - rowBox.height) / 2
+}
+
 /**
  * The seat button's accessible name.
  *
@@ -239,15 +250,25 @@ function useStruck(state: CombatState): { struck: Set<string>; beat: number } {
   return { struck, beat }
 }
 
-export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
+export function CombatScreen({
+  state,
+  viewerId,
+  onChange,
+  onAction,
+  drawCount,
+  decidedPlayerIds,
+  savedDiscardOrder,
+}: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
   const [spendingShiv, setSpendingShiv] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
+  const boardRef = useRef<HTMLDivElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const rows = useMemo(() => rowsOf(state), [state])
+  const savedDiscardKey = savedDiscardOrder?.join('\0')
 
   const { struck, beat } = useStruck(state)
 
@@ -268,6 +289,13 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
     }
   }, [state.phase])
 
+  useEffect(() => {
+    if (state.phase !== 'discard' || !savedDiscardOrder) return
+    setDiscardOrders({ [viewerId]: savedDiscardOrder })
+    const top = savedDiscardOrder.at(-1)
+    if (top) setDiscardTops({ [viewerId]: top })
+  }, [savedDiscardKey, state.phase, viewerId])
+
   // Newest-first means a scrolled log stays where the player left it, so a new
   // line lands above the visible area and is never seen.
   const logRef = useRef<HTMLOListElement | null>(null)
@@ -286,11 +314,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   // row you control, and the enemy you are fighting, out of view exactly when
   // you are meant to be reading them.
   useLayoutEffect(() => {
-    // Centred, not 'nearest': the row is shorter than the board, so centring
-    // leaves slack at both ends — 'nearest' parked it flush against an edge
-    // and clipped whichever end did not fit, which since the telegraph moved
-    // above the creature meant losing either the intent or the hit points.
-    viewerRowRef.current?.scrollIntoView({ block: 'center' })
+    revealViewerRow(boardRef.current, viewerRowRef.current)
   }, [viewerId, state.turn, state.phase])
 
   // And again whenever the viewport changes shape. The scroll position is
@@ -298,7 +322,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   // a window left the player's own row — and the enemy they are fighting —
   // scrolled off the board.
   useEffect(() => {
-    const reveal = () => viewerRowRef.current?.scrollIntoView({ block: 'center' })
+    const reveal = () => revealViewerRow(boardRef.current, viewerRowRef.current)
     window.addEventListener('resize', reveal)
     return () => window.removeEventListener('resize', reveal)
   }, [])
@@ -307,7 +331,9 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
 
   const over = state.phase === 'won' || state.phase === 'lost'
   const livingPlayers = state.players.filter((player) => !player.dead)
-  const confirmedDiscards = livingPlayers.filter((player) => discardOrders[player.id]).length
+  const confirmedDiscards = decidedPlayerIds
+    ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
+    : livingPlayers.filter((player) => discardOrders[player.id]).length
   const discardableHand = viewer.hand.filter((card) =>
     !faceOf(cardDef(card.defId), card.upgraded).retain)
   const viewerDiscardTop = discardTops[viewer.id] && discardableHand.some((card) => card.uid === discardTops[viewer.id])
@@ -317,7 +343,8 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   function finishTurn() {
     if (!viewer) return
     if (state.phase === 'player') {
-      onChange(beginEndPlayerTurn(state))
+      if (onAction) onAction({ kind: 'endTurn' })
+      else onChange?.(beginEndPlayerTurn(state))
       return
     }
     const selected = discardTops[viewer.id]
@@ -328,10 +355,14 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
       ? [...viewer.hand.filter((card) => card.uid !== top), viewer.hand.find((card) => card.uid === top)!]
       : viewer.hand
     const orders = { ...discardOrders, [viewer.id]: order.map((card) => card.uid) }
+    if (onAction) {
+      onAction({ kind: 'discardHand', discardOrder: orders[viewer.id] })
+      return
+    }
     if (livingPlayers.every((player) => orders[player.id])) {
       setDiscardTops({})
       setDiscardOrders({})
-      onChange(endPlayerTurn(state, orders))
+      onChange?.(endPlayerTurn(state, orders))
     } else {
       setDiscardOrders(orders)
     }
@@ -356,6 +387,22 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
   ) : true
 
   function commit(next: Pending) {
+    const action = {
+      kind: 'playCard',
+      cardUid: next.card.uid,
+      enemyUid: next.enemyUid,
+      playerId: next.playerId ?? viewer!.id,
+      discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
+      exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
+      spendMiracle: miracleOnCard,
+      shivEnemyUids: next.shivEnemyUids,
+    }
+    if (onAction) {
+      setMiracleOnCard(false)
+      setPending(null)
+      onAction(action)
+      return
+    }
     const result = playCard(state, viewer!.id, next.card.uid, {
       enemyUid: next.enemyUid,
       playerId: next.playerId ?? viewer!.id,
@@ -367,7 +414,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
     // Reference equality means the engine refused the play.
     if (result !== state) {
       setMiracleOnCard(false)
-      onChange(result)
+      onChange?.(result)
     }
     setPending(null)
   }
@@ -418,10 +465,15 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
 
   function onEnemyClick(enemy: Enemy) {
     if (spendingShiv) {
+      if (onAction) {
+        setSpendingShiv(false)
+        onAction({ kind: 'spendShiv', enemyUid: enemy.uid })
+        return
+      }
       const result = spendShiv(state, viewer!.id, enemy.uid)
       if (result !== state) {
         setSpendingShiv(false)
-        onChange(result)
+        onChange?.(result)
       }
       return
     }
@@ -497,7 +549,10 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
                   type="button"
                   aria-pressed={viewer.energy === CAPS.energy ? miracleOnCard : undefined}
                   onClick={() => {
-                    if (viewer.energy < CAPS.energy) onChange(spendMiracle(state, viewer.id))
+                    if (viewer.energy < CAPS.energy) {
+                      if (onAction) onAction({ kind: 'spendMiracle' })
+                      else onChange?.(spendMiracle(state, viewer.id))
+                    }
                     else {
                       setPending(null)
                       setSpendingShiv(false)
@@ -536,7 +591,10 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
             </>
           ) : null}
           {state.phase === 'enemy' ? (
-            <button type="button" onClick={() => onChange(enemyTurn(state))}>
+            <button
+              type="button"
+              onClick={() => onAction ? onAction({ kind: 'resolveEnemies' }) : onChange?.(enemyTurn(state))}
+            >
               Resolve enemies
             </button>
           ) : null}
@@ -544,7 +602,10 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
               read what the enemies did. This is the only way into the next
               round; without it the combat simply stops after round one. */}
           {state.phase === 'roundEnd' ? (
-            <button type="button" onClick={() => onChange(startPlayerTurn(state))}>
+            <button
+              type="button"
+              onClick={() => onAction ? onAction({ kind: 'startTurn' }) : onChange?.(startPlayerTurn(state))}
+            >
               Start turn {state.turn + 1}
             </button>
           ) : null}
@@ -578,7 +639,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
         </p>
       ) : null}
 
-      <div className="board" data-rows={rows.length}>
+      <div className="board" data-rows={rows.length} ref={boardRef}>
         {bosses.length > 0 ? (
           <div className="board__bosses">
             {bosses.map((enemy) => (
@@ -718,7 +779,7 @@ export function CombatScreen({ state, viewerId, onChange }: CombatScreenProps) {
               dropped it — leaving the row announcing "3 Energy 5 0 0". */}
           {(
             [
-              ['draw', 'Draw pile', viewer.draw.length, null],
+              ['draw', 'Draw pile', drawCount ?? viewer.draw.length, null],
               // Both of these are face UP on the table, so their top card is
               // public and worth naming. On the discard pile it is not even
               // decoration: Steam Barrier's Block depends on what that card

@@ -14,11 +14,13 @@ import {
 import type { RunState } from '../game/run.ts'
 import { seedFromString } from '../game/rng.ts'
 import type { CharacterId } from '../game/types.ts'
+import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { Icon, IconValue } from './Icon.tsx'
+import { OnlineGame } from './OnlineGame.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -37,6 +39,16 @@ function newRun(playerCount: number, seedText: string): RunState {
 }
 
 export function App() {
+  const [online, setOnline] = useState(hasRoomSession)
+  return (
+    <>
+      <div className="game-mode" hidden={online}><LocalGame onOnline={() => setOnline(true)} /></div>
+      {online ? <OnlineGame onLocal={() => setOnline(false)} /> : null}
+    </>
+  )
+}
+
+function LocalGame({ onOnline }: { onOnline: () => void }) {
   const [playerCount, setPlayerCount] = useState(2)
   const [seedText, setSeedText] = useState('spire')
   const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
@@ -152,6 +164,7 @@ export function App() {
           <button type="button" onClick={() => restart(playerCount, seedText)}>
             New run
           </button>
+          <button type="button" onClick={onOnline}>Play online</button>
         </div>
       </header>
 

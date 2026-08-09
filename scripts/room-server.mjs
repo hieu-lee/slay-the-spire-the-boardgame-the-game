@@ -3,12 +3,14 @@ import { createServer as createHttpServer } from 'node:http'
 import { WebSocketServer } from 'ws'
 import {
   apply,
+  chooseAscension,
   chooseCharacter,
   createRoom,
   createStore,
   findSeat,
   joinRoom,
   markDisconnected,
+  removeSeat,
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
@@ -153,7 +155,7 @@ export function createRoomServer() {
           throw error
         }
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|character|start|action))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|start|action))?$/)
       if (!match) return send(response, 404, { error: 'Not found' })
       const room = roomOrThrow(match[1])
       const operation = match[2]
@@ -183,22 +185,44 @@ export function createRoomServer() {
         return send(response, 200, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
       }
       const token = tokenOf(request)
-      if (!findSeat(room, token)) return send(response, 401, { error: 'Unknown seat' })
+      if (!findSeat(room, token)) {
+        if (operation === 'leave') return send(response, 200, { ok: true })
+        return send(response, 401, { error: 'Unknown seat' })
+      }
       if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
       const body = await readJson(request)
       if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
       let changed = true
       let snapshot = null
       if (operation === 'character') snapshot = chooseCharacter(room, token, body.character)
+      else if (operation === 'ascension') {
+        if (!Number.isInteger(body.ascension) || body.ascension < 0 || body.ascension > 13) {
+          return send(response, 400, { error: 'Ascension must be an integer from 0 to 13' })
+        }
+        snapshot = chooseAscension(room, token, body.ascension)
+      }
+      else if (operation === 'leave') {
+        removeSeat(room, token)
+        for (const [socket, client] of sockets) {
+          if (client.code === room.code && client.token === token) {
+            sockets.delete(socket)
+            socket.close(1000, 'Left room')
+          }
+        }
+        touch(room)
+        publish(room)
+        if (room.seats.length === 0) {
+          store.rooms.delete(room.code)
+          roomActivity.delete(room.code)
+          roomOwners.delete(room.code)
+        }
+        return send(response, 200, { ok: true })
+      }
       else if (operation === 'start') {
         if (room.seats.some((seat) => !seat.connected)) {
           return send(response, 409, { error: 'Every seat must be connected before starting' })
         }
-        const ascension = body.ascension ?? 0
-        if (!Number.isInteger(ascension) || ascension < 0 || ascension > 13) {
-          return send(response, 400, { error: 'Ascension must be an integer from 0 to 13' })
-        }
-        snapshot = startRun(room, token, { ascension })
+        snapshot = startRun(room, token, { ascension: room.ascension })
       }
       else if (operation === 'action') {
         const result = apply(room, token, body.action)

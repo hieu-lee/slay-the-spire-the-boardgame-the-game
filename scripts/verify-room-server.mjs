@@ -56,6 +56,25 @@ try {
     assertEqual(service.store.rooms.size, 0)
   })
 
+  const leavable = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Keeping', character: 'ironclad' },
+  })
+  const leavableCode = leavable.body.snapshot.code
+  const departing = await request(`/api/rooms/${leavableCode}/join`, {
+    method: 'POST', body: { name: 'Leaving', character: 'silent' },
+  })
+  const left = await request(`/api/rooms/${leavableCode}/leave`, {
+    method: 'POST', token: departing.body.token, body: {},
+  })
+  const replacement = await request(`/api/rooms/${leavableCode}/join`, {
+    method: 'POST', body: { name: 'Replacement', character: 'silent' },
+  })
+  check('leaving a lobby frees the seat and its stable player id', () => {
+    assertEqual(left.status, 200)
+    assertEqual(replacement.body.snapshot.seats.length, 2)
+    assertEqual(replacement.body.snapshot.you.playerId, 'p2')
+  })
+
   const created = await request('/api/rooms', {
     method: 'POST',
     body: { name: 'Ann', character: 'ironclad', random: {} },
@@ -125,18 +144,20 @@ try {
     connect(code, a.token),
     ...joined.map((seat) => connect(code, seat.token)),
   ])
-  const invalidAscension = await request(`/api/rooms/${code}/start`, {
+  const invalidAscension = await request(`/api/rooms/${code}/ascension`, {
     method: 'POST', token: a.token, body: { ascension: '13' },
   })
-  const started = await request(`/api/rooms/${code}/start`, {
+  const selectedAscension = await request(`/api/rooms/${code}/ascension`, {
     method: 'POST', token: a.token, body: { ascension: 13 },
   })
+  const started = await request(`/api/rooms/${code}/start`, { method: 'POST', token: a.token, body: {} })
   const lockedRename = await request(`/api/rooms/${code}/join`, {
     method: 'POST', token: a.token, body: { name: 'Renamed' },
   })
   check('an authenticated seat starts the authoritative run', () => {
     assertEqual(ghostStart.status, 409, 'a disconnected ghost seat must block starting')
     assertEqual(invalidAscension.status, 400, 'ascension must cross the network as a supported integer')
+    assertEqual(selectedAscension.body.ascension, 13, 'the lobby did not share its selected ascension')
     assertEqual(started.status, 200)
     assertEqual(started.body.run.ascension, 13)
     assertEqual(lockedRename.status, 409, 'a reconnect renamed only part of a live run')

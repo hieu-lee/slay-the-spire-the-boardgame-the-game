@@ -14,6 +14,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "verify": "node scripts/verify-all.mjs",
     "verify:browser": "node scripts/verify-browser.mjs",
+    "verify:online": "node scripts/verify-online-browser.mjs",
     "sync:assets": "node scripts/sync-card-assets.mjs && node scripts/sync-icons.mjs && node scripts/sync-enemy-art.mjs",
     "sync:cards": "node scripts/sync-card-assets.mjs",
     "sync:icons": "node scripts/sync-icons.mjs",

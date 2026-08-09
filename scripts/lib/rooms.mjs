@@ -77,6 +77,7 @@ export function createRoom(store, options = {}) {
   const room = {
     code,
     phase: 'lobby',
+    ascension: 0,
     seats: [],
     run: null,
     /** Bumped on every accepted mutation so clients can drop stale frames. */
@@ -154,7 +155,7 @@ export function joinRoom(room, { name, character, token: existing, random, conne
 
   const seat = {
     // Seat order is row order, and row order decides which enemies reach whom.
-    playerId: `p${room.seats.length + 1}`,
+    playerId: ['p1', 'p2', 'p3', 'p4'].find((id) => !room.seats.some((other) => other.playerId === id)),
     name: String(name ?? `Player ${room.seats.length + 1}`).slice(0, 24),
     character: pick,
     token: token(random),
@@ -175,6 +176,23 @@ export function chooseCharacter(room, seatToken, character) {
   seat.character = character
   room.version += 1
   return snapshotFor(room, seatToken)
+}
+
+export function chooseAscension(room, seatToken, ascension) {
+  findSeat(room, seatToken) ?? fail('Unknown seat')
+  if (room.phase !== 'lobby') fail('Ascension is locked once the run starts')
+  if (!Number.isInteger(ascension) || ascension < 0 || ascension > 13) fail('Ascension must be an integer from 0 to 13')
+  if (room.ascension === ascension) return snapshotFor(room, seatToken)
+  room.ascension = ascension
+  room.version += 1
+  return snapshotFor(room, seatToken)
+}
+
+export function removeSeat(room, seatToken) {
+  const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
+  if (room.phase !== 'lobby') fail('A run seat must be preserved for reconnection')
+  room.seats = room.seats.filter((candidate) => candidate !== seat)
+  room.version += 1
 }
 
 export function markDisconnected(room, seatToken) {
@@ -591,8 +609,12 @@ export function snapshotFor(room, seatToken) {
   return {
     code: room.code,
     phase: room.phase,
+    ascension: room.ascension,
     version: room.version,
     you: seat ? seatPublic(seat) : null,
+    campfireChoice: viewerId !== null && room.campfireChoices?.[viewerId]
+      ? { ...room.campfireChoices[viewerId] }
+      : undefined,
     /** Seats that have chosen at the campfire, so the UI can show who is left. */
     campfireDecided: Object.keys(room.campfireChoices ?? {}),
     // A reconnecting seat must be able to inspect its own pending permanent
@@ -603,6 +625,9 @@ export function snapshotFor(room, seatToken) {
     rewardDecided: Object.keys(room.rewardChoices ?? {}),
     rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
+    discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
+      ? [...room.endTurnOrders[viewerId]]
+      : undefined,
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }
