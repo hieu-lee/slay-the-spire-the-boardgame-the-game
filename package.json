@@ -8,8 +8,9 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 0.0.0.0 --port 5180 --strictPort",
     "dev:rooms": "node scripts/room-server.mjs",
+    "tunnel": "cloudflared tunnel --url http://localhost:5180",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "verify": "node scripts/verify-all.mjs",

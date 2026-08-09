@@ -8,12 +8,15 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) — this is a fan project and ships no artw
 ```bash
 pnpm install
 pnpm sync:assets     # fetch card art, icons and enemy portraits (see below)
-pnpm dev             # play at http://localhost:5173
+pnpm dev             # play at http://localhost:5180
 ```
 
 Pick a player count and a seed, then click a card and click its target. The app runs a
 full combat round: play cards, end the turn, resolve the enemies, repeat. After a win, each
 survivor whose enemy grants a card reward may reveal three character cards and add one, or skip unseen.
+
+For 2–4 player authoritative online co-op, voice chat, and Cloudflare Tunnel setup, see
+[`docs/online-play.md`](docs/online-play.md).
 
 ## Assets
 

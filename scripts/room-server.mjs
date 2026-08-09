@@ -26,6 +26,7 @@ const HEARTBEAT_MS = 30_000
 const MAX_BUFFERED_BYTES = 256 * 1024
 const MESSAGE_WINDOW_MS = 10_000
 const MAX_MESSAGES_PER_WINDOW = 60
+const MAX_VOICE_MESSAGES_PER_WINDOW = 180
 const CREATE_WINDOW_MS = 60_000
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
@@ -34,6 +35,7 @@ const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
 const MAX_PENDING_AUTH = 32
 const MAX_PENDING_AUTH_PER_IP = 4
+const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }]
 
 function send(response, status, body) {
   response.writeHead(status, JSON_HEADERS)
@@ -64,7 +66,11 @@ const sourceOf = (request) => request.headers['cf-connecting-ip']?.toString()
   ?? request.socket.remoteAddress
   ?? 'unknown'
 
-export function createRoomServer() {
+export function createRoomServer({
+  turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID,
+  turnApiToken = process.env.CLOUDFLARE_TURN_API_TOKEN,
+  fetchImpl = fetch,
+} = {}) {
   const store = createStore()
   const sockets = new Map()
   const roomActivity = new Map()
@@ -73,6 +79,7 @@ export function createRoomServer() {
   const joinRates = new Map()
   const upgradeRates = new Map()
   const seatRates = new Map()
+  const voiceRates = new Map()
   const pendingAuth = new Map()
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY })
 
@@ -92,12 +99,16 @@ export function createRoomServer() {
   const mayAct = (room, token) => consume(
     seatRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_MESSAGES_PER_WINDOW,
   )
+  const maySignalVoice = (room, token) => consume(
+    voiceRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_VOICE_MESSAGES_PER_WINDOW,
+  )
 
   function sweepRooms(now = Date.now()) {
     for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
     for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
     for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
     for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
+    for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
     for (const [code, touchedAt] of roomActivity) {
       if (now - touchedAt >= ROOM_TTL_MS) {
         for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
@@ -122,6 +133,27 @@ export function createRoomServer() {
         continue
       }
       socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token) }))
+    }
+  }
+
+  async function voiceIceServers() {
+    if (!turnKeyId || !turnApiToken) return DEFAULT_ICE_SERVERS
+    try {
+      const upstream = await fetchImpl(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(turnKeyId)}/credentials/generate-ice-servers`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${turnApiToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ ttl: ROOM_TTL_MS / 1000 }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      )
+      if (!upstream.ok) throw new Error('TURN request failed')
+      const body = await upstream.json()
+      if (!Array.isArray(body.iceServers)) throw new Error('Invalid TURN response')
+      return body.iceServers
+    } catch {
+      throw Object.assign(new Error('Could not create TURN credentials'), { status: 502 })
     }
   }
 
@@ -155,7 +187,7 @@ export function createRoomServer() {
           throw error
         }
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|start|action))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|start|action|voice-ice))?$/)
       if (!match) return send(response, 404, { error: 'Not found' })
       const room = roomOrThrow(match[1])
       const operation = match[2]
@@ -165,6 +197,12 @@ export function createRoomServer() {
         if (!seat) return send(response, 401, { error: 'Unknown seat' })
         if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
         return send(response, 200, snapshotFor(room, token))
+      }
+      if (request.method === 'GET' && operation === 'voice-ice') {
+        const token = tokenOf(request)
+        if (!findSeat(room, token)) return send(response, 401, { error: 'Unknown seat' })
+        if (!mayAct(room, token)) return send(response, 429, { error: 'Rate limit exceeded' })
+        return send(response, 200, { iceServers: await voiceIceServers() })
       }
       if (request.method !== 'POST') return send(response, 405, { error: 'Method not allowed' })
       if (operation === 'join') {
@@ -275,11 +313,20 @@ export function createRoomServer() {
       try {
         let client = sockets.get(socket)
         let room
+        let message
+        try {
+          message = JSON.parse(raw.toString())
+          if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error('Invalid message')
+        } catch {
+          return socket.close(4002, 'Invalid message')
+        }
         if (client) {
           room = roomOrThrow(client.code)
-          if (!mayAct(room, client.token)) return socket.close(4008, 'Rate limit exceeded')
+          const allowed = message.type === 'voice'
+            ? maySignalVoice(room, client.token)
+            : mayAct(room, client.token)
+          if (!allowed) return socket.close(4008, 'Rate limit exceeded')
         }
-        const message = JSON.parse(raw.toString())
         if (!client) {
           if (message.type !== 'authenticate' || typeof message.token !== 'string') {
             return socket.close(4003, 'Authentication required')
@@ -313,6 +360,9 @@ export function createRoomServer() {
             publish(room)
           }
         } else if (message.type === 'voice') {
+          if (!message.signal || typeof message.signal !== 'object' || Array.isArray(message.signal)) {
+            throw new Error('Invalid voice signal')
+          }
           if (JSON.stringify(message.signal).length > 32 * 1024) throw new Error('Voice signal is too large')
           const target = room.seats.find((seat) => seat.playerId === message.to)
           if (!target) throw new Error('Unknown voice peer')

@@ -4,7 +4,22 @@ import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('room server')
 
-const service = createRoomServer()
+let turnRequest
+let invalidTurnBody = false
+const service = createRoomServer({
+  turnKeyId: 'turn-key',
+  turnApiToken: 'server-secret',
+  fetchImpl: async (url, options) => {
+    turnRequest = { url, options }
+    if (invalidTurnBody) return new Response('not json', { status: 201 })
+    return new Response(JSON.stringify({
+      iceServers: [
+        { urls: ['stun:stun.cloudflare.com:3478'] },
+        { urls: ['turns:turn.cloudflare.com:443?transport=tcp'], username: 'short-user', credential: 'short-pass' },
+      ],
+    }), { status: 201, headers: { 'content-type': 'application/json' } })
+  },
+})
 const address = await service.listen(0)
 const origin = `http://127.0.0.1:${address.port}`
 const wsOrigin = `ws://127.0.0.1:${address.port}`
@@ -79,6 +94,22 @@ try {
     method: 'POST',
     body: { name: 'Ann', character: 'ironclad', random: {} },
   })
+  const deniedIce = await request(`/api/rooms/${created.body.snapshot.code}/voice-ice`)
+  const voiceIce = await request(`/api/rooms/${created.body.snapshot.code}/voice-ice`, { token: created.body.token })
+  invalidTurnBody = true
+  const invalidVoiceIce = await request(`/api/rooms/${created.body.snapshot.code}/voice-ice`, { token: created.body.token })
+  invalidTurnBody = false
+  check('voice ICE credentials are authenticated and minted server-side', () => {
+    assertEqual(deniedIce.status, 401)
+    assertEqual(voiceIce.status, 200)
+    assertEqual(voiceIce.body.iceServers[1].username, 'short-user')
+    assert(turnRequest.url.endsWith('/turn/keys/turn-key/credentials/generate-ice-servers'))
+    assertEqual(turnRequest.options.headers.authorization, 'Bearer server-secret')
+    assertEqual(JSON.parse(turnRequest.options.body).ttl, 21_600)
+    assert(turnRequest.options.signal instanceof AbortSignal, 'TURN request has no timeout signal')
+    assert(!JSON.stringify(voiceIce.body).includes('server-secret'), 'the long-term TURN secret reached the browser')
+    assertEqual(invalidVoiceIce.status, 502, 'an invalid TURN response escaped the gateway error boundary')
+  })
   const code = created.body.snapshot.code
   const a = { token: created.body.token, playerId: created.body.snapshot.you.playerId }
   const joined = []
@@ -136,7 +167,7 @@ try {
   malformed.send('{')
   const malformedCloseCode = await malformedClosed
   check('an unauthenticated socket gets one parse attempt', () => {
-    assertEqual(malformedCloseCode, 4003)
+    assertEqual(malformedCloseCode, 4002)
   })
 
   const ghostStart = await request(`/api/rooms/${code}/start`, { method: 'POST', token: a.token, body: {} })
@@ -184,6 +215,9 @@ try {
     assert(Array.isArray(bViewOfB.hand), 'Bo receives Bo\'s own hand')
   })
 
+  const invalidVoice = nextMessage(aLive.socket, 'error')
+  aLive.socket.send(JSON.stringify({ type: 'voice', to: joined[0].playerId, signal: null }))
+  const rejectedVoice = await invalidVoice
   const voice = nextMessage(bLive.socket, 'voice')
   aLive.socket.send(JSON.stringify({
     type: 'voice',
@@ -192,10 +226,53 @@ try {
   }))
   const relayed = await voice
   check('voice signaling is relayed only with the public sender id', () => {
+    assertEqual(rejectedVoice.error, 'Invalid voice signal')
     assertEqual(relayed.from, a.playerId)
     assertEqual(relayed.signal.type, 'hello')
     assert(!JSON.stringify(relayed).includes(a.token), 'voice relay leaked a bearer token')
     assert(!aLive.socket.url.includes(a.token), 'the bearer token appears in the WebSocket URL')
+  })
+
+  const voiceLimited = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Voice A', character: 'ironclad' },
+  })
+  const voiceJoined = await request(`/api/rooms/${voiceLimited.body.snapshot.code}/join`, {
+    method: 'POST', body: { name: 'Voice B', character: 'silent' },
+  })
+  const voiceSender = await connect(voiceLimited.body.snapshot.code, voiceLimited.body.token)
+  const voiceReceiver = await connect(voiceLimited.body.snapshot.code, voiceJoined.body.token)
+  const lastVoice = nextMessage(voiceReceiver.socket, 'voice', (message) => message.signal.sequence === 179)
+  for (let sequence = 0; sequence < 180; sequence++) {
+    voiceSender.socket.send(JSON.stringify({
+      type: 'voice',
+      to: voiceJoined.body.snapshot.you.playerId,
+      signal: { sequence },
+    }))
+  }
+  await lastVoice
+  const actionCapacity = await request(`/api/rooms/${voiceLimited.body.snapshot.code}`, { token: voiceLimited.body.token })
+  const voiceThrottled = new Promise((resolve) => voiceSender.socket.once('close', (closeCode) => resolve(closeCode)))
+  voiceSender.socket.send(JSON.stringify({
+    type: 'voice',
+    to: voiceJoined.body.snapshot.you.playerId,
+    signal: { sequence: 180 },
+  }))
+  const voiceThrottleCode = await voiceThrottled
+  voiceReceiver.socket.close()
+  check('voice signaling is bounded without consuming authoritative capacity', () => {
+    assertEqual(actionCapacity.status, 200)
+    assertEqual(voiceThrottleCode, 4008)
+  })
+
+  const malformedLive = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Malformed', character: 'ironclad' },
+  })
+  const malformedSocket = await connect(malformedLive.body.snapshot.code, malformedLive.body.token)
+  const malformedAuthenticated = new Promise((resolve) => malformedSocket.socket.once('close', (closeCode) => resolve(closeCode)))
+  malformedSocket.socket.send('null')
+  const malformedAuthenticatedCode = await malformedAuthenticated
+  check('an authenticated socket gets one parse attempt for an invalid frame', () => {
+    assertEqual(malformedAuthenticatedCode, 4002)
   })
 
   const replaced = new Promise((resolve) => aLive.socket.once('close', (code) => resolve(code)))

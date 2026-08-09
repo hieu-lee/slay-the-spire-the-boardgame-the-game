@@ -29,10 +29,26 @@ const viteAddress = vite.httpServer?.address()
 if (!viteAddress || typeof viteAddress === 'string') throw new Error('vite did not report a port')
 const origin = `http://127.0.0.1:${viteAddress.port}`
 
-const browser = await chromium.launch({ headless: true })
-const aContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
-const bContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-const cContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+})
+const aContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['microphone'] })
+const bContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['microphone'] })
+const cContext = await browser.newContext({ viewport: { width: 1024, height: 768 }, permissions: ['microphone'] })
+for (const context of [aContext, bContext]) {
+  await context.addInitScript(() => {
+    const sockets = []
+    window.__ROOM_SOCKETS__ = sockets
+    window.WebSocket = new Proxy(window.WebSocket, {
+      construct(Target, args) {
+        const socket = new Target(...args)
+        sockets.push(socket)
+        return socket
+      },
+    })
+  })
+}
 const a = await aContext.newPage()
 let b = await bContext.newPage()
 const failures = []
@@ -71,7 +87,9 @@ async function snapshot(page) {
   const response = await fetch(`${roomOrigin}/api/rooms/${saved.code}`, {
     headers: { 'x-room-token': saved.token },
   })
-  return response.json()
+  const body = await response.json()
+  assert(response.ok, `snapshot failed ${response.status}: ${body.error}`)
+  return body
 }
 
 try {
@@ -121,8 +139,34 @@ try {
     assertEqual(lobbyAfterOldLeave, 1)
     assert(!recoveriesAfterOldLeave.some((saved) => saved.code === guardedCredentials.code), 'the departed room stayed recoverable')
   })
+  await guardedEntry.evaluate(() => {
+    window.__VOICE_MEDIA_CALLS__ = 0
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = (...args) => {
+      window.__VOICE_MEDIA_CALLS__ += 1
+      return getUserMedia(...args)
+    }
+  })
+  let iceReached
+  const iceStarted = new Promise((resolveStarted) => { iceReached = resolveStarted })
+  let releaseIce
+  const iceReleased = new Promise((resolveReleased) => { releaseIce = resolveReleased })
+  await guardedEntry.route(`**/api/rooms/${spare.snapshot.code}/voice-ice`, async (route) => {
+    const response = await route.fetch()
+    iceReached()
+    await iceReleased
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await guardedEntry.getByRole('button', { name: 'Join voice' }).click()
+  await iceStarted
   await guardedEntry.getByRole('button', { name: '← Leave room' }).click()
   await guardedEntry.getByLabel('Seed').waitFor()
+  releaseIce()
+  await guardedEntry.waitForTimeout(200)
+  const mediaCallsAfterLeaving = await guardedEntry.evaluate(() => window.__VOICE_MEDIA_CALLS__)
+  check('leaving during ICE setup never opens the microphone', () => {
+    assertEqual(mediaCallsAfterLeaving, 0)
+  })
   await guardedEntry.close()
   check('a pending room entry cannot be abandoned behind the UI', () => {
     assert(backDisabledDuringEntry, 'solo mode stayed active while the room request was pending')
@@ -135,13 +179,70 @@ try {
   await enterOnline(b, 'Bo', 'silent', code)
   await a.locator('.online-seat', { hasText: 'Bo' }).waitFor()
   const c = await cContext.newPage()
+  await c.addInitScript(() => {
+    const streams = []
+    window.__LOCAL_VOICE_STREAMS__ = streams
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = async (...args) => {
+      const stream = await getUserMedia(...args)
+      streams.push(stream)
+      return stream
+    }
+  })
   c.on('pageerror', (error) => failures.push(String(error)))
   c.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
   await enterOnline(c, 'Cy', 'defect', code)
   await a.locator('.online-seat', { hasText: 'Cy' }).waitFor()
+  await a.getByRole('button', { name: 'Join voice' }).click()
+  await b.getByRole('button', { name: 'Join voice' }).click()
+  await c.getByRole('button', { name: 'Join voice' }).click()
+  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: 'Voice 2/2' }).waitFor()))
+  await Promise.all([a, b, c].map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
+    .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 2)))
+  const remoteAudioCounts = await Promise.all([a, b, c].map((page) => page.evaluate(() => [...document.querySelectorAll('audio')]
+    .filter((audio) => audio.srcObject?.getAudioTracks().length).length)))
+  await a.getByRole('button', { name: 'Mute' }).click()
+  const muted = await a.getByRole('button', { name: 'Unmute' }).getAttribute('aria-pressed')
+  await a.screenshot({ path: join(outDir, '01a-live-party-voice.png'), fullPage: true })
+  await c.getByRole('button', { name: 'Leave voice' }).click()
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/2' }).waitFor()))
+  await c.getByRole('button', { name: 'Join voice' }).click()
+  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: 'Voice 2/2' }).waitFor()))
+  let voiceLeaveReached
+  const voiceLeaveStarted = new Promise((resolve) => { voiceLeaveReached = resolve })
+  let releaseVoiceLeave
+  const voiceLeaveReleased = new Promise((resolve) => { releaseVoiceLeave = resolve })
+  await c.route(`**/api/rooms/${code}/leave`, async (route) => {
+    voiceLeaveReached()
+    await voiceLeaveReleased
+    await route.continue()
+  }, { times: 1 })
   await c.getByRole('button', { name: '← Leave room' }).click()
+  await voiceLeaveStarted
+  const stoppedBeforeLeave = await c.evaluate(() => window.__LOCAL_VOICE_STREAMS__.at(-1)
+    ?.getAudioTracks().every((track) => track.readyState === 'ended'))
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/2' }).waitFor()))
+  check('three browsers establish, mute, and leave native voice', () => {
+    assert(remoteAudioCounts.every((count) => count === 2), `remote audio counts: ${remoteAudioCounts.join(', ')}`)
+    assertEqual(muted, 'true')
+    assertEqual(stoppedBeforeLeave, true, 'Leave room waited for HTTP before stopping the microphone')
+  })
+  releaseVoiceLeave()
   await a.locator('.online-seat', { hasText: 'Cy' }).waitFor({ state: 'detached' })
   await c.close()
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/1' }).waitFor()))
+  for (const [dropped, observer, seatName] of [[b, a, 'Bo'], [a, b, 'Ann']]) {
+    await dropped.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'test reconnect'))
+    await observer.locator('.online-seat', { hasText: seatName }).locator('small', { hasText: 'away' }).waitFor()
+    await observer.locator('.voice__status', { hasText: 'Voice 0/1' }).waitFor()
+    await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/1' }).waitFor()))
+    await Promise.all([a, b].map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
+      .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 1)))
+  }
+  check('active voice recovers after either signaling socket reconnects', () => {})
+  await b.getByRole('button', { name: 'Leave voice' }).click()
+  await a.locator('.voice__status', { hasText: 'Voice 0/1' }).waitFor()
+  await a.getByRole('button', { name: 'Leave voice' }).click()
   await a.screenshot({ path: join(outDir, '01-two-player-lobby.png'), fullPage: true })
 
   const [aOnline, bOnline] = await Promise.all([
@@ -290,17 +391,34 @@ try {
   })
   await a.screenshot({ path: join(outDir, '03-shared-enemy-turn.png'), fullPage: true })
 
-  await b.goto('about:blank')
+  const reconnectCredentials = await credentials(b)
+  await b.close()
   const boStatus = a.locator('.setup .pip', { hasText: 'Bo' })
   await boStatus.filter({ hasText: '○' }).waitFor()
+  b = await bContext.newPage()
+  b.on('pageerror', (error) => failures.push(String(error)))
+  b.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
+  await b.addInitScript((saved) => {
+    sessionStorage.setItem('sts-room-session', JSON.stringify(saved))
+  }, reconnectCredentials)
+  let markReconnectStarted
+  const reconnectStarted = new Promise((resolve) => { markReconnectStarted = resolve })
+  let releaseReconnect
+  const reconnectReleased = new Promise((resolve) => { releaseReconnect = resolve })
   await b.route(`**/api/rooms/${code}`, async (route) => {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250))
+    markReconnectStarted()
+    await reconnectReleased
     await route.continue()
-  }, { times: 1 })
-  const reconnecting = b.goto(origin, { waitUntil: 'networkidle' })
-  await b.locator('.online-reconnecting').waitFor()
-  const createWhileReconnecting = await b.getByRole('button', { name: 'Create room' }).count()
-  await reconnecting
+  })
+  await b.goto(origin, { waitUntil: 'domcontentloaded' })
+  await reconnectStarted
+  let createWhileReconnecting
+  try {
+    await b.locator('.online-reconnecting').waitFor()
+    createWhileReconnecting = await b.getByRole('button', { name: 'Create room' }).count()
+  } finally {
+    releaseReconnect()
+  }
   await b.locator('.app-shell--online .combat').waitFor()
   await boStatus.filter({ hasText: '●' }).waitFor()
   const restored = await snapshot(b)

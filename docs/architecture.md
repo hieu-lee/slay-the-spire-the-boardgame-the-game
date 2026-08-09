@@ -3,9 +3,9 @@
 Decisions, and the reasons behind them. Most of these are lifted from `~/dune-3v3`,
 which solved the same problems for a different board game; the deviations are noted.
 
-**This describes the target design, not the current tree.** `src/multiplayer/` and
-`server/` do not exist yet; they arrive with the multiplayer work. Everything else below
-is either built or is a constraint the existing checks already enforce.
+Most sections below describe the target architecture, not the complete current tree.
+Today, the authoritative room protocol lives in `scripts/room-server.mjs` and
+`scripts/lib/rooms.mjs`; the browser session and WebRTC mesh live in `src/multiplayer/`.
 
 ## Layers
 

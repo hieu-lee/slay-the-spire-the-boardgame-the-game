@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CombatState } from '../game/combat.ts'
 import type { Room } from '../game/map.ts'
 import type { Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
 import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
+import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
 import { MapScreen } from './MapScreen.tsx'
@@ -53,12 +54,57 @@ function Seat({ seat }: { seat?: PublicSeat }) {
   )
 }
 
+function RemoteAudio({ stream }: { stream: MediaStream }) {
+  const audio = useRef<HTMLAudioElement>(null)
+  useEffect(() => {
+    if (audio.current) audio.current.srcObject = stream
+  }, [stream])
+  return <audio ref={audio} autoPlay playsInline />
+}
+
+function VoiceControls({ voice, seats, connected }: {
+  voice: ReturnType<typeof useVoiceChat>
+  seats: PublicSeat[]
+  connected: boolean
+}) {
+  if (!voice.available) return <span className="voice voice--unavailable">Voice unavailable</span>
+  if (!voice.enabled) {
+    return (
+      <div className="voice">
+        <button type="button" disabled={!connected || voice.starting} onClick={voice.start}>
+          {voice.starting ? 'Opening microphone…' : 'Join voice'}
+        </button>
+        {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
+      </div>
+    )
+  }
+  const connectedPeers = Object.values(voice.peerStates).filter((state) => state === 'connected').length
+  return (
+    <div className="voice" aria-label="Party voice">
+      <span className="voice__status">Voice {connectedPeers}/{Math.max(0, seats.length - 1)}</span>
+      <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
+      <button type="button" onClick={voice.stop}>Leave voice</button>
+      {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
+      {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} />)}
+    </div>
+  )
+}
+
 export function OnlineGame({ onLocal }: Props) {
   const room = useRoomSession()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
   const snapshot = room.snapshot
+  const voice = useVoiceChat({
+    roomCode: snapshot?.code,
+    playerId: snapshot?.you.playerId,
+    seats: snapshot?.seats ?? [],
+    connected: room.connection === 'connected',
+    sendSignal: room.sendVoiceSignal,
+    onSignal: room.onVoiceSignal,
+    loadIceServers: room.loadVoiceIceServers,
+  })
 
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
@@ -130,13 +176,14 @@ export function OnlineGame({ onLocal }: Props) {
     return (
       <main className="online-lobby">
         <header>
-          <button type="button" onClick={async () => { if (await room.leave()) onLocal() }}>← Leave room</button>
+          <button type="button" onClick={async () => { voice.stop(); if (await room.leave()) onLocal() }}>← Leave room</button>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
         </header>
         <section className="online-lobby__table">
           <span className="online-entry__eyebrow">Party room</span>
           <h1>{snapshot.code}</h1>
           <button type="button" onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>Copy room code</button>
+          <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
           <div className="online-lobby__seats">
             {Array.from({ length: 4 }, (_, index) => <Seat key={index} seat={snapshot.seats[index]} />)}
           </div>
@@ -183,7 +230,8 @@ export function OnlineGame({ onLocal }: Props) {
         </div>
         <div className="setup">
           {snapshot.seats.map((seat) => <span className="pip" key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
-          <button type="button" onClick={onLocal}>Solo table</button>
+          <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
+          <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
         </div>
       </header>
 

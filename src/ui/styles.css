@@ -242,6 +242,37 @@ button:disabled {
   color: var(--gold);
 }
 
+.voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.online-lobby .voice {
+  display: flex;
+  width: fit-content;
+  margin: 0.8rem auto 0;
+}
+
+.voice button {
+  border: 1px solid var(--edge);
+  border-radius: 0.3rem;
+  background: var(--bg-raised);
+  color: var(--ink);
+  padding: 0.45rem 0.65rem;
+}
+
+.voice__status,
+.voice--unavailable {
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+
+.voice audio {
+  display: none;
+}
+
 @media (max-width: 560px) {
   .online-entry__actions {
     flex-direction: column;

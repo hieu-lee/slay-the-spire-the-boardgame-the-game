@@ -67,6 +67,18 @@ export type RoomSnapshot = {
 type Credentials = { code: string; token: string }
 type JoinOptions = { name: string; character: CharacterId; code?: string }
 type Connection = 'idle' | 'connecting' | 'connected' | 'reconnecting'
+export type VoiceSignal = {
+  from: string
+  signal: {
+    voiceId?: string
+    toVoiceId?: string
+    ready?: true
+    restart?: true
+    left?: true
+    description?: RTCSessionDescriptionInit
+    candidate?: RTCIceCandidateInit
+  }
+}
 
 class RequestError extends Error {
   status: number
@@ -132,6 +144,7 @@ export function useRoomSession() {
   const generation = useRef(0)
   const departed = useRef(false)
   const socket = useRef<WebSocket | null>(null)
+  const voiceListeners = useRef(new Set<(message: VoiceSignal) => void>())
 
   useEffect(() => {
     mounted.current = true
@@ -187,6 +200,8 @@ export function useRoomSession() {
               accept(message.snapshot)
               setConnection('connected')
               setError('')
+            } else if (message.type === 'voice' && message.signal && typeof message.signal === 'object' && !Array.isArray(message.signal)) {
+              for (const listener of voiceListeners.current) listener(message)
             } else if (message.type === 'error') setError(message.error)
           } catch {
             next.close(1002, 'Invalid room update')
@@ -351,6 +366,24 @@ export function useRoomSession() {
   const chooseAscension = useCallback((ascension: number) => enqueue('ascension', { ascension }), [enqueue])
   const start = useCallback(() => enqueue('start', {}), [enqueue])
   const act = useCallback((action: object) => enqueue('action', { action }), [enqueue])
+  const sendVoiceSignal = useCallback((to: string, signal: VoiceSignal['signal']) => {
+    if (socket.current?.readyState !== WebSocket.OPEN) return false
+    socket.current.send(JSON.stringify({ type: 'voice', to, signal }))
+    return true
+  }, [])
+  const onVoiceSignal = useCallback((listener: (message: VoiceSignal) => void) => {
+    voiceListeners.current.add(listener)
+    return () => { voiceListeners.current.delete(listener) }
+  }, [])
+  const loadVoiceIceServers = useCallback(async () => {
+    if (!credentials) throw new Error('Room is not connected')
+    const voiceGeneration = generation.current
+    const body = await json(await fetch(`/api/rooms/${credentials.code}/voice-ice`, {
+      headers: { 'x-room-token': credentials.token },
+    })) as { iceServers: RTCIceServer[] }
+    if (generation.current !== voiceGeneration) throw new Error('Room session changed')
+    return body.iceServers
+  }, [credentials])
 
   return {
     snapshot,
@@ -367,5 +400,8 @@ export function useRoomSession() {
     chooseAscension,
     start,
     act,
+    sendVoiceSignal,
+    onVoiceSignal,
+    loadVoiceIceServers,
   }
 }
