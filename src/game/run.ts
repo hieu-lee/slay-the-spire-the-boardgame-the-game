@@ -4,7 +4,7 @@
 // about combat. This module owns the seam — it builds a CombatState when the
 // party enters a fighting room, and folds the result back into the run.
 import { CARDS, STARTER_DECKS } from './cards.ts'
-import { createCombat, startPlayerTurn } from './combat.ts'
+import { createCombat, startPlayerTurnWithChoices } from './combat.ts'
 import type { CombatState } from './combat.ts'
 import { enemyDef, startingHp } from './enemies.ts'
 import { generateMap, currentRoom, moveTo, isActComplete } from './map.ts'
@@ -367,7 +367,7 @@ export function enterRoom(state: RunState, roomId: string): RunState {
     const enemies = buildEncounter(rng, state.act, players, room.kind, first)
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
-    const combat = startPlayerTurn(createCombat(rng, players, enemies))
+    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies))
     return { ...next, phase: 'combat', players, combat }
   }
 

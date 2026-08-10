@@ -93,6 +93,9 @@ async function confirmAllDiscards() {
 }
 
 async function endTurn() {
+  if ((await readState()).phase === 'start') {
+    await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+  }
   await page.getByRole('button', { name: 'End turn' }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
   if ((await readState()).phase === 'discard') {
@@ -104,6 +107,9 @@ async function endTurn() {
 async function enterFirstRoom() {
   await page.locator('.room--reachable').first().click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+  if ((await readState()).phase === 'start') {
+    await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+  }
 }
 
 await page.goto(base, { waitUntil: 'networkidle' })
@@ -310,8 +316,7 @@ const finished = await playOutCombat()
 // the fixed-tail regression they exist to catch slips straight through.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'log-round'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 await endTurn()
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 await page.waitForFunction(() =>
@@ -408,8 +413,7 @@ await shot('05c-combat-over')
 // completely broken.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'winnable'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -574,8 +578,7 @@ await shot('05f-back-on-map')
 // without hurting anyone — and being unchanged, it then never re-animated.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'flinch'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 
 // Orbs are board state the log talks about ("Defect's Lightning orb hit ...
 // for 1"), so they have to be visible. Nothing rendered them at all.
@@ -1862,6 +1865,77 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeUnload)
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
   .some((card) => card.uid === 'ui-unload'))
 
+const runBeforeInfiniteBlades = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(actor, {
+    character: 'silent', hand: [], discard: [], exhaust: [], energy: 0, shivs: 3,
+    strength: 0, attacksPlayedThisTurn: 0,
+    powers: [
+      { uid: 'ui-infinite-demon', defId: 'demon_form', upgraded: false },
+      { uid: 'ui-infinite-blades', defId: 'infinite_blades', upgraded: true },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-infinite-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  Object.assign(ally, { shivs: 2, hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+    uid: `ui-infinite-ally-${index}`, defId: 'defend_ironclad', upgraded: false,
+  })) })
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, weak: 0, vulnerable: 0,
+    poison: 0, dead: false, abilityUsed: true,
+  }))
+  debug.setRun(run)
+})
+await page.locator('.power').first().waitFor()
+const infinitePowerLabels = await page.locator('.power').evaluateAll((powers) =>
+  powers.map((power) => power.getAttribute('aria-label') ?? ''))
+check('Infinite Blades announces its upgraded recurring Shiv effect', () => {
+  assert(infinitePowerLabels.some((label) =>
+    label.includes('Infinite Blades') && label.includes('2 Shivs') && label.includes('start of each turn')),
+  JSON.stringify(infinitePowerLabels))
+})
+const infinitePower = page.locator('.power[aria-label^="Infinite Blades"]')
+await infinitePower.click()
+await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await shot('07w-silent-infinite-blades-ready')
+await infinitePower.click()
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.locator('.combat[data-phase="start"]').waitFor()
+await page.locator('.end-turn-order > summary').click()
+await page.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
+await page.locator('.end-turn-order > summary').click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 1/2'))
+await shot('07x-silent-infinite-blades-choice')
+await page.locator('.enemy:not([disabled])').first().click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 2/2'))
+await page.getByRole('button', { name: 'Skip this Shiv' }).click()
+await shot('07x2-silent-infinite-blades-reset')
+await page.getByRole('button', { name: 'Reset start choices' }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 1/2'))
+await page.locator('.enemy:not([disabled])').first().click()
+await page.getByRole('button', { name: 'Skip this Shiv' }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const infiniteBlades = await readState()
+check('Infinite Blades orders, targets, and explicitly skips Start-of-Turn overflow', () => {
+  const actor = infiniteBlades.players[0]
+  assertEqual(actor.shivs, 3)
+  assertEqual(infiniteBlades.players[1].shivs, 2)
+  assertEqual(actor.attacksPlayedThisTurn, 1)
+  assertEqual(actor.strength, 1, 'Demon Form resolves after the reordered Shiv attack')
+  assertDeepEqual(infiniteBlades.enemies.filter((enemy) => enemy.hp < 20).map((enemy) => enemy.hp), [19])
+})
+await page.locator('.enemy').first().scrollIntoViewIfNeeded()
+await shot('07y-silent-infinite-blades-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeInfiniteBlades)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2217,8 +2291,7 @@ check('two hits in quick succession are both felt', () => {
 // make the row taller for unrelated reasons.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'fold'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 const foldProbe = []
 for (const size of [
   { width: 360, height: 720 },
@@ -2266,8 +2339,7 @@ check("an enemy's hit points are on screen without scrolling, at every size", ()
 // that make the row taller for reasons that have nothing to do with the log.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'pause'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 await endTurn()
 await page.getByRole('button', { name: 'Resolve enemies' }).click()
 await page.waitForFunction(() =>
@@ -2302,8 +2374,7 @@ await page.setViewportSize({ width: 1440, height: 900 })
 // the squash could be deleted with everything green.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'fold-four'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 const crowdedState = await readState()
 const crowdedEnemyCount = crowdedState.enemies.length
 const crowdedViewerRow = crowdedState.players[0].row
@@ -2760,8 +2831,7 @@ check('three enemies in one player row remain readable at every supported width'
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'choice-flows'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
+await enterFirstRoom()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2904,8 +2974,7 @@ check('Predator draws two cards for the chosen ally', () => {
 // see the old run. Wait for it to land before touching anything.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'debuff-display'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
-await page.locator('.room--reachable').first().click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
+await enterFirstRoom()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

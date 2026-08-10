@@ -40,9 +40,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 144 of 259 unique character cards are live.
+//   - 145 of 259 unique character cards are live.
 //     12 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 115 have not been transcribed at
+//     The other 114 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -128,14 +128,19 @@ export {
   enemyLabel,
   overflowShivCount,
   playCard,
+  preparePlayerTurn,
   previewCardChoice,
+  resolveStartPlayerTurn,
   resolveEnemyTargets,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  startPlayerTurnWithChoices,
+  startTurnAbilities,
+  defaultStartTurnChoices,
   validEndTurnOrder,
 } from './combat.ts'
-export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext } from './combat.ts'
+export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext, StartTurnAbility, StartTurnChoice } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

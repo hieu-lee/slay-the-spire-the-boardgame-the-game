@@ -44,12 +44,22 @@ function allKeys(value, out = []) {
 
 /**
  * A run opens on the map, so a room fixture that wants a combat has to walk
- * into one. `enterRoom` starts the player turn itself, so the hand is already
- * dealt when this returns.
+ * into one. Resolve any multi-ability Start-of-Turn choice so fixtures that
+ * exercise the Player Turn do not depend on the party size.
  */
 function enterFirstCombat(room, seatToken) {
   const [first] = roomChoices(room.run)
   apply(room, seatToken, { kind: 'enterRoom', roomId: first.id })
+  if (room.run.combat?.phase === 'start') {
+    const abilities = snapshotFor(room, seatToken).startTurnAbilities
+    apply(room, seatToken, {
+      kind: 'resolveStartTurn',
+      choices: abilities.map((ability) => ({
+        id: ability.id,
+        shivEnemyUids: Array(ability.overflowShivs).fill(null),
+      })),
+    })
+  }
   return room
 }
 
@@ -1400,6 +1410,77 @@ check('Unload keeps every mandatory Shiv target authoritative across reconnect s
   assertDeepEqual(snapshot.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [16, 18])
   assertEqual(mine.shivs, 0)
   assertEqual(mine.attacksPlayedThisTurn, 3)
+})
+
+check('Infinite Blades pauses Start of Turn for authoritative overflow choices', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const bo = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, { shivs: 3, draw: Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-infinite-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
+  })) })
+  Object.assign(bo, {
+    shivs: 2,
+    powers: [{ uid: 'room-infinite', defId: 'infinite_blades', upgraded: true }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-infinite-bo-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token)
+  assertEqual(pending.run.combat.phase, 'start')
+  assertEqual(pending.startTurnAbilities.length, 1)
+  assertEqual(pending.startTurnAbilities[0].overflowShivs, 2)
+  assertEqual(pending.startTurnCoordinatorId, a.playerId)
+
+  let unauthorized = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [{ id: pending.startTurnAbilities[0].id, shivEnemyUids: [null, null] }],
+    })
+  } catch (error) {
+    unauthorized = error
+  }
+  assertEqual(unauthorized?.name, 'RoomError', 'a non-coordinator cannot resolve everyone\'s order')
+
+  markDisconnected(room, a.token)
+  const transferred = snapshotFor(room, b.token)
+  assertEqual(transferred.startTurnCoordinatorId, b.playerId, 'disconnect transfers the pending coordinator')
+  const [first, second] = room.run.combat.enemies
+  first.hp = 1
+  let staleTarget = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [{
+        id: transferred.startTurnAbilities[0].id,
+        shivEnemyUids: [first.uid, first.uid],
+      }],
+    })
+  } catch (error) {
+    staleTarget = error
+  }
+  assertEqual(staleTarget?.name, 'RoomError', 'a queued Shiv cannot hit an enemy killed by the prior Shiv')
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [1, 20],
+    'a stale overflow target partially mutated the authoritative combat')
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [{
+      id: transferred.startTurnAbilities[0].id,
+      shivEnemyUids: [first.uid, second.uid],
+    }],
+  })
+  const resolved = snapshotFor(room, b.token)
+  assertEqual(resolved.run.combat.phase, 'player')
+  assertDeepEqual(resolved.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [0, 19])
+  assertEqual(resolved.run.combat.players.find((player) => player.id === b.playerId).attacksPlayedThisTurn, 2)
+  assertEqual(resolved.startTurnAbilities, undefined)
 })
 
 check('face-down reward stacks are counted, never listed', () => {

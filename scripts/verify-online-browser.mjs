@@ -923,6 +923,89 @@ try {
   Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), unloadRestore.bo)
   liveRoom.run.combat.enemies = unloadRestore.enemies
 
+  await a.getByRole('button', { name: 'Solo table' }).click()
+  await a.getByLabel('Seed').waitFor()
+  const preservedSeed = await a.getByLabel('Seed').inputValue()
+  await a.getByRole('button', { name: 'Play online' }).click()
+  await a.locator('.app-shell--online .combat').waitFor()
+  check('switching modes preserves both the solo run and online seat', () => {
+    assertEqual(preservedSeed, 'kept-local-run')
+  })
+
+  const infiniteRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(annBeforeInfinite, {
+    shivs: 3, strength: 0, attacksPlayedThisTurn: 0, hand: [],
+    powers: [
+      { uid: 'online-infinite-demon', defId: 'demon_form', upgraded: false },
+      { uid: 'online-infinite-blades', defId: 'infinite_blades', upgraded: true },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `online-infinite-ann-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  Object.assign(boBeforeInfinite, {
+    shivs: 2, hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `online-infinite-bo-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true })
+  }
+  const publishInfiniteFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'startTurn' } }),
+  })
+  assert(publishInfiniteFixture.ok, 'could not publish the Infinite Blades Start-of-Turn fixture')
+  await Promise.all([
+    a.locator('.combat[data-phase="start"]').waitFor(),
+    b.locator('.combat[data-phase="start"]').waitFor(),
+  ])
+  const teammateStartButton = b.getByRole('button', { name: 'Waiting for start-turn order' })
+  const teammateStartButtonDisabled = await teammateStartButton.isDisabled()
+  const teammateStartPrompts = await b.locator('.prompt').count()
+  const teammateStartTargets = await b.locator('.enemy--targeted').count()
+  check('only the connected coordinator can resolve Start-of-Turn choices', () => {
+    assert(teammateStartButtonDisabled)
+  })
+  check('waiting teammates are not offered dead Start-of-Turn target controls', () => {
+    assertEqual(teammateStartPrompts, 0)
+    assertEqual(teammateStartTargets, 0)
+  })
+  await b.screenshot({ path: join(outDir, '02c-waiting-start-turn.png'), fullPage: true })
+  await a.reload({ waitUntil: 'networkidle' })
+  await a.locator('.combat[data-phase="start"]').waitFor()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('overflow Shiv 1/2'))
+  await a.locator('.end-turn-order > summary').click()
+  await a.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
+  await a.locator('.end-turn-order > summary').click()
+  await a.locator('.enemy:not([disabled])').first().click()
+  await a.getByRole('button', { name: 'Skip this Shiv' }).click()
+  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
+  await a.locator('.combat[data-phase="player"]').waitFor()
+  const resolvedInfinite = await snapshot(a)
+  check('Infinite Blades survives refresh and resolves its ordered online overflow', () => {
+    const ann = resolvedInfinite.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.shivs, 3)
+    assertEqual(ann.strength, 1)
+    assertEqual(ann.attacksPlayedThisTurn, 1)
+    assertDeepEqual(resolvedInfinite.run.combat.enemies.filter((enemy) => enemy.hp < 50).map((enemy) => enemy.hp), [49])
+    assertEqual(resolvedInfinite.startTurnAbilities, undefined)
+  })
+  liveRoom.run.combat = infiniteRestore
+  const boAfterInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boAfterInfinite, { miracles: 1, energy: 0 })
+  const publishInfiniteRestore = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishInfiniteRestore.ok, 'could not restore the post-Infinite online fixture')
+  await a.locator('.combat[data-phase="player"]').waitFor()
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')
@@ -1182,15 +1265,6 @@ try {
     assertEqual(afterRemoteScroll, manualScroll)
   })
 
-  await a.getByRole('button', { name: 'Solo table' }).click()
-  await a.getByLabel('Seed').waitFor()
-  const preservedSeed = await a.getByLabel('Seed').inputValue()
-  await a.getByRole('button', { name: 'Play online' }).click()
-  await a.locator('.app-shell--online .combat').waitFor()
-  check('switching modes preserves both the solo run and online seat', () => {
-    assertEqual(preservedSeed, 'kept-local-run')
-  })
-
   await a.getByRole('button', { name: /^Blade Dance,/ }).click()
   await a.locator('.enemy:not([disabled])').first().click()
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
@@ -1206,53 +1280,60 @@ try {
   let teammateReorderControlsDisabled
   let coordinatorAbilityLabels
   let decayAbilityId
-  await a.route(`**/api/rooms/${code}`, async (route) => {
-    const stalePlayerTurn = await route.fetch()
-    for (const token of [aCredentials.token, bCredentials.token]) {
-      const response = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-room-token': token },
-        body: JSON.stringify({ action: { kind: 'endTurn' } }),
-      })
-      endTurnStatuses.push(response.status)
-    }
-    await a.getByRole('button', { name: 'Resolve end turn' }).waitFor()
-    const [coordinatorStage, boStage] = await Promise.all([snapshot(a), snapshot(b)])
-    publishedEndTurnOrder = coordinatorStage.endTurnOrder
-    decayAbilityId = boStage.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
-    teammateOrderButtonDisabled = await b.getByRole('button', { name: 'Waiting for end-turn order' }).isDisabled()
-    const teammateArrows = b.locator('.end-turn-order li button')
-    teammateReorderControlsDisabled = await teammateArrows.evaluateAll((buttons) =>
-      buttons.length > 0 && buttons.every((button) => button.disabled))
-    await a.locator('.end-turn-order > summary').click()
-    coordinatorAbilityLabels = await a.locator('.end-turn-order li span').allTextContents()
-    for (let index = publishedEndTurnOrder.indexOf(decayAbilityId); index > 0; index -= 1) {
-      await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
-    }
-    await a.screenshot({ path: join(outDir, '03-party-end-turn-order.png'), fullPage: true })
-    await a.getByRole('button', { name: 'Resolve end turn' }).click()
-    await a.waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'discard')
-    await route.fulfill({ response: stalePlayerTurn })
-  }, { times: 1 })
+  const stalePlayerTurn = await snapshot(a)
   let endTurnConflictStatus = 0
+  let finishEndTurnConflict
+  const endTurnConflictFinished = new Promise((resolveConflict) => { finishEndTurnConflict = resolveConflict })
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 0
     const response = await route.fetch()
     endTurnConflictStatus = response.status()
     await route.fulfill({ response })
+    finishEndTurnConflict()
   }, { times: 1 })
   await a.locator('.enemy:not([disabled])').nth(1).click()
+  await endTurnConflictFinished
+  await a.getByRole('alert').waitFor()
+  for (const token of [aCredentials.token, bCredentials.token]) {
+    const response = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-room-token': token },
+      body: JSON.stringify({ action: { kind: 'endTurn' } }),
+    })
+    endTurnStatuses.push(response.status)
+  }
+  await a.getByRole('button', { name: 'Resolve end turn' }).waitFor()
+  const [coordinatorStage, boStage] = await Promise.all([snapshot(a), snapshot(b)])
+  publishedEndTurnOrder = coordinatorStage.endTurnOrder
+  decayAbilityId = boStage.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
+  teammateOrderButtonDisabled = await b.getByRole('button', { name: 'Waiting for end-turn order' }).isDisabled()
+  const teammateArrows = b.locator('.end-turn-order li button')
+  teammateReorderControlsDisabled = await teammateArrows.evaluateAll((buttons) =>
+    buttons.length > 0 && buttons.every((button) => button.disabled))
+  await a.locator('.end-turn-order > summary').click()
+  coordinatorAbilityLabels = await a.locator('.end-turn-order li span').allTextContents()
+  for (let index = publishedEndTurnOrder.indexOf(decayAbilityId); index > 0; index -= 1) {
+    await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
+  }
+  await a.screenshot({ path: join(outDir, '03-party-end-turn-order.png'), fullPage: true })
+  await a.getByRole('button', { name: 'Resolve end turn' }).click()
   await Promise.all([
     a.locator('.combat[data-phase="discard"]').waitFor(),
     b.locator('.combat[data-phase="discard"]').waitFor(),
   ])
+  await a.evaluate((snapshot) => {
+    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ type: 'snapshot', snapshot }),
+    }))
+  }, stalePlayerTurn)
+  await a.waitForTimeout(0)
   await a.waitForFunction(() => document.querySelector('.prompt') === null)
   const expectedEndTurnConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(expectedEndTurnConflict >= 0, 'the post-end-turn card action did not conflict')
   failures.splice(expectedEndTurnConflict, 1)
   const afterEndTurnRace = await snapshot(a)
   const stalePhasePrompt = await a.locator('.prompt').count()
-  check('a stale conflict refresh after final end-turn cannot restore Player Turn targeting', () => {
+  check('a stale snapshot after final end-turn cannot restore Player Turn targeting', () => {
     assertDeepEqual(endTurnStatuses, [200, 200])
     assertEqual(endTurnConflictStatus, 409)
     assertEqual(afterEndTurnRace.run.combat.phase, 'discard')

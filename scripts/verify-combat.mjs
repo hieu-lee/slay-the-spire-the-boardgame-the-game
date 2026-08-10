@@ -1804,6 +1804,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'accuracy', powers: [1, 1], energy: [E - 1, E] },
     { id: 'choke', enemyHp: [17, 16] },
     { id: 'footwork', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'infinite_blades', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'envenom', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'dodge_and_roll', block: [2, 3] },
     { id: 'bouncing_flask', poison: [2, 3] },

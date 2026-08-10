@@ -273,6 +273,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':
       return `${effect.amount} Energy`
+    case 'gainShiv':
+      return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':

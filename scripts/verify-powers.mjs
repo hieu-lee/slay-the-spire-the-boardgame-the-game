@@ -10,7 +10,10 @@ import {
   endPlayerTurn,
   enemyTurn,
   playCard,
+  preparePlayerTurn,
+  resolveStartPlayerTurn,
   startPlayerTurn,
+  startTurnAbilities,
 } from '../src/game/combat.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { triggerMatches } from '../src/game/triggers.ts'
@@ -493,6 +496,51 @@ check('start-of-combat abilities fire on turn 1 only', () => {
   state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
   assertEqual(state.turn, 2, 'precondition: the second round has begun')
   assertEqual(state.players[0].hand.length, 5, 'and turn 2 is a plain five-card hand')
+})
+
+check('Infinite Blades resolves shared-supply overflow in the chosen Start-of-Turn order', () => {
+  const first = instance('infinite_blades')
+  const second = instance('infinite_blades', true)
+  const prepared = preparePlayerTurn(combat([
+    player({ id: 'p1', name: 'Ann', character: 'silent', powers: [first], shivs: 4, draw: deck() }),
+    player({ id: 'p2', name: 'Bo', character: 'silent', row: 1, powers: [second], draw: deck() }),
+  ], [enemy({ uid: 'e1', hp: 20 }), enemy({ uid: 'e2', row: 1, hp: 20 })]))
+  assertEqual(prepared.phase, 'start')
+  const abilities = startTurnAbilities(prepared)
+  assertEqual(abilities.find((ability) => ability.id.includes(first.uid)).overflowShivs, 0)
+  assertEqual(abilities.find((ability) => ability.id.includes(second.uid)).overflowShivs, 2)
+
+  const resolved = resolveStartPlayerTurn(prepared, abilities.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: ability.id.includes(second.uid) ? ['e1', 'e2'] : [],
+  })))
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.players.reduce((sum, owner) => sum + owner.shivs, 0), 5)
+  assertEqual(resolved.players[1].attacksPlayedThisTurn, 2)
+  assertEqual(resolved.enemies[0].hp, 19)
+  assertEqual(resolved.enemies[1].hp, 19)
+
+  const reverse = [...abilities].reverse().map((ability) => ability.id)
+  assertEqual(startTurnAbilities(prepared, reverse)[0].overflowShivs, 1,
+    'the upgraded Power takes one cube before its second Shiv overflows')
+  assertEqual(startTurnAbilities(prepared, reverse)[1].overflowShivs, 1,
+    'the later base Power then overflows too')
+
+  assert(resolveStartPlayerTurn(prepared, abilities.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: ability.id.includes(second.uid) ? ['e1'] : [],
+  }))) === prepared, 'every overflow Shiv needs an explicit target or skip')
+  const lethal = structuredClone(prepared)
+  lethal.enemies[0].hp = 1
+  assert(resolveStartPlayerTurn(lethal, abilities.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: ability.id.includes(second.uid) ? ['e1', 'e1'] : [],
+  }))) === lethal, 'a target killed by an earlier queued Shiv makes the whole choice stale')
+  const skipped = resolveStartPlayerTurn(prepared, abilities.map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: ability.id.includes(second.uid) ? [null, null] : [],
+  })))
+  assertEqual(skipped.enemies[0].hp, 20, 'explicit skips deal no damage')
 })
 
 check('the Start of Turn reshuffle fires an on-shuffle Power', () => {

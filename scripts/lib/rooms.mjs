@@ -44,9 +44,11 @@ import {
   resolveCardRewards,
   resolveCombat,
   resolveEnemyTargets,
+  resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
-  startPlayerTurn,
+  startPlayerTurnWithChoices,
+  startTurnAbilities,
   validEndTurnOrder,
 } from '../../src/game/state.ts'
 
@@ -335,8 +337,10 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
   if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
+  if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
+  if (room.run.combat?.phase === 'start') fail('Finish the Start-of-Turn abilities')
 
   const before = room.run
   const next = dispatch(before, seat, action)
@@ -481,6 +485,32 @@ function resolveEndTurn(room, seat, action, seatToken) {
   room.endTurnOrder = undefined
   room.endTurnPublicIds = undefined
   room.endTurnOrders = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function startTurnCoordinator(room) {
+  const alive = new Set(room.run?.combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
+  return room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
+}
+
+function resolveStartTurn(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') fail('The party is not resolving Start-of-Turn abilities')
+  if (seat.playerId !== startTurnCoordinator(room)) fail('Only the start-turn coordinator can resolve the order')
+  const choices = action.choices
+  if (!Array.isArray(choices) || choices.length > UID_LIMIT || choices.some((choice) =>
+    !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
+    choice.shivEnemyUids.length > CAPS.shivs ||
+    choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string'))) {
+    fail('Start-of-Turn choices must contain every ability and valid Shiv targets')
+  }
+  const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
+    id: choice.id,
+    shivEnemyUids: [...choice.shivEnemyUids],
+  })))
+  if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')
+  room.run = { ...room.run, combat: next }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -808,12 +838,14 @@ function dispatch(run, seat, action) {
 
     // The turn is shared, so any seat may advance it — at the table this is
     // one player asking "everyone done?" and nobody objecting.
-    case 'startTurn':
+    case 'startTurn': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = startPlayerTurnWithChoices(run.combat)
+      return combat === run.combat ? run : { ...run, combat }
+    }
     case 'resolveEnemies': {
       if (!run.combat) fail('No combat in progress')
-      const step =
-        action.kind === 'startTurn' ? startPlayerTurn : enemyTurn
-      const combat = step(run.combat)
+      const combat = enemyTurn(run.combat)
       return combat === run.combat ? run : { ...run, combat }
     }
 
@@ -934,6 +966,10 @@ export function snapshotFor(room, seatToken) {
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
     endTurnCoordinatorId: room.endTurnAbilities ? endTurnCoordinator(room) : undefined,
+    startTurnAbilities: room.run?.combat?.phase === 'start'
+      ? startTurnAbilities(room.run.combat)
+      : undefined,
+    startTurnCoordinatorId: room.run?.combat?.phase === 'start' ? startTurnCoordinator(room) : undefined,
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,

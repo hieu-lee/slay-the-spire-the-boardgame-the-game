@@ -23,12 +23,14 @@ import {
   overflowShivCount,
   playCard,
   previewCardChoice,
+  resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
-  startPlayerTurn,
+  startTurnAbilities,
+  startPlayerTurnWithChoices,
   validEndTurnOrder,
 } from '../game/combat.ts'
-import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext } from '../game/combat.ts'
+import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, StartTurnAbility, StartTurnChoice } from '../game/combat.ts'
 import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
@@ -60,6 +62,8 @@ type CombatScreenProps = {
   partyEndTurnAbilities?: EndTurnAbility[]
   savedEndTurnOrder?: string[]
   endTurnCoordinatorId?: string | null
+  partyStartTurnAbilities?: StartTurnAbility[]
+  startTurnCoordinatorId?: string | null
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */
@@ -137,6 +141,7 @@ function roundLog(log: readonly string[]): string[] {
 /** The engine's phase names are for the engine; players get words. */
 const PHASE_LABEL: Record<CombatState['phase'], string> = {
   player: 'Your turn',
+  start: 'Start of turn',
   discard: 'Order discards',
   enemy: 'Enemies act',
   roundEnd: 'Round over',
@@ -394,6 +399,8 @@ export function CombatScreen({
   partyEndTurnAbilities,
   savedEndTurnOrder,
   endTurnCoordinatorId,
+  partyStartTurnAbilities,
+  startTurnCoordinatorId,
   cardPreview,
   authoritativeVersion,
   authoritativeRefresh,
@@ -410,6 +417,8 @@ export function CombatScreen({
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
   const [endTurnError, setEndTurnError] = useState('')
+  const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
+  const [startTurnTargets, setStartTurnTargets] = useState<Record<string, (string | null | undefined)[]>>({})
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
@@ -434,6 +443,10 @@ export function CombatScreen({
     ? `${cardPreview.cardUid}\0${cardPreview.kind}\0${cardPreview.spendMiracle}\0${cardPreview.enemyUid ?? ''}\0${cardPreview.cards.map((card) => card.uid).join('\0')}`
     : ''
   const orderingStage = partyEndTurnAbilities !== undefined
+  const baseStartAbilities = state.phase === 'start'
+    ? (partyStartTurnAbilities ?? startTurnAbilities(state))
+    : []
+  const startAbilityKey = baseStartAbilities.map((ability) => `${ability.id}:${ability.overflowShivs}`).join('\0')
 
   const { struck, beat } = useStruck(state)
 
@@ -636,7 +649,20 @@ export function CombatScreen({
       setDiscardOrders({})
     }
     if (state.phase !== 'player') setEndTurnOrder([])
+    if (state.phase !== 'start') {
+      setStartTurnOrder([])
+      setStartTurnTargets({})
+    }
   }, [state.phase])
+
+  useEffect(() => {
+    if (state.phase !== 'start') return
+    setStartTurnOrder(baseStartAbilities.map((ability) => ability.id))
+    setStartTurnTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
+      ability.id,
+      Array(ability.overflowShivs).fill(undefined),
+    ])))
+  }, [startAbilityKey, state.phase])
 
   useEffect(() => {
     if (state.phase !== 'discard' || !savedDiscardOrder) return
@@ -761,6 +787,56 @@ export function CombatScreen({
     ? endTurnOrder
     : defaultOrder
   const canOrderEndTurn = !orderingStage || viewer.id === endTurnCoordinatorId
+  const startIds = startTurnOrder.length === baseStartAbilities.length
+    ? startTurnOrder
+    : baseStartAbilities.map((ability) => ability.id)
+  const orderedStartAbilities = startTurnAbilities(state, startIds)
+  const canResolveStartTurn = !onAction || viewer.id === startTurnCoordinatorId
+  const pendingStartShiv = canResolveStartTurn
+    ? orderedStartAbilities.flatMap((ability) =>
+      Array.from({ length: ability.overflowShivs }, (_unused, index) => ({ ability, index })))
+      .find(({ ability, index }) => startTurnTargets[ability.id]?.[index] === undefined)
+    : undefined
+  const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length && !pendingStartShiv
+
+  function moveStartTurnAbility(id: string, delta: -1 | 1) {
+    const from = startIds.indexOf(id)
+    const to = from + delta
+    if (!canResolveStartTurn || from < 0 || to < 0 || to >= startIds.length) return
+    const order = [...startIds]
+    ;[order[from], order[to]] = [order[to]!, order[from]!]
+    const plan = startTurnAbilities(state, order)
+    setStartTurnOrder(order)
+    setStartTurnTargets(Object.fromEntries(plan.map((ability) => [
+      ability.id,
+      Array(ability.overflowShivs).fill(undefined),
+    ])))
+  }
+
+  function chooseStartTurnShiv(enemyUid: string | null) {
+    if (!pendingStartShiv || !canResolveStartTurn) return
+    const targets = [...(startTurnTargets[pendingStartShiv.ability.id] ?? [])]
+    targets[pendingStartShiv.index] = enemyUid
+    setStartTurnTargets({ ...startTurnTargets, [pendingStartShiv.ability.id]: targets })
+  }
+
+  function finishStartTurn() {
+    if (!startTurnReady || !canResolveStartTurn) return
+    const choices: StartTurnChoice[] = orderedStartAbilities.map((ability) => ({
+      id: ability.id,
+      shivEnemyUids: (startTurnTargets[ability.id] ?? []).map((uid) => uid ?? null),
+    }))
+    if (onAction) onAction({ kind: 'resolveStartTurn', choices })
+    else onChange?.(resolveStartPlayerTurn(state, choices))
+  }
+
+  function beginNextTurn() {
+    if (onAction) {
+      onAction({ kind: 'startTurn' })
+      return
+    }
+    onChange?.(startPlayerTurnWithChoices(state))
+  }
 
   function moveEndTurnAbility(id: string, delta: -1 | 1) {
     const from = viewerEndTurnOrder.indexOf(id)
@@ -1199,6 +1275,10 @@ export function CombatScreen({
   }
 
   function onEnemyClick(enemy: Enemy) {
+    if (pendingStartShiv) {
+      chooseStartTurnShiv(enemy.uid)
+      return
+    }
     if (pendingPotion) {
       if (pendingPotionDef?.target === 'enemy') {
         consumePotion(pendingPotion, { enemyUid: enemy.uid })
@@ -1325,7 +1405,10 @@ export function CombatScreen({
     : overflowOnly
     ? `Choose overflow Shiv target ${(pending?.shivEnemyUids.length ?? 0) - (pending?.spentShivs ?? 0) + 1}/${pending?.overflowShivs}, or skip the rest`
     : normalEnemyPrompt
-  const prompt = pendingPotionDef
+  const startTurnPrompt = pendingStartShiv
+    ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
+    : null
+  const prompt = startTurnPrompt ?? (pendingPotionDef
     ? pendingPotionDef.target === 'row'
       ? `Choose a row for ${pendingPotionDef.name}`
       : pendingPotionOverflow > 0
@@ -1357,7 +1440,7 @@ export function CombatScreen({
           ? 'Choose who gets it'
           : switchChoiceReady
             ? 'Choose another player to switch rows with, or keep rows'
-          : null
+          : null)
 
   return (
     <div className="combat" data-phase={state.phase}>
@@ -1503,6 +1586,46 @@ export function CombatScreen({
               </button>
             </>
           ) : null}
+          {state.phase === 'start' ? (
+            <>
+              <details className="end-turn-order">
+                <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
+                <ol>
+                  {orderedStartAbilities.map((ability, index) => {
+                    const decided = (startTurnTargets[ability.id] ?? [])
+                      .filter((target) => target !== undefined).length
+                    return (
+                      <li key={ability.id}>
+                        <span>{ability.label}{ability.overflowShivs > 0
+                          ? ` — overflow ${decided}/${ability.overflowShivs}`
+                          : ''}</span>
+                        <button type="button" disabled={!canResolveStartTurn || index === 0}
+                          aria-label={`Move ${ability.label} earlier`}
+                          onClick={() => moveStartTurnAbility(ability.id, -1)}>↑</button>
+                        <button type="button" disabled={!canResolveStartTurn || index === orderedStartAbilities.length - 1}
+                          aria-label={`Move ${ability.label} later`}
+                          onClick={() => moveStartTurnAbility(ability.id, 1)}>↓</button>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </details>
+              {Object.values(startTurnTargets).some((targets) =>
+                targets.some((target) => target !== undefined)) ? (
+                <button type="button" disabled={!canResolveStartTurn}
+                  onClick={() => setStartTurnTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
+                    ability.id,
+                    Array(ability.overflowShivs).fill(undefined),
+                  ])))}>
+                  Reset start choices
+                </button>
+              ) : null}
+              <button type="button" onClick={finishStartTurn}
+                disabled={!startTurnReady || !canResolveStartTurn}>
+                {canResolveStartTurn ? 'Resolve start of turn' : 'Waiting for start-turn order'}
+              </button>
+            </>
+          ) : null}
           {state.phase === 'enemy' ? (
             <button
               type="button"
@@ -1517,7 +1640,7 @@ export function CombatScreen({
           {state.phase === 'roundEnd' ? (
             <button
               type="button"
-              onClick={() => onAction ? onAction({ kind: 'startTurn' }) : onChange?.(startPlayerTurn(state))}
+              onClick={beginNextTurn}
             >
               Start turn {state.turn + 1}
             </button>
@@ -1534,6 +1657,11 @@ export function CombatScreen({
       {prompt ? (
         <p className="prompt" role="status">
           {prompt}
+          {pendingStartShiv && canResolveStartTurn ? (
+            <button type="button" className="prompt__cancel" onClick={() => chooseStartTurnShiv(null)}>
+              Skip this Shiv
+            </button>
+          ) : null}
           {pending && overflowOnly && choiceSatisfied ? (
             <button type="button" className="prompt__cancel" onClick={() => commit(pending, true)}>
               Skip remaining overflow attacks
@@ -1577,7 +1705,7 @@ export function CombatScreen({
               Keep rows
             </button>
           ) : null}
-          {!pending?.choiceCards ? <button
+          {!pendingStartShiv && !pending?.choiceCards ? <button
             type="button"
             className="prompt__cancel"
             onClick={() => {
@@ -1637,7 +1765,7 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                targeted={Boolean(pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                 )) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -1744,7 +1872,7 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                      targeted={Boolean(pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                       )) && !enemy.dead}
                       onClick={onEnemyClick}

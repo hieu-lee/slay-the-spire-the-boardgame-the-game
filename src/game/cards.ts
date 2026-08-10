@@ -1751,6 +1751,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainCardBlockBonus', amount: 1 }],
     upgrade: { retain: true },
   }),
+  infinite_blades: card({
+    id: 'infinite_blades', name: 'Infinite Blades', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'gainShiv', amount: 1 }],
+    upgrade: { effects: [{ kind: 'gainShiv', amount: 2 }] },
+  }),
   envenom: card({
     id: 'envenom', name: 'Envenom', owner: 'silent', type: 'power', rarity: 'rare', cost: 3,
     resolvesOnPlay: true,

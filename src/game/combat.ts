@@ -30,6 +30,8 @@ import { CAPS } from './types.ts'
 import type { CardInstance, CardType, Enemy, OrbType, Player } from './types.ts'
 
 export type CombatPhase =
+  /** Reset, draw, and roll are done; ordered Start-of-Turn abilities remain. */
+  | 'start'
   | 'player'
   | 'discard'
   | 'enemy'
@@ -60,6 +62,20 @@ export type EndTurnAbility = {
   playerId: string | null
   label: string
   targets?: { uid: string; label: string }[]
+}
+
+export type StartTurnAbility = {
+  id: string
+  playerId: string
+  label: string
+  /** Shivs this ability cannot take from the shared supply and may throw now. */
+  overflowShivs: number
+}
+
+export type StartTurnChoice = {
+  id: string
+  /** One living enemy id or explicit skip per overflow Shiv. */
+  shivEnemyUids: (string | null)[]
 }
 
 const END_TURN_TARGET = '@'
@@ -248,8 +264,8 @@ export type PlayContext = {
   exhaustUids?: string[]
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
-  /** One chosen target per overflow Shiv, because each is a separate attack. */
-  shivEnemyUids?: string[]
+  /** One chosen target or explicit skip per immediate Shiv, in effect order. */
+  shivEnemyUids?: (string | null)[]
   /** Of the cards a Scry revealed, the ones the player bins. */
   scryDiscardUids?: string[]
   /**
@@ -1675,7 +1691,7 @@ export function playCard(
  * Only two states may begin a turn: a combat that has not started, and a round
  * whose Enemy Turn has just ended.
  */
-export function startPlayerTurn(state: CombatState): CombatState {
+export function preparePlayerTurn(state: CombatState): CombatState {
   const opening = state.turn === 0
   if (!opening && state.phase !== 'roundEnd') return state
   return beginPlayerTurn(clone(state))
@@ -1683,7 +1699,7 @@ export function startPlayerTurn(state: CombatState): CombatState {
 
 /** Start of Turn: reset, draw 5, roll the shared die (p.12). Mutates `next`. */
 function beginPlayerTurn(next: CombatState): CombatState {
-  next.phase = 'player'
+  next.phase = 'start'
   next.turn += 1
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
@@ -1726,15 +1742,109 @@ function beginPlayerTurn(next: CombatState): CombatState {
     ...next.log.slice(drewFrom),
   ]
 
-  // Start-of-combat abilities only fire on turn 1 (p.12).
-  if (next.turn === 1) fireTriggers(next, { kind: 'startOfCombat' })
-  fireTriggers(next, { kind: 'startOfTurn' })
-  // Die relics fire after the roll, during Start of Turn (p.19).
-  fireTriggers(next, { kind: 'dieRelic', die: next.die })
+  return combatIsOver(next) ? settle(next) : next
+}
 
-  // A start-of-turn ability can kill the last enemy, and a combat that is over
-  // must say so — otherwise the phase stays 'player' and endOfCombat is missed.
+type StartTurnSource = { ability: Omit<StartTurnAbility, 'overflowShivs'>; source: TriggerSource }
+
+function startTurnSources(state: CombatState): StartTurnSource[] {
+  if (state.phase !== 'start') return []
+  const events: TriggerEvent[] = [
+    ...(state.turn === 1 ? [{ kind: 'startOfCombat' as const }] : []),
+    { kind: 'startOfTurn' },
+    { kind: 'dieRelic', die: state.die },
+  ]
+  return events.flatMap((event) => state.players.flatMap((player) => player.dead ? [] :
+    triggerSources(player, event).map((source) => ({
+      source,
+      ability: {
+        id: `${player.id}/${source.id}`,
+        playerId: player.id,
+        label: source.name,
+      },
+    }))))
+}
+
+function validStartTurnOrder(sources: readonly StartTurnSource[], order: readonly string[]): boolean {
+  const expected = new Set(sources.map(({ ability }) => ability.id))
+  return order.length === expected.size && new Set(order).size === expected.size &&
+    order.every((id) => expected.has(id))
+}
+
+/** Ordered Start-of-Turn abilities, with overflow recomputed for that exact order. */
+export function startTurnAbilities(
+  state: CombatState,
+  order?: readonly string[],
+): StartTurnAbility[] {
+  const sources = startTurnSources(state)
+  const ids = order ?? sources.map(({ ability }) => ability.id)
+  if (!validStartTurnOrder(sources, ids)) return []
+  const byId = new Map(sources.map((entry) => [entry.ability.id, entry]))
+  let held = state.players.reduce((sum, player) => sum + player.shivs, 0)
+  return ids.map((id) => {
+    const entry = byId.get(id)!
+    const player = findPlayer(state, entry.ability.playerId)!
+    const shivs = entry.source.effects.reduce((sum, effect) => sum + (
+      effect.kind === 'gainShiv' && effectIsActive(effect, state, player) ? effect.amount : 0
+    ), 0)
+    const gained = Math.min(Math.max(0, CAPS.shivs - held), shivs)
+    held += gained
+    return { ...entry.ability, overflowShivs: shivs - gained }
+  })
+}
+
+export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
+  return startTurnAbilities(state).map((ability) => ({
+    id: ability.id,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+  }))
+}
+
+/** Resolves the ordered ability phase prepared by `preparePlayerTurn`. */
+export function resolveStartPlayerTurn(
+  state: CombatState,
+  choices: readonly StartTurnChoice[],
+): CombatState {
+  if (state.phase !== 'start') return state
+  const sources = startTurnSources(state)
+  const order = choices.map((choice) => choice.id)
+  if (!validStartTurnOrder(sources, order)) return state
+  const abilities = startTurnAbilities(state, order)
+  const alive = new Set(livingEnemies(state).map((enemy) => enemy.uid))
+  if (choices.some((choice, index) =>
+    choice.shivEnemyUids.length !== abilities[index]!.overflowShivs ||
+    choice.shivEnemyUids.some((uid) => uid !== null && !alive.has(uid)))) return state
+
+  const next = clone(state)
+  const byId = new Map(startTurnSources(next).map((entry) => [entry.ability.id, entry]))
+  for (const choice of choices) {
+    const entry = byId.get(choice.id)
+    const player = entry && findPlayer(next, entry.ability.playerId)
+    if (!entry || !player || !resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids)) {
+      return state
+    }
+    if (combatIsOver(next)) return settle(next)
+  }
+  next.phase = 'player'
   return settle(next)
+}
+
+/** Backwards-compatible deterministic start for simulations with no UI choice. */
+export function startPlayerTurn(state: CombatState): CombatState {
+  const prepared = preparePlayerTurn(state)
+  return prepared === state || prepared.phase !== 'start'
+    ? prepared
+    : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+}
+
+/** Starts a table-facing turn, pausing only when order or overflow matters. */
+export function startPlayerTurnWithChoices(state: CombatState): CombatState {
+  const prepared = preparePlayerTurn(state)
+  if (prepared === state || prepared.phase !== 'start') return prepared
+  const abilities = startTurnAbilities(prepared)
+  return abilities.length > 1 || abilities.some((ability) => ability.overflowShivs > 0)
+    ? prepared
+    : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
 }
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
@@ -2306,19 +2416,27 @@ function resolveTriggerSource(
   player: Player,
   source: TriggerSource,
   allowCombatOver = false,
-): void {
+  shivEnemyUids?: readonly (string | null)[],
+): boolean {
   const useKey = `${player.id}/${source.id}`
   if (source.oncePerTurn) {
     const used = (state.powerTriggersUsedThisTurn ??= [])
-    if (used.includes(useKey)) return
+    if (used.includes(useKey)) return true
     used.push(useKey)
   }
   const target = livingEnemies(state)[0]
-  const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
+  const context: PlayContext = {
+    enemyUid: target?.uid ?? null,
+    playerId: player.id,
+    shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
+    shivTargetIndex: 0,
+    invalidShivTarget: false,
+  }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
-    if (!allowCombatOver && combatIsOver(state)) return
+    if (!allowCombatOver && combatIsOver(state)) return true
   }
+  return !context.invalidShivTarget
 }
 
 function fireTriggersInner(
