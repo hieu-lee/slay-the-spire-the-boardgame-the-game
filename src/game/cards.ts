@@ -202,6 +202,10 @@ type EffectKind =
   | { kind: 'exhaustFromHand'; amount: number }
   /** Exhaust a chosen range of cards; absent `minimum` means zero is allowed. */
   | { kind: 'exhaustAny'; amount: number; minimum?: number }
+  /** Exhaust every non-Attack still in the player's hand. */
+  | { kind: 'exhaustAllNonAttacks' }
+  /** Gain Block for each card taken by this card's preceding automatic Exhaust. */
+  | { kind: 'gainBlockPerExhaust'; amount: number }
 
 export type CardDef = {
   id: string
@@ -239,6 +243,8 @@ export type CardDef = {
   handEndOfTurn?: HandEndOfTurnEffect[]
   /** Effects printed as "If this card is discarded by a card's effect...". */
   discardReaction?: { effects: Effect[]; exhaust?: boolean }
+  /** Effects printed as "If this card is Exhausted...". */
+  exhaustReaction?: { effects: Effect[] }
   /**
    * For Powers: when the ongoing effect fires once the card is in play. The
    * `effects` list is what the Power DOES each time it triggers, not what
@@ -474,6 +480,20 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'hit', amount: 4 }, { kind: 'exhaustAny', amount: 2, minimum: 1 }],
     },
+  }),
+  second_wind: card({
+    id: 'second_wind', name: 'Second Wind', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'exhaustAllNonAttacks' }, { kind: 'gainBlockPerExhaust', amount: 1 }],
+    upgrade: {
+      effects: [{ kind: 'exhaustAllNonAttacks' }, { kind: 'gainBlockPerExhaust', amount: 2 }],
+    },
+  }),
+  sentinel: card({
+    id: 'sentinel', name: 'Sentinel', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 2, toChosen: true }],
+    exhaustReaction: { effects: [{ kind: 'gainEnergy', amount: 2 }] },
+    upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }] },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.
   // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change

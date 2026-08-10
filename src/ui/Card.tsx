@@ -128,6 +128,8 @@ function effectText(effect: Effect): string {
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`
     case 'exhaustAny': return `exhaust ${effect.minimum ? `${effect.minimum}-${effect.amount}` : `up to ${effect.amount}`} cards from hand${condition}`
+    case 'exhaustAllNonAttacks': return `exhaust all non-Attack cards in hand${condition}`
+    case 'gainBlockPerExhaust': return `gain ${effect.amount} Block per card exhausted${condition}`
   }
 }
 
@@ -198,6 +200,8 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     ...(def.discardReaction?.effects ?? []).map((effect) =>
       `when discarded by a card effect, ${effectText(effect)}`),
     def.discardReaction?.exhaust ? 'exhausts after its discard effect' : '',
+    ...(def.exhaustReaction?.effects ?? []).map((effect) =>
+      `when this card is exhausted, ${effectText(effect)}`),
     def.toDrawTop ? 'returns to the top of your draw pile when played' : '',
     def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',

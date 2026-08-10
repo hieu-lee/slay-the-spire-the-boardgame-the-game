@@ -1391,6 +1391,34 @@ check('Sever Soul+ enforces its one-to-two Exhaust range at room authority', () 
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), choices.map((card) => card.uid))
 })
 
+check('Second Wind and Sentinel resolve their Exhaust rules through room authority', () => {
+  const { room, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const wind = { uid: 'room-second-wind', defId: 'second_wind', upgraded: false }
+  const sentinel = { uid: 'room-second-wind-sentinel', defId: 'sentinel', upgraded: false }
+  const strike = { uid: 'room-second-wind-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [wind, sentinel, strike], energy: 1, block: 0, exhaust: [], discard: [] })
+  apply(room, b.token, { kind: 'playCard', cardUid: wind.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(resolved.block, 1)
+  assertEqual(resolved.energy, 2)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [strike.uid])
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [sentinel.uid])
+
+  const { room: supportRoom, a: supportA, b: supportB } = twoSeatRoom()
+  const supportActor = supportRoom.run.combat.players.find((player) => player.id === supportB.playerId)
+  const supportAlly = supportRoom.run.combat.players.find((player) => player.id === supportA.playerId)
+  const supportSentinel = { uid: 'room-sentinel-support', defId: 'sentinel', upgraded: true }
+  Object.assign(supportActor, { hand: [supportSentinel], energy: 1 })
+  supportAlly.block = 0
+  apply(supportRoom, supportB.token, {
+    kind: 'playCard', cardUid: supportSentinel.uid, playerId: supportAlly.id, preflight: true,
+  })
+  assertEqual(supportRoom.run.combat.players.find((player) => player.id === supportAlly.id).block, 3)
+  assertEqual(supportRoom.run.combat.players.find((player) => player.id === supportActor.id).energy, 0,
+    'playing Sentinel must not fire its Exhaust reaction')
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

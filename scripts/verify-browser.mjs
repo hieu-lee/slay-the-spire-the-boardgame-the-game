@@ -1335,6 +1335,54 @@ check('Sever Soul+ requires one or two Exhaust choices and deals its printed hit
   assertEqual(severSoul.enemies.find((enemy) => enemy.uid === severTarget).hp, 6)
 })
 await shot('06zf-sever-soul-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-second-wind', defId: 'second_wind', upgraded: true },
+      { uid: 'ui-second-wind-sentinel', defId: 'sentinel', upgraded: false },
+      { uid: 'ui-second-wind-defend', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'ui-second-wind-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-second-wind-daze', defId: 'daze', upgraded: false },
+    ],
+    draw: [],
+    discard: [],
+    exhaust: [],
+    powers: [{ uid: 'ui-second-wind-fnp', defId: 'feel_no_pain', upgraded: false }],
+    energy: 1,
+    block: 0,
+  })
+  debug.setRun(run)
+})
+const secondWindCard = page.getByRole('button', { name: /^Second Wind\+,/ })
+await secondWindCard.waitFor()
+const secondWindLabel = await secondWindCard.getAttribute('aria-label')
+const sentinelLabel = await page.getByRole('button', { name: /^Sentinel,/ }).getAttribute('aria-label')
+const dazeFallback = page.getByTitle('Daze')
+const dazeFallbackBox = await dazeFallback.boundingBox()
+const dazeFallbackLayer = await dazeFallback.locator('.card__fallback').evaluate((fallback) =>
+  getComputedStyle(fallback).zIndex)
+assert(dazeFallbackBox?.height > 100, `Daze collapsed to ${dazeFallbackBox?.height ?? 0}px without scan art`)
+assertEqual(dazeFallbackLayer, '0', 'Daze fallback is layered behind its card')
+await shot('06zg-second-wind-exhaust-family')
+await secondWindCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 1)
+const secondWind = await readState()
+check('Second Wind+ exhausts non-Attacks, counts Daze, then resolves Sentinel and Feel No Pain', () => {
+  assert(secondWindLabel.includes('exhaust all non-Attack cards in hand'), secondWindLabel)
+  assert(secondWindLabel.includes('gain 2 Block per card exhausted'), secondWindLabel)
+  assert(sentinelLabel.includes('support effect may target any player'), sentinelLabel)
+  assert(sentinelLabel.includes('when this card is exhausted, gain 2 Energy'), sentinelLabel)
+  assertDeepEqual(secondWind.players[0].hand.map((card) => card.uid), ['ui-second-wind-strike'])
+  assertDeepEqual(secondWind.players[0].exhaust.map((card) => card.uid), [
+    'ui-second-wind-sentinel', 'ui-second-wind-defend',
+  ])
+  assertEqual(secondWind.players[0].block, 9, '6 printed Block plus three Feel No Pain triggers')
+  assertEqual(secondWind.players[0].energy, 2, 'Sentinel did not refund 2 Energy after Second Wind')
+})
+await shot('06zh-second-wind-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

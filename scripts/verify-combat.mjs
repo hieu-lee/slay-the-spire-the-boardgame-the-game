@@ -634,6 +634,45 @@ check('Sever Soul+ requires one choice when possible and accepts either one or t
     'a card may resolve as much as possible when no Exhaust choice exists')
 })
 
+check('Second Wind exhausts every non-Attack, counts Status cards, and resolves Sentinel afterward', () => {
+  for (const upgraded of [false, true]) {
+    const wind = instance('second_wind', upgraded)
+    const attack = instance('strike_ironclad')
+    const sentinel = instance('sentinel')
+    const defend = instance('defend_ironclad')
+    const daze = instance('daze')
+    const state = combat([makePlayer({ hand: [wind, attack, sentinel, defend, daze] })], [makeEnemy()])
+    const played = playCard(state, 'p1', wind.uid, { enemyUid: null, playerId: null })
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [attack.uid])
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [sentinel.uid, defend.uid],
+      'Status cards count as Exhausted but return to their shared supply')
+    assertEqual(played.players[0].block, upgraded ? 6 : 3)
+    assertEqual(played.players[0].energy, 4, 'Sentinel gains 2 Energy only after Second Wind finishes')
+    const blockAt = played.log.indexOf(`Ironclad gains ${upgraded ? 6 : 3} Block`)
+    const energyAt = played.log.indexOf("Ironclad's Sentinel: Ironclad gains 2 Energy")
+    assert(blockAt >= 0 && energyAt > blockAt,
+      `Sentinel resolved before Second Wind finished: ${played.log.join(' | ')}`)
+  }
+})
+
+check('Sentinel only gains Energy when another effect Exhausts it', () => {
+  const sentinel = instance('sentinel', true)
+  const ally = makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, block: 0 })
+  const state = combat([makePlayer({ hand: [sentinel], energy: 1 }), ally], [makeEnemy()])
+  const played = playCard(state, 'p1', sentinel.uid, { enemyUid: null, playerId: 'p2' })
+  assertEqual(played.players[0].energy, 0, 'playing Sentinel incorrectly fired its Exhaust reaction')
+  assertEqual(played.players[1].block, 3, 'Sentinel+ did not give 3 Block to its chosen ally')
+
+  const pact = instance('burning_pact')
+  const fuel = instance('sentinel')
+  const exhausted = playCard(combat([
+    makePlayer({ hand: [pact, fuel], energy: 1, draw: [instance('strike_ironclad'), instance('defend_ironclad')] }),
+  ], [makeEnemy()]), 'p1', pact.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [fuel.uid],
+  })
+  assertEqual(exhausted.players[0].energy, 2, 'Exhausted Sentinel did not gain its printed 2 Energy')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1886,6 +1925,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'battle_trance', hand: [3, 4] },
     { id: 'burning_pact', hand: [2, 3] },
     { id: 'sever_soul', enemyHp: [17, 16] },
+    { id: 'second_wind', block: [0, 0] },
+    { id: 'sentinel', block: [2, 3], energy: [E - 1, E - 1] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

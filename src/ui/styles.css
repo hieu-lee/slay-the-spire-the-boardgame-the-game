@@ -778,6 +778,7 @@ button:disabled {
   position: relative;
   flex: 0 0 auto;
   width: var(--card-width);
+  aspect-ratio: 1 / var(--card-ratio);
   padding: 0;
   background: none;
   border: 2px solid transparent;
@@ -788,6 +789,8 @@ button:disabled {
 }
 
 .card__art {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   border-radius: 6px;
@@ -808,6 +811,7 @@ button:disabled {
 
 .card__cost {
   position: absolute;
+  z-index: 2;
   top: 2px;
   left: 2px;
   display: grid;
@@ -832,6 +836,7 @@ button:disabled {
  */
 .card__aoe {
   position: absolute;
+  z-index: 2;
   /* Below the title banner, over the art. The banner sweeps across the top of
      every scan, so a badge at the top-right clips the last letters of a long
      name — "Dagger Spray" loses its y at the smallest card size. */
@@ -1685,7 +1690,7 @@ button:disabled {
   color: var(--ink-dim);
   background: var(--bg-raised);
   border-radius: 6px;
-  z-index: -1;
+  z-index: 0;
 }
 
 /* ---------- map paths ---------- */

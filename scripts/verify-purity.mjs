@@ -56,7 +56,25 @@ const party = [
 /** A run parked in its opening combat, with a hand dealt. */
 function inCombat(seed = 4242) {
   const run = createRun(seed, party)
-  return enterRoom(run, roomChoices(run)[0].id)
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const player = entered.combat.players[0]
+  if (player.hand.some((card) => card.defId.startsWith('strike'))) return entered
+  // Reward-card additions legitimately change seeded shuffles; mutation checks
+  // need a known playable card, not a lucky opening hand.
+  return {
+    ...entered,
+    combat: {
+      ...entered.combat,
+      players: entered.combat.players.map((candidate) => candidate.id === player.id
+        ? {
+            ...candidate,
+            hand: [...candidate.hand, {
+              uid: 'purity-fixture-strike', defId: 'strike_ironclad', upgraded: false,
+            }],
+          }
+        : candidate),
+    },
+  }
 }
 
 suite('purity')

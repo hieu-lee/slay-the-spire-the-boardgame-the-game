@@ -1007,6 +1007,38 @@ try {
   })
   liveRoom.run.combat = severRestore
 
+  const secondWindRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeSecondWind = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeSecondWind = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annBeforeSecondWind, {
+    hand: [
+      { uid: 'online-second-wind', defId: 'second_wind', upgraded: true },
+      { uid: 'online-second-wind-sentinel', defId: 'sentinel', upgraded: false },
+      { uid: 'online-second-wind-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 1, block: 0,
+    powers: [{ uid: 'online-second-wind-fnp', defId: 'feel_no_pain', upgraded: false }],
+  })
+  Object.assign(boBeforeSecondWind, { energy: 0, miracles: 1 })
+  const publishSecondWind = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishSecondWind.ok, 'could not publish the Second Wind fixture')
+  await a.getByRole('button', { name: /^Second Wind\+,/ }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Second Wind+,')))
+  const completedSecondWind = await snapshot(a)
+  check('Second Wind and Sentinel resolve through the two-client room', () => {
+    const ann = completedSecondWind.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.energy, 2)
+    assertEqual(ann.block, 3, '2 printed Block plus Feel No Pain')
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-second-wind-strike'])
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-second-wind-sentinel'])
+  })
+  liveRoom.run.combat = secondWindRestore
+
   const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   const unloadRestore = {
