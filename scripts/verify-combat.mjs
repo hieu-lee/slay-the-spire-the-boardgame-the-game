@@ -1,4 +1,5 @@
 import {
+  activatePower,
   activatePotion,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
@@ -2204,6 +2205,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'havoc', hand: [1, 1] },
+    { id: 'combust', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'headbutt', enemyHp: [18, 17] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
@@ -5189,6 +5191,47 @@ check('a lethal potion ends combat immediately and cannot be used outside the Pl
     activatePotion(enemyTurnState, 'p1', 'fire_potion', { enemyUid: 'e1' }) === enemyTurnState,
     'potions are not usable during the Enemy Turn',
   )
+})
+
+check('Combust damages its chosen row and boss once per turn', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('combust', upgraded)
+    const state = combat(
+      [makePlayer({ powers: [power] })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 6 }),
+        makeEnemy({ uid: 'left-two', row: 0, hp: 6 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 6 }),
+        makeEnemy({ uid: 'boss', row: 2, isBoss: true, hp: 6 }),
+      ],
+    )
+    const missing = activatePower(state, 'p1', power.uid)
+    assertEqual(missing, state, 'Combust needs a live row target')
+    const used = activatePower(state, 'p1', power.uid, { enemyRow: 0 })
+    const damage = upgraded ? 2 : 1
+    assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6 - damage, 6 - damage, 6, 6 - damage])
+    assert(used.powerTriggersUsedThisTurn.includes(`p1/power:${power.uid}`))
+    assertEqual(activatePower(used, 'p1', power.uid, { enemyRow: 1 }), used,
+      'Combust cannot activate twice in one turn')
+  }
+})
+
+check('Combust can choose an empty player row, but pauses for a forced card', () => {
+  const power = instance('combust')
+  const state = combat(
+    [makePlayer({ powers: [power] }), makePlayer({ id: 'p2', name: 'Ally', row: 1 })],
+    [makeEnemy({ uid: 'left', row: 0 }), makeEnemy({ uid: 'boss', isBoss: true, hp: 6 })],
+  )
+  const emptyRow = activatePower(state, 'p1', power.uid, { enemyRow: 1 })
+  assertDeepEqual(emptyRow.enemies.map((enemy) => enemy.hp), [6, 5], 'only the boss occupies the empty row')
+  const forced = {
+    ...state,
+    startTurnProgress: { choices: [], forcedCard: {
+      playerId: 'p2', cardUid: 'forced', sourceCardId: 'havoc', exhaustNonPower: false,
+    } },
+  }
+  assertEqual(activatePower(forced, 'p1', power.uid, { enemyRow: 0 }), forced,
+    'Combust bypassed the unresolved forced card')
 })
 
 report('combat')

@@ -403,8 +403,9 @@ check('every Power declares exactly one resolution model', () => {
     if (def.type !== 'power') continue
     const persistent = def.corruptSkills === true || def.retainBlock === true
     assert(
-      [def.trigger !== undefined, def.resolvesOnPlay === true, persistent].filter(Boolean).length === 1,
-      `${def.id} must either trigger later, resolve once when played, or declare a persistent modifier`,
+      [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
+        .filter(Boolean).length === 1,
+      `${def.id} must trigger later, activate during the turn, resolve when played, or be persistent`,
     )
   }
 })
@@ -414,6 +415,7 @@ check('no non-Power card carries a trigger', () => {
     if (def.type === 'power') continue
     assert(
       def.trigger === undefined && def.resolvesOnPlay !== true &&
+        def.activeAbility !== true &&
         def.corruptSkills !== true && def.retainBlock !== true,
       `${def.id} is a ${def.type} with Power-only resolution metadata`,
     )

@@ -505,7 +505,103 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    hand: [], powers: [{ uid: 'online-combust', defId: 'combust', upgraded: true }],
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  liveRoom.run.combat.powerTriggersUsedThisTurn = []
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false })
+  }
+  const publishCombustFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishCombustFixture.ok, 'could not publish the online Combust fixture')
+  await a.getByRole('button', { name: 'Use Combust+' }).waitFor()
+  const foreignCombustControls = await b.getByRole('button', { name: 'Use Combust+' }).count()
+  await a.getByRole('button', { name: 'Use Combust+' }).click()
+  await a.getByText('Choose a row for Combust+').waitFor()
+  let failedCombustRefreshes = 0
+  const combustFailureStart = failures.length
+  const combustRoomPattern = `**/api/rooms/${code}`
+  await a.route(combustRoomPattern, (route) => {
+    if (route.request().method() === 'GET' && failedCombustRefreshes < 3) {
+      failedCombustRefreshes += 1
+      return route.abort('connectionreset')
+    }
+    return route.continue()
+  })
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
+  await a.getByRole('button', { name: 'Target row 1' }).click()
+  await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
+  await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
+    .some((button) => button.textContent?.includes('Use Combust+') && button.disabled))
+  const lockedUnknownCombust = await a.getByRole('button', { name: 'Use Combust+' }).isDisabled()
+  await a.getByText('Choose a row for Combust+').waitFor()
+  await a.unroute(combustRoomPattern)
+  const expectedCombustFailures = failures.splice(combustFailureStart)
+  check('an unknown uncommitted Combust stays locked, then restages after an authoritative refresh', () => {
+    assertEqual(failedCombustRefreshes, 3)
+    assertEqual(expectedCombustFailures.length, 4)
+    assert(expectedCombustFailures.every((failure) => failure.includes('ERR_CONNECTION_RESET')))
+    assert(lockedUnknownCombust)
+    assertEqual(liveRoom.run.combat.powerTriggersUsedThisTurn.includes(`${annLive.id}/power:online-combust`), false)
+  })
+  let submittedCombust
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedCombust = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: 'Target row 1' }).click()
+  for (let attempt = 0; attempt < 50 &&
+    !liveRoom.run.combat.powerTriggersUsedThisTurn.includes(`${annLive.id}/power:online-combust`); attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const onlineCombust = liveRoom.run.combat
+  check('online Combust is private to its owner and routes its row target authoritatively', () => {
+    assertEqual(foreignCombustControls, 0)
+    assertEqual(submittedCombust.kind, 'activatePower')
+    assertEqual(submittedCombust.powerUid, 'online-combust')
+    assertEqual(submittedCombust.enemyRow, 0)
+    assertDeepEqual(onlineCombust.enemies.map((enemy) => enemy.hp), [8, 8, 10, 8])
+  })
+  await a.screenshot({ path: join(outDir, '02a-combust-resolved.png'), fullPage: true })
+
+  liveRoom.run.combat.powerTriggersUsedThisTurn = []
+  for (const enemy of liveRoom.run.combat.enemies) Object.assign(enemy, { hp: 10, block: 0, dead: false })
+  const boForCombustRestage = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  boForCombustRestage.miracles = 1
+  boForCombustRestage.energy = 2
+  const publishCombustRestage = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishCombustRestage.ok, 'could not publish the Combust same-seat fixture')
+  await a.getByRole('button', { name: 'Use Combust+' }).click()
+  await a.getByText('Choose a row for Combust+').waitFor()
+  const annCombustCredentials = await credentials(a)
+  const sameSeatCombust = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': annCombustCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'activatePower', powerUid: 'online-combust', enemyRow: 0, preflight: true,
+    } }),
+  })
+  assert(sameSeatCombust.ok, 'could not activate Combust through the same seat')
+  await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
+  const staleCombustRows = await a.getByRole('button', { name: /^Target row/ }).count()
+  check('a same-seat authoritative activation clears stale Combust targeting', () => {
+    assertEqual(staleCombustRows, 0)
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [{ uid: 'online-headbutt', defId: 'headbutt', upgraded: true }],
+    powers: [],
     discard: [
       { uid: 'online-headbutt-defend', defId: 'defend_ironclad', upgraded: false },
       { uid: 'online-headbutt-bash', defId: 'bash', upgraded: false },

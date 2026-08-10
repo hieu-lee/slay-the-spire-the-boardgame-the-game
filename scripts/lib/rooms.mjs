@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto'
 import {
   CAPS,
   abandonForcedCard,
+  activatePower,
   activatePotion,
   advanceAct,
   cardDef,
@@ -907,6 +908,18 @@ function dispatch(run, seat, action) {
       }
       if (combat === run.combat && action.preflight === true) {
         fail('That card play is no longer legal; choose again')
+      }
+      return combat === run.combat ? run : { ...run, combat }
+    }
+
+    case 'activatePower': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = activatePower(run.combat, seat.playerId, action.powerUid, {
+        enemyUid: action.enemyUid ?? null,
+        enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
+      })
+      if (combat === run.combat && action.preflight === true) {
+        fail('That Power ability is no longer legal; choose again')
       }
       return combat === run.combat ? run : { ...run, combat }
     }

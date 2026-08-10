@@ -50,7 +50,7 @@ export type CombatState = {
   enemies: Enemy[]
   discardedThisTurn: string[]
   stanceChangedThisTurn: string[]
-  /** Power instance ids already spent by a printed once-per-turn trigger. */
+  /** Power instance ids already spent by a printed once-per-turn ability or trigger. */
   powerTriggersUsedThisTurn: string[]
   /** Unresolved Start-of-Turn work, including Mayhem's private forced play. */
   startTurnProgress?: {
@@ -1614,8 +1614,9 @@ export function cardNeedsEnemy(
   actor?: CountablePlayer,
   includeEvokes = true,
   energySpent?: number,
+  forActivation = false,
 ): boolean {
-  if (def.type === 'power' && def.trigger) return false
+  if (def.type === 'power' && (def.trigger || (def.activeAbility && !forActivation))) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
   const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
   return effects.some((effect) =>
@@ -2068,6 +2069,52 @@ export function playCard(
 
   finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
   return finishForcedCardPlay(settle(next), forcedChoices)
+}
+
+export type PowerContext = { enemyUid?: string | null; enemyRow?: number | null }
+
+export const powerAbilityKey = (playerId: string, powerUid: string): string =>
+  `${playerId}/power:${powerUid}`
+
+export function powerAbilityUsed(state: CombatState, playerId: string, powerUid: string): boolean {
+  return state.powerTriggersUsedThisTurn.includes(powerAbilityKey(playerId, powerUid))
+}
+
+/** Activates a printed once-per-turn Power during the shared Player Turn. */
+export function activatePower(
+  state: CombatState,
+  playerId: string,
+  powerUid: string,
+  context: PowerContext = {},
+): CombatState {
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard) return state
+  const player = findPlayer(state, playerId)
+  const held = player?.powers.find((power) => power.uid === powerUid)
+  if (!player || player.dead || !held) return state
+  const def = faceOf(cardDef(held.defId), held.upgraded)
+  if (!def.activeAbility || !def.oncePerTurn || powerAbilityUsed(state, playerId, powerUid)) return state
+  if (def.target === 'row') {
+    if (!Number.isInteger(context.enemyRow) || !state.players.some((seat) => seat.row === context.enemyRow)) {
+      return state
+    }
+  } else if (cardNeedsEnemy(def, player, true, undefined, true) &&
+    resolveEnemyTargets(state, def.target ?? 'enemy', context.enemyUid ?? null).length === 0) return state
+
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, powerUid))
+  const playContext: PlayContext = {
+    enemyUid: context.enemyUid ?? null,
+    enemyRow: context.enemyRow,
+    playerId,
+    sourcePowerUid: powerUid,
+  }
+  for (const effect of def.effects) {
+    applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', playContext,
+      `${actor.name}'s ${def.name}`)
+    if (combatIsOver(next)) return settle(next)
+  }
+  return settle(next)
 }
 
 /**
@@ -2918,7 +2965,7 @@ function resolveTriggerSource(
   enemyUid?: string,
   enemyRow?: number,
 ): boolean {
-  const useKey = `${player.id}/${source.id}`
+  const useKey = source.powerUid ? powerAbilityKey(player.id, source.powerUid) : `${player.id}/${source.id}`
   if (source.oncePerTurn) {
     const used = (state.powerTriggersUsedThisTurn ??= [])
     if (used.includes(useKey)) return true

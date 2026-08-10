@@ -283,6 +283,8 @@ export type CardDef = {
   trigger?: Trigger
   /** This Power may resolve at most once between Start of Turn resets. */
   oncePerTurn?: boolean
+  /** This Power is activated by its owner during the Player Turn. */
+  activeAbility?: boolean
   /** A Power whose printed effects happen once when played, as Inflame does. */
   resolvesOnPlay?: boolean
   /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
@@ -616,6 +618,12 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'onExhaust' },
     effects: [{ kind: 'draw', amount: 1 }],
     upgrade: { cost: 1 },
+  }),
+  combust: card({
+    id: 'combust', name: 'Combust', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 1,
+    target: 'row', activeAbility: true, oncePerTurn: true,
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
   }),
   inflame: card({
     id: 'inflame', name: 'Inflame', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 2,

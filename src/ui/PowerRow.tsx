@@ -231,6 +231,7 @@ export function describePower(def: CardDef): string {
   const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
   if (!effects) return def.name
   const what = `${effects}${where}`
+  if (def.activeAbility) return `${def.name}: ${what}, activate once per turn`
   return when
     ? `${def.name}: ${what} ${when}${def.oncePerTurn ? ', once per turn' : ''}`
     : `${def.name}: ${what}`

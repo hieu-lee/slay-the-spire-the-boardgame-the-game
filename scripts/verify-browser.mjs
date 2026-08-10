@@ -3486,8 +3486,10 @@ await page.evaluate(() => {
       uid: `ui-noxious-${ally.id}-${index}`, defId: 'defend_ironclad', upgraded: false,
     })) })
   }
-  run.combat.enemies = run.combat.enemies.map((enemy) => ({
-    ...enemy, hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true,
+  const enemy = run.combat.enemies[0]
+  run.combat.enemies = [0, 1, 2].map((index) => ({
+    ...enemy, uid: `ui-noxious-enemy-${index}`, row: index,
+    hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true,
   }))
   Object.assign(run.combat.enemies[0], { hp: 0, dead: true })
   debug.setRun(run)
@@ -5287,6 +5289,69 @@ check('Try again preserves every Ascension setup modifier', () => {
   assertEqual(ascensionRetry.players[0].hp, 8)
   assert(ascensionRetry.players[0].deck.some((card) => card.defId === 'ascenders_bane'))
 })
+
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'combust-ui'))
+await page.locator('.room--reachable').first().click()
+await page.locator('.combat').waitFor()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
+    row: 0,
+    hand: [],
+    powers: [{ uid: 'ui-combust', defId: 'combust', upgraded: true }],
+  })
+  run.combat.phase = 'player'
+  run.combat.turn = 1
+  run.combat.powerTriggersUsedThisTurn = []
+  run.combat.enemies = [
+    { ...source, uid: 'combust-left-a', defId: 'cultist', row: 0, isBoss: false },
+    { ...source, uid: 'combust-left-b', defId: 'green_louse', row: 0, isBoss: false },
+    { ...source, uid: 'combust-right', defId: 'red_louse', row: 1, isBoss: false },
+    { ...source, uid: 'combust-boss', defId: 'gremlin_nob', row: 2, isBoss: true },
+  ].map((enemy) => ({ ...enemy, hp: 10, maxHp: 10, block: 0, dead: false }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Use Combust+' }).click()
+await page.getByText('Choose a row for Combust+').waitFor()
+await page.getByRole('button', { name: /^Cultist,/ }).scrollIntoViewIfNeeded()
+await shot('16a-combust-row-target')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.hand = [{ uid: 'ui-combust-forced', defId: 'strike_ironclad', upgraded: false }]
+  run.combat.startTurnProgress = { choices: [], forcedCard: {
+    playerId: actor.id, cardUid: 'ui-combust-forced', sourceCardId: 'havoc', exhaustNonPower: false,
+  } }
+  debug.setRun(run)
+})
+await page.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
+const stagedCombustDuringForcedCard = await page.getByText('Choose a row for Combust+').count()
+check('a forced card clears a staged Combust without changing phase', () => {
+  assertEqual(stagedCombustDuringForcedCard, 0)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = []
+  run.combat.startTurnProgress = undefined
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Use Combust+' }).click()
+await page.getByRole('button', { name: 'Target row 1' }).click()
+const combustResolved = await readState()
+const combustLocked = await page.getByRole('button', { name: 'Combust+ used' }).isDisabled()
+check('Combust+ visibly targets a row, includes the boss, and locks after use', () => {
+  assertDeepEqual(combustResolved.enemies.map((enemy) => enemy.hp), [8, 8, 10, 8])
+  assert(combustLocked)
+  assert(combustResolved.powerTriggersUsedThisTurn.includes(
+    `${combustResolved.players[0].id}/power:ui-combust`,
+  ))
+})
+await shot('16b-combust-resolved')
 
 writeFileSync(
   join(outDir, 'summary.json'),

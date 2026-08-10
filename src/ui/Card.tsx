@@ -219,7 +219,8 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.retainBlock ? 'at start of turn, keep your leftover Block from last turn, maximum Block 20' : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',
-    def.oncePerTurn ? 'once per turn' : '',
+    def.activeAbility ? 'activate once per turn during your turn' : '',
+    def.oncePerTurn && !def.activeAbility ? 'once per turn' : '',
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
       : def.effects.map(effectText)),

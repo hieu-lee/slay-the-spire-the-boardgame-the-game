@@ -4032,4 +4032,40 @@ check('a fixed-size card-effect uid list is capped above every supported printed
   assertDeepEqual(uidList([1, 'a', null]), ['a'], 'non-strings are still dropped')
 })
 
+check('online seats can activate only their own once-per-turn Combust', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const power = { uid: 'room-combust', defId: 'combust', upgraded: true }
+  actor.powers = [power]
+  room.run.combat.powerTriggersUsedThisTurn = []
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const rowHp = room.run.combat.enemies
+    .filter((enemy) => enemy.isBoss || enemy.row === target.row)
+    .map((enemy) => [enemy.uid, enemy.hp])
+
+  let denied = null
+  try {
+    apply(room, b.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'another seat activated the Ironclad power')
+  assertDeepEqual(room.run.combat.enemies
+    .filter((enemy) => enemy.isBoss || enemy.row === target.row)
+    .map((enemy) => [enemy.uid, enemy.hp]), rowHp, 'the refused action changed combat')
+
+  apply(room, a.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  const seen = snapshotFor(room, b.token).run.combat
+  for (const [uid, hp] of rowHp) assertEqual(seen.enemies.find((enemy) => enemy.uid === uid).hp, hp - 2)
+  assert(seen.powerTriggersUsedThisTurn.includes(`${a.playerId}/power:${power.uid}`))
+
+  let repeated = null
+  try {
+    apply(room, a.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  } catch (error) {
+    repeated = error
+  }
+  assertEqual(repeated?.name, 'RoomError', 'Combust activated twice in one turn')
+})
+
 report('co-op rooms')
