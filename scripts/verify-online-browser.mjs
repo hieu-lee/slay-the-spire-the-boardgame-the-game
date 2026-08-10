@@ -385,8 +385,76 @@ try {
     assert(boPotions.includes('Block Potion'))
     assertEqual(foreignPotionControls, 0)
   })
-  const annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
-  const boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  let annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  let boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const previewCredentials = await credentials(b)
+  const boBeforeFinale = structuredClone({
+    hand: boLive.hand,
+    draw: boLive.draw,
+    energy: boLive.energy,
+    miracles: boLive.miracles,
+  })
+  Object.assign(boLive, {
+    hand: [{ uid: 'online-grand-finale', defId: 'grand_finale', upgraded: false }],
+    draw: [{ uid: 'online-finale-draw', defId: 'defend_silent', upgraded: false }],
+    energy: 0,
+    miracles: 1,
+  })
+  const publishLockedFinale = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishLockedFinale.ok, 'could not publish the locked Grand Finale fixture')
+  const onlineFinale = b.getByRole('button', { name: /^Grand Finale,/ })
+  await onlineFinale.waitFor()
+  const finaleLockedOnline = await onlineFinale.isDisabled()
+  const hiddenDrawSnapshot = await snapshot(b)
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boLive, { draw: [], miracles: 1 })
+  const publishUnlockedFinale = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishUnlockedFinale.ok, 'could not publish the unlocked Grand Finale fixture')
+  await b.waitForFunction(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
+    return button && !button.disabled
+  })
+  const finaleUnlockedOnline = await onlineFinale.isEnabled()
+  await onlineFinale.click()
+  await b.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boLive, {
+    draw: [{ uid: 'online-finale-race-draw', defId: 'strike_silent', upgraded: false }],
+    miracles: 1,
+  })
+  const publishInvalidatedFinale = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishInvalidatedFinale.ok, 'could not publish the invalidated Grand Finale fixture')
+  await b.waitForFunction(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
+    return button?.disabled && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
+  })
+  const finaleClearedAfterRefill = await b.locator('.enemy--targeted').count() === 0
+  check('online Grand Finale uses the public draw count without revealing the pile', () => {
+    const visibleBo = hiddenDrawSnapshot.run.combat.players
+      .find((player) => player.id === hiddenDrawSnapshot.you.playerId)
+    assertEqual(visibleBo.drawCount, 1)
+    assertEqual(visibleBo.draw, undefined)
+    assert(finaleLockedOnline, 'Grand Finale was enabled while the hidden draw pile had a card')
+    assert(finaleUnlockedOnline, 'Grand Finale stayed disabled after the hidden draw pile emptied')
+    assert(finaleClearedAfterRefill, 'a staged Grand Finale kept its targets after the draw pile refilled')
+  })
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boLive, boBeforeFinale)
   annLive.hand = [
     { uid: 'online-acrobatics', defId: 'acrobatics', upgraded: false },
     { uid: 'online-existing-defend', defId: 'defend_ironclad', upgraded: false },
@@ -401,7 +469,6 @@ try {
   annLive.miracles = 1
   boLive.miracles = 1
   boLive.energy = 2
-  const previewCredentials = await credentials(b)
   const publishPreviewFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },

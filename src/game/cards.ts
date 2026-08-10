@@ -68,9 +68,11 @@ export type Condition =
   | { kind: 'goldAtLeast'; amount: number }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
+  /** Grand Finale: the face-down draw pile is empty. */
+  | { kind: 'drawPileEmpty' }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
-export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength' | 'cardsInHand'
+export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength' | 'cardsInHand' | 'skillsInHand'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -134,6 +136,7 @@ type EffectKind =
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
+  | { kind: 'multiplyPoison'; factor: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
@@ -180,6 +183,8 @@ export type CardDef = {
   /** Reduce this card's Energy cost for each Power its owner has in play. */
   powerCostReduction?: number
   effects: Effect[]
+  /** A condition that must hold before the card may be played at all. */
+  playCondition?: Condition
   /** Mutually exclusive printed effect lines chosen when this card is played. */
   modes?: CardMode[]
   /** Where this card's offensive effects land. Defaults to a single enemy. */
@@ -1585,6 +1590,30 @@ export const CARDS: Record<string, CardDef> = {
   meteor_strike: card({
     id: 'meteor_strike', name: 'Meteor Strike', owner: 'defect', type: 'attack', rarity: 'rare', cost: 5,
     powerCostReduction: 1,
+    effects: [{ kind: 'hit', amount: 10 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 12 }] },
+  }),
+  catalyst: card({
+    id: 'catalyst', name: 'Catalyst', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'multiplyPoison', factor: 2 }],
+    upgrade: { effects: [{ kind: 'multiplyPoison', factor: 3 }] },
+  }),
+  flechettes: card({
+    id: 'flechettes', name: 'Flechettes', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'skillsInHand' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 1, per: 'skillsInHand' } }] },
+  }),
+  adrenaline: card({
+    id: 'adrenaline', name: 'Adrenaline', owner: 'silent', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'gainEnergy', amount: 1 }, { kind: 'draw', amount: 2 }],
+    upgrade: { effects: [{ kind: 'gainEnergy', amount: 2 }, { kind: 'draw', amount: 2 }] },
+  }),
+  grand_finale: card({
+    id: 'grand_finale', name: 'Grand Finale', owner: 'silent', type: 'attack', rarity: 'rare', cost: 0,
+    target: 'row',
+    playCondition: { kind: 'drawPileEmpty' },
     effects: [{ kind: 'hit', amount: 10 }],
     upgrade: { effects: [{ kind: 'hit', amount: 12 }] },
   }),

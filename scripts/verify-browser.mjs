@@ -1358,6 +1358,68 @@ await shot('07g-power-discounted-attacks')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.players[0], { name: 'Silent', character: 'silent' })
+  Object.assign(run.combat.players[0], {
+    name: 'Silent',
+    character: 'silent',
+    hand: [
+      { uid: 'ui-adrenaline', defId: 'adrenaline', upgraded: true },
+      { uid: 'ui-catalyst', defId: 'catalyst', upgraded: true },
+      { uid: 'ui-flechettes', defId: 'flechettes', upgraded: true },
+      { uid: 'ui-grand-finale', defId: 'grand_finale', upgraded: true },
+    ],
+    draw: [
+      { uid: 'ui-final-deflect', defId: 'deflect', upgraded: false },
+      { uid: 'ui-final-acrobatics', defId: 'acrobatics', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 0,
+    orbs: [null, null, null],
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: 20 + index, maxHp: 20 + index, block: 0, poison: 2, dead: false,
+  }))
+  run.combat.log = []
+  debug.setRun(run)
+})
+const finaleBeforeDraw = page.getByRole('button', { name: /^Grand Finale\+,/ })
+const finaleDisabledBeforeDraw = await finaleBeforeDraw.isDisabled()
+const finaleLabelBeforeDraw = await finaleBeforeDraw.getAttribute('aria-label')
+check('Grand Finale+ is disabled and explains its empty-draw requirement', () => {
+  assert(finaleDisabledBeforeDraw, 'Grand Finale should be disabled with cards in draw')
+  assert(finaleLabelBeforeDraw?.includes('draw pile is empty'))
+})
+await page.getByRole('button', { name: /^Adrenaline\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw.length === 0)
+const afterAdrenaline = await readState()
+const finaleEnabledAfterDraw = !(await page.getByRole('button', { name: /^Grand Finale\+,/ }).isDisabled())
+check('Adrenaline+ gains 2 Energy, draws 2, and unlocks Grand Finale+', () => {
+  assertEqual(afterAdrenaline.players[0].energy, 2)
+  assertEqual(afterAdrenaline.players[0].hand.length, 5)
+  assert(finaleEnabledAfterDraw)
+})
+await shot('07h-grand-finale-unlocked')
+await page.getByRole('button', { name: /^Catalyst\+,/ }).click()
+await page.locator('.enemy').first().click()
+await page.getByRole('button', { name: /^Flechettes\+,/ }).click()
+await page.locator('.enemy').first().click()
+await page.getByRole('button', { name: /^Grand Finale\+,/ }).click()
+await page.locator('.enemy').first().click()
+const silentCombo = await readState()
+check('the Silent combo multiplies Poison, counts Skills, and lands Grand Finale+', () => {
+  const target = silentCombo.enemies.find((enemy) => enemy.poison === 6)
+  assert(target, 'Catalyst+ did not triple the targeted enemy Poison')
+  assertEqual(target.hp, target.maxHp - 15, 'Flechettes+ for 3 then Grand Finale+ for 12')
+  assertEqual(silentCombo.players[0].energy, 0)
+  assertEqual(silentCombo.players[0].exhaust.length, 2)
+})
+await shot('07i-silent-poison-finale-combo')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
@@ -2383,7 +2445,7 @@ const stalePredator = await readState()
 check('a staged card drops a primary target defeated by a teammate', () => {
   assert(stalePredator.players[0].hand.some((card) => card.uid === 'h-predator'))
 })
-await page.locator('.enemy[aria-label*="9 of 9 hit points"]').click()
+await page.locator('.enemy--targeted:not(:disabled)').first().click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose who gets it'))
 await page.locator('.seat:not(.seat--viewer)').click()
 const afterPredator = await readState()

@@ -35,6 +35,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   block: 'Block',
   strength: 'Strength',
   cardsInHand: 'other card in hand',
+  skillsInHand: 'Skill in hand',
 }
 
 function conditionText(condition: Condition): string {
@@ -51,6 +52,7 @@ function conditionText(condition: Condition): string {
     case 'hasNoAttacksInHand': return 'you have no Attacks in hand'
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
+    case 'drawPileEmpty': return 'your draw pile is empty'
   }
 }
 
@@ -83,6 +85,7 @@ function effectText(effect: Effect): string {
       ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
       : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
     case 'poison': return `apply ${effect.amount} Poison${condition}`
+    case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
@@ -162,6 +165,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.powerCostReduction
       ? `costs ${def.powerCostReduction} less for each Power you have in play`
       : '',
+    def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)

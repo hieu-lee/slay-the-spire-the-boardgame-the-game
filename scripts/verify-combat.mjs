@@ -1785,6 +1785,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
+    { id: 'catalyst', exhaust: [1, 1] },
+    { id: 'flechettes', enemyHp: [20, 19] },
+    { id: 'adrenaline', energy: [6, 6], hand: [2, 2], exhaust: [1, 1] },
+    { id: 'grand_finale', player: { draw: [] }, enemyHp: [10, 8] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2630,6 +2634,52 @@ check('Consume, Double Energy, Streamline, and Meteor Strike use their printed b
     const evoked = playCard(state, 'p1', dual.uid, context)
     if (orb === 'frost') assertEqual(evoked.players[0].block, expected)
     else assertEqual(evoked.enemies[0].hp, expected)
+  }
+})
+
+check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {
+  for (const upgraded of [false, true]) {
+    const catalyst = instance('catalyst', upgraded)
+    const poisoned = playCard(combat([
+      makePlayer({ character: 'silent', hand: [catalyst] }),
+    ], [makeEnemy({ poison: 3 })]), 'p1', catalyst.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(poisoned.enemies[0].poison, upgraded ? 9 : 6)
+    assertEqual(poisoned.players[0].exhaust.length, 1)
+
+    const flechettes = instance('flechettes', upgraded)
+    const skills = [instance('deflect'), instance('acrobatics')]
+    const counted = playCard(combat([
+      makePlayer({ character: 'silent', hand: [flechettes, ...skills, instance('slice')] }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', flechettes.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(counted.enemies[0].hp, upgraded ? 17 : 18)
+
+    const adrenaline = instance('adrenaline', upgraded)
+    const drawn = [instance('strike_silent'), instance('defend_silent')]
+    const surged = playCard(combat([
+      makePlayer({ character: 'silent', hand: [adrenaline], draw: drawn, energy: 2 }),
+    ], [makeEnemy()]), 'p1', adrenaline.uid, { enemyUid: null, playerId: null })
+    assertEqual(surged.players[0].energy, upgraded ? 4 : 3)
+    assertDeepEqual(surged.players[0].hand.map((card) => card.uid), drawn.map((card) => card.uid))
+    assertEqual(surged.players[0].exhaust.length, 1)
+
+    const finale = instance('grand_finale', upgraded)
+    const blocked = combat([
+      makePlayer({ character: 'silent', hand: [finale], draw: [instance('defend_silent')] }),
+    ], [makeEnemy()])
+    assertEqual(
+      playCard(blocked, 'p1', finale.uid, { enemyUid: 'e1', playerId: null }),
+      blocked,
+      'Grand Finale is refused while the draw pile has a card',
+    )
+    const played = playCard(combat([
+      makePlayer({ character: 'silent', hand: [finale], draw: [] }),
+    ], [
+      makeEnemy({ uid: 'left', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', row: 2, hp: 20, maxHp: 20, isBoss: true }),
+    ]), 'p1', finale.uid, { enemyUid: 'left', playerId: null })
+    const damage = upgraded ? 12 : 10
+    assertDeepEqual(played.enemies.map((enemy) => enemy.hp), [20 - damage, 20, 20 - damage])
   }
 })
 

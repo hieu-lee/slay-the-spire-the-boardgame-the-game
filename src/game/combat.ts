@@ -342,12 +342,26 @@ function holds(
       return actor.gold >= condition.amount
     case 'orbsAtLeast':
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
+    case 'drawPileEmpty':
+      return actor.draw.length === 0
   }
 }
 
 /** Whether a conditional printed clause applies to the current board. */
 export function effectIsActive(effect: Effect, state: CombatState, actor: Player): boolean {
   return !effect.when || holds(effect.when, state, actor)
+}
+
+/** Whether the card's printed play restriction currently allows it. */
+export function cardPlayConditionMet(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  drawCount = actor.draw.length,
+): boolean {
+  // Online snapshots hide draw identities but publish their count.
+  if (def.playCondition?.kind === 'drawPileEmpty') return drawCount === 0
+  return !def.playCondition || holds(def.playCondition, state, actor)
 }
 
 type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength'> & {
@@ -367,6 +381,8 @@ function countOf(count: CountOf, actor: CountablePlayer): number {
       return actor.strength
     case 'cardsInHand':
       return actor.hand?.length ?? 0
+    case 'skillsInHand':
+      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
   }
 }
 
@@ -579,6 +595,17 @@ function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.poison
         target.poison = gainPoison(target.poison, effect.amount, totalPoisonInPlay(state.enemies))
+        if (target.poison > before) {
+          note(`${enemyLabel(state.enemies, target)} takes ${target.poison - before} Poison`)
+        }
+      }
+      return
+    }
+    case 'multiplyPoison': {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
+        const before = target.poison
+        const added = before * Math.max(0, effect.factor - 1)
+        target.poison = gainPoison(before, added, totalPoisonInPlay(state.enemies))
         if (target.poison > before) {
           note(`${enemyLabel(state.enemies, target)} takes ${target.poison - before} Poison`)
         }
@@ -971,7 +998,8 @@ export function previewCardChoice(
   const def = faceOf(cardDef(held.defId), held.upgraded)
   const printedCost = cardCost(def, player.powers.length)
   const cost = printedCost === 'X' ? player.energy : printedCost
-  if (def.unplayable || cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
+  if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
+    cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
 
   const preview = clone(state)
   const actor = findPlayer(preview, playerId)!
@@ -999,7 +1027,8 @@ export function previewCardChoice(
  * not direct their biggest starter card.
  */
 const ENEMY_EFFECTS = [
-  'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'evoke', 'recurseOrb', 'clearTargetBlock',
+  'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
+  'evoke', 'recurseOrb', 'clearTargetBlock',
 ]
 
 /**
@@ -1203,6 +1232,7 @@ export function playCard(
 
   const def = faceOf(cardDef(held.defId), held.upgraded)
   if (def.unplayable) return state
+  if (!cardPlayConditionMet(def, state, player)) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state

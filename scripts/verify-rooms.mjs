@@ -1116,6 +1116,20 @@ check('Power discounts publish a zero-Energy Streamline atomically', () => {
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).energy, 0)
 })
 
+check('Catalyst+ publishes multiplied Poison and Exhaust atomically', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const catalyst = { uid: 'room-catalyst', defId: 'catalyst', upgraded: true }
+  Object.assign(actor, { hand: [catalyst], energy: 1 })
+  target.poison = 3
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: catalyst.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(result.snapshot.run.combat.enemies.find((enemy) => enemy.uid === target.uid).poison, 9)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).exhaust.length, 1)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

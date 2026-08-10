@@ -6,6 +6,7 @@ import {
   beginEndPlayerTurn,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardPlayConditionMet,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
   endTurnAbilities,
@@ -277,9 +278,16 @@ function fanOf(index: number, count: number): number {
   return (index - (count - 1) / 2) / ((count - 1) / 2)
 }
 
-function canAfford(player: Player, card: CardInstance, spendMiracle = false): boolean {
+function canAfford(
+  state: CombatState,
+  player: Player,
+  card: CardInstance,
+  spendMiracle = false,
+  drawCount = player.draw.length,
+): boolean {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   if (def.unplayable) return false
+  if (!cardPlayConditionMet(def, state, player, drawCount)) return false
   // An evoke with nothing charged is refused by the engine, and a refusal is
   // reference-equality — the UI has no way to explain it. Better to grey the
   // card out than to let the click land and appear to do nothing at all.
@@ -517,6 +525,7 @@ export function CombatScreen({
       if (!current) return current
       if (!viewer.hand.some((card) => card.uid === current.card.uid)) return null
       const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
+      if (!cardPlayConditionMet(def, state, viewer, drawCount)) return null
       const overflowShivs = overflowShivCount(state, gainedShivs(def.effects))
       const overflowChanged = overflowShivs !== current.overflowShivs
       const enemyUid = current.enemyUid && alive.has(current.enemyUid) ? current.enemyUid : null
@@ -557,7 +566,7 @@ export function CombatScreen({
         evokeEnemyUids,
       }
     })
-  }, [state, viewer])
+  }, [state, viewer, drawCount])
 
   useEffect(() => {
     if (onAction) return
@@ -1681,7 +1690,7 @@ export function CombatScreen({
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable
                 // or it strands the player in a pending state it cannot commit.
-                (canAfford(viewer, card, miracleOnCard) ||
+                (canAfford(state, viewer, card, miracleOnCard, drawCount) ||
                   pending?.card.uid === card.uid ||
                   (pending?.choice != null && card.uid !== pending.card.uid))
               }
