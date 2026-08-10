@@ -70,6 +70,9 @@ function amountText(amount: Amount, hit = false): string {
     const scale = (amount.scale ?? 1) + (hit && amount.per === 'strength' ? 1 : 0)
     parts.push(`${scale} per ${COUNT_LABEL[amount.per]}`)
   }
+  if (amount.targetTokens) {
+    parts.push(`1 per ${amount.targetTokens.map((token) => token === 'weak' ? 'Weak' : 'Poison').join(' and ')} on the target`)
+  }
   return parts.join(' plus ')
 }
 
@@ -111,6 +114,9 @@ function effectText(effect: Effect): string {
     case 'removeAllOrbs': return `remove all of your Orbs${condition}`
     case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
     case 'gainOrbEvokeBonus': return `Orb Evoke effects get +${effect.amount}${condition}`
+    case 'gainShivDamageBonus': return `Shivs deal +${effect.amount} damage${condition}`
+    case 'gainCardBlockBonus': return `each Block on your Attacks and Skills gets +${effect.amount}${condition}`
+    case 'gainHitPoison': return `each hit also applies ${effect.amount} Poison${condition}`
     case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`

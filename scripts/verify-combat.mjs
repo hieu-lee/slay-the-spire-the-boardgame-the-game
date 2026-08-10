@@ -1801,6 +1801,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'finisher', enemyHp: [20, 20] },
     { id: 'masterful_stab', enemyHp: [18, 17], energy: [E, E] },
     { id: 'outmaneuver', energy: [5, 6], player: { energy: 3 }, retained: true },
+    { id: 'accuracy', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'choke', enemyHp: [17, 16] },
+    { id: 'footwork', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'envenom', powers: [1, 1], energy: [E - 3, E - 2] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -3175,6 +3179,98 @@ check('Outmaneuver pays only after that card was Retained last turn', () => {
   assertEqual(state.players[0].energy, 3)
   assertEqual(state.players[0].discard.at(-1)?.retainedLastTurn, undefined,
     'leaving hand forgets the prior Retain')
+})
+
+check('Accuracy changes Shiv hits without changing ordinary Attacks', () => {
+  const accuracy = instance('accuracy')
+  const strike = instance('strike_silent')
+  let state = combat(
+    [makePlayer({ character: 'silent', hand: [accuracy, strike], energy: 3, shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  state = playCard(state, 'p1', accuracy.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].shivDamageBonus, 1)
+  state = spendShiv(state, 'p1', 'e1')
+  assertEqual(state.enemies[0].hp, 18, 'Accuracy makes the Shiv deal 2')
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 17, 'Accuracy does not modify a card hit')
+})
+
+check('Choke adds every Weak and Poison token on its target to one hit', () => {
+  for (const upgraded of [false, true]) {
+    const choke = instance('choke', upgraded)
+    const state = combat(
+      [makePlayer({ character: 'silent', hand: [choke] })],
+      [makeEnemy({ hp: 20, maxHp: 20, weak: 2, poison: 3 })],
+    )
+    const played = playCard(state, 'p1', choke.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, upgraded ? 11 : 12)
+    assertEqual(played.enemies[0].weak, 2, 'Choke reads but does not spend enemy Weak')
+    assertEqual(played.enemies[0].poison, 3, 'Choke reads but does not spend Poison')
+  }
+})
+
+check('Footwork adds Block only to printed Attack and Skill Block icons', () => {
+  const footwork = instance('footwork')
+  const defend = instance('defend_silent', true)
+  const ironWave = instance('iron_wave')
+  let state = combat(
+    [makePlayer({ character: 'silent', hand: [footwork, defend, ironWave], energy: 6,
+      potions: ['block_potion'] })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  state = playCard(state, 'p1', footwork.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].cardBlockBonus, 1)
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].block, 3, 'Defend+ has one printed Block icon')
+  state = playCard(state, 'p1', ironWave.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].block, 5, 'an Attack Block icon gains one extra Block too')
+  state = activatePotion(state, 'p1', 'block_potion', { targetPlayerId: 'p1' })
+  assertEqual(state.players[0].block, 7, 'Footwork does not modify a potion')
+
+  const firstFootwork = instance('footwork')
+  const secondFootwork = instance('footwork')
+  const stackedDefend = instance('defend_silent', true)
+  let stacked = combat(
+    [makePlayer({ character: 'silent', hand: [firstFootwork, secondFootwork, stackedDefend], energy: 6 })],
+    [makeEnemy()],
+  )
+  stacked = playCard(stacked, 'p1', firstFootwork.uid, { enemyUid: null, playerId: null })
+  stacked = playCard(stacked, 'p1', secondFootwork.uid, { enemyUid: null, playerId: null })
+  stacked = playCard(stacked, 'p1', stackedDefend.uid, { enemyUid: null, playerId: null })
+  assertEqual(stacked.players[0].block, 4, 'stacked Footwork modifies the one printed Block icon twice')
+
+  const conditionalFootwork = instance('footwork')
+  const deflect = instance('deflect', true)
+  let conditional = combat(
+    [makePlayer({ character: 'silent', hand: [conditionalFootwork, deflect], energy: 3, shivs: 1 })],
+    [makeEnemy()],
+  )
+  conditional = playCard(conditional, 'p1', conditionalFootwork.uid, { enemyUid: null, playerId: null })
+  conditional = playCard(conditional, 'p1', deflect.uid, { enemyUid: null, playerId: null })
+  assertEqual(conditional.players[0].block, 5, 'both active Block icons on Deflect+ get the bonus')
+})
+
+check('Envenom applies Poison once per hit even when Block absorbs all damage', () => {
+  const envenom = instance('envenom')
+  const spray = instance('dagger_spray')
+  let state = combat(
+    [makePlayer({ character: 'silent', hand: [envenom, spray], energy: 4 })],
+    [makeEnemy({ hp: 20, maxHp: 20, block: 2 })],
+  )
+  state = playCard(state, 'p1', envenom.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].hitPoison, 1)
+  state = playCard(state, 'p1', spray.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 20, 'Block absorbs both one-damage hits')
+  assertEqual(state.enemies[0].poison, 2, 'each blocked hit still applies Poison')
+
+  const shivState = combat(
+    [makePlayer({ character: 'silent', shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  shivState.players[0].hitPoison = 1
+  const shivved = spendShiv(shivState, 'p1', 'e1')
+  assertEqual(shivved.enemies[0].poison, 1, 'Envenom includes Shiv hits')
 })
 
 check('a Miracle can be spent for Energy only during the Player Turn', () => {

@@ -252,6 +252,7 @@ function amountLabel(amount: Amount): string {
   const parts = [String(amount.base)]
   if (amount.per) parts.push(`per ${amount.per}`)
   if (amount.bonus) parts.push(`+${amount.bonus.plus} conditional`)
+  if (amount.targetTokens) parts.push(`per target ${amount.targetTokens.join(' and ')}`)
   return parts.join(' ')
 }
 
@@ -273,6 +274,12 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':
       return `Orb Evoke effects get +${effect.amount}`
+    case 'gainShivDamageBonus':
+      return `Shivs deal +${effect.amount} damage`
+    case 'gainCardBlockBonus':
+      return `Attack and Skill Block gets +${effect.amount}`
+    case 'gainHitPoison':
+      return `hits apply ${effect.amount} Poison`
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':

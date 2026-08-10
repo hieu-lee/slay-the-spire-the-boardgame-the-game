@@ -1590,6 +1590,81 @@ check('the Silent ledger combo resolves through the real card controls', () => {
 })
 await shot('07n-silent-ledger-cards-resolved')
 
+const enemiesBeforeSilentModifiers = structuredClone((await readState()).enemies)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-accuracy', defId: 'accuracy', upgraded: true },
+      { uid: 'ui-footwork', defId: 'footwork', upgraded: true },
+      { uid: 'ui-envenom', defId: 'envenom', upgraded: true },
+      { uid: 'ui-choke', defId: 'choke', upgraded: true },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 6, block: 0, shivs: 1,
+    shivDamageBonus: 0, cardBlockBonus: 0, hitPoison: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: index === 0 ? 20 : 30, maxHp: index === 0 ? 20 : 30,
+    block: 0, weak: 0, poison: 0, dead: false,
+  }))
+  Object.assign(run.combat.enemies[0], { weak: 1, poison: 2 })
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const silentModifierCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artLoaded: card.querySelector('img')?.naturalWidth > 0,
+})))
+check('the four Silent modifier cards render scans and complete spoken rules', () => {
+  assert(silentModifierCards.every((card) => card.artLoaded), 'all modifier card scans should load')
+  assert(silentModifierCards.some((card) => card.label.startsWith('Accuracy+') && card.label.includes('Shivs deal +1')))
+  assert(silentModifierCards.some((card) => card.label.startsWith('Footwork+') &&
+    card.label.includes('Block on your Attacks and Skills') && card.label.includes('retain')))
+  assert(silentModifierCards.some((card) => card.label.startsWith('Envenom+') &&
+    card.label.includes('each hit also applies 1 Poison')))
+  assert(silentModifierCards.some((card) => card.label.startsWith('Choke+') &&
+    card.label.includes('Weak and Poison on the target')))
+})
+await shot('07o-silent-modifier-cards-ready')
+await page.getByRole('button', { name: /^Accuracy\+,/ }).click()
+await page.getByRole('button', { name: /^Footwork\+,/ }).click()
+await page.getByRole('button', { name: /^Envenom\+,/ }).click()
+await page.getByRole('button', { name: 'Use Shiv' }).click()
+await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
+await page.getByRole('button', { name: /^Choke\+,/ }).click()
+await page.locator('.enemy').filter({ hasText: /18\/20/ }).first().click()
+const silentModifiers = await readState()
+check('Accuracy, Footwork, Envenom, and Choke resolve through the real controls', () => {
+  const actor = silentModifiers.players[0]
+  const target = silentModifiers.enemies.find((enemy) => enemy.hp === 10)
+  assertEqual(actor.energy, 0)
+  assertEqual(actor.shivDamageBonus, 1)
+  assertEqual(actor.cardBlockBonus, 1)
+  assertEqual(actor.hitPoison, 1)
+  assertEqual(actor.powers.length, 3)
+  assert(target, 'the Accuracy Shiv and token-scaled Choke+ should deal 10 total')
+  assertEqual(target.poison, 4, 'Envenom applies once for the Shiv and once for Choke+')
+})
+await shot('07p-silent-modifier-cards-resolved')
+await page.evaluate((enemies) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    powers: [], shivDamageBonus: 0, cardBlockBonus: 0, hitPoison: 0,
+  })
+  run.combat.enemies = enemies
+  debug.setRun(run)
+}, enemiesBeforeSilentModifiers)
+await page.waitForFunction(() => {
+  const player = window.__STS_DEBUG__.getState().players[0]
+  return player.shivDamageBonus === 0 && player.cardBlockBonus === 0 && player.hitPoison === 0 &&
+    document.querySelectorAll('.power').length === 0
+})
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

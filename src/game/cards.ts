@@ -113,6 +113,8 @@ export type Amount =
       per?: CountOf
       /** Multiplies the counted units; Heavy Blade changes each Strength token. */
       scale?: number
+      /** Choke adds the target's Weak and Poison tokens to one hit. */
+      targetTokens?: readonly ('weak' | 'poison')[]
     }
 
 /**
@@ -166,6 +168,9 @@ type EffectKind =
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
+  | { kind: 'gainShivDamageBonus'; amount: number }
+  | { kind: 'gainCardBlockBonus'; amount: number }
+  | { kind: 'gainHitPoison'; amount: number }
   | { kind: 'doubleEnergy'; max: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
@@ -1709,6 +1714,29 @@ export const CARDS: Record<string, CardDef> = {
     retain: true,
     effects: [{ kind: 'gainEnergy', amount: 2, when: { kind: 'retainedLastTurn' } }],
     upgrade: { effects: [{ kind: 'gainEnergy', amount: 3, when: { kind: 'retainedLastTurn' } }] },
+  }),
+  accuracy: card({
+    id: 'accuracy', name: 'Accuracy', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 1,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainShivDamageBonus', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
+  choke: card({
+    id: 'choke', name: 'Choke', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: { base: 3, targetTokens: ['weak', 'poison'] } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 4, targetTokens: ['weak', 'poison'] } }] },
+  }),
+  footwork: card({
+    id: 'footwork', name: 'Footwork', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainCardBlockBonus', amount: 1 }],
+    upgrade: { retain: true },
+  }),
+  envenom: card({
+    id: 'envenom', name: 'Envenom', owner: 'silent', type: 'power', rarity: 'rare', cost: 3,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainHitPoison', amount: 1 }],
+    upgrade: { cost: 2 },
   }),
 }
 

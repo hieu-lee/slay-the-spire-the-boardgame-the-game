@@ -1198,6 +1198,33 @@ check('Silent combat ledgers are public while retained-card history stays privat
   assert(!Object.hasOwn(discarded, 'retainedLastTurn'), 'public discard kept private hand history')
 })
 
+check('Silent Power modifiers resolve and publish through the room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const cards = ['accuracy', 'footwork', 'envenom', 'choke'].map((defId) => ({
+    uid: `room-${defId}`, defId, upgraded: true,
+  }))
+  Object.assign(actor, { hand: cards, energy: 6, shivs: 1, powers: [] })
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, weak: 1, poison: 2, dead: false })
+
+  for (const defId of ['accuracy', 'footwork', 'envenom']) {
+    apply(room, b.token, { kind: 'playCard', cardUid: `room-${defId}`, enemyUid: null, preflight: true })
+  }
+  apply(room, b.token, { kind: 'spendShiv', enemyUid: target.uid })
+  apply(room, b.token, { kind: 'playCard', cardUid: 'room-choke', enemyUid: target.uid, preflight: true })
+
+  const teammate = snapshotFor(room, a.token)
+  const seenActor = teammate.run.combat.players.find((player) => player.id === b.playerId)
+  const seenTarget = teammate.run.combat.enemies.find((enemy) => enemy.uid === target.uid)
+  assertEqual(seenActor.shivDamageBonus, 1)
+  assertEqual(seenActor.cardBlockBonus, 1)
+  assertEqual(seenActor.hitPoison, 1)
+  assertEqual(seenActor.powers.length, 3)
+  assertEqual(seenTarget.hp, 10, 'Accuracy Shiv and token-scaled Choke+ deal 10 total')
+  assertEqual(seenTarget.poison, 4, 'the Shiv and Choke+ hits each apply Poison')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

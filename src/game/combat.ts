@@ -27,7 +27,7 @@ import type { Trigger, TriggerEvent } from './triggers.ts'
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
-import type { CardInstance, Enemy, OrbType, Player } from './types.ts'
+import type { CardInstance, CardType, Enemy, OrbType, Player } from './types.ts'
 
 export type CombatPhase =
   | 'player'
@@ -278,6 +278,8 @@ export type PlayContext = {
   drewSkill?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
+  /** Printed type of the card currently resolving, for Footwork. */
+  sourceCardType?: CardType
 }
 
 export type CardChoicePreview = {
@@ -421,6 +423,9 @@ function amountOf(
   let total = amount.base
   if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
   if (amount.per) total += countOf(amount.per, actor) * (amount.scale ?? 1)
+  if (target && amount.targetTokens) {
+    for (const token of amount.targetTokens) total += target[token]
+  }
   return total
 }
 
@@ -496,11 +501,17 @@ function applyEffect(
         const each = amountOf(effect.amount, state, actor, target)
         let blocked = 0
         let curled = false
+        let poisonApplied = 0
         for (let i = 0; i < times; i++) {
           if (target.dead) break
           const result = damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
           blocked += result.blocked
           curled = result.curled || curled
+          if (!target.dead && actor.hitPoison > 0) {
+            const before = target.poison
+            target.poison = gainPoison(target.poison, actor.hitPoison, totalPoisonInPlay(state.enemies))
+            poisonApplied += target.poison - before
+          }
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
         // One line for the whole attack, not one per swing: a five-hit card
@@ -515,6 +526,9 @@ function applyEffect(
               ? `${name} blocked ${who} completely (${blocked} spent)`
               : `${who} did no damage to ${name}`,
         ]
+        if (poisonApplied > 0) {
+          state.log = [...state.log, `${actor.name}'s Envenom applies ${poisonApplied} Poison to ${name}`]
+        }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
           triggerEnemyDeathAbility(state, target)
@@ -571,7 +585,13 @@ function applyEffect(
     case 'block': {
       // Deflect and Steam Barrier both read the CASTER's board, not the ally
       // they may be handing the Block to, so this is worked out once.
-      const amount = amountOf(effect.amount, state, actor)
+      const printedCard = context.sourceCardType === 'attack' || context.sourceCardType === 'skill'
+      const base = amountOf(effect.amount, state, actor)
+      const bonusIcon = typeof effect.amount !== 'number'
+        && effect.amount.bonus
+        && holds(effect.amount.bonus.when, state, actor)
+      const icons = 1 + Number(Boolean(bonusIcon))
+      const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0)
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
         grantBlock(state, target, amount)
@@ -708,7 +728,7 @@ function applyEffect(
           applyEffect(
             state,
             target,
-            { kind: 'hit', amount: 1 },
+            { kind: 'hit', amount: 1 + target.shivDamageBonus },
             'enemy',
             'self',
             { ...context, enemyUid },
@@ -852,6 +872,21 @@ function applyEffect(
     case 'gainOrbEvokeBonus': {
       actor.orbEvokeBonus = (actor.orbEvokeBonus ?? 0) + effect.amount
       note(`${actor.name}'s Orb Evoke effects get +${effect.amount}`)
+      return
+    }
+    case 'gainShivDamageBonus': {
+      actor.shivDamageBonus += effect.amount
+      note(`${actor.name}'s Shivs deal +${effect.amount} damage`)
+      return
+    }
+    case 'gainCardBlockBonus': {
+      actor.cardBlockBonus += effect.amount
+      note(`${actor.name}'s Attack and Skill Block gets +${effect.amount}`)
+      return
+    }
+    case 'gainHitPoison': {
+      actor.hitPoison += effect.amount
+      note(`${actor.name}'s hits apply ${effect.amount} Poison`)
       return
     }
     case 'doubleEnergy': {
@@ -1406,6 +1441,7 @@ export function playCard(
     pendingDiscards: [],
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
+    sourceCardType: def.type,
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -2184,6 +2220,9 @@ export function createCombat(
       ...player,
       lostHpThisCombat: false,
       attacksPlayedThisTurn: 0,
+      shivDamageBonus: 0,
+      cardBlockBonus: 0,
+      hitPoison: 0,
     })),
     enemies,
     discardedThisTurn: [],
@@ -2218,7 +2257,7 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
   applyEffect(
     next,
     actor,
-    { kind: 'hit', amount: 1 },
+    { kind: 'hit', amount: 1 + actor.shivDamageBonus },
     'enemy',
     'self',
     { enemyUid, playerId },

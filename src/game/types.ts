@@ -78,6 +78,10 @@ export type Player = {
   attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number
+  /** Ongoing Silent Power modifiers, reset between combats. */
+  shivDamageBonus: number
+  cardBlockBonus: number
+  hitPoison: number
   /** Watcher. */
   miracles: number
   stance: Stance
