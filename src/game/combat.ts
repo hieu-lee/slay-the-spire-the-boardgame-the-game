@@ -943,8 +943,9 @@ function applyEffect(
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
       return
     }
-    case 'exhaustAllNonAttacks': {
-      const moved = actor.hand.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type !== 'attack')
+    case 'exhaustHand': {
+      const moved = actor.hand.filter((card) =>
+        !effect.except || faceOf(cardDef(card.defId), card.upgraded).type !== effect.except)
       const picked = new Set(moved.map((card) => card.uid))
       actor.hand = actor.hand.filter((card) => !picked.has(card.uid))
       context.exhaustedByCard = moved.length
@@ -955,6 +956,10 @@ function applyEffect(
     case 'gainBlockPerExhaust':
       return applyEffect(state, actor, {
         kind: 'block', amount: effect.amount * (context.exhaustedByCard ?? 0),
+      }, scope, supportScope, context, source)
+    case 'hitPerExhaust':
+      return applyEffect(state, actor, {
+        kind: 'hit', amount: effect.amount, times: context.exhaustedByCard ?? 0,
       }, scope, supportScope, context, source)
     case 'channel': {
       // Reserve the line's position before forced evokes log, but write it only
@@ -1323,7 +1328,7 @@ export function previewCardChoice(
  */
 const ENEMY_EFFECTS = [
   'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
-  'evoke', 'recurseOrb', 'clearTargetBlock',
+  'evoke', 'recurseOrb', 'clearTargetBlock', 'hitPerExhaust',
 ]
 
 /**
@@ -1341,6 +1346,7 @@ function reachesEnemy(
   actor: CountablePlayer | undefined,
 ): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
+  if (effect.kind === 'hitPerExhaust') return !actor || actor.hand === null || actor.hand.length > 1
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
   const times = effect.times
   if (typeof times === 'number') return times > 0

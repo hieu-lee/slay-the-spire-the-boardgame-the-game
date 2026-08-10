@@ -1419,6 +1419,29 @@ check('Second Wind and Sentinel resolve their Exhaust rules through room authori
     'playing Sentinel must not fire its Exhaust reaction')
 })
 
+check('Fiend Fire resolves its whole-hand multi-attack through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const fiend = { uid: 'room-fiend-fire', defId: 'fiend_fire', upgraded: false }
+  const strike = { uid: 'room-fiend-fire-strike', defId: 'strike_ironclad', upgraded: false }
+  const defend = { uid: 'room-fiend-fire-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [fiend, strike, defend], energy: 2, strength: 1, weak: 0, discard: [], exhaust: [],
+  })
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: fiend.uid, enemyUid: target.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.strength, 1, 'the fixture lost its Strength before Fiend Fire resolved')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 16)
+  assertDeepEqual(resolved.hand, [])
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [strike.uid, defend.uid, fiend.uid])
+  assertEqual(resolved.energy, 0)
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

@@ -673,6 +673,42 @@ check('Sentinel only gains Energy when another effect Exhausts it', () => {
   assertEqual(exhausted.players[0].energy, 2, 'Exhausted Sentinel did not gain its printed 2 Energy')
 })
 
+check('Fiend Fire Exhausts the rest of the hand and deals one Strength-modified hit per card', () => {
+  for (const upgraded of [false, true]) {
+    const fiend = instance('fiend_fire', upgraded)
+    const strike = instance('strike_ironclad')
+    const sentinel = instance('sentinel')
+    const daze = instance('daze')
+    const state = combat([makePlayer({
+      hand: [fiend, strike, sentinel, daze],
+      energy: 2,
+      strength: 1,
+      powers: [instance('feel_no_pain')],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const played = playCard(state, 'p1', fiend.uid, { enemyUid: 'e1', playerId: null })
+
+    assertEqual(played.enemies[0].hp, upgraded ? 11 : 14,
+      'Fiend Fire must deal a separate Strength-modified hit for each other card')
+    assertDeepEqual(played.players[0].hand, [])
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [strike.uid, sentinel.uid, fiend.uid],
+      'Daze returns to the shared supply while every non-Status card Exhausts')
+    assertEqual(played.players[0].block, 4, 'Feel No Pain must see all three hand cards and Fiend Fire itself')
+    assertEqual(played.players[0].energy, 2, 'Sentinel must resolve after the attack and refund 2 Energy')
+    const hitAt = played.log.findIndex((line) => line.includes(' hit '))
+    const sentinelAt = played.log.indexOf("Ironclad's Sentinel: Ironclad gains 2 Energy")
+    assert(hitAt >= 0 && sentinelAt > hitAt,
+      `Exhaust reactions resolved before Fiend Fire finished: ${played.log.join(' | ')}`)
+  }
+
+  const fiend = instance('fiend_fire')
+  const empty = combat([makePlayer({ hand: [fiend], energy: 2 })], [makeEnemy()])
+  assertEqual(cardNeedsEnemy(faceOf(cardDef('fiend_fire'), false), empty.players[0]), false,
+    'a Fiend Fire with no other cards should not ask for a meaningless target')
+  const played = playCard(empty, 'p1', fiend.uid, { enemyUid: null, playerId: null })
+  assert(played !== empty, 'Fiend Fire should still be playable with no other cards')
+  assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [fiend.uid])
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1927,6 +1963,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'sever_soul', enemyHp: [17, 16] },
     { id: 'second_wind', block: [0, 0] },
     { id: 'sentinel', block: [2, 3], energy: [E - 1, E - 1] },
+    { id: 'fiend_fire', enemyHp: [20, 20], exhaust: [1, 1] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

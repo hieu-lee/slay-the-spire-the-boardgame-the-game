@@ -1383,6 +1383,51 @@ check('Second Wind+ exhausts non-Attacks, counts Daze, then resolves Sentinel an
   assertEqual(secondWind.players[0].energy, 2, 'Sentinel did not refund 2 Energy after Second Wind')
 })
 await shot('06zh-second-wind-resolved')
+
+const fiendTarget = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const target = run.combat.enemies.find((enemy) => enemy.row === 1) ?? run.combat.enemies[0]
+  for (const enemy of run.combat.enemies) enemy.dead = enemy.uid !== target.uid
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, dead: false, vulnerable: 0, abilityUsed: true })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-fiend-fire', defId: 'fiend_fire', upgraded: true },
+      { uid: 'ui-fiend-fire-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-fiend-fire-sentinel', defId: 'sentinel', upgraded: false },
+      { uid: 'ui-fiend-fire-daze', defId: 'daze', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], energy: 2, block: 0, strength: 1, weak: 0,
+    powers: [{ uid: 'ui-fiend-fire-fnp', defId: 'feel_no_pain', upgraded: false }],
+  })
+  run.combat.log = []
+  debug.setRun(run)
+  return target.uid
+})
+const fiendFireCard = page.getByRole('button', { name: /^Fiend Fire\+,/ })
+await fiendFireCard.waitFor()
+const fiendFireLabel = await fiendFireCard.getAttribute('aria-label')
+await shot('06zi-fiend-fire-full-hand')
+await fiendFireCard.click()
+await page.getByText('Choose an enemy').waitFor()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.waitForFunction(() => ![...document.querySelectorAll('button')]
+  .some((button) => button.getAttribute('aria-label')?.startsWith('Fiend Fire+,')))
+await page.getByText('11/20', { exact: true }).waitFor()
+const fiendFire = await readState()
+check('Fiend Fire+ Exhausts the whole hand and lands a separate Strength-modified hit per card', () => {
+  assert(fiendFireLabel.includes('exhaust all cards in hand'), fiendFireLabel)
+  assert(fiendFireLabel.includes('deal 2 as a separate hit per card exhausted'), fiendFireLabel)
+  assert(fiendFireLabel.includes('exhausts when played'), fiendFireLabel)
+  assertEqual(fiendFire.enemies.find((enemy) => enemy.uid === fiendTarget).hp, 11)
+  assertDeepEqual(fiendFire.players[0].hand, [])
+  assertDeepEqual(fiendFire.players[0].exhaust.map((card) => card.uid), [
+    'ui-fiend-fire-strike', 'ui-fiend-fire-sentinel', 'ui-fiend-fire',
+  ])
+  assertEqual(fiendFire.players[0].block, 4)
+  assertEqual(fiendFire.players[0].energy, 2)
+})
+await shot('06zj-fiend-fire-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

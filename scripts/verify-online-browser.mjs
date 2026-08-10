@@ -1039,6 +1039,49 @@ try {
   })
   liveRoom.run.combat = secondWindRestore
 
+  const fiendRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeFiend = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeFiend = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annBeforeFiend, {
+    hand: [
+      { uid: 'online-fiend-fire', defId: 'fiend_fire', upgraded: true },
+      { uid: 'online-fiend-fire-sentinel', defId: 'sentinel', upgraded: false },
+      { uid: 'online-fiend-fire-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 2, block: 0, strength: 1, weak: 0,
+    powers: [{ uid: 'online-fiend-fire-fnp', defId: 'feel_no_pain', upgraded: false }],
+  })
+  Object.assign(boBeforeFiend, { energy: 0, miracles: 1 })
+  const fiendEnemy = liveRoom.run.combat.enemies[0]
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: enemy.uid !== fiendEnemy.uid, abilityUsed: true })
+  }
+  liveRoom.run.combat.log = []
+  const publishFiend = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishFiend.ok, 'could not publish the Fiend Fire fixture')
+  await a.getByRole('button', { name: /^Fiend Fire\+,/ }).click()
+  await a.getByText('Choose an enemy').waitFor()
+  await a.locator('.enemy--targeted:not(:disabled)').click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Fiend Fire+,')))
+  const completedFiend = await snapshot(a)
+  await a.screenshot({ path: join(outDir, '02c-online-fiend-fire-resolved.png'), fullPage: true })
+  check('Fiend Fire resolves its whole-hand multi-attack through the two-client room', () => {
+    const ann = completedFiend.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(completedFiend.run.combat.enemies.find((enemy) => enemy.uid === fiendEnemy.uid).hp, 44)
+    assertEqual(ann.energy, 2)
+    assertEqual(ann.block, 3)
+    assertDeepEqual(ann.hand, [])
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), [
+      'online-fiend-fire-sentinel', 'online-fiend-fire-strike', 'online-fiend-fire',
+    ])
+  })
+  liveRoom.run.combat = fiendRestore
+
   const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   const unloadRestore = {

@@ -128,8 +128,9 @@ function effectText(effect: Effect): string {
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`
     case 'exhaustAny': return `exhaust ${effect.minimum ? `${effect.minimum}-${effect.amount}` : `up to ${effect.amount}`} cards from hand${condition}`
-    case 'exhaustAllNonAttacks': return `exhaust all non-Attack cards in hand${condition}`
+    case 'exhaustHand': return `exhaust all${effect.except ? ` non-${effect.except.charAt(0).toUpperCase()}${effect.except.slice(1)}` : ''} cards in hand${condition}`
     case 'gainBlockPerExhaust': return `gain ${effect.amount} Block per card exhausted${condition}`
+    case 'hitPerExhaust': return `deal ${effect.amount} as a separate hit per card exhausted${condition}`
   }
 }
 

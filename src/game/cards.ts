@@ -202,10 +202,12 @@ type EffectKind =
   | { kind: 'exhaustFromHand'; amount: number }
   /** Exhaust a chosen range of cards; absent `minimum` means zero is allowed. */
   | { kind: 'exhaustAny'; amount: number; minimum?: number }
-  /** Exhaust every non-Attack still in the player's hand. */
-  | { kind: 'exhaustAllNonAttacks' }
+  /** Exhaust every remaining card in hand, optionally keeping one printed type. */
+  | { kind: 'exhaustHand'; except?: CardType }
   /** Gain Block for each card taken by this card's preceding automatic Exhaust. */
   | { kind: 'gainBlockPerExhaust'; amount: number }
+  /** Deal one separate hit per card taken by this card's preceding automatic Exhaust. */
+  | { kind: 'hitPerExhaust'; amount: number }
 
 export type CardDef = {
   id: string
@@ -483,9 +485,9 @@ export const CARDS: Record<string, CardDef> = {
   }),
   second_wind: card({
     id: 'second_wind', name: 'Second Wind', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
-    effects: [{ kind: 'exhaustAllNonAttacks' }, { kind: 'gainBlockPerExhaust', amount: 1 }],
+    effects: [{ kind: 'exhaustHand', except: 'attack' }, { kind: 'gainBlockPerExhaust', amount: 1 }],
     upgrade: {
-      effects: [{ kind: 'exhaustAllNonAttacks' }, { kind: 'gainBlockPerExhaust', amount: 2 }],
+      effects: [{ kind: 'exhaustHand', except: 'attack' }, { kind: 'gainBlockPerExhaust', amount: 2 }],
     },
   }),
   sentinel: card({
@@ -494,6 +496,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 2, toChosen: true }],
     exhaustReaction: { effects: [{ kind: 'gainEnergy', amount: 2 }] },
     upgrade: { effects: [{ kind: 'block', amount: 3, toChosen: true }] },
+  }),
+  fiend_fire: card({
+    id: 'fiend_fire', name: 'Fiend Fire', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 2,
+    effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 1 }],
+    exhaust: true,
+    upgrade: { effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 2 }] },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.
   // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change
