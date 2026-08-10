@@ -2026,6 +2026,61 @@ check('Skewer+ spends chosen X Energy and resolves X separate 2-damage hits', ()
 })
 await shot('06zpv-skewer-resolved')
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-ftl', defId: 'ftl', upgraded: true }],
+    draw: [{ uid: 'ui-ftl-draw', defId: 'strike_defect', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 3, strength: 0, cardsPlayedThisTurn: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 10, maxHp: 10, block: 0, vulnerable: 0, dead: false,
+  }))
+  debug.setRun(run)
+})
+const ftlCard = page.getByRole('button', { name: /^FTL\+, cost 0,/ })
+const ftlLabel = await ftlCard.getAttribute('aria-label')
+await shot('06zpw-ftl-ready')
+await ftlCard.click()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+const firstFtl = await readState()
+check('FTL+ visibly draws only as the first card played this turn', () => {
+  assert(ftlLabel.includes('draw 1 card if this is the first card you played this turn'), ftlLabel)
+  assertEqual(firstFtl.enemies[0].hp, 8)
+  assertEqual(firstFtl.players[0].cardsPlayedThisTurn, 1)
+  assertDeepEqual(firstFtl.players[0].hand.map((card) => card.uid), ['ui-ftl-draw'])
+})
+await shot('06zpx-ftl-first-card-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-ftl-power-first', defId: 'inflame', upgraded: false },
+      { uid: 'ui-ftl-late', defId: 'ftl', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-ftl-stays-drawn', defId: 'strike_defect', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 3, block: 0, strength: 0, cardsPlayedThisTurn: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 10, maxHp: 10, block: 0, vulnerable: 0, dead: false,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Inflame,/ }).click()
+await page.getByRole('button', { name: /^FTL,/ }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+const lateFtl = await readState()
+check('FTL does not draw after another card through the real controls', () => {
+  assertEqual(lateFtl.players[0].cardsPlayedThisTurn, 2)
+  assertEqual(lateFtl.players[0].hand.length, 0)
+  assertEqual(lateFtl.players[0].draw[0].uid, 'ui-ftl-stays-drawn')
+})
+
 for (const freeKind of ['forced', 'discounted']) {
   await page.evaluate(({ baseline, freeKind }) => {
     const run = structuredClone(baseline)

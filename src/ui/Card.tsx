@@ -55,6 +55,7 @@ function conditionText(condition: Condition): string {
     case 'stanceChangedThisTurn': return 'you changed stance this turn'
     case 'targetFullHp': return 'the target is at full hit points'
     case 'firstTurnOfCombat': return 'it is the first turn of combat'
+    case 'firstCardPlayedThisTurn': return 'this is the first card you played this turn'
     case 'hasNoAttacksInHand': return 'you have no Attacks in hand'
     case 'allCardsInHandAreAttacks': return 'every card in your hand is an Attack'
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
@@ -119,7 +120,7 @@ function effectText(effect: Effect): string {
     case 'poison': return `apply ${effect.amount} Poison${condition}`
     case 'poisonChoices': return `assign ${effect.targets} separate ${effect.amount} Poison tokens to enemies${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
-    case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
+    case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'

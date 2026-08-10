@@ -1254,6 +1254,7 @@ function redactPlayer(player, viewerId) {
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
+    cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     shivs: player.shivs,
     shivDamageBonus: player.shivDamageBonus ?? 0,

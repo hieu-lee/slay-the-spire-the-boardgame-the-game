@@ -1392,14 +1392,15 @@ check('Calculated Gamble publishes Reflex, Tactician, and After Image atomically
     'Calculated Gamble leaked its private draws to the teammate')
 })
 
-check('Silent combat ledgers are public while retained-card history stays private', () => {
+check('combat ledgers are public while retained-card history stays private', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)
   const outmaneuver = {
     uid: 'room-retained-outmaneuver', defId: 'outmaneuver', upgraded: false, retainedLastTurn: true,
   }
   Object.assign(actor, {
-    hand: [outmaneuver], energy: 1, lostHpThisCombat: true, attacksPlayedThisTurn: 2,
+    hand: [outmaneuver], energy: 1, lostHpThisCombat: true,
+    cardsPlayedThisTurn: 3, attacksPlayedThisTurn: 2,
   })
 
   const owner = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === b.playerId)
@@ -1408,11 +1409,14 @@ check('Silent combat ledgers are public while retained-card history stays privat
   assertEqual(teammate.hand, null, 'a teammate still cannot inspect the retained card')
   assert(!allStrings(snapshotFor(room, a.token)).includes(outmaneuver.uid), 'the retained card uid leaked')
   assertEqual(teammate.lostHpThisCombat, true)
+  assertEqual(teammate.cardsPlayedThisTurn, 3)
   assertEqual(teammate.attacksPlayedThisTurn, 2)
 
   apply(room, b.token, { kind: 'playCard', cardUid: outmaneuver.uid, enemyUid: null, preflight: true })
   const discarded = snapshotFor(room, a.token).run.combat.players
     .find((player) => player.id === b.playerId).discard.at(-1)
+  assertEqual(snapshotFor(room, a.token).run.combat.players
+    .find((player) => player.id === b.playerId).cardsPlayedThisTurn, 4)
   assertEqual(discarded.uid, outmaneuver.uid, 'the played card becomes public in the discard pile')
   assert(!Object.hasOwn(discarded, 'retainedLastTurn'), 'public discard kept private hand history')
 })

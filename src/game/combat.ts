@@ -523,6 +523,8 @@ function holds(
       return target?.hp === target?.maxHp
     case 'firstTurnOfCombat':
       return state.turn === 1
+    case 'firstCardPlayedThisTurn':
+      return (actor.cardsPlayedThisTurn ?? 0) === 1
     case 'hasNoAttacksInHand':
       return actor.hand.every((card) => cardDef(card.defId).type !== 'attack')
     case 'allCardsInHandAreAttacks':
@@ -2022,6 +2024,7 @@ export function playCard(
     actor.energy += 1
     next.log = [...next.log, `${actor.name} spends a Miracle toward ${def.name}`]
   }
+  actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
 
   // Logged before its effects resolve: appended afterwards, a kill the card
   // caused reads as OLDER than the card, which is nonsense in a newest-first
@@ -2155,6 +2158,7 @@ export function playCardCopy(
   const next = clone(state)
   const copy = next.pendingCardCopy!
   const actor = findPlayer(next, playerId)!
+  actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
   const ctx = resolutionContext(context, def, copy.card, copy.energySpent)
   next.log = [...next.log, `${actor.name} played ${def.name} again (Double Tap)`]
 
@@ -2354,6 +2358,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
     player.doubledAttacksThisTurn = 0
+    player.cardsPlayedThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
   for (const player of next.players) {
@@ -3250,6 +3255,7 @@ export function createCombat(
       hpLossLimitThisRound: undefined,
       freeCardsThisTurn: 0,
       doubledAttacksThisTurn: 0,
+      cardsPlayedThisTurn: 0,
       attacksPlayedThisTurn: 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,

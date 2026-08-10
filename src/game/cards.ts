@@ -64,6 +64,8 @@ export type Condition =
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
   | { kind: 'firstTurnOfCombat' }
+  /** FTL: this card is the first actual card played this turn. Shivs are Attacks, not cards. */
+  | { kind: 'firstCardPlayedThisTurn' }
   | { kind: 'hasNoAttacksInHand' }
   | { kind: 'allCardsInHandAreAttacks' }
   | { kind: 'goldAtLeast'; amount: number }
@@ -1679,6 +1681,19 @@ export const CARDS: Record<string, CardDef> = {
     ],
     upgrade: {
       effects: [{ kind: 'hit', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }],
+    },
+  }),
+  ftl: card({
+    id: 'ftl', name: 'FTL', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 0,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'draw', amount: 1, when: { kind: 'firstCardPlayedThisTurn' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'draw', amount: 1, when: { kind: 'firstCardPlayedThisTurn' } },
+      ],
     },
   }),
   doom_and_gloom: card({

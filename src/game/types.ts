@@ -85,6 +85,8 @@ export type Player = {
   freeCardsThisTurn?: number
   /** Double Tap makes this many subsequent Attack cards play twice this turn. */
   doubledAttacksThisTurn?: number
+  /** FTL checks this public per-turn card-play ledger. Copies count; Shivs do not. */
+  cardsPlayedThisTurn?: number
   attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number

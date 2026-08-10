@@ -2146,6 +2146,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'ghostly_armor', block: [2, 3] },
     { id: 'prepared', hand: [0, 0], discardAfterDraw: [1, 2] },
     { id: 'beam_cell', enemyHp: [19, 19], vulnerable: [1, 1] },
+    { id: 'ftl', enemyHp: [19, 18], hand: [1, 1] },
     { id: 'doom_and_gloom', enemyHp: [18, 17], orb: ['dark', 'dark'] },
     { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
@@ -2923,6 +2924,72 @@ check('Skewer resolves its two printed X hit formulas against one enemy', () => 
   })
   assertEqual(upgradedZero.players[0].energy, 3)
   assertEqual(upgradedZero.players[0].discard[0].uid, upgraded.uid)
+})
+
+check('FTL draws only when it is the first card played this turn', () => {
+  for (const upgraded of [false, true]) {
+    const ftl = instance('ftl', upgraded)
+    const drawn = instance('defend_defect')
+    const state = combat([makePlayer({ hand: [ftl], draw: [drawn] })], [makeEnemy()])
+    const played = playCard(state, 'p1', ftl.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, 6 - (upgraded ? 2 : 1))
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [drawn.uid])
+    assertEqual(played.players[0].cardsPlayedThisTurn, 1)
+  }
+
+  const defend = instance('defend_defect')
+  const late = instance('ftl')
+  const drawn = instance('strike_defect')
+  const state = combat([makePlayer({ hand: [defend, late], draw: [drawn] })], [makeEnemy()])
+  const guarded = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  const playedLate = playCard(guarded, 'p1', late.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(playedLate.players[0].hand.length, 0, 'a later FTL did not draw')
+  assertEqual(playedLate.players[0].draw[0].uid, drawn.uid)
+  assertEqual(playedLate.players[0].cardsPlayedThisTurn, 2)
+})
+
+check('FTL copies are separate cards, while Shivs do not consume its first-card bonus', () => {
+  const ftl = instance('ftl')
+  const firstDraw = instance('defend_defect')
+  const secondDraw = instance('strike_defect')
+  const doubled = combat(
+    [makePlayer({ hand: [ftl], draw: [firstDraw, secondDraw] })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  doubled.players[0].doubledAttacksThisTurn = 1
+  const first = playCard(doubled, 'p1', ftl.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(first.phase, 'copy')
+  assertEqual(first.players[0].cardsPlayedThisTurn, 1)
+  assertDeepEqual(first.players[0].hand.map((card) => card.uid), [firstDraw.uid])
+  const copied = playCardCopy(first, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(copied.players[0].cardsPlayedThisTurn, 2)
+  assertDeepEqual(copied.players[0].hand.map((card) => card.uid), [firstDraw.uid],
+    'the second FTL copy is no longer the first card and does not draw')
+  assertDeepEqual(copied.players[0].draw.map((card) => card.uid), [secondDraw.uid])
+
+  const afterShivFtl = instance('ftl')
+  const afterShivDraw = instance('defend_defect')
+  const shivState = combat(
+    [makePlayer({ hand: [afterShivFtl], draw: [afterShivDraw], shivs: 1 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  const shivved = spendShiv(shivState, 'p1', 'e1')
+  assertEqual(shivved.players[0].cardsPlayedThisTurn, 0, 'a Shiv is an Attack, not a card')
+  const afterShiv = playCard(shivved, 'p1', afterShivFtl.uid, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(afterShiv.players[0].hand.map((card) => card.uid), [afterShivDraw.uid])
+})
+
+check('the card-play ledger resets each turn and ignores refused plays', () => {
+  const ftl = instance('ftl')
+  const state = combat(
+    [makePlayer({ hand: [ftl] })],
+    [makeEnemy()],
+  )
+  state.players[0].cardsPlayedThisTurn = 4
+  assertEqual(playCard(state, 'p1', ftl.uid, { enemyUid: null, playerId: null }), state)
+  assertEqual(state.players[0].cardsPlayedThisTurn, 4)
+  const reset = startPlayerTurn(state)
+  assertEqual(reset.players[0].cardsPlayedThisTurn, 0)
 })
 
 check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {

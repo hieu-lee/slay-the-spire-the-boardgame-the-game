@@ -407,7 +407,8 @@ check('no condition reads a target that its reader was never handed', () => {
   const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp'])
   const BOARD_READING = new Set([
     'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'discardedThisTurn', 'stanceChangedThisTurn',
-    'firstTurnOfCombat', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks', 'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
+    'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
+    'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
     'handEmpty', 'drewSkill', 'retainedLastTurn',
   ])
   // A hardcoded list quietly stops covering the condition somebody adds next,
