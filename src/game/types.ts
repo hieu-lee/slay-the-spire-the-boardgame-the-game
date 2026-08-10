@@ -149,5 +149,8 @@ export type Enemy = {
   /** Whether this enemy's once-per-combat special ability has fired. */
   abilityUsed: boolean
 
+  /** Cubes on a printed enemy ability track, currently used by Spiker. */
+  abilityCubes?: number
+
   dead: boolean
 }

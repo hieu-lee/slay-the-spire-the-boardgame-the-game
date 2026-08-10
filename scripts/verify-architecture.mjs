@@ -368,7 +368,7 @@ check('the not-implemented list states the real deferred count', () => {
 
 check('the not-implemented list states the real enemy count', () => {
   const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
-  const claimed = notes.match(/(\d+) enemies of roughly 60/)
+  const claimed = notes.match(/(\d+) enemy definitions/)
   assert(claimed !== null, 'the list should state how many enemy definitions are live')
   assertEqual(
     Number(claimed[1]),

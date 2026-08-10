@@ -4,7 +4,9 @@ import {
   enemyActingOrder,
   enemyTurn,
   playCard,
+  resolveStartPlayerTurn,
   startPlayerTurn,
+  startTurnAbilities,
 } from '../src/game/combat.ts'
 import {
   actionsFor, actionsForEnemy, advanceCube, createSummonSupply, drawSummon, enemyDef, startingHp,
@@ -1399,6 +1401,190 @@ check('Large Slime announces a summon and it arrives at the next round start', (
   assertEqual(next.enemies.length, 2)
   assertEqual(next.enemies[1].defId, 'acid_slime')
   assertEqual(next.enemies[1].row, next.enemies[0].row)
+})
+
+check('Act III die rows, cube tracks, and Ascension replacements match the cards', () => {
+  assertDeepEqual(actionsFor(enemyDef('jaw_worm_act3'), 1, 0), [
+    { kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('jaw_worm_summon'), 1, 0), [{ kind: 'attack', amount: 4 }])
+  assertDeepEqual(actionsFor(enemyDef('repulsor'), 1, 0), [
+    { kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('repulsor', 7), 1, 0), [
+    { kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('orb_walker_3ws'), 1, 0), [
+    { kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('orb_walker_2s'), 1, 0), [
+    { kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('maw'), 1, 0), [
+    { kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'actsLast' },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('maw'), 1, 1), [
+    { kind: 'attack', amount: 2, times: 2 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('maw', 7), 1, 0), [
+    { kind: 'attack', amount: 2, aoe: true },
+    { kind: 'applyVulnerable', amount: 1, aoe: true },
+    { kind: 'actsLast' },
+  ])
+  assertDeepEqual(enemyDef('giant_head', 12).hpByPlayers, [90, 185, 280, 380])
+  assertDeepEqual(actionsFor(enemyDef('nemesis', 12), 1, 2), [
+    { kind: 'attack', amount: 2, times: 3, aoe: true },
+    { kind: 'status', card: 'burn', amount: 2, aoe: true },
+  ])
+  assertDeepEqual(enemyDef('reptomancer', 12).hpByPlayers, [42, 90, 140, 194])
+  assertDeepEqual(actionsFor(enemyDef('exploder'), 1, 1), [{ kind: 'idle' }])
+  assertDeepEqual(actionsFor(enemyDef('writhing_mass'), 6, 0), [
+    { kind: 'attack', amount: 4 }, { kind: 'applyWeak', amount: 1 },
+  ])
+})
+
+check('Act III one-time tracks idle, explode, and die at the printed slots', () => {
+  const growth = enemyTurn(inEnemyPhase(
+    [player({ hp: 30, maxHp: 30 })],
+    [enemy({ defId: 'spire_growth', hp: 17, maxHp: 17 })],
+  ))
+  assertEqual(growth.players[0].hp, 30, 'Spire Growth does nothing on turn one')
+  assertEqual(growth.enemies[0].actionIndex, 1, 'then switches permanently to its die rows')
+  const attacked = enemyTurn({ ...growth, phase: 'enemy', die: 1 })
+  assertEqual(attacked.players[0].hp, 25, 'the low die row deals 2 then 3 AOE')
+
+  const exploder = enemyTurn(inEnemyPhase(
+    [player({ hp: 20, maxHp: 20 })],
+    [enemy({ defId: 'exploder', hp: 8, maxHp: 8, actionIndex: 2 })],
+  ))
+  assertEqual(exploder.players[0].hp, 10, 'Exploder deals its final 10 AOE')
+  assert(exploder.enemies[0].dead, 'Exploder then dies')
+
+  const transient = enemyTurn(inEnemyPhase(
+    [player({ hp: 30, maxHp: 30 })],
+    [enemy({ defId: 'transient', hp: 99, maxHp: 99, actionIndex: 3 })],
+  ))
+  assertEqual(transient.players[0].hp, 15, 'Transient deals its final 15')
+  assert(transient.enemies[0].dead, 'Transient then dies')
+})
+
+check('Darkling Regrow resolves at round start and Spiker starts with its cube', () => {
+  const livingOnly = {
+    ...createCombat(
+      createRng(41),
+      [player()],
+      [enemy({ defId: 'darkling', hp: 8, maxHp: 8, dead: false })],
+    ),
+    phase: 'start',
+    turn: 1,
+  }
+  assertEqual(startTurnAbilities(livingOnly).length, 0, 'Regrow does not create a no-op ordering choice')
+  const darklings = startPlayerTurn(createCombat(
+    createRng(42),
+    [player()],
+    [
+      enemy({ uid: 'living', defId: 'darkling', hp: 8, maxHp: 8, dead: false }),
+      enemy({ uid: 'dead', defId: 'darkling_bha', hp: 0, maxHp: 8, dead: true }),
+    ],
+  ))
+  assertEqual(darklings.enemies[1].hp, 4, 'Regrow returns a dead Darkling at 4 HP')
+  assertEqual(darklings.enemies[1].dead, false)
+
+  const ordered = {
+    ...createCombat(
+      createRng(44),
+      [player({ relics: [{ defId: 'stone_calendar', spent: false }] })],
+      [
+        enemy({ uid: 'fragile', defId: 'darkling', hp: 4, maxHp: 8 }),
+        enemy({ uid: 'survivor', defId: 'darkling_hab', hp: 8, maxHp: 8 }),
+        enemy({ uid: 'fallen', defId: 'darkling_bha', hp: 0, maxHp: 8, dead: true }),
+      ],
+    ),
+    phase: 'start',
+    turn: 1,
+    die: 4,
+  }
+  const orderedAbilities = startTurnAbilities(ordered)
+  const calendar = orderedAbilities.find((ability) => ability.label.includes('Stone Calendar'))
+  const regrow = orderedAbilities.find((ability) => ability.label.includes('Regrow'))
+  assert(calendar && regrow)
+  const regrown = resolveStartPlayerTurn(ordered, [
+    { id: calendar.id, enemyUid: 'fragile', shivEnemyUids: [] },
+    { id: regrow.id, shivEnemyUids: [] },
+  ])
+  assertEqual(regrown.enemies[0].hp, 4, 'a later living Darkling still Regrows one killed earlier in the phase')
+  assertEqual(regrown.enemies[2].hp, 4, 'the Darkling that began the phase dead also returns')
+
+  const spikerSetup = createCombat(
+    createRng(43),
+    [player()],
+    [enemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: undefined })],
+  )
+  assertEqual(spikerSetup.enemies[0].abilityCubes, 1, 'Spiker starts combat with one ability cube')
+  const spiker = startPlayerTurn(spikerSetup)
+  assertEqual(startTurnAbilities({ ...spikerSetup, phase: 'start', turn: 1 }).length, 0,
+    'Spiker setup does not create an ordering choice')
+  const capped = enemyTurn({ ...spiker, phase: 'enemy', die: 1, enemies: [
+    { ...spiker.enemies[0], abilityCubes: 5 },
+  ] })
+  assertEqual(capped.enemies[0].abilityCubes, 5, 'the printed five-cube track cannot overflow')
+})
+
+check('Act III pink spiral actions add Daze instead of Weak', () => {
+  const next = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'repulsor', hp: 7, maxHp: 7 })]),
+    die: 1,
+  })
+  assertEqual(next.players[0].weak, 0, 'the card has no Weak icon')
+  assertEqual(next.players[0].draw.filter((card) => card.defId === 'daze').length, 2, 'two Daze go on top of draw')
+})
+
+check('Reptomancer fills each occupied row and Rally skips only with no Daggers', () => {
+  const state = {
+    ...inEnemyPhase(
+      [player({ id: 'p1', row: 0 }), player({ id: 'p2', name: 'Silent', row: 1 })],
+      [enemy({ defId: 'reptomancer', hp: 70, maxHp: 70 })],
+    ),
+    summonSupply: { dagger: Array(8).fill('dagger') },
+    turn: 1,
+  }
+  const announced = enemyTurn(state)
+  assertEqual(announced.pendingSummons.length, 2, 'one summon batch is queued per occupied row')
+  const arrived = startPlayerTurn(announced)
+  const daggers = arrived.enemies.filter((target) => target.defId === 'dagger')
+  assertEqual(new Set(daggers.map((target) => target.uid)).size, 4, 'each row batch gets stable unique enemy ids')
+  for (const row of [0, 1]) {
+    assertEqual(daggers.filter((target) => target.row === row).length, 2)
+  }
+  assertDeepEqual(
+    enemyActingOrder(arrived).filter((target) => target.row === 0).map((target) => target.defId),
+    ['dagger', 'dagger', 'reptomancer'],
+    'new Daggers sit to the elite\'s left and act before it',
+  )
+
+  const noDaggers = enemyTurn(inEnemyPhase(
+    [player({ hp: 20, maxHp: 20 })],
+    [enemy({ defId: 'reptomancer', hp: 35, maxHp: 35, actionIndex: 1 })],
+  ))
+  assertEqual(noDaggers.enemies[0].actionIndex, 0, 'Rally skips the bottom action when no Daggers remain')
+  const withDagger = enemyTurn(inEnemyPhase(
+    [player({ hp: 20, maxHp: 20 })],
+    [
+      enemy({ uid: 'repto', defId: 'reptomancer', hp: 35, maxHp: 35, actionIndex: 1 }),
+      enemy({ uid: 'dagger', defId: 'dagger', hp: 5, maxHp: 5 }),
+    ],
+  ))
+  assertEqual(withDagger.enemies[0].actionIndex, 2, 'Rally keeps the bottom action while a Dagger lives')
+})
+
+check('the finite Act III Summons deck has every physical copy', () => {
+  const supply = createSummonSupply(createRng(87))
+  assertDeepEqual(Array.from({ length: 2 }, () => drawSummon(supply, 'spiker')).sort(), ['spiker_add', 'spiker_attack'])
+  assertEqual(drawSummon(supply, 'spiker'), null)
+  assertDeepEqual(Array.from({ length: 2 }, () => drawSummon(supply, 'darkling')).sort(), ['darkling_bha', 'darkling_hab'])
+  assertEqual(drawSummon(supply, 'darkling'), null)
+  assertEqual(Array.from({ length: 8 }, () => drawSummon(supply, 'dagger')).filter(Boolean).length, 8)
+  assertEqual(drawSummon(supply, 'dagger'), null)
 })
 
 check('an upgraded card is named as upgraded', () => {

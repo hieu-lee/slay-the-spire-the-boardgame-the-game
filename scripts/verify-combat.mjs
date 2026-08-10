@@ -127,7 +127,7 @@ check('Curl Up fires once, only after HP damage, and can block later hits', () =
   assertEqual(noDamage.enemies[0].block, 0, 'and therefore did not Curl Up')
 })
 
-check('Curl Up resolves between the hits of a multi-hit attack', () => {
+check('Curl Up waits until a multi-hit Attack card is complete', () => {
   const spray = instance('dagger_spray')
   const next = playCard(
     combat(
@@ -138,8 +138,197 @@ check('Curl Up resolves between the hits of a multi-hit attack', () => {
     spray.uid,
     { enemyUid: 'e1', playerId: null },
   )
-  assertEqual(next.enemies[0].hp, 5, 'the first dagger deals damage')
-  assertEqual(next.enemies[0].block, 1, 'Curl Up blocks the second dagger immediately')
+  assertEqual(next.enemies[0].hp, 4, 'both daggers deal damage before Curl Up')
+  assertEqual(next.enemies[0].block, 2, 'Curl Up resolves after the complete card')
+})
+
+check('Act III after-card reactions share the physical trigger timing', () => {
+  const spray = instance('dagger_spray')
+  const shifted = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hand: [spray] })],
+      [makeEnemy({ defId: 'transient', hp: 99, maxHp: 99 })],
+    ),
+    'p1', spray.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(shifted.enemies[0].hp, 97, 'both hits damage Transient')
+  assertEqual(shifted.players[0].block, 2, 'Shift grants the total HP lost after the card')
+
+  const strike = instance('strike_ironclad')
+  const reactive = playCard(
+    { ...combat(
+      [makePlayer({ hand: [strike] })],
+      [makeEnemy({ defId: 'writhing_mass', hp: 17, maxHp: 17 })],
+    ), die: 1 },
+    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assert(reactive.log.some((line) => line.includes('rerolled enemy intents')), 'Reactive rerolls after Attack damage')
+
+  const lethalShift = instance('strike_ironclad')
+  const shiftedDead = playCard(
+    combat(
+      [makePlayer({ hand: [lethalShift] })],
+      [
+        makeEnemy({ uid: 'e1', defId: 'transient', hp: 1, maxHp: 99 }),
+        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
+      ],
+    ),
+    'p1', lethalShift.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(shiftedDead.players[0].block, 1, 'lethal damage still triggers Shift while combat continues')
+
+  const lethalReactive = instance('strike_ironclad')
+  const reactiveDead = playCard(
+    combat(
+      [makePlayer({ hand: [lethalReactive] })],
+      [
+        makeEnemy({ uid: 'e1', defId: 'writhing_mass', hp: 1, maxHp: 17 }),
+        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
+      ],
+    ),
+    'p1', lethalReactive.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assert(reactiveDead.log.some((line) => line.includes('rerolled enemy intents')),
+    'lethal Attack damage still triggers Reactive while combat continues')
+
+  const passive = {
+    ...combat(
+      [makePlayer({ character: 'defect', orbs: ['lightning', null, null] })],
+      [
+        makeEnemy({ uid: 'e1', defId: 'transient', hp: 1, maxHp: 99 }),
+        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
+      ],
+    ),
+    phase: 'player',
+  }
+  const passiveShift = beginEndPlayerTurn(passive)
+  assertEqual(passiveShift.enemies[0].dead, true, 'end-turn Lightning defeats Transient')
+  assertEqual(passiveShift.players[0].block, 1,
+    'lethal non-card damage still triggers Shift while combat continues')
+
+  const thornStrike = instance('strike_ironclad')
+  const thorned = playCard(
+    combat(
+      [makePlayer({ hp: 10, hand: [thornStrike] })],
+      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 2 })],
+    ),
+    'p1', thornStrike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(thorned.players[0].hp, 8, 'Thorns retaliates once per Attack, not once per Hit')
+})
+
+check('Act III HP modifiers apply through every enemy damage path', () => {
+  const strike = instance('strike_ironclad')
+  const slow = playCard(
+    combat(
+      [makePlayer({ hand: [strike] })],
+      [makeEnemy({ defId: 'giant_head', hp: 80, maxHp: 80, vulnerable: 1 })],
+    ),
+    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(slow.enemies[0].hp, 76, 'Slow adds to the Hit before Vulnerable doubles it')
+
+  const immuneStrike = instance('strike_ironclad')
+  const immune = playCard(
+    combat(
+      [makePlayer({ hand: [immuneStrike] })],
+      [makeEnemy({ defId: 'nemesis', hp: 30, maxHp: 30, actionIndex: 1, poison: 2 })],
+    ),
+    'p1', immuneStrike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(immune.enemies[0].hp, 30, 'Nemesis cannot lose HP on a marked action')
+  const poisoned = beginEndPlayerTurn(immune)
+  assertEqual(poisoned.enemies[0].hp, 30, 'marked-action immunity also prevents Poison HP loss')
+})
+
+check('card-sourced orbs wait until all card text resolves before Curl Up', () => {
+  const card = instance('dual_cast')
+  const next = playCard(
+    combat(
+      [makePlayer({ character: 'defect', hand: [card], orbs: ['lightning', 'lightning', null] })],
+      [makeEnemy({ defId: 'green_louse', hp: 6, maxHp: 6 })],
+    ),
+    'p1', card.uid, {
+      enemyUid: null,
+      playerId: 'p1',
+      evokeSlots: [0, 1],
+      evokeEnemyUids: ['e1', 'e1'],
+    },
+  )
+  assertEqual(next.enemies[0].hp, 2, 'both Lightning evokes deal damage before Curl Up')
+  assertEqual(next.enemies[0].block, 2, 'Curl Up resolves after Dual Cast')
+})
+
+check('each generated or spent Shiv is a separate Attack for Thorns', () => {
+  const dance = instance('blade_dance')
+  const overflow = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hp: 10, hand: [dance], shivs: 5 })],
+      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1 })],
+    ),
+    'p1', dance.uid, { enemyUid: null, playerId: null, shivEnemyUids: ['e1', 'e1'] },
+  )
+  assertEqual(overflow.enemies[0].hp, 8, 'each overflow Shiv attacks once')
+  assertEqual(overflow.players[0].hp, 8, 'each overflow Shiv triggers Thorns')
+
+  const unload = instance('unload')
+  const spent = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hp: 10, hand: [unload], shivs: 2 })],
+      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1 })],
+    ),
+    'p1', unload.uid, { enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1', 'e1'] },
+  )
+  assertEqual(spent.enemies[0].hp, 4, 'Unload and its two Shivs deal their printed damage')
+  assertEqual(spent.players[0].hp, 7, 'Unload and both Shivs trigger Thorns separately')
+})
+
+check('Thorns resolves after lethal card text unless combat ended', () => {
+  const strike = instance('strike_ironclad')
+  const survivedCombat = playCard(
+    combat(
+      [makePlayer({ hp: 10, hand: [strike] })],
+      [
+        makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 }),
+        makeEnemy({ uid: 'e2', defId: 'cultist', hp: 6, maxHp: 6 }),
+      ],
+    ),
+    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(survivedCombat.enemies[0].dead, true, 'the Spiker is defeated')
+  assertEqual(survivedCombat.players[0].hp, 8, 'its pending Thorns still resolves')
+
+  const finalStrike = instance('strike_ironclad')
+  const endedCombat = playCard(
+    combat(
+      [makePlayer({ hp: 10, hand: [finalStrike] })],
+      [makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 })],
+    ),
+    'p1', finalStrike.uid, { enemyUid: 'e1', playerId: null },
+  )
+  assertEqual(endedCombat.phase, 'won', 'the last enemy ends combat immediately')
+  assertEqual(endedCombat.players[0].hp, 10, 'nothing resolves after combat ends')
+
+  const finalShiv = combat(
+    [makePlayer({ character: 'silent', hp: 10, shivs: 1 })],
+    [makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 })],
+  )
+  const shivEnded = spendShiv(finalShiv, 'p1', 'e1')
+  assertEqual(shivEnded.phase, 'won', 'a lethal standalone Shiv ends combat')
+  assertEqual(shivEnded.players[0].hp, 10, 'its final Spiker cannot retaliate after combat ends')
+})
+
+check('enemy card reactions resolve before played-card cleanup triggers', () => {
+  const card = instance('die_die_die')
+  const next = playCard(
+    combat(
+      [makePlayer({ character: 'silent', hp: 10, hand: [card], powers: [instance('feel_no_pain')] })],
+      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 2 })],
+    ),
+    'p1', card.uid, { enemyUid: null, playerId: null },
+  )
+  assertEqual(next.players[0].hp, 8, 'Thorns lands before Feel No Pain grants Block')
+  assertEqual(next.players[0].block, 1, 'the exhaust trigger resolves during cleanup afterward')
 })
 
 check('Spore Cloud applies Vulnerable to its row however the Fungi Beast dies', () => {

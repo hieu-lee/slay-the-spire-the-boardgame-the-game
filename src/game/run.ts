@@ -138,7 +138,21 @@ const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
     { defId: 'shelled_parasite', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['fungi_beast_a7'], minAscension: 7 },
     { defId: 'spheric_guardian', goldReward: 1, cardReward: 'normal', summons: ['sentry_a'], minAscension: 7 },
   ],
-  3: [{ defId: 'jaw_worm', goldReward: 2, cardReward: 'normal', summons: ['jaw_worm', 'jaw_worm'] }],
+  3: [
+    { defId: 'writhing_mass', goldReward: 0, cardReward: 'normal', potionReward: true },
+    { defId: 'maw', goldReward: 1, cardReward: null, potionReward: true, maxAscension: 6 },
+    { defId: 'darkling', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['darkling', 'darkling'] },
+    { defId: 'transient', goldReward: 2, cardReward: 'normal' },
+    { defId: 'orb_walker_3ws', goldReward: 1, cardReward: 'normal' },
+    { defId: 'orb_walker_2s', goldReward: 1, cardReward: 'normal' },
+    { defId: 'jaw_worm_act3', goldReward: 2, cardReward: 'normal', summons: ['jaw_worm_act3', 'jaw_worm_act3'] },
+    { defId: 'spire_growth', goldReward: 1, cardReward: 'normal', potionReward: true },
+    { defId: 'repulsor', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['exploder', 'spiker'], maxAscension: 6 },
+    { defId: 'exploder', goldReward: 1, cardReward: 'normal', summons: ['repulsor', 'spiker'], maxAscension: 6 },
+    { defId: 'exploder', goldReward: 1, cardReward: 'normal', summons: ['repulsor', 'spiker', 'spiker'], minAscension: 7 },
+    { defId: 'repulsor', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['exploder', 'spheric_guardian'], minAscension: 7 },
+    { defId: 'maw', goldReward: 1, cardReward: 'normal', minAscension: 7 },
+  ],
 }
 
 /** The complete four-card fixed-opening deck. */
@@ -321,7 +335,11 @@ const ELITES: Record<number, EncounterCard[]> = {
     { defId: 'gremlin_leader', goldReward: 2, cardReward: 'upgraded', relicReward: true, randomSummonsPerPlayer: { group: 'gremlin', count: 2 } },
     { defId: 'taskmaster', goldReward: 2, cardReward: 'upgraded', relicReward: true, summonsPerPlayer: ['blue_slaver', 'red_slaver'] },
   ],
-  3: [],
+  3: [
+    { defId: 'reptomancer', goldReward: 3, cardReward: 'upgraded', relicReward: true },
+    { defId: 'nemesis', goldReward: 3, cardReward: 'upgraded', relicReward: true },
+    { defId: 'giant_head', goldReward: 3, cardReward: 'upgraded', relicReward: true },
+  ],
 }
 
 function createEnemyDecks(rng: RngState, act: number, ascension: number): EnemyDecks {

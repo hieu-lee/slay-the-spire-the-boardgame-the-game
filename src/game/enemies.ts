@@ -20,6 +20,7 @@ export type EnemyAction =
   | { kind: 'blockAllEnemies'; amount: number }
   | { kind: 'strengthenAllEnemies'; amount: number }
   | { kind: 'healAllEnemies'; amount: number }
+  | { kind: 'healSelf'; amount: number }
   | { kind: 'blockNamed'; defId: string; amount: number }
   | { kind: 'clearSelfDebuffs' }
   | { kind: 'reviveAll'; group: 'gremlin' | 'darkling' }
@@ -31,10 +32,13 @@ export type EnemyAction =
   | { kind: 'status'; card: 'burn' | 'slimed'; amount: number; aoe?: boolean }
   | { kind: 'loseGold'; amount: number }
   | { kind: 'leave' }
+  | { kind: 'die' }
+  | { kind: 'addAbilityCube'; amount: number }
   /** This printed action is sorted after ordinary enemies for this round. */
   | { kind: 'actsLast' }
   /** Summons resolve at the start of the next round. */
   | { kind: 'summon'; defIds: string[] }
+  | { kind: 'summonUntil'; defId: string; perPlayer: number }
   /** Does nothing — Lagavulin asleep, the Gremlin Nob's first turn. */
   | { kind: 'idle' }
 
@@ -49,6 +53,8 @@ export type EnemyPattern =
   /** Indexed 1-6 by the shared die result for the round. */
   | { kind: 'die'; byRoll: Record<number, EnemyAction[]> }
   | { kind: 'cube'; slots: CubeSlot[] }
+  /** A one-time first turn followed by a permanent die table. */
+  | { kind: 'firstThenDie'; first: EnemyAction[]; byRoll: Record<number, EnemyAction[]> }
 
 export type EnemyAbility =
   | { kind: 'curlUp'; block: number }
@@ -60,6 +66,13 @@ export type EnemyAbility =
   | { kind: 'furyOnAllyDeath'; allyDefId: string; strength: number; actions: EnemyAction[] }
   | { kind: 'confusion'; byRoll: Record<number, number> }
   | { kind: 'barricade'; startingBlock: number }
+  | { kind: 'shift' }
+  | { kind: 'reactiveReroll' }
+  | { kind: 'regrow' }
+  | { kind: 'thorns'; damagePerCube: number; startingCubes: number; maxCubes: number }
+  | { kind: 'immuneOnSlots'; slots: number[] }
+  | { kind: 'slow'; damagePerHit: number }
+  | { kind: 'rally'; summonDefId: string }
 
 export type EnemyDef = {
   id: string
@@ -751,6 +764,276 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ],
   },
 
+  // Act III encounters and their finite Summons deck variants.
+  jaw_worm_act3: {
+    id: 'jaw_worm_act3', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
+      [{ kind: 'attack', amount: 4 }],
+    ) },
+  },
+
+  jaw_worm_summon: {
+    id: 'jaw_worm_summon', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 4 }],
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
+    ) },
+  },
+
+  spire_growth: {
+    id: 'spire_growth', name: 'Spire Growth', hpByPlayers: [17, 17, 17, 17],
+    pattern: { kind: 'firstThenDie', first: [{ kind: 'idle' }], byRoll: {
+      1: [{ kind: 'attackSequence', hits: [{ amount: 2 }, { amount: 3, aoe: true }] }],
+      2: [{ kind: 'attackSequence', hits: [{ amount: 2 }, { amount: 3, aoe: true }] }],
+      3: [{ kind: 'attackSequence', hits: [{ amount: 2 }, { amount: 3, aoe: true }] }],
+      4: [{ kind: 'attackSequence', hits: [{ amount: 4 }, { amount: 2, aoe: true }] }],
+      5: [{ kind: 'attackSequence', hits: [{ amount: 4 }, { amount: 2, aoe: true }] }],
+      6: [{ kind: 'attackSequence', hits: [{ amount: 4 }, { amount: 2, aoe: true }] }],
+    } },
+  },
+
+  repulsor: {
+    id: 'repulsor', name: 'Repulsor', hpByPlayers: [7, 7, 7, 7],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      2: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      3: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      4: [{ kind: 'attack', amount: 3 }], 5: [{ kind: 'attack', amount: 3 }], 6: [{ kind: 'attack', amount: 3 }],
+    } },
+    ascension: [{ min: 7, pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      2: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      3: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      4: [{ kind: 'attack', amount: 3 }], 5: [{ kind: 'attack', amount: 3 }], 6: [{ kind: 'attack', amount: 3 }],
+    } } }],
+  },
+
+  repulsor_summon: {
+    id: 'repulsor_summon', name: 'Repulsor', hpByPlayers: [7, 7, 7, 7],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
+      4: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      5: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+      6: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
+    } },
+  },
+
+  exploder: {
+    id: 'exploder', name: 'Exploder', hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3 }], once: true },
+      { actions: [{ kind: 'idle' }], once: true },
+      { actions: [{ kind: 'attack', amount: 10, aoe: true }, { kind: 'die' }], once: true },
+    ] },
+  },
+
+  exploder_summon: {
+    id: 'exploder_summon', name: 'Exploder', hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3 }], once: true },
+      { actions: [{ kind: 'idle' }], once: true },
+      { actions: [{ kind: 'attack', amount: 10, aoe: true }, { kind: 'die' }], once: true },
+    ] },
+  },
+
+  orb_walker_3ws: {
+    id: 'orb_walker_3ws', name: 'Orb Walker', hpByPlayers: [22, 22, 22, 22],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+      2: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+      3: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+      4: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+      5: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+      6: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+    } },
+  },
+
+  orb_walker_2s: {
+    id: 'orb_walker_2s', name: 'Orb Walker', hpByPlayers: [22, 22, 22, 22],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+      2: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+      3: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
+      4: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+      5: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+      6: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+    } },
+  },
+
+  transient: {
+    id: 'transient', name: 'Transient', hpByPlayers: [99, 99, 99, 99],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 6 }], once: true },
+      { actions: [{ kind: 'attack', amount: 9 }], once: true },
+      { actions: [{ kind: 'attack', amount: 12 }], once: true },
+      { actions: [{ kind: 'attack', amount: 15 }, { kind: 'die' }], once: true },
+    ] },
+    ability: { kind: 'shift' },
+  },
+
+  maw: {
+    id: 'maw', name: 'The Maw', hpByPlayers: [28, 28, 28, 28],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'actsLast' }], once: true },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 6 }] },
+    ] },
+    ascension: [{ min: 7, pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'actsLast' }], once: true },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 8 }] },
+    ] } }],
+  },
+
+  writhing_mass: {
+    id: 'writhing_mass', name: 'Writhing Mass', hpByPlayers: [17, 17, 17, 17],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'actsLast' }],
+      2: [{ kind: 'daze', amount: 2, aoe: true }],
+      3: [{ kind: 'attack', amount: 3, times: 2 }],
+      4: [{ kind: 'attack', amount: 5 }, { kind: 'block', amount: 5 }],
+      5: [{ kind: 'attack', amount: 7 }],
+      6: [{ kind: 'attack', amount: 4 }, { kind: 'applyWeak', amount: 1 }],
+    } },
+    ability: { kind: 'reactiveReroll' },
+  },
+
+  darkling: {
+    id: 'darkling', name: 'Darkling', hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2, times: 2 }],
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'healSelf', amount: 2 }],
+    ) },
+    ability: { kind: 'regrow' },
+  },
+
+  darkling_bha: {
+    id: 'darkling_bha', name: 'Darkling', hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'healSelf', amount: 2 }],
+      [{ kind: 'attack', amount: 2, times: 2 }],
+    ) },
+    ability: { kind: 'regrow' },
+  },
+
+  darkling_hab: {
+    id: 'darkling_hab', name: 'Darkling', hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }, { kind: 'healSelf', amount: 2 }],
+      [{ kind: 'attack', amount: 2, times: 2 }],
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
+    ) },
+    ability: { kind: 'regrow' },
+  },
+
+  spiker_add: {
+    id: 'spiker_add', name: 'Spiker', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'addAbilityCube', amount: 1 }], 2: [{ kind: 'addAbilityCube', amount: 1 }], 3: [{ kind: 'addAbilityCube', amount: 1 }],
+      4: [{ kind: 'attack', amount: 2 }], 5: [{ kind: 'attack', amount: 2 }], 6: [{ kind: 'attack', amount: 2 }],
+    } },
+    ability: { kind: 'thorns', damagePerCube: 1, startingCubes: 1, maxCubes: 5 },
+  },
+
+  spiker_attack: {
+    id: 'spiker_attack', name: 'Spiker', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 2 }], 2: [{ kind: 'attack', amount: 2 }], 3: [{ kind: 'attack', amount: 2 }],
+      4: [{ kind: 'addAbilityCube', amount: 1 }], 5: [{ kind: 'addAbilityCube', amount: 1 }], 6: [{ kind: 'addAbilityCube', amount: 1 }],
+    } },
+    ability: { kind: 'thorns', damagePerCube: 1, startingCubes: 1, maxCubes: 5 },
+  },
+
+  dagger: {
+    id: 'dagger', name: 'Dagger', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }], once: true },
+      { actions: [{ kind: 'attack', amount: 5 }, { kind: 'die' }], once: true },
+    ] },
+  },
+
+  giant_head: {
+    id: 'giant_head', name: 'Giant Head', elite: true,
+    hpByPlayers: [80, 160, 240, 320],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'idle' }], once: true },
+      { actions: [{ kind: 'idle' }], once: true },
+      { actions: [{ kind: 'idle' }], once: true },
+      { actions: [{ kind: 'attack', amount: 7, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+    ability: { kind: 'slow', damagePerHit: 1 },
+    ascension: [
+      { min: 1, hpByPlayers: [85, 170, 255, 340], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'idle' }], once: true },
+        { actions: [{ kind: 'attack', amount: 5, aoe: true }], once: true },
+        { actions: [{ kind: 'idle' }], once: true },
+        { actions: [{ kind: 'attack', amount: 8, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+      { min: 12, hpByPlayers: [90, 185, 280, 380], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'idle' }], once: true },
+        { actions: [{ kind: 'attack', amount: 6, aoe: true }], once: true },
+        { actions: [{ kind: 'idle' }], once: true },
+        { actions: [{ kind: 'attack', amount: 9, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+    ],
+  },
+
+  nemesis: {
+    id: 'nemesis', name: 'Nemesis', elite: true,
+    hpByPlayers: [30, 60, 90, 120],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'status', card: 'burn', amount: 4, aoe: true }], once: true },
+      { actions: [{ kind: 'attack', amount: 4, aoe: true }], once: true },
+      { actions: [{ kind: 'attack', amount: 2, times: 2, aoe: true }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 7, aoe: true }] },
+    ] },
+    ability: { kind: 'immuneOnSlots', slots: [1, 3] },
+    ascension: [
+      { min: 1, hpByPlayers: [35, 70, 105, 140], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'status', card: 'burn', amount: 5, aoe: true }], once: true },
+        { actions: [{ kind: 'attack', amount: 5, aoe: true }], once: true },
+        { actions: [{ kind: 'attack', amount: 2, times: 2, aoe: true }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+        { actions: [{ kind: 'attack', amount: 8, aoe: true }] },
+      ] } },
+      { min: 12, hpByPlayers: [36, 74, 116, 162], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'status', card: 'burn', amount: 5, aoe: true }], once: true },
+        { actions: [{ kind: 'attack', amount: 6, aoe: true }], once: true },
+        { actions: [{ kind: 'attack', amount: 2, times: 3, aoe: true }, { kind: 'status', card: 'burn', amount: 2, aoe: true }] },
+        { actions: [{ kind: 'attack', amount: 8, aoe: true }] },
+      ] } },
+    ],
+  },
+
+  reptomancer: {
+    id: 'reptomancer', name: 'Reptomancer', elite: true,
+    hpByPlayers: [35, 70, 105, 140],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'summonUntil', defId: 'dagger', perPlayer: 2 }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 7, aoe: true }] },
+    ] },
+    ability: { kind: 'rally', summonDefId: 'dagger' },
+    ascension: [
+      { min: 1, hpByPlayers: [40, 80, 120, 160], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'summonUntil', defId: 'dagger', perPlayer: 2 }] },
+        { actions: [{ kind: 'attack', amount: 7, aoe: true }, { kind: 'daze', amount: 1, aoe: true }] },
+        { actions: [{ kind: 'attack', amount: 4, times: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+      { min: 12, hpByPlayers: [42, 90, 140, 194], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'summonUntil', defId: 'dagger', perPlayer: 2 }] },
+        { actions: [{ kind: 'attack', amount: 7, aoe: true }, { kind: 'daze', amount: 2, aoe: true }] },
+        { actions: [{ kind: 'attack', amount: 4, times: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+    ],
+  },
+
   sentry_a: {
     id: 'sentry_a',
     name: 'Sentry A',
@@ -921,6 +1204,13 @@ const SUMMON_CARDS: SummonSupply = {
   ],
   sentry_a: Array(7).fill('sentry_a'),
   sentry_b: Array(5).fill('sentry_b'),
+  jaw_worm_act3: Array(2).fill('jaw_worm_summon'),
+  repulsor: ['repulsor_summon'],
+  exploder: ['exploder_summon'],
+  spiker: ['spiker_add', 'spiker_attack'],
+  darkling: ['darkling_bha', 'darkling_hab'],
+  dagger: Array(8).fill('dagger'),
+  spheric_guardian: ['spheric_guardian'],
 }
 
 export function createSummonSupply(rng: RngState): SummonSupply {
@@ -961,6 +1251,27 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'barricade': return compact
       ? `Barricade · starts with ${ability.startingBlock} Block; keeps Block`
       : `Barricade: starts with ${ability.startingBlock} Block and does not lose Block at the start of the Enemy Turn`
+    case 'shift': return compact
+      ? 'Shift · lost HP becomes row Block'
+      : 'Shift: when this enemy loses HP, the player in its row gains that much Block'
+    case 'reactiveReroll': return compact
+      ? 'Reactive · Attack damage rerolls enemy intents'
+      : 'Reactive: after an Attack damages this enemy, reroll the die without triggering relics'
+    case 'regrow': return compact
+      ? 'Regrow · round start: dead Darklings return at 4 HP'
+      : 'Regrow: at the start of the round, return every dead Darkling with 4 HP'
+    case 'thorns': return compact
+      ? `Thorns · Attack: ${ability.damagePerCube} damage per cube`
+      : `Thorns: after an Attack against this enemy, take ${ability.damagePerCube} damage per cube`
+    case 'immuneOnSlots': return compact
+      ? 'HP immunity · marked actions'
+      : 'Cannot lose HP while the cube is on a marked action'
+    case 'slow': return compact
+      ? `Slow · +${ability.damagePerHit} damage from each Hit`
+      : `Slow: this enemy takes ${ability.damagePerHit} extra damage from every Hit`
+    case 'rally': return compact
+      ? 'Rally · no Daggers: skip the bottom action'
+      : 'Rally: if no Daggers remain, skip the bottom action when moving the cube'
   }
 }
 
@@ -991,6 +1302,7 @@ export function actionsFor(def: EnemyDef, die: number, actionIndex: number): Ene
   const pattern = def.pattern
   if (pattern.kind === 'single') return pattern.actions
   if (pattern.kind === 'die') return pattern.byRoll[die] ?? []
+  if (pattern.kind === 'firstThenDie') return actionIndex === 0 ? pattern.first : pattern.byRoll[die] ?? []
   const slot = pattern.slots[actionIndex]
   return slot ? slot.actions : []
 }
@@ -1009,6 +1321,7 @@ export function actionsForEnemy(enemy: Enemy, die: number): EnemyAction[] {
  * topmost slot that is NOT a one-time grey slot (p.13).
  */
 export function advanceCube(def: EnemyDef, actionIndex: number): number {
+  if (def.pattern.kind === 'firstThenDie') return 1
   if (def.pattern.kind !== 'cube') return actionIndex
   const slots = def.pattern.slots
   const next = actionIndex + 1

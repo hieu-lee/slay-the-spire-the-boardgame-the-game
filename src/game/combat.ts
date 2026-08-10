@@ -157,22 +157,43 @@ export function enemyLabel(enemies: readonly Enemy[], enemy: Enemy): string {
 }
 
 /** Deals `damage` to an enemy, spending Block and firing Curl Up immediately. */
-function damageEnemy(enemy: Enemy, damage: number): { blocked: number; curled: boolean } {
+function enemyCannotLoseHp(enemy: Enemy): boolean {
+  const immunity = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+    .find((ability) => ability.kind === 'immuneOnSlots')
+  return immunity?.kind === 'immuneOnSlots' && immunity.slots.includes(enemy.actionIndex)
+}
+
+function damageEnemy(
+  enemy: Enemy,
+  damage: number,
+  deferAbilities = false,
+): { blocked: number; curled: boolean; hpLost: number } {
   const hpBefore = enemy.hp
   const blockBefore = enemy.block
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
   enemy.block = outcome.block
-  enemy.hp = outcome.hp
+  enemy.hp = enemyCannotLoseHp(enemy) ? hpBefore : outcome.hp
   if (enemy.hp === 0) enemy.dead = true
   const ability = enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).find((candidate) => candidate.kind === 'curlUp')
   if (
-    enemy.hp < hpBefore && !enemy.dead && !enemy.abilityUsed && ability?.kind === 'curlUp'
+    !deferAbilities && enemy.hp < hpBefore && !enemy.dead && !enemy.abilityUsed && ability?.kind === 'curlUp'
   ) {
     enemy.abilityUsed = true
     enemy.block = gainBlock(enemy.block, ability.block)
-    return { blocked: blockBefore - outcome.block, curled: true }
+    return { blocked: blockBefore - outcome.block, curled: true, hpLost: hpBefore - enemy.hp }
   }
-  return { blocked: blockBefore - outcome.block, curled: false }
+  return { blocked: blockBefore - outcome.block, curled: false, hpLost: hpBefore - enemy.hp }
+}
+
+function grantShiftBlock(state: CombatState, enemy: Enemy, amount: number): void {
+  if (amount <= 0) return
+  for (const player of playersInRowOf(state, enemy)) {
+    const before = player.block
+    player.block = gainBlock(player.block, amount)
+    if (player.block > before) {
+      state.log = [...state.log, `${enemyLabel(state.enemies, enemy)}'s Shift gave ${player.name} ${player.block - before} Block`]
+    }
+  }
 }
 
 function triggerAngry(state: CombatState, enemy: Enemy, damagingHits: number): void {
@@ -259,10 +280,12 @@ function damageEnemyLogged(
   enemy: Enemy,
   damage: number,
   source?: string,
+  context?: PlayContext,
 ): void {
   const wasAlive = !enemy.dead
   const hpBefore = enemy.hp
-  const result = damageEnemy(enemy, damage)
+  const deferred = context?.sourceCardType !== undefined
+  const result = damageEnemy(enemy, damage, deferred)
   const name = enemyLabel(state.enemies, enemy)
   if (source) {
     const lost = hpBefore - enemy.hp
@@ -285,6 +308,12 @@ function damageEnemyLogged(
     triggerEnemyDeathAbility(state, enemy)
   } else if (result.curled) {
     state.log = [...state.log, `${name}'s Curl Up gained Block`]
+  }
+  if (result.hpLost > 0 && deferred) {
+    context.pendingEnemyDamage?.push({ enemyUid: enemy.uid, amount: result.hpLost })
+  } else if (result.hpLost > 0 && !combatIsOver(state) &&
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'shift')) {
+    grantShiftBlock(state, enemy, result.hpLost)
   }
 }
 
@@ -414,6 +443,10 @@ export type PlayContext = {
   sourceCardType?: CardType
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
   sourceAttackCounted?: boolean
+  /** Enemy HP losses whose printed reactions wait until this card is complete. */
+  pendingEnemyDamage?: { enemyUid: string; amount: number }[]
+  /** Enemies this Attack targeted, for after-card reactions such as Thorns. */
+  pendingAttackTargets?: string[]
 }
 
 export type CardChoicePreview = {
@@ -637,6 +670,7 @@ function applyEffect(
         return
       }
       for (const target of targets) {
+        if (context.sourceCardType === 'attack') context.pendingAttackTargets?.push(target.uid)
         // Every hit of a multi-hit is modified, but only ONE token comes off
         // after the whole thing resolves (p.14).
         const vulnerableAtStart = target.vulnerable
@@ -654,8 +688,18 @@ function applyEffect(
           if (target.dead) break
           const hitHpBefore = target.hp
           const flying = enemyAbilities(enemyDef(target.defId, target.ascension)).find((ability) => ability.kind === 'flying')
-          const damage = hitDamage(each, mods, { vulnerable: vulnerableAtStart })
-          const result = damageEnemy(target, flying?.kind === 'flying' ? Math.min(damage, flying.maxDamagePerHit) : damage)
+          const slow = enemyAbilities(enemyDef(target.defId, target.ascension))
+            .find((ability) => ability.kind === 'slow')
+          const damage = hitDamage(
+            each + (slow?.kind === 'slow' ? slow.damagePerHit : 0),
+            mods,
+            { vulnerable: vulnerableAtStart },
+          )
+          const result = damageEnemy(
+            target,
+            flying?.kind === 'flying' ? Math.min(damage, flying.maxDamagePerHit) : damage,
+            context.sourceCardType !== undefined,
+          )
           if (target.hp < hitHpBefore) angryHits += 1
           blocked += result.blocked
           curled = result.curled || curled
@@ -670,6 +714,9 @@ function applyEffect(
         // would otherwise bury the round in near-identical lines.
         const name = enemyLabel(state.enemies, target)
         const lost = hpBefore - target.hp
+        if (lost > 0 && context.sourceCardType !== undefined) {
+          context.pendingEnemyDamage?.push({ enemyUid: target.uid, amount: lost })
+        }
         state.log = [
           ...state.log,
           lost > 0
@@ -689,6 +736,10 @@ function applyEffect(
           state.log = [...state.log, `${name}'s Curl Up gained Block`]
         }
         triggerAngry(state, target, angryHits)
+        if (lost > 0 && context.sourceCardType === undefined && !combatIsOver(state) &&
+          enemyAbilities(enemyDef(target.defId, target.ascension)).some((ability) => ability.kind === 'shift')) {
+          grantShiftBlock(state, target, lost)
+        }
         if (combatIsOver(state)) return
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
@@ -703,7 +754,7 @@ function applyEffect(
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        damageEnemyLogged(state, target, effect.amount, who)
+        damageEnemyLogged(state, target, effect.amount, who, context)
         if (combatIsOver(state)) return
       }
       return
@@ -712,7 +763,7 @@ function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const name = enemyLabel(state.enemies, target)
         const wasAlive = !target.dead
-        const outcome = applyHpLoss(target.hp, effect.amount)
+        const outcome = enemyCannotLoseHp(target) ? { hp: target.hp, hpLost: 0 } : applyHpLoss(target.hp, effect.amount)
         // What was actually lost, not what was printed: an enemy on 2 hit
         // points struck for 5 loses 2.
         state.log = [...state.log, `${name} loses ${target.hp - outcome.hp}`]
@@ -723,6 +774,10 @@ function applyEffect(
           // write `dead` inline and skip the line.
           if (wasAlive) state.log = [...state.log, `${name} is dead`]
           if (wasAlive) triggerEnemyDeathAbility(state, target)
+        }
+        if (outcome.hpLost > 0 && !combatIsOver(state) &&
+          enemyAbilities(enemyDef(target.defId, target.ascension)).some((ability) => ability.kind === 'shift')) {
+          grantShiftBlock(state, target, outcome.hpLost)
         }
         if (combatIsOver(state)) return
       }
@@ -931,15 +986,23 @@ function applyEffect(
             context.invalidShivTarget = true
             continue
           }
+          const shivContext: PlayContext = {
+            ...context,
+            enemyUid,
+            sourceCardType: 'attack',
+            pendingEnemyDamage: [],
+            pendingAttackTargets: [],
+          }
           applyEffect(
             state,
             target,
             { kind: 'hit', amount: 1 + target.shivDamageBonus },
             'enemy',
             'self',
-            { ...context, enemyUid },
+            shivContext,
             'Shiv',
           )
+          if (!combatIsOver(state)) resolvePendingEnemyReactions(state, target, shivContext)
           target.attacksPlayedThisTurn = (target.attacksPlayedThisTurn ?? 0) + 1
           if (combatIsOver(state)) return
         }
@@ -966,15 +1029,23 @@ function applyEffect(
           context.invalidShivTarget = true
           continue
         }
+        const shivContext: PlayContext = {
+          ...context,
+          enemyUid,
+          sourceCardType: 'attack',
+          pendingEnemyDamage: [],
+          pendingAttackTargets: [],
+        }
         applyEffect(
           state,
           actor,
           { kind: 'hit', amount: 1 + actor.shivDamageBonus + effect.bonus },
           'enemy',
           'self',
-          { ...context, enemyUid },
+          shivContext,
           'Shiv',
         )
+        if (!combatIsOver(state)) resolvePendingEnemyReactions(state, actor, shivContext)
         actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
         if (combatIsOver(state)) return
       }
@@ -1703,6 +1774,49 @@ function discardForcedCard(state: CombatState, playerId: string, held: CardInsta
   return next
 }
 
+/** Enemy abilities triggered by a card resolve only after all its text (p.12). */
+function resolvePendingEnemyReactions(state: CombatState, actor: Player, context: PlayContext): void {
+  const damage = new Map<string, number>()
+  for (const event of context.pendingEnemyDamage ?? []) {
+    damage.set(event.enemyUid, (damage.get(event.enemyUid) ?? 0) + event.amount)
+  }
+  const attacked = new Set(context.pendingAttackTargets ?? [])
+
+  for (const enemy of state.enemies) {
+    const abilities = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+    const lost = damage.get(enemy.uid) ?? 0
+    if (lost > 0) {
+      const curl = abilities.find((ability) => ability.kind === 'curlUp')
+      if (!enemy.dead && curl?.kind === 'curlUp' && !enemy.abilityUsed) {
+        enemy.abilityUsed = true
+        enemy.block = gainBlock(enemy.block, curl.block)
+        state.log = [...state.log, `${enemyLabel(state.enemies, enemy)}'s Curl Up gained Block`]
+      }
+      if (abilities.some((ability) => ability.kind === 'shift')) grantShiftBlock(state, enemy, lost)
+      if (attacked.has(enemy.uid) && abilities.some((ability) => ability.kind === 'reactiveReroll')) {
+        state.die = nextInt(state.rng, 6) + 1
+        state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} rerolled enemy intents to ${state.die}`]
+      }
+    }
+
+    const thorns = abilities.find((ability) => ability.kind === 'thorns')
+    if (!attacked.has(enemy.uid) || thorns?.kind !== 'thorns') continue
+    const amount = (enemy.abilityCubes ?? 0) * thorns.damagePerCube
+    if (amount <= 0) continue
+    const block = actor.block
+    const outcome = damagePlayer(state, actor, amount)
+    const blocked = block - actor.block
+    state.log = [...state.log, outcome.lost > 0
+      ? `${enemyLabel(state.enemies, enemy)}'s Thorns hit ${actor.name} for ${outcome.lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+      : `${actor.name} blocked ${enemyLabel(state.enemies, enemy)}'s Thorns${blocked > 0 ? ` (${blocked} spent)` : ''}`]
+    if (outcome.revivedHp !== null) state.log = [...state.log, `${actor.name}'s Fairy in a Bottle revives them at ${outcome.revivedHp} HP`]
+    if (actor.dead) {
+      state.log = [...state.log, `${actor.name} has fallen`]
+      return
+    }
+  }
+}
+
 /**
  * Plays a card from a player's hand. Returns the same state reference when the
  * play is illegal: not that player's card, not enough energy, wrong phase.
@@ -1897,6 +2011,8 @@ export function playCard(
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
     sourceAttackCounted: false,
+    pendingEnemyDamage: [],
+    pendingAttackTargets: [],
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -1914,6 +2030,9 @@ export function playCard(
   // the way every other refusal does: by handing back the very same reference.
   if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
     ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice) return state
+
+  resolvePendingEnemyReactions(next, actor, ctx)
+  if (combatIsOver(next)) return settle(next)
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)
@@ -1957,7 +2076,7 @@ export function playCard(
   }
 
   // "Abilities triggered by a card do not take effect until the card has
-  // finished resolving all of its text" (p.12) — so this fires after cleanup.
+  // finished resolving all of its text" (p.12). Cleanup follows those abilities.
   // `held.uid` is excluded: a Power that reacts to cards being played was not
   // in front of you when THIS card was played, so it does not see it.
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
@@ -2010,7 +2129,8 @@ function beginPlayerTurn(next: CombatState): CombatState {
   const due = next.pendingSummons.filter((summon) => summon.turn <= next.turn)
   next.pendingSummons = next.pendingSummons.filter((summon) => summon.turn > next.turn)
   for (const summon of due) {
-    const ascension = next.enemies.find((enemy) => enemy.uid === summon.sourceUid)?.ascension
+    const source = next.enemies.find((enemy) => enemy.uid === summon.sourceUid)
+    const ascension = source?.ascension
     summon.defIds.forEach((name, index) => {
       const defId = drawSummon(next.summonSupply, name)
       if (!defId) {
@@ -2019,8 +2139,8 @@ function beginPlayerTurn(next: CombatState): CombatState {
       }
       const def = enemyDef(defId, ascension)
       const hp = startingHp(def, next.players.length)
-      next.enemies.push({
-        uid: `${summon.sourceUid}-summon-${next.turn}-${index}`,
+      const summoned: Enemy = {
+        uid: `${summon.sourceUid}-summon-${next.turn}-${summon.row}-${index}`,
         defId,
         row: summon.row,
         isBoss: false,
@@ -2038,7 +2158,13 @@ function beginPlayerTurn(next: CombatState): CombatState {
         phase: 0,
         abilityUsed: false,
         dead: false,
-      })
+      }
+      const sourceIndex = source && source.row === summon.row &&
+        (source.isBoss || enemyDef(source.defId, source.ascension).elite)
+        ? next.enemies.indexOf(source)
+        : -1
+      if (sourceIndex < 0) next.enemies.push(summoned)
+      else next.enemies.splice(sourceIndex, 0, summoned)
       next.log = [...next.log, `${def.name} was summoned`]
     })
   }
@@ -2107,6 +2233,7 @@ type StartTurnSource = {
   source?: TriggerSource
   enemyUid?: string
   enemyBlock?: number
+  enemyAction?: EnemyAction
 }
 
 function startTurnSources(state: CombatState): StartTurnSource[] {
@@ -2134,9 +2261,11 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
       },
     }))))
   const owner = state.players.find((player) => !player.dead)
-  const enemySources = state.turn === 1 && owner ? livingEnemies(state).flatMap((enemy) => {
-    const amount = enemyDef(enemy.defId, enemy.ascension).startingBlock ?? 0
-    return amount > 0 ? [{
+  const enemySources = owner ? livingEnemies(state).flatMap((enemy) => {
+    const def = enemyDef(enemy.defId, enemy.ascension)
+    const sources: StartTurnSource[] = []
+    const amount = state.turn === 1 ? def.startingBlock ?? 0 : 0
+    if (amount > 0) sources.push({
       enemyUid: enemy.uid,
       enemyBlock: amount,
       ability: {
@@ -2144,8 +2273,21 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
         playerId: owner.id,
         label: `${enemyLabel(state.enemies, enemy)} — ${amount} Block`,
       },
-    }] : []
+    })
+    return sources
   }) : []
+  const deadDarkling = state.enemies.some((enemy) => enemy.dead && enemy.defId.startsWith('darkling'))
+  const regrow = owner && deadDarkling && livingEnemies(state).find((enemy) =>
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'regrow'))
+  if (owner && regrow) enemySources.push({
+    enemyUid: regrow.uid,
+    enemyAction: { kind: 'reviveAll', group: 'darkling' },
+    ability: {
+      id: `enemy:${regrow.uid}/regrow`,
+      playerId: owner.id,
+      label: `${enemyLabel(state.enemies, regrow)} — Regrow`,
+    },
+  })
   return [...playerSources, ...enemySources]
 }
 
@@ -2213,10 +2355,16 @@ export function resolveStartPlayerTurn(
     const entry = byId.get(choice.id)
     if (!entry) return state
     if (entry.enemyUid) {
-      const enemy = next.enemies.find((candidate) => candidate.uid === entry.enemyUid && !candidate.dead)
+      const enemy = entry.enemyAction?.kind === 'reviveAll' && entry.enemyAction.group === 'darkling'
+        ? livingEnemies(next).find((candidate) => enemyAbilities(enemyDef(candidate.defId, candidate.ascension))
+          .some((ability) => ability.kind === 'regrow'))
+        : next.enemies.find((candidate) => candidate.uid === entry.enemyUid && !candidate.dead)
       if (enemy) {
-        enemy.block = gainBlock(enemy.block, entry.enemyBlock ?? 0)
-        next.log = [...next.log, `${enemyLabel(next.enemies, enemy)} gains ${entry.enemyBlock} Block`]
+        if (entry.enemyAction) applyEnemyAction(next, enemy, entry.enemyAction)
+        else {
+          enemy.block = gainBlock(enemy.block, entry.enemyBlock ?? 0)
+          next.log = [...next.log, `${enemyLabel(next.enemies, enemy)} gains ${entry.enemyBlock} Block`]
+        }
       }
       continue
     }
@@ -2373,7 +2521,7 @@ export function beginEndPlayerTurn(
     if (id.startsWith('poison:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
       if (enemy && !enemy.dead && enemy.poison > 0) {
-        const outcome = applyHpLoss(enemy.hp, enemy.poison)
+        const outcome = enemyCannotLoseHp(enemy) ? { hp: enemy.hp, hpLost: 0 } : applyHpLoss(enemy.hp, enemy.poison)
         const name = enemyLabel(next.enemies, enemy)
         next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
         enemy.hp = outcome.hp
@@ -2381,6 +2529,10 @@ export function beginEndPlayerTurn(
           enemy.dead = true
           next.log = [...next.log, `${name} is dead`]
           triggerEnemyDeathAbility(next, enemy)
+        }
+        if (outcome.hpLost > 0 && !combatIsOver(next) &&
+          enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'shift')) {
+          grantShiftBlock(next, enemy, outcome.hpLost)
         }
       }
     } else {
@@ -2498,7 +2650,11 @@ export function enemyTurn(state: CombatState): CombatState {
 
   for (const enemy of next.enemies) {
     if (enemy.dead) continue
-    enemy.actionIndex = advanceCube(enemyDef(enemy.defId, enemy.ascension), enemy.actionIndex)
+    const def = enemyDef(enemy.defId, enemy.ascension)
+    const rally = enemyAbilities(def).find((ability) => ability.kind === 'rally')
+    const noSummons = rally?.kind === 'rally' && !next.enemies.some((candidate) => !candidate.dead &&
+      (candidate.defId === rally.summonDefId || candidate.defId.startsWith(`${rally.summonDefId}_`)))
+    enemy.actionIndex = noSummons && enemy.actionIndex === 1 ? 0 : advanceCube(def, enemy.actionIndex)
   }
 
   // The round is over. The next Start of Turn is its own step (p.12) rather
@@ -2674,6 +2830,12 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       }
       if (healed) state.log = [...state.log, `${name} healed all enemies`]
       return
+    case 'healSelf': {
+      const before = enemy.hp
+      enemy.hp = Math.min(enemy.maxHp, enemy.hp + action.amount)
+      if (enemy.hp > before) state.log = [...state.log, `${name} healed ${enemy.hp - before} HP`]
+      return
+    }
     case 'blockNamed': {
       const target = state.enemies.find((candidate) => !candidate.dead &&
         candidate.row === enemy.row &&
@@ -2744,6 +2906,21 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       enemy.dead = true
       state.log = [...state.log, `${name} left combat`]
       return
+    case 'die':
+      enemy.hp = 0
+      enemy.dead = true
+      state.log = [...state.log, `${name} died`]
+      triggerEnemyDeathAbility(state, enemy)
+      return
+    case 'addAbilityCube': {
+      const thorns = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'thorns')
+      if (thorns?.kind !== 'thorns') return
+      const before = enemy.abilityCubes ?? 0
+      enemy.abilityCubes = Math.min(thorns.maxCubes, before + action.amount)
+      if (enemy.abilityCubes > before) state.log = [...state.log, `${name} added ${enemy.abilityCubes - before} ability cube`]
+      return
+    }
     case 'summon':
       state.pendingSummons.push({
         sourceUid: enemy.uid,
@@ -2753,6 +2930,26 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       })
       state.log = [...state.log, `${name} will summon ${action.defIds.map((id) => enemyDef(id).name).join(', ')}`]
       return
+    case 'summonUntil': {
+      let count = 0
+      for (const row of new Set(state.players.filter((player) => !player.dead).map((player) => player.row))) {
+        const present = state.enemies.filter((candidate) => !candidate.dead && candidate.row === row &&
+          (candidate.defId === action.defId || candidate.defId.startsWith(`${action.defId}_`))).length
+        const queued = state.pendingSummons.filter((summon) => summon.row === row).reduce((total, summon) => total +
+          summon.defIds.filter((id) => id === action.defId).length, 0)
+        const needed = Math.max(0, action.perPlayer - present - queued)
+        if (needed === 0) continue
+        state.pendingSummons.push({
+          sourceUid: enemy.uid,
+          row,
+          defIds: Array(needed).fill(action.defId),
+          turn: state.turn + 1,
+        })
+        count += needed
+      }
+      state.log = [...state.log, `${name} will summon ${count} ${enemyDef(action.defId).name}${count === 1 ? '' : 's'}`]
+      return
+    }
     case 'actsLast':
     case 'idle':
       return
@@ -2821,7 +3018,13 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
   if (orb === 'lightning') {
     if (!target) {
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
+    } else damageEnemyLogged(
+      state,
+      target,
+      2 + (actor.orbEvokeBonus ?? 0),
+      `${actor.name}'s Lightning orb`,
+      context,
+    )
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
@@ -2838,6 +3041,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
       target,
       3 + actor.powers.length + (actor.orbEvokeBonus ?? 0),
       `${actor.name}'s Dark orb`,
+      context,
     )
   }
   return orb
@@ -3066,7 +3270,13 @@ export function createCombat(
       cardBlockBonus: 0,
       hitPoison: 0,
     })),
-    enemies,
+    enemies: enemies.map((enemy) => {
+      const thorns = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'thorns')
+      return thorns?.kind === 'thorns'
+        ? { ...enemy, abilityCubes: enemy.abilityCubes ?? thorns.startingCubes }
+        : enemy
+    }),
     summonSupply,
     pendingSummons: [],
     discardedThisTurn: [],
@@ -3104,15 +3314,23 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
   const actor = next.players.find((candidate) => candidate.id === playerId)!
   actor.shivs -= 1
   next.log = [...next.log, `${actor.name} spends a Shiv`]
+  const context: PlayContext = {
+    enemyUid,
+    playerId,
+    sourceCardType: 'attack',
+    pendingEnemyDamage: [],
+    pendingAttackTargets: [],
+  }
   applyEffect(
     next,
     actor,
     { kind: 'hit', amount: 1 + actor.shivDamageBonus },
     'enemy',
     'self',
-    { enemyUid, playerId },
+    context,
     'Shiv',
   )
+  if (!combatIsOver(next)) resolvePendingEnemyReactions(next, actor, context)
   actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
   return settle(next)
 }

@@ -44,7 +44,7 @@
 //     The other 108 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
-//     effects. 63 enemies of roughly 60; Act III/IV enemies and every boss
+//     effects. 84 enemy definitions cover Acts I-III; Act IV and every boss
 //     remain, and variant physical cards make the definition count larger than
 //     the unique-name count. No events or shops.
 //   - Ascension 2's max-HP loss, Ascension 5's starter Curse, Ascension 6's Act

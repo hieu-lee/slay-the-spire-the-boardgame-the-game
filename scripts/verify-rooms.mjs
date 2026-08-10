@@ -486,6 +486,59 @@ check('online seats can spend capped Miracles and their own Shivs atomically', (
   assertEqual(enemy().hp, hp - 1, 'the Shiv attacks the chosen enemy')
 })
 
+check('Act III start abilities and reactions stay room-authoritative across reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combat = room.run.combat
+  const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = () => room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of combat.players) {
+    player.relics = []
+    player.powers = []
+    player.hand = []
+    player.draw = []
+    player.discard = []
+  }
+  combat.turn = 0
+  combat.phase = 'player'
+  combat.enemies = [{
+    ...combat.enemies[0],
+    uid: 'online-spiker',
+    defId: 'spiker_add',
+    row: mine().row,
+    hp: 10,
+    maxHp: 10,
+    block: 0,
+    abilityCubes: 1,
+    actionIndex: 0,
+    dead: false,
+  }]
+
+  apply(room, b.token, { kind: 'startTurn' })
+  assertEqual(room.run.combat.enemies[0].abilityCubes, 1,
+    'a remote seat cannot duplicate the cube placed during combat setup')
+  const card = { uid: 'online-thorns-strike', defId: 'strike_ironclad', upgraded: false }
+  mine().hand.push(card)
+  const hp = mine().hp
+  const otherHp = other().hp
+  let refused = false
+  try {
+    apply(room, b.token, { kind: 'playCard', cardUid: card.uid, enemyUid: 'online-spiker' })
+  } catch {
+    refused = true
+  }
+  assert(refused, 'another seat played a card from Ann\'s private hand')
+  apply(room, a.token, { kind: 'playCard', cardUid: card.uid, enemyUid: 'online-spiker' })
+  assertEqual(mine().hp, hp - 1, 'the authoritative engine applies the public Thorns cube')
+  assertEqual(other().hp, otherHp, 'Thorns charges only the acting seat')
+
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  const restored = snapshotFor(room, a.token).run.combat
+  assertEqual(restored.enemies[0].abilityCubes, 1, 'reconnect preserves the enemy ability track')
+  assertEqual(restored.players.find((player) => player.id === a.playerId).hp, hp - 1, 'reconnect preserves reaction damage')
+  assertEqual(snapshotFor(room, b.token).run.combat.enemies[0].abilityCubes, 1, 'all seats see the same public enemy state')
+})
+
 check('an online seat can use only its own potion with a valid target', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)

@@ -808,6 +808,47 @@ check('Act II builds the complete twelve-card encounter deck and three elites', 
   assertDeepEqual(sphere?.summons, ['sentry_a'], 'A7 Spheric Guardian gains its Sentry')
 })
 
+check('Act III builds the ten physical encounters and three elites at base and A7', () => {
+  const nextAct = (run) => {
+    const bossId = run.map.rows.at(-1)[0]
+    return advanceAct({
+      ...run,
+      phase: 'victory',
+      map: {
+        ...run.map,
+        position: bossId,
+        rooms: { ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true } },
+      },
+    })
+  }
+  for (const ascension of [0, 7]) {
+    const act3 = nextAct(nextAct(createRun(190 + ascension, [
+      { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    ], ascension)))
+    assertEqual(act3.enemyDecks.encounter.length, 10, `A${ascension} has ten Act III encounters`)
+    assertDeepEqual(
+      [...act3.enemyDecks.elite.map((card) => card.defId)].sort(),
+      ['giant_head', 'nemesis', 'reptomancer'],
+      `A${ascension} shuffles all three Act III elites once`,
+    )
+    const repulsor = act3.enemyDecks.encounter.find((card) => card.defId === 'repulsor')
+    const exploder = act3.enemyDecks.encounter.find((card) => card.defId === 'exploder')
+    const maw = act3.enemyDecks.encounter.find((card) => card.defId === 'maw')
+    assertDeepEqual(
+      repulsor?.summons,
+      ascension < 7 ? ['exploder', 'spiker'] : ['exploder', 'spheric_guardian'],
+      `A${ascension} Repulsor has its printed summon box`,
+    )
+    assertDeepEqual(
+      exploder?.summons,
+      ascension < 7 ? ['repulsor', 'spiker'] : ['repulsor', 'spiker', 'spiker'],
+      `A${ascension} Exploder has its printed summon box`,
+    )
+    assertEqual(maw?.potionReward === true, ascension < 7, `A${ascension} Maw has its printed potion reward`)
+    assertEqual(maw?.cardReward, ascension < 7 ? null : 'normal', `A${ascension} Maw has its printed card reward`)
+  }
+})
+
 check('Act II elite setup deals the printed summons to every row', () => {
   const party = [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
@@ -1102,6 +1143,27 @@ const PRINTED_HP = {
   book_of_stabbing: [30, 60, 90, 120],
   gremlin_leader: [30, 60, 90, 120],
   taskmaster: [13, 28, 42, 56],
+  jaw_worm_act3: [10, 10, 10, 10],
+  jaw_worm_summon: [10, 10, 10, 10],
+  spire_growth: [17, 17, 17, 17],
+  repulsor: [7, 7, 7, 7],
+  repulsor_summon: [7, 7, 7, 7],
+  exploder: [8, 8, 8, 8],
+  exploder_summon: [8, 8, 8, 8],
+  orb_walker_3ws: [22, 22, 22, 22],
+  orb_walker_2s: [22, 22, 22, 22],
+  transient: [99, 99, 99, 99],
+  maw: [28, 28, 28, 28],
+  writhing_mass: [17, 17, 17, 17],
+  darkling: [8, 8, 8, 8],
+  darkling_bha: [8, 8, 8, 8],
+  darkling_hab: [8, 8, 8, 8],
+  spiker_add: [10, 10, 10, 10],
+  spiker_attack: [10, 10, 10, 10],
+  dagger: [5, 5, 5, 5],
+  giant_head: [80, 160, 240, 320],
+  nemesis: [30, 60, 90, 120],
+  reptomancer: [35, 70, 105, 140],
 }
 
 check('main-enemy rewards come from the Act-specific encounter card', () => {
@@ -1223,6 +1285,16 @@ check('the complete Act II enemy, summon, and elite roster is live', () => {
     'book_of_stabbing', 'gremlin_leader', 'taskmaster',
   ]
   assertDeepEqual(required.filter((id) => !ENEMIES[id]), [], 'every inventoried Act II card has a definition')
+})
+
+check('the complete Act III enemy, summon, and elite roster is live', () => {
+  const required = [
+    'jaw_worm_act3', 'jaw_worm_summon', 'spire_growth', 'repulsor', 'repulsor_summon',
+    'exploder', 'exploder_summon', 'orb_walker_3ws', 'orb_walker_2s', 'transient',
+    'maw', 'writhing_mass', 'darkling', 'darkling_bha', 'darkling_hab', 'spiker_add',
+    'spiker_attack', 'dagger', 'giant_head', 'nemesis', 'reptomancer',
+  ]
+  assertDeepEqual(required.filter((id) => !ENEMIES[id]), [], 'every inventoried Act III card has a definition')
 })
 
 check('encounter HP comes from the enemy definition, not a fixture', () => {

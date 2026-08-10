@@ -67,6 +67,8 @@ function intentParts(action: EnemyAction): IntentPart[] {
       return [{ icon: 'strength', value: action.amount, prefix: '+', label: 'Strength to all enemies' }]
     case 'healAllEnemies':
       return [{ icon: 'monster', value: action.amount, label: 'heal all enemies', visibleLabel: 'Heal' }]
+    case 'healSelf':
+      return [{ icon: 'monster', value: action.amount, label: 'heals itself', visibleLabel: 'Heal' }]
     case 'blockNamed':
       return [{ icon: 'block', value: action.amount, label: `Block to ${action.defId.replaceAll('_', ' ')}` }]
     case 'clearSelfDebuffs':
@@ -91,8 +93,14 @@ function intentParts(action: EnemyAction): IntentPart[] {
       return [{ icon: 'gold', value: action.amount, prefix: '-', label: 'gold' }]
     case 'summon':
       return [{ icon: 'monster', value: action.defIds.length, label: 'summons', visibleLabel: 'Summon' }]
+    case 'summonUntil':
+      return [{ icon: 'monster', value: action.perPlayer, label: 'summons per player', visibleLabel: 'Summon per player' }]
     case 'leave':
       return [{ icon: 'monster', label: 'leaves combat', visibleLabel: 'Leaves' }]
+    case 'die':
+      return [{ icon: 'monster', label: 'dies', visibleLabel: 'Dies' }]
+    case 'addAbilityCube':
+      return [{ icon: 'monster', value: action.amount, label: 'ability cube', visibleLabel: 'Cube' }]
     case 'actsLast':
       return [{ icon: 'monster', label: 'acts last', visibleLabel: 'Acts last' }]
     case 'idle':
@@ -165,6 +173,12 @@ export function EnemyCard({
   const abilityLabels = abilities.map((ability) => {
     const text = ability.kind === 'confusion'
       ? `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
+      : ability.kind === 'thorns'
+        ? `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
+      : ability.kind === 'immuneOnSlots'
+        ? ability.slots.includes(enemy.actionIndex)
+          ? 'Cannot lose HP this turn'
+          : 'Cannot lose HP while the cube is on a marked action'
       : abilityText(ability)
     return `${text}${spentAbility && ability.kind === 'curlUp' ? ', spent' : ''}`
   })
@@ -221,6 +235,12 @@ export function EnemyCard({
                 ? 'Curl Up · spent'
                 : ability.kind === 'confusion'
                   ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
+                  : ability.kind === 'thorns'
+                    ? `Thorns · ${enemy.abilityCubes ?? 0} cubes`
+                  : ability.kind === 'immuneOnSlots'
+                    ? ability.slots.includes(enemy.actionIndex)
+                      ? 'Cannot lose HP this turn'
+                      : 'HP immunity · inactive'
                   : abilityText(ability, true)}
             </span>
           ))}

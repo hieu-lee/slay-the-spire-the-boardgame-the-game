@@ -3165,10 +3165,72 @@ check('three enemies in one player row remain readable at every supported width'
   }
 })
 
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const state = run.combat
+  const base = state.enemies[0]
+  const specs = [
+    ['spiker_add', 10, 0, 0, 3],
+    ['writhing_mass', 17, 0, 0, 0],
+    ['nemesis', 162, 12, 1, 0],
+    ['reptomancer', 194, 12, 0, 0],
+  ]
+  state.enemies = specs.map(([defId, hp, ascension, actionIndex, abilityCubes], index) => ({
+    ...base,
+    uid: `act3-ui-${defId}`,
+    defId,
+    row: state.players[0].row,
+    isBoss: false,
+    ascension,
+    hp,
+    maxHp: hp,
+    block: 0,
+    strength: 0,
+    vulnerable: 0,
+    weak: 0,
+    poison: 0,
+    actionIndex,
+    abilityCubes,
+    abilityUsed: false,
+    dead: false,
+  }))
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.enemy').length === 4)
+for (let index = 0; index < 4; index++) {
+  await page.locator('.enemy').nth(index).scrollIntoViewIfNeeded()
+}
+await page.waitForFunction(() => [...document.querySelectorAll('.enemy__portrait img')]
+  .every((image) => image.complete && image.naturalWidth > 0))
+const act3Cards = await page.locator('.enemy').evaluateAll((cards) => cards.map((card) => {
+  const image = card.querySelector('.enemy__portrait img')
+  const box = card.getBoundingClientRect()
+  return {
+    label: card.getAttribute('aria-label') ?? '',
+    ability: card.querySelector('.enemy__ability')?.textContent ?? '',
+    intent: card.querySelector('.enemy__intent')?.textContent ?? '',
+    artLoaded: image?.complete === true && image.naturalWidth > 0,
+    onScreen: box.left >= 0 && box.right <= window.innerWidth,
+  }
+}))
+check('Act III mechanics are visible, accessible, and use their official card art', () => {
+  assert(act3Cards.every((card) => card.artLoaded), 'an Act III portrait failed to load')
+  assert(act3Cards.every((card) => card.onScreen), 'an Act III enemy card clips horizontally')
+  assert(act3Cards.some((card) => card.ability.includes('Thorns · 3 cubes') && card.label.includes('3 cubes')),
+    'Spiker ability cubes are not conveyed visually and accessibly')
+  assert(act3Cards.some((card) => card.label.includes('reroll the die')), 'Writhing Mass Reactive is absent from its label')
+  assert(act3Cards.some((card) => card.ability.includes('Cannot lose HP this turn') &&
+    card.label.includes('Cannot lose HP this turn')), 'active Nemesis immunity is not visible and accessible')
+  assert(act3Cards.some((card) => card.intent.includes('Summon per player') &&
+    card.label.includes('summons per player')), 'Reptomancer does not show the per-player summon count')
+})
+await shot('09a-act3-enemy-mechanics')
+
 // Cards that need a choice or an ally are the ones most easily broken by a UI
 // rewrite: a wrong auto-commit silently skips the discard, exhaust or ally
 // selection and quietly breaks the printed rule.
-await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'choice-flows'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
