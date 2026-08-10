@@ -1493,6 +1493,33 @@ check('Entrench doubles Block and removes Exhaust on upgrade through room author
   assertDeepEqual(resolved.discard.map((card) => card.uid), [upgraded.uid])
 })
 
+check('Clash enforces its hand restriction through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const clash = { uid: 'room-clash', defId: 'clash', upgraded: true }
+  const defend = { uid: 'room-clash-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [clash, defend], energy: 0, discard: [] })
+  const hp = target.hp
+  let refused = false
+  try {
+    apply(room, a.token, { kind: 'playCard', cardUid: clash.uid, enemyUid: target.uid, preflight: true })
+  } catch {
+    refused = true
+  }
+  assert(refused, 'room authority accepted Clash while a Skill remained in hand')
+  assertEqual(target.hp, hp)
+  assertDeepEqual(actor.hand.map((card) => card.uid), [clash.uid, defend.uid])
+
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const currentTarget = room.run.combat.enemies.find((enemy) => enemy.uid === target.uid)
+  currentActor.hand = [clash, { uid: 'room-clash-strike', defId: 'strike_ironclad', upgraded: false }]
+  apply(room, a.token, { kind: 'playCard', cardUid: clash.uid, enemyUid: currentTarget.uid, preflight: true })
+  const resolved = room.run.combat
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, hp - 4)
+  assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [clash.uid])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

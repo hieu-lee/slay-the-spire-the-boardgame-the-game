@@ -404,6 +404,8 @@ function holds(
       return state.turn === 1
     case 'hasNoAttacksInHand':
       return actor.hand.every((card) => cardDef(card.defId).type !== 'attack')
+    case 'allCardsInHandAreAttacks':
+      return actor.hand.every((card) => cardDef(card.defId).type === 'attack')
     case 'goldAtLeast':
       return actor.gold >= condition.amount
     case 'orbsAtLeast':

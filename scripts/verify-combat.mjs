@@ -798,6 +798,25 @@ check('Entrench doubles current Block to the cap and upgrades by removing Exhaus
   assertEqual(played.players[0].block, 20, 'Entrench must discard Block above the global cap')
 })
 
+check('Clash requires an all-Attack hand and upgrades from 3 to 4 damage', () => {
+  const blocked = instance('clash')
+  const blockedState = combat([makePlayer({
+    hand: [blocked, instance('defend_ironclad')], energy: 0,
+  })], [makeEnemy()])
+  assertEqual(playCard(blockedState, 'p1', blocked.uid, { enemyUid: 'e1', playerId: null }), blockedState)
+
+  for (const upgraded of [false, true]) {
+    const clash = instance('clash', upgraded)
+    const state = combat([makePlayer({
+      hand: [clash, instance('strike_ironclad')], energy: 0,
+    })], [makeEnemy()])
+    const played = playCard(state, 'p1', clash.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, upgraded ? 2 : 3)
+    assertEqual(played.players[0].energy, 0)
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [clash.uid])
+  }
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -2056,6 +2075,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
+    { id: 'clash', enemyHp: [17, 16] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

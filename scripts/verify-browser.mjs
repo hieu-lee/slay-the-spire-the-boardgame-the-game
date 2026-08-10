@@ -1551,6 +1551,47 @@ check('Entrench doubles Block to 20 and its upgrade removes Exhaust through real
   assertDeepEqual(entrenched.players[0].discard.map((card) => card.uid), ['ui-entrench-plus'])
 })
 await shot('06zr-entrench-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const target = run.combat.enemies.find((enemy) => !enemy.isBoss) ?? run.combat.enemies[0]
+  for (const enemy of run.combat.enemies) enemy.dead = enemy.uid !== target.uid
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, dead: false, vulnerable: 0 })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-clash', defId: 'clash', upgraded: false },
+      { uid: 'ui-clash-plus', defId: 'clash', upgraded: true },
+      { uid: 'ui-clash-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 0, strength: 0, weak: 0,
+  })
+  debug.setRun(run)
+})
+const clashCard = page.getByRole('button', { name: /^Clash,/ })
+const clashPlusCard = page.getByRole('button', { name: /^Clash\+,/ })
+await Promise.all([clashCard.waitFor(), clashPlusCard.waitFor()])
+const clashLabel = await clashCard.getAttribute('aria-label')
+assert(await clashCard.isDisabled(), 'Clash should be disabled while a Skill remains in hand')
+await shot('06zs-clash-restricted-hd-cards')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = run.combat.players[0].hand.filter((card) => card.defId !== 'defend_ironclad')
+  debug.setRun(run)
+})
+await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Clash,"]')?.disabled)
+await clashCard.click()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+await clashPlusCard.click()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+const clashed = await readState()
+check('Clash explains and enforces its all-Attack hand restriction through real controls', () => {
+  assert(clashLabel.includes('can only be played if every card in your hand is an Attack'), clashLabel)
+  assertEqual(clashed.enemies.find((enemy) => !enemy.dead).hp, 13)
+  assertDeepEqual(clashed.players[0].discard.map((card) => card.uid), ['ui-clash', 'ui-clash-plus'])
+})
+await shot('06zt-clash-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

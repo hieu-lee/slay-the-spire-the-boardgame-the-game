@@ -65,6 +65,7 @@ export type Condition =
   | { kind: 'targetFullHp' }
   | { kind: 'firstTurnOfCombat' }
   | { kind: 'hasNoAttacksInHand' }
+  | { kind: 'allCardsInHandAreAttacks' }
   | { kind: 'goldAtLeast'; amount: number }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
@@ -1056,6 +1057,17 @@ export const CARDS: Record<string, CardDef> = {
     cost: 1,
     effects: [{ kind: 'hit', amount: { base: 0, per: 'block' } }],
     upgrade: { cost: 0 },
+  }),
+  clash: card({
+    id: 'clash',
+    name: 'Clash',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 0,
+    playCondition: { kind: 'allCardsInHandAreAttacks' },
+    effects: [{ kind: 'hit', amount: 3 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
   }),
   heavy_blade: card({
     id: 'heavy_blade',

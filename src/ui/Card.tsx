@@ -51,6 +51,7 @@ function conditionText(condition: Condition): string {
     case 'targetFullHp': return 'the target is at full hit points'
     case 'firstTurnOfCombat': return 'it is the first turn of combat'
     case 'hasNoAttacksInHand': return 'you have no Attacks in hand'
+    case 'allCardsInHandAreAttacks': return 'every card in your hand is an Attack'
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
     case 'drawPileEmpty': return 'your draw pile is empty'
