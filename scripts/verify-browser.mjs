@@ -1543,6 +1543,44 @@ await shot('06zp-thinking-ahead-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-warcry', defId: 'warcry', upgraded: true },
+      { uid: 'ui-warcry-held', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: Array.from({ length: 3 }, (_, index) => ({
+      uid: `ui-warcry-draw-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+    discard: [], exhaust: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const warcryCard = page.getByRole('button', { name: /^Warcry\+,/ })
+await warcryCard.waitFor()
+const warcryLabel = await warcryCard.getAttribute('aria-label')
+await warcryCard.click()
+const warcryDialog = page.getByRole('dialog', { name: 'Choose 1 for the top of your draw pile' })
+await warcryDialog.waitFor()
+const warcryPrompt = await page.getByText('Warcry+ — choose 1 card to put on top').textContent()
+await shot('06zpa-warcry-choice')
+await warcryDialog.locator('.card').last().click()
+await warcryDialog.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].exhaust
+  .some((card) => card.uid === 'ui-warcry'))
+const warcried = await readState()
+check('Warcry+ uses the reusable private topdeck controls and card-specific prompt', () => {
+  assert(warcryLabel.includes('draw 3 cards'), warcryLabel)
+  assert(warcryLabel.includes('put 1 card from your hand on top of your draw pile'), warcryLabel)
+  assertEqual(warcryPrompt, 'Warcry+ — choose 1 card to put on top')
+  assertEqual(warcried.players[0].draw[0].uid, 'ui-warcry-draw-2')
+  assertEqual(warcried.players[0].hand.length, 3)
+})
+await shot('06zpb-warcry-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

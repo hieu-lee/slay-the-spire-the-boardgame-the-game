@@ -747,6 +747,12 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }],
     },
   }),
+  warcry: card({
+    id: 'warcry', name: 'Warcry', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 0,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
+    exhaust: true,
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,
     effects: [{ kind: 'hit', amount: 1 }, { kind: 'block', amount: 1 }],

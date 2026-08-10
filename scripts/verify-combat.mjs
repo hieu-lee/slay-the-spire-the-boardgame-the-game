@@ -2195,6 +2195,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'the_bomb', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'sadistic_nature', powers: [1, 1] },
     { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
+    { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
@@ -3245,6 +3246,26 @@ check('Thinking Ahead draws first, then returns exactly one chosen card to the d
     enemyUid: null, playerId: null, topdeckUids: [preview.cards[1].uid],
   })
   assertEqual(next.players[0].draw[0].uid, preview.cards[1].uid)
+})
+
+check('Warcry draws 2/3, topdecks one chosen hand card, and Exhausts', () => {
+  for (const upgraded of [false, true]) {
+    const warcry = instance('warcry', upgraded)
+    const held = instance('strike_ironclad')
+    const drawn = Array.from({ length: upgraded ? 3 : 2 }, () => instance('defend_ironclad'))
+    const state = combat([makePlayer({ hand: [warcry, held], draw: drawn, energy: 0 })], [makeEnemy()])
+    const preview = previewCardChoice(state, 'p1', warcry.uid)
+    assertEqual(preview?.kind, 'topdeck')
+    assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, ...drawn.map((card) => card.uid)])
+    const chosen = drawn.at(-1)
+    const next = playCard(state, 'p1', warcry.uid, {
+      enemyUid: null, playerId: null, topdeckUids: [chosen.uid],
+    })
+    assertEqual(next.players[0].energy, 0)
+    assertEqual(next.players[0].draw[0].uid, chosen.uid)
+    assertEqual(next.players[0].hand.length, drawn.length)
+    assertEqual(next.players[0].exhaust.at(-1).uid, warcry.uid)
+  }
 })
 
 check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {

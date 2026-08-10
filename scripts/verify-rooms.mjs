@@ -2210,6 +2210,34 @@ check('Thinking Ahead previews and validates its topdeck choice privately', () =
     'reconnect restored a settled Thinking Ahead preview')
 })
 
+check('Warcry uses the same private authoritative topdeck choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const warcry = { uid: 'room-warcry', defId: 'warcry', upgraded: true }
+  const held = { uid: 'room-warcry-held', defId: 'strike_ironclad', upgraded: false }
+  const hidden = Array.from({ length: 3 }, (_, index) => ({
+    uid: `room-warcry-hidden-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  Object.assign(actor, { hand: [warcry, held], draw: hidden, discard: [], exhaust: [], energy: 0 })
+  const before = JSON.stringify(room.run)
+  const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: warcry.uid }).snapshot.cardPreview
+  assertEqual(revealed.kind, 'topdeck')
+  assertDeepEqual(revealed.cards.map((card) => card.uid), [held.uid, ...hidden.map((card) => card.uid)])
+  assertEqual(JSON.stringify(room.run), before, 'Warcry preview advanced authoritative state')
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: warcry.uid, topdeckUids: [hidden[2].uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.draw[0].uid, hidden[2].uid)
+  assertEqual(resolved.hand.length, 3)
+  assertEqual(resolved.exhaust.at(-1).uid, warcry.uid)
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
+})
+
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)

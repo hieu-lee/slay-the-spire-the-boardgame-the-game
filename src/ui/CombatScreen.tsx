@@ -1490,7 +1490,7 @@ export function CombatScreen({
       ? pending.choice?.kind === 'scry'
         ? `Scry ${pending.choice.amount} — choose any cards to discard`
         : pending.choice?.kind === 'topdeck'
-          ? `Thinking Ahead — choose ${choiceNeeded} card to put on top`
+          ? `${pendingDef?.name ?? 'Card'} — choose ${choiceNeeded} card to put on top`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
     : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed
       ? pending.choice.kind === 'discardAny'
