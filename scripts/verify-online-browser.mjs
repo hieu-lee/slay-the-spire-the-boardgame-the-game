@@ -708,6 +708,52 @@ try {
   await a.getByRole('button', { name: /^Blade Dance,/ }).click()
   liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 1
 
+  const annBeforeDodge = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeDodge = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  annBeforeDodge.hand.push({ uid: 'online-dodge-refusal', defId: 'dodge_and_roll', upgraded: false })
+  Object.assign(annBeforeDodge, { energy: 3, block: 0 })
+  Object.assign(boBeforeDodge, { miracles: 1, energy: 0, block: 0, dead: false })
+  const publishDodgeFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishDodgeFixture.ok, 'could not publish the Dodge and Roll refusal fixture')
+  await a.getByRole('button', { name: /^Dodge and Roll,/ }).click()
+  await a.locator('button.seat').filter({ hasText: 'Ann' }).click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
+  let dodgeRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = JSON.parse(route.request().postData())
+    body.action.playerIds = [body.action.playerIds[0], 'gone']
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    dodgeRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('button.seat').filter({ hasText: 'Bo' }).click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('1/2'))
+  const expectedDodgeConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedDodgeConflict >= 0, 'the refused Dodge and Roll did not surface as an HTTP conflict')
+  failures.splice(expectedDodgeConflict, 1)
+  const refusedDodge = await snapshot(a)
+  check('a refused online Dodge and Roll reopens independent player targeting', () => {
+    const ann = refusedDodge.run.combat.players.find((player) => player.id === refusedDodge.you.playerId)
+    assertEqual(dodgeRefusalStatus, 409)
+    assert(ann.hand.some((card) => card.uid === 'online-dodge-refusal'))
+  })
+  await a.locator('button.seat').filter({ hasText: 'Ann' }).click()
+  await a.locator('button.seat').filter({ hasText: 'Bo' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Dodge and Roll,')))
+  const completedDodge = await snapshot(a)
+  check('the restored Dodge and Roll choice can complete', () => {
+    const ann = completedDodge.run.combat.players.find((player) => player.name === 'Ann')
+    const bo = completedDodge.run.combat.players.find((player) => player.name === 'Bo')
+    assertEqual(ann.block, 1)
+    assertEqual(bo.block, 1)
+  })
+  liveRoom.run.combat.players.forEach((player) => { player.block = 0 })
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')

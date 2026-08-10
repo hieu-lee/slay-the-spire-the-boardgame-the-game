@@ -671,8 +671,9 @@ function settleReward(room) {
  * handles messages one at a time on a single thread. A client sending 40,000
  * junk uids blocked every room in the process for 1.3 seconds, repeatably, and
  * 100,000 for about eight. This helper only handles card-effect choices, whose
- * printed amounts fit comfortably under the cap. End-turn discard orders can
- * span an unbounded hand and are validated separately against that hand.
+ * printed amounts fit comfortably under the cap. Variable discards and
+ * end-turn discard orders can span an unbounded hand and are validated
+ * separately against that hand.
  */
 export const UID_LIMIT = 32
 export const uidList = (value) =>
@@ -729,25 +730,42 @@ function dispatch(run, seat, action) {
       if (!run.combat) fail('No combat in progress')
       // A seat may only play cards from its OWN hand. Without this check any
       // client could spend another player's energy and empty their hand.
-      const card = run.combat.players
-        .find((player) => player.id === seat.playerId)
-        ?.hand.find((held) => held.uid === action.cardUid)
+      const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
+      const card = player?.hand.find((held) => held.uid === action.cardUid)
       if (!card) fail('That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, action)
+      const enemyUids = uidList(action.enemyUids)
+      const playerIds = uidList(action.playerIds)
+      if (action.enemyUids !== undefined && (
+        !Array.isArray(action.enemyUids) || enemyUids.length !== action.enemyUids.length
+      )) fail('Enemy choices must be a list of ids')
+      if (action.playerIds !== undefined && (
+        !Array.isArray(action.playerIds) || playerIds.length !== action.playerIds.length
+      )) fail('Player choices must be a list of ids')
       const scryDiscardUids = uidList(action.scryDiscardUids)
       if (action.scryDiscardUids !== undefined && (
         !Array.isArray(action.scryDiscardUids) || scryDiscardUids.length !== action.scryDiscardUids.length
       )) fail('Scry choices must be a list of card ids')
+      const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
+      const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
+      if (action.discardUids !== undefined && (
+        !Array.isArray(action.discardUids) ||
+        (variableDiscard
+          ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
+          : discardUids.length !== action.discardUids.length)
+      )) fail('Discard choices must be a valid list of card ids')
       const context = {
         enemyUid: action.enemyUid ?? null,
+        enemyUids,
         playerId: action.playerId ?? seat.playerId,
+        playerIds,
         switchWithPlayerId: action.switchWithPlayerId ?? null,
         mode: action.mode,
         // Coerced, not trusted: these arrive as JSON from a socket, and a
         // string where a list belongs threw a raw TypeError out of `apply`
         // instead of being refused like any other bad message.
-        discardUids: uidList(action.discardUids),
+        discardUids,
         exhaustUids: uidList(action.exhaustUids),
         spendMiracle: action.spendMiracle === true,
         shivEnemyUids,
@@ -961,6 +979,7 @@ function redactCombat(combat, viewerId) {
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,
+    powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.

@@ -143,12 +143,16 @@ type EffectKind =
   /** The caster loses HP, ignoring Block, as a printed card effect. */
   | { kind: 'loseOwnHp'; amount: number }
   | ({ kind: 'block'; amount: Amount } & Redirectable)
+  /** Separate printed Block icons, each independently assigned to any living player. */
+  | { kind: 'blockChoices'; amount: number; targets: number }
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
+  /** Separate Poison cubes, each independently assigned to a living enemy. */
+  | { kind: 'poisonChoices'; amount: number; targets: number }
   | { kind: 'multiplyPoison'; factor: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | { kind: 'drawToHandSize'; size: number }
@@ -158,6 +162,8 @@ type EffectKind =
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
+  /** Gain one Energy per card this card's preceding variable discard took, plus a flat bonus. */
+  | { kind: 'gainEnergyPerDiscard'; bonus: number }
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
@@ -186,6 +192,8 @@ type EffectKind =
    * atomic message for the server to validate.
    */
   | { kind: 'discard'; amount: number }
+  /** Discard any number of chosen cards, including zero. */
+  | { kind: 'discardAny' }
   /** Exhaust cards the player chooses from hand, as True Grit does. */
   | { kind: 'exhaustFromHand'; amount: number }
 
@@ -231,6 +239,8 @@ export type CardDef = {
    * happens when it is played — a Power with a trigger does nothing on play.
    */
   trigger?: Trigger
+  /** This Power may resolve at most once between Start of Turn resets. */
+  oncePerTurn?: boolean
   /** A Power whose printed effects happen once when played, as Inflame does. */
   resolvesOnPlay?: boolean
   /** What changes when upgraded. Merged over the base definition. */
@@ -1344,6 +1354,11 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'block', amount: { base: 2, bonus: { plus: 1, when: { kind: 'hasShiv' } } } }],
     },
   }),
+  dodge_and_roll: card({
+    id: 'dodge_and_roll', name: 'Dodge and Roll', owner: 'silent', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'blockChoices', amount: 1, targets: 2 }],
+    upgrade: { effects: [{ kind: 'blockChoices', amount: 1, targets: 3 }] },
+  }),
   bane: card({
     id: 'bane',
     name: 'Bane',
@@ -1737,6 +1752,24 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainHitPoison', amount: 1 }],
     upgrade: { cost: 2 },
+  }),
+  bouncing_flask: card({
+    id: 'bouncing_flask', name: 'Bouncing Flask', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'poisonChoices', amount: 1, targets: 2 }],
+    upgrade: { effects: [{ kind: 'poisonChoices', amount: 1, targets: 3 }] },
+  }),
+  concentrate: card({
+    id: 'concentrate', name: 'Concentrate', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'discardAny' }, { kind: 'gainEnergyPerDiscard', bonus: 0 }],
+    upgrade: { effects: [{ kind: 'discardAny' }, { kind: 'gainEnergyPerDiscard', bonus: 1 }] },
+  }),
+  distraction: card({
+    id: 'distraction', name: 'Distraction', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 2,
+    trigger: { kind: 'onApplyPoison' },
+    oncePerTurn: true,
+    effects: [{ kind: 'block', amount: 2 }],
+    upgrade: { cost: 1 },
   }),
 }
 

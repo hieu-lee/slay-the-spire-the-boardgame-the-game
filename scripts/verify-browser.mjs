@@ -1665,6 +1665,91 @@ await page.waitForFunction(() => {
     document.querySelectorAll('.power').length === 0
 })
 
+const runBeforeSilentChoices = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  if (!ally) throw new Error('the Silent choice playtest needs a teammate')
+  Object.assign(actor, {
+    character: 'silent',
+    hand: [
+      { uid: 'ui-distraction', defId: 'distraction', upgraded: true },
+      { uid: 'ui-bouncing-flask', defId: 'bouncing_flask', upgraded: true },
+      { uid: 'ui-dodge-roll', defId: 'dodge_and_roll', upgraded: true },
+      { uid: 'ui-concentrate', defId: 'concentrate', upgraded: true },
+      { uid: 'ui-concentrate-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'ui-concentrate-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 6, block: 0,
+    shivDamageBonus: 0, cardBlockBonus: 0, hitPoison: 0,
+  })
+  ally.block = 0
+  ally.dead = false
+  if (run.combat.enemies.length < 2) {
+    run.combat.enemies.push({
+      ...run.combat.enemies[0], uid: 'ui-bounce-second', row: run.combat.enemies[0].row + 1,
+    })
+  }
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, weak: 0, poison: 0, abilityUsed: false, dead: false,
+    row: index,
+  }))
+  run.combat.powerTriggersUsedThisTurn = []
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const silentChoiceCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artLoaded: card.querySelector('img')?.naturalWidth > 0,
+})))
+check('the Silent choice cards render scans and announce their independent decisions', () => {
+  assert(silentChoiceCards.every((card) => card.artLoaded), 'all four choice-card scans should load')
+  assert(silentChoiceCards.some((card) => card.label.startsWith('Dodge and Roll+') &&
+    card.label.includes('3 separate 1 Block icons')))
+  assert(silentChoiceCards.some((card) => card.label.startsWith('Bouncing Flask+') &&
+    card.label.includes('3 separate 1 Poison tokens')))
+  assert(silentChoiceCards.some((card) => card.label.startsWith('Concentrate+') &&
+    card.label.includes('discard any number') && card.label.includes('plus 1')))
+  assert(silentChoiceCards.some((card) => card.label.startsWith('Distraction+') &&
+    card.label.includes('once per turn') && card.label.includes('put Poison')))
+})
+await shot('07q-silent-choice-cards-ready')
+await page.getByRole('button', { name: /^Distraction\+,/ }).click()
+await page.getByRole('button', { name: /^Bouncing Flask\+,/ }).click()
+await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy').nth(1).click()
+await page.locator('.enemy').nth(0).click()
+await page.getByRole('button', { name: /^Dodge and Roll\+,/ }).click()
+await page.locator('button.seat').nth(0).click()
+await page.locator('button.seat').nth(1).click()
+await page.locator('button.seat').nth(1).click()
+await page.getByRole('button', { name: /^Concentrate\+,/ }).click()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.getByRole('button', { name: 'Discard 2' }).click()
+const silentChoices = await readState()
+check('independent targets, optional discard, and once-per-turn Poison resolve through the controls', () => {
+  const actor = silentChoices.players[0]
+  const ally = silentChoices.players[1]
+  assertEqual(actor.block, 3, 'Distraction plus one Dodge icon protects the Silent')
+  assertEqual(ally.block, 2, 'two Dodge icons can share one ally target')
+  assertEqual(actor.energy, 5, 'Concentrate+ gains two discarded cards plus one')
+  assertDeepEqual(silentChoices.enemies.map((enemy) => enemy.poison).filter(Boolean).sort((a, b) => b - a), [2, 1])
+  assertEqual(actor.powers.length, 1)
+  assert(silentChoices.powerTriggersUsedThisTurn.includes(`${actor.id}/power:ui-distraction`),
+    'the once-per-turn trigger should be visibly spent')
+  assertEqual(actor.exhaust.at(-1)?.uid, 'ui-concentrate')
+})
+await page.locator('button.seat').nth(1).scrollIntoViewIfNeeded()
+await shot('07r-silent-choice-cards-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeSilentChoices)
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
+  .some((card) => card.uid.startsWith('ui-')))
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

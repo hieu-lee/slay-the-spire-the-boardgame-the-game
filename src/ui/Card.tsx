@@ -84,6 +84,7 @@ function effectText(effect: Effect): string {
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
     case 'loseOwnHp': return `lose ${effect.amount} hit points${condition}`
     case 'block': return `gain ${amountText(effect.amount)} Block${condition}`
+    case 'blockChoices': return `assign ${effect.targets} separate ${effect.amount} Block icons to any players${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
@@ -91,6 +92,7 @@ function effectText(effect: Effect): string {
       ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
       : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
     case 'poison': return `apply ${effect.amount} Poison${condition}`
+    case 'poisonChoices': return `assign ${effect.targets} separate ${effect.amount} Poison tokens to enemies${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
@@ -98,6 +100,7 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
+    case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`
     case 'enterStance': return `enter ${effect.stance}${condition}`
@@ -120,6 +123,7 @@ function effectText(effect: Effect): string {
     case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
+    case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
   }
 }
@@ -142,6 +146,7 @@ function triggerText(trigger: Trigger): string {
       : 'whenever you enter a stance'
     case 'onScry': return 'whenever you scry'
     case 'onGainBlock': return 'whenever you gain Block'
+    case 'onApplyPoison': return 'when you put Poison on an enemy'
     case 'onShuffle': return 'whenever you shuffle your discard pile'
   }
 }
@@ -182,6 +187,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
       : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',
+    def.oncePerTurn ? 'once per turn' : '',
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
       : def.effects.map(effectText)),

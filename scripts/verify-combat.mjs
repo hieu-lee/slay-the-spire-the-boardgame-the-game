@@ -1805,6 +1805,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'choke', enemyHp: [17, 16] },
     { id: 'footwork', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'envenom', powers: [1, 1], energy: [E - 3, E - 2] },
+    { id: 'dodge_and_roll', block: [2, 3] },
+    { id: 'bouncing_flask', poison: [2, 3] },
+    { id: 'concentrate', energy: [1, 2], player: { energy: 1 } },
+    { id: 'distraction', powers: [1, 1], energy: [E - 2, E - 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1863,6 +1867,13 @@ check('every newly transcribed card does what its face prints', () => {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
       }
+      const enemyChoices = face.effects.reduce(
+        (sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
+      const playerChoices = face.effects.reduce(
+        (sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
+      if (enemyChoices > 0) context.enemyUids = Array(enemyChoices).fill('e1')
+      if (playerChoices > 0) context.playerIds = Array(playerChoices).fill('p1')
+      if (face.effects.some((effect) => effect.kind === 'discardAny')) context.discardUids = []
       if (spec.unplayable) {
         assertEqual(playCard(state, 'p1', card.uid, context), state, `${label} should be unplayable`)
         continue
@@ -3271,6 +3282,134 @@ check('Envenom applies Poison once per hit even when Block absorbs all damage', 
   shivState.players[0].hitPoison = 1
   const shivved = spendShiv(shivState, 'p1', 'e1')
   assertEqual(shivved.enemies[0].poison, 1, 'Envenom includes Shiv hits')
+})
+
+check('Dodge and Roll assigns every Block icon independently and Footwork modifies each one', () => {
+  const dodge = instance('dodge_and_roll')
+  const state = combat([
+    makePlayer({ id: 'p1', character: 'silent', hand: [dodge] }),
+    makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
+  ], [makeEnemy()])
+  state.players[0].cardBlockBonus = 1
+  const played = playCard(state, 'p1', dodge.uid, {
+    enemyUid: null,
+    playerId: null,
+    playerIds: ['p2', 'p1'],
+  })
+  assertEqual(played.players[0].block, 2, 'one icon may stay with the caster')
+  assertEqual(played.players[1].block, 2, 'the other may go to an ally')
+
+  assertEqual(playCard(state, 'p1', dodge.uid, {
+    enemyUid: null,
+    playerId: null,
+    playerIds: ['p2'],
+  }), state, 'every printed icon needs a target')
+  assertEqual(playCard(state, 'p1', dodge.uid, {
+    enemyUid: null,
+    playerId: null,
+    playerIds: ['p2', 'gone'],
+  }), state, 'a stale ally target refuses the atomic play')
+})
+
+check('Bouncing Flask assigns Poison cubes independently, including repeated targets', () => {
+  const flask = instance('bouncing_flask', true)
+  const state = combat(
+    [makePlayer({ id: 'p1', character: 'silent', hand: [flask] })],
+    [makeEnemy({ uid: 'e1' }), makeEnemy({ uid: 'e2', row: 1 })],
+  )
+  const played = playCard(state, 'p1', flask.uid, {
+    enemyUid: null,
+    playerId: null,
+    enemyUids: ['e1', 'e2', 'e1'],
+  })
+  assertEqual(played.enemies[0].poison, 2)
+  assertEqual(played.enemies[1].poison, 1)
+  assertEqual(playCard(state, 'p1', flask.uid, {
+    enemyUid: null,
+    playerId: null,
+    enemyUids: ['e1', 'gone', 'e2'],
+  }), state, 'a dead or stale enemy target refuses every cube')
+})
+
+check('Concentrate gains Energy from exactly the optional cards it discards', () => {
+  for (const upgraded of [false, true]) {
+    const concentrate = instance('concentrate', upgraded)
+    const first = instance('strike_silent')
+    const second = instance('defend_silent')
+    const spare = instance('neutralize')
+    const state = combat([
+      makePlayer({ character: 'silent', hand: [concentrate, first, second, spare], energy: 1 }),
+    ], [makeEnemy()])
+    const played = playCard(state, 'p1', concentrate.uid, {
+      enemyUid: null,
+      playerId: null,
+      discardUids: [first.uid, second.uid],
+    })
+    assertEqual(played.players[0].energy, upgraded ? 4 : 3)
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [first.uid, second.uid])
+    assertEqual(played.players[0].exhaust.at(-1)?.uid, concentrate.uid)
+
+    assertEqual(playCard(state, 'p1', concentrate.uid, {
+      enemyUid: null,
+      playerId: null,
+      discardUids: [first.uid, first.uid],
+    }), state, 'duplicate ids cannot mint Energy')
+  }
+
+  const upgraded = instance('concentrate', true)
+  const empty = playCard(combat([
+    makePlayer({ character: 'silent', hand: [upgraded], energy: 1 }),
+  ], [makeEnemy()]), 'p1', upgraded.uid, { enemyUid: null, playerId: null, discardUids: [] })
+  assertEqual(empty.players[0].energy, 2, 'the upgraded face adds one even when none are discarded')
+})
+
+check('Distraction grants Block only on the first real Poison gain each turn', () => {
+  const flask = instance('bouncing_flask')
+  const poison = instance('deadly_poison')
+  let state = {
+    ...combat([
+      makePlayer({
+        character: 'silent',
+        powers: [instance('distraction')],
+        hand: [flask, poison],
+        energy: 6,
+      }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]),
+    turn: 1,
+  }
+  state = playCard(state, 'p1', flask.uid, {
+    enemyUid: null,
+    playerId: null,
+    enemyUids: ['e1', 'e1'],
+  })
+  assertEqual(state.players[0].block, 2, 'two Flask cubes still trigger once')
+  const poisonLines = state.log.flatMap((line, index) => line.includes('takes 1 Poison') ? [index] : [])
+  const distractionLine = state.log.findIndex((line) => line.includes('Distraction'))
+  assert(poisonLines.length === 2 && poisonLines.every((index) => index < distractionLine),
+    'all printed Poison resolves before Distraction')
+  state = playCard(state, 'p1', poison.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].block, 2, 'another Poison effect in the same turn does not trigger again')
+
+  const nextTurn = startPlayerTurn({
+    ...state,
+    phase: 'roundEnd',
+    players: state.players.map((player) => ({
+      ...player,
+      draw: Array.from({ length: 5 }, () => instance('strike_silent')),
+    })),
+  })
+  const nextPoison = instance('deadly_poison')
+  nextTurn.players[0].hand.push(nextPoison)
+  nextTurn.players[0].energy = 3
+  const replayed = playCard(nextTurn, 'p1', nextPoison.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(replayed.players[0].block, 2, 'the Start of Turn reset makes Distraction available again')
+
+  const cappedPoison = instance('deadly_poison')
+  const capped = combat([
+    makePlayer({ character: 'silent', powers: [instance('distraction')], hand: [cappedPoison] }),
+  ], [makeEnemy({ poison: 30 })])
+  const ignored = playCard(capped, 'p1', cappedPoison.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(ignored.players[0].block, 0, 'an ignored Poison cube does not spend the once-per-turn trigger')
 })
 
 check('a Miracle can be spent for Energy only during the Player Turn', () => {

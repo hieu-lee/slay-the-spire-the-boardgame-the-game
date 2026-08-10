@@ -29,6 +29,8 @@ export type Trigger =
   | { kind: 'onEnterStance'; stance?: Stance }
   | { kind: 'onScry' }
   | { kind: 'onGainBlock' }
+  /** Fires when this player actually adds one or more Poison cubes to an enemy. */
+  | { kind: 'onApplyPoison' }
   | { kind: 'onShuffle' }
 
 /** What actually happened, so a trigger can decide whether it applies. */

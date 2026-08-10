@@ -4,8 +4,10 @@ import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePotion,
   beginEndPlayerTurn,
+  cardEnemyChoiceCount,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardPlayerChoiceCount,
   cardPlayConditionMet,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
@@ -80,6 +82,10 @@ type Pending = {
   needsSwitch: boolean
   /** Gained Shivs exceeding the shared five-cube supply may attack now. */
   overflowShivs: number
+  enemyChoices: number
+  playerChoices: number
+  enemyUids: string[]
+  playerIds: string[]
   shivEnemyUids: string[]
   evokeSlots: number[]
   evokeEnemyUids: (string | null | undefined)[]
@@ -96,7 +102,7 @@ type Pending = {
    */
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
-  choice: { kind: 'discard' | 'exhaust' | 'scry'; amount: number } | null
+  choice: { kind: 'discard' | 'discardAny' | 'exhaust' | 'scry'; amount: number } | null
   /** Private post-draw/Scry cards; null means choose from the visible hand. */
   choiceCards: CardInstance[] | null
   choiceConfirmed: boolean
@@ -140,7 +146,7 @@ function requirementsOf(
   allies: number,
   viewer: Player,
   state: CombatState,
-): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
+): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
   // an enemy and the engine would then throw the choice away. The viewer goes
@@ -149,23 +155,37 @@ function requirementsOf(
   const cardTarget = cardNeedsEnemy(def, viewer, false)
   const shivsGained = gainedShivs(def.effects)
   const overflowShivs = overflowShivCount(state, shivsGained)
-  const needsEnemy = cardTarget || overflowShivs > 0
+  const enemyChoices = cardEnemyChoiceCount(def)
+  const playerChoices = cardPlayerChoiceCount(def)
+  const needsEnemy = cardTarget || overflowShivs > 0 || enemyChoices > 0
   // With one player on the board there is nobody to choose between, so asking
   // "who gets it" is a prompt with a single possible answer.
   const needsAlly = def.supportTarget === 'anyPlayer' && allies > 1
   const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && allies > 1
   const discard = def.effects.find((effect) => effect.kind === 'discard')
+  const discardAny = def.effects.some((effect) => effect.kind === 'discardAny')
   const exhaust = def.effects.find((effect) => effect.kind === 'exhaustFromHand')
   const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
     ? { kind: 'discard' as const, amount: discard.amount }
+    : discardAny
+      ? { kind: 'discardAny' as const, amount: Math.max(0, viewer.hand.length - 1) }
     : exhaust
       ? { kind: 'exhaust' as const, amount: exhaust.amount }
       : scried
         ? { kind: 'scry' as const, amount: scried.amount }
         : null
-  return { needsEnemy, needsAlly, needsSwitch, overflowShivs, hitsRow: def.target === 'row', choice }
+  return {
+    needsEnemy,
+    needsAlly,
+    needsSwitch,
+    overflowShivs,
+    enemyChoices,
+    playerChoices,
+    hitsRow: def.target === 'row',
+    choice,
+  }
 }
 
 function pendingFor(
@@ -182,6 +202,10 @@ function pendingFor(
     playerId: null,
     switchPlayerId: null,
     switchChoiceDone: false,
+    enemyUids: [],
+    playerIds: state.players.filter((player) => !player.dead).length === 1
+      ? Array(cardPlayerChoiceCount(def)).fill(viewer.id)
+      : [],
     shivEnemyUids: [],
     evokeSlots: [],
     evokeEnemyUids: [],
@@ -528,11 +552,15 @@ export function CombatScreen({
       if (!cardPlayConditionMet(def, state, viewer, drawCount)) return null
       const overflowShivs = overflowShivCount(state, gainedShivs(def.effects))
       const overflowChanged = overflowShivs !== current.overflowShivs
+      const enemyChoices = cardEnemyChoiceCount(def)
+      const playerChoices = cardPlayerChoiceCount(def)
       const enemyUid = current.enemyUid && alive.has(current.enemyUid) ? current.enemyUid : null
+      const enemyUids = current.enemyUids.filter((uid) => alive.has(uid))
+      const playerIds = current.playerIds.filter((id) => livingPlayers.has(id))
       const shivEnemyUids = overflowChanged
         ? []
         : current.shivEnemyUids.filter((uid) => alive.has(uid))
-      const needsEnemy = cardNeedsEnemy(def, viewer, false) || overflowShivs > 0
+      const needsEnemy = cardNeedsEnemy(def, viewer, false) || overflowShivs > 0 || enemyChoices > 0
       const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && livingPlayers.size > 1
       const switchTargetAlive = current.switchPlayerId === null || livingPlayers.has(current.switchPlayerId)
       const switchPlayerId = switchTargetAlive ? current.switchPlayerId : null
@@ -547,6 +575,8 @@ export function CombatScreen({
       if (
         overflowShivs === current.overflowShivs &&
         enemyUid === current.enemyUid &&
+        enemyUids.length === current.enemyUids.length &&
+        playerIds.length === current.playerIds.length &&
         shivEnemyUids.length === current.shivEnemyUids.length &&
         needsSwitch === current.needsSwitch &&
         switchPlayerId === current.switchPlayerId &&
@@ -558,7 +588,11 @@ export function CombatScreen({
         overflowShivs,
         needsEnemy,
         needsSwitch,
+        enemyChoices,
+        playerChoices,
         enemyUid,
+        enemyUids,
+        playerIds,
         switchPlayerId,
         switchChoiceDone,
         shivEnemyUids,
@@ -849,16 +883,19 @@ export function CombatScreen({
   // Post-draw costs choose from the private preview, which already models the
   // hand at the exact clause where the engine will charge it.
   const choicePoolSize = pending?.choiceCards?.length ?? Math.max(0, viewer.hand.length - 1)
-  const choiceNeeded = pending?.choice && pending.choice.kind !== 'scry'
+  const choiceNeeded = pending?.choice && pending.choice.kind !== 'scry' && pending.choice.kind !== 'discardAny'
     ? Math.min(pending.choice.amount, choicePoolSize)
     : 0
   const pendingDef = pending ? faceOf(cardDef(pending.card.defId), pending.card.upgraded) : null
   const handChoiceSatisfied = pending?.choice?.kind === 'scry'
     ? true
+    : pending?.choice?.kind === 'discardAny'
+      ? true
     : pending?.choice ? pending.picked.length === choiceNeeded : true
   const revealedChoiceSatisfied = !pending?.choiceCards || pending.choiceConfirmed
+  const variableChoiceSatisfied = pending?.choice?.kind !== 'discardAny' || pending.choiceConfirmed
   const modeSatisfied = !pendingDef?.modes || pending?.mode !== null
-  const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && modeSatisfied
+  const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied && modeSatisfied
   const pendingNeedsCardEnemy = pendingDef ? cardNeedsEnemy(pendingDef, viewer, false) : false
   const pendingEvokeChoice = pendingDef && pending
     ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined)
@@ -868,9 +905,11 @@ export function CombatScreen({
   const enemyChoicesDone = pending ? (
     evokeChoicesDone &&
     (!pendingNeedsCardEnemy || pending.enemyUid !== null) &&
+    pending.enemyUids.length >= pending.enemyChoices &&
     pending.shivEnemyUids.length >= pending.overflowShivs
   ) : true
-  const allyChoiceDone = !pending?.needsAlly || pending.playerId !== null
+  const allyChoiceDone = (!pending?.needsAlly || pending.playerId !== null) &&
+    (!pending || pending.playerIds.length >= pending.playerChoices)
   const switchChoiceReady = Boolean(pending?.needsSwitch && !pending.switchChoiceDone &&
     enemyChoicesDone && choiceSatisfied && allyChoiceDone)
 
@@ -878,10 +917,14 @@ export function CombatScreen({
     if (cardActionPending.current) return
     const context = {
       enemyUid: next.enemyUid,
+      enemyUids: next.enemyUids,
       playerId: next.playerId ?? viewer!.id,
+      playerIds: next.playerIds,
       switchWithPlayerId: next.switchChoiceDone ? next.switchPlayerId : null,
       mode: next.mode ?? undefined,
-      discardUids: next.choice?.kind === 'discard' ? next.picked : undefined,
+      discardUids: next.choice?.kind === 'discard' || next.choice?.kind === 'discardAny'
+        ? next.picked
+        : undefined,
       exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
       scryDiscardUids: next.choice?.kind === 'scry' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
@@ -893,8 +936,9 @@ export function CombatScreen({
     // to its private preview, so only the authoritative engine can validate it.
     const result = onAction && next.choiceCards ? undefined : playCard(state, viewer!.id, next.card.uid, context)
     if (result === state) {
-      if (next.shivEnemyUids.length > 0 || next.evokeSlots.length > 0) {
-        setPending({ ...next, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [] })
+      if (next.enemyUids.length > 0 || next.playerIds.length > 0 ||
+        next.shivEnemyUids.length > 0 || next.evokeSlots.length > 0) {
+        setPending({ ...next, enemyUids: [], playerIds: [], shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [] })
       }
       return
     }
@@ -941,13 +985,15 @@ export function CombatScreen({
           }
           const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
           const overflowShivs = overflowShivCount(authoritative.combat, gainedShivs(def.effects))
-          const needsEnemy = cardNeedsEnemy(def, authoritative.player, false) || overflowShivs > 0
+          const enemyChoices = cardEnemyChoiceCount(def)
+          const playerChoices = cardPlayerChoiceCount(def)
+          const needsEnemy = cardNeedsEnemy(def, authoritative.player, false) || overflowShivs > 0 || enemyChoices > 0
           const needsAlly = def.supportTarget === 'anyPlayer' &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           setMiracleOnCard(usingMiracle)
-          if (needsEnemy || needsAlly || needsSwitch || def.modes || next.choice ||
+          if (needsEnemy || needsAlly || playerChoices > 0 || needsSwitch || def.modes || next.choice ||
             nextEvokeChoice(def, authoritative.player, [])) {
             setPending({
               ...next,
@@ -955,8 +1001,14 @@ export function CombatScreen({
               needsAlly,
               needsSwitch,
               overflowShivs,
+              enemyChoices,
+              playerChoices,
               enemyUid: null,
+              enemyUids: [],
               playerId: null,
+              playerIds: authoritative.combat.players.filter((player) => !player.dead).length === 1
+                ? Array(playerChoices).fill(authoritative.player.id)
+                : [],
               switchPlayerId: null,
               switchChoiceDone: false,
               shivEnemyUids: [],
@@ -978,14 +1030,20 @@ export function CombatScreen({
   function stageOrCommit(next: Pending) {
     const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
     const poolSize = next.choiceCards?.length ?? Math.max(0, viewer!.hand.length - 1)
-    const owed = next.choice && next.choice.kind !== 'scry' ? Math.min(next.choice.amount, poolSize) : 0
-    const selectionReady = next.choice?.kind === 'scry' || next.picked.length === owed
+    const owed = next.choice && next.choice.kind !== 'scry' && next.choice.kind !== 'discardAny'
+      ? Math.min(next.choice.amount, poolSize)
+      : 0
+    const selectionReady = next.choice?.kind === 'scry' || next.choice?.kind === 'discardAny' ||
+      next.picked.length === owed
     const ready = selectionReady && (!next.choiceCards || next.choiceConfirmed) &&
+      (next.choice?.kind !== 'discardAny' || next.choiceConfirmed) &&
       (!def.modes || next.mode !== null) &&
       !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
       (!cardNeedsEnemy(def, viewer!, false) || next.enemyUid !== null) &&
+      next.enemyUids.length >= next.enemyChoices &&
       next.shivEnemyUids.length >= next.overflowShivs &&
+      next.playerIds.length >= next.playerChoices &&
       (!next.needsAlly || next.playerId !== null) &&
       (!next.needsSwitch || next.switchChoiceDone)
     if (ready) commit(next)
@@ -1031,15 +1089,19 @@ export function CombatScreen({
     // While a card is waiting on a choice, clicks in hand pick cards for it.
     if (pending?.choice && !pending.choiceCards && card.uid !== pending.card.uid) {
       const already = pending.picked.includes(card.uid)
-      const need = Math.min(pending.choice.amount, Math.max(0, viewer!.hand.length - 1))
+      const any = pending.choice.kind === 'discardAny'
+      const need = any
+        ? Math.max(0, viewer!.hand.length - 1)
+        : Math.min(pending.choice.amount, Math.max(0, viewer!.hand.length - 1))
       const picked = already
         ? pending.picked.filter((uid) => uid !== card.uid)
         : [...pending.picked, card.uid].slice(-need)
-      const next = { ...pending, picked }
+      const next = { ...pending, picked, choiceConfirmed: false }
       setPending(next)
       // True Grit exhausts a card AND blocks any player, so satisfying the
       // choice must not skip the ally step.
-      if (!next.needsEnemy && !next.needsAlly && !next.needsSwitch && picked.length === need) {
+      if (!any && !next.needsEnemy && !next.needsAlly &&
+        next.playerIds.length >= next.playerChoices && !next.needsSwitch && picked.length === need) {
         stageOrCommit(next)
       }
       return
@@ -1069,10 +1131,11 @@ export function CombatScreen({
     setPending(next)
     // Only resolve on the spot when there is genuinely nothing left to pick —
     // including a cost the hand is too small to pay anything towards.
-    const owed = next.choice
+    const owed = next.choice && next.choice.kind !== 'discardAny'
       ? Math.min(next.choice.amount, Math.max(0, viewer!.hand.length - 1))
       : 0
-    if (!next.needsEnemy && !next.needsAlly && !next.needsSwitch && owed === 0 &&
+    if (next.choice?.kind !== 'discardAny' && !next.needsEnemy && !next.needsAlly &&
+      next.playerIds.length >= next.playerChoices && !next.needsSwitch && owed === 0 &&
       !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots)) commit(next)
   }
 
@@ -1136,13 +1199,22 @@ export function CombatScreen({
         return
       }
       const next = { ...pending, enemyUid: enemy.uid }
-      if (next.overflowShivs > 0 || next.needsAlly || next.needsSwitch) setPending(next)
+      if (next.enemyUids.length < next.enemyChoices || next.overflowShivs > 0 ||
+        next.needsAlly || next.playerIds.length < next.playerChoices || next.needsSwitch) setPending(next)
+      else commit(next)
+      return
+    }
+    if (pending.enemyUids.length < pending.enemyChoices) {
+      const next = { ...pending, enemyUids: [...pending.enemyUids, enemy.uid] }
+      if (next.enemyUids.length < next.enemyChoices || next.overflowShivs > 0 ||
+        next.needsAlly || next.playerIds.length < next.playerChoices || next.needsSwitch) setPending(next)
       else commit(next)
       return
     }
     if (pending.shivEnemyUids.length < pending.overflowShivs) {
       const next = { ...pending, shivEnemyUids: [...pending.shivEnemyUids, enemy.uid] }
-      if (next.shivEnemyUids.length < next.overflowShivs || next.needsAlly || next.needsSwitch) setPending(next)
+      if (next.shivEnemyUids.length < next.overflowShivs || next.needsAlly ||
+        next.playerIds.length < next.playerChoices || next.needsSwitch) setPending(next)
       else commit(next)
     }
   }
@@ -1170,6 +1242,12 @@ export function CombatScreen({
       return
     }
     if (!pending || !enemyChoicesDone || !choiceSatisfied) return
+    if (pending.playerIds.length < pending.playerChoices) {
+      const next = { ...pending, playerIds: [...pending.playerIds, ally.id] }
+      if (next.playerIds.length < next.playerChoices || next.needsAlly || next.needsSwitch) setPending(next)
+      else commit(next)
+      return
+    }
     if (pending.needsAlly && pending.playerId === null) {
       stageOrCommit({ ...pending, playerId: ally.id })
       return
@@ -1183,7 +1261,11 @@ export function CombatScreen({
   // whatever target is still outstanding. Showing the choice text after it is
   // satisfied would leave the player stuck looking at a completed instruction.
   const overflowOnly = (pending?.overflowShivs ?? 0) > 0 && !pendingNeedsCardEnemy
-  const enemyPrompt = overflowOnly
+  const independentEnemyPending = Boolean(pending && pending.enemyUids.length < pending.enemyChoices)
+  const independentPlayerPending = Boolean(pending && pending.playerIds.length < pending.playerChoices)
+  const enemyPrompt = independentEnemyPending
+    ? `Choose token target ${(pending?.enemyUids.length ?? 0) + 1}/${pending?.enemyChoices}`
+    : overflowOnly
     ? `Choose overflow Shiv target ${(pending?.shivEnemyUids.length ?? 0) + 1}/${pending?.overflowShivs}, or skip the rest`
     : pending?.hitsRow
       ? state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
@@ -1204,6 +1286,8 @@ export function CombatScreen({
       ? pending.choice?.kind === 'scry'
         ? `Scry ${pending.choice.amount} — choose any cards to discard`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
+    : pending?.choice?.kind === 'discardAny' && !pending.choiceConfirmed
+      ? `Discard any number of cards — ${pending.picked.length} chosen`
     : pending?.choice && !handChoiceSatisfied
       ? `${pending.choice.kind === 'discard' ? 'Discard' : 'Exhaust'} ${choiceNeeded} card${
           choiceNeeded === 1 ? '' : 's'
@@ -1212,8 +1296,10 @@ export function CombatScreen({
         ? 'Choose an enemy for this evoke'
         : pendingEvokeChoice
           ? `Choose Orb to evoke ${pendingEvokeChoice.index + 1}`
-          : pending?.needsEnemy && !enemyChoicesDone
+        : pending?.needsEnemy && !enemyChoicesDone
         ? enemyPrompt
+        : independentPlayerPending
+          ? `Choose Block recipient ${(pending?.playerIds.length ?? 0) + 1}/${pending?.playerChoices}`
         : pending?.needsAlly && !pending.playerId
           ? 'Choose who gets it'
           : switchChoiceReady
@@ -1400,6 +1486,12 @@ export function CombatScreen({
               Skip remaining overflow attacks
             </button>
           ) : null}
+          {pending?.choice?.kind === 'discardAny' && !pending.choiceConfirmed ? (
+            <button type="button" className="prompt__mode"
+              onClick={() => stageOrCommit({ ...pending, choiceConfirmed: true })}>
+              {pending.picked.length === 0 ? 'Discard none' : `Discard ${pending.picked.length}`}
+            </button>
+          ) : null}
           {pendingEvokeChoice && pendingEvokeTarget < 0 ? pendingEvokeChoice.options.map((option) => (
             <button type="button" className="prompt__orb" key={option.slot}
               onClick={() => onEvokeClick(option.slot)}>
@@ -1530,6 +1622,7 @@ export function CombatScreen({
                         occupant.dead ? 'seat--dead' : '',
                         struck.has(occupant.id) ? strikeClass('seat', beat) : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
+                          (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
                           (switchChoiceReady && occupant.id !== viewerId))
                         )

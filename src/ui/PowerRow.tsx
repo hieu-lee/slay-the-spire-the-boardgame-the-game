@@ -219,7 +219,9 @@ export function describePower(def: CardDef): string {
     : def.trigger ? WHEN[def.trigger.kind] : undefined
   const what = def.effects.map(describeEffect).filter(Boolean).join(', ')
   if (!what) return def.name
-  return when ? `${def.name}: ${what} ${when}` : `${def.name}: ${what}`
+  return when
+    ? `${def.name}: ${what} ${when}${def.oncePerTurn ? ', once per turn' : ''}`
+    : `${def.name}: ${what}`
 }
 
 const WHEN: Record<string, string> = {
@@ -235,6 +237,7 @@ const WHEN: Record<string, string> = {
   onEnterStance: 'whenever you enter a stance',
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
+  onApplyPoison: 'when you put Poison on an enemy',
   onShuffle: 'whenever you shuffle',
 }
 

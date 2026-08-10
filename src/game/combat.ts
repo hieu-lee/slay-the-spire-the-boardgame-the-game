@@ -48,6 +48,8 @@ export type CombatState = {
   enemies: Enemy[]
   discardedThisTurn: string[]
   stanceChangedThisTurn: string[]
+  /** Power instance ids already spent by a printed once-per-turn trigger. */
+  powerTriggersUsedThisTurn: string[]
   log: string[]
 }
 
@@ -145,6 +147,19 @@ function damageEnemy(enemy: Enemy, damage: number): { blocked: number; curled: b
   return { blocked: blockBefore - outcome.block, curled: false }
 }
 
+/** Adds Poison through the shared cube cap. */
+function putPoison(state: CombatState, target: Enemy, amount: number): number {
+  if (target.dead) return 0
+  const before = target.poison
+  target.poison = gainPoison(target.poison, amount, totalPoisonInPlay(state.enemies))
+  return target.poison - before
+}
+
+function poisonApplied(state: CombatState, actor: Player, context: PlayContext): void {
+  if (context.pendingPoisonTriggers) context.pendingPoisonTriggers.push(actor.id)
+  else fireTriggers(state, { kind: 'onApplyPoison' }, actor)
+}
+
 function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
   const ability = enemyDef(enemy.defId).ability
   if (ability?.kind !== 'sporeCloud') return
@@ -219,6 +234,10 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
+  /** One enemy per independently targeted printed token. Duplicates are legal. */
+  enemyUids?: string[]
+  /** One player per independently targeted printed Block icon. Duplicates are legal. */
+  playerIds?: string[]
   /** Another living player whose row is optionally exchanged with the caster's. */
   switchWithPlayerId?: string | null
   /** Zero-based printed mode for a modal card face. */
@@ -274,8 +293,14 @@ export type PlayContext = {
   invalidScryChoice?: boolean
   /** Discards whose reactions wait until this card finishes its printed text. */
   pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
+  /** Poison gains whose reactions wait until this card finishes its printed text. */
+  pendingPoisonTriggers?: string[]
   /** Internal result of the immediately preceding direct draw effect. */
   drewSkill?: boolean
+  /** Cards taken by this card's variable discard clause. */
+  discardedByCard?: number
+  /** A variable discard named a duplicate or a card outside the current hand. */
+  invalidDiscardChoice?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
@@ -501,16 +526,17 @@ function applyEffect(
         const each = amountOf(effect.amount, state, actor, target)
         let blocked = 0
         let curled = false
-        let poisonApplied = 0
+        let poisonAppliedTotal = 0
+        let poisonEvents = 0
         for (let i = 0; i < times; i++) {
           if (target.dead) break
           const result = damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
           blocked += result.blocked
           curled = result.curled || curled
           if (!target.dead && actor.hitPoison > 0) {
-            const before = target.poison
-            target.poison = gainPoison(target.poison, actor.hitPoison, totalPoisonInPlay(state.enemies))
-            poisonApplied += target.poison - before
+            const gained = putPoison(state, target, actor.hitPoison)
+            poisonAppliedTotal += gained
+            if (gained > 0) poisonEvents += 1
           }
         }
         if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
@@ -526,8 +552,9 @@ function applyEffect(
               ? `${name} blocked ${who} completely (${blocked} spent)`
               : `${who} did no damage to ${name}`,
         ]
-        if (poisonApplied > 0) {
-          state.log = [...state.log, `${actor.name}'s Envenom applies ${poisonApplied} Poison to ${name}`]
+        if (poisonAppliedTotal > 0) {
+          state.log = [...state.log, `${actor.name}'s Envenom applies ${poisonAppliedTotal} Poison to ${name}`]
+          for (let i = 0; i < poisonEvents; i++) poisonApplied(state, actor, context)
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
@@ -599,6 +626,13 @@ function applyEffect(
       }
       return
     }
+    case 'blockChoices': {
+      for (const playerId of context.playerIds ?? []) {
+        applyEffect(state, actor, { kind: 'block', amount: effect.amount, toChosen: true },
+          scope, 'anyPlayer', { ...context, playerId }, source)
+      }
+      return
+    }
     case 'applyVulnerable': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.vulnerable
@@ -638,11 +672,20 @@ function applyEffect(
     }
     case 'poison': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        const before = target.poison
-        target.poison = gainPoison(target.poison, effect.amount, totalPoisonInPlay(state.enemies))
-        if (target.poison > before) {
-          note(`${enemyLabel(state.enemies, target)} takes ${target.poison - before} Poison`)
+        const gained = putPoison(state, target, effect.amount)
+        if (gained > 0) {
+          note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
+          poisonApplied(state, actor, context)
         }
+      }
+      return
+    }
+    case 'poisonChoices': {
+      for (const enemyUid of context.enemyUids ?? []) {
+        applyEffect(state, actor, { kind: 'poison', amount: effect.amount }, 'enemy', 'self', {
+          ...context,
+          enemyUid,
+        }, source)
       }
       return
     }
@@ -650,9 +693,10 @@ function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.poison
         const added = before * Math.max(0, effect.factor - 1)
-        target.poison = gainPoison(before, added, totalPoisonInPlay(state.enemies))
-        if (target.poison > before) {
-          note(`${enemyLabel(state.enemies, target)} takes ${target.poison - before} Poison`)
+        const gained = putPoison(state, target, added)
+        if (gained > 0) {
+          note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
+          poisonApplied(state, actor, context)
         }
       }
       return
@@ -706,6 +750,13 @@ function applyEffect(
         target.energy = Math.min(CAPS.energy, target.energy + effect.amount)
         if (target.energy > before) note(`${target.name} gains ${target.energy - before} Energy`)
       }
+      return
+    }
+    case 'gainEnergyPerDiscard': {
+      const amount = (context.discardedByCard ?? 0) + effect.bonus
+      const before = actor.energy
+      actor.energy = Math.min(CAPS.energy, actor.energy + amount)
+      if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy`)
       return
     }
     case 'gainShiv': {
@@ -792,6 +843,19 @@ function applyEffect(
     case 'discard': {
       const chosen = allocate(actor, context.discardUids, effect.amount, context)
       const moved = chosen.map((uid) => actor.hand.find((card) => card.uid === uid)!)
+      discardByCardEffect(state, actor, moved, context)
+      return
+    }
+    case 'discardAny': {
+      const chosen = context.discardUids ?? []
+      if (new Set(chosen).size !== chosen.length ||
+        chosen.some((uid) => !actor.hand.some((card) => card.uid === uid))) {
+        context.invalidDiscardChoice = true
+        return
+      }
+      const picked = new Set(chosen)
+      const moved = actor.hand.filter((card) => picked.has(card.uid))
+      context.discardedByCard = moved.length
       discardByCardEffect(state, actor, moved, context)
       return
     }
@@ -1197,6 +1261,17 @@ export function cardNeedsEnemy(
     (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) && reachesEnemy(effect, actor))
 }
 
+/** Independent printed targets collected before an atomic card play. */
+export function cardEnemyChoiceCount(def: CardDef, mode?: number): number {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  return effects.reduce((sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
+}
+
+export function cardPlayerChoiceCount(def: CardDef, mode?: number): number {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  return effects.reduce((sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
+}
+
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
 function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[], mode?: number) {
@@ -1357,6 +1432,16 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
+  if (enemyChoiceCount > 0 && (
+    context.enemyUids?.length !== enemyChoiceCount ||
+    context.enemyUids.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
+  )) return state
+  const playerChoiceCount = cardPlayerChoiceCount(def, context.mode)
+  if (playerChoiceCount > 0 && (
+    context.playerIds?.length !== playerChoiceCount ||
+    context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
+  )) return state
   const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
@@ -1428,6 +1513,8 @@ export function playCard(
   // would be a mutation from a function that is otherwise pure.
   const ctx: PlayContext = {
     ...context,
+    enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
+    playerIds: context.playerIds ? [...context.playerIds] : undefined,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
     evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
     evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
@@ -1438,7 +1525,10 @@ export function playCard(
     evokeIndex: 0,
     invalidEvokeTarget: false,
     invalidScryChoice: false,
+    invalidDiscardChoice: false,
+    discardedByCard: 0,
     pendingDiscards: [],
+    pendingPoisonTriggers: [],
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
@@ -1457,7 +1547,8 @@ export function playCard(
   // card's effects for nothing. The whole play is resolved into a clone first,
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
-  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget || ctx.invalidScryChoice) return state
+  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
+    ctx.invalidScryChoice || ctx.invalidDiscardChoice) return state
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)
@@ -1474,6 +1565,12 @@ export function playCard(
     actor.draw = addToDrawTop(actor, [played]).draw
   } else {
     actor.discard = [...actor.discard, played]
+  }
+
+  for (const ownerId of ctx.pendingPoisonTriggers ?? []) {
+    const owner = findPlayer(next, ownerId)
+    if (owner) fireTriggers(next, { kind: 'onApplyPoison' }, owner)
+    if (combatIsOver(next)) return settle(next)
   }
 
   if (def.type === 'attack') actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
@@ -1532,6 +1629,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
   next.turn += 1
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
+  next.powerTriggersUsedThisTurn = []
   // Where this round's log starts, so the divider can be placed above anything
   // the Start of Turn itself writes.
   const drewFrom = next.log.length
@@ -2110,6 +2208,7 @@ type TriggerSource = {
   /** The card's own declared scopes, so a Power hits what it says it hits. */
   scope: TargetScope
   supportScope: TargetScope
+  oncePerTurn: boolean
 }
 
 function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string): TriggerSource[] {
@@ -2124,6 +2223,7 @@ function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string
       name: `${player.name}'s ${def.name}`,
       scope: 'enemy',
       supportScope: 'self',
+      oncePerTurn: false,
     })
   }
   for (const held of player.powers) {
@@ -2137,6 +2237,7 @@ function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string
       name: `${player.name}'s ${def.name}`,
       scope: def.target ?? 'enemy',
       supportScope: def.supportTarget ?? 'self',
+      oncePerTurn: def.oncePerTurn === true,
     })
   }
   return sources
@@ -2148,6 +2249,12 @@ function resolveTriggerSource(
   source: TriggerSource,
   allowCombatOver = false,
 ): void {
+  const useKey = `${player.id}/${source.id}`
+  if (source.oncePerTurn) {
+    const used = (state.powerTriggersUsedThisTurn ??= [])
+    if (used.includes(useKey)) return
+    used.push(useKey)
+  }
   const target = livingEnemies(state)[0]
   const context: PlayContext = { enemyUid: target?.uid ?? null, playerId: player.id }
   for (const effect of source.effects) {
@@ -2227,6 +2334,7 @@ export function createCombat(
     enemies,
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
+    powerTriggersUsedThisTurn: [],
     log: [],
   }
 }

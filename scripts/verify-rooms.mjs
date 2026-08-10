@@ -1206,7 +1206,9 @@ check('Silent Power modifiers resolve and publish through the room authority', (
     uid: `room-${defId}`, defId, upgraded: true,
   }))
   Object.assign(actor, { hand: cards, energy: 6, shivs: 1, powers: [] })
-  Object.assign(target, { hp: 20, maxHp: 20, block: 0, weak: 1, poison: 2, dead: false })
+  Object.assign(target, {
+    defId: 'cultist', hp: 20, maxHp: 20, block: 0, weak: 1, poison: 2, abilityUsed: false, dead: false,
+  })
 
   for (const defId of ['accuracy', 'footwork', 'envenom']) {
     apply(room, b.token, { kind: 'playCard', cardUid: `room-${defId}`, enemyUid: null, preflight: true })
@@ -1223,6 +1225,85 @@ check('Silent Power modifiers resolve and publish through the room authority', (
   assertEqual(seenActor.powers.length, 3)
   assertEqual(seenTarget.hp, 10, 'Accuracy Shiv and token-scaled Choke+ deal 10 total')
   assertEqual(seenTarget.poison, 4, 'the Shiv and Choke+ hits each apply Poison')
+})
+
+check('Silent independent targets and once-per-turn Poison reactions survive room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === a.playerId)
+  const first = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const second = { ...first, uid: 'room-bounce-second', row: first.row + 1, poison: 0, block: 0 }
+  room.run.combat.enemies.push(second)
+  const cards = [
+    { uid: 'room-distraction', defId: 'distraction', upgraded: true },
+    { uid: 'room-bouncing-flask', defId: 'bouncing_flask', upgraded: true },
+    { uid: 'room-dodge-roll', defId: 'dodge_and_roll', upgraded: false },
+    { uid: 'room-concentrate', defId: 'concentrate', upgraded: true },
+    { uid: 'room-concentrate-a', defId: 'strike_silent', upgraded: false },
+    { uid: 'room-concentrate-b', defId: 'defend_silent', upgraded: false },
+  ]
+  Object.assign(actor, { hand: cards, energy: 6, powers: [], block: 0 })
+  ally.block = 0
+  first.poison = 0
+
+  apply(room, b.token, { kind: 'playCard', cardUid: 'room-distraction', preflight: true })
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-bouncing-flask',
+    enemyUids: [first.uid, second.uid, first.uid], preflight: true,
+  })
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-dodge-roll',
+    playerIds: [a.playerId, b.playerId], preflight: true,
+  })
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-concentrate',
+    discardUids: ['room-concentrate-a', 'room-concentrate-b'], preflight: true,
+  })
+
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  const seen = snapshotFor(room, a.token).run.combat
+  const seenActor = seen.players.find((player) => player.id === b.playerId)
+  const seenAlly = seen.players.find((player) => player.id === a.playerId)
+  assertEqual(seenActor.block, 3, 'Distraction and one Dodge icon stack on the Silent')
+  assertEqual(seenAlly.block, 1, 'the other Dodge icon reaches the chosen teammate')
+  assertEqual(seenActor.energy, 5, 'Concentrate+ gains discarded count plus one')
+  assertEqual(seen.enemies.find((enemy) => enemy.uid === first.uid).poison, 2)
+  assertEqual(seen.enemies.find((enemy) => enemy.uid === second.uid).poison, 1)
+  assert(seen.powerTriggersUsedThisTurn.includes(`${b.playerId}/power:room-distraction`),
+    'reconnect lost the public once-per-turn ledger')
+  assert(seenActor.exhaust.some((card) => card.uid === 'room-concentrate'), 'Concentrate did not Exhaust')
+})
+
+check('Concentrate can discard an online hand larger than the fixed choice cap', () => {
+  const { room, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const concentrate = { uid: 'room-big-concentrate', defId: 'concentrate', upgraded: false }
+  const choices = Array.from({ length: UID_LIMIT + 1 }, (_unused, index) => ({
+    uid: `room-big-discard-${index}`, defId: 'strike_silent', upgraded: false,
+  }))
+  Object.assign(actor, { hand: [concentrate, ...choices], energy: 3 })
+
+  let oversized = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: concentrate.uid,
+      discardUids: [...choices.map((card) => card.uid), 'not-in-hand'], preflight: true,
+    })
+  } catch (error) {
+    oversized = error
+  }
+  assertEqual(oversized?.name, 'RoomError', 'a list larger than the selectable hand is refused')
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: concentrate.uid,
+    discardUids: choices.map((card) => card.uid), preflight: true,
+  })
+
+  const resolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(resolved.hand.length, 0)
+  assertEqual(resolved.discard.length, choices.length)
+  assert(resolved.exhaust.some((card) => card.uid === concentrate.uid), 'Concentrate did not Exhaust')
 })
 
 check('face-down reward stacks are counted, never listed', () => {
@@ -2752,7 +2833,7 @@ check('reconnecting can complete a campfire the table was waiting on', () => {
 // messages serially on one thread -- so an unbounded list is not merely rude,
 // it is a denial of service against every room in the process. Measured before
 // the cap: 40,000 junk uids blocked for 1.3 seconds.
-check('a card-effect uid list is capped above every supported printed choice', () => {
+check('a fixed-size card-effect uid list is capped above every supported printed choice', () => {
   const huge = Array.from({ length: 50_000 }, (_unused, i) => `junk-${i}`)
   assertEqual(uidList(huge).length, UID_LIMIT, 'the list should be truncated, not passed through')
   assert(UID_LIMIT >= 12, 'and the cap must still cover the largest transcribed effect choice')
