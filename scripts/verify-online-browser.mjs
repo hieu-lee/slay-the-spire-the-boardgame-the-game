@@ -1771,6 +1771,60 @@ try {
       .some((card) => card.uid === 'abandoned-acrobatics'))
   })
 
+  liveRoom.run = {
+    ...liveRoom.run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'map',
+    players: liveRoom.run.players.map((player) => player.name === 'Ann'
+      ? { ...player, potions: ['weak_potion'] }
+      : { ...player, potions: [] }),
+    rewards: [
+      { playerId: abandonedAnn.id, choices: [], upgraded: false, hasCard: false, hasPotion: true,
+        potionId: 'block_potion', hasRelic: false, relicChoices: null },
+      { playerId: abandonedBo.id, choices: null, upgraded: false, hasCard: true, hasPotion: true,
+        potionId: 'energy_potion', hasRelic: false, relicChoices: null },
+    ],
+  }
+  liveRoom.rewardChoices = undefined
+  const rewardCredentials = await credentials(b)
+  const publishRewardFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': rewardCredentials.token },
+    body: JSON.stringify({ action: { kind: 'cardReward', choice: 'reveal' } }),
+  })
+  assert(publishRewardFixture.ok, 'could not publish the sequential reward fixture')
+  const saveAnnReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': abandonedCredentials.token },
+    body: JSON.stringify({ action: { kind: 'cardReward', choice: {
+      card: null, potionRecipientId: abandonedAnn.id, discardPotionId: null, relicId: null,
+    } } }),
+  })
+  const saveBoReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': rewardCredentials.token },
+    body: JSON.stringify({ action: { kind: 'cardReward', choice: {
+      card: 0, potionRecipientId: abandonedBo.id, discardPotionId: null, relicId: null,
+    } } }),
+  })
+  assert(saveAnnReward.ok && saveBoReward.ok, 'could not save every reward choice')
+  const collectAnnReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': abandonedCredentials.token },
+    body: JSON.stringify({ action: { kind: 'cardReward', choice: 'collect' } }),
+  })
+  assert(collectAnnReward.ok, 'could not collect the earlier potion first')
+  const replaceEarlierPotion = b.getByRole('button', { name: 'Replace Block Potion on Ann' })
+  await replaceEarlierPotion.waitFor()
+  const afterEarlierReward = await snapshot(b)
+  await b.screenshot({ path: join(outDir, '09-online-sequential-reward.png'), fullPage: true })
+  check('online reward picks update in party order without erasing the remaining private draft', () => {
+    assertEqual(afterEarlierReward.rewardChoice.potionRecipientId, abandonedBo.id)
+    assertDeepEqual(afterEarlierReward.run.players.find((player) => player.id === abandonedAnn.id).potions,
+      ['weak_potion', 'block_potion'])
+  })
+
   check('the online flow has no browser errors', () => {
     assertEqual(failures.length, 0, failures.join('\n'))
   })

@@ -461,15 +461,15 @@ const withRelic = (defId, over = {}) =>
 // did nothing. These pin each trigger point.
 check('a start-of-combat relic fires on turn 1 only', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
-  let state = createCombat(createRng(5), [withRelic('akabeko', { draw: deck })], [enemy()])
+  let state = createCombat(createRng(5), [withRelic('lantern', { draw: deck })], [enemy()])
   state = startPlayerTurn(state)
-  assertEqual(state.players[0].strength, 1, 'Akabeko grants 1 Strength at the start of combat')
+  assertEqual(state.players[0].energy, 4, 'Lantern grants 1 Energy at the start of combat')
 
   // A real round-trip. `startPlayerTurn` on a turn already begun is refused,
   // so the old version never reached turn 2 and asserted nothing.
   state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
   assertEqual(state.turn, 2, 'precondition: the second round must actually begin')
-  assertEqual(state.players[0].strength, 1, 'and it does not fire again on turn 2')
+  assertEqual(state.players[0].energy, 3, 'and it does not fire again on turn 2')
 })
 
 check('a start-of-combat draw relic fills the hand further', () => {
@@ -519,14 +519,14 @@ check('a dead player ends combat before any relics fire', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('akabeko', { id: 'p1', dead: true, hp: 0, draw: deck }),
-        withRelic('akabeko', { id: 'p2', row: 1, draw: [...deck] }),
+        withRelic('lantern', { id: 'p1', dead: true, hp: 0, draw: deck }),
+        withRelic('lantern', { id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].strength, 0, 'the dead gain nothing from their relics')
-  assertEqual(state.players[1].strength, 0, 'nothing resolves after the party loses')
+  assertEqual(state.players[0].energy, 3, 'the dead gain nothing from their relics')
+  assertEqual(state.players[1].energy, 3, 'nothing resolves after the party loses')
   assertEqual(state.phase, 'lost')
 })
 
@@ -536,14 +536,14 @@ check('one player\'s relic never fires for another', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('akabeko', { id: 'p1', draw: deck }),
+        withRelic('lantern', { id: 'p1', draw: deck }),
         player({ id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].strength, 1, 'the owner gets the Strength')
-  assertEqual(state.players[1].strength, 0, 'the other player gets nothing')
+  assertEqual(state.players[0].energy, 4, 'the owner gets the Energy')
+  assertEqual(state.players[1].energy, 3, 'the other player gets nothing')
 })
 
 check('a player with no relics is unaffected', () => {

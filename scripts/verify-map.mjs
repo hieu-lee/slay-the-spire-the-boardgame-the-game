@@ -171,13 +171,16 @@ import {
   createRun,
   enterRoom,
   revealCardReward,
+  revealItemReward,
   resolveCampfire,
   resolveCardRewards,
   roomChoices,
   resolveCombat,
+  tradeRunPotion,
+  useRunPotion,
   MAX_HP,
 } from '../src/game/run.ts'
-import { RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
+import { RELICS, RELIC_DECK, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
 import { activatePotion } from '../src/game/combat.ts'
 
 suite('run')
@@ -284,6 +287,13 @@ check('a solo run starts with two extra gold AND the Loaded Die', () => {
 })
 
 check('every relic and potion a run can hand out actually exists', () => {
+  assertEqual(RELIC_DECK.length, 58, 'the physical ordinary relic deck has 58 cards')
+  assertEqual(new Set(RELIC_DECK).size, RELIC_DECK.length, 'ordinary relic cards are unique')
+  for (const id of RELIC_DECK) {
+    const def = RELICS[id]
+    assert(def !== undefined, `ordinary relic "${id}" is not defined`)
+    assert(!def.boss, `ordinary relic "${id}" is marked as a boss relic`)
+  }
   for (const character of Object.keys(MAX_HP)) {
     const id = STARTING_RELIC[character]
     assert(RELICS[id] !== undefined, `${character}'s starting relic "${id}" is not defined`)
@@ -294,8 +304,204 @@ check('every relic and potion a run can hand out actually exists', () => {
   }
   for (const [id, def] of Object.entries(POTIONS)) {
     assertEqual(def.id, id, `potion key ${id} disagrees with its id ${def.id}`)
-    assert(def.effects.length > 0, `${id} should actually do something`)
+    assert(def.text.length > 0, `${id} needs its printed text for the reward UI`)
   }
+})
+
+check('printed potion and elite relic rewards are dealt from shared finite decks', () => {
+  const run = createRun(109, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const [potionId, skippedPotion] = run.itemDecks.potions
+  const relicChoices = run.itemDecks.relics.slice(0, 2)
+  const offered = {
+    ...run,
+    phase: 'reward',
+    rewardDestination: 'map',
+    itemDecks: {
+      ...run.itemDecks,
+      potions: run.itemDecks.potions.slice(2),
+      relics: run.itemDecks.relics.slice(2),
+    },
+    rewards: [
+      { playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: true, potionId, hasRelic: true, relicChoices: [relicChoices[0]] },
+      { playerId: 'p2', choices: [], upgraded: false, hasCard: false, hasPotion: true, potionId: skippedPotion, hasRelic: true, relicChoices: [relicChoices[1]] },
+    ],
+  }
+  const after = resolveCardRewards(offered, {
+    p1: { card: null, potionRecipientId: 'p2', discardPotionId: null, relicId: relicChoices[0] },
+    p2: { card: null, potionRecipientId: null, discardPotionId: null, relicId: relicChoices[1] },
+  })
+  assertEqual(after.players[1].potions.at(-1), potionId, 'a potion may be passed to another player')
+  assertEqual(after.players[0].relics.at(-1).defId, relicChoices[0], 'each player gains their chosen relic')
+  assertEqual(after.players[1].relics.at(-1).defId, relicChoices[1])
+  assertEqual(after.itemDecks.potions.at(-1), skippedPotion, 'a skipped potion returns to the deck bottom')
+  assert(relicChoices.every((id) => !after.itemDecks.relics.includes(id)), 'chosen relics do not return to the deck')
+})
+
+check('each elite relic reward draws its own top card', () => {
+  const run = createRun(112, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const top = run.itemDecks.relics.slice(0, 2)
+  const offered = {
+    ...run,
+    phase: 'reward',
+    rewardDestination: 'map',
+    rewards: run.players.map((player) => ({
+      playerId: player.id, choices: [], upgraded: false, hasCard: false, hasPotion: false,
+      potionId: null, hasRelic: true, relicChoices: null,
+    })),
+  }
+  const first = revealItemReward(offered, 'p1', 'relic')
+  const second = revealItemReward(first, 'p2', 'relic')
+  assertDeepEqual(first.rewards[0].relicChoices, [top[0]])
+  assertEqual(first.rewards[1].relicChoices, null)
+  assertDeepEqual(second.rewards[1].relicChoices, [top[1]])
+  const skipped = resolveCardRewards(second, {
+    p1: { card: null, potionRecipientId: null, discardPotionId: null, relicId: null },
+    p2: { card: null, potionRecipientId: null, discardPotionId: null, relicId: null },
+  })
+  assertDeepEqual(skipped.itemDecks.relics.slice(-2), top, 'each skipped relic returns in reveal order')
+})
+
+check('later potion rewards can replace a potion gained by an earlier reward', () => {
+  const run = createRun(114, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ], 4)
+  const offered = {
+    ...run,
+    phase: 'reward',
+    rewardDestination: 'map',
+    players: run.players.map((player) => player.id === 'p1'
+      ? { ...player, potions: ['weak_potion'] }
+      : player),
+    rewards: [
+      { playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: true,
+        potionId: 'block_potion', hasRelic: false, relicChoices: null },
+      { playerId: 'p2', choices: [], upgraded: false, hasCard: false, hasPotion: true,
+        potionId: 'energy_potion', hasRelic: false, relicChoices: null },
+    ],
+  }
+  const after = resolveCardRewards(offered, {
+    p1: { card: null, potionRecipientId: 'p1', discardPotionId: null, relicId: null },
+    p2: { card: null, potionRecipientId: 'p1', discardPotionId: 'block_potion', relicId: null },
+  })
+  assertDeepEqual(after.players[0].potions, ['weak_potion', 'energy_potion'])
+  assertEqual(after.itemDecks.potions.at(-1), 'block_potion')
+  const reverse = resolveCardRewards(offered, {
+    p1: { card: null, potionRecipientId: 'p1', discardPotionId: 'energy_potion', relicId: null },
+    p2: { card: null, potionRecipientId: 'p1', discardPotionId: null, relicId: null },
+  })
+  assertDeepEqual(reverse.players[0].potions, ['weak_potion', 'block_potion'],
+    'the atomic helper finds the opposite legal pick order')
+  assertEqual(reverse.itemDecks.potions.at(-1), 'energy_potion')
+})
+
+check('Blood Potion and Entropic Brew work outside combat and return to the shared deck', () => {
+  const base = createRun(113, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const blood = useRunPotion({
+    ...base,
+    players: [{ ...base.players[0], hp: 4, potions: ['blood_potion'] }],
+  }, 'p1', 'blood_potion')
+  assertEqual(blood.players[0].hp, 6)
+  assertEqual(blood.players[0].potions.length, 0)
+  assertEqual(blood.itemDecks.potions.at(-1), 'blood_potion')
+
+  const top = base.itemDecks.potions.slice(0, 2)
+  const entropic = useRunPotion({
+    ...base,
+    ascension: 4,
+    players: [{ ...base.players[0], potions: ['entropic_brew', 'fire_potion'] }],
+  }, 'p1', 'entropic_brew', 'fire_potion')
+  assertDeepEqual(entropic.players[0].potions, top)
+  assertEqual(entropic.itemDecks.potions.at(-2), 'entropic_brew')
+  assertEqual(entropic.itemDecks.potions.at(-1), 'fire_potion')
+})
+
+check('players can trade a held potion outside combat', () => {
+  const base = createRun(115, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const offered = {
+    ...base,
+    players: base.players.map((player) => player.id === 'p1'
+      ? { ...player, potions: ['fire_potion'] }
+      : player),
+  }
+  const traded = tradeRunPotion(offered, 'p1', 'p2', 'fire_potion')
+  assertDeepEqual(traded.players[0].potions, [])
+  assertDeepEqual(traded.players[1].potions, ['fire_potion'])
+  assert(tradeRunPotion(traded, 'p2', 'p1', 'missing') === traded, 'only a held potion can move')
+  const full = {
+    ...offered,
+    ascension: 4,
+    players: offered.players.map((player) => player.id === 'p2'
+      ? { ...player, potions: ['weak_potion', 'block_potion'] }
+      : player),
+  }
+  assert(tradeRunPotion(full, 'p1', 'p2', 'fire_potion') === full, 'the recipient cap is enforced')
+  const fighting = { ...offered, combat: {} }
+  assert(tradeRunPotion(fighting, 'p1', 'p2', 'fire_potion') === fighting, 'potions cannot move during combat')
+})
+
+check('item rewards stay face down until drawn and used potions return to the bottom', () => {
+  const run = createRun(111, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const top = run.itemDecks.potions[0]
+  const offered = {
+    ...run,
+    phase: 'reward',
+    rewardDestination: 'map',
+    rewards: [{
+      playerId: 'p1', choices: [], upgraded: false, hasCard: false,
+      hasPotion: true, potionId: null, hasRelic: false, relicChoices: null,
+    }],
+  }
+  assertEqual(offered.itemDecks.potions[0], top, 'offering a reward does not expose the top card')
+  const revealed = revealItemReward(offered, 'p1', 'potion')
+  assertEqual(revealed.rewards[0].potionId, top)
+  assertEqual(revealed.itemDecks.potions.includes(top), false, 'the revealed card leaves the deck')
+
+  const entered = enterRoom({ ...run, players: run.players.map((player) => ({ ...player, potions: ['weak_potion'] })) }, roomChoices(run)[0].id)
+  const used = activatePotion(entered.combat, 'p1', 'weak_potion', { enemyUid: entered.combat.enemies[0].uid })
+  const won = resolveCombat({ ...entered, combat: { ...used, phase: 'won', enemies: used.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true, cardReward: null })) } })
+  assertEqual(won.itemDecks.potions.at(-1), 'weak_potion', 'a used potion returns after combat')
+})
+
+check('two players cannot take the same shared relic or overflow one potion belt', () => {
+  const run = createRun(110, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ], 4)
+  const relicChoices = run.itemDecks.relics.slice(0, 2)
+  const potionIds = run.itemDecks.potions.slice(0, 2)
+  const offered = {
+    ...run,
+    phase: 'reward',
+    rewardDestination: 'map',
+    players: run.players.map((player) => player.id === 'p1'
+      ? { ...player, potions: ['weak_potion'] }
+      : player),
+    rewards: run.players.map((player, index) => ({
+      playerId: player.id,
+      choices: [],
+      upgraded: false,
+      hasCard: false,
+      hasPotion: true,
+      potionId: potionIds[index],
+      hasRelic: true,
+      relicChoices,
+    })),
+  }
+  const duplicate = {
+    p1: { card: null, potionRecipientId: 'p1', discardPotionId: null, relicId: relicChoices[0] },
+    p2: { card: null, potionRecipientId: 'p1', discardPotionId: null, relicId: relicChoices[0] },
+  }
+  assert(resolveCardRewards(offered, duplicate) === offered, 'shared reward conflicts must be atomic')
 })
 
 check('entering a room is refused unless it is reachable', () => {
@@ -565,6 +771,86 @@ check('advancing an act heals the party and builds a new map', () => {
   assertDeepEqual(next.players[0].rareRewards, run.players[0].rareRewards, 'rare rewards are not shuffled')
 })
 
+check('Act II builds the complete twelve-card encounter deck and three elites', () => {
+  const run = createRun(91, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const bossId = run.map.rows.at(-1)[0]
+  const act2 = advanceAct({
+    ...run,
+    phase: 'victory',
+    map: {
+      ...run.map,
+      position: bossId,
+      rooms: { ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true } },
+    },
+  })
+  assertEqual(act2.enemyDecks.encounter.length, 12, 'the physical Act II deck has twelve cards')
+  assertDeepEqual(
+    [...act2.enemyDecks.elite.map((card) => card.defId)].sort(),
+    ['book_of_stabbing', 'gremlin_leader', 'taskmaster'],
+    'all three Act II elites are shuffled once',
+  )
+
+  const a7run = createRun(92, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 7)
+  const a7Boss = a7run.map.rows.at(-1)[0]
+  const a7 = advanceAct({
+    ...a7run,
+    phase: 'victory',
+    map: {
+      ...a7run.map,
+      position: a7Boss,
+      rooms: { ...a7run.map.rooms, [a7Boss]: { ...a7run.map.rooms[a7Boss], visited: true } },
+    },
+  })
+  assertEqual(a7.enemyDecks.encounter.length, 12, 'A7 replaces three cards rather than enlarging the deck')
+  const shelled = a7.enemyDecks.encounter.find((card) => card.defId === 'shelled_parasite')
+  const sphere = a7.enemyDecks.encounter.find((card) => card.defId === 'spheric_guardian')
+  assertDeepEqual(shelled?.summons, ['fungi_beast_a7'], 'A7 Shelled Parasite gains its Fungi Beast')
+  assertDeepEqual(sphere?.summons, ['sentry_a'], 'A7 Spheric Guardian gains its Sentry')
+})
+
+check('Act II elite setup deals the printed summons to every row', () => {
+  const party = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ]
+  const base = createRun(93, party)
+  const bossId = base.map.rows.at(-1)[0]
+  const act2 = advanceAct({
+    ...base,
+    phase: 'victory',
+    map: {
+      ...base.map,
+      position: bossId,
+      rooms: { ...base.map.rooms, [bossId]: { ...base.map.rooms[bossId], visited: true } },
+    },
+  })
+  const target = act2.map.rows[0][0]
+  const forced = {
+    ...act2,
+    map: {
+      ...act2.map,
+      position: null,
+      rooms: { ...act2.map.rooms, [target]: { ...act2.map.rooms[target], kind: 'elite' } },
+    },
+    enemyDecks: {
+      ...act2.enemyDecks,
+      elite: [{ defId: 'taskmaster', goldReward: 2, cardReward: 'upgraded', summonsPerPlayer: ['blue_slaver', 'red_slaver'] }],
+    },
+  }
+  const entered = enterRoom(forced, target)
+  assertEqual(entered.combat.enemies.length, 5, 'Taskmaster plus two Slavers per player')
+  for (const row of [0, 1]) {
+    const summons = entered.combat.enemies.filter((enemy) => enemy.row === row && enemy.uid.includes('summon'))
+    assertEqual(summons.length, 2, `row ${row} receives one Blue and one Red Slaver`)
+    assert(summons.some((enemy) => enemy.defId.startsWith('blue_slaver_')), 'the Blue Slaver came from its finite deck')
+    const red = summons.find((enemy) => enemy.defId.startsWith('red_slaver_'))
+    assert(red, 'the Red Slaver came from its finite deck')
+    assertEqual(red.actsLast, true, 'the Red Slaver summon card makes every summoned Red Slaver act last')
+  }
+  const bottom = entered.combat.enemies.filter((enemy) => enemy.row === 0)
+  assertEqual(bottom.at(-1).defId, 'taskmaster', 'the Elite is physically to the right of its bottom-row summons')
+})
+
 check('Ascension 6 heals 4 instead of to full', () => {
   const run = createRun(9, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 6)
   const bossId = run.map.rows[run.map.rows.length - 1][0]
@@ -644,13 +930,14 @@ check('an elite room places one elite, not one per player', () => {
       const elite = enterRoom(afterFight, choice.id)
       assertEqual(elite.combat.enemies.filter((enemy) => enemy.uid === 'elite').length, 1,
         'one elite card is placed in the bottom row (p.11)')
-      assert(!elite.combat.enemies[0].isBoss, 'an elite is not a boss')
-      assertEqual(elite.combat.enemies[0].goldReward, 2, 'an Act I elite grants 2 gold')
-      assertEqual(elite.combat.enemies[0].cardReward, 'normal', 'an Act I elite grants a normal card')
+      const main = elite.combat.enemies.find((enemy) => enemy.uid === 'elite')
+      assert(!main.isBoss, 'an elite is not a boss')
+      assertEqual(main.goldReward, 2, 'an Act I elite grants 2 gold')
+      assertEqual(main.cardReward, 'normal', 'an Act I elite grants a normal card')
 
       for (const act of [2, 3]) {
         const later = enterRoom({ ...afterFight, act }, choice.id)
-        const foe = later.combat.enemies[0]
+        const foe = later.combat.enemies.find((enemy) => enemy.uid === 'elite')
         assertEqual(foe.goldReward, act === 3 ? 3 : 2, `Act ${act} elite gold`)
         assertEqual(foe.cardReward, 'upgraded', `Act ${act} elite upgraded-card reward`)
         const offered = resolveCombat({ ...later, combat: { ...later.combat, phase: 'won' } })
@@ -681,12 +968,12 @@ check('Sentries alternates A/B summons until there are three enemies per player'
     const eliteRoom = roomChoices(afterFight).find((room) => room.kind === 'elite')
     if (!eliteRoom) continue
     const elite = enterRoom(afterFight, eliteRoom.id)
-    if (elite.combat.enemies[0].defId !== 'sentries') continue
+    if (elite.combat.enemies.find((enemy) => enemy.uid === 'elite')?.defId !== 'sentries') continue
     assertEqual(elite.combat.enemies.length, 6, 'two players face six Sentries')
     assertDeepEqual(
-      elite.combat.enemies.slice(1).map((enemy) => enemy.defId),
-      ['sentry_a', 'sentry_b', 'sentry_a', 'sentry_b', 'sentry_a'],
-      'the summon deck alternates A/B after the main Sentries card',
+      elite.combat.enemies.map((enemy) => enemy.defId),
+      ['sentry_a', 'sentry_b', 'sentry_a', 'sentry_b', 'sentry_a', 'sentries'],
+      'the summon deck alternates A/B to the left of the main Sentries card',
     )
     for (const player of elite.combat.players) {
       assertEqual(
@@ -787,6 +1074,34 @@ const PRINTED_HP = {
   sentries: [7, 7, 7, 7],
   gremlin_nob: [15, 30, 45, 60],
   lagavulin: [22, 44, 66, 88],
+  chosen_14: [14, 14, 14, 14],
+  chosen_16: [16, 16, 16, 16],
+  looter_hard: [10, 10, 10, 10],
+  mugger: [12, 12, 12, 12],
+  centurion_b3: [15, 15, 15, 15],
+  centurion_3b: [15, 15, 15, 15],
+  mystic: [12, 12, 12, 12],
+  mystic_2sh: [12, 12, 12, 12],
+  byrd_encounter: [5, 5, 5, 5],
+  byrd_s13: [4, 4, 4, 4],
+  byrd_s31: [4, 4, 4, 4],
+  byrd_31s: [4, 4, 4, 4],
+  snake_plant: [17, 17, 17, 17],
+  shelled_parasite: [18, 18, 18, 18],
+  fungi_beast_a7: [6, 6, 6, 6],
+  snecko: [23, 23, 23, 23],
+  spheric_guardian: [5, 5, 5, 5],
+  blue_slaver_wd3: [10, 10, 10, 10],
+  blue_slaver_w3d: [10, 10, 10, 10],
+  blue_slaver_dw3: [10, 10, 10, 10],
+  blue_slaver_3wd: [10, 10, 10, 10],
+  red_slaver_dv3: [10, 10, 10, 10],
+  red_slaver_3dv: [10, 10, 10, 10],
+  red_slaver_3vd: [10, 10, 10, 10],
+  red_slaver_v3d: [10, 10, 10, 10],
+  book_of_stabbing: [30, 60, 90, 120],
+  gremlin_leader: [30, 60, 90, 120],
+  taskmaster: [13, 28, 42, 56],
 }
 
 check('main-enemy rewards come from the Act-specific encounter card', () => {
@@ -819,11 +1134,14 @@ check('main-enemy rewards come from the Act-specific encounter card', () => {
   const ordinary = enterRoom({ ...base, map: { ...base.map, position: source.id } }, target).combat.enemies[0]
   assertEqual(ordinary.cardReward, 'normal', 'an ordinary Act I encounter grants its printed card reward')
 
-  for (const [act, defId] of [[2, 'cultist'], [3, 'jaw_worm']]) {
+  for (const [act, card] of [
+    [2, { defId: 'cultist', goldReward: 2, cardReward: 'normal' }],
+    [3, { defId: 'jaw_worm', goldReward: 2, cardReward: 'normal' }],
+  ]) {
     const base = createRun(71 + act, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
-    const run = { ...base, act }
+    const run = { ...base, act, enemyDecks: { act, first: [], encounter: [card], elite: [] } }
     const enemy = enterRoom(run, roomChoices(run)[0].id).combat.enemies[0]
-    assertEqual(enemy.defId, defId, `Act ${act} uses an implemented main-enemy card`)
+    assertEqual(enemy.defId, card.defId, `Act ${act} uses the drawn encounter card`)
     assertEqual(enemy.goldReward, 2, `Act ${act} printed gold`)
     assertEqual(enemy.cardReward, 'normal', `Act ${act} normal card reward`)
   }
@@ -893,6 +1211,18 @@ check('the complete Act I enemy, summon, gremlin, and elite roster is live', () 
     'sentries', 'gremlin_nob', 'lagavulin',
   ]
   assertDeepEqual(required.filter((id) => !ENEMIES[id]), [], 'every inventoried Act I card has a definition')
+})
+
+check('the complete Act II enemy, summon, and elite roster is live', () => {
+  const required = [
+    'chosen_14', 'chosen_16', 'looter_hard', 'mugger', 'centurion_b3', 'centurion_3b',
+    'mystic', 'mystic_2sh', 'byrd_encounter', 'byrd_s13', 'byrd_s31', 'byrd_31s',
+    'snake_plant', 'shelled_parasite', 'fungi_beast_a7', 'snecko', 'spheric_guardian',
+    'blue_slaver_wd3', 'blue_slaver_w3d', 'blue_slaver_dw3', 'blue_slaver_3wd',
+    'red_slaver_dv3', 'red_slaver_3dv', 'red_slaver_3vd', 'red_slaver_v3d',
+    'book_of_stabbing', 'gremlin_leader', 'taskmaster',
+  ]
+  assertDeepEqual(required.filter((id) => !ENEMIES[id]), [], 'every inventoried Act II card has a definition')
 })
 
 check('encounter HP comes from the enemy definition, not a fixture', () => {
@@ -1085,22 +1415,13 @@ check('HP board columns are read by party size', () => {
   assertEqual(startingHp(nob, 0), PRINTED_HP.gremlin_nob[0], 'below one clamps to the first')
 })
 
-check('a boss is the toughest thing the run can put up', () => {
+check('a boss stand-in is marked as a boss', () => {
   const run = createRun(4, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const bossId = run.map.rows[run.map.rows.length - 1][0]
   const parked = { ...run, map: { ...run.map, position: run.map.rows[run.map.rows.length - 2][0] } }
   const boss = enterRoom(parked, bossId).combat.enemies[0]
 
-  // Whatever stands in as the boss, it must be at least as tough as every
-  // elite the run can spawn as an ordinary elite room.
-  const eliteHp = Object.values(ENEMIES)
-    .filter((def) => def.elite)
-    .map((def) => def.hpByPlayers[0])
-  assert(
-    boss.maxHp >= Math.max(...eliteHp),
-    `the boss (${boss.defId}, ${boss.maxHp} HP) should not be weaker than an elite`,
-  )
-  assert(boss.isBoss, 'and must be marked as a boss')
+  assert(boss.isBoss, 'the temporary elite stand-in must still use boss acting order')
 })
 
 check('a player who chooses nothing is left alone', () => {

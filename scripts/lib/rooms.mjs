@@ -18,6 +18,7 @@ import {
   CAPS,
   activatePotion,
   advanceAct,
+  cardCost,
   cardDef,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
@@ -40,8 +41,9 @@ import {
   previewCardChoice,
   potionDef,
   revealCardReward,
+  revealItemReward,
   resolveCampfire,
-  resolveCardRewards,
+  resolveCardReward,
   resolveCombat,
   resolveEnemyTargets,
   resolveStartPlayerTurn,
@@ -49,7 +51,10 @@ import {
   spendShiv,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  tradeRunPotion,
+  useRunPotion,
   validEndTurnOrder,
+  validRewardDecision,
 } from '../../src/game/state.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
@@ -289,8 +294,12 @@ export function apply(room, seatToken, action) {
     const held = player?.hand.find((card) => card.uid === action.cardUid)
     const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
     const spendMiracle = action.spendMiracle === true
+    const printedCost = def && player ? cardCost(def, player.powers.length, player.lostHpThisCombat) : null
+    const cost = player?.nextCardCost ?? (player?.freeCardUids?.includes(action.cardUid)
+      ? 0
+      : printedCost === 'X' ? player?.energy : printedCost)
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
-      def.cost === 'X' || def.cost === 0)) fail('That Miracle cannot pay for this card')
+      def.cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
     const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
     const enemyUid = needsEnemy ? action.enemyUid : null
@@ -340,7 +349,10 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
-  if (room.run.combat?.phase === 'start') fail('Finish the Start-of-Turn abilities')
+  if (room.run.combat?.phase === 'start' && !(
+    action?.kind === 'usePotion' && action.potionId === 'gamblers_brew' &&
+    player?.potions.includes('gamblers_brew')
+  )) fail('Finish the Start-of-Turn abilities')
 
   const before = room.run
   const next = dispatch(before, seat, action)
@@ -370,7 +382,6 @@ export function apply(room, seatToken, action) {
   if (next.map.position !== before.map.position || next.phase !== before.phase) {
     room.campfireChoices = undefined
     room.rewardChoices = undefined
-    room.rewardConfirmed = undefined
   }
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -386,6 +397,15 @@ function endTurn(room, seat, _action, seatToken) {
   }
   if (previewOwners.length > 0) {
     if (!resolveAbandonedPreviews(room)) fail('The disconnected revealed card could not be resolved')
+    combat = room.run?.combat
+  }
+  const forcedOwners = combat?.players.filter((player) => (player.forcedCardUids?.length ?? 0) > 0) ?? []
+  if (forcedOwners.some((player) =>
+    room.seats.find((candidate) => candidate.playerId === player.id)?.connected !== false)) {
+    fail('Finish every immediate card before ending the turn')
+  }
+  if (forcedOwners.length > 0) {
+    resolveAbandonedForced(room)
     combat = room.run?.combat
   }
   if (room.endTurnAbilities) fail('The party is already ordering end-of-turn abilities')
@@ -407,6 +427,13 @@ function settleEndTurn(room) {
     if (previewOwners.some((playerId) => connected.has(playerId)) || connected.size === 0 ||
       [...connected].some((playerId) => !room.endTurnReady[playerId])) return previewOwners
     if (!resolveAbandonedPreviews(room)) return previewOwners
+    combat = room.run?.combat
+    if (!combat || !room.endTurnReady) return null
+  }
+  const forcedOwners = combat.players.filter((player) => (player.forcedCardUids?.length ?? 0) > 0)
+  if (forcedOwners.some((player) => connected.has(player.id))) return forcedOwners.map((player) => player.id)
+  if (forcedOwners.length > 0) {
+    resolveAbandonedForced(room)
     combat = room.run?.combat
     if (!combat || !room.endTurnReady) return null
   }
@@ -450,6 +477,23 @@ function resolveAbandonedPreviews(room) {
     }
   }
   return true
+}
+
+function resolveAbandonedForced(room) {
+  const combat = structuredClone(room.run.combat)
+  for (const player of combat.players) {
+    const seat = room.seats.find((candidate) => candidate.playerId === player.id)
+    if (seat?.connected !== false || (player.forcedCardUids?.length ?? 0) === 0) continue
+    const forced = new Set(player.forcedCardUids)
+    const abandoned = player.hand.filter((card) => forced.has(card.uid))
+    player.hand = player.hand.filter((card) => !forced.has(card.uid))
+    player.discard = [...player.discard, ...abandoned]
+    player.forcedCardUids = []
+    player.freeCardUids = (player.freeCardUids ?? []).filter((uid) => !forced.has(uid))
+    player.copyOriginalUids = (player.copyOriginalUids ?? []).filter((uid) => !forced.has(uid))
+    combat.log = [...combat.log, `${player.name}'s ${abandoned.length} immediate card${abandoned.length === 1 ? '' : 's'} discarded after disconnect`]
+  }
+  room.run = { ...room.run, combat }
 }
 
 function endTurnCoordinator(room) {
@@ -502,6 +546,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
   if (!Array.isArray(choices) || choices.length > UID_LIMIT || choices.some((choice) =>
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
     (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
+    (choice.playerId !== undefined && typeof choice.playerId !== 'string') ||
     choice.shivEnemyUids.length > CAPS.shivs ||
     choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string'))) {
     fail('Start-of-Turn choices must contain every ability and valid Shiv targets')
@@ -509,6 +554,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
   const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
     id: choice.id,
     enemyUid: choice.enemyUid,
+    playerId: choice.playerId,
     shivEnemyUids: [...choice.shivEnemyUids],
   })))
   if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')
@@ -635,33 +681,47 @@ function cardReward(room, seat, action, seatToken) {
   const run = room.run
   if (run.phase !== 'reward') fail('The party is not choosing rewards')
   const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
-  if (!offer) fail('This seat has no card reward')
+  if (!offer) fail('This seat has no combat reward')
   const choice = action.choice
   if (choice === 'reveal') {
     const next = revealCardReward(run, seat.playerId)
     if (next === run) fail('This reward is already revealed')
     room.run = next
-    // Revealing changes the information every permanent choice is based on.
-    room.rewardConfirmed = undefined
     room.version += 1
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
-  if (choice === 'confirm') {
-    const undecided = run.rewards.filter((candidate) => !(candidate.playerId in (room.rewardChoices ?? {})))
-    if (undecided.length > 0) fail('Everyone must choose before rewards are confirmed')
-    room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
+  if (choice === 'revealPotion' || choice === 'revealRelic') {
+    const next = revealItemReward(run, seat.playerId, choice === 'revealPotion' ? 'potion' : 'relic')
+    if (next === run) fail('This item reward is already revealed')
+    room.run = next
     room.version += 1
-    const waiting = settleReward(room)
-    return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
-  if (choice !== null && (
+  if (choice === 'collect') {
+    const undecided = run.rewards.filter((candidate) => !(candidate.playerId in (room.rewardChoices ?? {})))
+    if (undecided.length > 0) fail('Everyone must choose before rewards are collected')
+    const next = resolveCardReward(run, seat.playerId, room.rewardChoices[seat.playerId])
+    if (next === run) fail('Collect another reward or revise this choice first')
+    room.run = next
+    room.rewardChoices = { ...room.rewardChoices }
+    delete room.rewardChoices[seat.playerId]
+    if (next.phase !== 'reward') room.rewardChoices = undefined
+    room.version += 1
+    return { changed: true, waitingOn: settleReward(room), snapshot: snapshotFor(room, seatToken) }
+  }
+  if (typeof choice === 'object' && choice !== null) {
+    if (!Object.hasOwn(choice, 'card') || !Object.hasOwn(choice, 'potionRecipientId')
+      || !Object.hasOwn(choice, 'discardPotionId') || !Object.hasOwn(choice, 'relicId')
+      || !validRewardDecision(run, offer, choice)) {
+      fail('Choose one valid option for each printed reward')
+    }
+  } else if (choice !== null && (
     offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
   )) {
     fail('Choose one of your revealed cards or skip')
   }
-  room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: choice }
-  // Any changed decision reopens the final table confirmation for everyone.
-  room.rewardConfirmed = undefined
+  const choices = { ...room.rewardChoices, [seat.playerId]: choice }
+  room.rewardChoices = choices
   room.version += 1
   const waiting = settleReward(room)
   return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
@@ -670,27 +730,9 @@ function cardReward(room, seat, action, seatToken) {
 function settleReward(room) {
   const run = room.run
   if (!run || run.phase !== 'reward' || !room.rewardChoices) return null
-  if (!room.seats.some((seat) => seat.connected)) return null
-  const waiting = run.rewards
+  return run.rewards
     .filter((offer) => !(offer.playerId in room.rewardChoices))
     .map((offer) => offer.playerId)
-  if (waiting.length > 0) return waiting
-  const confirming = run.rewards
-    .filter((offer) => !(offer.playerId in (room.rewardConfirmed ?? {})))
-    .map((offer) => offer.playerId)
-  if (confirming.length > 0) return confirming
-  const decisions = Object.fromEntries(run.rewards.map((offer) => [
-    offer.playerId,
-    room.rewardChoices[offer.playerId],
-  ]))
-  const next = resolveCardRewards(run, decisions)
-  room.rewardChoices = undefined
-  room.rewardConfirmed = undefined
-  if (next !== run) {
-    room.run = next
-    room.version += 1
-  }
-  return null
 }
 
 /**
@@ -874,7 +916,16 @@ function dispatch(run, seat, action) {
       return combat === run.combat ? run : { ...run, combat }
     }
     case 'usePotion': {
-      if (!run.combat) fail('No combat in progress')
+      if (!run.combat) {
+        const next = useRunPotion(
+          run,
+          seat.playerId,
+          action.potionId,
+          typeof action.discardPotionId === 'string' ? action.discardPotionId : undefined,
+        )
+        if (next === run) fail('That potion cannot be used now')
+        return next
+      }
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
       if (typeof action.potionId !== 'string' || !player?.potions.includes(action.potionId)) {
         fail('That potion is not yours')
@@ -890,6 +941,10 @@ function dispatch(run, seat, action) {
           targetPlayerId: action.targetPlayerId ?? null,
           enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
           shivEnemyUids,
+          die: Number.isInteger(action.die) ? action.die : undefined,
+          cardUid: typeof action.cardUid === 'string' ? action.cardUid : undefined,
+          cardUids: uidList(action.cardUids),
+          discardPotionId: typeof action.discardPotionId === 'string' ? action.discardPotionId : undefined,
         },
       )
       if (
@@ -905,6 +960,14 @@ function dispatch(run, seat, action) {
         fail('That potion use is no longer legal; choose again')
       }
       return combat === run.combat ? run : { ...run, combat }
+    }
+    case 'tradePotion': {
+      if (run.combat || typeof action.potionId !== 'string' || typeof action.toPlayerId !== 'string') {
+        fail('That potion cannot be traded now')
+      }
+      const next = tradeRunPotion(run, seat.playerId, action.toPlayerId, action.potionId)
+      if (next === run) fail('That potion cannot be traded now')
+      return next
     }
     case 'enterRoom':
       return enterRoom(run, action.roomId)
@@ -970,10 +1033,9 @@ export function snapshotFor(room, seatToken) {
     // A reconnecting seat must be able to inspect its own pending permanent
     // choice. `null` is meaningful (skip), so test ownership rather than truth.
     rewardChoice: viewerId !== null && Object.hasOwn(room.rewardChoices ?? {}, viewerId)
-      ? room.rewardChoices[viewerId]
+      ? structuredClone(room.rewardChoices[viewerId])
       : undefined,
     rewardDecided: Object.keys(room.rewardChoices ?? {}),
-    rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
@@ -989,6 +1051,8 @@ export function snapshotFor(room, seatToken) {
       ? structuredClone(room.cardPreviews[viewerId])
       : undefined,
     cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0],
+    forcedCardPlayerId: room.run?.combat?.players.find((player) =>
+      (player.forcedCardUids?.length ?? 0) > 0)?.id,
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }
@@ -1047,6 +1111,7 @@ function redactCombat(combat, viewerId) {
     // are all printed on the card and face up on the table.
     enemies: combat.enemies,
     pendingSummons: combat.pendingSummons ?? [],
+    potionSupplyCount: combat.potionSupply.length,
     players: combat.players.map((player) => redactPlayer(player, viewerId)),
   }
 }
@@ -1079,6 +1144,14 @@ function redactPlayer(player, viewerId) {
     drawLocked: player.drawLocked === true,
     lostHpThisCombat: player.lostHpThisCombat === true,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
+    cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
+    nextCardCost: player.nextCardCost ?? null,
+    cardCopyQueue: player.cardCopyQueue ?? [],
+    copyOriginalUids: mine ? player.copyOriginalUids ?? [] : [],
+    freeCardUids: mine ? player.freeCardUids ?? [] : [],
+    forcedCardUids: mine ? player.forcedCardUids ?? [] : [],
+    hpLossLimitThisTurn: player.hpLossLimitThisTurn ?? null,
+    hpLostThisTurnAmount: player.hpLostThisTurnAmount ?? 0,
     shivs: player.shivs,
     shivDamageBonus: player.shivDamageBonus ?? 0,
     cardBlockBonus: player.cardBlockBonus ?? 0,

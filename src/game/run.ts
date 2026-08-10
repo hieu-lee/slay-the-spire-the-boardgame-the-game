@@ -10,9 +10,10 @@ import { createSummonSupply, drawSummon, enemyDef, startingHp } from './enemies.
 import type { SummonSupply } from './enemies.ts'
 import { generateMap, currentRoom, moveTo, isActComplete } from './map.ts'
 import type { Room, RoomKind, SpireMap } from './map.ts'
-import { STARTING_RELIC } from './relics.ts'
+import { BOSS_RELIC_DECK, POTION_DECK, RELIC_DECK, STARTING_RELIC, potionDef } from './relics.ts'
 import { createRng, shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
+import { CAPS } from './types.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from './types.ts'
 
 export type RunPhase =
@@ -34,6 +35,7 @@ export type RunState = {
   phase: RunPhase
   map: SpireMap
   enemyDecks: EnemyDecks
+  itemDecks: ItemDecks
   players: Player[]
   combat: CombatState | null
   rewards: CardRewardOffer[]
@@ -45,6 +47,24 @@ export type CardRewardOffer = {
   playerId: string
   choices: string[] | null
   upgraded: boolean
+  hasCard: boolean
+  hasPotion: boolean
+  potionId: string | null
+  hasRelic: boolean
+  relicChoices: string[] | null
+}
+
+export type RewardDecision = {
+  card: number | null
+  potionRecipientId: string | null
+  discardPotionId: string | null
+  relicId: string | null
+}
+
+export type ItemDecks = {
+  potions: string[]
+  relics: string[]
+  bossRelics: string[]
 }
 
 /** Max HP per character. Not printed in the rulebook — these come from the boards. */
@@ -59,8 +79,12 @@ export type EncounterCard = {
   defId: string
   goldReward: number
   cardReward: Enemy['cardReward']
+  potionReward?: boolean
+  relicReward?: boolean
   summons?: string[]
   randomSummons?: { group: string; count: number; soloCount?: number }
+  summonsPerPlayer?: string[]
+  randomSummonsPerPlayer?: { group: string; count: number }
   minAscension?: number
   maxAscension?: number
 }
@@ -78,35 +102,51 @@ const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
     { defId: 'red_louse', goldReward: 1, cardReward: 'normal', summons: ['green_louse', 'red_louse'] },
     { defId: 'jaw_worm', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
     { defId: 'cultist', goldReward: 1, cardReward: 'normal', summons: ['green_louse'] },
-    { defId: 'cultist', goldReward: 1, cardReward: 'normal', summons: ['spike_slime'] },
-    { defId: 'looter', goldReward: 0, cardReward: 'normal', maxAscension: 6 },
+    { defId: 'cultist', goldReward: 1, cardReward: 'normal', potionReward: true, summons: ['spike_slime'] },
+    { defId: 'looter', goldReward: 0, cardReward: 'normal', potionReward: true, maxAscension: 6 },
     { defId: 'blue_slaver', goldReward: 2, cardReward: 'normal' },
     { defId: 'red_slaver', goldReward: 1, cardReward: 'normal' },
     { defId: 'small_slime', goldReward: 1, cardReward: 'normal', summons: ['acid_slime', 'spike_slime'] },
-    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
+    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', potionReward: true, maxAscension: 6 },
     {
       defId: 'mad_gremlin', goldReward: 2, cardReward: 'normal',
       randomSummons: { group: 'gremlin', count: 3, soloCount: 2 },
     },
     {
-      defId: 'sneaky_gremlin', goldReward: 1, cardReward: 'normal',
+      defId: 'sneaky_gremlin', goldReward: 1, cardReward: 'normal', potionReward: true,
       randomSummons: { group: 'gremlin', count: 3, soloCount: 2 },
     },
-    { defId: 'fungi_beast', goldReward: 1, cardReward: 'normal', summons: ['fungi_beast'] },
-    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', minAscension: 7 },
+    { defId: 'fungi_beast', goldReward: 1, cardReward: 'normal', potionReward: true, summons: ['fungi_beast'] },
+    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', potionReward: true, minAscension: 7 },
     { defId: 'jaw_worm_a7', goldReward: 1, cardReward: 'normal', summons: ['spike_slime'], minAscension: 7 },
-    { defId: 'looter', goldReward: 0, cardReward: 'normal', summons: ['acid_slime'], minAscension: 7 },
+    { defId: 'looter', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['acid_slime'], minAscension: 7 },
   ],
-  2: [{ defId: 'cultist', goldReward: 2, cardReward: 'normal', summons: ['cultist', 'cultist'] }],
+  2: [
+    { defId: 'chosen_14', goldReward: 1, cardReward: 'normal', potionReward: true, summons: ['cultist'] },
+    { defId: 'chosen_16', goldReward: 2, cardReward: 'normal', summons: ['byrd'] },
+    { defId: 'looter_hard', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['mugger'] },
+    { defId: 'looter_hard', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['mugger'] },
+    { defId: 'cultist', goldReward: 2, cardReward: 'normal', summons: ['cultist', 'cultist'] },
+    { defId: 'snake_plant', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
+    { defId: 'shelled_parasite', goldReward: 0, cardReward: 'normal', potionReward: true, maxAscension: 6 },
+    { defId: 'snecko', goldReward: 1, cardReward: 'normal' },
+    { defId: 'byrd_encounter', goldReward: 1, cardReward: 'normal', summons: ['byrd', 'byrd'] },
+    { defId: 'spheric_guardian', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
+    { defId: 'centurion_3b', goldReward: 1, cardReward: 'normal', potionReward: true, summons: ['mystic'] },
+    { defId: 'centurion_b3', goldReward: 1, cardReward: 'normal', summons: ['mystic'] },
+    { defId: 'snake_plant', goldReward: 1, cardReward: 'normal', minAscension: 7 },
+    { defId: 'shelled_parasite', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['fungi_beast_a7'], minAscension: 7 },
+    { defId: 'spheric_guardian', goldReward: 1, cardReward: 'normal', summons: ['sentry_a'], minAscension: 7 },
+  ],
   3: [{ defId: 'jaw_worm', goldReward: 2, cardReward: 'normal', summons: ['jaw_worm', 'jaw_worm'] }],
 }
 
 /** The complete four-card fixed-opening deck. */
 const FIRST_ENCOUNTERS: EncounterCard[] = [
   { defId: 'cultist', goldReward: 1, cardReward: 'normal' },
-  { defId: 'jaw_worm_first', goldReward: 1, cardReward: 'normal' },
+  { defId: 'jaw_worm_first', goldReward: 1, cardReward: 'normal', potionReward: true },
   { defId: 'red_louse_first', goldReward: 1, cardReward: null, summons: ['green_louse'] },
-  { defId: 'small_slime', goldReward: 0, cardReward: 'normal', summons: ['acid_slime'] },
+  { defId: 'small_slime', goldReward: 0, cardReward: 'normal', potionReward: true, summons: ['acid_slime'] },
 ]
 
 /**
@@ -196,6 +236,14 @@ export function createPlayer(
     drawLocked: false,
     lostHpThisCombat: false,
     attacksPlayedThisTurn: 0,
+    cardsPlayedThisTurn: 0,
+    nextCardCost: null,
+    cardCopyQueue: [],
+    copyOriginalUids: [],
+    freeCardUids: [],
+    forcedCardUids: [],
+    hpLossLimitThisTurn: null,
+    hpLostThisTurnAmount: 0,
     shivs: 0,
     shivDamageBonus: 0,
     cardBlockBonus: 0,
@@ -249,6 +297,11 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
     phase: 'map',
     map: generateMap(rng, 1),
     enemyDecks: createEnemyDecks(rng, 1, ascension),
+    itemDecks: {
+      potions: shuffle(rng, [...POTION_DECK]),
+      relics: shuffle(rng, [...RELIC_DECK]),
+      bossRelics: shuffle(rng, [...BOSS_RELIC_DECK]),
+    },
     players,
     combat: null,
     rewards: [],
@@ -259,11 +312,15 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
 
 const ELITES: Record<number, EncounterCard[]> = {
   1: [
-    { defId: 'gremlin_nob', goldReward: 2, cardReward: 'normal' },
-    { defId: 'lagavulin', goldReward: 2, cardReward: 'normal' },
-    { defId: 'sentries', goldReward: 2, cardReward: 'normal' },
+    { defId: 'gremlin_nob', goldReward: 2, cardReward: 'normal', relicReward: true },
+    { defId: 'lagavulin', goldReward: 2, cardReward: 'normal', relicReward: true },
+    { defId: 'sentries', goldReward: 2, cardReward: 'normal', relicReward: true },
   ],
-  2: [],
+  2: [
+    { defId: 'book_of_stabbing', goldReward: 2, cardReward: 'upgraded', relicReward: true },
+    { defId: 'gremlin_leader', goldReward: 2, cardReward: 'upgraded', relicReward: true, randomSummonsPerPlayer: { group: 'gremlin', count: 2 } },
+    { defId: 'taskmaster', goldReward: 2, cardReward: 'upgraded', relicReward: true, summonsPerPlayer: ['blue_slaver', 'red_slaver'] },
+  ],
   3: [],
 }
 
@@ -300,12 +357,16 @@ function spawn(
   goldReward: number,
   cardReward: Enemy['cardReward'],
   ascension = 0,
+  potionReward = false,
+  relicReward = false,
+  actsLast = false,
 ): Enemy {
   return {
     uid,
     defId,
     row,
     isBoss,
+    actsLast,
     ascension,
     hp,
     maxHp: hp,
@@ -316,7 +377,10 @@ function spawn(
     poison: 0,
     goldReward,
     cardReward,
+    potionReward,
+    relicReward,
     actionIndex: 0,
+    phase: 0,
     abilityUsed: false,
     dead: false,
   }
@@ -359,10 +423,13 @@ function buildEncounter(
     const hp = startingHp(enemyDef(card.defId, ascension), count)
     // Elites are placed in the bottom row (p.11).
     const row = players[0]?.row ?? 0
-    const enemies = [spawn(
+    const elite = spawn(
       card.defId, 'elite', row, hp, false, card.goldReward, card.cardReward,
       ascension,
-    )]
+      card.potionReward === true,
+      card.relicReward === true,
+    )
+    const enemies: Enemy[] = []
     if (card.defId === 'sentries') {
       let next = 'sentry_a'
       for (const player of players) {
@@ -376,6 +443,35 @@ function buildEncounter(
         }
       }
     }
+    for (const player of players) {
+      const requested = [
+        ...(card.summonsPerPlayer ?? []),
+        ...Array.from(
+          { length: card.randomSummonsPerPlayer?.count ?? 0 },
+          () => card.randomSummonsPerPlayer!.group,
+        ),
+      ]
+      for (const group of requested) {
+        const defId = drawSummon(summonSupply, group)
+        if (!defId) continue
+        enemies.push(spawn(
+          defId,
+          `elite-summon-${enemies.length}`,
+          player.row,
+          startingHp(enemyDef(defId, ascension), count),
+          false,
+          0,
+          null,
+          ascension,
+          false,
+          false,
+          card.defId === 'taskmaster' && defId.startsWith('red_slaver'),
+        ))
+      }
+    }
+    // Summons share the Elite's row to its left (p.11), so the Elite is added
+    // last and acts after them in the left-to-right Enemy Turn.
+    enemies.push(elite)
     return { enemies, summonSupply }
   }
 
@@ -392,6 +488,8 @@ function buildEncounter(
       card.goldReward,
       card.cardReward,
       ascension,
+      card.potionReward === true,
+      card.relicReward === true,
     )
     const randomCount = card.randomSummons
       ? count === 1 ? card.randomSummons.soloCount ?? card.randomSummons.count : card.randomSummons.count
@@ -437,6 +535,8 @@ function readyForCombat(rng: RngState, player: Player): Player {
     vulnerable: 0,
     weak: 0,
     drawLocked: false,
+    cardsPlayedThisTurn: 0,
+    nextCardCost: null,
     shivs: 0,
     miracles: 0,
     stance: 'neutral',
@@ -476,8 +576,16 @@ export function enterRoom(state: RunState, roomId: string): RunState {
     )
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
-    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies, summonSupply))
-    return { ...next, phase: 'combat', players, combat }
+    const combat = startPlayerTurnWithChoices(createCombat(
+      rng, players, enemies, summonSupply, next.itemDecks.potions, state.ascension >= 4 ? 2 : CAPS.potions,
+    ))
+    return {
+      ...next,
+      itemDecks: { ...next.itemDecks, potions: [] },
+      phase: 'combat',
+      players,
+      combat,
+    }
   }
 
   return { ...next, phase: 'room' }
@@ -515,14 +623,16 @@ export function resolveCombat(state: RunState): RunState {
 
   const room = currentRoom(state.map)
   const wasBoss = room?.kind === 'boss'
-  const sharedReward = room?.kind === 'elite' || wasBoss ? combat.enemies[0] : undefined
+  const sharedReward = room?.kind === 'elite'
+    ? combat.enemies.find((enemy) => enemyDef(enemy.defId, enemy.ascension).elite)
+    : undefined
 
   // Carry HP forward and read each printed enemy reward. Encounter rewards come
   // from the enemy in your row; Elite and Boss rewards are shared (p.13).
   const players = state.players.map((player) => {
     const after = combat.players.find((candidate) => candidate.id === player.id)
     if (!after) return player
-    const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === after.row)
+    const source = wasBoss ? undefined : sharedReward ?? combat.enemies.find((enemy) => enemy.row === after.row)
     const gold = source?.goldReward ?? 0
     return {
       ...player,
@@ -534,15 +644,30 @@ export function resolveCombat(state: RunState): RunState {
     }
   })
 
-  const rewards = players.flatMap((player) => {
-    if (player.dead) return []
-    const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
-    if (!source?.cardReward || player.cardRewards.length < 3) return []
-    return [{ playerId: player.id, choices: null, upgraded: source.cardReward === 'upgraded' }]
-  })
   const destination = wasBoss ? 'victory' : 'map'
+  const itemDecks = structuredClone(state.itemDecks)
+  itemDecks.potions = [...(combat.potionSupply ?? [])]
+  const living = players.filter((player) => !player.dead)
+  const rewards = living.flatMap((player) => {
+    const source = wasBoss ? undefined : sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
+    const hasCard = Boolean(source?.cardReward && player.cardRewards.length >= 3)
+    const hasPotion = source?.potionReward === true
+    const hasRelic = source?.relicReward === true
+    if (!hasCard && !hasPotion && !hasRelic) return []
+    return [{
+      playerId: player.id,
+      choices: hasCard ? null : [],
+      upgraded: source?.cardReward === 'upgraded',
+      hasCard,
+      hasPotion,
+      potionId: null,
+      hasRelic,
+      relicChoices: null,
+    }]
+  })
   return {
     ...state,
+    itemDecks,
     phase: rewards.length > 0 ? 'reward' : destination,
     players,
     combat: null,
@@ -553,12 +678,36 @@ export function resolveCombat(state: RunState): RunState {
   }
 }
 
+/** Reveal a physical item only when the party chooses to draw that reward. */
+export function revealItemReward(state: RunState, playerId: string, kind: 'potion' | 'relic'): RunState {
+  if (state.phase !== 'reward') return state
+  const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
+  if (!offer) return state
+  const itemDecks = structuredClone(state.itemDecks)
+  if (kind === 'potion') {
+    if (!offer.hasPotion || offer.potionId !== null || itemDecks.potions.length === 0) return state
+    const potionId = itemDecks.potions.shift()!
+    return {
+      ...state,
+      itemDecks,
+      rewards: state.rewards.map((candidate) => candidate === offer ? { ...candidate, potionId } : candidate),
+    }
+  }
+  if (!offer.hasRelic || offer.relicChoices !== null || itemDecks.relics.length === 0) return state
+  const relicChoices = itemDecks.relics.splice(0, 1)
+  return {
+    ...state,
+    itemDecks,
+    rewards: state.rewards.map((candidate) => candidate === offer ? { ...candidate, relicChoices } : candidate),
+  }
+}
+
 /** Reveal one player's top three; rewards may instead be skipped unseen (p.8). */
 export function revealCardReward(state: RunState, playerId: string): RunState {
   if (state.phase !== 'reward') return state
   const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
   const player = state.players.find((candidate) => candidate.id === playerId)
-  if (!offer || offer.choices !== null || !player) return state
+  if (!offer?.hasCard || offer.choices !== null || !player) return state
   return {
     ...state,
     rewards: state.rewards.map((candidate) => candidate === offer
@@ -567,59 +716,179 @@ export function revealCardReward(state: RunState, playerId: string): RunState {
   }
 }
 
-/** Resolve every living player's revealed choice or unseen skip together (p.8). */
-export function resolveCardRewards(
+/** Validate one seat's complete reward decision without exposing another seat's choice. */
+export function validRewardDecision(
   state: RunState,
-  decisions: Readonly<Record<string, number | null>>,
+  offer: CardRewardOffer,
+  decision: RewardDecision,
+): boolean {
+  const player = state.players.find((candidate) => candidate.id === offer.playerId)
+  const shown = offer.hasCard ? (offer.choices ?? player?.cardRewards.slice(0, 3)) : []
+  if (decision.card === undefined || decision.potionRecipientId === undefined
+    || decision.discardPotionId === undefined || decision.relicId === undefined) return false
+  if (!player || !shown || !shown.every((defId, index) => player.cardRewards[index] === defId)) return false
+  if (decision.card !== null && (
+    !offer.hasCard || offer.choices === null || !Number.isInteger(decision.card)
+    || decision.card < 0 || decision.card >= offer.choices.length
+  )) return false
+  if (decision.potionRecipientId !== null) {
+    const recipient = state.players.find((candidate) => candidate.id === decision.potionRecipientId && !candidate.dead)
+    if (!offer.potionId || !recipient) return false
+  }
+  if (decision.discardPotionId !== null && decision.potionRecipientId === null) return false
+  return decision.relicId === null || offer.relicChoices?.includes(decision.relicId) === true
+}
+
+const normalizeRewardDecision = (raw: RewardDecision | number | null): RewardDecision =>
+  typeof raw === 'object' && raw !== null
+    ? raw
+    : { card: raw, potionRecipientId: null, discardPotionId: null, relicId: null }
+
+/** Gain one player's reward now, so the party can pick any order and use potions between picks (p.8). */
+export function resolveCardReward(
+  state: RunState,
+  playerId: string,
+  raw: RewardDecision | number | null,
 ): RunState {
   if (state.phase !== 'reward' || !state.rewardDestination) return state
-  for (const offer of state.rewards) {
-    const player = state.players.find((candidate) => candidate.id === offer.playerId)
-    const shown = offer.choices ?? player?.cardRewards.slice(0, 3)
-    if (!player || !shown || !shown.every((defId, index) => player.cardRewards[index] === defId)) return state
-    if (!(offer.playerId in decisions)) return state
-    const choice = decisions[offer.playerId]
-    if (choice === undefined) return state
-    if (choice !== null && (
-      offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
-    )) return state
-  }
+  const offer = state.rewards.find((candidate) => candidate.playerId === playerId)
+  if (!offer) return state
+  const decision = normalizeRewardDecision(raw)
+  if (!validRewardDecision(state, offer, decision)) return state
 
-  // Derive the next uid from THIS run. Another room may have called createRun
-  // since this one started, so the setup counter is not authoritative here.
-  let nextUid = Math.max(0, ...state.players.flatMap((player) =>
-    player.deck.map((card) => Number(/^c(\d+)$/.exec(card.uid)?.[1] ?? 0)),
-  ))
-  const mint = (defId: string, upgraded: boolean): CardInstance => ({ uid: `c${++nextUid}`, defId, upgraded })
-  const players = state.players.map((player) => {
-    const offer = state.rewards.find((candidate) => candidate.playerId === player.id)
-    if (!offer) return player
-    const choice = decisions[player.id] ?? null
-    if (offer.choices === null) return player
-    const shown = offer.choices
-    const selected = choice === null ? null : shown[choice]!
-    const unchosen = shown.filter((_defId, index) => index !== choice)
-    return {
-      ...player,
-      deck: selected === null ? player.deck : [...player.deck, mint(selected, offer.upgraded)],
-      cardRewards: [...player.cardRewards.slice(shown.length), ...unchosen],
+  const players = structuredClone(state.players)
+  const owner = players.find((player) => player.id === playerId)
+  if (!owner) return state
+  const itemDecks = structuredClone(state.itemDecks)
+  if (decision.potionRecipientId !== null) {
+    const recipient = players.find((player) => player.id === decision.potionRecipientId)
+    if (!recipient || !offer.potionId) return state
+    if (decision.discardPotionId !== null) {
+      const discardAt = recipient.potions.indexOf(decision.discardPotionId)
+      if (discardAt < 0) return state
+      itemDecks.potions.push(recipient.potions.splice(discardAt, 1)[0]!)
     }
-  })
+    if (recipient.potions.length >= (state.ascension >= 4 ? 2 : CAPS.potions)) return state
+    recipient.potions.push(offer.potionId)
+  } else if (offer.potionId) itemDecks.potions.push(offer.potionId)
 
+  const shown = offer.choices ?? []
+  const selected = !offer.hasCard || offer.choices === null || decision.card === null
+    ? null
+    : shown[decision.card]!
+  if (selected) {
+    const nextUid = Math.max(0, ...players.flatMap((player) =>
+      player.deck.map((card) => Number(/^c(\d+)$/.exec(card.uid)?.[1] ?? 0)),
+    )) + 1
+    owner.deck.push({ uid: `c${nextUid}`, defId: selected, upgraded: offer.upgraded })
+  }
+  if (offer.choices !== null) {
+    owner.cardRewards = [
+      ...owner.cardRewards.slice(shown.length),
+      ...shown.filter((_defId, index) => index !== decision.card),
+    ]
+  }
+  if (decision.relicId !== null) owner.relics.push({ defId: decision.relicId, spent: false })
+  itemDecks.relics.push(...(offer.relicChoices ?? []).filter((id) => id !== decision.relicId))
+
+  const rewards = state.rewards.filter((candidate) => candidate !== offer)
+  const done = rewards.length === 0
   return {
     ...state,
-    phase: state.rewardDestination,
+    itemDecks,
     players,
-    rewards: [],
-    rewardDestination: null,
-    log: [...state.log, 'The party collects its rewards.'],
+    rewards,
+    phase: done ? state.rewardDestination : 'reward',
+    rewardDestination: done ? null : state.rewardDestination,
+    log: [...state.log, done ? 'The party collects its rewards.' : `${owner.name} collects their rewards.`],
   }
+}
+
+/** Backwards-compatible atomic helper: find any legal pick order, transactionally. */
+export function resolveCardRewards(
+  state: RunState,
+  decisions: Readonly<Record<string, RewardDecision | number | null>>,
+): RunState {
+  const ids = state.rewards.map((offer) => offer.playerId)
+  if (ids.some((id) => !(id in decisions) || decisions[id] === undefined)) return state
+  const relics = ids.map((id) => normalizeRewardDecision(decisions[id]!).relicId).filter(Boolean)
+  if (new Set(relics).size !== relics.length) return state
+  const settle = (current: RunState, remaining: string[]): RunState | null => {
+    if (remaining.length === 0) return current
+    for (const id of remaining) {
+      const next = resolveCardReward(current, id, decisions[id]!)
+      if (next === current) continue
+      const resolved = settle(next, remaining.filter((candidate) => candidate !== id))
+      if (resolved) return resolved
+    }
+    return null
+  }
+  return settle(state, ids) ?? state
 }
 
 /** Leaves a non-combat room and returns the party to the map. */
 export function leaveRoom(state: RunState): RunState {
   if (state.phase !== 'room') return state
   return { ...state, phase: 'map' }
+}
+
+/** Use a potion whose printed effect still makes sense between combats. */
+export function useRunPotion(
+  state: RunState,
+  playerId: string,
+  potionId: string,
+  discardPotionId?: string,
+): RunState {
+  if (state.combat || state.phase === 'defeat') return state
+  const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
+  const usedAt = player?.potions.indexOf(potionId) ?? -1
+  if (!player || usedAt < 0 || (potionId !== 'blood_potion' && potionId !== 'entropic_brew')) return state
+
+  const potions = [...player.potions]
+  potions.splice(usedAt, 1)
+  const itemDecks = structuredClone(state.itemDecks)
+  itemDecks.potions.push(potionId)
+
+  if (potionId === 'entropic_brew') {
+    const draws = Math.min(2, itemDecks.potions.length)
+    const overflow = Math.max(0, potions.length + draws - (state.ascension >= 4 ? 2 : CAPS.potions))
+    if (overflow > 0) {
+      const discardAt = discardPotionId ? potions.indexOf(discardPotionId) : -1
+      if (discardAt < 0) return state
+      itemDecks.potions.push(potions.splice(discardAt, 1)[0]!)
+    }
+    potions.push(...itemDecks.potions.splice(0, draws))
+  }
+
+  return {
+    ...state,
+    itemDecks,
+    players: state.players.map((candidate) => candidate.id === playerId ? {
+      ...candidate,
+      hp: potionId === 'blood_potion' ? Math.min(candidate.maxHp, candidate.hp + 2) : candidate.hp,
+      potions,
+    } : candidate),
+    log: [...state.log, `${player.name} uses ${potionId === 'blood_potion' ? 'Blood Potion' : 'Entropic Brew'}.`],
+  }
+}
+
+/** Give one face-up potion to another player outside combat (rulebook p.8). */
+export function tradeRunPotion(state: RunState, fromId: string, toId: string, potionId: string): RunState {
+  if (state.combat || state.phase === 'defeat' || fromId === toId) return state
+  const from = state.players.find((player) => player.id === fromId && !player.dead)
+  const to = state.players.find((player) => player.id === toId && !player.dead)
+  const cap = state.ascension >= 4 ? 2 : CAPS.potions
+  const index = from?.potions.indexOf(potionId) ?? -1
+  if (!from || !to || index < 0 || to.potions.length >= cap) return state
+  const fromPotions = [...from.potions]
+  fromPotions.splice(index, 1)
+  return {
+    ...state,
+    players: state.players.map((player) => player.id === fromId
+      ? { ...player, potions: fromPotions }
+      : player.id === toId ? { ...player, potions: [...player.potions, potionId] } : player),
+    log: [...state.log, `${from.name} gives ${potionDef(potionId).name} to ${to.name}.`],
+  }
 }
 
 export type CampfireChoice = 'rest' | 'smith'

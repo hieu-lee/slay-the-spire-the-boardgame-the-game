@@ -7,9 +7,12 @@ import {
   leaveRoom,
   resolveCampfire,
   revealCardReward,
-  resolveCardRewards,
+  revealItemReward,
+  resolveCardReward,
   resolveCombat,
   roomChoices,
+  useRunPotion,
+  tradeRunPotion,
 } from '../game/run.ts'
 import type { RunState } from '../game/run.ts'
 import { seedFromString } from '../game/rng.ts'
@@ -21,6 +24,7 @@ import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { Icon, IconValue } from './Icon.tsx'
 import { OnlineGame } from './OnlineGame.tsx'
+import { RunPotionBar } from './RunPotionBar.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -179,6 +183,12 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
         </div>
       </header>
 
+      {viewer && !run.combat && run.phase !== 'defeat' ? (
+        <RunPotionBar player={viewer} players={run.players} ascension={run.ascension}
+          onUse={(potionId, discardPotionId) => setRun((current) => useRunPotion(current, viewer.id, potionId, discardPotionId))}
+          onTrade={(potionId, toPlayerId) => setRun((current) => tradeRunPotion(current, viewer.id, toPlayerId, potionId))} />
+      ) : null}
+
       {run.phase === 'combat' && run.combat ? (
         <CombatScreen
           state={run.combat}
@@ -198,9 +208,11 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
       {run.phase === 'reward' ? (
         <RewardScreen
           players={run.players}
+          ascension={run.ascension}
           rewards={run.rewards}
           onReveal={(playerId) => setRun((current) => revealCardReward(current, playerId))}
-          onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
+          onRevealItem={(playerId, kind) => setRun((current) => revealItemReward(current, playerId, kind))}
+          onResolve={(playerId, decision) => setRun((current) => resolveCardReward(current, playerId, decision))}
         />
       ) : null}
 

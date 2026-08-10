@@ -63,6 +63,7 @@ async function shot(label) {
   await page
     .waitForFunction(
       () => [...document.querySelectorAll('img')].every((img) => img.complete),
+      undefined,
       { timeout: 4000 },
     )
     .catch(() => {})
@@ -434,7 +435,7 @@ check('a combat can actually be won', () => {
 await shot('05d-victory')
 
 // The combat screen clears itself into the printed three-card reward (p.8).
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', { timeout: 5000 })
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', undefined, { timeout: 5000 })
 const hiddenRewardRun = await readRun()
 const revealButtons = await page.getByRole('button', { name: /^Reveal 3 for/ }).count()
 check('card rewards stay face down until each player reveals or skips', () => {
@@ -447,8 +448,7 @@ for (const player of hiddenRewardRun.players) {
   await page.getByRole('button', { name: `Reveal 3 for ${player.name}` }).click()
 }
 await page.waitForFunction(() => document.querySelectorAll('.reward-screen__cards .card').length === 6)
-// An upgraded reward still reveals base faces; only the card collected is
-// upgraded. Force that printed reward type so the UI contract stays covered.
+// Force an upgraded printed reward so the shown face and preview toggle stay covered.
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -467,7 +467,9 @@ const rewardCards = await page.locator('.reward-screen__cards .card').count()
 const rewardArt = await page.locator('.reward-screen__cards .card__art').evaluateAll((images) =>
   images.map((image) => ({ src: image.getAttribute('src'), ok: image.complete && image.naturalWidth > 0 })),
 )
-const collectLocked = await page.getByRole('button', { name: 'Everyone must choose' }).isDisabled()
+const collectLocked = await page.getByRole('button', { name: 'Reveal and choose every reward first' }).evaluateAll(
+  (buttons) => buttons.length === 2 && buttons.every((button) => button.disabled),
+)
 check('victory reveals three card rewards to every living player', () => {
   assertEqual(rewardRun.rewards.length, 2, 'both players receive their own reward')
   assertEqual(rewardCards, 6, 'three choices are shown per player')
@@ -479,22 +481,22 @@ check('victory reveals three card rewards to every living player', () => {
 })
 await shot('05ea-card-rewards')
 const firstReward = page.locator('.reward-screen__choice').first()
-const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
-const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
-await firstReward.getByRole('button', { name: /^Show .* upgrade$/ }).click()
 const upgradedRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
 const upgradedRewardArt = await firstReward.locator('.card__art').getAttribute('src')
-const previewPressed = await firstReward.getByRole('button', { name: /^Show .* base$/ }).getAttribute('aria-pressed')
+await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
+const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
+const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
+const previewPressed = await firstReward.getByRole('button', { name: /^Show .* upgrade$/ }).getAttribute('aria-pressed')
 const previewSelected = await firstReward.locator('.card').getAttribute('aria-pressed')
-check('Full Knowledge previews both faces even when the collected reward will be upgraded', () => {
-  assert(!(baseRewardLabel ?? '').includes('+,'), `the base face was not shown first: ${baseRewardLabel}`)
-  assert((upgradedRewardLabel ?? '').includes('+,'), `the upgraded face is not announced: ${upgradedRewardLabel}`)
+check('upgraded rewards show the collected face first and still preview both faces', () => {
+  assert((upgradedRewardLabel ?? '').includes('+,'), `the upgraded reward was not shown first: ${upgradedRewardLabel}`)
+  assert(!(baseRewardLabel ?? '').includes('+,'), `the base preview is not announced: ${baseRewardLabel}`)
   assert(baseRewardArt !== upgradedRewardArt && upgradedRewardArt?.endsWith('+.webp'), 'the art did not flip')
-  assertEqual(previewPressed, 'true', 'the upgrade preview control is not announced as pressed')
+  assertEqual(previewPressed, 'false', 'the base preview control is announced as the selected reward face')
   assertEqual(previewSelected, 'false', 'previewing an upgrade must not choose the reward')
 })
 await shot('05eaa-card-reward-upgrade')
-await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
+await firstReward.getByRole('button', { name: /^Show .* upgrade$/ }).click()
 await page.setViewportSize({ width: 390, height: 844 })
 const mobileRewardLayout = await page.locator('.reward-screen').evaluate((element) => ({
   width: element.clientWidth,
@@ -528,7 +530,7 @@ check('mobile reward cards stay readable inside their own horizontal tray', () =
 })
 await shot('05eb-card-rewards-mobile')
 await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = element.scrollHeight })
-const mobileCollectVisible = await page.getByRole('button', { name: 'Everyone must choose' }).evaluate((button) => {
+const mobileCollectVisible = await page.getByRole('button', { name: 'Reveal and choose every reward first' }).last().evaluate((button) => {
   const box = button.getBoundingClientRect()
   return box.top >= 0 && box.bottom <= window.innerHeight
 })
@@ -558,7 +560,17 @@ check('a chosen skip is visibly and accessibly selected', () => {
   assert(skipSelection.background !== unselectedSkipBackground, 'the chosen skip looks like the default button')
 })
 await shot('05ed-card-rewards-chosen')
-await page.getByRole('button', { name: 'Collect rewards' }).click()
+await page.getByRole('button', { name: "Collect Ironclad's rewards" }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().rewards.length === 1)
+const oneRewardLeft = await readRun()
+check('the party can collect printed rewards one at a time in its chosen order', () => {
+  assertEqual(oneRewardLeft.phase, 'reward')
+  assertEqual(oneRewardLeft.rewards[0].playerId, rewardRun.players[1].id)
+  assertEqual(oneRewardLeft.players[0].deck.length, deckSizesBeforeReward[0] + 1)
+  assertEqual(oneRewardLeft.players[1].deck.length, deckSizesBeforeReward[1])
+})
+await shot('05ee-card-rewards-sequential')
+await page.getByRole('button', { name: "Collect Silent's rewards" }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const backOnMap = await readRun()
 check('winning hands the party back to the map with somewhere to go', () => {
@@ -2144,6 +2156,10 @@ await shot('07w-silent-infinite-blades-ready')
 await infinitePower.click()
 await page.getByRole('button', { name: 'Start turn 2' }).click()
 await page.locator('.combat[data-phase="start"]').waitFor()
+const startEndTurnButtons = await page.getByRole('button', { name: 'End turn' }).count()
+check('Start-of-Turn choices expose no premature End Turn action', () => {
+  assertEqual(startEndTurnButtons, 0)
+})
 await page.locator('.end-turn-order > summary').click()
 await page.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
 await page.locator('.end-turn-order > summary').click()
@@ -2581,9 +2597,15 @@ const beats = await page.evaluate(async () => {
     const run = structuredClone(debug.getRun())
     run.combat.players[0].hp -= 1
     debug.setRun(run)
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    // Wait for this render rather than guessing that an overloaded browser can
+    // always paint inside 80 ms. The next hit still lands within the 380 ms
+    // flinch window, but cannot be coalesced into the same React commit.
+    const deadline = performance.now() + 300
+    while (seen.length <= i && performance.now() < deadline) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
   }
-  await new Promise((resolve) => setTimeout(resolve, 120))
+  await new Promise((resolve) => setTimeout(resolve, 80))
   return { count: seen.length, names: seen }
 })
 check('two hits in quick succession are both felt', () => {

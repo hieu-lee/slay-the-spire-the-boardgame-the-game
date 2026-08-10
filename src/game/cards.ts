@@ -162,6 +162,12 @@ type EffectKind =
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
+  | { kind: 'gainGold'; amount: number }
+  | { kind: 'setHpAtLeast'; amount: number }
+  | { kind: 'setHpLossLimit'; amount: number }
+  | { kind: 'blockIfNone'; amount: number }
+  | { kind: 'blockAllPlayers'; amount: number; soloAmount?: number }
+  | { kind: 'queueCardCopy'; cardType: 'attack' | 'skill' }
   /** Gain one Energy per card this card's preceding variable discard took, plus a flat bonus. */
   | { kind: 'gainEnergyPerDiscard'; bonus: number }
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)

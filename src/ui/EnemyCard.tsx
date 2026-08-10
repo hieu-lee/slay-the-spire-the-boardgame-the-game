@@ -1,4 +1,4 @@
-import { abilityText, actionsFor, enemyDef } from '../game/enemies.ts'
+import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
 import { Icon, IconValue } from './Icon.tsx'
@@ -55,10 +55,24 @@ function intentParts(action: EnemyAction): IntentPart[] {
         echo: index > 0,
       }))
     }
+    case 'attackSequence':
+      return action.hits.map((hit) => ({ icon: 'attack', value: hit.amount, aoe: hit.aoe }))
     case 'block':
       return [{ icon: 'block', value: action.amount }]
     case 'gainStrength':
       return [{ icon: 'strength', value: action.amount, prefix: '+' }]
+    case 'blockAllEnemies':
+      return [{ icon: 'block', value: action.amount, label: 'Block to all enemies' }]
+    case 'strengthenAllEnemies':
+      return [{ icon: 'strength', value: action.amount, prefix: '+', label: 'Strength to all enemies' }]
+    case 'healAllEnemies':
+      return [{ icon: 'monster', value: action.amount, label: 'heal all enemies', visibleLabel: 'Heal' }]
+    case 'blockNamed':
+      return [{ icon: 'block', value: action.amount, label: `Block to ${action.defId.replaceAll('_', ' ')}` }]
+    case 'clearSelfDebuffs':
+      return [{ icon: 'monster', label: 'removes Weak and Vulnerable', visibleLabel: 'Cleanse' }]
+    case 'reviveAll':
+      return [{ icon: 'monster', label: `revives all dead ${action.group}s`, visibleLabel: 'Revive' }]
     case 'applyWeak':
       return [{ icon: 'weak', value: action.amount, aoe: action.aoe }]
     case 'applyVulnerable':
@@ -94,7 +108,7 @@ function intentParts(action: EnemyAction): IntentPart[] {
  * for players. The intent especially: it is the one thing choosing a target
  * depends on, and it was not being announced at all.
  */
-function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], ability: string | null): string {
+function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilities: string[]): string {
   // The label is built by the engine and is the SAME string the log prints --
   // "Cultist (row 0, #2)" when two of them share a row. Two identically named
   // buttons would leave a screen-reader user unable to match log to board, and
@@ -118,7 +132,7 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilit
   // enemy CARRIES are announced below in the same shape, and case alone is not
   // something a screen reader conveys.
   parts.push(said ? `intends ${said}` : 'no intent')
-  if (ability) parts.push(ability)
+  parts.push(...abilities)
 
   const tokens: [string, number][] = [
     ['Block', enemy.block],
@@ -141,11 +155,19 @@ export function EnemyCard({
   onClick,
 }: EnemyCardProps) {
   const def = enemyDef(enemy.defId, enemy.ascension)
-  const intent = actionsFor(def, die, enemy.actionIndex).flatMap(intentParts)
-  const spentAbility = def.ability?.kind === 'curlUp' && enemy.abilityUsed
-  const ability = def.ability
-    ? `${abilityText(def.ability)}${spentAbility ? ', spent' : ''}`
-    : null
+  const actions = actionsForEnemy(enemy, die)
+  const intent = actions.flatMap(intentParts)
+  if ((enemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
+    intent.push(...intentParts({ kind: 'actsLast' }))
+  }
+  const abilities = enemyAbilities(def)
+  const spentAbility = abilities.some((ability) => ability.kind === 'curlUp') && enemy.abilityUsed
+  const abilityLabels = abilities.map((ability) => {
+    const text = ability.kind === 'confusion'
+      ? `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
+      : abilityText(ability)
+    return `${text}${spentAbility && ability.kind === 'curlUp' ? ', spent' : ''}`
+  })
   const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
 
   const className = [
@@ -164,7 +186,7 @@ export function EnemyCard({
       className={className}
       disabled={enemy.dead}
       onClick={() => onClick?.(enemy)}
-      aria-label={describeEnemy(enemy, label, intent, ability)}
+      aria-label={describeEnemy(enemy, label, intent, abilityLabels)}
     >
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.
@@ -188,12 +210,20 @@ export function EnemyCard({
           ))
         )}
       </span>
-      {def.ability ? (
+      {abilities.length > 0 ? (
         <span
           className={`enemy__ability${spentAbility ? ' enemy__ability--spent' : ''}`}
-          title={ability ?? undefined}
+          title={abilityLabels.join('\n')}
         >
-          {spentAbility ? 'Curl Up · spent' : abilityText(def.ability, true)}
+          {abilities.map((ability, index) => (
+            <span key={`${ability.kind}-${index}`}>
+              {spentAbility && ability.kind === 'curlUp'
+                ? 'Curl Up · spent'
+                : ability.kind === 'confusion'
+                  ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
+                  : abilityText(ability, true)}
+            </span>
+          ))}
         </span>
       ) : null}
 

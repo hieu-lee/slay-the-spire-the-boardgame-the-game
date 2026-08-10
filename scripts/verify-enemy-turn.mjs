@@ -7,7 +7,7 @@ import {
   startPlayerTurn,
 } from '../src/game/combat.ts'
 import {
-  actionsFor, advanceCube, createSummonSupply, drawSummon, enemyDef, startingHp,
+  actionsFor, actionsForEnemy, advanceCube, createSummonSupply, drawSummon, enemyDef, startingHp,
 } from '../src/game/enemies.ts'
 import { CARDS, STARTER_DECKS, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -91,6 +91,44 @@ check('a die-pattern enemy acts on the shared roll', () => {
 check('enemy Strength adds to its attacks', () => {
   const next = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse', strength: 2 })]))
   assertEqual(next.players[0].hp, 7, 'a 1-damage attack with 2 Strength deals 3')
+})
+
+check('Snake Plant spends modifiers once across its two different printed hits', () => {
+  const state = inEnemyPhase(
+    [player({ hp: 20, maxHp: 20, vulnerable: 2 })],
+    [enemy({ defId: 'snake_plant', hp: 17, maxHp: 17, weak: 2 })],
+  )
+  const next = enemyTurn({ ...state, die: 1 })
+  assertEqual(next.players[0].hp, 15, 'the 3 and 2 hits both use the starting modifiers')
+  assertEqual(next.players[0].vulnerable, 1, 'the whole sequence spends one Vulnerable')
+  assertEqual(next.enemies[0].weak, 1, 'the whole sequence spends one Weak')
+
+  const multiplayer = inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', name: 'Silent', row: 1 })],
+    [enemy({ defId: 'snake_plant', ascension: 7, hp: 17, maxHp: 17 })],
+  )
+  const spread = enemyTurn({ ...multiplayer, die: 1 })
+  assertEqual(spread.players[0].hp, 5, 'the row target takes both printed hits')
+  assertEqual(spread.players[1].hp, 8, 'the later AoE hit still reaches every other player')
+})
+
+check('Act II elite rows preserve single-row and AoE icons from the cards', () => {
+  const book = enemyTurn(inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', name: 'Silent', row: 1 })],
+    [enemy({ defId: 'book_of_stabbing', row: 0, hp: 60, maxHp: 60, actionIndex: 1 })],
+  ))
+  assertEqual(book.players[0].hp, 7, 'Book of Stabbing large hit stays in its row')
+  assertEqual(book.players[1].hp, 10, 'the large hit is not AoE')
+
+  const taskmaster = enemyTurn(inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', name: 'Silent', row: 1 })],
+    [enemy({ defId: 'taskmaster', ascension: 1, hp: 32, maxHp: 32, actionIndex: 1 })],
+  ))
+  assertEqual(taskmaster.players[0].hp, 8, 'Taskmaster repeating A1 row deals its printed 2 damage to all')
+  assertEqual(taskmaster.players[1].hp, 8)
+  assertEqual(taskmaster.players[0].draw.filter((card) => card.defId === 'daze').length, 2)
+  assertEqual(taskmaster.players[1].draw.filter((card) => card.defId === 'daze').length, 2)
+  assertEqual(taskmaster.enemies[0].strength, 1)
 })
 
 // p.13: highest row first, left to right, and bosses always act last.
@@ -186,6 +224,133 @@ check('the Enemy Turn does not mutate the state handed in', () => {
   const before = JSON.stringify(state)
   enemyTurn(state)
   assertEqual(JSON.stringify(state), before, 'enemyTurn must return a new state')
+})
+
+check('Spheric Guardian keeps its Block through the Enemy Turn', () => {
+  const state = inEnemyPhase([player()], [enemy({ defId: 'spheric_guardian', hp: 5, maxHp: 5, block: 10 })])
+  const next = enemyTurn(state)
+  assertEqual(next.enemies[0].block, 15, 'Barricade keeps 10 Block before the printed 5 Block is added')
+})
+
+check('Flying caps each Hit rather than the whole Attack', () => {
+  const twin = instance('twin_strike')
+  const state = createCombat(
+    createRng(5),
+    [player({ hand: [twin], strength: 5 })],
+    [enemy({ defId: 'byrd_s13', hp: 4, maxHp: 4 })],
+  )
+  const next = playCard(state, 'p1', twin.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(next.enemies[0].hp, 2, 'two boosted Hits each deal exactly 1')
+})
+
+check('Snecko sets and spends the first-card Confused cost', () => {
+  uid = 0
+  const strike = instance('strike_ironclad')
+  let state = createCombat(
+    createRng(8),
+    [player({ deck: [strike], draw: [strike] })],
+    [enemy({ defId: 'snecko', hp: 23, maxHp: 23 })],
+  )
+  state = startPlayerTurn(state)
+  const expected = state.die <= 2 ? 2 : state.die <= 4 ? 1 : 3
+  assertEqual(state.players[0].nextCardCost, expected, 'the shared die selects Snecko\'s printed Confused value')
+  const before = state.players[0].energy
+  state = playCard(state, 'p1', state.players[0].hand[0].uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.players[0].energy, before - expected, 'the first card pays the Confused cost')
+  assertEqual(state.players[0].nextCardCost, null, 'later cards return to their printed costs')
+})
+
+check('Centurion enters Fury immediately when its Mystic dies', () => {
+  const strike = instance('strike_ironclad')
+  let state = createCombat(
+    createRng(5),
+    [player({ hand: [strike] })],
+    [
+      enemy({ uid: 'centurion', defId: 'centurion_b3', hp: 15, maxHp: 15, abilityUsed: false }),
+      enemy({ uid: 'mystic', defId: 'mystic_2sh', hp: 1, maxHp: 12 }),
+    ],
+  )
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'mystic', playerId: 'p1' })
+  assert(state.enemies[0].abilityUsed, 'Fury flips on as part of the death')
+  assertEqual(state.enemies[0].strength, 1, 'Fury gains 1 Strength')
+  state = enemyTurn({ ...state, phase: 'enemy', die: 1 })
+  assertEqual(state.players[0].hp, 6, 'the Centurion immediately uses only its 3-damage attack with Strength')
+  assertEqual(actionsForEnemy(state.enemies[0], 1)[0].kind, 'attack', 'the public intent follows the Fury action')
+})
+
+check('each Centurion blocks only the Mystic in its own row', () => {
+  const state = inEnemyPhase(
+    [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
+    [
+      enemy({ uid: 'c0', defId: 'centurion_b3', row: 0, hp: 15, maxHp: 15, abilityUsed: false }),
+      enemy({ uid: 'm0', defId: 'mystic', row: 0, hp: 12, maxHp: 12 }),
+      enemy({ uid: 'c1', defId: 'centurion_b3', row: 1, hp: 15, maxHp: 15, abilityUsed: false }),
+      enemy({ uid: 'm1', defId: 'mystic_2sh', row: 1, hp: 12, maxHp: 12 }),
+    ],
+  )
+  const next = enemyTurn({ ...state, die: 1 })
+  assertEqual(next.enemies.find((foe) => foe.uid === 'm0').block, 3, 'row 0 Mystic receives one Block action')
+  assertEqual(next.enemies.find((foe) => foe.uid === 'm1').block, 3, 'row 1 Mystic receives one Block action')
+})
+
+check('Painful Stabs adds one Daze after any unblocked multi-hit', () => {
+  const state = inEnemyPhase(
+    [player({ block: 1 })],
+    [enemy({ defId: 'book_of_stabbing', hp: 30, maxHp: 30, actionIndex: 0 })],
+  )
+  const next = enemyTurn(state)
+  assertEqual(next.players[0].hp, 9, 'one of the two hits gets through the Block')
+  assertEqual(next.players[0].draw.filter((card) => card.defId === 'daze').length, 1, 'Painful Stabs pays once, not per hit')
+})
+
+check('Fairy revival does not hide Painful Stabs damage', () => {
+  const state = inEnemyPhase(
+    [player({ hp: 1, maxHp: 10, potions: ['fairy_in_a_bottle'] })],
+    [enemy({ defId: 'book_of_stabbing', hp: 30, maxHp: 30, actionIndex: 0 })],
+  )
+  const next = enemyTurn(state)
+  assertEqual(next.players[0].draw.filter((card) => card.defId === 'daze').length, 1)
+  assertEqual(next.log.filter((line) => /hit Ironclad for 1/.test(line)).length, 2,
+    `missing separate physical hit logs: ${next.log.join(' | ')}`)
+})
+
+check('encounter Red Slavers act last only while applying Vulnerable', () => {
+  for (let die = 1; die <= 6; die++) {
+    const state = {
+      ...inEnemyPhase(
+        [player()],
+        [enemy({ uid: 'red', defId: 'red_slaver_dv3' }), enemy({ uid: 'blue', defId: 'blue_slaver_wd3' })],
+      ),
+      die,
+    }
+    assertDeepEqual(
+      enemyActingOrder(state).map((foe) => foe.uid),
+      die === 3 || die === 4 ? ['blue', 'red'] : ['red', 'blue'],
+      `ordinary die ${die}`,
+    )
+  }
+})
+
+check('summoned Red Slavers use their printed permanent Acts Last rule', () => {
+  const taskmaster = inEnemyPhase(
+    [player()],
+    [enemy({ uid: 'red', defId: 'red_slaver_dv3', actsLast: true }), enemy({ uid: 'blue', defId: 'blue_slaver_wd3' })],
+  )
+  assertDeepEqual(enemyActingOrder({ ...taskmaster, die: 1 }).map((foe) => foe.uid), ['blue', 'red'])
+})
+
+check('Gremlin Leader revives every dead Gremlin on its third action', () => {
+  const state = inEnemyPhase(
+    [player()],
+    [
+      enemy({ uid: 'gremlin', defId: 'sneaky_gremlin', hp: 0, maxHp: 2, dead: true }),
+      enemy({ uid: 'leader', defId: 'gremlin_leader', hp: 30, maxHp: 30, actionIndex: 2 }),
+    ],
+  )
+  const next = enemyTurn(state)
+  assert(!next.enemies[0].dead, 'the physical Gremlin card returns to play')
+  assertEqual(next.enemies[0].hp, 2, 'it returns at its printed HP')
+  assertEqual(next.players[0].hp, 10, 'a left-side Gremlin does not act again after the Leader revives it')
 })
 
 // A player at 0 HP ends the game for the whole party (p.13).

@@ -40,6 +40,7 @@ export type TriggerEvent = {
   die?: number
   /** The type of the card that was just played, for `onPlayCard`. */
   cardType?: CardType
+  cardOwner?: string
   /** The stance just entered, for `onEnterStance`. */
   stance?: Stance
 }

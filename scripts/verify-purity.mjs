@@ -25,6 +25,7 @@ import {
   playCard,
   revealCardReward,
   resolveCampfire,
+  resolveCardReward,
   resolveCardRewards,
   resolveCombat,
   roomChoices,
@@ -176,7 +177,9 @@ check('resolveCardRewards leaves the offer and reward stacks alone', () => {
   )
   const decisions = Object.fromEntries(offered.rewards.map((offer) => [offer.playerId, 0]))
   assert(resolveCardRewards(offered, decisions) !== offered, 'precondition: the reward resolves')
+  assert(resolveCardReward(offered, offered.rewards[0].playerId, 0) !== offered, 'precondition: one reward resolves')
   unchanged('revealCardReward', hidden, () => revealCardReward(hidden, hidden.rewards[0].playerId))
+  unchanged('resolveCardReward', offered, () => resolveCardReward(offered, offered.rewards[0].playerId, 0))
   unchanged('resolveCardRewards', offered, () => resolveCardRewards(offered, decisions))
 })
 

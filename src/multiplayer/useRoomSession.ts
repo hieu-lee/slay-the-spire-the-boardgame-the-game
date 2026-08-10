@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CombatPhase, EndTurnAbility, StartTurnAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
-import type { CampfireChoice, CardRewardOffer, RunPhase } from '../game/run.ts'
+import type { CampfireChoice, CardRewardOffer, RewardDecision, RunPhase } from '../game/run.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
@@ -36,6 +36,7 @@ export type VisibleCombat = {
   players: VisiblePlayer[]
   enemies: Enemy[]
   pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
+  potionSupplyCount: number
   powerTriggersUsedThisTurn: string[]
   log: string[]
 }
@@ -60,9 +61,8 @@ export type RoomSnapshot = {
   seats: PublicSeat[]
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
   campfireDecided: string[]
-  rewardChoice?: number | null
+  rewardChoice?: RewardDecision | number | null
   rewardDecided: string[]
-  rewardConfirmed: string[]
   endTurnDecided: string[]
   endTurnAbilities?: EndTurnAbility[]
   endTurnOrder?: string[]
@@ -78,6 +78,7 @@ export type RoomSnapshot = {
     enemyUid: string | null
   }
   cardChoicePlayerId?: string
+  forcedCardPlayerId?: string
   run: VisibleRun | null
 }
 

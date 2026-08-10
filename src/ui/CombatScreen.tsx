@@ -344,7 +344,9 @@ function canAfford(
     player.orbs.every((orb) => !orb)) {
     return false
   }
-  const cost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const cost = player.nextCardCost ?? (player.freeCardUids?.includes(card.uid)
+    ? 0
+    : cardCost(def, player.powers.length, player.lostHpThisCombat))
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   return cost === 'X' || cost <= player.energy + (spendMiracle ? 1 : 0)
 }
@@ -418,6 +420,7 @@ export function CombatScreen({
   const [pendingPotion, setPendingPotion] = useState<string | null>(null)
   const [potionShivEnemyUids, setPotionShivEnemyUids] = useState<string[]>([])
   const [potionOverflowRequired, setPotionOverflowRequired] = useState(0)
+  const [potionCardUids, setPotionCardUids] = useState<string[]>([])
   const [usingPotion, setUsingPotion] = useState(false)
   const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
@@ -426,6 +429,7 @@ export function CombatScreen({
   const [endTurnError, setEndTurnError] = useState('')
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
+  const [startTurnPlayerTargets, setStartTurnPlayerTargets] = useState<Record<string, string | undefined>>({})
   const [startTurnTargets, setStartTurnTargets] = useState<Record<string, (string | null | undefined)[]>>({})
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -500,6 +504,7 @@ export function CombatScreen({
     setPendingPotion(null)
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
+    setPotionCardUids([])
   }, [state.phase, viewerId])
 
   useEffect(() => {
@@ -671,6 +676,7 @@ export function CombatScreen({
     if (state.phase !== 'start') {
       setStartTurnOrder([])
       setStartTurnEnemyTargets({})
+      setStartTurnPlayerTargets({})
       setStartTurnTargets({})
     }
   }, [state.phase])
@@ -681,6 +687,10 @@ export function CombatScreen({
     setStartTurnEnemyTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id,
       ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+    ])))
+    setStartTurnPlayerTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
+      ability.id,
+      ability.playerTargets?.length === 1 ? ability.playerTargets[0]!.id : undefined,
     ])))
     setStartTurnTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id,
@@ -794,8 +804,12 @@ export function CombatScreen({
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
 
   const over = state.phase === 'won' || state.phase === 'lost'
+  const forcedOwnerId = state.players.find((player) => (player.forcedCardUids?.length ?? 0) > 0)?.id
+  const forcedActionAllowed = forcedOwnerId === undefined || forcedOwnerId === viewer.id
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
   const pendingPotionOverflow = potionOverflowRequired
+  const pendingEntropicDiscard = pendingPotionDef?.special === 'entropicBrew' &&
+    Math.min(2, state.potionSupply.length + 1) > state.potionLimit - (viewer.potions.length - 1)
   const livingPlayers = state.players.filter((player) => !player.dead)
   const confirmedDiscards = decidedPlayerIds
     ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
@@ -820,13 +834,17 @@ export function CombatScreen({
     ? orderedStartAbilities.find((ability) =>
       ability.targets && startTurnEnemyTargets[ability.id] === undefined)
     : undefined
-  const pendingStartShiv = canResolveStartTurn && !pendingStartEnemy
+  const pendingStartPlayer = canResolveStartTurn && !pendingStartEnemy
+    ? orderedStartAbilities.find((ability) =>
+      ability.playerTargets && startTurnPlayerTargets[ability.id] === undefined)
+    : undefined
+  const pendingStartShiv = canResolveStartTurn && !pendingStartEnemy && !pendingStartPlayer
     ? orderedStartAbilities.flatMap((ability) =>
       Array.from({ length: ability.overflowShivs }, (_unused, index) => ({ ability, index })))
       .find(({ ability, index }) => startTurnTargets[ability.id]?.[index] === undefined)
     : undefined
   const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length &&
-    !pendingStartEnemy && !pendingStartShiv
+    !pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv
 
   function moveStartTurnAbility(id: string, delta: -1 | 1) {
     const from = startIds.indexOf(id)
@@ -839,6 +857,10 @@ export function CombatScreen({
     setStartTurnEnemyTargets(Object.fromEntries(plan.map((ability) => [
       ability.id,
       ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+    ])))
+    setStartTurnPlayerTargets(Object.fromEntries(plan.map((ability) => [
+      ability.id,
+      ability.playerTargets?.length === 1 ? ability.playerTargets[0]!.id : undefined,
     ])))
     setStartTurnTargets(Object.fromEntries(plan.map((ability) => [
       ability.id,
@@ -863,6 +885,7 @@ export function CombatScreen({
     const choices: StartTurnChoice[] = orderedStartAbilities.map((ability) => ({
       id: ability.id,
       enemyUid: startTurnEnemyTargets[ability.id],
+      playerId: startTurnPlayerTargets[ability.id],
       shivEnemyUids: (startTurnTargets[ability.id] ?? []).map((uid) => uid ?? null),
     }))
     if (onAction) onAction({ kind: 'resolveStartTurn', choices })
@@ -912,6 +935,7 @@ export function CombatScreen({
       }
       return
     }
+    if (state.phase !== 'discard') return
     const selected = discardTops[viewer.id]
     const top = selected && discardableHand.some((card) => card.uid === selected)
       ? selected
@@ -1288,6 +1312,10 @@ export function CombatScreen({
     if (pending?.choiceCards) return
 
     const def = faceOf(cardDef(card.defId), card.upgraded)
+    if (viewer!.forcedCardUids?.includes(card.uid) && !canAfford(state, viewer!, card, miracleOnCard, drawCount)) {
+      commit(pendingFor(card, null, state, viewer!))
+      return
+    }
     if (cardNeedsChoicePreview(def, state, viewer!)) {
       if (cardNeedsEnemy(def, viewer!, false)) {
         const next = pendingFor(card, null, state, viewer!)
@@ -1416,6 +1444,10 @@ export function CombatScreen({
 
   function onAllyClick(ally: Player) {
     if (ally.dead) return
+    if (pendingStartPlayer && canResolveStartTurn) {
+      setStartTurnPlayerTargets({ ...startTurnPlayerTargets, [pendingStartPlayer.id]: ally.id })
+      return
+    }
     if (pendingPotion && potionDef(pendingPotion).supportTarget === 'anyPlayer') {
       consumePotion(pendingPotion, { targetPlayerId: ally.id })
       return
@@ -1465,9 +1497,19 @@ export function CombatScreen({
     ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
     : pendingStartEnemy
       ? `${pendingStartEnemy.label} — choose an enemy`
+    : pendingStartPlayer
+      ? `${pendingStartPlayer.label} — choose a player`
     : null
   const prompt = startTurnPrompt ?? (pendingPotionDef
-    ? pendingPotionDef.target === 'row'
+    ? pendingPotionDef.special === 'changeDie'
+      ? `Choose the die result for ${pendingPotionDef.name}`
+      : pendingPotionDef.special === 'liquidMemories'
+        ? `Choose a discard card for ${pendingPotionDef.name}`
+      : pendingPotionDef.special === 'purity'
+          ? `Choose up to 3 cards to Exhaust — ${potionCardUids.length} chosen`
+        : pendingPotionDef.special === 'entropicBrew' && pendingEntropicDiscard
+          ? `Choose a potion to discard before drawing 2 for ${pendingPotionDef.name}`
+    : pendingPotionDef.target === 'row'
       ? `Choose a row for ${pendingPotionDef.name}`
       : pendingPotionOverflow > 0
         ? `Choose overflow Shiv target ${potionShivEnemyUids.length + 1}/${pendingPotionOverflow}, or skip the rest`
@@ -1511,21 +1553,25 @@ export function CombatScreen({
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
-          {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
+          {!viewer.dead && (state.phase === 'player' || state.phase === 'discard' || state.phase === 'start') ? (
             <>
-              {state.phase === 'player' && !orderingStage ? [...new Set(viewer.potions)].map((potionId) => {
+              {(state.phase === 'player' && !orderingStage) || state.phase === 'start' ? [...new Set(viewer.potions)].map((potionId) => {
                 const potion = potionDef(potionId)
+                if (state.phase === 'start' && potion.special !== 'changeDie') return null
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
                 const shivs = gainedShivs(potion.effects)
                 const needsTarget = Boolean(potion.target) || (
                   potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
-                ) || overflowShivCount(state, shivs) > 0
+                ) || overflowShivCount(state, shivs) > 0 || potion.special === 'changeDie'
+                  || potion.special === 'liquidMemories' || potion.special === 'purity'
+                  || potion.special === 'entropicBrew' &&
+                    Math.min(2, state.potionSupply.length + 1) > state.potionLimit - (viewer.potions.length - 1)
                 return (
                   <button
                     type="button"
                     key={potionId}
-                    disabled={usingPotion || Boolean(pending?.choiceCards)}
+                    disabled={forcedOwnerId !== undefined || usingPotion || Boolean(pending?.choiceCards) || potion.special === 'fairy'}
                     aria-pressed={needsTarget ? staged : undefined}
                     title={potion.text}
                     onClick={() => {
@@ -1535,6 +1581,7 @@ export function CombatScreen({
                         setMiracleOnCard(false)
                         setPendingPotion(staged ? null : potionId)
                         setPotionShivEnemyUids([])
+                        setPotionCardUids([])
                         setPotionOverflowRequired(staged ? 0 : overflowShivCount(state, shivs))
                       } else consumePotion(potionId)
                     }}
@@ -1546,7 +1593,7 @@ export function CombatScreen({
               {state.phase === 'player' && !orderingStage && viewer.shivs > 0 ? (
                 <button
                   type="button"
-                  disabled={Boolean(pending?.choiceCards)}
+                  disabled={forcedOwnerId !== undefined || Boolean(pending?.choiceCards)}
                   aria-pressed={spendingShiv}
                   onClick={() => {
                     setPending(null)
@@ -1563,7 +1610,7 @@ export function CombatScreen({
               {state.phase === 'player' && !orderingStage && viewer.miracles > 0 ? (
                 <button
                   type="button"
-                  disabled={Boolean(pending?.choiceCards)}
+                  disabled={forcedOwnerId !== undefined || Boolean(pending?.choiceCards)}
                   aria-pressed={viewer.energy === CAPS.energy ? miracleOnCard : undefined}
                   onClick={() => {
                     if (viewer.energy < CAPS.energy) {
@@ -1636,14 +1683,16 @@ export function CombatScreen({
                 </details>
               ) : null}
               {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
-              <button type="button" onClick={finishTurn}
-                disabled={Boolean(pending?.choiceCards) || (orderingStage && viewer.id !== endTurnCoordinatorId)}>
-                {state.phase === 'discard'
-                  ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
-                  : orderingStage
-                    ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
-                    : 'End turn'}
-              </button>
+              {state.phase !== 'start' ? (
+                <button type="button" onClick={finishTurn}
+                  disabled={forcedOwnerId !== undefined || Boolean(pending?.choiceCards) || (orderingStage && viewer.id !== endTurnCoordinatorId)}>
+                  {state.phase === 'discard'
+                    ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
+                    : orderingStage
+                      ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
+                      : 'End turn'}
+                </button>
+              ) : null}
             </>
           ) : null}
           {state.phase === 'start' ? (
@@ -1655,12 +1704,17 @@ export function CombatScreen({
                     const targetChosen = ability.targets
                       ? startTurnEnemyTargets[ability.id] !== undefined
                       : false
+                    const playerChosen = ability.playerTargets
+                      ? startTurnPlayerTargets[ability.id] !== undefined
+                      : false
                     const decided = (startTurnTargets[ability.id] ?? [])
                       .filter((target) => target !== undefined).length
                     return (
                       <li key={ability.id}>
                         <span>{ability.label}{ability.targets
                           ? ` — target ${targetChosen ? 1 : 0}/1`
+                          : ''}{ability.playerTargets
+                          ? ` — player ${playerChosen ? 1 : 0}/1`
                           : ''}{ability.overflowShivs > 0
                           ? ` — overflow ${decided}/${ability.overflowShivs}`
                           : ''}</span>
@@ -1677,6 +1731,7 @@ export function CombatScreen({
               </details>
               {orderedStartAbilities.some((ability) =>
                 (ability.targets?.length ?? 0) > 1 && startTurnEnemyTargets[ability.id] !== undefined) ||
+                Object.values(startTurnPlayerTargets).some((target) => target !== undefined) ||
                 Object.values(startTurnTargets).some((targets) =>
                   targets.some((target) => target !== undefined)) ? (
                 <button type="button" disabled={!canResolveStartTurn}
@@ -1684,6 +1739,10 @@ export function CombatScreen({
                     setStartTurnEnemyTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
                       ability.id,
                       ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+                    ])))
+                    setStartTurnPlayerTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
+                      ability.id,
+                      ability.playerTargets?.length === 1 ? ability.playerTargets[0]!.id : undefined,
                     ])))
                     setStartTurnTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
                       ability.id,
@@ -1775,13 +1834,50 @@ export function CombatScreen({
               Skip remaining overflow attacks
             </button>
           ) : null}
+          {pendingPotion && pendingPotionDef?.special === 'changeDie' ? [1, 2, 3, 4, 5, 6].map((die) => (
+            <button type="button" className="prompt__mode" key={die} onClick={() => consumePotion(pendingPotion, { die })}>
+              {die}
+            </button>
+          )) : null}
+          {pendingPotion && pendingPotionDef?.special === 'liquidMemories' ? viewer.discard.map((card) => (
+            <button type="button" className="prompt__mode" key={card.uid} onClick={() => consumePotion(pendingPotion, { cardUid: card.uid })}>
+              {cardDef(card.defId).name}
+            </button>
+          )) : null}
+          {pendingPotion && pendingPotionDef?.special === 'purity' ? (
+            <>
+              {viewer.hand.map((card) => {
+                const picked = potionCardUids.includes(card.uid)
+                return (
+                  <button type="button" className="prompt__mode" key={card.uid} aria-pressed={picked}
+                    disabled={!picked && potionCardUids.length >= 3}
+                    onClick={() => setPotionCardUids((current) => picked
+                      ? current.filter((uid) => uid !== card.uid)
+                      : [...current, card.uid])}>
+                    {cardDef(card.defId).name}
+                  </button>
+                )
+              })}
+              <button type="button" className="prompt__mode" onClick={() => consumePotion(pendingPotion, { cardUids: potionCardUids })}>
+                Exhaust {potionCardUids.length || 'none'}
+              </button>
+            </>
+          ) : null}
+          {pendingPotion && pendingPotionDef?.special === 'entropicBrew' && pendingEntropicDiscard
+            ? [...new Set(viewer.potions.filter((_id, index) => index !== viewer.potions.indexOf(pendingPotion)))].map((id) => (
+              <button type="button" className="prompt__mode" key={id}
+                onClick={() => consumePotion(pendingPotion, { discardPotionId: id })}>
+                Discard {potionDef(id).name}
+              </button>
+            ))
+            : null}
           {pending && switchChoiceReady ? (
             <button type="button" className="prompt__cancel"
               onClick={() => stageOrCommit({ ...pending, switchPlayerId: null, switchChoiceDone: true })}>
               Keep rows
             </button>
           ) : null}
-          {!pendingStartEnemy && !pendingStartShiv && !pending?.choiceCards ? <button
+          {!pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv && !pending?.choiceCards ? <button
             type="button"
             className="prompt__cancel"
             onClick={() => {
@@ -1790,6 +1886,7 @@ export function CombatScreen({
               setPendingPotion(null)
               setPotionShivEnemyUids([])
               setPotionOverflowRequired(0)
+              setPotionCardUids([])
             }}
           >
             Cancel
@@ -1878,7 +1975,8 @@ export function CombatScreen({
                         occupant.id === viewerId ? 'seat--viewer' : '',
                         occupant.dead ? 'seat--dead' : '',
                         struck.has(occupant.id) ? strikeClass('seat', beat) : '',
-                        (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
+                        (!occupant.dead && (Boolean(pendingStartPlayer) ||
+                          (pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
                           (switchChoiceReady && occupant.id !== viewerId))
@@ -2031,16 +2129,20 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
-              cost={cardCost(faceOf(cardDef(card.defId), card.upgraded), viewer.powers.length, viewer.lostHpThisCombat)}
+              cost={viewer.nextCardCost ?? (viewer.freeCardUids?.includes(card.uid)
+                ? 0
+                : cardCost(faceOf(cardDef(card.defId), card.upgraded), viewer.powers.length, viewer.lostHpThisCombat))}
               playable={
                 !usingCard &&
+                forcedActionAllowed &&
                 !orderingStage &&
                 (!pending?.choiceCards || pending.card.uid === card.uid) &&
                 state.phase === 'player' &&
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable
                 // or it strands the player in a pending state it cannot commit.
-                (canAfford(state, viewer, card, miracleOnCard, drawCount) ||
+                (((viewer.forcedCardUids?.length ?? 0) === 0 || viewer.forcedCardUids?.includes(card.uid)) &&
+                  (viewer.forcedCardUids?.includes(card.uid) || canAfford(state, viewer, card, miracleOnCard, drawCount)) ||
                   pending?.card.uid === card.uid ||
                   (pending?.choice != null && card.uid !== pending.card.uid))
               }

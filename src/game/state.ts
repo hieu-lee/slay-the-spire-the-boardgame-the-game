@@ -25,13 +25,15 @@
 //   - Ethereal and every Curse's in-combat text are live. Parasite's removal
 //     penalty and Ascender's Bane's removal protection wait on card removal,
 //     which arrives with the Merchant rather than as an unreachable API.
-//   - The live enemies resolve Curl Up, Spore Cloud and Enraged. Special
-//     abilities on enemies not yet transcribed remain absent with those cards.
+//   - The live Act I and II enemies resolve their printed special abilities.
+//     Special abilities on later-act enemies remain absent with those cards.
 //   - There is no boss deck: a boss room stands up the toughest elite, marked
 //     as a boss so it acts last. It grants no reward rather than inventing the
 //     stand-in elite's reward. Act I elite rooms draw all three physical cards.
 //   - Event, treasure and merchant rooms show a placeholder screen.
-//   - Relic and potion reward decks are not wired yet.
+//   - Physical relic and potion reward decks are shared, face down, and return
+//     skipped, discarded, and used potions to the bottom. Item effects listed
+//     without an engine trigger in relics.ts are still not automated.
 //   - Card rewards can be skipped unseen or reveal three live common/uncommon
 //     cards, allow one or a skip, return the rest to the bottom, and persist
 //     the pick into the deck.
@@ -42,10 +44,12 @@
 //     The other 108 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
-//     effects. 35 enemies of roughly 60; no events, no shops.
+//     effects. 63 enemies of roughly 60; Act III/IV enemies and every boss
+//     remain, and variant physical cards make the definition count larger than
+//     the unique-name count. No events or shops.
 //   - Ascension 2's max-HP loss, Ascension 5's starter Curse, Ascension 6's Act
 //     heal and Ascension 9's starting damage are applied. Ascension 4 waits on
-//     potion rewards; the others wait on their elite, event, merchant, boss or
+//     potion limits; the others wait on their elite, event, merchant, boss or
 //     Act IV content.
 //   - Orbs can be individually chosen and targeted for card evokes, forced
 //     full-slot channels and end-of-turn resolution.
@@ -161,11 +165,16 @@ export {
   enteringRoom,
   leaveRoom,
   revealCardReward,
+  revealItemReward,
+  resolveCardReward,
   resolveCardRewards,
   resolveCombat,
   roomChoices,
+  useRunPotion,
+  tradeRunPotion,
+  validRewardDecision,
 } from './run.ts'
-export type { CardRewardOffer, PartyMember, RunPhase, RunState } from './run.ts'
+export type { CardRewardOffer, PartyMember, RewardDecision, RunPhase, RunState } from './run.ts'
 export { resolveCampfire } from './run.ts'
 export type { CampfireChoice } from './run.ts'
 

@@ -100,6 +100,12 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
+    case 'gainGold': return `gain ${effect.amount} Gold${condition}`
+    case 'setHpAtLeast': return `set HP to at least ${effect.amount}${condition}`
+    case 'setHpLossLimit': return `lose no more than ${effect.amount} HP this turn${condition}`
+    case 'blockIfNone': return `gain ${effect.amount} Block if you have none${condition}`
+    case 'blockAllPlayers': return `give all players ${effect.amount} Block${condition}`
+    case 'queueCardCopy': return `play your next ${effect.cardType} twice${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainShivPerDiscard': return `gain 1 Shiv per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`

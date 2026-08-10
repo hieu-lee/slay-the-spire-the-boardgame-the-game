@@ -9,10 +9,13 @@ import {
   livingEnemies,
   playCard,
   previewCardChoice,
+  resolveStartPlayerTurn,
   resolveEnemyTargets,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  startPlayerTurnWithChoices,
+  startTurnAbilities,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -388,6 +391,16 @@ check('ending a turn in Wrath costs 1 damage unless blocked', () => {
   const guarded = endPlayerTurn(combat([makePlayer({ stance: 'wrath', block: 3 })], [makeEnemy()]))
   assertEqual(guarded.players[0].hp, 10, 'Block prevents the Wrath damage')
   assertEqual(guarded.players[0].block, 2, 'and one Block is spent doing so')
+
+  const revived = beginEndPlayerTurn(combat([
+    makePlayer({ hp: 1, stance: 'wrath', potions: ['fairy_in_a_bottle'] }),
+  ], [makeEnemy()]))
+  assertEqual(revived.players[0].hp, 2, 'Fairy revives lethal end-turn damage')
+  const damageLog = revived.log.findIndex((line) => line.includes('takes 1 from Wrath'))
+  const fairyLog = revived.log.findIndex((line) => line.includes('Fairy in a Bottle revives'))
+  assert(damageLog >= 0, 'the actual HP loss is logged')
+  assert(fairyLog > damageLog, 'Fairy consumption is visible after the damage that caused it')
+  assert(!revived.log.some((line) => line.includes('blocks the bite')), 'revival is not reported as Block')
 })
 
 // Twin Strike is two separate hits, not one hit of double size. The difference
@@ -855,6 +868,17 @@ check('players choose the order of Power and Curse end-of-turn abilities', () =>
   assertEqual(curseChosen.players[0].hp, 5, 'Decay then Shame spends Block instead')
   assert(beginEndPlayerTurn(curseState, [`p1/card:${shame.uid}`]) === curseState,
     'an incomplete order is rejected without mutating the turn')
+})
+
+check('Orichalcum grants its one printed Block only when empty', () => {
+  const empty = beginEndPlayerTurn(combat([
+    makePlayer({ relics: [{ defId: 'orichalcum', spent: false }] }),
+  ], [makeEnemy()]))
+  assertEqual(empty.players[0].block, 1)
+  const guarded = beginEndPlayerTurn(combat([
+    makePlayer({ block: 2, relics: [{ defId: 'orichalcum', spent: false }] }),
+  ], [makeEnemy()]))
+  assertEqual(guarded.players[0].block, 2)
 })
 
 check('the party can interleave end-of-turn abilities across co-op seats', () => {
@@ -4071,13 +4095,300 @@ check('support potions share the card effect resolver and obey caps', () => {
   assertEqual(ended.players[0].strengthLossAtEndOfTurn, 0)
 })
 
-check('Weak Potion applies the three printed Weak tokens', () => {
+check('Weak Potion applies the two printed Weak tokens', () => {
   const state = combat(
     [makePlayer({ potions: ['weak_potion'] })],
     [makeEnemy()],
   )
   const used = activatePotion(state, 'p1', 'weak_potion', { enemyUid: 'e1' })
-  assertEqual(used.enemies[0].weak, 3)
+  assertEqual(used.enemies[0].weak, 2)
+})
+
+check('special physical potions resolve instead of being consumed as no-ops', () => {
+  const strike = instance('strike_ironclad')
+  let state = combat(
+    [makePlayer({ hand: [strike], potions: ['attack_potion'] })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  state = activatePotion(state, 'p1', 'attack_potion')
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 19, 'the copy resolves before the original')
+  assertDeepEqual(state.players[0].forcedCardUids, [strike.uid])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 18, 'Attack Potion plays the next Attack twice')
+  assertEqual(state.players[0].cardsPlayedThisTurn, 2, 'the copy is a separate card play')
+
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  state = combat(
+    [makePlayer({ hand: [first, second], potions: ['attack_potion', 'attack_potion'] })],
+    [makeEnemy({ uid: 'e1', hp: 20 }), makeEnemy({ uid: 'e2', row: 1, hp: 20 })],
+  )
+  state = activatePotion(activatePotion(state, 'p1', 'attack_potion'), 'p1', 'attack_potion')
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 19)
+  assertEqual(state.players[0].cardCopyQueue.length, 1, 'a second copy potion waits for the next card')
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e2', playerId: null })
+  assertEqual(state.enemies[1].hp, 19, 'the original chooses an independent target')
+  assertEqual(state.players[0].cardCopyQueue.length, 1)
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].cardCopyQueue.length, 0)
+
+  const hand = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash')]
+  state = combat([makePlayer({ hand, potions: ['purity_potion'] })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'purity_potion', { cardUids: hand.slice(0, 2).map((card) => card.uid) })
+  assertEqual(state.players[0].hand.length, 1)
+  assertEqual(state.players[0].exhaust.length, 2, 'Purity Potion Exhausts the chosen cards')
+
+  const remembered = instance('bash')
+  state = combat([makePlayer({ discard: [remembered], potions: ['liquid_memories'], energy: 0 })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'liquid_memories', { cardUid: remembered.uid })
+  state = playCard(state, 'p1', remembered.uid, { enemyUid: 'e1', playerId: null })
+  assert(state.players[0].discard.some((card) => card.uid === remembered.uid), 'Liquid Memories returns and plays the card')
+  assertEqual(state.players[0].energy, 0, 'the returned card costs 0 this turn')
+
+  const confused = instance('strike_ironclad')
+  state = combat([makePlayer({ discard: [confused], potions: ['liquid_memories'] })], [makeEnemy({ hp: 20 })])
+  state.players[0].nextCardCost = 3
+  state = activatePotion(state, 'p1', 'liquid_memories', { cardUid: confused.uid })
+  state = playCard(state, 'p1', confused.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].energy, 0, 'Snecko overrides a potion-created free cost')
+
+  const dualCast = instance('dual_cast')
+  state = combat([
+    makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', null, null], potions: ['skill_potion'] }),
+  ], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'skill_potion')
+  state = playCard(state, 'p1', dualCast.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
+  assertEqual(state.players[0].orbs.filter(Boolean).length, 0)
+  assertEqual(state.players[0].forcedCardUids.length, 0, 'an orb-consuming copy cannot strand its original')
+  assert(state.players[0].discard.some((card) => card.uid === dualCast.uid), 'the impossible original is discarded')
+})
+
+check('forced card sequences lock every other shared-turn action', () => {
+  const forced = instance('strike_ironclad')
+  const other = instance('strike_silent')
+  const state = combat([
+    makePlayer({ hand: [forced], forcedCardUids: [forced.uid], freeCardUids: [forced.uid] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, hand: [other], shivs: 1,
+      miracles: 1, energy: 5, potions: ['fire_potion'] }),
+  ], [makeEnemy({ hp: 20 })])
+  assert(playCard(state, 'p2', other.uid, { enemyUid: 'e1', playerId: null }) === state)
+  assert(spendShiv(state, 'p2', 'e1') === state)
+  assert(spendMiracle(state, 'p2') === state)
+  assert(activatePotion(state, 'p2', 'fire_potion', { enemyUid: 'e1' }) === state)
+
+  const choice = instance('acrobatics')
+  const previewState = combat([
+    makePlayer({ hand: [choice], draw: [instance('defend_silent')], energy: 0,
+      forcedCardUids: [choice.uid], freeCardUids: [choice.uid] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1,
+      hand: [instance('acrobatics')], draw: [instance('defend_silent')] }),
+  ], [makeEnemy({ hp: 20 })])
+  assert(previewCardChoice(previewState, 'p1', choice.uid), 'a free forced choice card previews at zero energy')
+  assertEqual(previewCardChoice(previewState, 'p2', previewState.players[1].hand[0].uid), null,
+    'another player cannot preview during a forced sequence')
+})
+
+check('a die relic with any-player support pauses for the owner choice', () => {
+  let paused
+  for (let seed = 0; seed < 100 && !paused; seed++) {
+    const base = combat([
+      makePlayer(),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1,
+        relics: [{ defId: 'oddly_smooth_stone', spent: false }] }),
+    ], [makeEnemy()])
+    const candidate = startPlayerTurnWithChoices({ ...base, phase: 'roundEnd', turn: 1, rng: createRng(seed) })
+    if (candidate.die === 4) paused = candidate
+  }
+  assert(paused, 'fixture must find a die-4 seed')
+  assertEqual(paused.phase, 'start')
+  const ability = startTurnAbilities(paused).find((entry) => entry.label.includes('Oddly Smooth Stone'))
+  assertDeepEqual(ability.playerTargets.map((target) => target.id), ['p1', 'p2'])
+})
+
+check("Spheric Guardian's opening Block can be ordered with start-of-turn relics", () => {
+  let paused
+  for (let seed = 0; seed < 100 && !paused; seed++) {
+    const base = combat([
+      makePlayer({ relics: [{ defId: 'the_boot', spent: false }] }),
+    ], [makeEnemy({ defId: 'spheric_guardian', hp: 20, maxHp: 20 })])
+    const candidate = startPlayerTurnWithChoices({ ...base, phase: 'roundEnd', turn: 0, rng: createRng(seed) })
+    if (candidate.die >= 4) paused = candidate
+  }
+  assert(paused, 'fixture must find a Boot roll')
+  assertEqual(paused.phase, 'start')
+  assertEqual(paused.enemies[0].block, 0, 'opening Block waits for the shared ability phase')
+  const abilities = startTurnAbilities(paused)
+  const boot = abilities.find((ability) => ability.label.includes('The Boot'))
+  const barricade = abilities.find((ability) => ability.label.includes('Spheric Guardian'))
+  assert(boot && barricade)
+  const bootChoice = { id: boot.id, enemyUid: 'e1', shivEnemyUids: [] }
+  const barricadeChoice = { id: barricade.id, shivEnemyUids: [] }
+  const hitFirst = resolveStartPlayerTurn(paused, [bootChoice, barricadeChoice])
+  assertEqual(hitFirst.enemies[0].hp, 19)
+  assertEqual(hitFirst.enemies[0].block, 10)
+  const blockFirst = resolveStartPlayerTurn(paused, [barricadeChoice, bootChoice])
+  assertEqual(blockFirst.enemies[0].hp, 20)
+  assertEqual(blockFirst.enemies[0].block, 9)
+})
+
+check('defensive, die, draw, and potion-supply specials preserve their physical lifecycle', () => {
+  let state = combat([makePlayer({ hp: 8, potions: ['ghost_in_a_jar'] })], [makeEnemy({ defId: 'jaw_worm' })])
+  state = activatePotion(state, 'p1', 'ghost_in_a_jar')
+  state = enemyTurn({ ...state, phase: 'enemy', die: 3 })
+  assertEqual(state.players[0].hp, 7, 'Ghost in a Jar caps total HP loss at 1')
+
+  state = combat([makePlayer({ hp: 1, potions: ['fairy_in_a_bottle'] })], [makeEnemy({ defId: 'green_louse' })])
+  state = enemyTurn({ ...state, phase: 'enemy' })
+  assertEqual(state.players[0].hp, 2, 'Fairy in a Bottle revives at 2 HP')
+  assertEqual(state.players[0].dead, false)
+  assertEqual(state.potionSupply.at(-1), 'fairy_in_a_bottle', 'the Fairy returns to the deck immediately')
+
+  state = {
+    ...combat([makePlayer({ potions: ['gamblers_brew'] })], [makeEnemy()]),
+    phase: 'start',
+    die: 1,
+  }
+  state = activatePotion(state, 'p1', 'gamblers_brew', { die: 6 })
+  assertEqual(state.die, 6, "Gambler's Brew changes the shared die")
+
+  state = {
+    ...combat([makePlayer({ potions: ['gamblers_brew'] })], [makeEnemy()]),
+    phase: 'roundEnd',
+    turn: 1,
+  }
+  state = startPlayerTurnWithChoices(state)
+  assertEqual(state.phase, 'start', "a real round pauses before accepting the roll for Gambler's Brew")
+  state = activatePotion(state, 'p1', 'gamblers_brew', { die: 5 })
+  assertEqual(state.die, 5)
+
+  state = {
+    ...combat([makePlayer({ potions: ['entropic_brew'] })], [makeEnemy()]),
+    potionSupply: ['fire_potion', 'block_potion'],
+  }
+  state = activatePotion(state, 'p1', 'entropic_brew')
+  assertDeepEqual(state.players[0].potions, ['fire_potion', 'block_potion'])
+
+  state = {
+    ...combat([makePlayer({ potions: ['entropic_brew', 'fire_potion', 'weak_potion'] })], [makeEnemy()]),
+    potionSupply: ['block_potion', 'energy_potion'],
+  }
+  assert(activatePotion(state, 'p1', 'entropic_brew') === state, 'a full belt requires an explicit replacement')
+  state = activatePotion(state, 'p1', 'entropic_brew', { discardPotionId: 'fire_potion' })
+  assertDeepEqual(state.players[0].potions, ['weak_potion', 'block_potion', 'energy_potion'])
+  assertDeepEqual(state.potionSupply.slice(-2), ['entropic_brew', 'fire_potion'], 'used and discarded potions go straight to the bottom')
+})
+
+check('Distilled Chaos forces its three drawn cards to be played for 0 in any order', () => {
+  const draw = [instance('strike_ironclad'), instance('defend_ironclad'), instance('strike_ironclad')]
+  let state = combat([makePlayer({ draw, potions: ['distilled_chaos'], energy: 0 })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertEqual(state.players[0].forcedCardUids.length, 3)
+  assert(endPlayerTurn(state) === state, 'the immediate plays cannot be skipped by ending the turn')
+  for (const card of [...state.players[0].hand]) {
+    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+  }
+  assertEqual(state.players[0].forcedCardUids.length, 0)
+  assertEqual(state.players[0].energy, 0)
+
+  const orbLocked = [instance('dual_cast'), instance('strike_defect'), instance('defend_defect')]
+  state = combat([makePlayer({ character: 'defect', draw: orbLocked, potions: ['distilled_chaos'], orbs: [null, null, null] })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  const impossibleDual = state.players[0].hand.find((card) => card.defId === 'dual_cast')
+  state = playCard(state, 'p1', impossibleDual.uid, { enemyUid: null, playerId: null })
+  assert(state.players[0].discard.some((card) => card.uid === impossibleDual.uid),
+    'a no-Orb Dual Cast is discarded only when its play is attempted')
+  assertEqual(state.players[0].forcedCardUids.length, 2)
+  assert(beginEndPlayerTurn(state) === state, 'end-turn staging cannot skip immediate cards')
+
+  const sequence = [instance('dual_cast'), instance('zap'), instance('defend_defect')]
+  state = combat([makePlayer({ character: 'defect', draw: sequence, potions: ['distilled_chaos'], orbs: [null, null, null] })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  const zap = state.players[0].hand.find((card) => card.defId === 'zap')
+  const dual = state.players[0].hand.find((card) => card.defId === 'dual_cast')
+  state = playCard(state, 'p1', zap.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
+  assertEqual(state.enemies[0].hp, 18, 'Zap can make a later forced Dual Cast playable')
+
+  const survivor = instance('survivor')
+  const discarded = instance('strike_silent')
+  const remaining = instance('defend_silent')
+  state = combat([makePlayer({ character: 'silent', draw: [survivor, discarded, remaining],
+    potions: ['distilled_chaos'] })], [makeEnemy()])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  state = playCard(state, 'p1', survivor.uid, {
+    enemyUid: null, playerId: null, discardUids: [discarded.uid],
+  })
+  assertDeepEqual(state.players[0].forcedCardUids, [remaining.uid],
+    'a forced card discarded by another forced card does not lock the turn')
+
+  const lastSurvivor = instance('survivor')
+  state = combat([makePlayer({ character: 'silent', hand: [lastSurvivor],
+    forcedCardUids: [lastSurvivor.uid], freeCardUids: [lastSurvivor.uid] })], [makeEnemy()])
+  state = playCard(state, 'p1', lastSurvivor.uid, { enemyUid: null, playerId: null, discardUids: [] })
+  assertEqual(state.players[0].forcedCardUids.length, 0,
+    'a last forced Survivor pays with every available other card: none')
+
+  const unaffordable = instance('strike_ironclad')
+  state = combat([makePlayer({ hand: [unaffordable], energy: 0,
+    forcedCardUids: [unaffordable.uid], freeCardUids: [unaffordable.uid] })], [makeEnemy()])
+  state.players[0].nextCardCost = 3
+  state = playCard(state, 'p1', unaffordable.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].forcedCardUids.length, 0, 'Snecko cannot strand a forced card the player cannot pay for')
+  assert(state.players[0].discard.some((card) => card.uid === unaffordable.uid))
+
+  const lethal = instance('strike_ironclad')
+  const waiting = instance('strike_ironclad')
+  state = {
+    ...combat([makePlayer({ hand: [lethal, waiting], forcedCardUids: [lethal.uid, waiting.uid],
+      freeCardUids: [lethal.uid, waiting.uid] })], [makeEnemy({ defId: 'large_slime', hp: 1, maxHp: 10 })]),
+    pendingSummons: [{ sourceUid: 'e1', row: 0, defIds: ['acid_slime'], turn: 2 }],
+  }
+  state = playCard(state, 'p1', lethal.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.pendingSummons.length, 1, 'the defeated Large Slime schedules its summon')
+  state = playCard(state, 'p1', waiting.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].forcedCardUids.length, 0,
+    'an attack with no living target is discarded instead of locking the turn before the summon')
+})
+
+check('multi-hit Fairy logs the HP it actually revived at', () => {
+  const state = {
+    ...combat(
+      [makePlayer({ hp: 1, potions: ['fairy_in_a_bottle'] })],
+      [makeEnemy({ defId: 'book_of_stabbing', hp: 30, maxHp: 30 })],
+    ),
+    phase: 'enemy',
+    die: 1,
+  }
+  const next = enemyTurn(state)
+  assertEqual(next.players[0].hp, 1, 'the second stab lands after the revival')
+  const hits = next.log.flatMap((line, index) => line.includes('Book of Stabbing hit Ironclad for 1') ? [index] : [])
+  const revival = next.log.findIndex((line) => line.includes('Fairy in a Bottle revives them at 2 HP'))
+  assertEqual(hits.length, 2, `each physical stab must be visible: ${next.log.join(' | ')}`)
+  assert(hits[0] < revival && revival < hits[1], `expected hit, revival, hit: ${next.log.join(' | ')}`)
+})
+
+check('Ghost and Fairy cover direct HP loss as well as attacks', () => {
+  CARDS.fixture_self_loss = {
+    id: 'fixture_self_loss', name: 'Fixture Self Loss', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 0,
+    effects: [{ kind: 'loseOwnHp', amount: 3 }],
+  }
+  const loss = instance('fixture_self_loss')
+  let state = combat([makePlayer({ hp: 5, hand: [loss], potions: ['ghost_in_a_jar'] })], [makeEnemy({ hp: 20 })])
+  state = activatePotion(state, 'p1', 'ghost_in_a_jar')
+  state = playCard(state, 'p1', loss.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].hp, 4, 'Ghost caps card HP loss at one')
+
+  const lethal = instance('fixture_self_loss')
+  state = combat([makePlayer({ hp: 1, hand: [lethal], potions: ['fairy_in_a_bottle'] })], [makeEnemy({ hp: 20 })])
+  state = playCard(state, 'p1', lethal.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].hp, 2, 'Fairy revives from direct card HP loss')
+  assertEqual(state.potionSupply.at(-1), 'fairy_in_a_bottle')
 })
 
 check('simple printed potions resolve through the shared effect vocabulary', () => {

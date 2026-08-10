@@ -78,6 +78,18 @@ export type Player = {
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
   attacksPlayedThisTurn: number
+  /** Includes statuses, but not Shivs; used by Snecko and Time Eater. */
+  cardsPlayedThisTurn?: number
+  /** Snecko replaces the first card's printed cost for this turn. */
+  nextCardCost?: number | null
+  /** Potion-created one-shot card and damage rules. */
+  cardCopyQueue?: ('attack' | 'skill')[]
+  /** Originals already committed after their separately resolved copy. */
+  copyOriginalUids?: string[]
+  freeCardUids?: string[]
+  forcedCardUids?: string[]
+  hpLossLimitThisTurn?: number | null
+  hpLostThisTurnAmount?: number
   /** Silent. */
   shivs: number
   /** Ongoing Silent Power modifiers, reset between combats. */
@@ -108,6 +120,8 @@ export type Enemy = {
   row: number
   /** Bosses are treated as being in every row and are hit by every AoE. */
   isBoss: boolean
+  /** Encounter-card override, such as Red Slavers summoned by Taskmaster. */
+  actsLast?: boolean
   /** Printed alternate rows selected when this enemy card entered play. */
   ascension?: number
 
@@ -123,9 +137,14 @@ export type Enemy = {
   /** Reward printed by the encounter card that spawned this enemy. */
   goldReward: number
   cardReward: 'normal' | 'upgraded' | null
+  potionReward?: boolean
+  relicReward?: boolean
 
   /** Position on a cube-action track. */
   actionIndex: number
+
+  /** Boss form/phase. Ordinary enemies stay at zero. */
+  phase?: number
 
   /** Whether this enemy's once-per-combat special ability has fired. */
   abilityUsed: boolean

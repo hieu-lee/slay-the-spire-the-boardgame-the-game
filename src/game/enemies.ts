@@ -7,13 +7,22 @@
 // and are skipped on the loop.
 import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
+import type { Enemy } from './types.ts'
 
 export type EnemyAction =
   /** Damage to the player in this enemy's row, or to all players if `aoe`. */
   | { kind: 'attack'; amount: number; times?: number; aoe?: boolean }
+  /** Different printed hits that still spend modifiers once as one action. */
+  | { kind: 'attackSequence'; hits: { amount: number; aoe?: boolean }[] }
   /** Block and Strength always go on the enemy itself, never on a player (p.14). */
   | { kind: 'block'; amount: number }
   | { kind: 'gainStrength'; amount: number }
+  | { kind: 'blockAllEnemies'; amount: number }
+  | { kind: 'strengthenAllEnemies'; amount: number }
+  | { kind: 'healAllEnemies'; amount: number }
+  | { kind: 'blockNamed'; defId: string; amount: number }
+  | { kind: 'clearSelfDebuffs' }
+  | { kind: 'reviveAll'; group: 'gremlin' | 'darkling' }
   | { kind: 'applyWeak'; amount: number; aoe?: boolean }
   | { kind: 'applyVulnerable'; amount: number; aoe?: boolean }
   /** Puts a Daze card on top of the target's draw pile (p.24). */
@@ -46,6 +55,11 @@ export type EnemyAbility =
   | { kind: 'sporeCloud'; vulnerable: number }
   | { kind: 'enraged'; damage: number; fromTurn: number }
   | { kind: 'angry'; strength: number }
+  | { kind: 'flying'; maxDamagePerHit: number }
+  | { kind: 'painfulStabs'; daze: number }
+  | { kind: 'furyOnAllyDeath'; allyDefId: string; strength: number; actions: EnemyAction[] }
+  | { kind: 'confusion'; byRoll: Record<number, number> }
+  | { kind: 'barricade'; startingBlock: number }
 
 export type EnemyDef = {
   id: string
@@ -57,8 +71,11 @@ export type EnemyDef = {
   elite?: boolean
   /** Bosses act last, as do enemies whose card says "acts last" (p.13). */
   actsLast?: boolean
+  startingBlock?: number
+  retainsBlock?: boolean
   /** The yellow special ability printed on the card (p.13). */
   ability?: EnemyAbility
+  abilities?: EnemyAbility[]
   /** Highest matching threshold replaces only the listed printed values. */
   ascension?: EnemyAscension[]
 }
@@ -68,7 +85,10 @@ export type EnemyAscension = {
   hpByPlayers?: [number, number, number, number]
   pattern?: EnemyPattern
   actsLast?: boolean
+  startingBlock?: number
+  retainsBlock?: boolean
   ability?: EnemyAbility
+  abilities?: EnemyAbility[]
 }
 
 /** Die patterns pair the faces, so this keeps the tables readable. */
@@ -431,6 +451,306 @@ export const ENEMIES: Record<string, EnemyDef> = {
     pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, aoe: true }] },
   },
 
+  chosen_14: {
+    id: 'chosen_14', name: 'Chosen', hpByPlayers: [14, 14, 14, 14],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }], once: true },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 5 }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+  },
+
+  chosen_16: {
+    id: 'chosen_16', name: 'Chosen', hpByPlayers: [16, 16, 16, 16],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }], once: true },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 5 }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+  },
+
+  mugger: {
+    id: 'mugger', name: 'Mugger', hpByPlayers: [12, 12, 12, 12],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 1 }], once: true },
+      { actions: [{ kind: 'attack', amount: 2 }], once: true },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'block', amount: 2 }], once: true },
+      { actions: [{ kind: 'loseGold', amount: 2 }, { kind: 'leave' }], once: true },
+    ] },
+  },
+
+  looter_hard: {
+    id: 'looter_hard', name: 'Looter', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }], once: true },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }], once: true },
+      { actions: [{ kind: 'loseGold', amount: 2 }, { kind: 'leave' }], once: true },
+    ] },
+  },
+
+  centurion_b3: {
+    id: 'centurion_b3', name: 'Centurion', hpByPlayers: [15, 15, 15, 15],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+      2: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+      3: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+      4: [{ kind: 'attack', amount: 3 }], 5: [{ kind: 'attack', amount: 3 }], 6: [{ kind: 'attack', amount: 3 }],
+    } },
+    ability: { kind: 'furyOnAllyDeath', allyDefId: 'mystic', strength: 1, actions: [{ kind: 'attack', amount: 3 }] },
+  },
+
+  centurion_3b: {
+    id: 'centurion_3b', name: 'Centurion', hpByPlayers: [15, 15, 15, 15],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
+      4: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+      5: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+      6: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
+    } },
+    ability: { kind: 'furyOnAllyDeath', allyDefId: 'mystic', strength: 1, actions: [{ kind: 'attack', amount: 3 }] },
+  },
+
+  mystic: {
+    id: 'mystic', name: 'Mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'healAllEnemies', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'strengthenAllEnemies', amount: 1 }],
+    ) },
+  },
+
+  mystic_2sh: {
+    id: 'mystic_2sh', name: 'Mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'strengthenAllEnemies', amount: 1 }],
+      [{ kind: 'healAllEnemies', amount: 3 }],
+    ) },
+  },
+
+  byrd_encounter: {
+    id: 'byrd_encounter', name: 'Byrd', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 1, times: 2 }],
+      [{ kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+    ability: { kind: 'flying', maxDamagePerHit: 1 },
+  },
+
+  byrd_s13: {
+    id: 'byrd_s13', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 1, times: 2 }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+    ability: { kind: 'flying', maxDamagePerHit: 1 },
+  },
+
+  byrd_s31: {
+    id: 'byrd_s31', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 1, times: 2 }],
+    ) },
+    ability: { kind: 'flying', maxDamagePerHit: 1 },
+  },
+
+  byrd_31s: {
+    id: 'byrd_31s', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 1, times: 2 }],
+      [{ kind: 'gainStrength', amount: 1 }],
+    ) },
+    ability: { kind: 'flying', maxDamagePerHit: 1 },
+  },
+
+  snake_plant: {
+    id: 'snake_plant', name: 'Snake Plant', hpByPlayers: [17, 17, 17, 17],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attackSequence', hits: [{ amount: 3 }, { amount: 2 }] }],
+      [{ kind: 'attackSequence', hits: [{ amount: 3 }, { amount: 2 }] }],
+      [{ kind: 'applyWeak', amount: 2 }],
+    ) },
+    ascension: [{ min: 7, pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attackSequence', hits: [{ amount: 3 }, { amount: 2, aoe: true }] }],
+      [{ kind: 'attackSequence', hits: [{ amount: 3 }, { amount: 2, aoe: true }] }],
+      [{ kind: 'applyWeak', amount: 2 }],
+    ) } }],
+  },
+
+  shelled_parasite: {
+    id: 'shelled_parasite', name: 'Shelled Parasite', hpByPlayers: [18, 18, 18, 18],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'block', amount: 2 }], once: true },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'block', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'block', amount: 2 }] },
+    ] },
+    ascension: [{ min: 7, hpByPlayers: [16, 16, 16, 16] }],
+  },
+
+  fungi_beast_a7: {
+    id: 'fungi_beast_a7', name: 'Fungi Beast', hpByPlayers: [6, 6, 6, 6],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
+    ) },
+    ability: { kind: 'sporeCloud', vulnerable: 1 },
+  },
+
+  snecko: {
+    id: 'snecko', name: 'Snecko', hpByPlayers: [23, 23, 23, 23],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 5 }],
+      [{ kind: 'attack', amount: 2 }],
+    ) },
+    ability: { kind: 'confusion', byRoll: { 1: 2, 2: 2, 3: 1, 4: 1, 5: 3, 6: 3 } },
+  },
+
+  spheric_guardian: {
+    id: 'spheric_guardian', name: 'Spheric Guardian', hpByPlayers: [5, 5, 5, 5],
+    startingBlock: 10, retainsBlock: true,
+    ability: { kind: 'barricade', startingBlock: 10 },
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 5 }] },
+    ] },
+  },
+
+  blue_slaver_wd3: {
+    id: 'blue_slaver_wd3', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+  },
+
+  blue_slaver_w3d: {
+    id: 'blue_slaver_w3d', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+    ) },
+  },
+
+  blue_slaver_dw3: {
+    id: 'blue_slaver_dw3', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+  },
+
+  blue_slaver_3wd: {
+    id: 'blue_slaver_3wd', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+    ) },
+  },
+
+  red_slaver_3vd: {
+    id: 'red_slaver_3vd', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+    ) },
+  },
+
+  red_slaver_3dv: {
+    id: 'red_slaver_3dv', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+    ) },
+  },
+
+  red_slaver_v3d: {
+    id: 'red_slaver_v3d', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+    ) },
+  },
+
+  red_slaver_dv3: {
+    id: 'red_slaver_dv3', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+  },
+
+  book_of_stabbing: {
+    id: 'book_of_stabbing', name: 'Book of Stabbing', elite: true,
+    hpByPlayers: [30, 60, 90, 120],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 1, times: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+    ability: { kind: 'painfulStabs', daze: 1 },
+    ascension: [
+      { min: 1, hpByPlayers: [35, 70, 105, 140], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 3 }, { kind: 'gainStrength', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 1, times: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+      { min: 12, hpByPlayers: [36, 74, 118, 162], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 4 }, { kind: 'gainStrength', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 1, times: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+    ],
+  },
+
+  gremlin_leader: {
+    id: 'gremlin_leader', name: 'Gremlin Leader', elite: true,
+    hpByPlayers: [30, 60, 90, 120],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'blockAllEnemies', amount: 1 }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 5, aoe: true }] },
+      { actions: [{ kind: 'reviveAll', group: 'gremlin' }] },
+    ] },
+    ascension: [
+      { min: 1, hpByPlayers: [35, 70, 105, 140], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 3, aoe: true }, { kind: 'blockAllEnemies', amount: 1 }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 5, aoe: true }] },
+        { actions: [{ kind: 'reviveAll', group: 'gremlin' }] },
+      ] } },
+      { min: 12, hpByPlayers: [40, 82, 130, 172], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 3, aoe: true }, { kind: 'blockAllEnemies', amount: 1 }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 5, aoe: true }] },
+        { actions: [{ kind: 'reviveAll', group: 'gremlin' }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+      ] } },
+    ],
+  },
+
+  taskmaster: {
+    id: 'taskmaster', name: 'Taskmaster', elite: true,
+    hpByPlayers: [13, 28, 42, 56],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+    ascension: [
+      { min: 1, hpByPlayers: [15, 32, 48, 64], pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 1, aoe: true }], once: true },
+        { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'daze', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      ] } },
+      { min: 12, hpByPlayers: [16, 34, 56, 82], pattern: { kind: 'single', actions: [
+        { kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 },
+      ] } },
+    ],
+  },
+
   sentry_a: {
     id: 'sentry_a',
     name: 'Sentry A',
@@ -588,11 +908,18 @@ const SUMMON_CARDS: SummonSupply = {
   spike_slime: ['spike_slime', 'spike_slime_dv2', 'spike_slime_v2d', 'spike_slime_2dv'],
   large_slime: ['large_slime_summon_w4s', 'large_slime_summon_w4s', 'large_slime_summon_4sw', 'large_slime_summon_sw4'],
   fungi_beast: ['fungi_beast'],
+  fungi_beast_a7: ['fungi_beast_a7'],
+  cultist: Array(4).fill('cultist'),
+  byrd: ['byrd_s13', 'byrd_s31', 'byrd_31s'],
+  mystic: ['mystic', 'mystic_2sh'],
+  mugger: Array(2).fill('mugger'),
+  blue_slaver: ['blue_slaver_wd3', 'blue_slaver_w3d', 'blue_slaver_dw3', 'blue_slaver_3wd'],
+  red_slaver: ['red_slaver_dv3', 'red_slaver_3dv', 'red_slaver_3vd', 'red_slaver_v3d'],
   gremlin: [
     'gremlin_wizard', 'sneaky_gremlin', 'fat_gremlin', 'mad_gremlin',
     'gremlin_wizard', 'sneaky_gremlin', 'fat_gremlin', 'mad_gremlin',
   ],
-  sentry_a: Array(6).fill('sentry_a'),
+  sentry_a: Array(7).fill('sentry_a'),
   sentry_b: Array(5).fill('sentry_b'),
 }
 
@@ -619,7 +946,26 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'angry': return compact
       ? `Angry · hit: +${ability.strength} Strength`
       : `Angry: after taking damage from an Attack, gain ${ability.strength} Strength`
+    case 'flying': return compact
+      ? `Flying · max ${ability.maxDamagePerHit} per Hit`
+      : `Flying: takes at most ${ability.maxDamagePerHit} damage from each Hit`
+    case 'painfulStabs': return compact
+      ? `Painful Stabs · unblocked attack: +${ability.daze} Daze`
+      : `Painful Stabs: after an attack deals unblocked damage, gain ${ability.daze} Daze`
+    case 'furyOnAllyDeath': return compact
+      ? `Fury · ${ability.allyDefId} defeated: +${ability.strength} Strength`
+      : `Fury: when its ally is defeated, gain ${ability.strength} Strength and only attack`
+    case 'confusion': return compact
+      ? 'Confusion · first card uses intent cost'
+      : 'Confusion: the first card played this turn costs the value shown by this enemy'
+    case 'barricade': return compact
+      ? `Barricade · starts with ${ability.startingBlock} Block; keeps Block`
+      : `Barricade: starts with ${ability.startingBlock} Block and does not lose Block at the start of the Enemy Turn`
   }
+}
+
+export function enemyAbilities(def: EnemyDef): EnemyAbility[] {
+  return [...(def.ability ? [def.ability] : []), ...(def.abilities ?? [])]
 }
 
 export function enemyDef(id: string, ascension = 0): EnemyDef {
@@ -647,6 +993,15 @@ export function actionsFor(def: EnemyDef, die: number, actionIndex: number): Ene
   if (pattern.kind === 'die') return pattern.byRoll[die] ?? []
   const slot = pattern.slots[actionIndex]
   return slot ? slot.actions : []
+}
+
+/** The action currently telegraphed after once-per-combat mode changes. */
+export function actionsForEnemy(enemy: Enemy, die: number): EnemyAction[] {
+  const def = enemyDef(enemy.defId, enemy.ascension)
+  const fury = enemyAbilities(def).find((candidate) => candidate.kind === 'furyOnAllyDeath')
+  return enemy.abilityUsed && fury?.kind === 'furyOnAllyDeath'
+    ? fury.actions
+    : actionsFor(def, die, enemy.actionIndex)
 }
 
 /**

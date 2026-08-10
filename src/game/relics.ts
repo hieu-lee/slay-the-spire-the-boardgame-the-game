@@ -9,6 +9,14 @@ import type { Trigger } from './triggers.ts'
 /** Relics and Powers share one trigger vocabulary; see triggers.ts. */
 export type RelicTrigger = Trigger
 
+export type RelicAbility = {
+  trigger: RelicTrigger
+  effects: Effect[]
+  target?: TargetScope
+  supportTarget?: TargetScope
+  whenDrawOwner?: string
+}
+
 export type RelicDef = {
   id: string
   name: string
@@ -16,8 +24,13 @@ export type RelicDef = {
   boss?: boolean
   /** Gold cost at the Merchant; absent means it is not for sale. */
   cost?: number
-  trigger: RelicTrigger
+  trigger?: RelicTrigger
   effects: Effect[]
+  target?: TargetScope
+  supportTarget?: TargetScope
+  whenDrawOwner?: string
+  abilities?: RelicAbility[]
+  oncePerCombat?: boolean
   /** Prose for the UI. The effects above are what actually resolve. */
   text: string
 }
@@ -67,13 +80,154 @@ export const RELICS: Record<string, RelicDef> = {
     effects: [{ kind: 'gainEnergy', amount: 1 }],
     text: 'On a 3 or 4: gain 1 Energy.',
   },
+  bag_of_preparation: {
+    id: 'bag_of_preparation', name: 'Bag of Preparation', trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'draw', amount: 2 }], text: 'Start of combat: draw 2 cards.',
+  },
+  bird_faced_urn: {
+    id: 'bird_faced_urn', name: 'Bird-Faced Urn', trigger: { kind: 'onPlayCard', cardType: 'power' },
+    effects: [{ kind: 'block', amount: 1 }], text: 'When you play a Power: gain 1 Block.',
+  },
+  blood_vial: {
+    id: 'blood_vial', name: 'Blood Vial', trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'heal', amount: 1 }], text: 'Start of combat: heal 1 HP.',
+  },
+  blue_candle: { id: 'blue_candle', name: 'Blue Candle', effects: [], text: 'Once per combat: Exhaust up to 2 cards in your hand.' },
+  calipers: { id: 'calipers', name: 'Calipers', effects: [], text: 'Once per combat: keep your leftover Block from last turn.' },
+  captains_wheel: {
+    id: 'captains_wheel', name: "Captain's Wheel", trigger: { kind: 'dieRelic', faces: [3] },
+    effects: [{ kind: 'block', amount: 3 }], text: 'On a 3: gain 3 Block.',
+  },
+  centennial_puzzle: { id: 'centennial_puzzle', name: 'Centennial Puzzle', effects: [], text: 'Once per combat: draw 3 cards if you lost HP this combat.' },
+  charons_ashes: { id: 'charons_ashes', name: "Charon's Ashes", effects: [], text: 'You may Exhaust a card to deal 2 damage.' },
+  dead_branch: { id: 'dead_branch', name: 'Dead Branch', effects: [], text: 'Once per combat: draw a card for each card in your Exhaust pile.' },
+  dollys_mirror: { id: 'dollys_mirror', name: "Dolly's Mirror", effects: [], text: 'Trigger a die relic ability. Its owner gains the effect.' },
+  duality: {
+    id: 'duality', name: 'Duality', effects: [], text: 'On a 2: gain 2 Block. On a 4: deal 2 damage.',
+    abilities: [
+      { trigger: { kind: 'dieRelic', faces: [2] }, effects: [{ kind: 'block', amount: 2 }] },
+      { trigger: { kind: 'dieRelic', faces: [4] }, effects: [{ kind: 'damage', amount: 2 }], target: 'enemy' },
+    ],
+  },
+  du_vu_doll: {
+    id: 'du_vu_doll', name: 'Du-Vu Doll', trigger: { kind: 'onDraw' }, whenDrawOwner: 'curse',
+    effects: [{ kind: 'gainTemporaryStrength', amount: 1 }],
+    text: 'When you draw a Curse, gain 1 Strength this turn.',
+  },
+  gambling_chip: { id: 'gambling_chip', name: 'Gambling Chip', effects: [], text: 'Once per room: reroll the die.' },
+  golden_eye: { id: 'golden_eye', name: 'Golden Eye', effects: [], text: 'Once per combat: Scry 3.' },
+  golden_idol: {
+    id: 'golden_idol', name: 'Golden Idol', trigger: { kind: 'endOfCombat' },
+    effects: [{ kind: 'gainGold', amount: 1 }], text: 'End of combat: gain 1 Gold.',
+  },
+  gremlin_horn: {
+    id: 'gremlin_horn', name: 'Gremlin Horn', effects: [], text: 'On a 4: draw a card. On a 5: gain 1 Energy.',
+    abilities: [
+      { trigger: { kind: 'dieRelic', faces: [4] }, effects: [{ kind: 'draw', amount: 1 }] },
+      { trigger: { kind: 'dieRelic', faces: [5] }, effects: [{ kind: 'gainEnergy', amount: 1 }] },
+    ],
+  },
+  horn_cleat: {
+    id: 'horn_cleat', name: 'Horn Cleat', trigger: { kind: 'dieRelic', faces: [1, 2] },
+    effects: [{ kind: 'block', amount: 1 }], text: 'On a 1 or 2: gain 1 Block.',
+  },
+  ice_cream: { id: 'ice_cream', name: 'Ice Cream', effects: [], text: 'Start of turn: gain your leftover Energy from last turn. Maximum Energy is 6.' },
+  incense_burner: {
+    id: 'incense_burner', name: 'Incense Burner', trigger: { kind: 'dieRelic', faces: [6] },
+    effects: [{ kind: 'setHpLossLimit', amount: 1 }], text: 'On a 6: you cannot lose more than 1 HP this round.',
+  },
+  ink_bottle: {
+    id: 'ink_bottle', name: 'Ink Bottle', trigger: { kind: 'dieRelic', faces: [5, 6] },
+    effects: [{ kind: 'draw', amount: 1 }], text: 'On a 5 or 6: draw a card.',
+  },
+  lantern: {
+    id: 'lantern', name: 'Lantern', trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'gainEnergy', amount: 1 }], text: 'Start of combat: gain 1 Energy.',
+  },
+  meat_on_the_bone: {
+    id: 'meat_on_the_bone', name: 'Meat on the Bone', trigger: { kind: 'endOfCombat' },
+    effects: [{ kind: 'setHpAtLeast', amount: 4 }], text: 'End of combat: if below 4 HP, set HP to 4.',
+  },
+  mercury_hourglass: {
+    id: 'mercury_hourglass', name: 'Mercury Hourglass', trigger: { kind: 'dieRelic', faces: [1, 2] },
+    effects: [{ kind: 'damage', amount: 1 }], target: 'row', text: 'On a 1 or 2: deal 1 damage to any row.',
+  },
+  molten_egg: { id: 'molten_egg', name: 'Molten Egg', effects: [], text: 'When you add an Attack to your deck, upgrade it. Use 3 times, then discard.' },
+  mummified_hand: { id: 'mummified_hand', name: 'Mummified Hand', effects: [], text: 'Once per combat: gain 2 Energy if you played a Power this turn.' },
+  mutagen: {
+    id: 'mutagen', name: 'Mutagenic Strength', trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'gainTemporaryStrength', amount: 1 }], text: 'Start of combat: gain 1 Strength; lose it at end of turn.',
+  },
+  necronomicon: {
+    id: 'necronomicon', name: 'Necronomicon', trigger: { kind: 'dieRelic', faces: [1] },
+    effects: [{ kind: 'queueCardCopy', cardType: 'attack' }], text: 'On a 1: your next Attack this turn is played twice.',
+  },
+  nilrys_codex: { id: 'nilrys_codex', name: "Nilry's Codex", effects: [], text: 'On a 4: draw a card. On a 5: trigger a die relic ability; its owner gains the effect.' },
+  ninja_scroll: { id: 'ninja_scroll', name: 'Ninja Scroll', effects: [], text: 'Once per combat: gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.' },
+  oddly_smooth_stone: {
+    id: 'oddly_smooth_stone', name: 'Oddly Smooth Stone', trigger: { kind: 'dieRelic', faces: [4] },
+    effects: [{ kind: 'block', amount: 2, toChosen: true }], supportTarget: 'anyPlayer',
+    text: 'On a 4: 2 Block to any player.',
+  },
+  old_coin: { id: 'old_coin', name: 'Old Coin', effects: [], text: 'Gain 3 Gold, then discard this relic. At a Merchant or The Courier, discard it and draw again.' },
+  omamori: { id: 'omamori', name: 'Omamori', effects: [], text: "You can't gain Curses." },
+  orichalcum: {
+    id: 'orichalcum', name: 'Orichalcum', trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'blockIfNone', amount: 1 }], text: 'End of turn: gain 1 Block if you have none.',
+  },
+  peace_pipe: { id: 'peace_pipe', name: 'Peace Pipe', effects: [], text: 'When you Rest: you may also remove a card.' },
+  pen_nib: {
+    id: 'pen_nib', name: 'Pen Nib', trigger: { kind: 'dieRelic', faces: [5] },
+    effects: [{ kind: 'applyVulnerable', amount: 1 }], text: 'On a 5: apply 1 Vulnerable.',
+  },
+  pocketwatch: {
+    id: 'pocketwatch', name: 'Pocketwatch', trigger: { kind: 'dieRelic', faces: [3] },
+    effects: [{ kind: 'draw', amount: 3 }], text: 'On a 3: draw 3 cards.',
+  },
+  red_mask: {
+    id: 'red_mask', name: 'Red Mask', trigger: { kind: 'dieRelic', faces: [5, 6] },
+    effects: [{ kind: 'applyWeak', amount: 1 }], text: 'On a 5 or 6: apply 1 Weak.',
+  },
+  red_skull: { id: 'red_skull', name: 'Red Skull', trigger: { kind: 'onShuffle' }, effects: [{ kind: 'gainStrength', amount: 1 }], oncePerCombat: true, text: 'Once per combat: gain 1 Strength if you shuffled your draw pile this combat.' },
+  regal_pillow: { id: 'regal_pillow', name: 'Regal Pillow', effects: [], text: 'When you Rest: heal 3 additional HP.' },
+  runic_pyramid: { id: 'runic_pyramid', name: 'Runic Pyramid', effects: [], text: 'Once per combat: Retain any number of cards this turn.' },
+  self_forming_clay: { id: 'self_forming_clay', name: 'Self-Forming Clay', effects: [], text: 'Once per combat: gain 3 Block if you lost HP this combat.' },
+  ssserpent_head: { id: 'ssserpent_head', name: 'Ssserpent Head', effects: [], text: 'On a 6: gain 1 Gold when you enter the room.' },
+  stone_calendar: {
+    id: 'stone_calendar', name: 'Stone Calendar', trigger: { kind: 'dieRelic', faces: [4] },
+    effects: [{ kind: 'damage', amount: 4 }], text: 'On a 4: deal 4 damage.',
+  },
+  strike_dummy: { id: 'strike_dummy', name: 'Strike Dummy', effects: [], text: 'When you play a starter Strike, it deals 1 additional damage.' },
+  sundial: {
+    id: 'sundial', name: 'Sundial', trigger: { kind: 'dieRelic', faces: [2] },
+    effects: [{ kind: 'gainEnergy', amount: 2 }], text: 'On a 2: gain 2 Energy.',
+  },
+  the_abacus: { id: 'the_abacus', name: 'The Abacus', effects: [], text: 'Once per room: add 1 to the die result; 6 becomes 1.' },
+  the_boot: {
+    id: 'the_boot', name: 'The Boot', trigger: { kind: 'dieRelic', faces: [4, 5, 6] },
+    effects: [{ kind: 'damage', amount: 1 }], text: 'On a 4, 5, or 6: deal 1 damage.',
+  },
+  the_courier: { id: 'the_courier', name: 'The Courier', effects: [], text: 'Once per combat: look at the top card of the relic or potion deck. Buy it or discard it.' },
+  toolbox: { id: 'toolbox', name: 'Toolbox', effects: [], text: 'Once per room: subtract 1 from the die result; 1 becomes 6.' },
+  toxic_egg: { id: 'toxic_egg', name: 'Toxic Egg', effects: [], text: 'When you add a Skill to your deck, upgrade it. Use 3 times, then discard.' },
+  tungsten_rod: {
+    id: 'tungsten_rod', name: 'Tungsten Rod', trigger: { kind: 'dieRelic', faces: [5] },
+    effects: [{ kind: 'blockAllPlayers', amount: 1, soloAmount: 3 }],
+    text: 'On a 5: 1 Block to all players; 3 Block instead in solo.',
+  },
+  vajra: {
+    id: 'vajra', name: 'Vajra', trigger: { kind: 'dieRelic', faces: [2] },
+    effects: [{ kind: 'gainTemporaryStrength', amount: 1 }], text: 'On a 2: gain 1 Strength this turn.',
+  },
+  war_paint: { id: 'war_paint', name: 'War Paint', effects: [], text: 'Upgrade a starter Defend and another Skill, then discard this item. Cannot be used in combat.' },
+  whetstone: { id: 'whetstone', name: 'Whetstone', effects: [], text: 'Upgrade a starter Strike and another Attack, then discard this item. Cannot be used in combat.' },
+  wing_boots: { id: 'wing_boots', name: 'Wing Boots', effects: [], text: 'You may ignore paths when moving to the next room. Use 3 times, then discard.' },
   akabeko: {
     id: 'akabeko',
     name: 'Akabeko',
     cost: 5,
-    trigger: { kind: 'startOfCombat' },
-    effects: [{ kind: 'gainStrength', amount: 1 }],
-    text: 'Start of combat: gain 1 Strength.',
+    effects: [],
+    text: 'Once per combat: gain 3 Strength for one Attack.',
   },
   bag_of_marbles: {
     id: 'bag_of_marbles',
@@ -120,6 +274,8 @@ export type PotionDef = {
   target?: Extract<TargetScope, 'enemy' | 'row'>
   /** Where a supportive potion may land. */
   supportTarget?: TargetScope
+  special?: 'doubleAttack' | 'distilledChaos' | 'entropicBrew' | 'fairy'
+    | 'changeDie' | 'hpLossLimit' | 'liquidMemories' | 'purity' | 'doubleSkill'
   text: string
 }
 
@@ -171,9 +327,9 @@ export const POTIONS: Record<string, PotionDef> = {
   weak_potion: {
     id: 'weak_potion',
     name: 'Weak Potion',
-    effects: [{ kind: 'applyWeak', amount: 3 }],
+    effects: [{ kind: 'applyWeak', amount: 2 }],
     target: 'enemy',
-    text: 'Apply 3 Weak.',
+    text: 'Apply 2 Weak.',
   },
   vulnerable_potion: {
     id: 'vulnerable_potion',
@@ -201,6 +357,46 @@ export const POTIONS: Record<string, PotionDef> = {
     effects: [{ kind: 'draw', amount: 5 }, { kind: 'addDaze', amount: 2, pile: 'draw' }],
     text: 'Draw 5 cards. Gain 2 Daze.',
   },
+}
+
+/** The complete physical ordinary relic deck; every card appears exactly once. */
+export const RELIC_DECK = [
+  'akabeko', 'anchor', 'bag_of_preparation', 'bird_faced_urn', 'blood_vial', 'blue_candle',
+  'calipers', 'captains_wheel', 'centennial_puzzle', 'charons_ashes', 'dead_branch', 'dollys_mirror',
+  'duality', 'du_vu_doll', 'gambling_chip', 'golden_eye', 'golden_idol', 'gremlin_horn',
+  'happy_flower', 'horn_cleat', 'ice_cream', 'incense_burner', 'ink_bottle', 'lantern',
+  'meat_on_the_bone', 'mercury_hourglass', 'molten_egg', 'mummified_hand', 'mutagen',
+  'necronomicon', 'nilrys_codex', 'ninja_scroll', 'oddly_smooth_stone', 'old_coin', 'omamori',
+  'orichalcum', 'peace_pipe', 'pen_nib', 'pocketwatch', 'red_mask', 'red_skull', 'regal_pillow',
+  'runic_pyramid', 'self_forming_clay', 'ssserpent_head', 'stone_calendar', 'strike_dummy',
+  'sundial', 'the_abacus', 'the_boot', 'the_courier', 'toolbox', 'toxic_egg', 'tungsten_rod',
+  'vajra', 'war_paint', 'whetstone', 'wing_boots',
+] as const
+export const BOSS_RELIC_DECK: string[] = []
+
+/** The physical shared potion deck, including repeated cards. */
+export const POTION_DECK = [
+  'ancient_potion', 'attack_potion', 'block_potion', 'block_potion', 'blood_potion', 'cunning_potion',
+  'distilled_chaos', 'energy_potion', 'energy_potion', 'entropic_brew', 'explosive_potion', 'explosive_potion',
+  'fairy_in_a_bottle', 'fire_potion', 'fire_potion', 'flex_potion', 'flex_potion', 'gamblers_brew',
+  'ghost_in_a_jar', 'liquid_memories', 'purity_potion', 'skill_potion', 'snecko_oil',
+  'swift_potion', 'swift_potion', 'vulnerable_potion', 'vulnerable_potion', 'weak_potion', 'weak_potion',
+] as const
+
+const SPECIAL_POTIONS: Array<[string, string, PotionDef['special'], string]> = [
+  ['attack_potion', 'Attack Potion', 'doubleAttack', 'The next Attack you play this turn is played twice.'],
+  ['distilled_chaos', 'Distilled Chaos', 'distilledChaos', 'Draw 3 cards. Immediately play them in any order for 0 Energy.'],
+  ['entropic_brew', 'Entropic Brew', 'entropicBrew', 'Gain 2 potions.'],
+  ['fairy_in_a_bottle', 'Fairy in a Bottle', 'fairy', 'When your HP becomes 0, instead set your HP to 2 and discard this item.'],
+  ['gamblers_brew', "Gambler's Brew", 'changeDie', 'Change the die to any number before accepting the roll.'],
+  ['ghost_in_a_jar', 'Ghost in a Jar', 'hpLossLimit', 'You cannot lose more than 1 HP this turn.'],
+  ['liquid_memories', 'Liquid Memories', 'liquidMemories', 'Return a card from your discard pile to your hand. It costs 0 Energy this turn.'],
+  ['purity_potion', 'Purity Potion', 'purity', 'Exhaust up to 3 cards in your hand.'],
+  ['skill_potion', 'Skill Potion', 'doubleSkill', 'The next Skill you play this turn is played twice.'],
+]
+
+for (const [id, name, special, text] of SPECIAL_POTIONS) {
+  POTIONS[id] = { id, name, effects: [], special, text }
 }
 
 export function potionDef(id: string): PotionDef {

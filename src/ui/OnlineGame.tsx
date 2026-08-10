@@ -10,6 +10,7 @@ import { IconValue } from './Icon.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
+import { RunPotionBar } from './RunPotionBar.tsx'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -210,6 +211,9 @@ export function OnlineGame({ onLocal }: Props) {
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
+  const forcedCardSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.forcedCardPlayerId)
+  const foreignForcedCards = forcedCardSeat !== undefined && forcedCardSeat.playerId !== snapshot.you.playerId
+  const foreignImmediate = foreignCardChoice || foreignForcedCards
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const combat = run.combat ? {
@@ -217,6 +221,8 @@ export function OnlineGame({ onLocal }: Props) {
     rng: { seed: 0, calls: 0 },
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
+    potionSupply: Array(run.combat.potionSupplyCount ?? 0).fill('hidden'),
+    potionLimit: run.ascension >= 4 ? 2 : 3,
     pendingSummons: run.combat.pendingSummons ?? [],
     // The remaining face-down Summons deck is server-only hidden information.
     summonSupply: {},
@@ -241,10 +247,25 @@ export function OnlineGame({ onLocal }: Props) {
         </div>
       </header>
 
+      {viewer && !run.combat && run.phase !== 'defeat' ? (
+        <RunPotionBar player={playerForUi(viewer)} players={run.players.map(playerForUi)} ascension={run.ascension}
+          onUse={(potionId, discardPotionId) => room.act({ kind: 'usePotion', potionId, discardPotionId })}
+          onTrade={(potionId, toPlayerId) => room.act({ kind: 'tradePotion', potionId, toPlayerId })} />
+      ) : null}
+
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {foreignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving a revealed card…</p>
         : null}
+      {foreignForcedCards && forcedCardSeat?.connected && !foreignCardChoice
+        ? <p className="online-banner" role="status">{forcedCardSeat.name} is resolving immediate cards…</p>
+        : null}
+      {foreignForcedCards && forcedCardSeat && !forcedCardSeat.connected && !foreignCardChoice ? (
+        <p className="online-banner" role="status">
+          {forcedCardSeat.name} disconnected during immediate cards.{' '}
+          <button type="button" onClick={() => room.act({ kind: 'endTurn' })}>Discard cards and end turn</button>
+        </p>
+      ) : null}
       {foreignCardChoice && cardChoiceSeat && !cardChoiceSeat.connected ? (
         <p className="online-banner" role="status">
           {cardChoiceSeat.name} disconnected during a revealed card.{' '}
@@ -253,8 +274,8 @@ export function OnlineGame({ onLocal }: Props) {
       ) : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || undefined}
-        aria-disabled={room.connection !== 'connected' || foreignCardChoice || undefined}>
+      <div className="online-mutations" inert={room.connection !== 'connected' || foreignImmediate || undefined}
+        aria-disabled={room.connection !== 'connected' || foreignImmediate || undefined}>
       {run.phase === 'combat' && combat ? (
         <CombatScreen
           state={combat}
@@ -280,7 +301,6 @@ export function OnlineGame({ onLocal }: Props) {
           viewerId={snapshot.you.playerId}
           choice={snapshot.rewardChoice}
           decided={snapshot.rewardDecided}
-          confirmed={snapshot.rewardConfirmed}
           onAction={room.act}
         />
       ) : null}

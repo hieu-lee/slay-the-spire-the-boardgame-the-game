@@ -635,6 +635,8 @@ button:disabled {
 }
 
 .enemy__ability {
+  display: grid;
+  gap: 0.15rem;
   margin: 0 0.5rem;
   color: #e2b34f;
   font-size: 0.65rem;
@@ -1658,6 +1660,31 @@ button:disabled {
   color: var(--ink-dim);
 }
 
+.run-potions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+}
+
+.run-potions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0.4rem 0.7rem;
+  color: var(--gold);
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+}
+
+.run-potions__discard {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .room-screen {
   flex: 1;
   display: flex;
@@ -1931,6 +1958,31 @@ button:disabled {
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.reward-screen__item {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid rgb(205 151 56 / 32%);
+}
+
+.reward-screen__item button {
+  min-height: 44px;
+  margin: 4px;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--edge);
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.reward-screen__item button:disabled {
+  opacity: 0.5;
+}
+
+.reward-screen__item button[aria-pressed='true'] {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgb(205 151 56 / 20%);
 }
 
 @media (max-width: 720px) {
