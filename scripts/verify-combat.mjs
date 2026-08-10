@@ -780,6 +780,24 @@ check('Barricade preserves only its owner\'s leftover Block at Start of Turn', (
     'Barricade must not preserve a teammate\'s Block')
 })
 
+check('Entrench doubles current Block to the cap and upgrades by removing Exhaust', () => {
+  for (const upgraded of [false, true]) {
+    const entrench = instance('entrench', upgraded)
+    const played = playCard(combat([makePlayer({
+      hand: [entrench], energy: 1, block: 6,
+    })], [makeEnemy()]), 'p1', entrench.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, 12)
+    assertEqual(played.players[0].energy, 0)
+    assertDeepEqual(played.players[0][upgraded ? 'discard' : 'exhaust'].map((card) => card.uid),
+      [entrench.uid])
+  }
+
+  const capped = instance('entrench', true)
+  const played = playCard(combat([makePlayer({ hand: [capped], block: 14 })], [makeEnemy()]),
+    'p1', capped.uid, { enemyUid: null, playerId: null })
+  assertEqual(played.players[0].block, 20, 'Entrench must discard Block above the global cap')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -2037,6 +2055,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'fiend_fire', enemyHp: [20, 20], exhaust: [1, 1] },
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

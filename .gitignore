@@ -30,5 +30,6 @@ artifacts/
 # All artwork is the publisher's. It is fetched into the working tree by the
 # sync-* scripts and deliberately NOT redistributed here. See ATTRIBUTION.md.
 public/assets/cards/
+public/assets/cards-hd/
 public/assets/icons/
 public/assets/enemies/

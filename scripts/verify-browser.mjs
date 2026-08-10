@@ -1517,6 +1517,40 @@ check('Barricade+ visibly preserves only its owner\'s Block through Start of Tur
   assertDeepEqual(barricaded.players[0].powers.map((card) => card.uid), ['ui-barricade'])
 })
 await shot('06zp-barricade-block-retained')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'player', log: [] })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-entrench', defId: 'entrench', upgraded: false },
+      { uid: 'ui-entrench-plus', defId: 'entrench', upgraded: true },
+    ],
+    discard: [], exhaust: [], energy: 2, block: 6, powers: [],
+  })
+  debug.setRun(run)
+})
+const entrenchCard = page.getByRole('button', { name: /^Entrench,/ })
+const entrenchPlusCard = page.getByRole('button', { name: /^Entrench\+,/ })
+await Promise.all([entrenchCard.waitFor(), entrenchPlusCard.waitFor()])
+const entrenchLabel = await entrenchCard.getAttribute('aria-label')
+const entrenchPlusLabel = await entrenchPlusCard.getAttribute('aria-label')
+await shot('06zq-entrench-cards-ready')
+await entrenchCard.click()
+await entrenchPlusCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const entrenched = await readState()
+check('Entrench doubles Block to 20 and its upgrade removes Exhaust through real controls', () => {
+  assert(entrenchLabel.includes('double your Block, maximum Block 20') &&
+    entrenchLabel.includes('exhausts'), entrenchLabel)
+  assert(entrenchPlusLabel.includes('double your Block, maximum Block 20') &&
+    !entrenchPlusLabel.includes('exhausts'), entrenchPlusLabel)
+  assertEqual(entrenched.players[0].block, 20)
+  assertDeepEqual(entrenched.players[0].exhaust.map((card) => card.uid), ['ui-entrench'])
+  assertDeepEqual(entrenched.players[0].discard.map((card) => card.uid), ['ui-entrench-plus'])
+})
+await shot('06zr-entrench-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

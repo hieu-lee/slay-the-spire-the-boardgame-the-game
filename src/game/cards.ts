@@ -499,6 +499,12 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'exhaustHand', except: 'attack' }, { kind: 'gainBlockPerExhaust', amount: 2 }],
     },
   }),
+  entrench: card({
+    id: 'entrench', name: 'Entrench', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'block' } }],
+    exhaust: true,
+    upgrade: { exhaust: false },
+  }),
   sentinel: card({
     id: 'sentinel', name: 'Sentinel', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
     supportTarget: 'anyPlayer',

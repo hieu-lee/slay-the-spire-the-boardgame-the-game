@@ -1479,6 +1479,20 @@ check('Barricade preserves only its owner\'s Block through room-authoritative St
   assertDeepEqual(started.players.map((player) => player.block), [7, 0])
 })
 
+check('Entrench doubles Block and removes Exhaust on upgrade through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const base = { uid: 'room-entrench', defId: 'entrench', upgraded: false }
+  const upgraded = { uid: 'room-entrench-plus', defId: 'entrench', upgraded: true }
+  Object.assign(actor, { hand: [base, upgraded], energy: 2, block: 6, discard: [], exhaust: [] })
+  apply(room, a.token, { kind: 'playCard', cardUid: base.uid, preflight: true })
+  apply(room, a.token, { kind: 'playCard', cardUid: upgraded.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 20)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [base.uid])
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [upgraded.uid])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

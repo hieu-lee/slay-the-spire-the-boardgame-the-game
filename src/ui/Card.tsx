@@ -83,7 +83,10 @@ function effectText(effect: Effect): string {
     case 'damage': return `deal ${effect.amount} damage${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
     case 'loseOwnHp': return `lose ${effect.amount} hit points${condition}`
-    case 'block': return `gain ${amountText(effect.amount)} Block${condition}`
+    case 'block': return typeof effect.amount !== 'number' && effect.amount.base === 0 &&
+      effect.amount.per === 'block' && effect.amount.scale === undefined && effect.amount.bonus === undefined
+      ? `double your Block, maximum Block 20${condition}`
+      : `gain ${amountText(effect.amount)} Block${condition}`
     case 'blockChoices': return `assign ${effect.targets} separate ${effect.amount} Block icons to any players${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
