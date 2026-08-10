@@ -11,11 +11,14 @@ import {
   livingEnemies,
   playCard,
   playCost,
+  preparePlayerTurn,
   previewCardChoice,
   resolveEnemyTargets,
+  resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  startTurnAbilities,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
@@ -2005,6 +2008,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'apotheosis', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'the_bomb', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'sadistic_nature', powers: [1, 1] },
+    { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
+    { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -2118,6 +2123,9 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.discardAfterDraw) {
         const amount = Array.isArray(spec.discardAfterDraw) ? spec.discardAfterDraw[at] : 1
         context.discardUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, amount).map((held) => held.uid)
+      }
+      if (spec.topdeckAfterDraw) {
+        context.topdeckUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, 1).map((held) => held.uid)
       }
       const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
@@ -3013,6 +3021,110 @@ check('Sadistic Nature fires once per enemy token actually added, on that enemy'
   ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p2', allyBlind.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(otherOwner.enemies[0].weak, 1)
   assertEqual(otherOwner.enemies[0].hp, 20, 'another player\'s token does not trigger your Power')
+})
+
+check('Thinking Ahead draws first, then returns exactly one chosen card to the draw top', () => {
+  for (const upgraded of [false, true]) {
+    const thinking = instance('thinking_ahead', upgraded)
+    const held = instance('strike_ironclad')
+    const drawn = Array.from({ length: upgraded ? 3 : 2 }, () => instance('defend_ironclad'))
+    const state = combat([makePlayer({ hand: [thinking, held], draw: drawn })], [makeEnemy()])
+    const preview = previewCardChoice(state, 'p1', thinking.uid)
+    assertEqual(preview?.kind, 'topdeck')
+    assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, ...drawn.map((card) => card.uid)])
+    const chosen = drawn.at(-1)
+    const next = playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: [chosen.uid],
+    })
+    assert(next !== state)
+    assertEqual(next.players[0].draw[0]?.uid, chosen.uid)
+    assertEqual(next.players[0].hand.length, drawn.length)
+    assertEqual(next.players[0].exhaust.at(-1)?.uid, thinking.uid)
+
+    assertEqual(playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: ['not-in-hand'],
+    }), state, 'a stale private choice must reject the whole play')
+    assertEqual(playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: [held.uid, drawn[0].uid],
+    }), state, 'extra topdeck choices must not be silently ignored')
+  }
+
+  const thinking = instance('thinking_ahead')
+  const onlyDraw = instance('strike_ironclad')
+  const reshuffled = [instance('defend_ironclad'), instance('bash')]
+  const state = combat([makePlayer({ hand: [thinking], draw: [onlyDraw], discard: reshuffled })], [makeEnemy()])
+  const preview = previewCardChoice(state, 'p1', thinking.uid)
+  assertEqual(preview.cards.length, 2, 'the preview follows a mid-draw reshuffle')
+  const next = playCard(state, 'p1', thinking.uid, {
+    enemyUid: null, playerId: null, topdeckUids: [preview.cards[1].uid],
+  })
+  assertEqual(next.players[0].draw[0].uid, preview.cards[1].uid)
+})
+
+check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {
+  for (const upgraded of [false, true]) {
+    assertEqual(faceOf(CARDS.mayhem, upgraded).cost, upgraded ? 1 : 2)
+    const mayhem = instance('mayhem', upgraded)
+    const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+    const meteor = instance('meteor_strike')
+    const state = combat([makePlayer({ powers: [mayhem], draw: [...opening, meteor], energy: 0 })], [
+      makeEnemy({ hp: 20, maxHp: 20 }),
+    ])
+    Object.assign(state, { phase: 'roundEnd', turn: 1 })
+    const prepared = preparePlayerTurn(state)
+    const [ability] = startTurnAbilities(prepared)
+    const forced = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+    assertEqual(forced.phase, 'start')
+    assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, meteor.uid)
+    assertEqual(forced.players[0].energy, 3)
+    const played = playCard(forced, 'p1', meteor.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.phase, 'player')
+    assertEqual(played.players[0].energy, 3, 'Mayhem pays the entire printed cost')
+    assertEqual(played.enemies[0].hp, 10)
+    assertEqual(played.players[0].attacksPlayedThisTurn, 1, 'the forced card counts as played')
+  }
+
+  const mayhem = instance('mayhem')
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const daze = instance('daze')
+  const state = combat([makePlayer({ powers: [mayhem], draw: [...opening, daze] })], [makeEnemy()])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const [ability] = startTurnAbilities(prepared)
+  const resolved = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+  assertEqual(resolved.phase, 'player', 'an unplayable Mayhem draw is discarded without a prompt')
+  assertEqual(resolved.players[0].discard.at(-1)?.uid, daze.uid)
+
+  const emptyDualCast = instance('dual_cast')
+  const noOrbState = combat([makePlayer({
+    character: 'defect', powers: [instance('mayhem')], draw: [...opening, emptyDualCast], orbs: [null, null, null],
+  })], [makeEnemy()])
+  Object.assign(noOrbState, { phase: 'roundEnd', turn: 1 })
+  const noOrbPrepared = preparePlayerTurn(noOrbState)
+  const [noOrbAbility] = startTurnAbilities(noOrbPrepared)
+  const noOrbResolved = resolveStartPlayerTurn(noOrbPrepared, [{ id: noOrbAbility.id, shivEnemyUids: [] }])
+  assertEqual(noOrbResolved.phase, 'player', 'an impossible Evoke cannot strand Mayhem')
+  assertEqual(noOrbResolved.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
+
+  const madness = instance('madness')
+  const forcedStrike = instance('strike_ironclad')
+  const chainedState = combat([makePlayer({
+    powers: [instance('mayhem'), instance('mayhem')],
+    draw: [...opening, madness, forcedStrike],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  Object.assign(chainedState, { phase: 'roundEnd', turn: 1 })
+  const chainedPrepared = preparePlayerTurn(chainedState)
+  const chainedAbilities = startTurnAbilities(chainedPrepared)
+  const firstForced = resolveStartPlayerTurn(chainedPrepared, chainedAbilities.map((ability) => ({
+    id: ability.id, shivEnemyUids: [],
+  })))
+  const secondForced = playCard(firstForced, 'p1', madness.uid, { enemyUid: null, playerId: null })
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.cardUid, forcedStrike.uid)
+  assertEqual(secondForced.players[0].freeCardsThisTurn, 1)
+  const chained = playCard(secondForced, 'p1', forcedStrike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(chained.phase, 'player')
+  assertEqual(chained.players[0].freeCardsThisTurn, 0,
+    'Mayhem\'s forced card still consumes Madness\'s next-card discount')
 })
 
 check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {

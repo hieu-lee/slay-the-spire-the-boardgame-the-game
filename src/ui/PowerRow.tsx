@@ -300,6 +300,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage':
       return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'drawAndPlayFree':
+      return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':

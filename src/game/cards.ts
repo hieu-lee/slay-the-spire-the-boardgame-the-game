@@ -196,6 +196,10 @@ type EffectKind =
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
+  /** Put chosen cards from hand on top of the draw pile, in chosen order. */
+  | { kind: 'topdeck'; amount: number }
+  /** Draw a card and immediately play it for 0 Energy, as Mayhem does. */
+  | { kind: 'drawAndPlayFree' }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
@@ -1670,6 +1674,18 @@ export const CARDS: Record<string, CardDef> = {
     target: 'enemy',
     effects: [{ kind: 'damage', amount: 1 }],
     upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
+  thinking_ahead: card({
+    id: 'thinking_ahead', name: 'Thinking Ahead', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
+  mayhem: card({
+    id: 'mayhem', name: 'Mayhem', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'drawAndPlayFree' }],
+    upgrade: { cost: 1 },
   }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

@@ -1502,6 +1502,139 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Re
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].powers
   .some((card) => card.uid === 'ui-sadistic'))
 
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-thinking', defId: 'thinking_ahead', upgraded: true },
+      { uid: 'ui-thinking-held', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: Array.from({ length: 3 }, (_, index) => ({
+      uid: `ui-thinking-draw-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+    discard: [], exhaust: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const thinkingCard = page.getByRole('button', { name: /^Thinking Ahead\+,/ })
+await thinkingCard.waitFor()
+const thinkingLabel = await thinkingCard.getAttribute('aria-label')
+await thinkingCard.click()
+const thinkingDialog = page.getByRole('dialog', { name: 'Choose 1 for the top of your draw pile' })
+await thinkingDialog.waitFor()
+check('Thinking Ahead+ exposes its private topdeck choice accessibly', () => {
+  assert(thinkingLabel.includes('draw 3 cards'), thinkingLabel)
+  assert(thinkingLabel.includes('put 1 card from your hand on top of your draw pile'), thinkingLabel)
+})
+await shot('06zo-thinking-ahead-choice')
+await thinkingDialog.locator('.card').last().click()
+await thinkingDialog.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].exhaust
+  .some((card) => card.uid === 'ui-thinking'))
+const thinking = await readState()
+check('Thinking Ahead+ draws three and topdecks the selected card', () => {
+  assertEqual(thinking.players[0].draw[0].uid, 'ui-thinking-draw-2')
+  assertEqual(thinking.players[0].hand.length, 3)
+})
+await shot('06zp-thinking-ahead-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [], discard: [], exhaust: [], energy: 0,
+    powers: [{ uid: 'ui-mayhem', defId: 'mayhem', upgraded: true }],
+    draw: [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-mayhem-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+      })),
+      { uid: 'ui-mayhem-forced', defId: 'meteor_strike', upgraded: true },
+    ],
+  })
+  for (const player of run.combat.players.slice(1)) Object.assign(player, {
+    hand: [], discard: [], powers: [],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-mayhem-ally-${player.id}-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.getByText('Mayhem — play the drawn card for 0 Energy').waitFor()
+const forcedMayhem = page.getByRole('button', { name: /^Meteor Strike\+, cost 0,/ })
+await forcedMayhem.waitFor()
+const mayhemPowerLabel = await page.locator('.power[aria-label^="Mayhem+"]').getAttribute('aria-label')
+const forcedMayhemEnabled = await forcedMayhem.isEnabled()
+check('Mayhem announces its discard fallback and enables an otherwise unaffordable card', () => {
+  assert(mayhemPowerLabel.includes('if it cannot be played, discard it'), mayhemPowerLabel)
+  assertEqual(forcedMayhemEnabled, true)
+})
+await shot('06zq-mayhem-forced-card')
+await forcedMayhem.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const mayhem = await readState()
+check('Mayhem forces its private card for 0 Energy and resumes Start of Turn', () => {
+  assertEqual(mayhem.players[0].energy, 3)
+  assertEqual(mayhem.enemies[0].hp, 8)
+  assertEqual(mayhem.startTurnProgress, undefined)
+})
+await shot('06zr-mayhem-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [], discard: [], exhaust: [], energy: 0, block: 0,
+    powers: [{ uid: 'ui-mayhem-choice', defId: 'mayhem', upgraded: false }],
+    draw: [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-mayhem-choice-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+      })),
+      { uid: 'ui-mayhem-survivor', defId: 'survivor', upgraded: false },
+    ],
+  })
+  for (const player of run.combat.players.slice(1)) Object.assign(player, {
+    hand: [], powers: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-mayhem-choice-ally-${player.id}-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.getByRole('button', { name: /^Survivor, cost 0,/ }).click()
+await page.getByText(/Discard 1 card.*0\/1 chosen/).waitFor()
+const forcedChoiceFodder = page.getByRole('button', { name: /^Defend,/ }).first()
+const forcedChoiceFodderEnabled = await forcedChoiceFodder.isEnabled()
+check('Mayhem keeps hand cards enabled as mandatory forced-play choices', () => {
+  assertEqual(forcedChoiceFodderEnabled, true)
+})
+await forcedChoiceFodder.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const mayhemChoice = await readState()
+check('Mayhem resumes after the forced card pays its hand choice', () => {
+  assertEqual(mayhemChoice.players[0].energy, 3)
+  assertEqual(mayhemChoice.players[0].block, 2)
+  assertEqual(mayhemChoice.players[0].discard.some((card) => card.uid === 'ui-mayhem-survivor'), true)
+})
+await shot('06zs-mayhem-hand-choice-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction((enemyCount) => {
+  const state = window.__STS_DEBUG__.getState()
+  return state.enemies.length === enemyCount &&
+    !state.players[0].powers.some((card) => card.uid === 'ui-mayhem')
+}, colorlessBatch1Restore.combat.enemies.length)
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -1847,6 +1980,9 @@ await page.evaluate(() => {
     orbs: [null, null, null, null, null],
     energy: 1,
   })
+  for (const enemy of run.combat.enemies) {
+    if (!enemy.dead) Object.assign(enemy, { hp: 30, maxHp: 30, block: 0, vulnerable: 0 })
+  }
   run.combat.log = []
   debug.setRun(run)
 })
@@ -2858,24 +2994,22 @@ check('a hit is felt, and keeps being felt for the rest of the combat', () => {
 
 // Two blows landing inside the same 380ms window: the class has to CHANGE, or
 // the browser never restarts the animation and the second hit is not felt.
-const beats = await page.evaluate(async () => {
-  const seen = []
+await flinchCount(0)
+await page.evaluate(() => {
+  window.__STS_FLINCHES__ = []
   document.addEventListener('animationstart', (event) => {
-    if (event.animationName.startsWith('struck')) seen.push(event.animationName)
+    if (event.animationName.startsWith('struck')) window.__STS_FLINCHES__.push(event.animationName)
   })
-  for (let i = 0; i < 2; i++) {
-    // Re-read the bridge every time: App rebuilds it on each render, so a
-    // captured reference keeps returning the state it closed over and the
-    // second "hit" would silently write back the hit points already there.
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.combat.players[0].hp -= 1
-    debug.setRun(run)
-    await new Promise((resolve) => setTimeout(resolve, 80))
-  }
-  await new Promise((resolve) => setTimeout(resolve, 120))
-  return { count: seen.length, names: seen }
 })
+for (let i = 0; i < 2; i++) {
+  const before = await page.evaluate(() => window.__STS_FLINCHES__.length)
+  await hurtViewer()
+  await page.waitForFunction((count) => window.__STS_FLINCHES__.length > count, before)
+}
+const beats = await page.evaluate(() => ({
+  count: window.__STS_FLINCHES__.length,
+  names: window.__STS_FLINCHES__,
+}))
 check('two hits in quick succession are both felt', () => {
   // The invariant is that the two flinches use DIFFERENT animations, which is
   // what makes the browser restart the second one. The exact event count is
