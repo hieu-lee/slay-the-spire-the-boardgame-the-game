@@ -600,6 +600,151 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    hand: [
+      { uid: 'online-double-tap', defId: 'double_tap', upgraded: true },
+      { uid: 'online-double-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 3,
+    doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const doubleTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  liveRoom.run.combat.enemies = [
+    { ...doubleTemplate, uid: 'online-double-first', defId: 'cultist', row: 0, isBoss: false,
+      hp: 6, maxHp: 6, block: 0, vulnerable: 1, dead: false },
+    { ...doubleTemplate, uid: 'online-double-second', defId: 'red_louse', row: 1, isBoss: false,
+      hp: 6, maxHp: 6, block: 0, vulnerable: 0, dead: false },
+  ]
+  const publishDoubleTapFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishDoubleTapFixture.ok, 'could not publish the online Double Tap fixture')
+  await a.getByRole('button', { name: /^Double Tap\+,/ }).click()
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByText('Choose an enemy').waitFor()
+  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
+  await b.getByRole('status').filter({ hasText: 'Ann is resolving a Double Tap copy' }).waitFor()
+  const teammateLockedForCopy = await b.locator('.online-mutations').evaluate((table) => table.inert)
+  await a.screenshot({ path: join(outDir, '02b-double-tap-copy-target.png'), fullPage: true })
+  let failedCopyRefreshes = 0
+  const copyFailureStart = failures.length
+  const copyRoomPattern = `**/api/rooms/${code}`
+  await a.route(copyRoomPattern, (route) => {
+    if (route.request().method() === 'GET' && failedCopyRefreshes < 3) {
+      failedCopyRefreshes += 1
+      return route.abort('connectionreset')
+    }
+    return route.continue()
+  })
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
+  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor({ state: 'hidden' })
+  for (let attempt = 0; attempt < 50 && failedCopyRefreshes < 3; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  await a.waitForTimeout(0)
+  const staleUnknownCopyPrompt = await a.getByText('Choose an enemy for Strike Double Tap copy').count()
+  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
+  await a.unroute(copyRoomPattern)
+  const expectedCopyFailures = failures.splice(copyFailureStart)
+  check('an unknown uncommitted Double Tap copy stays locked until an authoritative refresh', () => {
+    assertEqual(failedCopyRefreshes, 3, 'reconciliation refresh failures')
+    assertEqual(expectedCopyFailures.length, 4, 'action plus refresh request failures')
+    assert(expectedCopyFailures.every((failure) => failure.includes('ERR_CONNECTION_RESET')),
+      `unexpected failure: ${expectedCopyFailures.join('; ')}`)
+    assertEqual(staleUnknownCopyPrompt, 0, 'copy prompt before authoritative refresh')
+    assertEqual(liveRoom.run.combat.pendingCardCopy?.card.uid, 'online-double-strike', 'authoritative copy')
+  })
+  let submittedCopy
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedCopy = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.phase !== 'player'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('online Double Tap locks teammates and submits the copy target authoritatively', () => {
+    assert(teammateLockedForCopy)
+    assertEqual(submittedCopy.kind, 'playCardCopy')
+    assertEqual(submittedCopy.enemyUid, 'online-double-second')
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [4, 5])
+    assertEqual(liveRoom.run.combat.players.find((player) => player.name === 'Ann').attacksPlayedThisTurn, 2)
+  })
+  await a.screenshot({ path: join(outDir, '02c-double-tap-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [
+      { uid: 'online-copy-preview-tap', defId: 'double_tap', upgraded: true },
+      { uid: 'online-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },
+      { uid: 'online-copy-preview-held', defId: 'bash', upgraded: false },
+    ],
+    draw: [
+      { uid: 'online-copy-preview-first', defId: 'neutralize', upgraded: false },
+      { uid: 'online-copy-preview-second', defId: 'survivor', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 3, doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, vulnerable: 0, dead: false })
+  }
+  const publishCopyPreviewFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishCopyPreviewFixture.ok, 'could not publish the copied Dagger Throw fixture')
+  await a.getByRole('button', { name: /^Double Tap\+,/ }).click()
+  await a.getByRole('button', { name: /^Dagger Throw,/ }).click()
+  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  const firstCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
+  await firstCopyDiscard.getByRole('button', { name: /^Neutralize,/ }).click()
+  await firstCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
+  await a.getByText('Choose an enemy for Dagger Throw Double Tap copy').waitFor()
+  await a.getByRole('button', { name: /^Red Louse,/ }).click()
+  const repeatedCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
+  await repeatedCopyDiscard.getByRole('button', { name: /^Survivor,/ }).click()
+  let copiedDaggerRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = route.request().postDataJSON()
+    body.action.discardUids = ['not-in-the-copy-preview']
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    copiedDaggerRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await repeatedCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
+  for (let attempt = 0; attempt < 50 && copiedDaggerRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(copiedDaggerRefusalStatus, 409, 'the forged copied Dagger Throw did not reach refusal')
+  await repeatedCopyDiscard.getByText(/^0\/1 selected/).waitFor()
+  const recoveredCopyPreview = await snapshot(a)
+  await repeatedCopyDiscard.getByRole('button', { name: /^Survivor,/ }).click()
+  await repeatedCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
+  await repeatedCopyDiscard.waitFor({ state: 'hidden' })
+  const copiedDaggerConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(copiedDaggerConflict >= 0, 'the refused copied Dagger Throw did not surface as an HTTP conflict')
+  failures.splice(copiedDaggerConflict, 1)
+  check('a refused copied Dagger Throw restores its private copy preview', () => {
+    assertEqual(recoveredCopyPreview.cardPreview?.copy, true)
+    assertDeepEqual(recoveredCopyPreview.cardPreview?.cards.map((card) => card.uid),
+      ['online-copy-preview-held', 'online-copy-preview-second'])
+    assertEqual(liveRoom.run.combat.phase, 'player')
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [8, 8])
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [{ uid: 'online-headbutt', defId: 'headbutt', upgraded: true }],
     powers: [],
     discard: [

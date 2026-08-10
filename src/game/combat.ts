@@ -33,6 +33,7 @@ export type CombatPhase =
   /** Reset, draw, and roll are done; ordered Start-of-Turn abilities remain. */
   | 'start'
   | 'player'
+  | 'copy'
   | 'discard'
   | 'enemy'
   /** The Enemy Turn is done and the next Start of Turn has not been taken. */
@@ -63,6 +64,16 @@ export type CombatState = {
       /** Havoc cards waiting for their immediately-played child to finish. */
       deferredHavocs?: { card: CardInstance; exhaust: boolean }[]
     }
+  }
+  /** A Double Tap copy that must finish before any other combat action. */
+  pendingCardCopy?: {
+    playerId: string
+    card: CardInstance
+    energySpent: number
+    resumePhase: 'start' | 'player'
+    forcedExhaust: boolean
+    forcedChoices: StartTurnChoice[] | null
+    deferredHavocs: { card: CardInstance; exhaust: boolean }[]
   }
   log: string[]
 }
@@ -414,6 +425,46 @@ function invalidPlayChoice(context: PlayContext): boolean {
   return Boolean(context.shortfall || context.invalidShivTarget || context.invalidEvokeTarget ||
     context.invalidScryChoice || context.invalidDiscardChoice || context.invalidExhaustChoice ||
     context.invalidTopdeckChoice || context.invalidRecoverChoice)
+}
+
+function resolutionContext(
+  context: PlayContext,
+  def: CardDef,
+  held: CardInstance,
+  energySpent: number,
+): PlayContext {
+  return {
+    ...context,
+    enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
+    playerIds: context.playerIds ? [...context.playerIds] : undefined,
+    topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
+    shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
+    evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
+    evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
+    spentUids: new Set<string>(),
+    shortfall: false,
+    shivTargetIndex: 0,
+    invalidShivTarget: false,
+    evokeIndex: 0,
+    invalidEvokeTarget: false,
+    invalidScryChoice: false,
+    invalidDiscardChoice: false,
+    invalidExhaustChoice: false,
+    invalidTopdeckChoice: false,
+    invalidRecoverChoice: false,
+    discardedByCard: 0,
+    exhaustedByCard: 0,
+    pendingDiscards: [],
+    pendingPoisonTriggers: [],
+    pendingEnemyTokenTriggers: [],
+    pendingExhaustTriggers: [],
+    drewSkill: false,
+    sourceRetainedLastTurn: held.retainedLastTurn === true,
+    sourceCardType: def.type,
+    sourceCardId: def.id,
+    energySpent,
+    sourceAttackCounted: false,
+  }
 }
 
 export function overflowShivCount(state: { players: readonly { shivs: number }[] }, amount: number): number {
@@ -885,6 +936,11 @@ function applyEffect(
     case 'discountNextCard': {
       actor.freeCardsThisTurn = (actor.freeCardsThisTurn ?? 0) + 1
       note(`${actor.name}'s next card costs 0 this turn`)
+      return
+    }
+    case 'doubleNextAttack': {
+      actor.doubledAttacksThisTurn = (actor.doubledAttacksThisTurn ?? 0) + 1
+      note(`${actor.name}'s next Attack will be played twice`)
       return
     }
     case 'limitRoundHpLoss': {
@@ -1821,6 +1877,91 @@ function finishDeferredHavocs(
   }
 }
 
+function cardResolutionChoicesAreValid(
+  state: CombatState,
+  player: Player,
+  def: CardDef,
+  effects: readonly Effect[],
+  context: PlayContext,
+  energySpent: number,
+): boolean {
+  const mandatoryShivs = cardShivChoiceCount(def, player, context.mode)
+  const discarded = context.discardUids?.length ?? 0
+  const gainedShivs = effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
+    ? effect.amount
+    : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0), 0)
+  const shivChoices = context.shivEnemyUids ?? []
+  if (shivChoices.length < mandatoryShivs ||
+    shivChoices.length > mandatoryShivs + overflowShivCount(state, gainedShivs) ||
+    shivChoices.some((uid, index) => (index < mandatoryShivs && uid === null) ||
+      (uid !== null && !livingEnemies(state).some((enemy) => enemy.uid === uid)))) return false
+
+  const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
+  if (enemyChoiceCount > 0 && (
+    context.enemyUids?.length !== enemyChoiceCount ||
+    context.enemyUids.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
+  )) return false
+  const playerChoiceCount = cardPlayerChoiceCount(def, context.mode)
+  if (playerChoiceCount > 0 && (
+    context.playerIds?.length !== playerChoiceCount ||
+    context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
+  )) return false
+
+  const recover = effects.find((effect) => effect.kind === 'recoverDiscard')
+  if (recover) {
+    const required = Math.min(recover.amount, player.discard.length)
+    const chosen = context.recoverDiscardUid
+    if ((required === 1 && (!chosen || !player.discard.some((card) => card.uid === chosen))) ||
+      (required === 0 && chosen !== undefined)) return false
+  }
+  const exhume = effects.find((effect) => effect.kind === 'recoverExhaust')
+  if (exhume) {
+    const required = Math.min(exhume.amount, player.exhaust.length)
+    const chosen = context.recoverExhaustUid
+    if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
+      (required === 0 && chosen !== undefined)) return false
+  }
+
+  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode)
+  if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return false
+  if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return false
+  if (context.evokeEnemyUids) {
+    if (!context.evokeSlots || context.evokeEnemyUids.length !== plan.chosen.length) return false
+    for (let index = 0; index < plan.chosen.length; index++) {
+      const target = context.evokeEnemyUids[index]
+      if (plan.chosen[index] === 'frost') {
+        if (target !== null) return false
+      } else if (typeof target !== 'string' || !livingEnemies(state).some((enemy) => enemy.uid === target)) {
+        return false
+      }
+    }
+  }
+  return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids, energySpent) &&
+    !hasInvalidChosenPlayer(state, def, context.playerId) &&
+    !hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)
+}
+
+function cleanupPlayedCard(
+  state: CombatState,
+  actor: Player,
+  held: CardInstance,
+  def: CardDef,
+  context: PlayContext,
+  forcedExhaust = false,
+): void {
+  const played = forgetRetain(held)
+  if (def.exhaust || forcedExhaust ||
+    (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
+    exhaustCards(state, actor, [played], context)
+  } else if (def.type === 'power') {
+    actor.powers = [...actor.powers, played]
+  } else if (def.toDrawTop) {
+    actor.draw = addToDrawTop(actor, [played]).draw
+  } else {
+    actor.discard = [...actor.discard, played]
+  }
+}
+
 /**
  * Plays a card from a player's hand. Returns the same state reference when the
  * play is illegal: not that player's card, not enough energy, wrong phase.
@@ -1848,39 +1989,6 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
-  const mandatoryShivs = cardShivChoiceCount(def, player, context.mode)
-  const discarded = context.discardUids?.length ?? 0
-  const gainedShivs = effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
-    ? effect.amount
-    : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0), 0)
-  const maxShivChoices = mandatoryShivs + overflowShivCount(state, gainedShivs)
-  const shivChoices = context.shivEnemyUids ?? []
-  if (shivChoices.length < mandatoryShivs || shivChoices.length > maxShivChoices ||
-    shivChoices.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return state
-  const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
-  if (enemyChoiceCount > 0 && (
-    context.enemyUids?.length !== enemyChoiceCount ||
-    context.enemyUids.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
-  )) return state
-  const playerChoiceCount = cardPlayerChoiceCount(def, context.mode)
-  if (playerChoiceCount > 0 && (
-    context.playerIds?.length !== playerChoiceCount ||
-    context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
-  )) return state
-  const recover = effects.find((effect) => effect.kind === 'recoverDiscard')
-  if (recover) {
-    const required = Math.min(recover.amount, player.discard.length)
-    const chosen = context.recoverDiscardUid
-    if ((required === 1 && (!chosen || !player.discard.some((card) => card.uid === chosen))) ||
-      (required === 0 && chosen !== undefined)) return state
-  }
-  const exhume = effects.find((effect) => effect.kind === 'recoverExhaust')
-  if (exhume) {
-    const required = Math.min(exhume.amount, player.exhaust.length)
-    const chosen = context.recoverExhaustUid
-    if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
-      (required === 0 && chosen !== undefined)) return state
-  }
   const printedCost = forcedPlay ? 0 : playCost(def, player)
   const xCost = printedCost === 'X'
   if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < 0 ||
@@ -1893,31 +2001,9 @@ export function playCard(
     player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
   )) return state
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
-  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode)
-  if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return state
-  if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return state
-  if (context.evokeEnemyUids) {
-    if (!context.evokeSlots || context.evokeEnemyUids.length !== plan.chosen.length) return state
-    for (let index = 0; index < plan.chosen.length; index++) {
-      const target = context.evokeEnemyUids[index]
-      if (plan.chosen[index] === 'frost') {
-        if (target !== null) return state
-      } else if (typeof target !== 'string' || !livingEnemies(state).some((enemy) => enemy.uid === target)) {
-        return state
-      }
-    }
-  }
-  // A card that must pick an enemy but was given none would otherwise spend the
-  // Energy, discard itself and do nothing. The UI never allows it, but the room
-  // server hands this function messages straight off the network, so the check
-  // belongs here rather than in the client.
-  if (needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids,
-    xCost ? cost : 0)) return state
-  // A co-op target can die or disconnect after the client stages the card.
-  // Refuse the stale command instead of silently redirecting its support
-  // effect to the caster.
-  if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
-  if (hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)) return state
+  // Choices are checked together at the trust boundary. The same validator is
+  // reused when Double Tap resolves its separately targeted copy.
+  if (!cardResolutionChoicesAreValid(state, player, def, effects, context, xCost ? cost : 0)) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   // The player was just found in `state`, so a clone must contain them too.
@@ -1952,38 +2038,7 @@ export function playCard(
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
   // would be a mutation from a function that is otherwise pure.
-  const ctx: PlayContext = {
-    ...context,
-    enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
-    playerIds: context.playerIds ? [...context.playerIds] : undefined,
-    topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
-    shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
-    evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
-    evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
-    spentUids: new Set<string>(),
-    shortfall: false,
-    shivTargetIndex: 0,
-    invalidShivTarget: false,
-    evokeIndex: 0,
-    invalidEvokeTarget: false,
-    invalidScryChoice: false,
-    invalidDiscardChoice: false,
-    invalidExhaustChoice: false,
-    invalidTopdeckChoice: false,
-    invalidRecoverChoice: false,
-    discardedByCard: 0,
-    exhaustedByCard: 0,
-    pendingDiscards: [],
-    pendingPoisonTriggers: [],
-    pendingEnemyTokenTriggers: [],
-    pendingExhaustTriggers: [],
-    drewSkill: false,
-    sourceRetainedLastTurn: held.retainedLastTurn === true,
-    sourceCardType: def.type,
-    sourceCardId: def.id,
-    energySpent: xCost ? cost : 0,
-    sourceAttackCounted: false,
-  }
+  const ctx = resolutionContext(context, def, held, xCost ? cost : 0)
   if (resolvesOnPlay) {
     for (const effect of effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
@@ -2023,17 +2078,9 @@ export function playCard(
     if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   }
 
-  const played = forgetRetain(held)
-  if (def.exhaust || (forcedPlay && forced.exhaustNonPower && def.type !== 'power') ||
-    (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
-    exhaustCards(next, actor, [played], ctx)
-  } else if (def.type === 'power') {
-    actor.powers = [...actor.powers, played]
-  } else if (def.toDrawTop) {
-    actor.draw = addToDrawTop(actor, [played]).draw
-  } else {
-    actor.discard = [...actor.discard, played]
-  }
+  const doubled = def.type === 'attack' && (actor.doubledAttacksThisTurn ?? 0) > 0
+  if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
+    forcedPlay && forced.exhaustNonPower && def.type !== 'power')
 
   for (const pending of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pending.playerId)
@@ -2058,7 +2105,8 @@ export function playCard(
   }
 
   // "Abilities triggered by a card do not take effect until the card has
-  // finished resolving all of its text" (p.12) — so this fires after cleanup.
+  // finished resolving all of its text" (p.12). A doubled card stays outside
+  // every pile until its copy finishes, so only that exceptional cleanup waits.
   // `held.uid` is excluded: a Power that reacts to cards being played was not
   // in front of you when THIS card was played, so it does not see it.
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
@@ -2066,8 +2114,152 @@ export function playCard(
 
   if (def.type === 'skill') resolveEnraged(next, actor)
 
+  if (doubled) {
+    actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
+    next.pendingCardCopy = {
+      playerId: actor.id,
+      card: { ...held },
+      energySpent: xCost ? cost : 0,
+      resumePhase: state.phase === 'start' ? 'start' : 'player',
+      forcedExhaust: forcedPlay && forced.exhaustNonPower && def.type !== 'power',
+      forcedChoices,
+      deferredHavocs: [...(forced?.deferredHavocs ?? [])],
+    }
+    next.phase = 'copy'
+    next.log = [...next.log, `${actor.name}'s Double Tap will play ${def.name} again`]
+    return settle(next)
+  }
+
   finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
   return finishForcedCardPlay(settle(next), forcedChoices)
+}
+
+/** Resolves the separately targeted virtual card created by Double Tap. */
+export function playCardCopy(
+  state: CombatState,
+  playerId: string,
+  context: PlayContext = { enemyUid: null, playerId: null },
+): CombatState {
+  const pending = state.pendingCardCopy
+  if (state.phase !== 'copy' || !pending || pending.playerId !== playerId) return state
+  const player = findPlayer(state, playerId)
+  if (!player || player.dead) return state
+  const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
+  if (def.type !== 'attack') return state
+  if (def.modes) {
+    if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
+  } else if (context.mode !== undefined) return state
+  const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  if (!cardResolutionChoicesAreValid(state, player, def, effects, context, pending.energySpent)) return state
+
+  const next = clone(state)
+  const copy = next.pendingCardCopy!
+  const actor = findPlayer(next, playerId)!
+  const ctx = resolutionContext(context, def, copy.card, copy.energySpent)
+  next.log = [...next.log, `${actor.name} played ${def.name} again (Double Tap)`]
+
+  for (const effect of effects) {
+    applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', ctx)
+    if (invalidPlayChoice(ctx)) return state
+    if (combatIsOver(next)) {
+      delete next.pendingCardCopy
+      return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+  }
+  if (invalidPlayChoice(ctx)) return state
+
+  for (const pendingDiscard of ctx.pendingDiscards ?? []) {
+    const owner = findPlayer(next, pendingDiscard.playerId)
+    if (owner) resolveDiscardReactions(next, owner, pendingDiscard.cards)
+    if (combatIsOver(next)) {
+      delete next.pendingCardCopy
+      return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+  }
+  cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
+    const owner = findPlayer(next, pendingExhaust.playerId)
+    if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
+    if (combatIsOver(next)) {
+      delete next.pendingCardCopy
+      return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+  }
+  for (const ownerId of ctx.pendingPoisonTriggers ?? []) {
+    const owner = findPlayer(next, ownerId)
+    if (owner) fireTriggers(next, { kind: 'onApplyPoison' }, owner)
+    if (combatIsOver(next)) {
+      delete next.pendingCardCopy
+      return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+  }
+  for (const pendingToken of ctx.pendingEnemyTokenTriggers ?? []) {
+    const owner = findPlayer(next, pendingToken.playerId)
+    if (owner) fireTriggers(next, { kind: 'onPutEnemyToken', enemyUid: pendingToken.enemyUid }, owner)
+    if (combatIsOver(next)) {
+      delete next.pendingCardCopy
+      return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+  }
+
+  if (!ctx.sourceAttackCounted) actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+  fireTriggers(next, { kind: 'onPlayCard', cardType: 'attack' }, actor, copy.card.uid)
+  delete next.pendingCardCopy
+  if (combatIsOver(next)) return finishForcedCardPlay(settle(next), copy.forcedChoices)
+  next.phase = copy.resumePhase
+  finishDeferredHavocs(next, actor, copy.deferredHavocs)
+  return finishForcedCardPlay(settle(next), copy.forcedChoices)
+}
+
+/** Releases a disconnected owner without letting the rest of the party deadlock. */
+export function abandonCardCopy(state: CombatState, playerId: string): CombatState {
+  const pending = state.pendingCardCopy
+  if (state.phase !== 'copy' || !pending || pending.playerId !== playerId) return state
+  const next = clone(state)
+  const copy = next.pendingCardCopy!
+  const actor = findPlayer(next, playerId)
+  if (!actor) return state
+  delete next.pendingCardCopy
+  next.phase = copy.resumePhase
+  const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
+  const ctx = resolutionContext({ enemyUid: null, playerId }, def, copy.card, copy.energySpent)
+  cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
+    const owner = findPlayer(next, pendingExhaust.playerId)
+    if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
+  }
+  next.log = [...next.log, `${actor.name}'s Double Tap copy was skipped after disconnecting`]
+  finishDeferredHavocs(next, actor, copy.deferredHavocs)
+  return finishForcedCardPlay(settle(next), copy.forcedChoices)
+}
+
+/** Privately previews a copied card's post-draw or Scry choice. */
+export function previewCardCopyChoice(state: CombatState, playerId: string): CardChoicePreview | null {
+  const pending = state.pendingCardCopy
+  const player = findPlayer(state, playerId)
+  if (state.phase !== 'copy' || !pending || pending.playerId !== playerId || !player || player.dead) return null
+  const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
+  if (!cardNeedsChoicePreview(def, state, player)) return null
+
+  const preview = clone(state)
+  const actor = findPlayer(preview, playerId)!
+  let drew = false
+  for (const effect of def.effects) {
+    if (!effectIsActive(effect, preview, actor)) continue
+    if (effect.kind === 'draw') {
+      drawInto(preview, actor, amountOf(effect.amount, preview, actor, undefined, {
+        enemyUid: null, playerId, energySpent: pending.energySpent,
+      }))
+      drew = true
+    } else if (effect.kind === 'scry') {
+      return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+    } else if (drew && effect.kind === 'discard') {
+      return { kind: 'discard', cards: actor.hand }
+    } else if (drew && effect.kind === 'topdeck') {
+      return { kind: 'topdeck', cards: actor.hand }
+    }
+  }
+  return null
 }
 
 export type PowerContext = { enemyUid?: string | null; enemyRow?: number | null }
@@ -2161,6 +2353,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.hpLostThisRound = 0
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
+    player.doubledAttacksThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
   for (const player of next.players) {
@@ -3056,6 +3249,7 @@ export function createCombat(
       hpLostThisRound: 0,
       hpLossLimitThisRound: undefined,
       freeCardsThisTurn: 0,
+      doubledAttacksThisTurn: 0,
       attacksPlayedThisTurn: 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,

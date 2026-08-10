@@ -4091,4 +4091,96 @@ check('online Evolve resolves chained Status draws without revealing the new han
     'Evolve leaked the owner hand through the teammate snapshot')
 })
 
+check('online Double Tap locks the room until its owner separately targets the copy', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [
+    { uid: 'room-double-tap', defId: 'double_tap', upgraded: true },
+    { uid: 'room-double-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.energy = 3
+  const [first, second] = room.run.combat.enemies.filter((enemy) => !enemy.dead).slice(0, 2)
+  first.vulnerable = 1
+
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-double-tap', preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-double-strike', enemyUid: first.uid, preflight: true,
+  })
+  const waiting = snapshotFor(room, b.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertEqual(waiting.pendingCardCopy.playerId, a.playerId)
+  assertEqual(waiting.pendingCardCopy.card.defId, 'strike_ironclad')
+  assertEqual(waiting.enemies.find((enemy) => enemy.uid === first.uid).vulnerable, 0)
+
+  let bypassed = null
+  try {
+    apply(room, b.token, { kind: 'spendShiv', enemyUid: second.uid })
+  } catch (error) {
+    bypassed = error
+  }
+  assertEqual(bypassed?.name, 'RoomError', 'another seat acted before the copy finished')
+
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: 'room-double-strike', enemyUid: second.uid, preflight: true,
+  })
+  const resolved = snapshotFor(room, b.token).run.combat
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.pendingCardCopy, undefined)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).attacksPlayedThisTurn, 2)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).doubledAttacksThisTurn, 0)
+})
+
+check('disconnecting the Double Tap owner releases the shared room lock', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [{ uid: 'room-abandoned-copy', defId: 'strike_ironclad', upgraded: false }]
+  actor.doubledAttacksThisTurn = 1
+  actor.energy = 3
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-abandoned-copy', enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'copy')
+  markDisconnected(room, a.token)
+  const released = snapshotFor(room, b.token).run.combat
+  assertEqual(released.phase, 'player')
+  assertEqual(released.pendingCardCopy, undefined)
+  assert(released.log.some((line) => line.includes('Double Tap copy was skipped after disconnecting')))
+})
+
+check('a Double Tap copy reveals its post-draw choice only to its owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [
+    { uid: 'room-copy-preview-tap', defId: 'double_tap', upgraded: true },
+    { uid: 'room-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },
+  ]
+  actor.draw = [
+    { uid: 'room-copy-preview-first', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'room-copy-preview-secret', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.energy = 3
+  const [first, second] = room.run.combat.enemies.filter((enemy) => !enemy.dead).slice(0, 2)
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-copy-preview-tap', preflight: true })
+  apply(room, a.token, {
+    kind: 'previewCard', cardUid: 'room-copy-preview-dagger', enemyUid: first.uid,
+  })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-copy-preview-dagger', enemyUid: first.uid,
+    discardUids: ['room-copy-preview-first'], preflight: true,
+  })
+  const previewed = apply(room, a.token, {
+    kind: 'previewCardCopy', cardUid: 'room-copy-preview-dagger', enemyUid: second.uid,
+  }).snapshot
+  assertEqual(previewed.cardPreview.copy, true)
+  assertDeepEqual(previewed.cardPreview.cards.map((card) => card.uid), ['room-copy-preview-secret'])
+  assert(!allStrings(snapshotFor(room, b.token)).includes('room-copy-preview-secret'),
+    'the copied card preview leaked to a teammate')
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: 'room-copy-preview-dagger', enemyUid: second.uid,
+    discardUids: ['room-copy-preview-secret'], preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+})
+
 report('co-op rooms')

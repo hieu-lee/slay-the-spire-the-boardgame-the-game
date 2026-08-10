@@ -11,9 +11,11 @@ import {
   enemyTurn,
   livingEnemies,
   playCard,
+  playCardCopy,
   playCost,
   preparePlayerTurn,
   previewCardChoice,
+  previewCardCopyChoice,
   resolveEnemyTargets,
   resolveStartPlayerTurn,
   spendMiracle,
@@ -2207,6 +2209,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'havoc', hand: [1, 1] },
     { id: 'combust', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'evolve', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'double_tap', energy: [E - 1, E] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'headbutt', enemyHp: [18, 17] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
@@ -5233,6 +5236,133 @@ check('Combust can choose an empty player row, but pauses for a forced card', ()
   }
   assertEqual(activatePower(forced, 'p1', power.uid, { enemyRow: 0 }), forced,
     'Combust bypassed the unresolved forced card')
+})
+
+check('Double Tap plays the next Attack twice with separate targets and modifiers', () => {
+  const doubleTap = instance('double_tap')
+  const strike = instance('strike_ironclad')
+  const state = combat(
+    [makePlayer({ hand: [doubleTap, strike] })],
+    [
+      makeEnemy({ uid: 'first', hp: 6, maxHp: 6, vulnerable: 1 }),
+      makeEnemy({ uid: 'second', hp: 6, maxHp: 6, row: 1 }),
+    ],
+  )
+  const primed = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(primed.players[0].doubledAttacksThisTurn, 1)
+  assertEqual(primed.players[0].energy, 2)
+
+  const first = playCard(primed, 'p1', strike.uid, { enemyUid: 'first', playerId: 'p1' })
+  assertEqual(first.phase, 'copy')
+  assertEqual(first.enemies[0].hp, 4, 'the first play separately spent Vulnerable')
+  assertEqual(first.enemies[0].vulnerable, 0)
+  assertEqual(first.enemies[1].hp, 6)
+  assertEqual(first.players[0].attacksPlayedThisTurn, 1)
+  assertEqual(first.players[0].doubledAttacksThisTurn, 0)
+  assert(playCard(first, 'p1', doubleTap.uid, { enemyUid: null, playerId: 'p1' }) === first,
+    'another card bypassed the unresolved copy')
+  assert(playCardCopy(first, 'p1', { enemyUid: null, playerId: 'p1' }) === first,
+    'a targetless copied Strike was accepted')
+
+  const copied = playCardCopy(first, 'p1', { enemyUid: 'second', playerId: 'p1' })
+  assertEqual(copied.phase, 'player')
+  assertEqual(copied.enemies[0].hp, 4)
+  assertEqual(copied.enemies[1].hp, 5, 'the copy used its own target')
+  assertEqual(copied.players[0].attacksPlayedThisTurn, 2)
+  assertEqual(copied.players[0].energy, 1, 'the virtual copy costs no extra Energy')
+  assertEqual(copied.players[0].discard.filter((card) => card.uid === strike.uid).length, 1,
+    'the physical Attack is cleaned up exactly once')
+})
+
+check('Double Tap copies pay their own card-effect choices from the current hand', () => {
+  const doubleTap = instance('double_tap', true)
+  const rampage = instance('rampage', true)
+  const firstCost = instance('strike_ironclad')
+  const secondCost = instance('defend_ironclad')
+  const state = combat(
+    [makePlayer({ hand: [doubleTap, rampage, firstCost, secondCost] })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  const primed = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: 'p1' })
+  const first = playCard(primed, 'p1', rampage.uid, {
+    enemyUid: 'e1', playerId: 'p1', exhaustUids: [firstCost.uid],
+  })
+  assertEqual(first.phase, 'copy')
+  assertDeepEqual(first.players[0].hand.map((card) => card.uid), [secondCost.uid])
+  assert(playCardCopy(first, 'p1', {
+    enemyUid: 'e1', playerId: 'p1', exhaustUids: [firstCost.uid],
+  }) === first, 'the copy reused a card already Exhausted by the first play')
+  const copied = playCardCopy(first, 'p1', {
+    enemyUid: 'e1', playerId: 'p1', exhaustUids: [secondCost.uid],
+  })
+  assertEqual(copied.enemies[0].hp, 7,
+    'the copy recounts the Exhaust pile after paying its own second cost')
+  assertDeepEqual(copied.players[0].exhaust.map((card) => card.uid), [firstCost.uid, secondCost.uid])
+  assertEqual(copied.players[0].energy, 2, 'Double Tap+ itself was free and Rampage paid once')
+})
+
+check('multiple Double Taps copy multiple subsequent Attacks, never one Attack more than twice', () => {
+  const taps = [instance('double_tap', true), instance('double_tap', true)]
+  const strikes = [instance('strike_ironclad'), instance('strike_ironclad')]
+  let state = combat([makePlayer({ hand: [...taps, ...strikes] })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', taps[0].uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', taps[1].uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].doubledAttacksThisTurn, 2)
+  for (const strike of strikes) {
+    state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: 'p1' })
+    assertEqual(state.phase, 'copy')
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: 'p1' })
+  }
+  assertEqual(state.enemies[0].hp, 6)
+  assertEqual(state.players[0].attacksPlayedThisTurn, 4)
+  assertEqual(state.players[0].doubledAttacksThisTurn, 0)
+})
+
+check('a copied Attack gets a fresh private post-draw choice without advancing the preview', () => {
+  const doubleTap = instance('double_tap', true)
+  const dagger = instance('dagger_throw')
+  const firstDraw = instance('defend_silent')
+  const secondDraw = instance('strike_silent')
+  let state = combat([
+    makePlayer({ character: 'silent', hand: [doubleTap, dagger], draw: [firstDraw, secondDraw] }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: 'p1' })
+  const firstPreview = previewCardChoice(state, 'p1', dagger.uid)
+  assertDeepEqual(firstPreview.cards.map((card) => card.uid), [firstDraw.uid])
+  state = playCard(state, 'p1', dagger.uid, {
+    enemyUid: 'e1', playerId: 'p1', discardUids: [firstDraw.uid],
+  })
+  const before = structuredClone(state)
+  const copyPreview = previewCardCopyChoice(state, 'p1')
+  assertDeepEqual(copyPreview.cards.map((card) => card.uid), [secondDraw.uid])
+  assertDeepEqual(state, before, 'previewing the copied draw changed the authoritative state')
+  state = playCardCopy(state, 'p1', {
+    enemyUid: 'e1', playerId: 'p1', discardUids: [secondDraw.uid],
+  })
+  assertEqual(state.enemies[0].hp, 6)
+  assertEqual(state.phase, 'player')
+})
+
+check('the physical Attack stays outside every pile until its Double Tap copy finishes', () => {
+  const doubleTap = instance('double_tap', true)
+  const headbutt = instance('headbutt')
+  const recovered = instance('defend_ironclad')
+  let state = combat([
+    makePlayer({ hand: [doubleTap, headbutt], discard: [recovered] }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', headbutt.uid, {
+    enemyUid: 'e1', playerId: 'p1', recoverDiscardUid: recovered.uid,
+  })
+  assertEqual(state.phase, 'copy')
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [doubleTap.uid],
+    'the copy could illegally recover the still-resolving Headbutt')
+  assertEqual(state.players[0].draw.at(-1).uid, recovered.uid)
+  state = playCardCopy(state, 'p1', {
+    enemyUid: 'e1', playerId: 'p1', recoverDiscardUid: doubleTap.uid,
+  })
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [headbutt.uid])
+  assertEqual(state.enemies[0].hp, 6)
 })
 
 report('combat')

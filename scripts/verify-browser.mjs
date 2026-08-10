@@ -5393,6 +5393,131 @@ check('Evolve chains once for each drawn Status through the real controls', () =
 })
 await shot('16d-evolve-resolved')
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-double-tap', defId: 'double_tap', upgraded: true },
+      { uid: 'ui-double-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 3,
+    doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  run.combat.enemies = [
+    { ...source, uid: 'double-first', defId: 'cultist', row: 0, hp: 6, maxHp: 6,
+      block: 0, vulnerable: 1, dead: false, isBoss: false },
+    { ...source, uid: 'double-second', defId: 'red_louse', row: 1, hp: 6, maxHp: 6,
+      block: 0, vulnerable: 0, dead: false, isBoss: false },
+  ]
+  run.combat.log = []
+  debug.setRun(run)
+})
+const doubleTapLabel = await page.getByRole('button', { name: /^Double Tap\+,/ }).getAttribute('aria-label')
+check('Double Tap+ announces the separately resolved copy rule', () => {
+  assert(doubleTapLabel.includes('next Attack') && doubleTapLabel.includes('separate targets and modifiers'))
+})
+await page.getByRole('button', { name: /^Double Tap\+,/ }).click()
+const queuedDoubleTapText = await page.locator('.seat__pending').filter({ hasText: 'Double Tap' }).textContent()
+const queuedDoubleTapSeat = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('queued Double Tap count is visible and included in the seat accessible name', () => {
+  assert(queuedDoubleTapText.includes('next 1 Attack played twice'))
+  assert(queuedDoubleTapSeat.includes('Double Tap, next 1 Attack played twice'))
+})
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByText('Choose an enemy').waitFor()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
+await page.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
+await page.locator('.prompt').evaluate((prompt) => Promise.all(
+  prompt.getAnimations().map((animation) => animation.finished),
+))
+await shot('16e-double-tap-copy-target')
+await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const doubleTapResolved = await readState()
+check('Double Tap visibly pauses for and resolves its independently targeted copy', () => {
+  assertDeepEqual(doubleTapResolved.enemies.map((enemy) => enemy.hp), [4, 5])
+  assertEqual(doubleTapResolved.players[0].attacksPlayedThisTurn, 2)
+  assertEqual(doubleTapResolved.players[0].energy, 2)
+  assertEqual(doubleTapResolved.pendingCardCopy, undefined)
+})
+await shot('16f-double-tap-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-double-tap-aoe', defId: 'double_tap', upgraded: true },
+      { uid: 'ui-double-immolate', defId: 'immolate', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], energy: 3,
+    doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, vulnerable: 0, dead: false, abilityUsed: true,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Double Tap\+,/ }).click()
+await page.getByRole('button', { name: /^Immolate,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
+  window.__STS_DEBUG__.getState().players[0].attacksPlayedThisTurn === 2)
+const doubledAoe = await readState()
+check('a Double Tap copy with no choices auto-resolves instead of deadlocking', () => {
+  assertDeepEqual(doubledAoe.enemies.map((enemy) => enemy.hp), [10, 10])
+  assertEqual(doubledAoe.players[0].draw.filter((card) => card.defId === 'daze').length, 4)
+  assertEqual(doubledAoe.players[0].energy, 1)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-double-headbutt-tap', defId: 'double_tap', upgraded: true },
+      { uid: 'ui-double-headbutt', defId: 'headbutt', upgraded: false },
+    ],
+    draw: [],
+    discard: [{ uid: 'ui-double-headbutt-defend', defId: 'defend_ironclad', upgraded: false }],
+    exhaust: [], energy: 3, doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, vulnerable: 0, dead: false,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Double Tap\+,/ }).click()
+await page.getByRole('button', { name: /^Headbutt,/ }).click()
+const firstHeadbuttChoice = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+await firstHeadbuttChoice.getByRole('button', { name: /^Defend,/ }).click()
+await firstHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+const copiedHeadbuttChoice = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+await copiedHeadbuttChoice.waitFor()
+await page.keyboard.press('Escape')
+const copiedHeadbuttCancel = await copiedHeadbuttChoice.getByRole('button', { name: 'Cancel' }).count()
+const copiedHeadbuttPhase = (await readState()).phase
+check('a mandatory copied Headbutt recovery cannot be dismissed', () => {
+  assertEqual(copiedHeadbuttCancel, 0)
+  assertEqual(copiedHeadbuttPhase, 'copy')
+})
+await copiedHeadbuttChoice.getByRole('button', { name: /^Double Tap\+,/ }).click()
+await copiedHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+
 writeFileSync(
   join(outDir, 'summary.json'),
   JSON.stringify(

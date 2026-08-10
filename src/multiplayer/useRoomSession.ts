@@ -45,6 +45,15 @@ export type VisibleCombat = {
       exhaustNonPower: boolean
     }
   }
+  pendingCardCopy?: {
+    playerId: string
+    card: CardInstance
+    energySpent: number
+    resumePhase: 'start' | 'player'
+    forcedExhaust: boolean
+    forcedChoices: StartTurnChoice[] | null
+    deferredHavocs: { card: CardInstance; exhaust: boolean }[]
+  }
   log: string[]
 }
 
@@ -80,6 +89,7 @@ export type RoomSnapshot = {
   discardOrder?: string[]
   cardPreview?: {
     cardUid: string
+    copy?: boolean
     kind: 'discard' | 'scry' | 'topdeck'
     cards: CardInstance[]
     spendMiracle: boolean

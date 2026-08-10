@@ -172,6 +172,8 @@ type EffectKind =
   | { kind: 'preventDraw' }
   /** The next card played this turn costs 0 Energy. */
   | { kind: 'discountNextCard' }
+  /** The next Attack played this turn resolves as two separately targeted cards. */
+  | { kind: 'doubleNextAttack' }
   /** Total HP lost this round cannot exceed this amount. */
   | { kind: 'limitRoundHpLoss'; amount: number }
   /** Permanently improve this combat's starter Strikes and Defends. */
@@ -553,6 +555,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'doubleStrength' }],
     exhaust: true,
     upgrade: { exhaust: false },
+  }),
+  double_tap: card({
+    id: 'double_tap', name: 'Double Tap', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'doubleNextAttack' }],
+    upgrade: { cost: 0 },
   }),
   feed: card({
     id: 'feed', name: 'Feed', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 1,

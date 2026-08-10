@@ -35,9 +35,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 172 of 259 unique character cards are live.
+//   - 173 of 259 unique character cards are live.
 //     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 87 have not been transcribed at
+//     The other 86 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -103,6 +103,7 @@ export { CARDS, STARTER_DECKS, cardCost, cardDef, faceOf } from './cards.ts'
 export type { Amount, CardDef, CardMode, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {
+  abandonCardCopy,
   abandonForcedCard,
   activatePower,
   activatePotion,
@@ -128,9 +129,11 @@ export {
   powerAbilityKey,
   powerAbilityUsed,
   playCard,
+  playCardCopy,
   playCost,
   preparePlayerTurn,
   previewCardChoice,
+  previewCardCopyChoice,
   resolveStartPlayerTurn,
   resolveEnemyTargets,
   spendMiracle,

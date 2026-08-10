@@ -111,6 +111,7 @@ function effectText(effect: Effect): string {
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'doubleNextAttack': return 'your next Attack this turn is played twice, with separate targets and modifiers'
     case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
     case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`

@@ -210,6 +210,7 @@ export function OnlineGame({ onLocal }: Props) {
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
+  const foreignDoubleTap = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const combat = run.combat ? {
@@ -240,7 +241,9 @@ export function OnlineGame({ onLocal }: Props) {
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {foreignCardChoice && cardChoiceSeat?.connected
-        ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving a revealed card…</p>
+        ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
+          foreignDoubleTap ? 'a Double Tap copy' : 'a revealed card'
+        }…</p>
         : null}
       {foreignCardChoice && cardChoiceSeat && !cardChoiceSeat.connected ? (
         <p className="online-banner" role="status">

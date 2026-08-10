@@ -83,6 +83,8 @@ export type Player = {
   hpLossLimitThisRound?: number
   /** Madness makes this many subsequently played cards cost 0 this turn. */
   freeCardsThisTurn?: number
+  /** Double Tap makes this many subsequent Attack cards play twice this turn. */
+  doubledAttacksThisTurn?: number
   attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number

@@ -171,6 +171,7 @@ export function createPlayer(
     hpLostThisRound: 0,
     hpLossLimitThisRound: undefined,
     freeCardsThisTurn: 0,
+    doubledAttacksThisTurn: 0,
     attacksPlayedThisTurn: 0,
     shivs: 0,
     shivDamageBonus: 0,
