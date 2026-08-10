@@ -2153,6 +2153,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'battle_trance', hand: [3, 4] },
     { id: 'rupture', strength: [1, 1] },
     { id: 'whirlwind', enemyHp: [20, 19], energySpent: [0, 0] },
+    { id: 'skewer', enemyHp: [19, 20], energySpent: [0, 0] },
     { id: 'burning_pact', hand: [2, 3] },
     { id: 'sever_soul', enemyHp: [17, 16] },
     { id: 'second_wind', block: [0, 0] },
@@ -2891,6 +2892,37 @@ check('Whirlwind validates X atomically and zero Energy follows each face', () =
   })
   assertEqual(forcedPlay.enemies[0].hp, 9, 'a free Whirlwind+ resolves as X = 0, then adds one hit')
   assertEqual(forcedPlay.players[0].energy, 3)
+})
+
+check('Skewer resolves its two printed X hit formulas against one enemy', () => {
+  for (const upgraded of [false, true]) {
+    const skewer = instance('skewer', upgraded)
+    const state = combat(
+      [makePlayer({ hand: [skewer], energy: 3, strength: 1 })],
+      [makeEnemy({ hp: 10, maxHp: 10, block: 1 })],
+    )
+    const played = playCard(state, 'p1', skewer.uid, {
+      enemyUid: 'e1', playerId: null, energySpent: 2,
+    })
+    assertEqual(played.enemies[0].hp, 5,
+      upgraded ? 'Skewer+ applies Strength to each of two hits' : 'Skewer applies Strength to each of three hits')
+    assertEqual(played.players[0].energy, 1)
+    assertEqual(played.players[0].discard[0].uid, skewer.uid)
+  }
+
+  const base = instance('skewer')
+  const baseState = combat([makePlayer({ hand: [base], energy: 3 })], [makeEnemy()])
+  assert(playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  }) === baseState, 'Skewer at X = 0 still needs a target for its extra hit')
+
+  const upgraded = instance('skewer', true)
+  const upgradedState = combat([makePlayer({ hand: [upgraded], energy: 3 })], [makeEnemy()])
+  const upgradedZero = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(upgradedZero.players[0].energy, 3)
+  assertEqual(upgradedZero.players[0].discard[0].uid, upgraded.uid)
 })
 
 check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {

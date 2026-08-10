@@ -83,10 +83,23 @@ function amountText(amount: Amount, hit = false): string {
   return parts.join(' plus ')
 }
 
+function timesText(times: Amount): string {
+  if (typeof times === 'number') return times === 1 ? 'once' : `${times} times`
+  const parts: string[] = []
+  const count = (amount: number) => amount === 1 ? 'once' : `${amount} times`
+  if (times.base) parts.push(count(times.base))
+  if (times.bonus) parts.push(`${count(times.bonus.plus)} if ${conditionText(times.bonus.when)}`)
+  if (times.per) parts.push(`${count(times.scale ?? 1)} per ${COUNT_LABEL[times.per]}`)
+  if (times.targetTokens) {
+    parts.push(`once per ${times.targetTokens.map((token) => token === 'weak' ? 'Weak' : 'Poison').join(' and ')} on the target`)
+  }
+  return parts.join(' plus ') || '0 times'
+}
+
 function effectText(effect: Effect): string {
   const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
   switch (effect.kind) {
-    case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${amountText(effect.times)} times` : ''}${condition}`
+    case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
     case 'damage': return `deal ${effect.amount} damage${condition}`
     case 'damagePerAttackIntent': return `deal ${effect.amount} damage to each enemy attacking you per Attack icon in its intent${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`

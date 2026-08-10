@@ -1966,7 +1966,7 @@ await whirlwindCard.click()
 await page.getByText('Choose Energy for Whirlwind+').waitFor()
 const whirlwindTargetsBeforeEnergy = await page.locator('.enemy--targeted').count()
 check('Whirlwind+ asks how much Energy to spend before exposing row targets', () => {
-  assert(whirlwindLabel.includes('1 per Energy spent on this card times'), whirlwindLabel)
+  assert(whirlwindLabel.includes('once plus once per Energy spent on this card'), whirlwindLabel)
   assert(whirlwindLabel.includes('hits a whole row and any boss'), whirlwindLabel)
   assertEqual(whirlwindTargetsBeforeEnergy, 0)
 })
@@ -1999,6 +1999,32 @@ check('Whirlwind+ spends only the chosen Energy and hits that row plus the boss 
   assertEqual(whirled.players[0].discard[0].uid, 'ui-whirlwind')
 })
 await shot('06zpu-whirlwind-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-skewer', defId: 'skewer', upgraded: true }],
+    discard: [], draw: [], exhaust: [], energy: 3, strength: 0, weak: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 10, maxHp: 10, block: 1, vulnerable: 0, dead: false,
+  }))
+  debug.setRun(run)
+})
+const skewerCard = page.getByRole('button', { name: /^Skewer\+, cost X,/ })
+const skewerLabel = await skewerCard.getAttribute('aria-label')
+await skewerCard.click()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+const skewered = await readState()
+check('Skewer+ spends chosen X Energy and resolves X separate 2-damage hits', () => {
+  assert(skewerLabel.includes('2 damage once per Energy spent on this card'), skewerLabel)
+  assertEqual(skewered.enemies[0].hp, 7)
+  assertEqual(skewered.players[0].energy, 1)
+})
+await shot('06zpv-skewer-resolved')
 
 for (const freeKind of ['forced', 'discounted']) {
   await page.evaluate(({ baseline, freeKind }) => {

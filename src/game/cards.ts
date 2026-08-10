@@ -1011,6 +1011,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 3 }, { kind: 'discard', amount: 1 }],
     upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'discard', amount: 1 }] },
   }),
+  skewer: card({
+    id: 'skewer', name: 'Skewer', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 'X',
+    effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'energySpent' } }] },
+  }),
 
   ball_lightning: card({
     id: 'ball_lightning',
