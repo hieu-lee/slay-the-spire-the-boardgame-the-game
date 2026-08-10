@@ -1627,6 +1627,40 @@ check('Spot Weakness upgrades its die range and gives Strength to an ally throug
   ])
 })
 await shot('06zv-spot-weakness-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-rage', defId: 'rage', upgraded: false },
+      { uid: 'ui-rage-plus', defId: 'rage', upgraded: true },
+      { uid: 'ui-rage-a', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-rage-b', defId: 'clash', upgraded: false },
+      { uid: 'ui-rage-c', defId: 'body_slam', upgraded: false },
+      { uid: 'ui-rage-skill', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 1, block: 0,
+  })
+  debug.setRun(run)
+})
+const rageCard = page.getByRole('button', { name: /^Rage,/ })
+const ragePlusCard = page.getByRole('button', { name: /^Rage\+,/ })
+await Promise.all([rageCard.waitFor(), ragePlusCard.waitFor()])
+const rageLabel = await rageCard.getAttribute('aria-label')
+const ragePlusLabel = await ragePlusCard.getAttribute('aria-label')
+await shot('06zw-rage-hd-cards')
+await rageCard.click()
+await ragePlusCard.click()
+const raged = await readState()
+check('Rage counts Attacks still in hand and its upgrade costs 0 through real controls', () => {
+  assert(rageLabel.includes('cost 1') && rageLabel.includes('1 per Attack in hand'), rageLabel)
+  assert(ragePlusLabel.includes('cost 0') && ragePlusLabel.includes('1 per Attack in hand'), ragePlusLabel)
+  assertEqual(raged.players[0].block, 6)
+  assertEqual(raged.players[0].energy, 0)
+  assertDeepEqual(raged.players[0].discard.map((card) => card.uid), ['ui-rage', 'ui-rage-plus'])
+})
+await shot('06zx-rage-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

@@ -834,6 +834,19 @@ check('Spot Weakness gives any player Strength on its printed die faces', () => 
   }
 })
 
+check('Rage gains one Block per other Attack in hand and upgrades to cost 0', () => {
+  for (const upgraded of [false, true]) {
+    const rage = instance('rage', upgraded)
+    const state = combat([makePlayer({
+      hand: [rage, instance('strike_ironclad'), instance('clash'), instance('body_slam'), instance('defend_ironclad')],
+      energy: upgraded ? 0 : 1,
+    })], [makeEnemy()])
+    const played = playCard(state, 'p1', rage.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, 3)
+    assertEqual(played.players[0].energy, 0)
+  }
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -2094,6 +2107,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
     { id: 'clash', enemyHp: [17, 16] },
     { id: 'spot_weakness', strength: [1, 1] },
+    { id: 'rage', block: [0, 0], energy: [E - 1, E] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

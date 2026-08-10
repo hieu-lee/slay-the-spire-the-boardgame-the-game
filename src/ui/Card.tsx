@@ -36,6 +36,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   strength: 'Strength',
   cardsInHand: 'other card in hand',
   skillsInHand: 'Skill in hand',
+  attacksInHand: 'Attack in hand',
   attacksPlayedThisTurn: 'other Attack played this turn',
 }
 

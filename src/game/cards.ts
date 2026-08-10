@@ -84,6 +84,7 @@ export type CountOf =
   | 'strength'
   | 'cardsInHand'
   | 'skillsInHand'
+  | 'attacksInHand'
   | 'attacksPlayedThisTurn'
 
 /**
@@ -1081,6 +1082,16 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'gainStrength', amount: 1, toChosen: true, when: { kind: 'dieShows', faces: [1, 2, 3, 4] } }],
     },
+  }),
+  rage: card({
+    id: 'rage',
+    name: 'Rage',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'attacksInHand' } }],
+    upgrade: { cost: 0 },
   }),
   heavy_blade: card({
     id: 'heavy_blade',

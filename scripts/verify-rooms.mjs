@@ -1537,6 +1537,27 @@ check('Spot Weakness applies its upgraded die face to an ally through room autho
   assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [spot.uid])
 })
 
+check('Rage counts only its owner\'s Attacks through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const rage = { uid: 'room-rage', defId: 'rage', upgraded: true }
+  Object.assign(actor, {
+    hand: [
+      rage,
+      { uid: 'room-rage-a', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'room-rage-b', defId: 'clash', upgraded: false },
+      { uid: 'room-rage-skill', defId: 'defend_ironclad', upgraded: false },
+    ],
+    energy: 0, block: 0,
+  })
+  ally.hand = [{ uid: 'room-rage-ally-attack', defId: 'strike_silent', upgraded: false }]
+  apply(room, a.token, { kind: 'playCard', cardUid: rage.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 2)
+  assertEqual(resolved.energy, 0)
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

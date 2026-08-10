@@ -461,6 +461,8 @@ function countOf(count: CountOf, actor: CountablePlayer): number {
       return actor.hand?.length ?? 0
     case 'skillsInHand':
       return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
+    case 'attacksInHand':
+      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'attack').length ?? 0
     case 'attacksPlayedThisTurn':
       return actor.attacksPlayedThisTurn ?? 0
   }
