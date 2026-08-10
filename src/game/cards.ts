@@ -640,6 +640,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 3 }, { kind: 'preventDraw' }],
     upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'preventDraw' }] },
   }),
+  rupture: card({
+    id: 'rupture', name: 'Rupture', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'loseOwnHp', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
 
   bash: card({
     id: 'bash',

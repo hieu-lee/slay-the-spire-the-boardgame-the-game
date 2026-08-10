@@ -2148,6 +2148,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
     { id: 'riddle_with_holes', shivs: [4, 5] },
     { id: 'battle_trance', hand: [3, 4] },
+    { id: 'rupture', strength: [1, 1] },
     { id: 'burning_pact', hand: [2, 3] },
     { id: 'sever_soul', enemyHp: [17, 16] },
     { id: 'second_wind', block: [0, 0] },
@@ -2792,6 +2793,26 @@ check('Offering pays HP before its Energy and draw, and Exhausts both faces', ()
   assertEqual(lost.players[0].hand.length, 0, 'cards were drawn after the fatal clause')
   assertDeepEqual(lost.players[0].draw.map((card) => card.uid), deck.map((card) => card.uid))
   assertEqual(lost.players[0].exhaust.length, 0, 'Offering Exhausted after combat had already ended')
+})
+
+check('Rupture gains Strength, loses HP through Block, and upgrades only its cost', () => {
+  for (const upgraded of [false, true]) {
+    const rupture = instance('rupture', upgraded)
+    const state = combat([makePlayer({ hand: [rupture], hp: 7, block: 5, energy: 1 })], [makeEnemy()])
+    const played = playCard(state, 'p1', rupture.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].strength, 1)
+    assertEqual(played.players[0].hp, 6)
+    assertEqual(played.players[0].block, 5, 'printed HP loss ignores Block')
+    assertEqual(played.players[0].energy, upgraded ? 1 : 0)
+    assertEqual(played.players[0].discard[0].uid, rupture.uid)
+  }
+
+  const fatal = instance('rupture')
+  const state = combat([makePlayer({ hand: [fatal], hp: 1, energy: 1 })], [makeEnemy()])
+  const lost = playCard(state, 'p1', fatal.uid, { enemyUid: null, playerId: null })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.players[0].strength, 1, 'Strength resolves before the printed HP loss')
+  assertEqual(lost.players[0].discard.length, 0, 'cleanup cannot continue after a lethal clause')
 })
 
 check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {

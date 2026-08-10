@@ -1911,6 +1911,34 @@ await shot('06zpp-exhume-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-rupture', defId: 'rupture', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1, hp: 7, block: 4, strength: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const ruptureCard = page.getByRole('button', { name: /^Rupture\+, cost 0,/ })
+const ruptureLabel = await ruptureCard.getAttribute('aria-label')
+await shot('06zpq-rupture-ready')
+await ruptureCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].strength === 1)
+const ruptured = await readState()
+check('Rupture+ gains Strength before its unblocked HP loss and costs no Energy', () => {
+  assert(ruptureLabel.includes('gain 1 Strength'), ruptureLabel)
+  assert(ruptureLabel.includes('lose 1 hit points'), ruptureLabel)
+  assertEqual(ruptured.players[0].strength, 1)
+  assertEqual(ruptured.players[0].hp, 6)
+  assertEqual(ruptured.players[0].block, 4)
+  assertEqual(ruptured.players[0].energy, 1)
+})
+await shot('06zpr-rupture-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,
