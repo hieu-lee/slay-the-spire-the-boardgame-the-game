@@ -13,8 +13,8 @@
 //     silence. No printed card chains that deep; a future one would look like
 //     a Power quietly under-performing.
 //   - Effects can now read the board: a clause can carry a condition, and an
-//     amount can carry a bonus or a count. Twelve questions are transcribed
-//     (`Condition` in cards.ts), plus Orb, Orb-type, Block, Strength and hand counts.
+//     amount can carry a bonus or a count. Fourteen questions are transcribed
+//     (`Condition` in cards.ts), plus Orb, Orb-type, Block, Strength, hand and attack counts.
 //     Per-Miracle counts are not there yet, nor is X-cost.
 //     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
 //     well, because the readers disagree about what it means: `playCard`
@@ -40,9 +40,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 130 of 259 unique character cards are live.
+//   - 134 of 259 unique character cards are live.
 //     12 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 129 have not been transcribed at
+//     The other 125 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.

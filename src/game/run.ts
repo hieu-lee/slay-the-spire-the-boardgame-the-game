@@ -167,6 +167,8 @@ export function createPlayer(
     vulnerable: 0,
     weak: 0,
     drawLocked: false,
+    lostHpThisCombat: false,
+    attacksPlayedThisTurn: 0,
     shivs: 0,
     miracles: 0,
     stance: 'neutral',

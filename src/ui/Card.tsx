@@ -36,6 +36,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   strength: 'Strength',
   cardsInHand: 'other card in hand',
   skillsInHand: 'Skill in hand',
+  attacksPlayedThisTurn: 'other Attack played this turn',
 }
 
 function conditionText(condition: Condition): string {
@@ -53,6 +54,8 @@ function conditionText(condition: Condition): string {
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
     case 'drawPileEmpty': return 'your draw pile is empty'
+    case 'drewSkill': return 'the card just drawn is a Skill'
+    case 'retainedLastTurn': return 'this card was Retained last turn'
   }
 }
 
@@ -167,6 +170,9 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.supportTarget === 'allPlayers' ? 'support effect applies to all players' : '',
     def.powerCostReduction
       ? `costs ${def.powerCostReduction} less for each Power you have in play`
+      : '',
+    def.costAfterHpLoss !== undefined
+      ? `costs ${def.costAfterHpLoss} after you lose hit points this combat`
       : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',

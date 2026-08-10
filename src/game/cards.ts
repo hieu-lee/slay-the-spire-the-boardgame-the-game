@@ -70,9 +70,20 @@ export type Condition =
   | { kind: 'orbsAtLeast'; amount: number }
   /** Grand Finale: the face-down draw pile is empty. */
   | { kind: 'drawPileEmpty' }
+  /** Escape Plan: the immediately preceding draw effect drew a Skill. */
+  | { kind: 'drewSkill' }
+  /** Outmaneuver: this exact card was kept by Retain last turn. */
+  | { kind: 'retainedLastTurn' }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
-export type CountOf = 'orbs' | 'orbTypes' | 'block' | 'strength' | 'cardsInHand' | 'skillsInHand'
+export type CountOf =
+  | 'orbs'
+  | 'orbTypes'
+  | 'block'
+  | 'strength'
+  | 'cardsInHand'
+  | 'skillsInHand'
+  | 'attacksPlayedThisTurn'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -184,6 +195,8 @@ export type CardDef = {
   cost: number | 'X'
   /** Reduce this card's Energy cost for each Power its owner has in play. */
   powerCostReduction?: number
+  /** Replace the printed cost after this player has lost HP in this combat. */
+  costAfterHpLoss?: number
   effects: Effect[]
   /** A condition that must hold before the card may be played at all. */
   playCondition?: Condition
@@ -225,9 +238,10 @@ export function faceOf(def: CardDef, upgraded: boolean): CardDef {
   return { ...def, ...def.upgrade, name: `${def.name}+` }
 }
 
-export function cardCost(def: CardDef, powersInPlay: number): number | 'X' {
+export function cardCost(def: CardDef, powersInPlay: number, lostHpThisCombat = false): number | 'X' {
   if (def.cost === 'X') return 'X'
-  return Math.max(0, def.cost - (def.powerCostReduction ?? 0) * powersInPlay)
+  const cost = lostHpThisCombat ? (def.costAfterHpLoss ?? def.cost) : def.cost
+  return Math.max(0, cost - (def.powerCostReduction ?? 0) * powersInPlay)
 }
 
 const card = (def: CardDef): CardDef => def
@@ -1673,6 +1687,28 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'onDiscard' },
     effects: [{ kind: 'block', amount: 1 }],
     upgrade: { cost: 0 },
+  }),
+  escape_plan: card({
+    id: 'escape_plan', name: 'Escape Plan', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    effects: [{ kind: 'draw', amount: 1 }, { kind: 'block', amount: 1, when: { kind: 'drewSkill' } }],
+    upgrade: { effects: [{ kind: 'block', amount: 1 }, { kind: 'draw', amount: 1 }] },
+  }),
+  finisher: card({
+    id: 'finisher', name: 'Finisher', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 1, times: { base: 0, per: 'attacksPlayedThisTurn' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'attacksPlayedThisTurn' } }] },
+  }),
+  masterful_stab: card({
+    id: 'masterful_stab', name: 'Masterful Stab', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 0,
+    costAfterHpLoss: 2,
+    effects: [{ kind: 'hit', amount: 2 }],
+    upgrade: { costAfterHpLoss: 1, effects: [{ kind: 'hit', amount: 3 }] },
+  }),
+  outmaneuver: card({
+    id: 'outmaneuver', name: 'Outmaneuver', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    retain: true,
+    effects: [{ kind: 'gainEnergy', amount: 2, when: { kind: 'retainedLastTurn' } }],
+    upgrade: { effects: [{ kind: 'gainEnergy', amount: 3, when: { kind: 'retainedLastTurn' } }] },
   }),
 }
 

@@ -34,6 +34,8 @@ export type CardInstance = {
   upgraded: boolean
   /** Dark Embrace drew this during Ethereal cleanup; keep it through this discard step. */
   endTurnProtected?: boolean
+  /** This exact card was kept by Retain at the end of the previous Player Turn. */
+  retainedLastTurn?: boolean
 }
 
 export type RelicInstance = {
@@ -71,6 +73,9 @@ export type Player = {
   weak: number
   /** Battle Trance and Pray prevent further draws until the next Player Turn. */
   drawLocked: boolean
+  /** Public combat ledgers used by Masterful Stab and Finisher. */
+  lostHpThisCombat: boolean
+  attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number
   /** Watcher. */

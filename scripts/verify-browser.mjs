@@ -1537,6 +1537,62 @@ await page.evaluate(() => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-outmaneuver', defId: 'outmaneuver', upgraded: false, retainedLastTurn: true },
+      { uid: 'ui-escape-plan', defId: 'escape_plan', upgraded: false },
+      { uid: 'ui-masterful-stab', defId: 'masterful_stab', upgraded: false },
+      { uid: 'ui-finisher', defId: 'finisher', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-escape-skill', defId: 'defend_silent', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 1, block: 0,
+    lostHpThisCombat: true, attacksPlayedThisTurn: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const silentLedgerCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artLoaded: card.querySelector('img')?.naturalWidth > 0,
+})))
+check('the four Silent ledger cards render scans and spoken dynamic rules', () => {
+  assert(silentLedgerCards.every((card) => card.artLoaded), 'all four card scans should load')
+  assert(silentLedgerCards.some((card) => card.label.startsWith('Masterful Stab, cost 2,') &&
+    card.label.includes('after you lose hit points this combat')), 'Masterful Stab should render its current cost')
+  assert(silentLedgerCards.some((card) => card.label.startsWith('Finisher') &&
+    card.label.includes('other Attack played this turn')), 'Finisher should announce its attack count')
+  assert(silentLedgerCards.some((card) => card.label.startsWith('Outmaneuver') &&
+    card.label.includes('Retained last turn')), 'Outmaneuver should announce its condition')
+})
+await shot('07m-silent-ledger-cards-ready')
+await page.getByRole('button', { name: /^Outmaneuver,/ }).click()
+await page.getByRole('button', { name: /^Escape Plan,/ }).click()
+await page.getByRole('button', { name: /^Masterful Stab,/ }).click()
+await page.locator('.enemy').first().click()
+await page.getByRole('button', { name: /^Finisher,/ }).click()
+await page.locator('.enemy').first().click()
+const silentLedgers = await readState()
+check('the Silent ledger combo resolves through the real card controls', () => {
+  const actor = silentLedgers.players[0]
+  assertEqual(actor.energy, 0, 'Retain gain and dynamic costs balance to zero')
+  assertEqual(actor.block, 1, 'Escape Plan drew a Skill and gained Block')
+  assertEqual(actor.attacksPlayedThisTurn, 2, 'Masterful Stab and Finisher are recorded')
+  assert(silentLedgers.enemies.some((enemy) => enemy.hp === 17),
+    'Masterful Stab then one Finisher hit should deal 3 to their target')
+  assert(!Object.hasOwn(actor.discard.find((card) => card.uid === 'ui-outmaneuver'), 'retainedLastTurn'),
+    'playing Outmaneuver clears its retained history')
+})
+await shot('07n-silent-ledger-cards-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

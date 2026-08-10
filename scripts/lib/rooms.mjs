@@ -995,6 +995,8 @@ function redactPlayer(player, viewerId) {
     vulnerable: player.vulnerable,
     weak: player.weak,
     drawLocked: player.drawLocked === true,
+    lostHpThisCombat: player.lostHpThisCombat === true,
+    attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     shivs: player.shivs,
     miracles: player.miracles,
     stance: player.stance,

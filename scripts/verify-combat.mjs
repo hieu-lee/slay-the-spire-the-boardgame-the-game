@@ -1797,6 +1797,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'reflex', unplayable: true },
     { id: 'tactician', unplayable: true },
     { id: 'after_image', powers: [1, 1] },
+    { id: 'escape_plan', block: [1, 1], hand: [1, 1], player: { draw: [instance('defend_silent')] } },
+    { id: 'finisher', enemyHp: [20, 20] },
+    { id: 'masterful_stab', enemyHp: [18, 17], energy: [E, E] },
+    { id: 'outmaneuver', energy: [5, 6], player: { energy: 3 }, retained: true },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1829,7 +1833,7 @@ check('every newly transcribed card does what its face prints', () => {
     for (const upgraded of [false, true]) {
       const at = upgraded ? 1 : 0
       const label = `${spec.id}${upgraded ? '+' : ''}`
-      const card = instance(spec.id, upgraded)
+      const card = { ...instance(spec.id, upgraded), retainedLastTurn: spec.retained || undefined }
       const state = {
         ...combat(
           [
@@ -3087,6 +3091,90 @@ check('Retain cards survive the ordered end-of-turn discard', () => {
   const next = endPlayerTurn(state, { p1: [spent.uid, retained.uid] })
   assertDeepEqual(next.players[0].hand.map((held) => held.uid), [retained.uid], 'Protect stays in hand')
   assertDeepEqual(next.players[0].discard.map((held) => held.uid), [spent.uid], 'only non-Retain cards discard')
+})
+
+check('Escape Plan checks only the card its own draw effect drew', () => {
+  for (const [drawnId, expectedBlock] of [['defend_silent', 1], ['strike_silent', 0]]) {
+    const escape = instance('escape_plan')
+    const drawn = instance(drawnId)
+    const state = combat(
+      [makePlayer({ character: 'silent', hand: [escape], draw: [drawn] })],
+      [makeEnemy()],
+    )
+    const played = playCard(state, 'p1', escape.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, expectedBlock)
+    assertEqual(played.players[0].hand[0]?.uid, drawn.uid)
+  }
+
+  const upgraded = instance('escape_plan', true)
+  const attack = instance('strike_silent')
+  const played = playCard(
+    combat([makePlayer({ character: 'silent', hand: [upgraded], draw: [attack] })], [makeEnemy()]),
+    'p1', upgraded.uid, { enemyUid: null, playerId: null },
+  )
+  assertEqual(played.players[0].block, 1, 'Escape Plan+ grants Block before any draw result')
+})
+
+check('Finisher counts earlier Attack cards and Shiv attacks once each', () => {
+  const strike = instance('strike_silent')
+  const finisher = instance('finisher')
+  let state = combat(
+    [makePlayer({ character: 'silent', hand: [strike, finisher], shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].attacksPlayedThisTurn, 1)
+  state = spendShiv(state, 'p1', 'e1')
+  assertEqual(state.players[0].attacksPlayedThisTurn, 2)
+  state = playCard(state, 'p1', finisher.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 16, 'Strike, Shiv, then two Finisher hits')
+  assertEqual(state.players[0].attacksPlayedThisTurn, 3, 'Finisher counts only after resolving itself')
+
+  const reset = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(reset.players[0].attacksPlayedThisTurn, 0)
+})
+
+check('Masterful Stab changes cost only after HP is actually lost this combat', () => {
+  for (const upgraded of [false, true]) {
+    const offering = instance('offering')
+    const stab = instance('masterful_stab', upgraded)
+    let state = combat(
+      [makePlayer({ character: 'silent', hand: [offering, stab], energy: 3 })],
+      [makeEnemy({ hp: 20, maxHp: 20 })],
+    )
+    state = playCard(state, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assert(state.players[0].lostHpThisCombat, 'Offering records its real HP loss')
+    const energy = state.players[0].energy
+    state = playCard(state, 'p1', stab.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.players[0].energy, energy - (upgraded ? 1 : 2))
+    assertEqual(state.enemies[0].hp, upgraded ? 17 : 18)
+  }
+
+  const carried = makePlayer({ lostHpThisCombat: true, attacksPlayedThisTurn: 4 })
+  const fresh = createCombat(createRng(7), [carried], [makeEnemy()])
+  assertEqual(fresh.players[0].lostHpThisCombat, false, 'a new combat clears the HP-loss ledger')
+  assertEqual(fresh.players[0].attacksPlayedThisTurn, 0, 'a new combat clears the attack ledger')
+})
+
+check('Outmaneuver pays only after that card was Retained last turn', () => {
+  const freshCard = instance('outmaneuver')
+  const fresh = playCard(
+    combat([makePlayer({ character: 'silent', hand: [freshCard], energy: 1 })], [makeEnemy()]),
+    'p1', freshCard.uid, { enemyUid: null, playerId: null },
+  )
+  assertEqual(fresh.players[0].energy, 1, 'a newly drawn Outmaneuver gains nothing')
+
+  const retained = instance('outmaneuver')
+  let state = combat([makePlayer({ character: 'silent', hand: [retained] })], [makeEnemy()])
+  state = endPlayerTurn(state, { p1: [retained.uid] })
+  assertEqual(state.players[0].hand[0]?.retainedLastTurn, true)
+  state = enemyTurn(state)
+  state = startPlayerTurn(state)
+  state.players[0].energy = 1
+  state = playCard(state, 'p1', retained.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].energy, 3)
+  assertEqual(state.players[0].discard.at(-1)?.retainedLastTurn, undefined,
+    'leaving hand forgets the prior Retain')
 })
 
 check('a Miracle can be spent for Energy only during the Player Turn', () => {

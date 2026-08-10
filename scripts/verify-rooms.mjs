@@ -1173,6 +1173,31 @@ check('Calculated Gamble publishes Reflex, Tactician, and After Image atomically
     'Calculated Gamble leaked its private draws to the teammate')
 })
 
+check('Silent combat ledgers are public while retained-card history stays private', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const outmaneuver = {
+    uid: 'room-retained-outmaneuver', defId: 'outmaneuver', upgraded: false, retainedLastTurn: true,
+  }
+  Object.assign(actor, {
+    hand: [outmaneuver], energy: 1, lostHpThisCombat: true, attacksPlayedThisTurn: 2,
+  })
+
+  const owner = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === b.playerId)
+  const teammate = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(owner.hand[0].retainedLastTurn, true, 'the owner needs the flag to render the playable effect')
+  assertEqual(teammate.hand, null, 'a teammate still cannot inspect the retained card')
+  assert(!allStrings(snapshotFor(room, a.token)).includes(outmaneuver.uid), 'the retained card uid leaked')
+  assertEqual(teammate.lostHpThisCombat, true)
+  assertEqual(teammate.attacksPlayedThisTurn, 2)
+
+  apply(room, b.token, { kind: 'playCard', cardUid: outmaneuver.uid, enemyUid: null, preflight: true })
+  const discarded = snapshotFor(room, a.token).run.combat.players
+    .find((player) => player.id === b.playerId).discard.at(-1)
+  assertEqual(discarded.uid, outmaneuver.uid, 'the played card becomes public in the discard pile')
+  assert(!Object.hasOwn(discarded, 'retainedLastTurn'), 'public discard kept private hand history')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
@@ -2125,10 +2150,10 @@ check('a dropped player does not hold the campfire hostage', () => {
 
 check('a room with no campfire refuses campfire choices', () => {
   const { room, a } = twoSeatRoom()
-  const treasure = Object.values(room.run.map.rooms).find((entry) => entry.kind === 'treasure')
-  assert(treasure, 'precondition: the act should contain a treasure room')
+  const nonCampfire = Object.values(room.run.map.rooms).find((entry) => entry.kind !== 'campfire')
+  assert(nonCampfire, 'precondition: the act should contain a non-campfire room')
   room.run.phase = 'room'
-  room.run.map.position = treasure.id
+  room.run.map.position = nonCampfire.id
   room.run.combat = null
 
   let threw = false

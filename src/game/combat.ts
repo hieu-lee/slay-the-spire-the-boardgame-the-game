@@ -72,6 +72,11 @@ export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTu
 
 const clone = <T,>(value: T): T => structuredClone(value)
 
+function forgetRetain(card: CardInstance): CardInstance {
+  const { retainedLastTurn: _retained, ...rest } = card
+  return rest
+}
+
 export function livingEnemies(state: CombatState): Enemy[] {
   return state.enemies.filter((enemy) => !enemy.dead)
 }
@@ -197,6 +202,7 @@ function damageEnemyLogged(
 function damagePlayer(player: Player, damage: number): void {
   const outcome = applyDamage(player.block, player.hp, damage)
   player.block = outcome.block
+  if (outcome.hp < player.hp) player.lostHpThisCombat = true
   player.hp = outcome.hp
   if (player.hp === 0) player.dead = true
 }
@@ -268,6 +274,10 @@ export type PlayContext = {
   invalidScryChoice?: boolean
   /** Discards whose reactions wait until this card finishes its printed text. */
   pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
+  /** Internal result of the immediately preceding direct draw effect. */
+  drewSkill?: boolean
+  /** Whether the card being played was kept by Retain last turn. */
+  sourceRetainedLastTurn?: boolean
 }
 
 export type CardChoicePreview = {
@@ -324,7 +334,7 @@ function holds(
       // deals a Daze, it cannot be played, and it is left on top of the discard
       // by the end-of-turn sweep precisely because everything else WAS played.
       if (face.unplayable) return false
-      return cardCost(face, actor.powers.length) === condition.cost
+      return cardCost(face, actor.powers.length, actor.lostHpThisCombat) === condition.cost
     }
     case 'dieShows':
       return condition.faces.includes(state.die)
@@ -346,11 +356,21 @@ function holds(
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
     case 'drawPileEmpty':
       return actor.draw.length === 0
+    case 'drewSkill':
+    case 'retainedLastTurn':
+      return false
   }
 }
 
 /** Whether a conditional printed clause applies to the current board. */
-export function effectIsActive(effect: Effect, state: CombatState, actor: Player): boolean {
+export function effectIsActive(
+  effect: Effect,
+  state: CombatState,
+  actor: Player,
+  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn'>,
+): boolean {
+  if (effect.when?.kind === 'drewSkill') return context?.drewSkill === true
+  if (effect.when?.kind === 'retainedLastTurn') return context?.sourceRetainedLastTurn === true
   return !effect.when || holds(effect.when, state, actor)
 }
 
@@ -366,7 +386,7 @@ export function cardPlayConditionMet(
   return !def.playCondition || holds(def.playCondition, state, actor)
 }
 
-type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength'> & {
+type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
   hand: readonly CardInstance[] | null
 }
 
@@ -385,6 +405,8 @@ function countOf(count: CountOf, actor: CountablePlayer): number {
       return actor.hand?.length ?? 0
     case 'skillsInHand':
       return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
+    case 'attacksPlayedThisTurn':
+      return actor.attacksPlayedThisTurn ?? 0
   }
 }
 
@@ -442,7 +464,7 @@ function applyEffect(
   // Conditions that read a TARGET are not usable here — there is no one target
   // yet — and the only one of those, `targetPoisoned`, is a damage bonus that
   // belongs inside an `Amount`. `verify-architecture.mjs` holds that line.
-  if (!effectIsActive(effect, state, actor)) return
+  if (!effectIsActive(effect, state, actor, context)) return
 
   switch (effect.kind) {
     case 'hit': {
@@ -540,6 +562,7 @@ function applyEffect(
     }
     case 'loseOwnHp': {
       const outcome = applyHpLoss(actor.hp, effect.amount)
+      if (outcome.hp < actor.hp) actor.lostHpThisCombat = true
       actor.hp = outcome.hp
       if (actor.hp === 0) actor.dead = true
       note(`${actor.name} loses ${outcome.hpLost} HP`)
@@ -620,7 +643,10 @@ function applyEffect(
         // Reserve the line before drawing: a draw can reshuffle and fire
         // triggers that log, and those belong under this line, not above it.
         const at = state.log.length
-        drawInto(state, target, amountOf(effect.amount, state, actor))
+        const drawnCards = drawInto(state, target, amountOf(effect.amount, state, actor))
+        if (target.id === actor.id) {
+          context.drewSkill = drawnCards.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill')
+        }
         const drawn = target.hand.length - before
         if (drawn > 0) {
           const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
@@ -688,6 +714,7 @@ function applyEffect(
             { ...context, enemyUid },
             'Shiv',
           )
+          target.attacksPlayedThisTurn = (target.attacksPlayedThisTurn ?? 0) + 1
           if (combatIsOver(state)) return
         }
       }
@@ -783,7 +810,7 @@ function applyEffect(
       const top = actor.discard.at(-1)
       if (!top) return
       const face = faceOf(cardDef(top.defId), top.upgraded)
-      if (face.unplayable || cardCost(face, actor.powers.length) !== effect.cost) return
+      if (face.unplayable || cardCost(face, actor.powers.length, actor.lostHpThisCombat) !== effect.cost) return
       actor.discard = actor.discard.slice(0, -1)
       actor.hand = [...actor.hand, top]
       note(`${actor.name} returns ${face.name} to hand`)
@@ -890,9 +917,11 @@ function grantBlock(state: CombatState, target: Player, amount: number): void {
  * on-draw Power saw nothing and an on-shuffle Power missed the reshuffle that
  * the Start of Turn draw is the usual cause of.
  */
-function drawInto(state: CombatState, actor: Player, amount: number): void {
-  if (actor.drawLocked) return
+function drawInto(state: CombatState, actor: Player, amount: number): CardInstance[] {
+  if (actor.drawLocked) return []
+  const handSize = actor.hand.length
   const result = drawCards(state.rng, actor, amount)
+  const drawnCards = result.hand.slice(handSize)
   actor.draw = result.draw
   actor.hand = result.hand
   actor.discard = result.discard
@@ -907,6 +936,7 @@ function drawInto(state: CombatState, actor: Player, amount: number): void {
     }
     fireTriggers(state, { kind: 'onDraw' }, actor)
   }
+  return drawnCards
 }
 
 /** Take Daze from the one physical ten-card deck shared by every source. */
@@ -935,7 +965,9 @@ function addDaze(
 
 /** Exhaust cards once, returning Status cards to their shared supply (p.24). */
 function exhaustCards(state: CombatState, actor: Player, cards: readonly Player['hand'][number][]): void {
-  const lasting = cards.filter((held) => cardDef(held.defId).owner !== 'status')
+  const lasting = cards
+    .filter((held) => cardDef(held.defId).owner !== 'status')
+    .map(forgetRetain)
   actor.exhaust = [...actor.exhaust, ...lasting]
   for (let i = 0; i < cards.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
 }
@@ -949,17 +981,18 @@ function discardByCardEffect(
 ): void {
   if (cards.length === 0) return
   const uids = new Set(cards.map((card) => card.uid))
+  const discarded = cards.map(forgetRetain)
   actor.hand = actor.hand.filter((card) => !uids.has(card.uid))
   actor.draw = actor.draw.filter((card) => !uids.has(card.uid))
-  actor.discard = [...actor.discard.filter((card) => !uids.has(card.uid)), ...cards]
+  actor.discard = [...actor.discard.filter((card) => !uids.has(card.uid)), ...discarded]
   if (!state.discardedThisTurn.includes(actor.id)) state.discardedThisTurn.push(actor.id)
   state.log = [...state.log, `${actor.name} discards ${cards.length}`]
 
   if (context?.pendingDiscards) {
-    context.pendingDiscards.push({ playerId: actor.id, cards: [...cards] })
+    context.pendingDiscards.push({ playerId: actor.id, cards: discarded })
     return
   }
-  resolveDiscardReactions(state, actor, cards)
+  resolveDiscardReactions(state, actor, discarded)
 }
 
 function resolveDiscardReactions(
@@ -1048,7 +1081,7 @@ export function previewCardChoice(
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const printedCost = cardCost(def, player.powers.length)
+  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -1289,7 +1322,7 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
-  const printedCost = cardCost(def, player.powers.length)
+  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
   if (miracleOnCard && (
@@ -1371,6 +1404,8 @@ export function playCard(
     invalidEvokeTarget: false,
     invalidScryChoice: false,
     pendingDiscards: [],
+    drewSkill: false,
+    sourceRetainedLastTurn: held.retainedLastTurn === true,
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -1394,15 +1429,18 @@ export function playCard(
     if (combatIsOver(next)) return settle(next)
   }
 
+  const played = forgetRetain(held)
   if (def.exhaust) {
-    exhaustCards(next, actor, [held])
+    exhaustCards(next, actor, [played])
   } else if (def.type === 'power') {
-    actor.powers = [...actor.powers, held]
+    actor.powers = [...actor.powers, played]
   } else if (def.toDrawTop) {
-    actor.draw = addToDrawTop(actor, [held]).draw
+    actor.draw = addToDrawTop(actor, [played]).draw
   } else {
-    actor.discard = [...actor.discard, held]
+    actor.discard = [...actor.discard, played]
   }
+
+  if (def.type === 'attack') actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
 
   // "Abilities triggered by a card do not take effect until the card has
   // finished resolving all of its text" (p.12) — so this fires after cleanup.
@@ -1476,6 +1514,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.energy = 3
     player.block = 0
     player.drawLocked = false
+    player.attacksPlayedThisTurn = 0
   }
   for (const player of next.players) {
     if (player.dead) continue
@@ -1582,6 +1621,7 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
     } else if (effect.kind === 'loseHp') {
       const outcome = applyHpLoss(player.hp, effect.amount)
       state.log = [...state.log, `${def.name}: ${player.name} loses ${outcome.hpLost} HP`]
+      if (outcome.hp < player.hp) player.lostHpThisCombat = true
       player.hp = outcome.hp
       if (player.hp === 0) player.dead = true
     } else if (effect.kind === 'gainWeak') {
@@ -1703,10 +1743,13 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
       .map((held) => held.uid)
     const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
-    player.hand = piles.hand.map((held) => held.endTurnProtected
-      ? { ...held, endTurnProtected: undefined }
-      : held)
-    player.discard = piles.discard
+    player.hand = piles.hand.map((held) => {
+      const clean = forgetRetain({ ...held, endTurnProtected: undefined })
+      return faceOf(cardDef(held.defId), held.upgraded).retain
+        ? { ...clean, retainedLastTurn: true }
+        : clean
+    })
+    player.discard = piles.discard.map(forgetRetain)
     const discarded = held - keep.length
     if (discarded > 0) {
       next.log = [...next.log, `${player.name} discards ${discarded} at end of turn`]
@@ -2137,7 +2180,11 @@ export function createCombat(
     turn: 0,
     die: 1,
     phase: 'player',
-    players,
+    players: players.map((player) => ({
+      ...player,
+      lostHpThisCombat: false,
+      attacksPlayedThisTurn: 0,
+    })),
     enemies,
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
@@ -2177,6 +2224,7 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
     { enemyUid, playerId },
     'Shiv',
   )
+  actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
   return settle(next)
 }
 
