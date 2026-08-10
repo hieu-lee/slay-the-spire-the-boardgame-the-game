@@ -41,7 +41,7 @@
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
 //   - 146 of 259 unique character cards are live.
-//     12 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
+//     13 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
 //     The other 113 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their

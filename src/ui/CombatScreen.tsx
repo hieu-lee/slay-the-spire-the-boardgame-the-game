@@ -109,7 +109,7 @@ type Pending = {
    */
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
-  choice: { kind: 'discard' | 'discardAny' | 'exhaust' | 'scry'; amount: number } | null
+  choice: { kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry'; amount: number } | null
   /** Private post-draw/Scry cards; null means choose from the visible hand. */
   choiceCards: CardInstance[] | null
   choiceConfirmed: boolean
@@ -174,6 +174,7 @@ function requirementsOf(
   const discard = def.effects.find((effect) => effect.kind === 'discard')
   const discardAny = def.effects.some((effect) => effect.kind === 'discardAny')
   const exhaust = def.effects.find((effect) => effect.kind === 'exhaustFromHand')
+  const exhaustAny = def.effects.find((effect) => effect.kind === 'exhaustAny')
   const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
@@ -182,6 +183,8 @@ function requirementsOf(
       ? { kind: 'discardAny' as const, amount: Math.max(0, viewer.hand.length - 1) }
     : exhaust
       ? { kind: 'exhaust' as const, amount: exhaust.amount }
+    : exhaustAny
+      ? { kind: 'exhaustAny' as const, amount: exhaustAny.amount }
       : scried
         ? { kind: 'scry' as const, amount: scried.amount }
         : null
@@ -588,6 +591,10 @@ export function CombatScreen({
       const enemyUid = current.enemyUid && alive.has(current.enemyUid) ? current.enemyUid : null
       const enemyUids = current.enemyUids.filter((uid) => alive.has(uid))
       const playerIds = current.playerIds.filter((id) => livingPlayers.has(id))
+      const picked = current.choiceCards
+        ? current.picked
+        : current.picked.filter((uid) => viewer.hand.some((card) => card.uid === uid))
+      const pickedChanged = picked.length !== current.picked.length
       const shivEnemyUids = overflowChanged || spentChanged
         ? []
         : current.shivEnemyUids.filter((uid) => alive.has(uid))
@@ -610,6 +617,7 @@ export function CombatScreen({
         enemyUid === current.enemyUid &&
         enemyUids.length === current.enemyUids.length &&
         playerIds.length === current.playerIds.length &&
+        !pickedChanged &&
         shivEnemyUids.length === current.shivEnemyUids.length &&
         needsSwitch === current.needsSwitch &&
         switchPlayerId === current.switchPlayerId &&
@@ -627,10 +635,12 @@ export function CombatScreen({
         enemyUid,
         enemyUids,
         playerIds,
+        picked,
         switchPlayerId,
         switchChoiceDone,
         shivEnemyUids,
-        choiceConfirmed: overflowChanged && overflowShivs === 0 && current.choice?.kind === 'discardAny'
+        choiceConfirmed: (pickedChanged || (overflowChanged && overflowShivs === 0)) &&
+          (current.choice?.kind === 'discardAny' || current.choice?.kind === 'exhaustAny')
           ? false
           : current.choiceConfirmed,
         evokeSlots,
@@ -1003,17 +1013,19 @@ export function CombatScreen({
   // Post-draw costs choose from the private preview, which already models the
   // hand at the exact clause where the engine will charge it.
   const choicePoolSize = pending?.choiceCards?.length ?? Math.max(0, viewer.hand.length - 1)
-  const choiceNeeded = pending?.choice && pending.choice.kind !== 'scry' && pending.choice.kind !== 'discardAny'
+  const choiceNeeded = pending?.choice && pending.choice.kind !== 'scry' &&
+    pending.choice.kind !== 'discardAny' && pending.choice.kind !== 'exhaustAny'
     ? Math.min(pending.choice.amount, choicePoolSize)
     : 0
   const pendingDef = pending ? faceOf(cardDef(pending.card.defId), pending.card.upgraded) : null
   const handChoiceSatisfied = pending?.choice?.kind === 'scry'
     ? true
-    : pending?.choice?.kind === 'discardAny'
+    : pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny'
       ? true
     : pending?.choice ? pending.picked.length === choiceNeeded : true
   const revealedChoiceSatisfied = !pending?.choiceCards || pending.choiceConfirmed
-  const variableChoiceSatisfied = pending?.choice?.kind !== 'discardAny' || pending.choiceConfirmed
+  const variableChoiceSatisfied = pending?.choice?.kind !== 'discardAny' && pending?.choice?.kind !== 'exhaustAny' ||
+    pending.choiceConfirmed
   const modeSatisfied = !pendingDef?.modes || pending?.mode !== null
   const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied && modeSatisfied
   const pendingNeedsCardEnemy = pendingDef ? cardNeedsEnemy(pendingDef, viewer, false) : false
@@ -1045,7 +1057,9 @@ export function CombatScreen({
       discardUids: next.choice?.kind === 'discard' || next.choice?.kind === 'discardAny'
         ? next.picked
         : undefined,
-      exhaustUids: next.choice?.kind === 'exhaust' ? next.picked : undefined,
+      exhaustUids: next.choice?.kind === 'exhaust' || next.choice?.kind === 'exhaustAny'
+        ? next.picked
+        : undefined,
       scryDiscardUids: next.choice?.kind === 'scry' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
       shivEnemyUids: next.shivEnemyUids,
@@ -1133,7 +1147,10 @@ export function CombatScreen({
               playerIds: authoritative.combat.players.filter((player) => !player.dead).length === 1
                 ? Array(playerChoices).fill(authoritative.player.id)
                 : [],
-              choiceConfirmed: overflowShivs === 0 && next.choice?.kind === 'discardAny'
+              picked: next.picked.filter((uid) =>
+                authoritative.player.hand?.some((card) => card.uid === uid) === true),
+              choiceConfirmed: overflowShivs === 0 &&
+                (next.choice?.kind === 'discardAny' || next.choice?.kind === 'exhaustAny')
                 ? false
                 : next.choiceConfirmed,
               switchPlayerId: null,
@@ -1171,13 +1188,15 @@ export function CombatScreen({
       setPending(next)
     }
     const poolSize = next.choiceCards?.length ?? Math.max(0, viewer!.hand.length - 1)
-    const owed = next.choice && next.choice.kind !== 'scry' && next.choice.kind !== 'discardAny'
+    const owed = next.choice && next.choice.kind !== 'scry' &&
+      next.choice.kind !== 'discardAny' && next.choice.kind !== 'exhaustAny'
       ? Math.min(next.choice.amount, poolSize)
       : 0
     const selectionReady = next.choice?.kind === 'scry' || next.choice?.kind === 'discardAny' ||
+      next.choice?.kind === 'exhaustAny' ||
       next.picked.length === owed
     const ready = selectionReady && (!next.choiceCards || next.choiceConfirmed) &&
-      (next.choice?.kind !== 'discardAny' || next.choiceConfirmed) &&
+      (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' || next.choiceConfirmed) &&
       (!def.modes || next.mode !== null) &&
       !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
@@ -1230,10 +1249,11 @@ export function CombatScreen({
     // While a card is waiting on a choice, clicks in hand pick cards for it.
     if (pending?.choice && !pending.choiceCards && card.uid !== pending.card.uid) {
       const already = pending.picked.includes(card.uid)
-      const any = pending.choice.kind === 'discardAny'
-      const need = any
-        ? Math.max(0, viewer!.hand.length - 1)
-        : Math.min(pending.choice.amount, Math.max(0, viewer!.hand.length - 1))
+      const any = pending.choice.kind === 'discardAny' || pending.choice.kind === 'exhaustAny'
+      const handChoices = Math.max(0, viewer!.hand.length - 1)
+      const need = pending.choice.kind === 'discardAny'
+        ? handChoices
+        : Math.min(pending.choice.amount, handChoices)
       const picked = already
         ? pending.picked.filter((uid) => uid !== card.uid)
         : [...pending.picked, card.uid].slice(-need)
@@ -1272,10 +1292,11 @@ export function CombatScreen({
     setPending(next)
     // Only resolve on the spot when there is genuinely nothing left to pick —
     // including a cost the hand is too small to pay anything towards.
-    const owed = next.choice && next.choice.kind !== 'discardAny'
+    const owed = next.choice && next.choice.kind !== 'discardAny' && next.choice.kind !== 'exhaustAny'
       ? Math.min(next.choice.amount, Math.max(0, viewer!.hand.length - 1))
       : 0
-    if (next.choice?.kind !== 'discardAny' && !next.needsEnemy && !next.needsAlly &&
+    if (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' &&
+      !next.needsEnemy && !next.needsAlly &&
       next.playerIds.length >= next.playerChoices && !next.needsSwitch && owed === 0 &&
       !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots)) commit(next)
   }
@@ -1450,8 +1471,10 @@ export function CombatScreen({
       ? pending.choice?.kind === 'scry'
         ? `Scry ${pending.choice.amount} — choose any cards to discard`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
-    : pending?.choice?.kind === 'discardAny' && !pending.choiceConfirmed
-      ? `Discard any number of cards — ${pending.picked.length} chosen`
+    : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed
+      ? pending.choice.kind === 'discardAny'
+        ? `Discard any number of cards — ${pending.picked.length} chosen`
+        : `Exhaust up to ${pending.choice.amount} cards — ${pending.picked.length} chosen`
     : pending?.choice && !handChoiceSatisfied
       ? `${pending.choice.kind === 'discard' ? 'Discard' : 'Exhaust'} ${choiceNeeded} card${
           choiceNeeded === 1 ? '' : 's'
@@ -1708,10 +1731,12 @@ export function CombatScreen({
               Skip remaining overflow attacks
             </button>
           ) : null}
-          {pending?.choice?.kind === 'discardAny' && !pending.choiceConfirmed ? (
+          {(pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed ? (
             <button type="button" className="prompt__mode"
               onClick={() => stageOrCommit({ ...pending, choiceConfirmed: true })}>
-              {pending.picked.length === 0 ? 'Discard none' : `Discard ${pending.picked.length}`}
+              {pending.picked.length === 0
+                ? `${pending.choice.kind === 'discardAny' ? 'Discard' : 'Exhaust'} none`
+                : `${pending.choice.kind === 'discardAny' ? 'Discard' : 'Exhaust'} ${pending.picked.length}`}
             </button>
           ) : null}
           {pendingEvokeChoice && pendingEvokeTarget < 0 ? pendingEvokeChoice.options.map((option) => (

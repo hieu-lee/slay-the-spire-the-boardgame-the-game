@@ -127,6 +127,7 @@ function effectText(effect: Effect): string {
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
+    case 'exhaustAny': return `exhaust up to ${effect.amount} cards from hand${condition}`
   }
 }
 

@@ -777,6 +777,7 @@ function dispatch(run, seat, action) {
       if (!card) fail('That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
+      const variableExhaust = def.effects.find((effect) => effect.kind === 'exhaustAny')
       const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
       if (action.discardUids !== undefined && (
         !Array.isArray(action.discardUids) ||
@@ -784,6 +785,11 @@ function dispatch(run, seat, action) {
           ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
           : discardUids.length !== action.discardUids.length)
       )) fail('Discard choices must be a valid list of card ids')
+      const exhaustUids = uidList(action.exhaustUids)
+      if (action.exhaustUids !== undefined && (
+        !Array.isArray(action.exhaustUids) || exhaustUids.length !== action.exhaustUids.length ||
+        (variableExhaust && action.exhaustUids.length > variableExhaust.amount)
+      )) fail('Exhaust choices must be a valid list of card ids')
       const shivEffects = def.type === 'power' && def.trigger && def.resolvesOnPlay !== true ? [] : def.effects
       const mandatoryShivs = cardShivChoiceCount(def, player, action.mode)
       const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, shivEffects, {
@@ -812,7 +818,7 @@ function dispatch(run, seat, action) {
         // string where a list belongs threw a raw TypeError out of `apply`
         // instead of being refused like any other bad message.
         discardUids,
-        exhaustUids: uidList(action.exhaustUids),
+        exhaustUids,
         spendMiracle: action.spendMiracle === true,
         shivEnemyUids,
         // Both of these are real choices the rules grant (p.16, p.24). Dropping

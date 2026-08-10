@@ -320,6 +320,8 @@ export type PlayContext = {
   discardedByCard?: number
   /** A variable discard named a duplicate or a card outside the current hand. */
   invalidDiscardChoice?: boolean
+  /** A variable exhaust exceeded its limit, repeated a card, or named a card outside the hand. */
+  invalidExhaustChoice?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
@@ -918,6 +920,20 @@ function applyEffect(
       const chosen = allocate(actor, context.exhaustUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
+      exhaustCards(state, actor, moved)
+      if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
+      return
+    }
+    case 'exhaustAny': {
+      const chosen = context.exhaustUids ?? []
+      if (chosen.length > effect.amount || new Set(chosen).size !== chosen.length ||
+        chosen.some((uid) => !actor.hand.some((card) => card.uid === uid))) {
+        context.invalidExhaustChoice = true
+        return
+      }
+      const picked = new Set(chosen)
+      const moved = actor.hand.filter((card) => picked.has(card.uid))
+      actor.hand = actor.hand.filter((card) => !picked.has(card.uid))
       exhaustCards(state, actor, moved)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
       return
@@ -1600,6 +1616,7 @@ export function playCard(
     invalidEvokeTarget: false,
     invalidScryChoice: false,
     invalidDiscardChoice: false,
+    invalidExhaustChoice: false,
     discardedByCard: 0,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
@@ -1623,7 +1640,7 @@ export function playCard(
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
   if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
-    ctx.invalidScryChoice || ctx.invalidDiscardChoice) return state
+    ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice) return state
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)

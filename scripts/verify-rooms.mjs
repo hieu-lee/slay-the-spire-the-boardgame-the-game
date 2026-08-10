@@ -1317,6 +1317,36 @@ check('Concentrate can discard an online hand larger than the fixed choice cap',
   assert(resolved.exhaust.some((card) => card.uid === concentrate.uid), 'Concentrate did not Exhaust')
 })
 
+check('Purity validates its optional Exhaust choices at room authority', () => {
+  const { room, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const purity = { uid: 'room-purity', defId: 'purity', upgraded: false }
+  const choices = Array.from({ length: 4 }, (_unused, index) => ({
+    uid: `room-purity-${index}`, defId: 'strike_ironclad', upgraded: false,
+  }))
+  Object.assign(actor, { hand: [purity, ...choices], energy: 3 })
+
+  let oversized = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: purity.uid,
+      exhaustUids: choices.map((card) => card.uid), preflight: true,
+    })
+  } catch (error) {
+    oversized = error
+  }
+  assertEqual(oversized?.name, 'RoomError', 'the base face accepted four Exhaust choices')
+  assertEqual(actor.hand.length, 5, 'an invalid optional Exhaust partially resolved')
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: purity.uid,
+    exhaustUids: choices.slice(0, 2).map((card) => card.uid), preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [choices[0].uid, choices[1].uid, purity.uid])
+  assertDeepEqual(resolved.hand.map((card) => card.uid), choices.slice(2).map((card) => card.uid))
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

@@ -494,6 +494,48 @@ check('an exhaust effect never removes more than its printed amount', () => {
   assertEqual(next.players[0].hand.length, 1, 'the other card stays in hand')
 })
 
+check('Purity exhausts any chosen number up to its face limit atomically', () => {
+  for (const upgraded of [false, true]) {
+    const purity = instance('purity', upgraded)
+    const fodder = Array.from({ length: 5 }, () => instance('strike_ironclad'))
+    const state = combat([
+      makePlayer({ hand: [purity, ...fodder], powers: [instance('feel_no_pain')] }),
+    ], [makeEnemy()])
+    const limit = upgraded ? 5 : 3
+    const picked = fodder.slice(0, limit)
+    const played = playCard(state, 'p1', purity.uid, {
+      enemyUid: null,
+      playerId: null,
+      exhaustUids: picked.map((card) => card.uid),
+    })
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [
+      ...picked.map((card) => card.uid), purity.uid,
+    ])
+    assertEqual(played.players[0].block, limit + 1, 'Feel No Pain sees every chosen card and Purity itself')
+  }
+
+  const purity = instance('purity')
+  const [first, ...rest] = Array.from({ length: 4 }, () => instance('strike_ironclad'))
+  const state = combat([makePlayer({ hand: [purity, first, ...rest] })], [makeEnemy()])
+  assertEqual(playCard(state, 'p1', purity.uid, {
+    enemyUid: null,
+    playerId: null,
+    exhaustUids: [first.uid, ...rest.map((card) => card.uid)],
+  }), state, 'the base face accepted more than three choices')
+  assertEqual(playCard(state, 'p1', purity.uid, {
+    enemyUid: null,
+    playerId: null,
+    exhaustUids: [first.uid, first.uid],
+  }), state, 'duplicate choices were accepted')
+  const skipped = playCard(state, 'p1', purity.uid, {
+    enemyUid: null,
+    playerId: null,
+    exhaustUids: [],
+  })
+  assertDeepEqual(skipped.players[0].exhaust.map((card) => card.uid), [purity.uid],
+    'exhausting no hand cards must remain legal')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1773,6 +1815,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'mind_blast', enemyHp: [20, 19] },
     { id: 'hand_of_greed', enemyHp: [16, 16] },
     { id: 'panacea', exhaust: [1, 1] },
+    { id: 'purity', exhaust: [1, 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -1878,6 +1921,7 @@ check('every newly transcribed card does what its face prints', () => {
       if (enemyChoices > 0) context.enemyUids = Array(enemyChoices).fill('e1')
       if (playerChoices > 0) context.playerIds = Array(playerChoices).fill('p1')
       if (face.effects.some((effect) => effect.kind === 'discardAny')) context.discardUids = []
+      if (face.effects.some((effect) => effect.kind === 'exhaustAny')) context.exhaustUids = []
       if (spec.unplayable) {
         assertEqual(playCard(state, 'p1', card.uid, context), state, `${label} should be unplayable`)
         continue

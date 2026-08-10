@@ -859,6 +859,98 @@ try {
   Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), stormRestore.bo)
   liveRoom.run.combat.enemies = stormRestore.enemies
 
+  const annBeforePurity = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforePurity = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const purityRestore = structuredClone(liveRoom.run.combat)
+  Object.assign(annBeforePurity, {
+    hand: [
+      { uid: 'online-purity-refusal', defId: 'purity', upgraded: true },
+      { uid: 'online-purity-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'online-purity-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 3, powers: [],
+  })
+  Object.assign(boBeforePurity, { energy: 0, miracles: 1 })
+  const publishPurityFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishPurityFixture.ok, 'could not publish the Purity refusal fixture')
+  await a.getByRole('button', { name: /^Purity\+,/ }).click()
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByRole('button', { name: 'Exhaust 1' }).waitFor()
+  const purityOwnerCredentials = await credentials(a)
+  const competingPurityPlay = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': purityOwnerCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'playCard', cardUid: 'online-purity-strike',
+      enemyUid: liveRoom.run.combat.enemies.find((enemy) => !enemy.dead).uid,
+      preflight: true,
+    } }),
+  })
+  assert(competingPurityPlay.ok, 'the same-seat competing Strike was refused')
+  await a.getByText('Exhaust up to 5 cards — 0 chosen').waitFor()
+  await a.getByRole('button', { name: /^Defend,/ }).click()
+  await a.getByRole('button', { name: 'Exhaust 1' }).waitFor()
+  await a.getByRole('button', { name: 'Exhaust 1' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Purity+,')))
+  const completedPurityRace = await snapshot(a)
+  check('a same-seat update removes stale Purity choices before confirmation', () => {
+    const ann = completedPurityRace.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-purity-defend', 'online-purity-refusal'])
+    assertDeepEqual(ann.discard.map((card) => card.uid), ['online-purity-strike'])
+    assertDeepEqual(ann.hand, [])
+  })
+
+  const annBeforePurityRefusal = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforePurityRefusal = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annBeforePurityRefusal, {
+    hand: [
+      { uid: 'online-purity-retry', defId: 'purity', upgraded: true },
+      { uid: 'online-purity-retry-strike', defId: 'strike_silent', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 3,
+  })
+  Object.assign(boBeforePurityRefusal, { energy: 0, miracles: 1 })
+  const publishPurityRefusal = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishPurityRefusal.ok, 'could not publish the Purity refusal fixture')
+  await a.getByRole('button', { name: /^Purity\+,/ }).click()
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  let purityRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = JSON.parse(route.request().postData())
+    body.action.exhaustUids.push(body.action.exhaustUids[0])
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    purityRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: 'Exhaust 1' }).click()
+  for (let attempt = 0; attempt < 50 && purityRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(purityRefusalStatus, 409, 'the forged Purity did not reach the refusal path')
+  await a.getByRole('button', { name: 'Exhaust 1' }).waitFor()
+  await a.getByRole('button', { name: 'Exhaust 1' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Purity+,')))
+  const completedPurityRetry = await snapshot(a)
+  const expectedPurityConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedPurityConflict >= 0, 'the refused Purity did not surface as an HTTP conflict')
+  failures.splice(expectedPurityConflict, 1)
+  check('a refused Purity reopens its optional Exhaust confirmation', () => {
+    const ann = completedPurityRetry.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-purity-retry-strike', 'online-purity-retry'])
+    assertDeepEqual(ann.hand, [])
+  })
+  liveRoom.run.combat = purityRestore
+
   const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   const unloadRestore = {

@@ -387,7 +387,7 @@ check('no live card draws before exhausting from hand', () => {
       let drewFirst = false
       for (const effect of face?.effects ?? []) {
         if (effect.kind === 'draw') drewFirst = true
-        if (drewFirst && effect.kind === 'exhaustFromHand') offenders.push(def.id)
+        if (drewFirst && (effect.kind === 'exhaustFromHand' || effect.kind === 'exhaustAny')) offenders.push(def.id)
       }
     }
   }

@@ -200,6 +200,8 @@ type EffectKind =
   | { kind: 'discardAny' }
   /** Exhaust cards the player chooses from hand, as True Grit does. */
   | { kind: 'exhaustFromHand'; amount: number }
+  /** Exhaust any number of chosen cards up to the printed limit. */
+  | { kind: 'exhaustAny'; amount: number }
 
 export type CardDef = {
   id: string
@@ -1565,6 +1567,12 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'clearDebuffs', toChosen: true }],
     upgrade: { supportTarget: 'allPlayers' },
+  }),
+  purity: card({
+    id: 'purity', name: 'Purity', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'exhaustAny', amount: 3 }],
+    upgrade: { effects: [{ kind: 'exhaustAny', amount: 5 }] },
   }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

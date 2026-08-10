@@ -1216,6 +1216,46 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-purity', defId: 'purity', upgraded: true },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-purity-fodder-${index}`, defId: 'strike_ironclad', upgraded: false,
+      })),
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [{ uid: 'ui-purity-feel-no-pain', defId: 'feel_no_pain', upgraded: false }],
+    energy: 0,
+    block: 0,
+  })
+  debug.setRun(run)
+})
+const purityCard = page.getByRole('button', { name: /^Purity\+,/ })
+await purityCard.waitFor()
+const purityLabel = await purityCard.getAttribute('aria-label')
+await purityCard.click()
+await page.getByRole('button', { name: 'Exhaust none' }).waitFor()
+const purityPrompt = await page.locator('.prompt').textContent()
+await page.getByRole('button', { name: /^Strike,/ }).nth(0).click()
+await page.getByRole('button', { name: /^Strike,/ }).nth(1).click()
+await page.getByRole('button', { name: 'Exhaust 2' }).waitFor()
+await shot('06za-purity-optional-exhaust')
+await page.getByRole('button', { name: 'Exhaust 2' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
+const purity = await readState()
+check('Purity+ lets the player Exhaust any number up to five', () => {
+  assert(purityLabel.includes('exhaust up to 5 cards from hand'), purityLabel)
+  assert(purityPrompt.includes('Exhaust up to 5 cards'), purityPrompt)
+  assertEqual(purity.players[0].hand.length, 3)
+  assertEqual(purity.players[0].exhaust.length, 3, 'two chosen cards and Purity itself Exhaust')
+  assertEqual(purity.players[0].block, 3, 'Feel No Pain sees all three Exhausts')
+})
+await shot('06zb-purity-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
     hand: [{ uid: 'ui-melter', defId: 'melter', upgraded: true }],
     discard: [],
     exhaust: [],
@@ -1732,16 +1772,26 @@ await page.locator('button.seat').nth(0).click()
 await page.locator('button.seat').nth(1).click()
 await page.locator('button.seat').nth(1).click()
 await page.getByRole('button', { name: /^Concentrate\+,/ }).click()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand.push({
+    uid: 'ui-concentrate-new-draw', defId: 'neutralize', upgraded: false,
+  })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Neutralize,/ }).waitFor()
 await page.getByRole('button', { name: /^Strike,/ }).click()
 await page.getByRole('button', { name: /^Defend,/ }).click()
-await page.getByRole('button', { name: 'Discard 2' }).click()
+await page.getByRole('button', { name: /^Neutralize,/ }).click()
+await page.getByRole('button', { name: 'Discard 3' }).click()
 const silentChoices = await readState()
 check('independent targets, optional discard, and once-per-turn Poison resolve through the controls', () => {
   const actor = silentChoices.players[0]
   const ally = silentChoices.players[1]
   assertEqual(actor.block, 3, 'Distraction plus one Dodge icon protects the Silent')
   assertEqual(ally.block, 2, 'two Dodge icons can share one ally target')
-  assertEqual(actor.energy, 5, 'Concentrate+ gains two discarded cards plus one')
+  assertEqual(actor.energy, 6, 'Concentrate+ includes a card drawn after staging and respects the Energy cap')
   assertDeepEqual(silentChoices.enemies.map((enemy) => enemy.poison).filter(Boolean).sort((a, b) => b - a), [2, 1])
   assertEqual(actor.powers.length, 1)
   assert(silentChoices.powerTriggersUsedThisTurn.includes(`${actor.id}/power:ui-distraction`),
