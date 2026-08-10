@@ -2098,6 +2098,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'wild_strike', enemyHp: [17, 16], daze: [1, 1] },
     { id: 'power_through', block: [3, 4], daze: [1, 1] },
     { id: 'flame_barrier', block: [3, 4] },
+    { id: 'rampage', enemyHp: [20, 20] },
+    { id: 'exhume', exhaust: [1, 1], energy: [E - 1, E] },
     { id: 'blade_dance', shivs: [2, 3] },
     { id: 'cloak_and_dagger', block: [1, 1], shivs: [1, 2] },
     { id: 'sneaky_strike', enemyHp: [17, 16] },
@@ -3169,6 +3171,7 @@ check('The Bomb counts three end turns, damages every enemy, then Exhausts itsel
     assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [30 - damage, 30 - damage])
     assertEqual(state.players[0].powers.some((card) => card.uid === bomb.uid), false)
     assertEqual(state.players[0].exhaust.some((card) => card.uid === bomb.uid), true)
+    assertEqual(state.players[0].exhaust.find((card) => card.uid === bomb.uid).counter, undefined)
   }
 })
 
@@ -3462,6 +3465,86 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
   } finally {
     delete ENEMIES.flame_barrier_multi_hit_fixture
   }
+})
+
+check('Rampage counts the whole Exhaust pile after its upgraded Exhaust resolves', () => {
+  const exhausted = [instance('defend_ironclad'), instance('bash')]
+  for (const upgraded of [false, true]) {
+    const rampage = instance('rampage', upgraded)
+    const fuel = instance('strike_ironclad')
+    const state = combat([makePlayer({ hand: [rampage, fuel], exhaust: exhausted, energy: 1 })], [
+      makeEnemy({ hp: 10, maxHp: 10 }),
+    ])
+    const played = playCard(state, 'p1', rampage.uid, {
+      enemyUid: 'e1', playerId: null, exhaustUids: upgraded ? [fuel.uid] : undefined,
+    })
+    assertEqual(played.enemies[0].hp, upgraded ? 7 : 8)
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid),
+      upgraded ? [...exhausted.map((card) => card.uid), fuel.uid] : exhausted.map((card) => card.uid))
+  }
+
+  const emptyRampage = instance('rampage')
+  const empty = combat([makePlayer({ hand: [emptyRampage], exhaust: [], energy: 1 })], [makeEnemy()])
+  const played = playCard(empty, 'p1', emptyRampage.uid, { enemyUid: 'e1', playerId: null })
+  assert(played !== empty, 'Rampage with an empty Exhaust pile was refused')
+  assertEqual(played.enemies[0].hp, empty.enemies[0].hp)
+
+  const lethalRampage = instance('rampage', true)
+  const lethalFuel = instance('strike_ironclad')
+  const lethal = combat([makePlayer({
+    hand: [lethalRampage, lethalFuel], exhaust: [instance('bash')], energy: 1,
+  })], [makeEnemy({ hp: 2, maxHp: 2 })])
+  assertEqual(playCard(lethal, 'p1', lethalRampage.uid, { enemyUid: 'e1', playerId: null }), lethal,
+    'lethal Rampage+ bypassed its missing Exhaust')
+  assertEqual(playCard(lethal, 'p1', lethalRampage.uid, {
+    enemyUid: 'e1', playerId: null, exhaustUids: ['not-in-hand'],
+  }), lethal, 'lethal Rampage+ bypassed a stale Exhaust choice')
+  const killed = playCard(lethal, 'p1', lethalRampage.uid, {
+    enemyUid: 'e1', playerId: null, exhaustUids: [lethalFuel.uid],
+  })
+  assertEqual(killed.enemies[0].hp, 0)
+})
+
+check('Exhume returns any chosen Exhaust card to hand before Exhausting itself', () => {
+  for (const upgraded of [false, true]) {
+    const exhume = instance('exhume', upgraded)
+    const lower = instance('defend_ironclad')
+    const chosen = instance('bash')
+    const state = combat([makePlayer({ hand: [exhume], exhaust: [lower, chosen], energy: 1 })], [makeEnemy()])
+    assertEqual(playCard(state, 'p1', exhume.uid, { enemyUid: null, playerId: null }), state,
+      'Exhume accepted a missing Exhaust choice')
+    assertEqual(playCard(state, 'p1', exhume.uid, {
+      enemyUid: null, playerId: null, recoverExhaustUid: 'not-in-pile',
+    }), state, 'Exhume accepted a stale Exhaust choice')
+
+    const played = playCard(state, 'p1', exhume.uid, {
+      enemyUid: null, playerId: null, recoverExhaustUid: lower.uid,
+    })
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [lower.uid])
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [chosen.uid, exhume.uid])
+    assertEqual(played.players[0].energy, upgraded ? 1 : 0)
+  }
+
+  const spentBomb = { ...instance('the_bomb'), counter: 3 }
+  const exhume = instance('exhume', true)
+  const state = combat([makePlayer({ hand: [exhume], exhaust: [spentBomb], energy: 2 })], [
+    makeEnemy({ hp: 20, maxHp: 20 }),
+  ])
+  const returned = playCard(state, 'p1', exhume.uid, {
+    enemyUid: null, playerId: null, recoverExhaustUid: spentBomb.uid,
+  })
+  assertEqual(returned.players[0].hand[0].counter, undefined, 'Exhume preserved The Bomb\'s spent cubes')
+  const replayed = playCard(returned, 'p1', spentBomb.uid, { enemyUid: null, playerId: null })
+  const ability = endTurnAbilities(replayed).find((entry) => entry.label.includes('The Bomb'))
+  const ticked = beginEndPlayerTurn(replayed, [ability.id])
+  assertEqual(ticked.players[0].powers[0].counter, 1, 'replayed The Bomb resumed at its old counter')
+  assertEqual(ticked.enemies[0].hp, 20, 'replayed The Bomb detonated after one turn')
+
+  const emptyExhume = instance('exhume')
+  const empty = combat([makePlayer({ hand: [emptyExhume], exhaust: [], energy: 1 })], [makeEnemy()])
+  const played = playCard(empty, 'p1', emptyExhume.uid, { enemyUid: null, playerId: null })
+  assert(played !== empty, 'Exhume with an empty Exhaust pile was refused')
+  assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [emptyExhume.uid])
 })
 
 check('nested forced cards preserve the outer Start-of-Turn queue', () => {

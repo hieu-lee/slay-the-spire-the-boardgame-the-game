@@ -1833,6 +1833,84 @@ await shot('06zpl-flame-barrier-row-intents')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-rampage', defId: 'rampage', upgraded: true },
+      { uid: 'ui-rampage-fuel', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], draw: [],
+    exhaust: [
+      { uid: 'ui-rampage-old-1', defId: 'bash', upgraded: false },
+      { uid: 'ui-rampage-old-2', defId: 'strike_ironclad', upgraded: false },
+    ],
+    powers: [], energy: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true, row: actor.row,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const rampageCard = page.getByRole('button', { name: /^Rampage\+, cost 1,/ })
+const rampageLabel = await rampageCard.getAttribute('aria-label')
+await rampageCard.click()
+await page.getByRole('button', { name: /^Defend, cost 1,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await shot('06zpm-rampage-exhaust-target')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 7)
+const rampaged = await readState()
+check('Rampage+ Exhausts a hand card before counting the full Exhaust pile for damage', () => {
+  assert(rampageLabel.includes('exhaust 1 card'), rampageLabel)
+  assert(rampageLabel.includes('1 per card in your Exhaust pile'), rampageLabel)
+  assertEqual(rampaged.enemies[0].hp, 7)
+  assertDeepEqual(rampaged.players[0].exhaust.map((card) => card.uid), [
+    'ui-rampage-old-1', 'ui-rampage-old-2', 'ui-rampage-fuel',
+  ])
+})
+await shot('06zpn-rampage-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-exhume', defId: 'exhume', upgraded: true }],
+    discard: [], draw: [],
+    exhaust: [
+      { uid: 'ui-exhume-lower', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'ui-exhume-top', defId: 'bash', upgraded: false },
+    ],
+    powers: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const exhumeCard = page.getByRole('button', { name: /^Exhume\+, cost 0,/ })
+const exhumeLabel = await exhumeCard.getAttribute('aria-label')
+await exhumeCard.click()
+const exhumeDialog = page.getByRole('dialog', { name: 'Choose a card from your Exhaust pile' })
+await exhumeDialog.waitFor()
+const exhumePrompt = await page.getByText('Exhume+ — choose a card from your Exhaust pile').textContent()
+await exhumeDialog.getByRole('button', { name: /^Defend,/ }).click()
+await page.waitForTimeout(150)
+await shot('06zpo-exhume-choice')
+await exhumeDialog.getByRole('button', { name: 'Return selected card to hand' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand[0]?.uid === 'ui-exhume-lower')
+const exhumed = await readState()
+check('Exhume+ chooses any public Exhaust card and returns it only to hand', () => {
+  assertEqual(exhumePrompt, 'Exhume+ — choose a card from your Exhaust pile')
+  assert(exhumeLabel.includes('put a card from your Exhaust pile into your hand'), exhumeLabel)
+  assert(exhumeLabel.includes('exhausts when played'), exhumeLabel)
+  assertDeepEqual(exhumed.players[0].hand.map((card) => card.uid), ['ui-exhume-lower'])
+  assertDeepEqual(exhumed.players[0].exhaust.map((card) => card.uid), ['ui-exhume-top', 'ui-exhume'])
+  assertEqual(exhumed.players[0].energy, 0)
+})
+await shot('06zpp-exhume-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

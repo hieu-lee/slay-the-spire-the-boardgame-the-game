@@ -35,6 +35,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   block: 'Block',
   strength: 'Strength',
   cardsInHand: 'other card in hand',
+  cardsInExhaust: 'card in your Exhaust pile',
   strikesInHand: 'other card in hand containing Strike',
   skillsInHand: 'Skill in hand',
   attacksInHand: 'Attack in hand',
@@ -127,6 +128,7 @@ function effectText(effect: Effect): string {
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
     case 'recoverDiscard': return 'put a card from your discard pile on top of your draw pile'
+    case 'recoverExhaust': return 'put a card from your Exhaust pile into your hand'
     case 'drawAndPlayFree': return effect.exhaustNonPower
       ? `draw 1 card, then immediately play it for 0 Energy; exhaust it unless it is a Power${condition}`
       : `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`

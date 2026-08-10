@@ -863,6 +863,10 @@ function dispatch(run, seat, action) {
       if (recoverDiscardUid !== undefined && typeof recoverDiscardUid !== 'string') {
         fail('Discard recovery must be a card id')
       }
+      const recoverExhaustUid = action.recoverExhaustUid
+      if (recoverExhaustUid !== undefined && typeof recoverExhaustUid !== 'string') {
+        fail('Exhaust recovery must be a card id')
+      }
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,
@@ -883,6 +887,7 @@ function dispatch(run, seat, action) {
         scryDiscardUids,
         topdeckUids,
         recoverDiscardUid,
+        recoverExhaustUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }

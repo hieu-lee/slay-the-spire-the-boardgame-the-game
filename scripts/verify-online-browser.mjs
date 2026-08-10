@@ -507,6 +507,7 @@ try {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   await onlineHeadbutt.waitFor({ state: 'hidden' })
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   const expectedHeadbuttConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(expectedHeadbuttConflict >= 0, 'the refused Headbutt did not surface as an HTTP conflict')
   failures.splice(expectedHeadbuttConflict, 1)
@@ -518,6 +519,131 @@ try {
     assert(liveRoom.run.combat.enemies.some((enemy) => enemy.hp === 7),
       'the corrected Headbutt did not hit its chosen enemy')
   })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-exhume', defId: 'exhume', upgraded: true }],
+    exhaust: [
+      { uid: 'online-exhume-defend', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'online-exhume-bash', defId: 'bash', upgraded: false },
+    ],
+    energy: 0,
+  })
+  boLive.miracles = 1
+  const publishExhumeFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishExhumeFixture.ok, 'could not publish the online Exhume fixture')
+  let prematureExhumeActions = 0
+  const countPrematureExhume = (request) => {
+    if (request.method() === 'POST' && request.url().endsWith(`/api/rooms/${code}/action`)) {
+      prematureExhumeActions += 1
+    }
+  }
+  a.on('request', countPrematureExhume)
+  await a.getByRole('button', { name: /^Exhume\+,/ }).click()
+  const onlineExhume = a.getByRole('dialog', { name: 'Choose a card from your Exhaust pile' })
+  await onlineExhume.waitFor()
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  a.off('request', countPrematureExhume)
+  assertEqual(prematureExhumeActions, 0, 'opening Exhume submitted before its public choice')
+  await onlineExhume.getByRole('button', { name: /^Bash,/ }).click()
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = [
+    { uid: 'online-exhume-new-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  liveRoom.version += 1
+  let exhumeRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    exhumeRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  for (let attempt = 0; attempt < 50 && exhumeRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(exhumeRefusalStatus, 409, 'the stale Exhume did not reach the room refusal path')
+  await onlineExhume.waitFor()
+  await onlineExhume.getByText(/^0\/1 selected from Exhaust/).waitFor()
+  const staleExhumeChoice = await onlineExhume.getByRole('button', { name: /^Bash,/ }).count()
+  await onlineExhume.getByRole('button', { name: /^Strike,/ }).click()
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  for (let attempt = 0; attempt < 50 &&
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand[0]?.uid !==
+      'online-exhume-new-strike'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  await onlineExhume.waitFor({ state: 'hidden' })
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  const expectedExhumeConflicts = failures
+    .map((failure, index) => failure.includes('409 (Conflict)') ? index : -1)
+    .filter((index) => index >= 0)
+  assertEqual(expectedExhumeConflicts.length, 1, 'the refused Exhume surfaced an unexpected number of conflicts')
+  for (const index of expectedExhumeConflicts.reverse()) failures.splice(index, 1)
+  check('a refused online Exhume rebuilds its public choice from authoritative Exhaust', () => {
+    assertEqual(exhumeRefusalStatus, 409)
+    assertEqual(staleExhumeChoice, 0)
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.hand[0].uid, 'online-exhume-new-strike')
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-exhume'])
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-empty-exhume', defId: 'exhume', upgraded: true }],
+    exhaust: [{ uid: 'online-empty-exhume-bash', defId: 'bash', upgraded: false }],
+    energy: 0,
+  })
+  boLive.miracles = 1
+  const publishEmptyExhume = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishEmptyExhume.ok, 'could not publish the empty-pile Exhume fixture')
+  const emptyExhumeCard = a.getByRole('button', { name: /^Exhume\+,/ })
+  await emptyExhumeCard.click()
+  await onlineExhume.waitFor()
+  await onlineExhume.getByRole('button', { name: /^Bash,/ }).click()
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust = []
+  liveRoom.version += 1
+  let emptyExhumeRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    emptyExhumeRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await onlineExhume.getByRole('button', { name: 'Return selected card to hand' }).click()
+  for (let attempt = 0; attempt < 50 && emptyExhumeRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(emptyExhumeRefusalStatus, 409, 'empty-pile Exhume did not reach refusal reconciliation')
+  await onlineExhume.waitFor({ state: 'hidden' })
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  const expectedEmptyExhumeConflicts = failures
+    .map((failure, index) => failure.includes('409 (Conflict)') ? index : -1)
+    .filter((index) => index >= 0)
+  assertEqual(expectedEmptyExhumeConflicts.length, 1,
+    'empty-pile Exhume surfaced an unexpected number of conflicts')
+  failures.splice(expectedEmptyExhumeConflicts[0], 1)
+  const stagedEmptyExhume = await emptyExhumeCard.getAttribute('class')
+  check('an online Exhume refusal clears staging when its Exhaust pile becomes empty', () => {
+    assertEqual(stagedEmptyExhume.includes('card--selected'), false)
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-empty-exhume'])
+    assertDeepEqual(ann.exhaust, [])
+  })
+  await emptyExhumeCard.click()
+  for (let attempt = 0; attempt < 50 &&
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand.length > 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertDeepEqual(liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust
+    .map((card) => card.uid), ['online-empty-exhume'])
   // This suite deliberately drives one seat hard enough to exercise the real
   // limiter later; let this added refusal window expire before continuing.
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 10_100))

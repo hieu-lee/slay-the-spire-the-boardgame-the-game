@@ -85,6 +85,7 @@ export type CountOf =
   | 'block'
   | 'strength'
   | 'cardsInHand'
+  | 'cardsInExhaust'
   | 'strikesInHand'
   | 'skillsInHand'
   | 'attacksInHand'
@@ -207,6 +208,8 @@ type EffectKind =
   | { kind: 'topdeck'; amount: number }
   /** Put one chosen card from the face-up discard pile on the draw top. */
   | { kind: 'recoverDiscard'; amount: 1 }
+  /** Put one chosen card from the face-up Exhaust pile into hand. */
+  | { kind: 'recoverExhaust'; amount: 1 }
   /** Draw a card and immediately play it for 0 Energy. */
   | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
@@ -785,6 +788,22 @@ export const CARDS: Record<string, CardDef> = {
     id: 'flame_barrier', name: 'Flame Barrier', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 2,
     effects: [{ kind: 'block', amount: 3 }, { kind: 'damagePerAttackIntent', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 4 }, { kind: 'damagePerAttackIntent', amount: 1 }] },
+  }),
+  rampage: card({
+    id: 'rampage', name: 'Rampage', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } }],
+    upgrade: {
+      effects: [
+        { kind: 'exhaustFromHand', amount: 1 },
+        { kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } },
+      ],
+    },
+  }),
+  exhume: card({
+    id: 'exhume', name: 'Exhume', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'recoverExhaust', amount: 1 }],
+    exhaust: true,
+    upgrade: { cost: 0 },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,

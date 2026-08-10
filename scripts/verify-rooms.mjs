@@ -2399,6 +2399,80 @@ check('Flame Barrier resolves current intents from its online owner\'s row', () 
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-boss').hp, 4)
 })
 
+check('Rampage+ authoritatively Exhausts first and counts the resulting public pile', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const rampage = { uid: 'room-rampage', defId: 'rampage', upgraded: true }
+  const fuel = { uid: 'room-rampage-fuel', defId: 'strike_ironclad', upgraded: false }
+  const old = { uid: 'room-rampage-old', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [rampage, fuel], exhaust: [old], energy: 1 })
+  const enemy = room.run.combat.enemies[0]
+  Object.assign(enemy, { hp: 2, maxHp: 2, block: 0, dead: false, abilityUsed: true })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid, preflight: true },
+    { kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+      exhaustUids: ['not-in-hand'], preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'an unpaid Rampage+ Exhaust was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Rampage+ mutated room authority')
+  }
+
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+      exhaustUids: [fuel.uid], preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Rampage+')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+    exhaustUids: [fuel.uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(room.run.combat.enemies[0].hp, 0)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [old.uid, fuel.uid])
+})
+
+check('Exhume moves one public Exhaust card into only its owner\'s private hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const exhume = { uid: 'room-exhume', defId: 'exhume', upgraded: true }
+  const lower = { uid: 'room-exhume-lower', defId: 'defend_ironclad', upgraded: false }
+  const chosen = { uid: 'room-exhume-chosen', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [exhume], exhaust: [lower, chosen], energy: 0 })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: exhume.uid, preflight: true },
+    { kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: 7, preflight: true },
+    { kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: exhume.uid, preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'a malformed Exhume choice was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Exhume mutated room authority')
+  }
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: lower.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [lower.uid])
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [chosen.uid, exhume.uid])
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(owner.hand.map((card) => card.uid), [lower.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).includes(lower.uid),
+    'Exhume left its recovered card visible to a teammate')
+})
+
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)

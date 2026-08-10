@@ -316,6 +316,7 @@ export type PlayContext = {
   topdeckUids?: string[]
   /** Card chosen to move from discard to the top of the draw pile. */
   recoverDiscardUid?: string
+  recoverExhaustUid?: string
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
   /** One chosen target or explicit skip per immediate Shiv, in effect order. */
@@ -405,6 +406,12 @@ export type PotionContext = {
   targetPlayerId?: string | null
   enemyRow?: number | null
   shivEnemyUids?: string[]
+}
+
+function invalidPlayChoice(context: PlayContext): boolean {
+  return Boolean(context.shortfall || context.invalidShivTarget || context.invalidEvokeTarget ||
+    context.invalidScryChoice || context.invalidDiscardChoice || context.invalidExhaustChoice ||
+    context.invalidTopdeckChoice || context.invalidRecoverChoice)
 }
 
 export function overflowShivCount(state: { players: readonly { shivs: number }[] }, amount: number): number {
@@ -517,7 +524,7 @@ export function cardIsPlayable(
     actor.orbs.every((orb) => !orb))
 }
 
-type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn' | 'exhaust'> & {
   hand: readonly CardInstance[] | null
 }
 
@@ -534,6 +541,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): n
       return actor.strength
     case 'cardsInHand':
       return actor.hand?.length ?? 0
+    case 'cardsInExhaust':
+      return actor.exhaust.length
     case 'strikesInHand':
       return actor.hand?.filter((card) => cardDef(card.defId).name.includes('Strike')).length ?? 0
     case 'skillsInHand':
@@ -893,6 +902,7 @@ function applyEffect(
       if (held.counter < effect.cubes) return
       applyEffect(state, actor, { kind: 'damage', amount: effect.damage }, 'allEnemies', 'self', context, source)
       actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+      held.counter = undefined
       exhaustCards(state, actor, [held])
       note(`${actor.name} exhausts The Bomb`)
       return
@@ -1258,6 +1268,23 @@ function applyEffect(
       actor.discard = actor.discard.filter((card) => card.uid !== chosen)
       actor.draw = addToDrawTop(actor, [forgetRetain(moved)]).draw
       note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their draw pile`)
+      return
+    }
+    case 'recoverExhaust': {
+      const required = Math.min(effect.amount, actor.exhaust.length)
+      const chosen = context.recoverExhaustUid
+      if ((required === 1 && (!chosen || !actor.exhaust.some((card) => card.uid === chosen))) ||
+        (required === 0 && chosen !== undefined)) {
+        context.invalidRecoverChoice = true
+        return
+      }
+      if (!chosen) return
+      const moved = actor.exhaust.find((card) => card.uid === chosen)!
+      actor.exhaust = actor.exhaust.filter((card) => card.uid !== chosen)
+      const recovered = forgetRetain(moved)
+      recovered.counter = undefined
+      actor.hand = [...actor.hand, recovered]
+      note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their hand`)
       return
     }
     case 'drawAndPlayFree': {
@@ -1835,6 +1862,13 @@ export function playCard(
     if ((required === 1 && (!chosen || !player.discard.some((card) => card.uid === chosen))) ||
       (required === 0 && chosen !== undefined)) return state
   }
+  const exhume = effects.find((effect) => effect.kind === 'recoverExhaust')
+  if (exhume) {
+    const required = Math.min(exhume.amount, player.exhaust.length)
+    const chosen = context.recoverExhaustUid
+    if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
+      (required === 0 && chosen !== undefined)) return state
+  }
   const printedCost = forcedPlay ? 0 : playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
@@ -1935,6 +1969,7 @@ export function playCard(
   if (resolvesOnPlay) {
     for (const effect of effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
+      if (invalidPlayChoice(ctx)) return state
       // Combat endings are immediate (p.13), including halfway through a
       // card. Nothing printed later, nor cleanup or play triggers, resolves.
       if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
@@ -1962,9 +1997,7 @@ export function playCard(
   // card's effects for nothing. The whole play is resolved into a clone first,
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
-  if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
-    ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice ||
-    ctx.invalidTopdeckChoice || ctx.invalidRecoverChoice) return state
+  if (invalidPlayChoice(ctx)) return state
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)

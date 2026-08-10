@@ -112,7 +112,7 @@ type Pending = {
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
   choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover'
+    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover' | 'recoverExhaust'
     amount: number
     minimum?: number
   } | null
@@ -183,6 +183,7 @@ function requirementsOf(
   const exhaustAny = def.effects.find((effect) => effect.kind === 'exhaustAny')
   const topdeck = def.effects.find((effect) => effect.kind === 'topdeck')
   const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
+  const recoverExhaust = def.effects.find((effect) => effect.kind === 'recoverExhaust')
   const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
@@ -199,6 +200,8 @@ function requirementsOf(
           ? { kind: 'topdeck' as const, amount: topdeck.amount }
         : recover && viewer.discard.length > 0
           ? { kind: 'recover' as const, amount: recover.amount }
+        : recoverExhaust && viewer.exhaust.length > 0
+          ? { kind: 'recoverExhaust' as const, amount: recoverExhaust.amount }
         : null
   return {
     needsEnemy,
@@ -236,7 +239,9 @@ function pendingFor(
     evokeSlots: [],
     evokeEnemyUids: [],
     mode: null,
-    choiceCards: choiceCards ?? (requirements.choice?.kind === 'recover' ? viewer.discard : null),
+    choiceCards: choiceCards ?? (requirements.choice?.kind === 'recover'
+      ? viewer.discard
+      : requirements.choice?.kind === 'recoverExhaust' ? viewer.exhaust : null),
     choiceConfirmed: false,
     picked: [],
   }
@@ -524,13 +529,15 @@ export function CombatScreen({
   // after a reconnect so the player must finish the card they already saw.
   useEffect(() => {
     if (!cardPreview || !viewer) {
-      if (onAction) setPending((current) => current?.choiceCards && current.choice?.kind !== 'recover' ? null : current)
+      if (onAction) setPending((current) => current?.choiceCards &&
+        current.choice?.kind !== 'recover' && current.choice?.kind !== 'recoverExhaust' ? null : current)
       return
     }
     if (usingCard) return
     const card = viewer.hand.find((held) => held.uid === cardPreview.cardUid)
     if (!card) {
-      if (onAction) setPending((current) => current?.choiceCards && current.choice?.kind !== 'recover' ? null : current)
+      if (onAction) setPending((current) => current?.choiceCards &&
+        current.choice?.kind !== 'recover' && current.choice?.kind !== 'recoverExhaust' ? null : current)
       return
     }
     const next = pendingFor(card, cardPreview.cards, state, viewer)
@@ -595,10 +602,17 @@ export function CombatScreen({
       const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
       if (!cardPlayConditionMet(def, state, viewer, drawCount)) return null
       const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
+      const recoverExhaust = def.effects.find((effect) => effect.kind === 'recoverExhaust')
+      const recoveryCards = recover ? viewer.discard : recoverExhaust ? viewer.exhaust : null
+      if ((recover || recoverExhaust) && recoveryCards?.length === 0) return null
       const choice = recover
         ? viewer.discard.length > 0 ? { kind: 'recover' as const, amount: recover.amount } : null
+        : recoverExhaust
+          ? viewer.exhaust.length > 0
+            ? { kind: 'recoverExhaust' as const, amount: recoverExhaust.amount }
+            : null
         : current.choice
-      const choiceCards = recover ? (viewer.discard.length > 0 ? viewer.discard : null) : current.choiceCards
+      const choiceCards = recoveryCards ? (recoveryCards.length > 0 ? recoveryCards : null) : current.choiceCards
       const choiceCardsChanged = choiceCards?.length !== current.choiceCards?.length ||
         choiceCards?.some((card, index) => card.uid !== current.choiceCards?.[index]?.uid) === true
       const overflowShivs = overflowShivCount(state,
@@ -612,7 +626,7 @@ export function CombatScreen({
       const enemyUids = current.enemyUids.filter((uid) => alive.has(uid))
       const playerIds = current.playerIds.filter((id) => livingPlayers.has(id))
       const picked = choiceCards
-        ? recover
+        ? recover || recoverExhaust
           ? current.picked.filter((uid) => choiceCards.some((card) => card.uid === uid))
           : current.picked
         : current.picked.filter((uid) => viewer.hand.some((card) => card.uid === uid))
@@ -671,7 +685,7 @@ export function CombatScreen({
         choiceConfirmed: (pickedChanged || choiceCardsChanged || minimumUnpaid ||
           (overflowChanged && overflowShivs === 0)) &&
           (current.choice?.kind === 'discardAny' || current.choice?.kind === 'exhaustAny' ||
-            current.choice?.kind === 'recover')
+            current.choice?.kind === 'recover' || current.choice?.kind === 'recoverExhaust')
           ? false
           : current.choiceConfirmed,
         evokeSlots,
@@ -1095,6 +1109,7 @@ export function CombatScreen({
       scryDiscardUids: next.choice?.kind === 'scry' ? next.picked : undefined,
       topdeckUids: next.choice?.kind === 'topdeck' ? next.picked : undefined,
       recoverDiscardUid: next.choice?.kind === 'recover' ? next.picked[0] : undefined,
+      recoverExhaustUid: next.choice?.kind === 'recoverExhaust' ? next.picked[0] : undefined,
       spendMiracle: miracleOnCard,
       shivEnemyUids: next.shivEnemyUids,
       evokeSlots: next.evokeSlots,
@@ -1146,12 +1161,19 @@ export function CombatScreen({
         if (outcome?.status === 'refused' || outcome?.status === 'reconciled') {
           const authoritative = reconciliation(outcome)
           if (!authoritative || !authoritative.player.hand?.some((card) => card.uid === next.card.uid)) return
-          if (next.choiceCards && next.choice?.kind === 'recover') {
+          if (next.choiceCards &&
+            (next.choice?.kind === 'recover' || next.choice?.kind === 'recoverExhaust')) {
             setMiracleOnCard(usingMiracle)
-            const cards = authoritative.player.discard
+            const cards = next.choice.kind === 'recover'
+              ? authoritative.player.discard
+              : authoritative.player.exhaust
+            if (cards.length === 0) {
+              setPending(null)
+              return
+            }
             setPending({
               ...next,
-              choice: cards.length > 0 ? { kind: 'recover', amount: 1 } : null,
+              choice: cards.length > 0 ? { kind: next.choice.kind, amount: 1 } : null,
               choiceCards: cards.length > 0 ? cards : null,
               choiceConfirmed: false,
               picked: [],
@@ -1319,7 +1341,8 @@ export function CombatScreen({
     // A normal staged card can be cancelled. A card that already revealed
     // hidden information is committed and must be finished.
     if (pending?.card.uid === card.uid) {
-      if (pending.choiceCards && pending.choice?.kind !== 'recover') return
+      if (pending.choiceCards && pending.choice?.kind !== 'recover' &&
+        pending.choice?.kind !== 'recoverExhaust') return
       setPending(null)
       return
     }
@@ -1341,7 +1364,7 @@ export function CombatScreen({
     // Only resolve on the spot when there is genuinely nothing left to pick —
     // including a cost the hand is too small to pay anything towards.
     const owed = next.choice && next.choice.kind !== 'discardAny' && next.choice.kind !== 'exhaustAny'
-      ? Math.min(next.choice.amount, Math.max(0, viewer!.hand.length - 1))
+      ? Math.min(next.choice.amount, next.choiceCards?.length ?? Math.max(0, viewer!.hand.length - 1))
       : 0
     if (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' &&
       !next.needsEnemy && !next.needsAlly &&
@@ -1527,6 +1550,8 @@ export function CombatScreen({
           ? `${pendingDef?.name ?? 'Card'} — choose ${choiceNeeded} card to put on top`
         : pending.choice?.kind === 'recover'
           ? `${pendingDef?.name ?? 'Card'} — choose a card from your discard pile`
+        : pending.choice?.kind === 'recoverExhaust'
+          ? `${pendingDef?.name ?? 'Card'} — choose a card from your Exhaust pile`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
     : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed
       ? pending.choice.kind === 'discardAny'
@@ -1830,7 +1855,9 @@ export function CombatScreen({
             </button>
           ) : null}
           {!pendingStartEnemy && !pendingStartShiv &&
-            (!pending?.choiceCards || pending.choice?.kind === 'recover' && pending.choiceConfirmed) &&
+            (!pending?.choiceCards ||
+              (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust') &&
+              pending.choiceConfirmed) &&
             !forcedCard ? <button
             type="button"
             className="prompt__cancel"
@@ -1851,7 +1878,7 @@ export function CombatScreen({
         <dialog ref={choiceDialogRef} className="choice-modal" aria-labelledby="choice-modal-title"
           onCancel={(event) => {
             event.preventDefault()
-            if (pending.choice?.kind === 'recover') setPending(null)
+            if (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust') setPending(null)
           }}>
           <div className="choice-modal__panel">
             <h2 id="choice-modal-title">
@@ -1861,6 +1888,8 @@ export function CombatScreen({
                   ? `Choose ${choiceNeeded} for the top of your draw pile`
                 : pending.choice.kind === 'recover'
                   ? 'Choose a card from your discard pile'
+                : pending.choice.kind === 'recoverExhaust'
+                  ? 'Choose a card from your Exhaust pile'
                   : `Choose ${choiceNeeded} to discard`}
             </h2>
             <p>
@@ -1870,6 +1899,8 @@ export function CombatScreen({
                   ? `${pending.picked.length}/${choiceNeeded} selected. The card is committed.`
                 : pending.choice.kind === 'recover'
                   ? `${pending.picked.length}/${choiceNeeded} selected from discard.`
+                : pending.choice.kind === 'recoverExhaust'
+                  ? `${pending.picked.length}/${choiceNeeded} selected from Exhaust.`
                 : `${pending.picked.length}/${choiceNeeded} selected.${pending.picked.length > 0
                   ? ` Discard order (later is higher): ${pending.picked.map((uid, index) => {
                     const card = pending.choiceCards!.find((held) => held.uid === uid)!
@@ -1891,9 +1922,11 @@ export function CombatScreen({
                   ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : pending.choice.kind === 'recover'
                   ? 'Put selected card on top'
+                : pending.choice.kind === 'recoverExhaust'
+                  ? 'Return selected card to hand'
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
-            {pending.choice.kind === 'recover' ? (
+            {pending.choice.kind === 'recover' || pending.choice.kind === 'recoverExhaust' ? (
               <button type="button" className="prompt__cancel" onClick={() => setPending(null)}>Cancel</button>
             ) : null}
           </div>
