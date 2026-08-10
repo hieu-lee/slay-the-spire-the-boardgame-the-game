@@ -692,6 +692,12 @@ function applyEffect(
       }
       return
     }
+    case 'doubleStrength': {
+      const before = actor.strength
+      actor.strength = gainStrength(actor.strength, actor.strength)
+      if (actor.strength > before) note(`${actor.name} gains ${actor.strength - before} Strength`)
+      return
+    }
     case 'gainTemporaryStrength': {
       const before = actor.strength
       actor.strength = gainStrength(actor.strength, effect.amount)

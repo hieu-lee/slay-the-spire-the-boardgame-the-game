@@ -150,6 +150,7 @@ type EffectKind =
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
+  | { kind: 'doubleStrength' }
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
@@ -519,6 +520,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 1 }],
     exhaust: true,
     upgrade: { effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 2 }] },
+  }),
+  limit_break: card({
+    id: 'limit_break', name: 'Limit Break', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'doubleStrength' }],
+    exhaust: true,
+    upgrade: { exhaust: false },
   }),
   corruption: card({
     id: 'corruption', name: 'Corruption', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 3,

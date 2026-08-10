@@ -1706,6 +1706,35 @@ check('Blood for Blood unlocks its 1/0 HP-loss costs through real controls', () 
   ])
 })
 await shot('06zz-blood-for-blood-resolved')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-limit-break', defId: 'limit_break', upgraded: false },
+      { uid: 'ui-limit-break-plus', defId: 'limit_break', upgraded: true },
+    ],
+    discard: [], exhaust: [], energy: 2, strength: 2,
+  })
+  debug.setRun(run)
+})
+const limitCard = page.getByRole('button', { name: /^Limit Break,/ })
+const limitPlusCard = page.getByRole('button', { name: /^Limit Break\+,/ })
+await Promise.all([limitCard.waitFor(), limitPlusCard.waitFor()])
+const limitLabel = await limitCard.getAttribute('aria-label')
+const limitPlusLabel = await limitPlusCard.getAttribute('aria-label')
+await shot('070-limit-break-hd-cards')
+await limitCard.click()
+await limitPlusCard.click()
+const limited = await readState()
+check('Limit Break doubles Strength to 8 and flips Exhaust through real controls', () => {
+  assert(limitLabel.includes('double your Strength, maximum Strength 8') && limitLabel.includes('exhausts when played'), limitLabel)
+  assert(limitPlusLabel.includes('double your Strength, maximum Strength 8') && !limitPlusLabel.includes('exhausts when played'), limitPlusLabel)
+  assertEqual(limited.players[0].strength, 8)
+  assertDeepEqual(limited.players[0].exhaust.map((card) => card.uid), ['ui-limit-break'])
+  assertDeepEqual(limited.players[0].discard.map((card) => card.uid), ['ui-limit-break-plus'])
+})
+await shot('070a-limit-break-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

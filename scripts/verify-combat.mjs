@@ -847,6 +847,17 @@ check('Rage gains one Block per other Attack in hand and upgrades to cost 0', ()
   }
 })
 
+check('Limit Break doubles Strength to its cap and only the base face Exhausts', () => {
+  for (const upgraded of [false, true]) {
+    const limit = instance('limit_break', upgraded)
+    const state = combat([makePlayer({ hand: [limit], energy: 1, strength: upgraded ? 5 : 3 })], [makeEnemy()])
+    const played = playCard(state, 'p1', limit.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].strength, upgraded ? 8 : 6)
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), upgraded ? [] : [limit.uid])
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), upgraded ? [limit.uid] : [])
+  }
+})
+
 check('Blood for Blood discounts after HP loss and upgrades that discount to 0', () => {
   const fullPrice = instance('blood_for_blood')
   const unaffordable = combat([makePlayer({ hand: [fullPrice], energy: 2 })], [makeEnemy()])
@@ -2117,6 +2128,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'second_wind', block: [0, 0] },
     { id: 'sentinel', block: [2, 3], energy: [E - 1, E - 1] },
     { id: 'fiend_fire', enemyHp: [20, 20], exhaust: [1, 1] },
+    { id: 'limit_break', strength: [0, 0], exhaust: [1, 0], energy: [E - 1, E - 1] },
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },

@@ -93,6 +93,7 @@ function effectText(effect: Effect): string {
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
+    case 'doubleStrength': return `double your Strength, maximum Strength 8${condition}`
     case 'gainTemporaryStrength': return effect.loseGainedOnly
       ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
       : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`

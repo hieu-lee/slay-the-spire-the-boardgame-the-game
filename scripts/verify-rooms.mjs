@@ -1573,6 +1573,20 @@ check('Blood for Blood uses the owner\'s combat-wide HP-loss discount through ro
   assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 0)
 })
 
+check('Limit Break doubles only its owner\'s Strength through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const limit = { uid: 'room-limit-break', defId: 'limit_break', upgraded: true }
+  Object.assign(actor, { hand: [limit], energy: 1, strength: 5, discard: [], exhaust: [] })
+  ally.strength = 2
+  apply(room, a.token, { kind: 'playCard', cardUid: limit.uid, preflight: true })
+  const resolved = room.run.combat.players
+  assertEqual(resolved.find((player) => player.id === a.playerId).strength, 8)
+  assertEqual(resolved.find((player) => player.id === b.playerId).strength, 2)
+  assertDeepEqual(resolved.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [limit.uid])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)
