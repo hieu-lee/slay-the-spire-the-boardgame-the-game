@@ -1046,6 +1046,7 @@ function redactCombat(combat, viewerId) {
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
     enemies: combat.enemies,
+    pendingSummons: combat.pendingSummons ?? [],
     players: combat.players.map((player) => redactPlayer(player, viewerId)),
   }
 }

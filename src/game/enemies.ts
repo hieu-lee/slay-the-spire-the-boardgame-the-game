@@ -5,6 +5,8 @@
 // every turn, a row of actions indexed by the shared die, or a cube that walks
 // down a track and loops back to the topmost RED slot — grey slots are one-time
 // and are skipped on the loop.
+import { shuffle } from './rng.ts'
+import type { RngState } from './rng.ts'
 
 export type EnemyAction =
   /** Damage to the player in this enemy's row, or to all players if `aoe`. */
@@ -16,6 +18,14 @@ export type EnemyAction =
   | { kind: 'applyVulnerable'; amount: number; aoe?: boolean }
   /** Puts a Daze card on top of the target's draw pile (p.24). */
   | { kind: 'daze'; amount: number; aoe?: boolean }
+  /** Status cards go on top of discard, unlike Daze (p.24). */
+  | { kind: 'status'; card: 'burn' | 'slimed'; amount: number; aoe?: boolean }
+  | { kind: 'loseGold'; amount: number }
+  | { kind: 'leave' }
+  /** This printed action is sorted after ordinary enemies for this round. */
+  | { kind: 'actsLast' }
+  /** Summons resolve at the start of the next round. */
+  | { kind: 'summon'; defIds: string[] }
   /** Does nothing — Lagavulin asleep, the Gremlin Nob's first turn. */
   | { kind: 'idle' }
 
@@ -35,6 +45,7 @@ export type EnemyAbility =
   | { kind: 'curlUp'; block: number }
   | { kind: 'sporeCloud'; vulnerable: number }
   | { kind: 'enraged'; damage: number; fromTurn: number }
+  | { kind: 'angry'; strength: number }
 
 export type EnemyDef = {
   id: string
@@ -47,6 +58,16 @@ export type EnemyDef = {
   /** Bosses act last, as do enemies whose card says "acts last" (p.13). */
   actsLast?: boolean
   /** The yellow special ability printed on the card (p.13). */
+  ability?: EnemyAbility
+  /** Highest matching threshold replaces only the listed printed values. */
+  ascension?: EnemyAscension[]
+}
+
+export type EnemyAscension = {
+  min: number
+  hpByPlayers?: [number, number, number, number]
+  pattern?: EnemyPattern
+  actsLast?: boolean
   ability?: EnemyAbility
 }
 
@@ -61,26 +82,49 @@ export const ENEMIES: Record<string, EnemyDef> = {
   small_slime: {
     id: 'small_slime',
     name: 'Small Slime',
-    // Fixed-opening variant photographed in the cited physical-game source;
-    // the later Act I encounter card is a distinct 3-HP card.
-    hpByPlayers: [2, 2, 2, 2],
+    hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
   },
 
   acid_slime: {
     id: 'acid_slime',
     name: 'Acid Slime',
-    // The fixed-opening photo shows this 4-HP summon with Weak on 1-2;
-    // other cards in the four-card Acid Slime summon stack are not live yet.
-    hpByPlayers: [4, 4, 4, 4],
+    hpByPlayers: [5, 5, 5, 5],
     pattern: {
       kind: 'die',
       byRoll: byPairs(
-        [{ kind: 'applyWeak', amount: 1 }],
         [{ kind: 'attack', amount: 2 }],
+        [{ kind: 'applyWeak', amount: 1 }],
         [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
       ),
     },
+  },
+
+  acid_slime_daw: {
+    id: 'acid_slime_daw', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'applyWeak', amount: 1 }],
+    ) },
+  },
+
+  acid_slime_wda: {
+    id: 'acid_slime_wda', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }],
+    ) },
+  },
+
+  acid_slime_wad: {
+    id: 'acid_slime_wad', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+    ) },
   },
 
   cultist: {
@@ -105,7 +149,35 @@ export const ENEMIES: Record<string, EnemyDef> = {
       byRoll: byPairs(
         [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
         [{ kind: 'attack', amount: 4 }],
+        [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 1 }],
+      ),
+    },
+  },
+
+  jaw_worm_first: {
+    id: 'jaw_worm_first',
+    name: 'Jaw Worm',
+    hpByPlayers: [7, 7, 7, 7],
+    pattern: {
+      kind: 'die',
+      byRoll: byPairs(
         [{ kind: 'block', amount: 2 }, { kind: 'gainStrength', amount: 1 }],
+        [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 1 }],
+        [{ kind: 'attack', amount: 3 }],
+      ),
+    },
+  },
+
+  jaw_worm_a7: {
+    id: 'jaw_worm_a7',
+    name: 'Jaw Worm',
+    hpByPlayers: [7, 7, 7, 7],
+    pattern: {
+      kind: 'die',
+      byRoll: byPairs(
+        [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 1 }],
+        [{ kind: 'block', amount: 2 }, { kind: 'gainStrength', amount: 1 }],
+        [{ kind: 'attack', amount: 3 }],
       ),
     },
   },
@@ -125,6 +197,16 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ability: { kind: 'curlUp', block: 2 },
   },
 
+  green_louse_21w: {
+    id: 'green_louse_21w', name: 'Green Louse', hpByPlayers: [3, 3, 3, 3],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }],
+      [{ kind: 'applyWeak', amount: 1 }],
+    ) },
+    ability: { kind: 'curlUp', block: 2 },
+  },
+
   red_louse: {
     id: 'red_louse',
     name: 'Red Louse',
@@ -140,20 +222,67 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ability: { kind: 'curlUp', block: 2 },
   },
 
+  red_louse_first: {
+    id: 'red_louse_first',
+    name: 'Red Louse',
+    hpByPlayers: [4, 4, 4, 4],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'gainStrength', amount: 1 }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }],
+    ) },
+    ability: { kind: 'curlUp', block: 2 },
+  },
+
+  red_louse_summon: {
+    id: 'red_louse_summon', name: 'Red Louse', hpByPlayers: [3, 3, 3, 3],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }],
+      [{ kind: 'gainStrength', amount: 1 }],
+    ) },
+    ability: { kind: 'curlUp', block: 2 },
+  },
+
   spike_slime: {
     id: 'spike_slime',
     name: 'Spike Slime',
     hpByPlayers: [5, 5, 5, 5],
-    // "Acts last" is printed beside its first action.
-    actsLast: true,
     pattern: {
       kind: 'die',
       byRoll: byPairs(
-        [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }],
+        [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
         [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
         [{ kind: 'attack', amount: 2 }],
       ),
     },
+  },
+
+  spike_slime_dv2: {
+    id: 'spike_slime_dv2', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }],
+    ) },
+  },
+
+  spike_slime_v2d: {
+    id: 'spike_slime_v2d', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
+    ) },
+  },
+
+  spike_slime_2dv: {
+    id: 'spike_slime_2dv', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+    ) },
   },
 
   fungi_beast: {
@@ -174,14 +303,196 @@ export const ENEMIES: Record<string, EnemyDef> = {
   blue_slaver: {
     id: 'blue_slaver',
     name: 'Blue Slaver',
-    hpByPlayers: [7, 7, 7, 7],
+    hpByPlayers: [10, 10, 10, 10],
+    pattern: {
+      kind: 'die',
+      byRoll: byPairs(
+        [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+        [{ kind: 'attack', amount: 3 }],
+        [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+      ),
+    },
+  },
+
+  red_slaver: {
+    id: 'red_slaver',
+    name: 'Red Slaver',
+    hpByPlayers: [10, 10, 10, 10],
+    pattern: {
+      kind: 'die',
+      byRoll: byPairs(
+        [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
+        [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+        [{ kind: 'attack', amount: 3 }],
+      ),
+    },
+  },
+
+  looter: {
+    id: 'looter',
+    name: 'Looter',
+    hpByPlayers: [9, 9, 9, 9],
     pattern: {
       kind: 'cube',
       slots: [
-        { actions: [{ kind: 'attack', amount: 1 }] },
-        { actions: [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 2 }] },
+        { actions: [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }] },
+        { actions: [{ kind: 'loseGold', amount: 2 }, { kind: 'leave' }] },
       ],
     },
+    ascension: [{ min: 7, hpByPlayers: [7, 7, 7, 7] }],
+  },
+
+  large_slime: {
+    id: 'large_slime',
+    name: 'Large Slime',
+    hpByPlayers: [8, 8, 8, 8],
+    pattern: {
+      kind: 'cube',
+      slots: [
+        { actions: [{ kind: 'attack', amount: 1, aoe: true }] },
+        { actions: [{ kind: 'attack', amount: 4 }, { kind: 'daze', amount: 1 }] },
+        { actions: [{ kind: 'summon', defIds: ['acid_slime'] }] },
+      ],
+    },
+    ascension: [{
+      min: 7,
+      hpByPlayers: [9, 9, 9, 9],
+      pattern: {
+        kind: 'cube',
+        slots: [
+          { actions: [{ kind: 'attack', amount: 2, aoe: true }] },
+          { actions: [{ kind: 'attack', amount: 4 }, { kind: 'daze', amount: 2 }] },
+          { actions: [{ kind: 'summon', defIds: ['acid_slime'] }] },
+        ],
+      },
+    }],
+  },
+
+  large_slime_summon_w4s: {
+    id: 'large_slime_summon_w4s', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 2 }],
+      [{ kind: 'attack', amount: 4 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2 }],
+    ) },
+  },
+
+  large_slime_summon_4sw: {
+    id: 'large_slime_summon_4sw', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 4 }],
+      [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 2 }],
+    ) },
+  },
+
+  large_slime_summon_sw4: {
+    id: 'large_slime_summon_sw4', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2 }],
+      [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 2 }],
+      [{ kind: 'attack', amount: 4 }],
+    ) },
+  },
+
+  mad_gremlin: {
+    id: 'mad_gremlin',
+    name: 'Mad Gremlin',
+    hpByPlayers: [4, 4, 4, 4],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
+    ability: { kind: 'angry', strength: 1 },
+  },
+
+  sneaky_gremlin: {
+    id: 'sneaky_gremlin',
+    name: 'Sneaky Gremlin',
+    hpByPlayers: [2, 2, 2, 2],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 2 }] },
+  },
+
+  gremlin_wizard: {
+    id: 'gremlin_wizard',
+    name: 'Gremlin Wizard',
+    hpByPlayers: [4, 4, 4, 4],
+    pattern: {
+      kind: 'cube',
+      slots: [
+        { actions: [{ kind: 'idle' }], once: true },
+        { actions: [{ kind: 'attack', amount: 3, aoe: true }] },
+      ],
+    },
+  },
+
+  fat_gremlin: {
+    id: 'fat_gremlin',
+    name: 'Fat Gremlin',
+    hpByPlayers: [3, 3, 3, 3],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, aoe: true }] },
+  },
+
+  sentry_a: {
+    id: 'sentry_a',
+    name: 'Sentry A',
+    hpByPlayers: [7, 7, 7, 7],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'daze', amount: 1 }], 2: [{ kind: 'daze', amount: 1 }], 3: [{ kind: 'daze', amount: 1 }],
+      4: [{ kind: 'attack', amount: 3 }], 5: [{ kind: 'attack', amount: 3 }], 6: [{ kind: 'attack', amount: 3 }],
+    } },
+  },
+
+  sentry_b: {
+    id: 'sentry_b',
+    name: 'Sentry B',
+    hpByPlayers: [8, 8, 8, 8],
+    pattern: { kind: 'die', byRoll: {
+      1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
+      4: [{ kind: 'daze', amount: 1 }], 5: [{ kind: 'daze', amount: 1 }], 6: [{ kind: 'daze', amount: 1 }],
+    } },
+  },
+
+  sentries: {
+    id: 'sentries',
+    name: 'Sentries',
+    elite: true,
+    hpByPlayers: [7, 7, 7, 7],
+    pattern: {
+      kind: 'die',
+      byRoll: {
+        1: [{ kind: 'attack', amount: 2 }],
+        2: [{ kind: 'attack', amount: 2 }],
+        3: [{ kind: 'attack', amount: 2 }],
+        4: [{ kind: 'daze', amount: 1 }],
+        5: [{ kind: 'daze', amount: 1 }],
+        6: [{ kind: 'daze', amount: 1 }],
+      },
+    },
+    ascension: [
+      {
+        min: 1,
+        hpByPlayers: [8, 8, 8, 8],
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'daze', amount: 1 }], once: true },
+            { actions: [{ kind: 'attack', amount: 2 }] },
+            { actions: [{ kind: 'daze', amount: 2 }] },
+          ],
+        },
+      },
+      {
+        min: 12,
+        hpByPlayers: [9, 9, 9, 9],
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'daze', amount: 1, aoe: true }], once: true },
+            { actions: [{ kind: 'attack', amount: 2 }] },
+            { actions: [{ kind: 'daze', amount: 2 }] },
+          ],
+        },
+      },
+    ],
   },
 
   gremlin_nob: {
@@ -189,7 +500,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     name: 'Gremlin Nob',
     elite: true,
     // Elites scale with the party via the HP board (p.11).
-    hpByPlayers: [14, 28, 42, 56],
+    hpByPlayers: [15, 30, 45, 60],
     pattern: {
       kind: 'cube',
       slots: [
@@ -198,6 +509,30 @@ export const ENEMIES: Record<string, EnemyDef> = {
       ],
     },
     ability: { kind: 'enraged', damage: 1, fromTurn: 2 },
+    ascension: [
+      {
+        min: 1,
+        hpByPlayers: [17, 35, 53, 70],
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'idle' }], once: true },
+            { actions: [{ kind: 'attack', amount: 3, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+          ],
+        },
+      },
+      {
+        min: 12,
+        hpByPlayers: [19, 39, 61, 85],
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'attack', amount: 1, aoe: true }], once: true },
+            { actions: [{ kind: 'attack', amount: 3, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+          ],
+        },
+      },
+    ],
   },
 
   lagavulin: {
@@ -212,10 +547,62 @@ export const ENEMIES: Record<string, EnemyDef> = {
         { actions: [{ kind: 'idle' }], once: true },
         { actions: [{ kind: 'attack', amount: 4, aoe: true }] },
         { actions: [{ kind: 'attack', amount: 4, aoe: true }] },
-        { actions: [{ kind: 'applyWeak', amount: 2, aoe: true }] },
+        { actions: [{ kind: 'applyWeak', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
       ],
     },
+    ascension: [
+      {
+        min: 1,
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'applyWeak', amount: 2, aoe: true }] },
+            { actions: [{ kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+            { actions: [{ kind: 'attack', amount: 4, aoe: true }] },
+          ],
+        },
+      },
+      {
+        min: 12,
+        hpByPlayers: [24, 49, 76, 105],
+        pattern: {
+          kind: 'cube',
+          slots: [
+            { actions: [{ kind: 'applyWeak', amount: 2, aoe: true }] },
+            { actions: [{ kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+            { actions: [{ kind: 'attack', amount: 4, aoe: true }] },
+          ],
+        },
+      },
+    ],
   },
+}
+
+export type SummonSupply = Record<string, string[]>
+
+/** The physical Summons deck, grouped by the name a card asks us to search for. */
+const SUMMON_CARDS: SummonSupply = {
+  acid_slime: ['acid_slime', 'acid_slime_daw', 'acid_slime_wda', 'acid_slime_wad'],
+  green_louse: ['green_louse', 'green_louse_21w'],
+  red_louse: ['red_louse_summon'],
+  spike_slime: ['spike_slime', 'spike_slime_dv2', 'spike_slime_v2d', 'spike_slime_2dv'],
+  large_slime: ['large_slime_summon_w4s', 'large_slime_summon_w4s', 'large_slime_summon_4sw', 'large_slime_summon_sw4'],
+  fungi_beast: ['fungi_beast'],
+  gremlin: [
+    'gremlin_wizard', 'sneaky_gremlin', 'fat_gremlin', 'mad_gremlin',
+    'gremlin_wizard', 'sneaky_gremlin', 'fat_gremlin', 'mad_gremlin',
+  ],
+  sentry_a: Array(6).fill('sentry_a'),
+  sentry_b: Array(5).fill('sentry_b'),
+}
+
+export function createSummonSupply(rng: RngState): SummonSupply {
+  return Object.fromEntries(Object.entries(SUMMON_CARDS).map(([name, cards]) => [name, shuffle(rng, [...cards])]))
+}
+
+/** Removes one random matching physical card; absent cards cannot be summoned. */
+export function drawSummon(supply: SummonSupply, name: string): string | null {
+  return supply[name]?.shift() ?? null
 }
 
 export function abilityText(ability: EnemyAbility, compact = false): string {
@@ -229,13 +616,19 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'enraged': return compact
       ? `Enraged · turn ${ability.fromTurn}+: Skills hurt ${ability.damage}`
       : `Enraged: from turn ${ability.fromTurn}, a Skill deals ${ability.damage} damage to its player`
+    case 'angry': return compact
+      ? `Angry · hit: +${ability.strength} Strength`
+      : `Angry: after taking damage from an Attack, gain ${ability.strength} Strength`
   }
 }
 
-export function enemyDef(id: string): EnemyDef {
+export function enemyDef(id: string, ascension = 0): EnemyDef {
   const def = ENEMIES[id]
   if (!def) throw new Error(`unknown enemy id: ${id}`)
-  return def
+  const variant = def.ascension
+    ?.filter((candidate) => ascension >= candidate.min)
+    .sort((a, b) => b.min - a.min)[0]
+  return variant ? { ...def, ...variant, id: def.id, name: def.name } : def
 }
 
 /** Starting HP scales with the party size via the HP board (p.11). */

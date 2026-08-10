@@ -35,6 +35,7 @@ export type VisibleCombat = {
   phase: CombatPhase
   players: VisiblePlayer[]
   enemies: Enemy[]
+  pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
   powerTriggersUsedThisTurn: string[]
   log: string[]
 }

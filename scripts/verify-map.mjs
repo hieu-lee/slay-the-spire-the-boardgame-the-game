@@ -183,7 +183,10 @@ import { activatePotion } from '../src/game/combat.ts'
 suite('run')
 
 const skipRewards = (run) => run.phase === 'reward'
-  ? resolveCardRewards(run, Object.fromEntries(run.rewards.map((offer) => [offer.playerId, null])))
+  ? resolveCardRewards(
+      run,
+      Object.fromEntries(run.rewards.map((offer) => [offer.playerId, null])),
+    )
   : run
 
 check('every enemy the run can spawn actually exists', () => {
@@ -236,8 +239,9 @@ check('every enemy has a sane HP track', () => {
     for (const hp of def.hpByPlayers) {
       assert(hp > 0, `${def.id} has a non-positive HP entry`)
     }
-    // Elites use the HP board, which scales; ordinary enemies do not.
-    if (def.elite) {
+    // Single-card elites use the HP board. Sentries instead scales by summoning
+    // until three enemies per player are present.
+    if (def.elite && def.id !== 'sentries') {
       assert(
         def.hpByPlayers[3] > def.hpByPlayers[0],
         `${def.id} is an elite so its HP should scale with the party`,
@@ -324,19 +328,19 @@ check('the four fixed-opening cards are dealt once each, with their summons', ()
   const mains = enemies.filter((enemy) => !enemy.uid.includes('-summon'))
   assertDeepEqual(
     [...mains.map((enemy) => enemy.defId)].sort(),
-    ['cultist', 'jaw_worm', 'red_louse', 'small_slime'],
+    ['cultist', 'jaw_worm_first', 'red_louse_first', 'small_slime'],
     'the physical opening deck is dealt without replacement',
   )
   const expected = {
     cultist: [],
-    jaw_worm: [],
-    red_louse: ['green_louse'],
-    small_slime: ['acid_slime'],
+    jaw_worm_first: [],
+    red_louse_first: ['Green Louse'],
+    small_slime: ['Acid Slime'],
   }
   for (const main of mains) {
     const summons = enemies
       .filter((enemy) => enemy.uid.startsWith(`${main.uid}-summon`))
-    assertDeepEqual(summons.map((enemy) => enemy.defId), expected[main.defId], `${main.defId} summon box`)
+    assertDeepEqual(summons.map((enemy) => enemyDef(enemy.defId).name), expected[main.defId], `${main.defId} summon box`)
     for (const summon of summons) {
       assertEqual(summon.row, main.row, 'the summon is placed to the right in the same row')
       assertEqual(summon.goldReward, 0, 'summons do not add a second reward')
@@ -351,8 +355,8 @@ check('the fixed opening encounter uses its own printed rewards', () => {
   const enemy = entered.combat.enemies[0]
   const printed = {
     cultist: [1, 'normal'],
-    jaw_worm: [1, 'normal'],
-    red_louse: [1, null],
+    jaw_worm_first: [1, 'normal'],
+    red_louse_first: [1, null],
     small_slime: [0, 'normal'],
   }
   const reward = printed[enemy.defId]
@@ -379,6 +383,32 @@ check('winning a combat carries HP forward into the run', () => {
   const foe = entered.combat.enemies.find((enemy) => enemy.row === entered.players[0].row)
   const printedGold = foe.goldReward
   assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
+})
+
+check('encounter rewards follow each player’s final combat row', () => {
+  const run = createRun(44, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const mains = entered.combat.enemies.filter((enemy) => !enemy.uid.includes('-summon')).slice(0, 2)
+  const won = {
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      players: entered.combat.players.map((player) => ({ ...player, row: player.row === 0 ? 1 : 0 })),
+      enemies: [
+        { ...mains[0], row: 0, dead: true, hp: 0, goldReward: 1, cardReward: 'normal' },
+        { ...mains[1], row: 1, dead: true, hp: 0, goldReward: 3, cardReward: 'upgraded' },
+      ],
+    },
+  }
+  const after = resolveCombat(won)
+  assertEqual(after.players.find((player) => player.id === 'p1').row, 1, 'the row switch persists')
+  assertEqual(after.players.find((player) => player.id === 'p1').gold, 3, 'p1 gets row 1 gold')
+  const p1Offer = after.rewards.find((offer) => offer.playerId === 'p1')
+  assertEqual(p1Offer.upgraded, true, 'p1 gets row 1 upgraded card reward')
 })
 
 check('a potion consumed to win does not reappear after combat', () => {
@@ -612,7 +642,8 @@ check('an elite room places one elite, not one per player', () => {
     for (const choice of roomChoices(afterFight)) {
       if (choice.kind !== 'elite') continue
       const elite = enterRoom(afterFight, choice.id)
-      assertEqual(elite.combat.enemies.length, 1, 'an elite is placed alone in the bottom row (p.11)')
+      assertEqual(elite.combat.enemies.filter((enemy) => enemy.uid === 'elite').length, 1,
+        'one elite card is placed in the bottom row (p.11)')
       assert(!elite.combat.enemies[0].isBoss, 'an elite is not a boss')
       assertEqual(elite.combat.enemies[0].goldReward, 2, 'an Act I elite grants 2 gold')
       assertEqual(elite.combat.enemies[0].cardReward, 'normal', 'an Act I elite grants a normal card')
@@ -635,32 +666,139 @@ check('an elite room places one elite, not one per player', () => {
   assert(found, 'expected at least one elite room within 60 seeds')
 })
 
+check('Sentries alternates A/B summons until there are three enemies per player', () => {
+  let checked = false
+  for (let seed = 0; seed < 200 && !checked; seed++) {
+    const run = createRun(seed, [
+      { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+      { id: 'p2', name: 'Silent', character: 'silent' },
+    ])
+    const start = enterRoom(run, roomChoices(run)[0].id)
+    const afterFight = skipRewards(resolveCombat({
+      ...start,
+      combat: { ...start.combat, phase: 'won', enemies: start.combat.enemies.map((enemy) => ({ ...enemy, dead: true })) },
+    }))
+    const eliteRoom = roomChoices(afterFight).find((room) => room.kind === 'elite')
+    if (!eliteRoom) continue
+    const elite = enterRoom(afterFight, eliteRoom.id)
+    if (elite.combat.enemies[0].defId !== 'sentries') continue
+    assertEqual(elite.combat.enemies.length, 6, 'two players face six Sentries')
+    assertDeepEqual(
+      elite.combat.enemies.slice(1).map((enemy) => enemy.defId),
+      ['sentry_a', 'sentry_b', 'sentry_a', 'sentry_b', 'sentry_a'],
+      'the summon deck alternates A/B after the main Sentries card',
+    )
+    for (const player of elite.combat.players) {
+      assertEqual(
+        elite.combat.enemies.filter((enemy) => enemy.row === player.row).length,
+        3,
+        `row ${player.row} has exactly three Sentries`,
+      )
+    }
+    checked = true
+  }
+  assert(checked, 'expected to find a Sentries elite within 200 seeds')
+})
+
+check('random gremlins draw without replacement from the shared two-copy deck', () => {
+  let checked = false
+  for (let seed = 0; seed < 300 && !checked; seed++) {
+    const run = createRun(seed, [
+      { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+      { id: 'p2', name: 'Silent', character: 'silent' },
+      { id: 'p3', name: 'Defect', character: 'defect' },
+      { id: 'p4', name: 'Watcher', character: 'watcher' },
+    ])
+    const source = Object.values(run.map.rooms).find((room) =>
+      room.exits.some((id) => run.map.rooms[id]?.kind === 'encounter'))
+    const target = source?.exits.find((id) => run.map.rooms[id]?.kind === 'encounter')
+    if (!source || !target) continue
+    const entered = enterRoom({ ...run, map: { ...run.map, position: source.id } }, target)
+    if (!entered.combat.enemies.some((enemy) => enemy.defId === 'mad_gremlin' || enemy.defId === 'sneaky_gremlin')) continue
+    const gremlins = ['gremlin_wizard', 'mad_gremlin', 'sneaky_gremlin', 'fat_gremlin']
+    for (const id of gremlins) {
+      assert(entered.combat.enemies.filter((enemy) => enemy.uid.includes('summon') && enemy.defId === id).length <= 2,
+        `${id} exceeded its two physical summon cards`)
+    }
+    checked = true
+  }
+  assert(checked, 'expected to draw a random-gremlin encounter within 300 seeds')
+})
+
+check('ordinary encounter cards rotate to the bottom instead of reshuffling per room', () => {
+  const party = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ]
+  const run = createRun(44, party)
+  const source = Object.values(run.map.rooms).find((room) =>
+    room.exits.some((id) => run.map.rooms[id]?.kind === 'encounter'))
+  const target = source?.exits.find((id) => run.map.rooms[id]?.kind === 'encounter')
+  assert(source && target, 'the regression map needs an ordinary encounter edge')
+  const before = structuredClone(run.enemyDecks.encounter)
+  const entered = enterRoom({ ...run, map: { ...run.map, position: source.id } }, target)
+  assertDeepEqual(
+    entered.enemyDecks.encounter,
+    [...before.slice(party.length), ...before.slice(0, party.length)],
+    'drawn physical cards return to the bottom in order',
+  )
+  assertDeepEqual(
+    JSON.parse(JSON.stringify(entered)).enemyDecks,
+    entered.enemyDecks,
+    'the remaining deck survives save/reconnect serialization',
+  )
+})
+
 // Transcribed from the enemy card scans. Comparing a definition to itself is a
 // tautology, so the numbers are pinned here against the printed cards instead.
 const PRINTED_HP = {
-  small_slime: [2, 2, 2, 2],
-  acid_slime: [4, 4, 4, 4],
+  small_slime: [3, 3, 3, 3],
+  acid_slime: [5, 5, 5, 5],
+  acid_slime_daw: [5, 5, 5, 5],
+  acid_slime_wda: [5, 5, 5, 5],
+  acid_slime_wad: [5, 5, 5, 5],
   cultist: [9, 9, 9, 9],
   jaw_worm: [10, 10, 10, 10],
+  jaw_worm_first: [7, 7, 7, 7],
+  jaw_worm_a7: [7, 7, 7, 7],
   green_louse: [3, 3, 3, 3],
+  green_louse_21w: [3, 3, 3, 3],
   red_louse: [4, 4, 4, 4],
+  red_louse_first: [4, 4, 4, 4],
+  red_louse_summon: [3, 3, 3, 3],
   spike_slime: [5, 5, 5, 5],
+  spike_slime_dv2: [5, 5, 5, 5],
+  spike_slime_v2d: [5, 5, 5, 5],
+  spike_slime_2dv: [5, 5, 5, 5],
   fungi_beast: [6, 6, 6, 6],
-  blue_slaver: [7, 7, 7, 7],
-  gremlin_nob: [14, 28, 42, 56],
+  blue_slaver: [10, 10, 10, 10],
+  red_slaver: [10, 10, 10, 10],
+  looter: [9, 9, 9, 9],
+  large_slime: [8, 8, 8, 8],
+  large_slime_summon_w4s: [10, 10, 10, 10],
+  large_slime_summon_4sw: [10, 10, 10, 10],
+  large_slime_summon_sw4: [10, 10, 10, 10],
+  mad_gremlin: [4, 4, 4, 4],
+  sneaky_gremlin: [2, 2, 2, 2],
+  gremlin_wizard: [4, 4, 4, 4],
+  fat_gremlin: [3, 3, 3, 3],
+  sentry_a: [7, 7, 7, 7],
+  sentry_b: [8, 8, 8, 8],
+  sentries: [7, 7, 7, 7],
+  gremlin_nob: [15, 30, 45, 60],
   lagavulin: [22, 44, 66, 88],
 }
 
 check('main-enemy rewards come from the Act-specific encounter card', () => {
   const firstCardReward = {
-    red_louse: null,
-    jaw_worm: 'normal',
+    red_louse_first: null,
+    jaw_worm_first: 'normal',
     cultist: 'normal',
     small_slime: 'normal',
   }
   const actOneGold = {
-    red_louse: 1,
-    jaw_worm: 1,
+    red_louse_first: 1,
+    jaw_worm_first: 1,
     cultist: 1,
     small_slime: 0,
     blue_slaver: 2,
@@ -741,6 +879,20 @@ check('every enemy HP track matches the number printed on its card', () => {
     Object.keys(PRINTED_HP).length,
     'an enemy was added or removed without updating the printed-HP table',
   )
+})
+
+check('the complete Act I enemy, summon, gremlin, and elite roster is live', () => {
+  const required = [
+    'small_slime', 'acid_slime', 'acid_slime_daw', 'acid_slime_wda', 'acid_slime_wad', 'cultist',
+    'jaw_worm', 'jaw_worm_first', 'jaw_worm_a7', 'green_louse', 'green_louse_21w', 'red_louse',
+    'red_louse_first', 'red_louse_summon', 'spike_slime', 'spike_slime_dv2',
+    'spike_slime_v2d', 'spike_slime_2dv', 'fungi_beast', 'blue_slaver',
+    'red_slaver', 'looter', 'large_slime', 'large_slime_summon_w4s',
+    'large_slime_summon_4sw', 'large_slime_summon_sw4', 'mad_gremlin',
+    'sneaky_gremlin', 'gremlin_wizard', 'fat_gremlin', 'sentry_a', 'sentry_b',
+    'sentries', 'gremlin_nob', 'lagavulin',
+  ]
+  assertDeepEqual(required.filter((id) => !ENEMIES[id]), [], 'every inventoried Act I card has a definition')
 })
 
 check('encounter HP comes from the enemy definition, not a fixture', () => {

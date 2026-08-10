@@ -273,7 +273,9 @@ check('Full Knowledge shares every revealed reward before final choices', () => 
 check('revising a reward choice invalidates every earlier confirmation', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
-  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' }))
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, cardReward: 'normal',
+  }))
   apply(room, a.token, { kind: 'resolveCombat' })
   apply(room, a.token, { kind: 'cardReward', choice: null })
   apply(room, b.token, { kind: 'cardReward', choice: null })
@@ -303,7 +305,9 @@ check('online reward messages reject unrevealed choices', () => {
 check('a disconnected seat keeps its undecided permanent reward', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
-  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({ ...enemy, cardReward: 'normal' }))
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, cardReward: 'normal',
+  }))
   apply(room, a.token, { kind: 'resolveCombat' })
   apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
   apply(room, a.token, { kind: 'cardReward', choice: 0 })
@@ -2008,6 +2012,8 @@ check('the rng state never reaches a client', () => {
   const keys = allKeys(snapshotFor(room, a.token))
   assert(!keys.includes('rng'), 'the rng state was serialised to a client')
   assert(!keys.includes('seed'), 'the run seed was serialised to a client')
+  assert(!keys.includes('enemyDecks'), 'the face-down encounter and elite decks were serialised to a client')
+  assert(!keys.includes('summonSupply'), 'the remaining face-down Summons deck was serialised to a client')
 })
 
 check('pile sizes are still visible — they are public at a real table', () => {

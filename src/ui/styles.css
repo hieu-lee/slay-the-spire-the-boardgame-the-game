@@ -969,6 +969,12 @@ button:disabled {
   font-size: 1.15rem;
 }
 
+.intent__label {
+  font-size: 0.68rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .enemy__asleep {
   color: var(--ink-dim);
   letter-spacing: 0.2em;

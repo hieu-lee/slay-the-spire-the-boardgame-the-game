@@ -25,6 +25,8 @@ export const CAPS = {
   potions: 3,
   /** The physical Daze deck is shared by the party. */
   daze: 10,
+  /** The 36 double-sided Burn/Slimed cards share one supply. */
+  status: 36,
 } as const
 
 /** Card definitions are static; instances are what live in a deck. */
@@ -106,6 +108,8 @@ export type Enemy = {
   row: number
   /** Bosses are treated as being in every row and are hit by every AoE. */
   isBoss: boolean
+  /** Printed alternate rows selected when this enemy card entered play. */
+  ascension?: number
 
   hp: number
   maxHp: number

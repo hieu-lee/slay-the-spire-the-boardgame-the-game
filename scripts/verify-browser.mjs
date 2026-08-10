@@ -3080,7 +3080,7 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   const state = run.combat
   const row = state.players[0].row
-  const red = state.enemies.find((enemy) => enemy.defId === 'red_louse')
+  const red = state.enemies.find((enemy) => enemy.defId === 'red_louse' || enemy.defId === 'red_louse_first')
   state.enemies = state.enemies.filter((enemy) => enemy.isBoss || enemy.row !== row)
   for (let index = 0; index < 3; index++) state.enemies.push({
     ...red,

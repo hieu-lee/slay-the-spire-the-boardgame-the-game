@@ -29,12 +29,9 @@
 //     abilities on enemies not yet transcribed remain absent with those cards.
 //   - There is no boss deck: a boss room stands up the toughest elite, marked
 //     as a boss so it acts last. It grants no reward rather than inventing the
-//     stand-in elite's reward. Elite rooms draw from a two-entry elite list.
+//     stand-in elite's reward. Act I elite rooms draw all three physical cards.
 //   - Event, treasure and merchant rooms show a placeholder screen.
-//   - Relics fire on their triggers, but there is no way to GAIN one during a
-//     run. Twelve potion types can be used in combat; reward draws, replacement
-//     at the limit, outside-combat trading, and the other nine effects are not
-//     wired yet.
+//   - Relic and potion reward decks are not wired yet.
 //   - Card rewards can be skipped unseen or reveal three live common/uncommon
 //     cards, allow one or a skip, return the rest to the bottom, and persist
 //     the pick into the deck.
@@ -45,11 +42,11 @@
 //     The other 108 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
-//     effects. 11 enemies of roughly 60; no events, no shops.
+//     effects. 35 enemies of roughly 60; no events, no shops.
 //   - Ascension 2's max-HP loss, Ascension 5's starter Curse, Ascension 6's Act
-//     heal and Ascension 9's starting damage are applied. Ascension 4's potion
-//     limit waits on potion rewards; the others wait on their elite, event,
-//     merchant, boss or Act IV content.
+//     heal and Ascension 9's starting damage are applied. Ascension 4 waits on
+//     potion rewards; the others wait on their elite, event, merchant, boss or
+//     Act IV content.
 //   - Orbs can be individually chosen and targeted for card evokes, forced
 //     full-slot channels and end-of-turn resolution.
 //   - On-play, on-Poison, on-Exhaust and card-effect discard abilities wait until the

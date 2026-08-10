@@ -364,15 +364,14 @@ suite('player statuses')
 
 // Enemies can Weaken players and make them Vulnerable; both were no-ops before.
 check('an enemy action actually applies Weak to the player in its row', () => {
-  const state = inEnemyPhase(
+  const state = { ...inEnemyPhase(
     [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
-    // Slot 1 of the Blue Slaver's track is the attack that Weakens.
-    [enemy({ defId: 'blue_slaver', hp: 7, actionIndex: 1 })],
-  )
+    [enemy({ defId: 'blue_slaver', hp: 7 })],
+  ), die: 1 }
   const next = enemyTurn(state)
   assertEqual(next.players[0].weak, 1, 'the player sharing the row is Weakened')
   assertEqual(next.players[1].weak, 0, 'a player in another row is not')
-  assertEqual(next.players[0].hp, 8, 'and still takes the attack')
+  assertEqual(next.players[0].hp, 7, 'and still takes the printed 2 attack')
 })
 
 check('a Weak player deals one less damage per hit', () => {

@@ -5,7 +5,8 @@
 // "not allowed" from "allowed but nothing changed".
 import { cardCost, faceOf, cardDef } from './cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect, TargetScope } from './cards.ts'
-import { actionsFor, advanceCube, enemyDef } from './enemies.ts'
+import { actionsFor, advanceCube, drawSummon, enemyDef, startingHp } from './enemies.ts'
+import type { SummonSupply } from './enemies.ts'
 import type { EnemyAction } from './enemies.ts'
 import {
   applyDamage,
@@ -20,7 +21,7 @@ import {
   hitDamage,
   totalPoisonInPlay,
 } from './damage.ts'
-import { addToDrawTop, drawCards, discardHand, scry } from './piles.ts'
+import { addToDiscardTop, addToDrawTop, drawCards, discardHand, scry } from './piles.ts'
 import { potionDef, relicDef } from './relics.ts'
 import { triggerMatches } from './triggers.ts'
 import type { Trigger, TriggerEvent } from './triggers.ts'
@@ -48,6 +49,8 @@ export type CombatState = {
   phase: CombatPhase
   players: Player[]
   enemies: Enemy[]
+  summonSupply: SummonSupply
+  pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
   discardedThisTurn: string[]
   stanceChangedThisTurn: string[]
   /** Power instance ids already spent by a printed once-per-turn trigger. */
@@ -155,7 +158,7 @@ function damageEnemy(enemy: Enemy, damage: number): { blocked: number; curled: b
   enemy.block = outcome.block
   enemy.hp = outcome.hp
   if (enemy.hp === 0) enemy.dead = true
-  const ability = enemyDef(enemy.defId).ability
+  const ability = enemyDef(enemy.defId, enemy.ascension).ability
   if (
     enemy.hp < hpBefore && !enemy.dead && !enemy.abilityUsed && ability?.kind === 'curlUp'
   ) {
@@ -164,6 +167,16 @@ function damageEnemy(enemy: Enemy, damage: number): { blocked: number; curled: b
     return { blocked: blockBefore - outcome.block, curled: true }
   }
   return { blocked: blockBefore - outcome.block, curled: false }
+}
+
+function triggerAngry(state: CombatState, enemy: Enemy, damagingHits: number): void {
+  const ability = enemyDef(enemy.defId, enemy.ascension).ability
+  if (enemy.dead || damagingHits === 0 || ability?.kind !== 'angry') return
+  const before = enemy.strength
+  enemy.strength = gainStrength(enemy.strength, ability.strength * damagingHits)
+  if (enemy.strength > before) {
+    state.log = [...state.log, `${enemyLabel(state.enemies, enemy)}'s Angry gained ${enemy.strength - before} Strength`]
+  }
 }
 
 /** Adds Poison through the shared cube cap. */
@@ -180,7 +193,7 @@ function poisonApplied(state: CombatState, actor: Player, context: PlayContext):
 }
 
 function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
-  const ability = enemyDef(enemy.defId).ability
+  const ability = enemyDef(enemy.defId, enemy.ascension).ability
   if (ability?.kind !== 'sporeCloud') return
   const name = enemyLabel(state.enemies, enemy)
   for (const target of playersInRowOf(state, enemy)) {
@@ -553,11 +566,14 @@ function applyEffect(
         const each = amountOf(effect.amount, state, actor, target)
         let blocked = 0
         let curled = false
+        let angryHits = 0
         let poisonAppliedTotal = 0
         let poisonEvents = 0
         for (let i = 0; i < times; i++) {
           if (target.dead) break
+          const hitHpBefore = target.hp
           const result = damageEnemy(target, hitDamage(each, mods, { vulnerable: vulnerableAtStart }))
+          if (target.hp < hitHpBefore) angryHits += 1
           blocked += result.blocked
           curled = result.curled || curled
           if (!target.dead && actor.hitPoison > 0) {
@@ -589,6 +605,7 @@ function applyEffect(
         } else if (curled) {
           state.log = [...state.log, `${name}'s Curl Up gained Block`]
         }
+        triggerAngry(state, target, angryHits)
         if (combatIsOver(state)) return
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
@@ -1153,6 +1170,29 @@ function addDaze(
   }))
   if (pile === 'draw') target.draw = [...cards, ...target.draw]
   else target.discard = [...target.discard, ...cards]
+  return gained
+}
+
+/** Take one of the shared double-sided Burn/Slimed cards. */
+function addStatus(
+  state: CombatState,
+  target: Player,
+  defId: 'burn' | 'slimed',
+  amount: number,
+  source: string,
+): number {
+  const inPlay = state.players.reduce((total, player) => total + [
+    ...player.draw,
+    ...player.hand,
+    ...player.discard,
+  ].filter((card) => card.defId === 'burn' || card.defId === 'slimed').length, 0)
+  const gained = Math.min(amount, Math.max(0, CAPS.status - inPlay))
+  const cards = Array.from({ length: gained }, (_, index) => ({
+    uid: `status-${state.turn}-${source}-${target.id}-${state.log.length}-${index}`,
+    defId,
+    upgraded: false,
+  }))
+  target.discard = addToDiscardTop(target, cards).discard
   return gained
 }
 
@@ -1731,7 +1771,7 @@ export function playCard(
 
   if (def.type === 'skill') {
     for (const enemy of next.enemies) {
-      const ability = enemyDef(enemy.defId).ability
+      const ability = enemyDef(enemy.defId, enemy.ascension).ability
       if (enemy.dead || ability?.kind !== 'enraged' || next.turn < ability.fromTurn) continue
       const hpBefore = actor.hp
       const blockBefore = actor.block
@@ -1775,6 +1815,40 @@ export function preparePlayerTurn(state: CombatState): CombatState {
 function beginPlayerTurn(next: CombatState): CombatState {
   next.phase = 'start'
   next.turn += 1
+  const due = next.pendingSummons.filter((summon) => summon.turn <= next.turn)
+  next.pendingSummons = next.pendingSummons.filter((summon) => summon.turn > next.turn)
+  for (const summon of due) {
+    const ascension = next.enemies.find((enemy) => enemy.uid === summon.sourceUid)?.ascension
+    summon.defIds.forEach((name, index) => {
+      const defId = drawSummon(next.summonSupply, name)
+      if (!defId) {
+        next.log = [...next.log, `No ${enemyDef(name).name} remained in the Summons deck`]
+        return
+      }
+      const def = enemyDef(defId, ascension)
+      const hp = startingHp(def, next.players.length)
+      next.enemies.push({
+        uid: `${summon.sourceUid}-summon-${next.turn}-${index}`,
+        defId,
+        row: summon.row,
+        isBoss: false,
+        ascension,
+        hp,
+        maxHp: hp,
+        block: 0,
+        strength: 0,
+        vulnerable: 0,
+        weak: 0,
+        poison: 0,
+        goldReward: 0,
+        cardReward: null,
+        actionIndex: 0,
+        abilityUsed: false,
+        dead: false,
+      })
+      next.log = [...next.log, `${def.name} was summoned`]
+    })
+  }
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
   next.powerTriggersUsedThisTurn = []
@@ -2166,7 +2240,7 @@ export function enemyTurn(state: CombatState): CombatState {
     // Immediately — so the enemies still queued behind the killing blow never
     // get to act, and the log does not report four attacks that never landed.
     if (combatIsOver(next)) break
-    const def = enemyDef(enemy.defId)
+    const def = enemyDef(enemy.defId, enemy.ascension)
     for (const action of actionsFor(def, next.die, enemy.actionIndex)) {
       applyEnemyAction(next, enemy, action)
       if (combatIsOver(next)) break
@@ -2175,7 +2249,7 @@ export function enemyTurn(state: CombatState): CombatState {
 
   for (const enemy of next.enemies) {
     if (enemy.dead) continue
-    enemy.actionIndex = advanceCube(enemyDef(enemy.defId), enemy.actionIndex)
+    enemy.actionIndex = advanceCube(enemyDef(enemy.defId, enemy.ascension), enemy.actionIndex)
   }
 
   // The round is over. The next Start of Turn is its own step (p.12) rather
@@ -2189,7 +2263,11 @@ export function enemyTurn(state: CombatState): CombatState {
 /** Highest row first, then left to right, with bosses and "acts last" at the end. */
 export function enemyActingOrder(state: CombatState): Enemy[] {
   const order = state.enemies.filter((enemy) => !enemy.dead)
-  const isLast = (enemy: Enemy) => enemy.isBoss || enemyDef(enemy.defId).actsLast === true
+  const isLast = (enemy: Enemy) => {
+    const def = enemyDef(enemy.defId, enemy.ascension)
+    return enemy.isBoss || def.actsLast === true ||
+      actionsFor(def, state.die, enemy.actionIndex).some((action) => action.kind === 'actsLast')
+  }
   return [...order].sort((a, b) => {
     if (isLast(a) !== isLast(b)) return isLast(a) ? 1 : -1
     if (a.row !== b.row) return b.row - a.row
@@ -2304,6 +2382,35 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       }
       return
     }
+    case 'status': {
+      for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        const gained = addStatus(state, target, action.card, action.amount, enemy.uid)
+        if (gained > 0) state.log = [...state.log, `${name} gave ${target.name} ${gained} ${action.card}`]
+      }
+      return
+    }
+    case 'loseGold': {
+      for (const target of playersInRowOf(state, enemy)) {
+        const lost = Math.min(target.gold, action.amount)
+        target.gold -= lost
+        state.log = [...state.log, `${target.name} lost ${lost} gold to ${name}`]
+      }
+      return
+    }
+    case 'leave':
+      enemy.dead = true
+      state.log = [...state.log, `${name} left combat`]
+      return
+    case 'summon':
+      state.pendingSummons.push({
+        sourceUid: enemy.uid,
+        row: enemy.row,
+        defIds: action.defIds,
+        turn: state.turn + 1,
+      })
+      state.log = [...state.log, `${name} will summon ${action.defIds.map((id) => enemyDef(id).name).join(', ')}`]
+      return
+    case 'actsLast':
     case 'idle':
       return
   }
@@ -2551,7 +2658,8 @@ function fireTriggersInner(
  * resolve at all.
  */
 function combatIsOver(state: CombatState): boolean {
-  return state.enemies.every((enemy) => enemy.dead) || state.players.some((player) => player.dead)
+  return (state.enemies.every((enemy) => enemy.dead) && state.pendingSummons.length === 0) ||
+    state.players.some((player) => player.dead)
 }
 
 /** Decides whether the combat has ended, and returns the state either way. */
@@ -2560,7 +2668,7 @@ function settle(state: CombatState): CombatState {
   // its own: `combatIsOver` stops each phase at the moment either ending
   // happens, so this is never reached with a dead player AND a wiped board.
   // It is kept in this order as a backstop for a state assembled by hand.
-  if (state.enemies.every((enemy) => enemy.dead)) {
+  if (state.enemies.every((enemy) => enemy.dead) && state.pendingSummons.length === 0) {
     state.phase = 'won'
     fireTriggers(state, { kind: 'endOfCombat' })
     return state
@@ -2578,6 +2686,7 @@ export function createCombat(
   rng: RngState,
   players: Player[],
   enemies: Enemy[],
+  summonSupply: SummonSupply = {},
 ): CombatState {
   return {
     rng,
@@ -2593,6 +2702,8 @@ export function createCombat(
       hitPoison: 0,
     })),
     enemies,
+    summonSupply,
+    pendingSummons: [],
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
     powerTriggersUsedThisTurn: [],

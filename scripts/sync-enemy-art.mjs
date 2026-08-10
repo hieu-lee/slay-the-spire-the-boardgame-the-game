@@ -48,7 +48,7 @@ from PIL import Image
 
 pdf, out, width = sys.argv[1], sys.argv[2], int(sys.argv[3])
 wanted = json.loads(sys.argv[4])
-by_hash = {h: name for name, h in wanted.items()}
+by_hash = {h: name for name, h in wanted.items() if h != "prebuilt"}
 
 TOP, BOTTOM, LEFT, RIGHT = 0.115, 0.44, 0.145, 0.135
 
@@ -69,7 +69,10 @@ for pno in range(len(doc)):
         art.save(f"{out}/{name}.png")
         found[name] = h
 
-print(json.dumps({"found": sorted(found), "missing": sorted(set(wanted) - set(found))}))
+print(json.dumps({
+    "found": sorted(found),
+    "missing": sorted(name for name, source in wanted.items() if source != "prebuilt" and name not in found),
+}))
 `
 
 const result = spawnSync(

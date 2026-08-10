@@ -6,11 +6,12 @@
 import { CARDS, STARTER_DECKS } from './cards.ts'
 import { createCombat, startPlayerTurnWithChoices } from './combat.ts'
 import type { CombatState } from './combat.ts'
-import { enemyDef, startingHp } from './enemies.ts'
+import { createSummonSupply, drawSummon, enemyDef, startingHp } from './enemies.ts'
+import type { SummonSupply } from './enemies.ts'
 import { generateMap, currentRoom, moveTo, isActComplete } from './map.ts'
 import type { Room, RoomKind, SpireMap } from './map.ts'
 import { STARTING_RELIC } from './relics.ts'
-import { createRng, shuffle, nextInt } from './rng.ts'
+import { createRng, shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from './types.ts'
 
@@ -32,6 +33,7 @@ export type RunState = {
   act: number
   phase: RunPhase
   map: SpireMap
+  enemyDecks: EnemyDecks
   players: Player[]
   combat: CombatState | null
   rewards: CardRewardOffer[]
@@ -53,22 +55,47 @@ export const MAX_HP: Record<CharacterId, number> = {
   watcher: 9,
 }
 
-type EncounterCard = {
+export type EncounterCard = {
   defId: string
   goldReward: number
   cardReward: Enemy['cardReward']
   summons?: string[]
+  randomSummons?: { group: string; count: number; soloCount?: number }
+  minAscension?: number
+  maxAscension?: number
+}
+
+export type EnemyDecks = {
+  act: number
+  first: EncounterCard[]
+  encounter: EncounterCard[]
+  elite: EncounterCard[]
 }
 
 /** Implemented main-enemy cards, including the Act-specific printed reward. */
 const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
   1: [
     { defId: 'red_louse', goldReward: 1, cardReward: 'normal', summons: ['green_louse', 'red_louse'] },
-    { defId: 'jaw_worm', goldReward: 1, cardReward: 'normal' },
+    { defId: 'jaw_worm', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
     { defId: 'cultist', goldReward: 1, cardReward: 'normal', summons: ['green_louse'] },
     { defId: 'cultist', goldReward: 1, cardReward: 'normal', summons: ['spike_slime'] },
+    { defId: 'looter', goldReward: 0, cardReward: 'normal', maxAscension: 6 },
     { defId: 'blue_slaver', goldReward: 2, cardReward: 'normal' },
+    { defId: 'red_slaver', goldReward: 1, cardReward: 'normal' },
+    { defId: 'small_slime', goldReward: 1, cardReward: 'normal', summons: ['acid_slime', 'spike_slime'] },
+    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', maxAscension: 6 },
+    {
+      defId: 'mad_gremlin', goldReward: 2, cardReward: 'normal',
+      randomSummons: { group: 'gremlin', count: 3, soloCount: 2 },
+    },
+    {
+      defId: 'sneaky_gremlin', goldReward: 1, cardReward: 'normal',
+      randomSummons: { group: 'gremlin', count: 3, soloCount: 2 },
+    },
     { defId: 'fungi_beast', goldReward: 1, cardReward: 'normal', summons: ['fungi_beast'] },
+    { defId: 'large_slime', goldReward: 1, cardReward: 'normal', minAscension: 7 },
+    { defId: 'jaw_worm_a7', goldReward: 1, cardReward: 'normal', summons: ['spike_slime'], minAscension: 7 },
+    { defId: 'looter', goldReward: 0, cardReward: 'normal', summons: ['acid_slime'], minAscension: 7 },
   ],
   2: [{ defId: 'cultist', goldReward: 2, cardReward: 'normal', summons: ['cultist', 'cultist'] }],
   3: [{ defId: 'jaw_worm', goldReward: 2, cardReward: 'normal', summons: ['jaw_worm', 'jaw_worm'] }],
@@ -77,8 +104,8 @@ const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
 /** The complete four-card fixed-opening deck. */
 const FIRST_ENCOUNTERS: EncounterCard[] = [
   { defId: 'cultist', goldReward: 1, cardReward: 'normal' },
-  { defId: 'jaw_worm', goldReward: 1, cardReward: 'normal' },
-  { defId: 'red_louse', goldReward: 1, cardReward: null, summons: ['green_louse'] },
+  { defId: 'jaw_worm_first', goldReward: 1, cardReward: 'normal' },
+  { defId: 'red_louse_first', goldReward: 1, cardReward: null, summons: ['green_louse'] },
   { defId: 'small_slime', goldReward: 0, cardReward: 'normal', summons: ['acid_slime'] },
 ]
 
@@ -221,6 +248,7 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
     act: 1,
     phase: 'map',
     map: generateMap(rng, 1),
+    enemyDecks: createEnemyDecks(rng, 1, ascension),
     players,
     combat: null,
     rewards: [],
@@ -229,7 +257,39 @@ export function createRun(seed: number, party: PartyMember[], ascension = 0): Ru
   }
 }
 
-const ELITES = ['gremlin_nob', 'lagavulin']
+const ELITES: Record<number, EncounterCard[]> = {
+  1: [
+    { defId: 'gremlin_nob', goldReward: 2, cardReward: 'normal' },
+    { defId: 'lagavulin', goldReward: 2, cardReward: 'normal' },
+    { defId: 'sentries', goldReward: 2, cardReward: 'normal' },
+  ],
+  2: [],
+  3: [],
+}
+
+function createEnemyDecks(rng: RngState, act: number, ascension: number): EnemyDecks {
+  const eligible = (cards: EncounterCard[]) => cards.filter((card) =>
+    ascension >= (card.minAscension ?? 0) && ascension <= (card.maxAscension ?? Number.POSITIVE_INFINITY))
+  return {
+    act,
+    first: act === 1 ? shuffle(rng, [...FIRST_ENCOUNTERS]) : [],
+    encounter: shuffle(rng, eligible(ACT_ENCOUNTERS[act] ?? [])),
+    elite: shuffle(rng, eligible(ELITES[act] ?? [])),
+  }
+}
+
+/** Draws from the top and returns used cards to the bottom (rulebook p.13). */
+function drawCards<T>(deck: T[], count: number): T[] {
+  if (deck.length === 0) return []
+  const drawn: T[] = []
+  for (let index = 0; index < count; index++) {
+    const card = deck.shift()
+    if (!card) break
+    drawn.push(card)
+    deck.push(card)
+  }
+  return drawn
+}
 
 function spawn(
   defId: string,
@@ -239,12 +299,14 @@ function spawn(
   isBoss: boolean,
   goldReward: number,
   cardReward: Enemy['cardReward'],
+  ascension = 0,
 ): Enemy {
   return {
     uid,
     defId,
     row,
     isBoss,
+    ascension,
     hp,
     maxHp: hp,
     block: 0,
@@ -269,51 +331,93 @@ function spawn(
  */
 function buildEncounter(
   rng: RngState,
+  decks: EnemyDecks,
   act: number,
   players: Player[],
   kind: 'encounter' | 'elite' | 'boss',
   first = false,
-): Enemy[] {
+  ascension = 0,
+): { enemies: Enemy[]; summonSupply: SummonSupply } {
   const count = players.length
+  const summonSupply = createSummonSupply(rng)
 
   if (kind === 'boss') {
     // There is no boss deck yet. Rather than pretend, the toughest elite stands
     // in, marked as a boss so it acts last and reads as one on the board.
-    const defId = ELITES[ELITES.length - 1] ?? 'lagavulin'
-    const hp = startingHp(enemyDef(defId), count)
+    const defId = 'lagavulin'
+    const hp = startingHp(enemyDef(defId, ascension), count)
     const row = players[players.length - 1]?.row ?? 0
-    return [spawn(defId, 'boss', row, hp, true, 0, null)]
+    return { enemies: [spawn(defId, 'boss', row, hp, true, 0, null, ascension)], summonSupply }
   }
 
   if (kind === 'elite') {
-    const defId = ELITES[nextInt(rng, ELITES.length)] ?? 'gremlin_nob'
-    const hp = startingHp(enemyDef(defId), count)
+    const card = drawCards(decks.elite, 1)[0] ?? {
+      ...ELITES[1]![0]!,
+      goldReward: act === 3 ? 3 : 2,
+      cardReward: act === 1 ? 'normal' as const : 'upgraded' as const,
+    }
+    const hp = startingHp(enemyDef(card.defId, ascension), count)
     // Elites are placed in the bottom row (p.11).
     const row = players[0]?.row ?? 0
-    return [spawn(defId, 'elite', row, hp, false, act === 3 ? 3 : 2, act === 1 ? 'normal' : 'upgraded')]
+    const enemies = [spawn(
+      card.defId, 'elite', row, hp, false, card.goldReward, card.cardReward,
+      ascension,
+    )]
+    if (card.defId === 'sentries') {
+      let next = 'sentry_a'
+      for (const player of players) {
+        const needed = 3 - (player.row === row ? 1 : 0)
+        for (let index = 0; index < needed; index++) {
+          const defId = drawSummon(summonSupply, next)
+          next = next === 'sentry_a' ? 'sentry_b' : 'sentry_a'
+          if (!defId) continue
+          enemies.push(spawn(defId, `elite-summon-${enemies.length}`, player.row,
+            startingHp(enemyDef(defId), count), false, 0, null, ascension))
+        }
+      }
+    }
+    return { enemies, summonSupply }
   }
 
-  const pool = first ? FIRST_ENCOUNTERS : ACT_ENCOUNTERS[act] ?? ACT_ENCOUNTERS[1] ?? []
-  const deck = shuffle(rng, [...pool])
-  return players.flatMap((player, index) => {
-    // ponytail: Acts II/III repeat their one live card after the deck runs out;
-    // remove the modulo as those physical encounter cards are implemented.
-    const card = deck[index % deck.length] ?? ACT_ENCOUNTERS[1]![0]!
-    const hp = startingHp(enemyDef(card.defId), count)
-    const main = spawn(card.defId, `e${index}`, player.row, hp, false, card.goldReward, card.cardReward)
+  const cards = first ? decks.first.splice(0, count) : drawCards(decks.encounter, count)
+  const enemies = players.flatMap((player, index) => {
+    const card = cards[index] ?? ACT_ENCOUNTERS[1]![0]!
+    const hp = startingHp(enemyDef(card.defId, ascension), count)
+    const main = spawn(
+      card.defId,
+      `e${index}`,
+      player.row,
+      hp,
+      false,
+      card.goldReward,
+      card.cardReward,
+      ascension,
+    )
+    const randomCount = card.randomSummons
+      ? count === 1 ? card.randomSummons.soloCount ?? card.randomSummons.count : card.randomSummons.count
+      : 0
+    const random = Array.from(
+      { length: randomCount },
+      () => drawSummon(summonSupply, card.randomSummons!.group),
+    )
+      .filter((id): id is string => id !== null)
+    const summoned = (card.summons ?? []).map((name) => drawSummon(summonSupply, name))
+      .filter((id): id is string => id !== null)
     return [
       main,
-      ...(card.summons ?? []).map((summonId, summonIndex) => spawn(
+      ...[...summoned, ...random].map((summonId, summonIndex) => spawn(
         summonId,
         summonIndex === 0 ? `e${index}-summon` : `e${index}-summon-${summonIndex}`,
         player.row,
-        startingHp(enemyDef(summonId), count),
+        startingHp(enemyDef(summonId, ascension), count),
         false,
         0,
         null,
+        ascension,
       )),
     ]
   })
+  return { enemies, summonSupply }
 }
 
 /** Resets a player's piles for a fresh combat: everything back to the deck. */
@@ -358,16 +462,21 @@ export function enterRoom(state: RunState, roomId: string): RunState {
     ...state,
     map,
     rng,
+    enemyDecks: state.enemyDecks?.act === state.act
+      ? structuredClone(state.enemyDecks)
+      : createEnemyDecks(rng, state.act, state.ascension),
     log: [...state.log, `The party enters ${enteringRoom(room.kind)}.`],
   }
 
   if (room.kind === 'encounter' || room.kind === 'elite' || room.kind === 'boss') {
     const players = state.players.map((player) => readyForCombat(rng, player))
     const first = state.act === 1 && state.map.position === null && room.id === state.map.rows[0]?.[0]
-    const enemies = buildEncounter(rng, state.act, players, room.kind, first)
+    const { enemies, summonSupply } = buildEncounter(
+      rng, next.enemyDecks, state.act, players, room.kind, first, state.ascension,
+    )
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
-    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies))
+    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies, summonSupply))
     return { ...next, phase: 'combat', players, combat }
   }
 
@@ -413,12 +522,13 @@ export function resolveCombat(state: RunState): RunState {
   const players = state.players.map((player) => {
     const after = combat.players.find((candidate) => candidate.id === player.id)
     if (!after) return player
-    const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
+    const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === after.row)
     const gold = source?.goldReward ?? 0
     return {
       ...player,
       hp: after.hp,
       gold: after.gold + gold,
+      row: after.row,
       potions: after.potions,
       dead: after.dead,
     }
@@ -577,6 +687,7 @@ export function advanceAct(state: RunState): RunState {
     act,
     phase: 'map',
     map: generateMap(rng, act),
+    enemyDecks: createEnemyDecks(rng, act, state.ascension),
     players,
     combat: null,
     log: [...state.log, `Act ${act} begins.`],

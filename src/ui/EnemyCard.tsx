@@ -35,6 +35,8 @@ type IntentPart = {
   times?: number
   /** Silent to a screen reader: a later copy of a repeated symbol. */
   echo?: boolean
+  label?: string
+  visibleLabel?: string
 }
 
 /** An enemy's telegraphed intent, in the game's own symbols. */
@@ -63,6 +65,22 @@ function intentParts(action: EnemyAction): IntentPart[] {
       return [{ icon: 'vulnerable', value: action.amount, aoe: action.aoe }]
     case 'daze':
       return [{ icon: 'daze', value: action.amount, aoe: action.aoe }]
+    case 'status':
+      return [{
+        icon: action.card === 'burn' ? 'burn' : 'monster',
+        value: action.amount,
+        aoe: action.aoe,
+        label: action.card,
+        visibleLabel: action.card === 'slimed' ? 'Slimed' : undefined,
+      }]
+    case 'loseGold':
+      return [{ icon: 'gold', value: action.amount, prefix: '-', label: 'gold' }]
+    case 'summon':
+      return [{ icon: 'monster', value: action.defIds.length, label: 'summons', visibleLabel: 'Summon' }]
+    case 'leave':
+      return [{ icon: 'monster', label: 'leaves combat', visibleLabel: 'Leaves' }]
+    case 'actsLast':
+      return [{ icon: 'monster', label: 'acts last', visibleLabel: 'Acts last' }]
     case 'idle':
       return []
   }
@@ -93,7 +111,7 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilit
     .map((part) => {
       const value = part.value === undefined || part.value === '' ? '' : `${part.value} `
       const repeat = part.times ? `, ${part.times} times` : ''
-      return `${part.aoe ? 'all rows, ' : ''}to apply ${value}${part.icon}${repeat}`
+      return `${part.aoe ? 'all rows, ' : ''}to ${part.prefix === '-' ? 'lose' : 'apply'} ${value}${part.label ?? part.icon}${repeat}`
     })
     .join(', ')
   // "intends to apply 1 Vulnerable" rather than "vulnerable 1": the tokens the
@@ -122,7 +140,7 @@ export function EnemyCard({
   beat = 0,
   onClick,
 }: EnemyCardProps) {
-  const def = enemyDef(enemy.defId)
+  const def = enemyDef(enemy.defId, enemy.ascension)
   const intent = actionsFor(def, die, enemy.actionIndex).flatMap(intentParts)
   const spentAbility = def.ability?.kind === 'curlUp' && enemy.abilityUsed
   const ability = def.ability
@@ -165,6 +183,7 @@ export function EnemyCard({
             <span className="intent" key={`${part.icon}-${i}`}>
               {part.aoe ? <Icon name="aoe" size={20} /> : null}
               <IconValue name={part.icon} value={part.value ?? ''} prefix={part.prefix} size={28} />
+              {part.visibleLabel ? <span className="intent__label">{part.visibleLabel}</span> : null}
             </span>
           ))
         )}

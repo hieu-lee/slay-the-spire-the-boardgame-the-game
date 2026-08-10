@@ -217,6 +217,9 @@ export function OnlineGame({ onLocal }: Props) {
     rng: { seed: 0, calls: 0 },
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
+    pendingSummons: run.combat.pendingSummons ?? [],
+    // The remaining face-down Summons deck is server-only hidden information.
+    summonSupply: {},
     players: run.combat.players.map(playerForUi),
   } satisfies CombatState : null
 

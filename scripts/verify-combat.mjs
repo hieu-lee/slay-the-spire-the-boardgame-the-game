@@ -2045,7 +2045,7 @@ check('every newly transcribed card does what its face prints', () => {
     'strike_silent', 'defend_silent', 'neutralize', 'survivor', 'acrobatics',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
     'strike_watcher', 'defend_watcher', 'eruption', 'vigilance', 'third_eye',
-    'daze', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
+    'daze', 'slimed', 'burn', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
     'shame', 'writhe', 'ascenders_bane',
   ])
   const covered = new Set(CASES.map((spec) => spec.id))
