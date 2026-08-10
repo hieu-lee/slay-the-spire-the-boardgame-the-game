@@ -314,6 +314,8 @@ export type PlayContext = {
   pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
   /** Poison gains whose reactions wait until this card finishes its printed text. */
   pendingPoisonTriggers?: string[]
+  /** Exhausts whose reactions wait until this card finishes its printed text. */
+  pendingExhaustTriggers?: string[]
   /** Internal result of the immediately preceding direct draw effect. */
   drewSkill?: boolean
   /** Cards taken by this card's variable discard clause. */
@@ -920,13 +922,14 @@ function applyEffect(
       const chosen = allocate(actor, context.exhaustUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
-      exhaustCards(state, actor, moved)
+      exhaustCards(state, actor, moved, context)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
       return
     }
     case 'exhaustAny': {
       const chosen = context.exhaustUids ?? []
-      if (chosen.length > effect.amount || new Set(chosen).size !== chosen.length ||
+      const minimum = Math.min(effect.minimum ?? 0, actor.hand.length)
+      if (chosen.length < minimum || chosen.length > effect.amount || new Set(chosen).size !== chosen.length ||
         chosen.some((uid) => !actor.hand.some((card) => card.uid === uid))) {
         context.invalidExhaustChoice = true
         return
@@ -934,7 +937,7 @@ function applyEffect(
       const picked = new Set(chosen)
       const moved = actor.hand.filter((card) => picked.has(card.uid))
       actor.hand = actor.hand.filter((card) => !picked.has(card.uid))
-      exhaustCards(state, actor, moved)
+      exhaustCards(state, actor, moved, context)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
       return
     }
@@ -1134,12 +1137,20 @@ function addDaze(
 }
 
 /** Exhaust cards once, returning Status cards to their shared supply (p.24). */
-function exhaustCards(state: CombatState, actor: Player, cards: readonly Player['hand'][number][]): void {
+function exhaustCards(
+  state: CombatState,
+  actor: Player,
+  cards: readonly Player['hand'][number][],
+  context?: PlayContext,
+): void {
   const lasting = cards
     .filter((held) => cardDef(held.defId).owner !== 'status')
     .map(forgetRetain)
   actor.exhaust = [...actor.exhaust, ...lasting]
-  for (let i = 0; i < cards.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
+  for (let i = 0; i < cards.length; i++) {
+    if (context?.pendingExhaustTriggers) context.pendingExhaustTriggers.push(actor.id)
+    else fireTriggers(state, { kind: 'onExhaust' }, actor)
+  }
 }
 
 /** Discard from a card effect, deferring reactions until its printed text ends (p.12). */
@@ -1620,6 +1631,7 @@ export function playCard(
     discardedByCard: 0,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
+    pendingExhaustTriggers: [],
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
@@ -1650,13 +1662,19 @@ export function playCard(
 
   const played = forgetRetain(held)
   if (def.exhaust) {
-    exhaustCards(next, actor, [played])
+    exhaustCards(next, actor, [played], ctx)
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, played]
   } else if (def.toDrawTop) {
     actor.draw = addToDrawTop(actor, [played]).draw
   } else {
     actor.discard = [...actor.discard, played]
+  }
+
+  for (const ownerId of ctx.pendingExhaustTriggers ?? []) {
+    const owner = findPlayer(next, ownerId)
+    if (owner) fireTriggers(next, { kind: 'onExhaust' }, owner)
+    if (combatIsOver(next)) return settle(next)
   }
 
   for (const ownerId of ctx.pendingPoisonTriggers ?? []) {

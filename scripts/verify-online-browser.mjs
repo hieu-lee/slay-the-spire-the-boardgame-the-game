@@ -951,6 +951,62 @@ try {
   })
   liveRoom.run.combat = purityRestore
 
+  const severRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeSever = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeSever = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const severEnemy = liveRoom.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(annBeforeSever, {
+    hand: [{ uid: 'online-sever-soul', defId: 'sever_soul', upgraded: true }],
+    draw: [
+      { uid: 'online-sever-drawn-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'online-sever-drawn-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 2, powers: [], strength: 0, weak: 0,
+  })
+  Object.assign(boBeforeSever, {
+    hand: [{ uid: 'online-sever-predator', defId: 'predator', upgraded: false }],
+    energy: 1,
+    miracles: 1,
+  })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true })
+  }
+  const publishSeverFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishSeverFixture.ok, 'could not publish the Sever Soul ally-draw fixture')
+  await a.getByRole('button', { name: /^Sever Soul\+,/ }).click()
+  await a.getByRole('button', { name: 'Exhaust none', exact: true }).click()
+  await a.getByText('Choose an enemy').waitFor()
+  const teammateDraw = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'playCard', cardUid: 'online-sever-predator', enemyUid: severEnemy.uid,
+      playerId: annBeforeSever.id, preflight: true,
+    } }),
+  })
+  assert(teammateDraw.ok, 'Predator could not draw into the staged Sever Soul hand')
+  await a.getByText('Exhaust 1-2 cards — 0 chosen').waitFor()
+  const reopenedSever = a.getByRole('button', { name: 'Exhaust none', exact: true })
+  assert(await reopenedSever.isDisabled(), 'the new required Exhaust could still be skipped')
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
+  await a.getByText('Choose an enemy').waitFor()
+  await a.locator('.enemy--targeted:not(:disabled)').first().click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Sever Soul+,')))
+  const completedSeverRace = await snapshot(a)
+  check('an ally draw reopens Sever Soul+ when its Exhaust minimum rises', () => {
+    const ann = completedSeverRace.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-sever-drawn-strike'])
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-sever-drawn-defend'])
+    assert(ann.discard.some((card) => card.uid === 'online-sever-soul'), 'Sever Soul+ did not finish')
+  })
+  liveRoom.run.combat = severRestore
+
   const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   const unloadRestore = {

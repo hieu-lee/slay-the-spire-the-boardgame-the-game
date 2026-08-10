@@ -536,6 +536,104 @@ check('Purity exhausts any chosen number up to its face limit atomically', () =>
     'exhausting no hand cards must remain legal')
 })
 
+check('Burning Pact Exhausts before drawing and follows both printed faces', () => {
+  for (const upgraded of [false, true]) {
+    const pact = instance('burning_pact', upgraded)
+    const fuel = instance('strike_ironclad')
+    const draw = Array.from({ length: 3 }, () => instance('defend_ironclad'))
+    const state = combat([
+      makePlayer({ hand: [pact, fuel], draw, powers: [instance('feel_no_pain')] }),
+    ], [makeEnemy()])
+    const played = playCard(state, 'p1', pact.uid, {
+      enemyUid: null,
+      playerId: null,
+      exhaustUids: [fuel.uid],
+    })
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [fuel.uid])
+    assertEqual(played.players[0].hand.length, upgraded ? 3 : 2)
+    assertEqual(played.players[0].block, 1, 'Feel No Pain sees the exhausted card')
+  }
+
+  const pact = instance('burning_pact')
+  const state = combat([
+    makePlayer({ hand: [pact], draw: [instance('strike_ironclad'), instance('defend_ironclad')] }),
+  ], [makeEnemy()])
+  const played = playCard(state, 'p1', pact.uid, { enemyUid: null, playerId: null })
+  assertEqual(played.players[0].hand.length, 2, 'an empty hand Exhausts nothing, then draws normally')
+
+  const orderedPact = instance('burning_pact')
+  const orderedFuel = instance('strike_ironclad')
+  const hidden = instance('defend_ironclad')
+  const orderedState = combat([
+    makePlayer({ hand: [orderedPact, orderedFuel], draw: [hidden, instance('strike_ironclad')] }),
+  ], [makeEnemy()])
+  assertEqual(playCard(orderedState, 'p1', orderedPact.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [hidden.uid],
+  }), orderedState, 'Burning Pact drew before validating its Exhaust choice')
+  assertEqual(orderedState.players[0].draw.length, 2, 'a refused Exhaust partially drew cards')
+
+  const embracePact = instance('burning_pact')
+  const embraceFuel = instance('strike_ironclad')
+  const embraced = playCard(combat([makePlayer({
+    hand: [embracePact, embraceFuel],
+    draw: Array.from({ length: 3 }, () => instance('defend_ironclad')),
+    powers: [instance('dark_embrace')],
+  })], [makeEnemy()]), 'p1', embracePact.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [embraceFuel.uid],
+  })
+  const pactDrawAt = embraced.log.indexOf('Ironclad draws 2')
+  const embraceDrawAt = embraced.log.indexOf("Ironclad's Dark Embrace: Ironclad draws 1")
+  assert(pactDrawAt >= 0 && embraceDrawAt > pactDrawAt,
+    `Dark Embrace resolved before Burning Pact finished: ${embraced.log.join(' | ')}`)
+})
+
+check('Sever Soul+ requires one choice when possible and accepts either one or two', () => {
+  const makeState = () => {
+    const sever = instance('sever_soul', true)
+    const choices = Array.from({ length: 3 }, () => instance('defend_ironclad'))
+    return { sever, choices, state: combat([makePlayer({ hand: [sever, ...choices] })], [makeEnemy()]) }
+  }
+
+  const base = instance('sever_soul')
+  const baseChoices = [instance('defend_ironclad'), instance('strike_ironclad')]
+  const basePlayed = playCard(
+    combat([makePlayer({ hand: [base, ...baseChoices] })], [makeEnemy()]),
+    'p1', base.uid,
+    { enemyUid: 'e1', playerId: null, exhaustUids: baseChoices.map((card) => card.uid) },
+  )
+  assertEqual(basePlayed.enemies[0].hp, 3, 'Sever Soul did not deal 3')
+  assertDeepEqual(basePlayed.players[0].exhaust.map((card) => card.uid), [baseChoices[0].uid],
+    'Sever Soul must Exhaust exactly one available card')
+  assertDeepEqual(basePlayed.players[0].hand.map((card) => card.uid), [baseChoices[1].uid])
+
+  const skipped = makeState()
+  assertEqual(playCard(skipped.state, 'p1', skipped.sever.uid, {
+    enemyUid: 'e1', playerId: null, exhaustUids: [],
+  }), skipped.state, 'Sever Soul+ accepted zero choices while cards were available')
+  assertEqual(skipped.state.enemies[0].hp, 6, 'a refused play partially dealt damage')
+
+  for (const count of [1, 2]) {
+    const fixture = makeState()
+    const played = playCard(fixture.state, 'p1', fixture.sever.uid, {
+      enemyUid: 'e1',
+      playerId: null,
+      exhaustUids: fixture.choices.slice(0, count).map((card) => card.uid),
+    })
+    assertEqual(played.enemies[0].hp, 2, `Sever Soul+ with ${count} choice(s) did not deal 4`)
+    assertEqual(played.players[0].exhaust.length, count)
+  }
+
+  const oversized = makeState()
+  assertEqual(playCard(oversized.state, 'p1', oversized.sever.uid, {
+    enemyUid: 'e1', playerId: null, exhaustUids: oversized.choices.map((card) => card.uid),
+  }), oversized.state, 'Sever Soul+ accepted more than two choices')
+
+  const lone = instance('sever_soul', true)
+  const emptyHand = combat([makePlayer({ hand: [lone] })], [makeEnemy()])
+  assert(playCard(emptyHand, 'p1', lone.uid, { enemyUid: 'e1', playerId: null }) !== emptyHand,
+    'a card may resolve as much as possible when no Exhaust choice exists')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1786,6 +1884,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
     { id: 'riddle_with_holes', shivs: [4, 5] },
     { id: 'battle_trance', hand: [3, 4] },
+    { id: 'burning_pact', hand: [2, 3] },
+    { id: 'sever_soul', enemyHp: [17, 16] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

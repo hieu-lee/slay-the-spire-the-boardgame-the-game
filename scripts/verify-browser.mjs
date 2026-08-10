@@ -1252,6 +1252,99 @@ check('Purity+ lets the player Exhaust any number up to five', () => {
 })
 await shot('06zb-purity-resolved')
 
+const exhaustPairRestore = await readState()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-burning-pact', defId: 'burning_pact', upgraded: true },
+      { uid: 'ui-burning-pact-fuel', defId: 'defend_ironclad', upgraded: false },
+    ],
+    draw: Array.from({ length: 3 }, (_, index) => ({
+      uid: `ui-burning-pact-draw-${index}`, defId: 'strike_ironclad', upgraded: false,
+    })),
+    discard: [],
+    exhaust: [],
+    powers: [{ uid: 'ui-burning-pact-fnp', defId: 'feel_no_pain', upgraded: false }],
+    energy: 1,
+    block: 0,
+  })
+  debug.setRun(run)
+})
+const burningPactCard = page.getByRole('button', { name: /^Burning Pact\+,/ })
+await burningPactCard.waitFor()
+const burningPactLabel = await burningPactCard.getAttribute('aria-label')
+await burningPactCard.click()
+await page.getByText(/Exhaust 1 card.*0\/1 chosen/).waitFor()
+await shot('06zc-burning-pact-exhaust-choice')
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
+const burningPact = await readState()
+check('Burning Pact+ Exhausts its choice before drawing three cards', () => {
+  assert(burningPactLabel.includes('exhaust 1 card from hand'), burningPactLabel)
+  assert(burningPactLabel.includes('draw 3'), burningPactLabel)
+  assertDeepEqual(burningPact.players[0].exhaust.map((card) => card.uid), ['ui-burning-pact-fuel'])
+  assertEqual(burningPact.players[0].hand.length, 3)
+  assertEqual(burningPact.players[0].block, 1, 'Feel No Pain did not observe the Exhaust')
+})
+await shot('06zd-burning-pact-resolved')
+
+const severTarget = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const target = run.combat.enemies.find((enemy) => !enemy.isBoss) ?? run.combat.enemies[0]
+  for (const enemy of run.combat.enemies) enemy.dead = enemy.uid !== target.uid
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, vulnerable: 0 })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-sever-soul', defId: 'sever_soul', upgraded: true },
+      { uid: 'ui-sever-soul-one', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'ui-sever-soul-two', defId: 'defend_ironclad', upgraded: false },
+    ],
+    draw: [],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 2,
+    strength: 0,
+    weak: 0,
+  })
+  debug.setRun(run)
+  return target.uid
+})
+const severSoulCard = page.getByRole('button', { name: /^Sever Soul\+,/ })
+await severSoulCard.waitFor()
+const severSoulLabel = await severSoulCard.getAttribute('aria-label')
+await severSoulCard.click()
+const emptySeverConfirmation = page.getByRole('button', { name: 'Exhaust none' })
+await emptySeverConfirmation.waitFor()
+assert(await emptySeverConfirmation.isDisabled(), 'Sever Soul+ allowed zero Exhaust choices')
+await page.getByRole('button', { name: /^Defend,/ }).first().click()
+await page.getByRole('button', { name: 'Exhaust 1', exact: true }).waitFor()
+await shot('06ze-sever-soul-range-choice')
+await page.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
+await page.getByText('Choose an enemy').waitFor()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
+const severSoul = await readState()
+check('Sever Soul+ requires one or two Exhaust choices and deals its printed hit', () => {
+  assert(severSoulLabel.includes('exhaust 1-2 cards from hand'), severSoulLabel)
+  assertEqual(severSoul.players[0].exhaust.length, 1)
+  assertEqual(severSoul.players[0].hand.length, 1)
+  assertEqual(severSoul.enemies.find((enemy) => enemy.uid === severTarget).hp, 6)
+})
+await shot('06zf-sever-soul-resolved')
+await page.evaluate((combat) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat = combat
+  debug.setRun(run)
+}, exhaustPairRestore)
+await page.waitForFunction((uid) =>
+  window.__STS_DEBUG__.getState().players[0].hand.some((card) => card.uid === uid),
+exhaustPairRestore.players[0].hand[0].uid)
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

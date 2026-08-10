@@ -785,11 +785,15 @@ function dispatch(run, seat, action) {
           ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
           : discardUids.length !== action.discardUids.length)
       )) fail('Discard choices must be a valid list of card ids')
-      const exhaustUids = uidList(action.exhaustUids)
+      const exhaustUids = uidList(action.exhaustUids) ?? []
       if (action.exhaustUids !== undefined && (
         !Array.isArray(action.exhaustUids) || exhaustUids.length !== action.exhaustUids.length ||
         (variableExhaust && action.exhaustUids.length > variableExhaust.amount)
       )) fail('Exhaust choices must be a valid list of card ids')
+      if (variableExhaust && exhaustUids.length < Math.min(
+        variableExhaust.minimum ?? 0,
+        Math.max(0, player.hand.length - 1),
+      )) fail('Choose the minimum number of cards to Exhaust')
       const shivEffects = def.type === 'power' && def.trigger && def.resolvesOnPlay !== true ? [] : def.effects
       const mandatoryShivs = cardShivChoiceCount(def, player, action.mode)
       const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, shivEffects, {

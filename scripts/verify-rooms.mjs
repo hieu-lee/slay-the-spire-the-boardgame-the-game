@@ -1345,6 +1345,50 @@ check('Purity validates its optional Exhaust choices at room authority', () => {
   const resolved = room.run.combat.players.find((player) => player.id === b.playerId)
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), [choices[0].uid, choices[1].uid, purity.uid])
   assertDeepEqual(resolved.hand.map((card) => card.uid), choices.slice(2).map((card) => card.uid))
+
+  const { room: optionalRoom, b: optionalSeat } = twoSeatRoom()
+  const optionalActor = optionalRoom.run.combat.players.find((player) => player.id === optionalSeat.playerId)
+  const optionalPurity = { uid: 'room-purity-omitted', defId: 'purity', upgraded: false }
+  const optionalSpare = { uid: 'room-purity-omitted-spare', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(optionalActor, { hand: [optionalPurity, optionalSpare], energy: 3 })
+  apply(optionalRoom, optionalSeat.token, {
+    kind: 'playCard', cardUid: optionalPurity.uid, preflight: true,
+  })
+  const optionalResolved = optionalRoom.run.combat.players.find((player) => player.id === optionalSeat.playerId)
+  assertDeepEqual(optionalResolved.exhaust.map((card) => card.uid), [optionalPurity.uid],
+    'omitting Purity choices should mean Exhaust none')
+  assertDeepEqual(optionalResolved.hand.map((card) => card.uid), [optionalSpare.uid])
+})
+
+check('Sever Soul+ enforces its one-to-two Exhaust range at room authority', () => {
+  const { room, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const sever = { uid: 'room-sever-soul', defId: 'sever_soul', upgraded: true }
+  const choices = Array.from({ length: 2 }, (_unused, index) => ({
+    uid: `room-sever-soul-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  Object.assign(actor, { hand: [sever, ...choices], energy: 3 })
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
+
+  let missing = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: sever.uid, enemyUid: target.uid, preflight: true,
+    })
+  } catch (error) {
+    missing = error
+  }
+  assertEqual(missing?.name, 'RoomError', 'the room accepted no Exhaust choice')
+  assertEqual(target.hp, 10, 'the invalid action partially damaged its target')
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: sever.uid, enemyUid: target.uid,
+    exhaustUids: choices.map((card) => card.uid), preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 6)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), choices.map((card) => card.uid))
 })
 
 check('Storm of Steel overflow resolves through room authority', () => {

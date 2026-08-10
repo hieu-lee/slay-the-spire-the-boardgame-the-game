@@ -200,8 +200,8 @@ type EffectKind =
   | { kind: 'discardAny' }
   /** Exhaust cards the player chooses from hand, as True Grit does. */
   | { kind: 'exhaustFromHand'; amount: number }
-  /** Exhaust any number of chosen cards up to the printed limit. */
-  | { kind: 'exhaustAny'; amount: number }
+  /** Exhaust a chosen range of cards; absent `minimum` means zero is allowed. */
+  | { kind: 'exhaustAny'; amount: number; minimum?: number }
 
 export type CardDef = {
   id: string
@@ -461,6 +461,18 @@ export const CARDS: Record<string, CardDef> = {
         { kind: 'block', amount: 2, toChosen: true },
         { kind: 'exhaustFromHand', amount: 1 },
       ],
+    },
+  }),
+  burning_pact: card({
+    id: 'burning_pact', name: 'Burning Pact', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'exhaustFromHand', amount: 1 }, { kind: 'draw', amount: 2 }],
+    upgrade: { effects: [{ kind: 'exhaustFromHand', amount: 1 }, { kind: 'draw', amount: 3 }] },
+  }),
+  sever_soul: card({
+    id: 'sever_soul', name: 'Sever Soul', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: 3 }, { kind: 'exhaustFromHand', amount: 1 }],
+    upgrade: {
+      effects: [{ kind: 'hit', amount: 4 }, { kind: 'exhaustAny', amount: 2, minimum: 1 }],
     },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.

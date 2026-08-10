@@ -126,8 +126,8 @@ function effectText(effect: Effect): string {
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'discardAny': return `discard any number of cards${condition}`
-    case 'exhaustFromHand': return `exhaust ${effect.amount} cards from hand${condition}`
-    case 'exhaustAny': return `exhaust up to ${effect.amount} cards from hand${condition}`
+    case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`
+    case 'exhaustAny': return `exhaust ${effect.minimum ? `${effect.minimum}-${effect.amount}` : `up to ${effect.amount}`} cards from hand${condition}`
   }
 }
 
