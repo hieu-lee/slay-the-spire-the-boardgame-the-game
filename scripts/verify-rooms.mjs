@@ -1442,6 +1442,30 @@ check('Fiend Fire resolves its whole-hand multi-attack through room authority', 
   assertEqual(resolved.energy, 0)
 })
 
+check('Corruption discounts and Exhausts only its owner\'s Skills at room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defend = { uid: 'room-corruption-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [defend], energy: 0, block: 0, discard: [], exhaust: [],
+    powers: [{ uid: 'room-corruption', defId: 'corruption', upgraded: false }],
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: defend.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 1)
+  assertEqual(resolved.energy, 0)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [defend.uid])
+
+  const allyDefend = { uid: 'room-corruption-ally-defend', defId: 'defend_silent', upgraded: false }
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(ally, { hand: [allyDefend], energy: 1, block: 0, discard: [], exhaust: [] })
+  apply(room, b.token, { kind: 'playCard', cardUid: allyDefend.uid, preflight: true })
+  const allyResolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(allyResolved.energy, 0)
+  assertDeepEqual(allyResolved.discard.map((card) => card.uid), [allyDefend.uid])
+  assertDeepEqual(allyResolved.exhaust, [])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

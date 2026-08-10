@@ -1063,6 +1063,7 @@ try {
     body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
   })
   assert(publishFiend.ok, 'could not publish the Fiend Fire fixture')
+  liveRoom.run.combat.log = []
   await a.getByRole('button', { name: /^Fiend Fire\+,/ }).click()
   await a.getByText('Choose an enemy').waitFor()
   await a.locator('.enemy--targeted:not(:disabled)').click()
@@ -1081,6 +1082,48 @@ try {
     ])
   })
   liveRoom.run.combat = fiendRestore
+
+  const corruptionRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeCorruption = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeCorruption = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annBeforeCorruption, {
+    hand: [
+      { uid: 'online-corruption', defId: 'corruption', upgraded: true },
+      { uid: 'online-corruption-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], energy: 2, block: 0, powers: [],
+  })
+  Object.assign(boBeforeCorruption, {
+    hand: [{ uid: 'online-corruption-ally-defend', defId: 'defend_silent', upgraded: false }],
+    energy: 0, miracles: 1, discard: [], exhaust: [], powers: [],
+  })
+  liveRoom.run.combat.log = []
+  const publishCorruption = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishCorruption.ok, 'could not publish the Corruption fixture')
+  liveRoom.run.combat.log = []
+  await a.getByRole('button', { name: /^Corruption\+,/ }).click()
+  await a.getByRole('button', {
+    name: 'Corruption+: your Skills cost 0 and Exhaust when played',
+  }).waitFor()
+  await a.getByRole('button', { name: /^Defend, cost 0,/ }).waitFor()
+  await b.getByRole('button', { name: /^Defend, cost 1,/ }).waitFor()
+  await a.getByRole('button', { name: /^Defend, cost 0,/ }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Defend,')))
+  const completedCorruption = await snapshot(a)
+  await a.screenshot({ path: join(outDir, '02d-online-corruption-resolved.png'), fullPage: true })
+  check('Corruption stays owner-scoped through the two-client room', () => {
+    const ann = completedCorruption.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.energy, 0)
+    assertEqual(ann.block, 1)
+    assertDeepEqual(ann.exhaust.map((card) => card.uid), ['online-corruption-defend'])
+    assertDeepEqual(ann.powers.map((card) => card.uid), ['online-corruption'])
+  })
+  liveRoom.run.combat = corruptionRestore
 
   const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')

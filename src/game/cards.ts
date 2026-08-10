@@ -1,7 +1,7 @@
 // Card definitions are data, not code. A card's printed text is a sequence of
 // icons — Bash is literally "2⚔ 💔" — so an effect list is a transcription of
 // the card rather than an interpretation of it. One resolver reads them all.
-import type { CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
+import type { CardInstance, CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
 import type { Trigger } from './triggers.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
@@ -257,6 +257,8 @@ export type CardDef = {
   oncePerTurn?: boolean
   /** A Power whose printed effects happen once when played, as Inflame does. */
   resolvesOnPlay?: boolean
+  /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
+  corruptSkills?: boolean
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -267,10 +269,15 @@ export function faceOf(def: CardDef, upgraded: boolean): CardDef {
   return { ...def, ...def.upgrade, name: `${def.name}+` }
 }
 
-export function cardCost(def: CardDef, powersInPlay: number, lostHpThisCombat = false): number | 'X' {
+export function cardCost(
+  def: CardDef,
+  powers: readonly CardInstance[],
+  lostHpThisCombat = false,
+): number | 'X' {
+  if (def.type === 'skill' && powers.some((held) => cardDef(held.defId).corruptSkills)) return 0
   if (def.cost === 'X') return 'X'
   const cost = lostHpThisCombat ? (def.costAfterHpLoss ?? def.cost) : def.cost
-  return Math.max(0, cost - (def.powerCostReduction ?? 0) * powersInPlay)
+  return Math.max(0, cost - (def.powerCostReduction ?? 0) * powers.length)
 }
 
 const card = (def: CardDef): CardDef => def
@@ -502,6 +509,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 1 }],
     exhaust: true,
     upgrade: { effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 2 }] },
+  }),
+  corruption: card({
+    id: 'corruption', name: 'Corruption', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 3,
+    resolvesOnPlay: true,
+    effects: [],
+    corruptSkills: true,
+    upgrade: { cost: 2 },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.
   // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change

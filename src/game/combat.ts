@@ -388,7 +388,7 @@ function holds(
       // deals a Daze, it cannot be played, and it is left on top of the discard
       // by the end-of-turn sweep precisely because everything else WAS played.
       if (face.unplayable) return false
-      return cardCost(face, actor.powers.length, actor.lostHpThisCombat) === condition.cost
+      return cardCost(face, actor.powers, actor.lostHpThisCombat) === condition.cost
     }
     case 'dieShows':
       return condition.faces.includes(state.die)
@@ -988,7 +988,7 @@ function applyEffect(
       const top = actor.discard.at(-1)
       if (!top) return
       const face = faceOf(cardDef(top.defId), top.upgraded)
-      if (face.unplayable || cardCost(face, actor.powers.length, actor.lostHpThisCombat) !== effect.cost) return
+      if (face.unplayable || cardCost(face, actor.powers, actor.lostHpThisCombat) !== effect.cost) return
       actor.discard = actor.discard.slice(0, -1)
       actor.hand = [...actor.hand, top]
       note(`${actor.name} returns ${face.name} to hand`)
@@ -1296,7 +1296,7 @@ export function previewCardChoice(
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const printedCost = cardCost(def, player.powers, player.lostHpThisCombat)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -1578,7 +1578,7 @@ export function playCard(
     context.playerIds?.length !== playerChoiceCount ||
     context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
   )) return state
-  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const printedCost = cardCost(def, player.powers, player.lostHpThisCombat)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
   if (miracleOnCard && (
@@ -1697,7 +1697,7 @@ export function playCard(
   }
 
   const played = forgetRetain(held)
-  if (def.exhaust) {
+  if (def.exhaust || (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
     exhaustCards(next, actor, [played], ctx)
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, played]

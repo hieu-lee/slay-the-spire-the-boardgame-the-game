@@ -1428,6 +1428,45 @@ check('Fiend Fire+ Exhausts the whole hand and lands a separate Strength-modifie
   assertEqual(fiendFire.players[0].energy, 2)
 })
 await shot('06zj-fiend-fire-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-corruption', defId: 'corruption', upgraded: true },
+      { uid: 'ui-corruption-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], energy: 2, block: 0, powers: [],
+  })
+  run.combat.log = []
+  debug.setRun(run)
+})
+const corruptionCard = page.getByRole('button', { name: /^Corruption\+,/ })
+await corruptionCard.waitFor()
+const corruptionLabel = await corruptionCard.getAttribute('aria-label')
+await shot('06zk-corruption-power-card')
+await corruptionCard.click()
+const corruptionPower = page.getByRole('button', {
+  name: 'Corruption+: your Skills cost 0 and Exhaust when played',
+})
+await corruptionPower.waitFor()
+const freeDefend = page.getByRole('button', { name: /^Defend, cost 0,/ })
+await freeDefend.waitFor()
+await shot('06zl-corruption-active')
+await freeDefend.click()
+await page.waitForFunction(() => ![...document.querySelectorAll('button')]
+  .some((button) => button.getAttribute('aria-label')?.startsWith('Defend,')))
+const corruption = await readState()
+check('Corruption+ makes Skills visibly free and Exhausts them after they resolve', () => {
+  assert(corruptionLabel.includes('your Skills cost 0 and Exhaust when played'), corruptionLabel)
+  assertEqual(corruption.players[0].energy, 0)
+  assertEqual(corruption.players[0].block, 1)
+  assertDeepEqual(corruption.players[0].hand, [])
+  assertDeepEqual(corruption.players[0].exhaust.map((card) => card.uid), ['ui-corruption-defend'])
+  assertDeepEqual(corruption.players[0].powers.map((card) => card.uid), ['ui-corruption'])
+})
+await shot('06zm-corruption-skill-exhausted')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2341,13 +2380,21 @@ check('a support potion chooses a player from the combat board', () => {
   assertEqual(blockedByPotion.players[0].potions.includes('block_potion'), false)
 })
 const durabilityBeforePotion = blockedByPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
+const fireTarget = blockedByPotion.enemies
+  .filter((enemy) => !enemy.dead)
+  .sort((a, b) => b.hp + b.block - a.hp - a.block)[0]
+assert(fireTarget && fireTarget.hp + fireTarget.block >= 4,
+  'the browser Fire Potion playtest needs a target that can take all 4 damage')
 await page.locator('.combat__actions').getByRole('button', { name: /Fire Potion/ }).click()
 await page.waitForSelector('.enemy--targeted')
 await page.locator('.prompt').evaluate(async (element) => {
   await Promise.all(element.getAnimations().map((animation) => animation.finished))
 })
 await shot('05g-potion-targeting')
-await page.locator('.enemy:not([disabled])').first().click()
+await page.locator(
+  `.enemy--targeted:not(:disabled)[aria-label*="${fireTarget.hp} of ${fireTarget.maxHp} hit points"]`,
+).first().click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('fire_potion'))
 const firedPotion = await readState()
 check('a targeted potion waits for an enemy, then consumes itself', () => {
   const durability = firedPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
@@ -2570,6 +2617,7 @@ check('a hit is felt, and keeps being felt for the rest of the combat', () => {
 // the browser never restarts the animation and the second hit is not felt.
 const beats = await page.evaluate(async () => {
   const seen = []
+  const advanced = []
   document.addEventListener('animationstart', (event) => {
     if (event.animationName.startsWith('struck')) seen.push(event.animationName)
   })
@@ -2580,24 +2628,30 @@ const beats = await page.evaluate(async () => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
     run.combat.players[0].hp -= 1
+    const before = seen.length
     debug.setRun(run)
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await new Promise((resolve) => {
+      const deadline = performance.now() + 500
+      const poll = () => seen.length > before || performance.now() >= deadline
+        ? resolve()
+        : requestAnimationFrame(poll)
+      poll()
+    })
+    advanced.push(seen.length > before)
+    if (i === 0) {
+      // Drain any duplicate event from this render before taking the next
+      // baseline. Two frames remain well inside the 380ms flinch window.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    }
   }
-  await new Promise((resolve) => setTimeout(resolve, 120))
-  return { count: seen.length, names: seen }
+  return { advanced, names: seen }
 })
 check('two hits in quick succession are both felt', () => {
-  // The invariant is that the two flinches use DIFFERENT animations, which is
-  // what makes the browser restart the second one. The exact event count is
-  // not an invariant: StrictMode double-invokes the effect, so an extra
-  // animationstart can legitimately land, and asserting equality made this
-  // flaky — which is worse than not testing it at all.
-  assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
-  assertEqual(
-    new Set(beats.names).size,
-    2,
-    `the two flinches must use different animations to restart: ${beats.names.join(', ')}`,
-  )
+  // The browser event is the user-visible invariant. React may briefly remove
+  // and restore the same animation or alternate keyframes, so its name is an
+  // implementation detail; either path is correct if both blows start one.
+  assertDeepEqual(beats.advanced, [true, true],
+    `each blow should start a flinch: ${beats.names.join(', ')}`)
 })
 
 // The enemy's remaining hit points are the number the whole turn is planned

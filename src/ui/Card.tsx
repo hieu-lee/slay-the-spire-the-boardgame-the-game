@@ -191,6 +191,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.costAfterHpLoss !== undefined
       ? `costs ${def.costAfterHpLoss} after you lose hit points this combat`
       : '',
+    def.corruptSkills ? 'your Skills cost 0 and Exhaust when played' : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',
     def.oncePerTurn ? 'once per turn' : '',

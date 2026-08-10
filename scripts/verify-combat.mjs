@@ -709,6 +709,53 @@ check('Fiend Fire Exhausts the rest of the hand and deals one Strength-modified 
   assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [fiend.uid])
 })
 
+check('Corruption makes only its owner\'s Skills free and Exhausts them after they resolve', () => {
+  for (const upgraded of [false, true]) {
+    const corruption = instance('corruption', upgraded)
+    const defend = instance('defend_ironclad')
+    const drawn = instance('strike_ironclad')
+    const state = combat([makePlayer({
+      hand: [corruption, defend],
+      draw: [drawn],
+      energy: upgraded ? 2 : 3,
+      powers: [instance('feel_no_pain'), instance('dark_embrace')],
+    })], [makeEnemy()])
+    const powered = playCard(state, 'p1', corruption.uid, { enemyUid: null, playerId: null })
+    assertEqual(powered.players[0].energy, 0, `Corruption${upgraded ? '+' : ''} charged the wrong cost`)
+    assert(powered.players[0].powers.some((card) => card.uid === corruption.uid), 'Corruption did not enter play')
+
+    const played = playCard(powered, 'p1', defend.uid, { enemyUid: null, playerId: null })
+    assert(played !== powered, 'Corruption did not make the Skill affordable at zero Energy')
+    assertEqual(played.players[0].energy, 0)
+    assertEqual(played.players[0].block, 2, 'Defend resolves before Feel No Pain adds its Block')
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [defend.uid])
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), [drawn.uid],
+      'Dark Embrace must draw only after the Skill finishes and Exhausts')
+  }
+
+  const corrupted = instance('corruption')
+  const ironStrike = instance('strike_ironclad')
+  const allyDefend = instance('defend_silent')
+  const state = combat([
+    makePlayer({ hand: [ironStrike], energy: 0, powers: [corrupted] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, hand: [allyDefend], energy: 1 }),
+  ], [makeEnemy()])
+  assertEqual(playCard(state, 'p1', ironStrike.uid, { enemyUid: 'e1', playerId: null }), state,
+    'Corruption incorrectly made an Attack free')
+  const allyPlayed = playCard(state, 'p2', allyDefend.uid, { enemyUid: null, playerId: null })
+  assertEqual(allyPlayed.players[1].energy, 0, 'another player incorrectly received Corruption\'s discount')
+  assertDeepEqual(allyPlayed.players[1].discard.map((card) => card.uid), [allyDefend.uid],
+    'another player\'s Skill incorrectly Exhausted')
+
+  const barrier = instance('steam_barrier')
+  const discountedTop = instance('defend_ironclad')
+  const conditional = playCard(combat([makePlayer({
+    hand: [barrier], discard: [discountedTop], energy: 0, powers: [instance('corruption')],
+  })], [makeEnemy()]), 'p1', barrier.uid, { enemyUid: null, playerId: null })
+  assertEqual(conditional.players[0].block, 2,
+    'cost conditions must see Corruption\'s zero-cost Skill override outside the hand too')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1964,6 +2011,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'second_wind', block: [0, 0] },
     { id: 'sentinel', block: [2, 3], energy: [E - 1, E - 1] },
     { id: 'fiend_fire', enemyHp: [20, 20], exhaust: [1, 1] },
+    { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
