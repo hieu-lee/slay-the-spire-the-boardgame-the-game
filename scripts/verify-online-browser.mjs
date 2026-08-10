@@ -1203,7 +1203,7 @@ try {
   const boBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
   Object.assign(annBeforeInfinite, {
-    shivs: 3, strength: 0, attacksPlayedThisTurn: 0, hand: [],
+    shivs: 3, strength: 0, attacksPlayedThisTurn: 0, hand: [], block: 6,
     powers: [
       { uid: 'online-infinite-demon', defId: 'demon_form', upgraded: false },
       { uid: 'online-infinite-blades', defId: 'infinite_blades', upgraded: true },
@@ -1213,7 +1213,9 @@ try {
     })),
   })
   Object.assign(boBeforeInfinite, {
-    shivs: 2, hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+    shivs: 2, hand: [], block: 7,
+    powers: [{ uid: 'online-barricade', defId: 'barricade', upgraded: true }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
       uid: `online-infinite-bo-${index}`, defId: 'defend_ironclad', upgraded: false,
     })),
   })
@@ -1234,6 +1236,8 @@ try {
   const teammateStartButtonDisabled = await teammateStartButton.isDisabled()
   const teammateStartPrompts = await b.locator('.prompt').count()
   const teammateStartTargets = await b.locator('.enemy--targeted').count()
+  const barricadeAnnLabel = await b.getByRole('button', { name: /^Ann,/ }).getAttribute('aria-label')
+  const barricadeBoLabel = await b.getByRole('button', { name: /^Bo,/ }).getAttribute('aria-label')
   check('only the connected coordinator can resolve Start-of-Turn choices', () => {
     assert(teammateStartButtonDisabled)
   })
@@ -1241,6 +1245,11 @@ try {
     assertEqual(teammateStartPrompts, 0)
     assertEqual(teammateStartTargets, 0)
   })
+  check('Barricade preserves only its owner\'s Block through the two-client room', () => {
+    assert(!/\bBlock \d+\b/.test(barricadeAnnLabel), barricadeAnnLabel)
+    assert(barricadeBoLabel.includes('Block 7'), barricadeBoLabel)
+  })
+  await b.screenshot({ path: join(outDir, '02e-online-barricade-resolved.png'), fullPage: true })
   await b.screenshot({ path: join(outDir, '02c-waiting-start-turn.png'), fullPage: true })
   await a.reload({ waitUntil: 'networkidle' })
   await a.locator('.combat[data-phase="start"]').waitFor()
@@ -1255,11 +1264,14 @@ try {
   const resolvedInfinite = await snapshot(a)
   check('Infinite Blades survives refresh and resolves its ordered online overflow', () => {
     const ann = resolvedInfinite.run.combat.players.find((player) => player.name === 'Ann')
+    const bo = resolvedInfinite.run.combat.players.find((player) => player.name === 'Bo')
     assertEqual(ann.shivs, 3)
     assertEqual(ann.strength, 1)
     assertEqual(ann.attacksPlayedThisTurn, 1)
     assertDeepEqual(resolvedInfinite.run.combat.enemies.filter((enemy) => enemy.hp < 50).map((enemy) => enemy.hp), [49])
     assertEqual(resolvedInfinite.startTurnAbilities, undefined)
+    assertDeepEqual([ann.block, bo.block], [0, 7], 'Barricade remains owner-scoped after ordered abilities')
+    assertDeepEqual(bo.powers.map((card) => card.uid), ['online-barricade'])
   })
   liveRoom.run.combat = infiniteRestore
   const boAfterInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')

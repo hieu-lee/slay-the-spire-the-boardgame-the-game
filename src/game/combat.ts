@@ -1794,7 +1794,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
   for (const player of next.players) {
     if (player.dead) continue
     player.energy = 3
-    player.block = 0
+    if (!player.powers.some((power) => cardDef(power.defId).retainBlock)) player.block = 0
     player.drawLocked = false
     player.attacksPlayedThisTurn = 0
   }

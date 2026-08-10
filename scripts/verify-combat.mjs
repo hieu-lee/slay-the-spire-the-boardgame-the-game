@@ -756,6 +756,30 @@ check('Corruption makes only its owner\'s Skills free and Exhausts them after th
     'cost conditions must see Corruption\'s zero-cost Skill override outside the hand too')
 })
 
+check('Barricade preserves only its owner\'s leftover Block at Start of Turn', () => {
+  for (const upgraded of [false, true]) {
+    const barricade = instance('barricade', upgraded)
+    const powered = playCard(combat([makePlayer({
+      hand: [barricade], energy: upgraded ? 1 : 2, block: 7,
+    })], [makeEnemy()]), 'p1', barricade.uid, { enemyUid: null, playerId: null })
+    assertEqual(powered.players[0].energy, 0, `Barricade${upgraded ? '+' : ''} charged the wrong cost`)
+    assertDeepEqual(powered.players[0].powers.map((card) => card.uid), [barricade.uid])
+    const nextTurn = startPlayerTurn({ ...powered, phase: 'roundEnd', turn: 1 })
+    assertEqual(nextTurn.players[0].block, 7, 'Barricade cleared its owner\'s leftover Block')
+  }
+
+  const reset = startPlayerTurn({
+    ...combat([
+      makePlayer({ block: 7, powers: [instance('barricade')] }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, block: 6 }),
+    ], [makeEnemy()]),
+    phase: 'roundEnd',
+    turn: 1,
+  })
+  assertDeepEqual(reset.players.map((player) => player.block), [7, 0],
+    'Barricade must not preserve a teammate\'s Block')
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -2012,6 +2036,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'sentinel', block: [2, 3], energy: [E - 1, E - 1] },
     { id: 'fiend_fire', enemyHp: [20, 20], exhaust: [1, 1] },
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
+    { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

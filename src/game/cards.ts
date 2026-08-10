@@ -259,6 +259,8 @@ export type CardDef = {
   resolvesOnPlay?: boolean
   /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
   corruptSkills?: boolean
+  /** While this Power is in play, its owner keeps leftover Block at Start of Turn. */
+  retainBlock?: boolean
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -512,10 +514,15 @@ export const CARDS: Record<string, CardDef> = {
   }),
   corruption: card({
     id: 'corruption', name: 'Corruption', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 3,
-    resolvesOnPlay: true,
     effects: [],
     corruptSkills: true,
     upgrade: { cost: 2 },
+  }),
+  barricade: card({
+    id: 'barricade', name: 'Barricade', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 2,
+    effects: [],
+    retainBlock: true,
+    upgrade: { cost: 1 },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.
   // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change

@@ -1467,6 +1467,56 @@ check('Corruption+ makes Skills visibly free and Exhausts them after they resolv
   assertDeepEqual(corruption.players[0].powers.map((card) => card.uid), ['ui-corruption'])
 })
 await shot('06zm-corruption-skill-exhausted')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  Object.assign(run.combat, { phase: 'player', turn: 1, log: [] })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-barricade', defId: 'barricade', upgraded: true }],
+    draw: [], discard: [], exhaust: [], energy: 1, block: 7, powers: [],
+  })
+  Object.assign(ally, { hand: [], draw: [], discard: [], exhaust: [], block: 6, powers: [] })
+  debug.setRun(run)
+})
+const barricadeCard = page.getByRole('button', { name: /^Barricade\+,/ })
+await barricadeCard.waitFor()
+const barricadeLabel = await barricadeCard.getAttribute('aria-label')
+await shot('06zn-barricade-power-card')
+await barricadeCard.click()
+const barricadePower = page.getByRole('button', {
+  name: 'Barricade+: keep leftover Block at the start of your turn, maximum 20',
+})
+await barricadePower.waitFor()
+await shot('06zo-barricade-active')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1 })
+  for (const [playerIndex, player] of run.combat.players.entries()) {
+    Object.assign(player, {
+      hand: [],
+      draw: Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-barricade-draw-${playerIndex}-${index}`,
+        defId: player.character === 'silent' ? 'defend_silent' : 'defend_ironclad',
+        upgraded: false,
+      })),
+    })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const barricaded = await readState()
+check('Barricade+ visibly preserves only its owner\'s Block through Start of Turn', () => {
+  assert(barricadeLabel.includes('at start of turn, keep your leftover Block from last turn'), barricadeLabel)
+  assertEqual(barricaded.players[0].energy, 3)
+  assertDeepEqual(barricaded.players.map((player) => player.block), [7, 0])
+  assertDeepEqual(barricaded.players[0].powers.map((card) => card.uid), ['ui-barricade'])
+})
+await shot('06zp-barricade-block-retained')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

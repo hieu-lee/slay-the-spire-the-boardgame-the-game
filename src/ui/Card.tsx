@@ -192,6 +192,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
       ? `costs ${def.costAfterHpLoss} after you lose hit points this combat`
       : '',
     def.corruptSkills ? 'your Skills cost 0 and Exhaust when played' : '',
+    def.retainBlock ? 'at start of turn, keep your leftover Block from last turn, maximum Block 20' : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',
     def.trigger ? triggerText(def.trigger) : '',
     def.oncePerTurn ? 'once per turn' : '',

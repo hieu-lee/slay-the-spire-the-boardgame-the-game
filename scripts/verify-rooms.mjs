@@ -1466,6 +1466,19 @@ check('Corruption discounts and Exhausts only its owner\'s Skills at room author
   assertDeepEqual(allyResolved.exhaust, [])
 })
 
+check('Barricade preserves only its owner\'s Block through room-authoritative Start of Turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(actor, { block: 7, powers: [{ uid: 'room-barricade', defId: 'barricade', upgraded: false }] })
+  Object.assign(ally, { block: 6, powers: [] })
+  apply(room, a.token, { kind: 'startTurn' })
+  const started = snapshotFor(room, a.token).run.combat
+  assertEqual(started.phase, 'player', 'Barricade must not create a no-op ordered ability')
+  assertDeepEqual(started.players.map((player) => player.block), [7, 0])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)
