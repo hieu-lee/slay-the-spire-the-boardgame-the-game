@@ -21,6 +21,7 @@ import {
   cardDef,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardShivChoiceCount,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
@@ -697,7 +698,7 @@ const targetList = (value) => Array.isArray(value)
   ? value.slice(0, UID_LIMIT).map((item) => item === null || typeof item === 'string' ? item : '')
   : undefined
 
-function overflowChoices(combat, effects, action) {
+function overflowChoices(combat, effects, action, mandatory = 0) {
   const discarded = Array.isArray(action.discardUids) ? action.discardUids.length : 0
   const gained = effects.reduce(
     (sum, effect) => sum + (effect.kind === 'gainShiv'
@@ -713,19 +714,22 @@ function overflowChoices(combat, effects, action) {
     fail('The shared Shiv supply changed; choose targets again')
   }
   const targets = action.shivEnemyUids ?? []
-  if (!Array.isArray(targets) || targets.length > overflow || targets.some((uid) => typeof uid !== 'string')) {
+  if (!Array.isArray(targets) || targets.length < mandatory ||
+    targets.length > mandatory + overflow || targets.some((uid) => typeof uid !== 'string')) {
     fail('Choose every overflow Shiv target or explicitly skip the rest')
   }
   if (overflow > 0) {
     if (!Number.isInteger(action.expectedShivOverflow)) {
       fail('The shared Shiv supply changed; choose targets again')
     }
-    if (targets.length > overflow || (action.skipOverflow !== true && targets.length !== overflow)) {
+    if (action.skipOverflow !== true && targets.length !== mandatory + overflow) {
       fail('Choose every overflow Shiv target or explicitly skip the rest')
     }
-    if (targets.some((uid) => resolveEnemyTargets(combat, 'enemy', uid).length === 0)) {
-      fail('An overflow Shiv target is no longer alive')
-    }
+  } else if (targets.length !== mandatory) {
+    fail('Choose every Shiv target')
+  }
+  if (targets.some((uid) => resolveEnemyTargets(combat, 'enemy', uid).length === 0)) {
+    fail('A Shiv target is no longer alive')
   }
   return { overflow, targets }
 }
@@ -749,9 +753,10 @@ function dispatch(run, seat, action) {
           : discardUids.length !== action.discardUids.length)
       )) fail('Discard choices must be a valid list of card ids')
       const shivEffects = def.type === 'power' && def.trigger && def.resolvesOnPlay !== true ? [] : def.effects
+      const mandatoryShivs = cardShivChoiceCount(def, player, action.mode)
       const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, shivEffects, {
         ...action, discardUids,
-      })
+      }, mandatoryShivs)
       const enemyUids = uidList(action.enemyUids)
       const playerIds = uidList(action.playerIds)
       if (action.enemyUids !== undefined && (
@@ -786,10 +791,10 @@ function dispatch(run, seat, action) {
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
       const combat = playCard(run.combat, seat.playerId, action.cardUid, context)
-      if (combat === run.combat && overflow > 0 && shivEnemyUids.length > 0) {
+      if (combat === run.combat && overflow > 0 && shivEnemyUids.length > mandatoryShivs) {
         const withoutOverflowTargets = playCard(run.combat, seat.playerId, action.cardUid, {
           ...context,
-          shivEnemyUids: [],
+          shivEnemyUids: shivEnemyUids.slice(0, mandatoryShivs),
         })
         if (withoutOverflowTargets !== run.combat) {
           fail('An earlier overflow Shiv defeated a later target; choose targets again')

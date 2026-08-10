@@ -859,6 +859,70 @@ try {
   Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), stormRestore.bo)
   liveRoom.run.combat.enemies = stormRestore.enemies
 
+  const annBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeUnload = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const unloadRestore = {
+    ann: structuredClone({
+      hand: annBeforeUnload.hand, discard: annBeforeUnload.discard, energy: annBeforeUnload.energy,
+      shivs: annBeforeUnload.shivs, attacksPlayedThisTurn: annBeforeUnload.attacksPlayedThisTurn,
+    }),
+    bo: structuredClone({ energy: boBeforeUnload.energy, miracles: boBeforeUnload.miracles }),
+    enemies: liveRoom.run.combat.enemies.map((enemy) => structuredClone(enemy)),
+  }
+  Object.assign(annBeforeUnload, {
+    hand: [{ uid: 'online-unload-refusal', defId: 'unload', upgraded: false }],
+    energy: 3,
+    shivs: 2,
+    attacksPlayedThisTurn: 0,
+  })
+  Object.assign(boBeforeUnload, { energy: 0, miracles: 1 })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true })
+  }
+  const publishUnloadFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishUnloadFixture.ok, 'could not publish the Unload refusal fixture')
+  await a.getByRole('button', { name: /^Unload,/ }).click()
+  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.getByText('Choose Shiv attack 1/2').waitFor()
+  await a.locator('.enemy:not([disabled])').nth(0).click()
+  let unloadRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = JSON.parse(route.request().postData())
+    body.action.shivEnemyUids[1] = 'gone'
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    unloadRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('.enemy:not([disabled])').nth(1).click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose an enemy'))
+  const expectedUnloadConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedUnloadConflict >= 0, 'the refused Unload did not surface as an HTTP conflict')
+  failures.splice(expectedUnloadConflict, 1)
+  check('a refused online Unload restarts every authoritative target choice', () => {
+    assertEqual(unloadRefusalStatus, 409)
+  })
+  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.getByText('Choose Shiv attack 1/2').waitFor()
+  await a.locator('.enemy:not([disabled])').nth(0).click()
+  await a.locator('.enemy:not([disabled])').nth(1).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Unload,')))
+  const completedUnload = await snapshot(a)
+  check('the restored Unload choice completes with three separate attacks', () => {
+    const ann = completedUnload.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.shivs, 0)
+    assertEqual(ann.attacksPlayedThisTurn, 3)
+    assertDeepEqual(completedUnload.run.combat.enemies
+      .filter((enemy) => enemy.hp < 50).map((enemy) => enemy.hp).sort((x, y) => x - y), [46, 48])
+  })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), unloadRestore.ann)
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), unloadRestore.bo)
+  liveRoom.run.combat.enemies = unloadRestore.enemies
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')

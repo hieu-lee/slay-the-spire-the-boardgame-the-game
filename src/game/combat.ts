@@ -305,6 +305,8 @@ export type PlayContext = {
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
   sourceCardType?: CardType
+  /** The source Attack was recorded early so its later Shiv attacks follow it. */
+  sourceAttackCounted?: boolean
 }
 
 export type CardChoicePreview = {
@@ -795,6 +797,36 @@ function applyEffect(
       return applyEffect(state, actor, {
         kind: 'gainShiv', amount: (context.discardedByCard ?? 0) + effect.bonus,
       }, scope, supportScope, context, source)
+    case 'useAllShivs': {
+      const count = actor.shivs
+      actor.shivs = 0
+      if (context.sourceCardType === 'attack' && !context.sourceAttackCounted) {
+        actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+        context.sourceAttackCounted = true
+      }
+      if (count > 0) note(`${actor.name} uses ${count} Shiv${count === 1 ? '' : 's'}`)
+      for (let i = 0; i < count; i++) {
+        const at = context.shivTargetIndex ?? 0
+        const enemyUid = context.shivEnemyUids?.[at]
+        context.shivTargetIndex = at + 1
+        if (!enemyUid || resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) {
+          context.invalidShivTarget = true
+          continue
+        }
+        applyEffect(
+          state,
+          actor,
+          { kind: 'hit', amount: 1 + actor.shivDamageBonus + effect.bonus },
+          'enemy',
+          'self',
+          { ...context, enemyUid },
+          'Shiv',
+        )
+        actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+        if (combatIsOver(state)) return
+      }
+      return
+    }
     case 'gainMiracle': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.miracles
@@ -1276,6 +1308,16 @@ export function cardPlayerChoiceCount(def: CardDef, mode?: number): number {
   return effects.reduce((sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
 }
 
+/** Mandatory targets for a card that spends every Shiv the actor currently holds. */
+export function cardShivChoiceCount(
+  def: CardDef,
+  actor: Pick<Player, 'shivs'>,
+  mode?: number,
+): number {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  return effects.some((effect) => effect.kind === 'useAllShivs') ? actor.shivs : 0
+}
+
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
 function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[], mode?: number) {
@@ -1436,6 +1478,15 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  const mandatoryShivs = cardShivChoiceCount(def, player, context.mode)
+  const discarded = context.discardUids?.length ?? 0
+  const gainedShivs = effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
+    ? effect.amount
+    : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0), 0)
+  const maxShivChoices = mandatoryShivs + overflowShivCount(state, gainedShivs)
+  const shivChoices = context.shivEnemyUids ?? []
+  if (shivChoices.length < mandatoryShivs || shivChoices.length > maxShivChoices ||
+    shivChoices.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return state
   const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
   if (enemyChoiceCount > 0 && (
     context.enemyUids?.length !== enemyChoiceCount ||
@@ -1536,6 +1587,7 @@ export function playCard(
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
+    sourceAttackCounted: false,
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -1577,7 +1629,9 @@ export function playCard(
     if (combatIsOver(next)) return settle(next)
   }
 
-  if (def.type === 'attack') actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+  if (def.type === 'attack' && !ctx.sourceAttackCounted) {
+    actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+  }
 
   // "Abilities triggered by a card do not take effect until the card has
   // finished resolving all of its text" (p.12) — so this fires after cleanup.

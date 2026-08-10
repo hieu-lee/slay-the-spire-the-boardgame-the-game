@@ -1368,6 +1368,40 @@ check('Storm of Steel can target more overflow Shivs than the fixed choice cap',
   assertEqual(room.run.combat.enemies[0].hp, 50 - choices.length)
 })
 
+check('Unload keeps every mandatory Shiv target authoritative across reconnect snapshots', () => {
+  const { room, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const [first, second] = room.run.combat.enemies
+  Object.assign(actor, {
+    hand: [{ uid: 'room-unload', defId: 'unload', upgraded: false }],
+    energy: 3,
+    shivs: 2,
+  })
+  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+
+  let missing = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: 'room-unload', enemyUid: first.uid,
+      shivEnemyUids: [first.uid], preflight: true,
+    })
+  } catch (error) {
+    missing = error
+  }
+  assertEqual(missing?.name, 'RoomError', 'a client cannot omit a held Shiv attack')
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-unload', enemyUid: first.uid,
+    shivEnemyUids: [first.uid, second.uid], preflight: true,
+  })
+  const snapshot = snapshotFor(room, b.token)
+  const mine = snapshot.run.combat.players.find((player) => player.id === b.playerId)
+  assertDeepEqual(snapshot.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [16, 18])
+  assertEqual(mine.shivs, 0)
+  assertEqual(mine.attacksPlayedThisTurn, 3)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

@@ -167,6 +167,8 @@ type EffectKind =
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
   /** Gain one Shiv per card this card's variable discard took, plus a flat bonus. */
   | { kind: 'gainShivPerDiscard'; bonus: number }
+  /** Spend every held Shiv now; each one is still its own attack. */
+  | { kind: 'useAllShivs'; bonus: number }
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: number }
@@ -1777,6 +1779,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'storm_of_steel', name: 'Storm of Steel', owner: 'silent', type: 'skill', rarity: 'rare', cost: 1,
     effects: [{ kind: 'discardAny' }, { kind: 'gainShivPerDiscard', bonus: 0 }],
     upgrade: { effects: [{ kind: 'discardAny' }, { kind: 'gainShivPerDiscard', bonus: 1 }] },
+  }),
+  unload: card({
+    id: 'unload', name: 'Unload', owner: 'silent', type: 'attack', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'useAllShivs', bonus: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'useAllShivs', bonus: 2 }] },
   }),
 }
 

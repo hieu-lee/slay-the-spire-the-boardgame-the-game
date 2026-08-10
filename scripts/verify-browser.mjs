@@ -1814,6 +1814,54 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeShivPowe
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
   .some((card) => card.uid.startsWith('ui-')))
 
+const runBeforeUnload = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    character: 'silent',
+    hand: [{ uid: 'ui-unload', defId: 'unload', upgraded: true }],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 3, shivs: 2,
+    shivDamageBonus: 1, hitPoison: 0, attacksPlayedThisTurn: 0,
+  })
+  if (run.combat.enemies.length < 2) {
+    run.combat.enemies.push({
+      ...run.combat.enemies[0], uid: 'ui-unload-added-enemy', row: run.combat.enemies[0].row + 1,
+    })
+  }
+  run.combat.enemies = run.combat.enemies.slice(0, 2).map((enemy, index) => ({
+    ...enemy, uid: `ui-unload-enemy-${index}`, hp: 20, maxHp: 20, block: 0,
+    weak: 0, vulnerable: 0, poison: 0, abilityUsed: true, dead: false, row: index,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Unload\+,/ }).waitFor()
+const unloadLabel = await page.getByRole('button', { name: /^Unload\+,/ }).getAttribute('aria-label')
+check('Unload renders its complete upgraded separate-attack rule', () => {
+  assert(unloadLabel?.includes('use all Shivs now; each deals +2 damage as a separate attack'))
+})
+await shot('07u-silent-unload-ready')
+await page.getByRole('button', { name: /^Unload\+,/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Choose an enemy'))
+await page.locator('.enemy').nth(0).click()
+await page.getByText('Choose Shiv attack 1/2').waitFor()
+await page.locator('.enemy').nth(0).click()
+await page.getByText('Choose Shiv attack 2/2').waitFor()
+await page.locator('.enemy').nth(1).click()
+const unloaded = await readState()
+check('Unload targets its card hit and every held Shiv through the combat board', () => {
+  assertDeepEqual(unloaded.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [14, 16])
+  assertEqual(unloaded.players[0].shivs, 0)
+  assertEqual(unloaded.players[0].attacksPlayedThisTurn, 3)
+  assertEqual(unloaded.players[0].discard.at(-1)?.uid, 'ui-unload')
+})
+await page.locator('.enemy').first().scrollIntoViewIfNeeded()
+await shot('07v-silent-unload-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeUnload)
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
+  .some((card) => card.uid === 'ui-unload'))
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

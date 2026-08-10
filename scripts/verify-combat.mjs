@@ -1810,6 +1810,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'concentrate', energy: [1, 2], player: { energy: 1 } },
     { id: 'distraction', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'storm_of_steel', shivs: [0, 1] },
+    { id: 'unload', enemyHp: [18, 18] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -3451,6 +3452,54 @@ check('Storm of Steel turns every chosen discard into a Shiv, plus one when upgr
   assertDeepEqual(thrown.enemies.map((enemy) => enemy.hp), [4, 4])
   assertEqual(thrown.players[0].shivs, 4, 'overflow Shivs are thrown without taking unavailable cubes')
   assertEqual(thrown.players[0].attacksPlayedThisTurn, 2, 'each overflow Shiv is a separate attack')
+})
+
+check('Unload uses every held Shiv as a separately targeted attack', () => {
+  for (const upgraded of [false, true]) {
+    const unload = instance('unload', upgraded)
+    const state = combat([
+      makePlayer({
+        character: 'silent', hand: [unload], energy: 3, shivs: 2,
+      }),
+    ], [
+      makeEnemy({ uid: 'e1', hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'e2', hp: 20, maxHp: 20 }),
+    ])
+    Object.assign(state.players[0], { shivDamageBonus: 1, hitPoison: 1, attacksPlayedThisTurn: 4 })
+    const played = playCard(state, 'p1', unload.uid, {
+      enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1', 'e2'],
+    })
+    const shivDamage = upgraded ? 4 : 3
+    assertDeepEqual(played.enemies.map((enemy) => enemy.hp), [18 - shivDamage, 20 - shivDamage])
+    assertDeepEqual(played.enemies.map((enemy) => enemy.poison), [2, 1], 'Envenom applies on every separate hit')
+    assertEqual(played.players[0].shivs, 0)
+    assertEqual(played.players[0].attacksPlayedThisTurn, 7, 'the card and both Shivs count as attacks')
+  }
+
+  const unload = instance('unload')
+  const stale = combat([
+    makePlayer({ character: 'silent', hand: [unload], shivs: 2 }),
+  ], [makeEnemy({ uid: 'e1' }), makeEnemy({ uid: 'e2', dead: true, hp: 0 })])
+  assertEqual(playCard(stale, 'p1', unload.uid, {
+    enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1'],
+  }), stale, 'every held Shiv needs a target')
+  assertEqual(playCard(stale, 'p1', unload.uid, {
+    enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1', 'e2'],
+  }), stale, 'a stale Shiv target refuses the whole play atomically')
+
+  const separate = instance('unload')
+  const tokenState = combat([
+    makePlayer({ character: 'silent', hand: [separate], shivs: 2, weak: 3 }),
+  ], [
+    makeEnemy({ uid: 'e1', hp: 20, maxHp: 20, vulnerable: 3 }),
+    makeEnemy({ uid: 'e2', hp: 20, maxHp: 20, vulnerable: 3 }),
+  ])
+  const spentTokens = playCard(tokenState, 'p1', separate.uid, {
+    enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1', 'e2'],
+  })
+  assertEqual(spentTokens.players[0].weak, 0, 'the card and each Shiv spend their own Weak')
+  assertDeepEqual(spentTokens.enemies.map((enemy) => enemy.vulnerable), [1, 2],
+    'each separately targeted attack spends its own Vulnerable')
 })
 
 check('a Miracle can be spent for Energy only during the Player Turn', () => {

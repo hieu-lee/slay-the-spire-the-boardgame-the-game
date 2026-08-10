@@ -103,6 +103,7 @@ function effectText(effect: Effect): string {
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainShivPerDiscard': return `gain 1 Shiv per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
+    case 'useAllShivs': return `use all Shivs now; each deals +${effect.bonus} damage as a separate attack${condition}`
     case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`
     case 'enterStance': return `enter ${effect.stance}${condition}`
     case 'channel': return `channel ${effect.amount} ${effect.orb} orbs${condition}`
