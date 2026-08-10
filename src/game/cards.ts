@@ -139,6 +139,7 @@ type EffectKind =
   | { kind: 'multiplyPoison'; factor: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | { kind: 'drawToHandSize'; size: number }
+  | { kind: 'cycleHand' }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
   /** Optionally exchange the caster's row with another living player. */
@@ -204,6 +205,8 @@ export type CardDef = {
   ethereal?: boolean
   /** Effects printed as "End of turn: If this card is in your hand...". */
   handEndOfTurn?: HandEndOfTurnEffect[]
+  /** Effects printed as "If this card is discarded by a card's effect...". */
+  discardReaction?: { effects: Effect[]; exhaust?: boolean }
   /**
    * For Powers: when the ongoing effect fires once the card is in play. The
    * `effects` list is what the Power DOES each time it triggers, not what
@@ -1644,6 +1647,32 @@ export const CARDS: Record<string, CardDef> = {
     id: 'expertise', name: 'Expertise', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'drawToHandSize', size: 6 }],
     upgrade: { effects: [{ kind: 'drawToHandSize', size: 7 }] },
+  }),
+  calculated_gamble: card({
+    id: 'calculated_gamble', name: 'Calculated Gamble', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'cycleHand' }],
+    upgrade: { exhaust: false },
+  }),
+  reflex: card({
+    id: 'reflex', name: 'Reflex', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    unplayable: true,
+    effects: [],
+    discardReaction: { effects: [{ kind: 'draw', amount: 2 }] },
+    upgrade: { discardReaction: { effects: [{ kind: 'draw', amount: 3 }] } },
+  }),
+  tactician: card({
+    id: 'tactician', name: 'Tactician', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    unplayable: true,
+    effects: [],
+    discardReaction: { effects: [{ kind: 'gainEnergy', amount: 2 }], exhaust: true },
+    upgrade: { discardReaction: { effects: [{ kind: 'gainEnergy', amount: 3 }], exhaust: true } },
+  }),
+  after_image: card({
+    id: 'after_image', name: 'After Image', owner: 'silent', type: 'power', rarity: 'rare', cost: 1,
+    trigger: { kind: 'onDiscard' },
+    effects: [{ kind: 'block', amount: 1 }],
+    upgrade: { cost: 0 },
   }),
 }
 

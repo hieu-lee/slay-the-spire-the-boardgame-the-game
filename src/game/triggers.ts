@@ -22,6 +22,8 @@ export type Trigger =
   | { kind: 'dieRelic'; faces: number[] }
   /** After a card finishes resolving. `cardType` narrows it to attacks, skills, etc. */
   | { kind: 'onPlayCard'; cardType?: CardType }
+  /** Once when one card effect makes this player discard one or more cards. */
+  | { kind: 'onDiscard' }
   | { kind: 'onExhaust' }
   | { kind: 'onDraw' }
   | { kind: 'onEnterStance'; stance?: Stance }

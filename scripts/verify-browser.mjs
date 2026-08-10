@@ -1482,6 +1482,61 @@ await shot('07j-silent-turn-cards')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-after-image', defId: 'after_image', upgraded: true },
+      { uid: 'ui-calculated-gamble', defId: 'calculated_gamble', upgraded: false },
+      { uid: 'ui-reflex', defId: 'reflex', upgraded: true },
+      { uid: 'ui-tactician', defId: 'tactician', upgraded: true },
+      { uid: 'ui-gamble-spare', defId: 'slice', upgraded: false },
+    ],
+    draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `ui-gamble-draw-${index}`, defId: index % 2 ? 'deflect' : 'slice', upgraded: false,
+    })),
+    discard: [], exhaust: [], powers: [], energy: 1, block: 0,
+  })
+  run.combat.discardedThisTurn = []
+  run.combat.log = []
+  debug.setRun(run)
+})
+const discardReactionLabels = await page.locator('.hand .card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label') ?? ''))
+check('discard-reaction cards announce their unplayable and reactive rules', () => {
+  const reflex = discardReactionLabels.find((label) => label.startsWith('Reflex+')) ?? ''
+  const tactician = discardReactionLabels.find((label) => label.startsWith('Tactician+')) ?? ''
+  assert(reflex.includes('unplayable') && reflex.includes('when discarded by a card effect, draw 3 cards'), reflex)
+  assert(tactician.includes('unplayable') && tactician.includes('gain 3 Energy') && tactician.includes('exhausts'), tactician)
+})
+await shot('07k-silent-discard-engine-ready')
+await page.getByRole('button', { name: /^After Image\+,/ }).click()
+const afterImagePowerLabel = await page.locator('.power').getAttribute('aria-label')
+check('After Image in play announces when its Block triggers', () => {
+  assert(afterImagePowerLabel?.includes('whenever a card effect makes you discard one or more cards'),
+    afterImagePowerLabel ?? 'After Image Power was not rendered')
+})
+await page.getByRole('button', { name: /^Calculated Gamble,/ }).click()
+const discardCombo = await readState()
+check('Calculated Gamble resolves Reflex, Tactician, and After Image through the UI', () => {
+  const actor = discardCombo.players[0]
+  assertEqual(actor.hand.length, 6)
+  assertEqual(actor.energy, 4)
+  assertEqual(actor.block, 1)
+  assertEqual(actor.powers.length, 1)
+  assertDeepEqual(actor.exhaust.map((card) => card.uid).sort(), ['ui-calculated-gamble', 'ui-tactician'])
+  assert(actor.discard.some((card) => card.uid === 'ui-reflex'))
+  assert(discardCombo.discardedThisTurn.includes(actor.id))
+})
+await shot('07l-silent-discard-engine-resolved')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].powers = []
+  debug.setRun(run)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

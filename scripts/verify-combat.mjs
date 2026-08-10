@@ -1793,6 +1793,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
     { id: 'expertise', hand: [6, 6] },
+    { id: 'calculated_gamble', exhaust: [1, 0] },
+    { id: 'reflex', unplayable: true },
+    { id: 'tactician', unplayable: true },
+    { id: 'after_image', powers: [1, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -1850,6 +1854,10 @@ check('every newly transcribed card does what its face prints', () => {
       const context = {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
+      }
+      if (spec.unplayable) {
+        assertEqual(playCard(state, 'p1', card.uid, context), state, `${label} should be unplayable`)
+        continue
       }
       if (spec.discardAfterDraw) {
         const amount = Array.isArray(spec.discardAfterDraw) ? spec.discardAfterDraw[at] : 1
@@ -2732,6 +2740,95 @@ check('Expertise draws only the cards needed to reach its printed hand size', ()
     assertEqual(state.players[0].hand.length, upgraded ? 7 : 6)
     assertEqual(state.players[0].draw.length, upgraded ? 3 : 4)
   }
+})
+
+check('Reflex and Tactician react only when a card effect discards them', () => {
+  for (const upgraded of [false, true]) {
+    const attack = instance('all_out_attack')
+    const reflex = instance('reflex', upgraded)
+    const kept = instance('slice')
+    const reflexState = playCard(combat([
+      makePlayer({ character: 'silent', hand: [attack, reflex, kept], draw: Array.from({ length: 5 }, () => instance('deflect')) }),
+    ], [makeEnemy()]), 'p1', attack.uid, {
+      enemyUid: null, playerId: null, discardUids: [reflex.uid],
+    })
+    assertEqual(reflexState.players[0].hand.length, upgraded ? 4 : 3)
+    assert(reflexState.players[0].discard.some((card) => card.uid === reflex.uid))
+
+    const tactician = instance('tactician', upgraded)
+    const tacticianState = playCard(combat([
+      makePlayer({ character: 'silent', hand: [attack, tactician, kept], energy: 1 }),
+    ], [makeEnemy()]), 'p1', attack.uid, {
+      enemyUid: null, playerId: null, discardUids: [tactician.uid],
+    })
+    assertEqual(tacticianState.players[0].energy, upgraded ? 3 : 2)
+    assert(tacticianState.players[0].exhaust.some((card) => card.uid === tactician.uid))
+    assert(!tacticianState.players[0].discard.some((card) => card.uid === tactician.uid))
+  }
+})
+
+check('Calculated Gamble finishes drawing before resolving discard reactions', () => {
+  for (const upgraded of [false, true]) {
+    const gamble = instance('calculated_gamble', upgraded)
+    const reflex = instance('reflex', upgraded)
+    const tactician = instance('tactician', upgraded)
+    const kept = instance('slice')
+    const state = playCard(combat([
+      makePlayer({
+        character: 'silent', hand: [gamble, reflex, tactician, kept],
+        draw: Array.from({ length: 10 }, () => instance('deflect')), energy: 0,
+        powers: [instance('after_image')],
+      }),
+    ], [makeEnemy()]), 'p1', gamble.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hand.length, upgraded ? 6 : 5)
+    assertEqual(state.players[0].energy, upgraded ? 3 : 2)
+    assertEqual(state.players[0].block, 1, 'After Image fires once for the whole discard effect')
+    assertEqual(state.players[0].exhaust.length, upgraded ? 1 : 2)
+    assert(state.discardedThisTurn.includes('p1'))
+    const ownDraw = state.log.findIndex((line) => line === `${state.players[0].name} draws 3`)
+    const reflexDraw = state.log.findIndex((line) => line.startsWith(`${upgraded ? 'Reflex+' : 'Reflex'}:`))
+    assert(ownDraw >= 0 && reflexDraw > ownDraw, 'Reflex waits for Calculated Gamble to finish drawing')
+  }
+})
+
+check('Calculated Gamble never duplicates a shuffled Tactician when reactions resolve', () => {
+  const gamble = instance('calculated_gamble')
+  const reflex = instance('reflex', true)
+  const tactician = instance('tactician', true)
+  const spare = instance('slice')
+  const state = playCard(combat([
+    makePlayer({
+      character: 'silent', hand: [gamble, reflex, tactician, spare],
+      draw: [], discard: [], energy: 0,
+    }),
+  ], [makeEnemy()]), 'p1', gamble.uid, { enemyUid: null, playerId: null })
+  const player = state.players[0]
+  const all = [...player.hand, ...player.draw, ...player.discard, ...player.exhaust]
+  assertEqual(all.filter((card) => card.uid === tactician.uid).length, 1)
+  assertEqual(player.exhaust.filter((card) => card.uid === tactician.uid).length, 1)
+})
+
+check('Scry routes discarded cards through Silent reactions and After Image', () => {
+  const thirdEye = instance('third_eye')
+  const reflex = instance('reflex')
+  const tactician = instance('tactician')
+  const spare = instance('slice')
+  const state = playCard(combat([
+    makePlayer({
+      character: 'silent', hand: [thirdEye], draw: [reflex, tactician, spare], energy: 1,
+      powers: [instance('after_image')],
+    }),
+  ], [makeEnemy()]), 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: [reflex.uid, tactician.uid],
+  })
+  const player = state.players[0]
+  const all = [...player.hand, ...player.draw, ...player.discard, ...player.exhaust]
+  assertEqual(player.energy, 2)
+  assertEqual(player.block, 3, 'Third Eye grants 2 Block and After Image grants 1')
+  assert(state.discardedThisTurn.includes('p1'))
+  assertEqual(all.filter((card) => card.uid === tactician.uid).length, 1)
+  assertEqual(player.exhaust.filter((card) => card.uid === tactician.uid).length, 1)
+  assert(player.hand.some((card) => card.uid === reflex.uid), 'Reflex draws after the Scry text finishes')
 })
 
 check('Anger returns the played card itself to the top of draw', () => {

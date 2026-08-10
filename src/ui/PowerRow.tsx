@@ -229,6 +229,7 @@ const WHEN: Record<string, string> = {
   endOfCombat: 'at the end of combat',
   dieRelic: 'on the matching die roll',
   onPlayCard: 'whenever you play a card',
+  onDiscard: 'whenever a card effect makes you discard one or more cards',
   onExhaust: 'whenever you exhaust a card',
   onDraw: 'whenever you draw a card',
   onEnterStance: 'whenever you enter a stance',

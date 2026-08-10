@@ -266,6 +266,8 @@ export type PlayContext = {
   invalidEvokeTarget?: boolean
   /** A Scry named a card outside the cards it actually revealed. */
   invalidScryChoice?: boolean
+  /** Discards whose reactions wait until this card finishes its printed text. */
+  pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
 }
 
 export type CardChoicePreview = {
@@ -631,6 +633,12 @@ function applyEffect(
       return applyEffect(state, actor, {
         kind: 'draw', amount: Math.max(0, effect.size - actor.hand.length),
       }, scope, supportScope, context, source)
+    case 'cycleHand': {
+      const moved = [...actor.hand]
+      discardByCardEffect(state, actor, moved, context)
+      return applyEffect(state, actor, { kind: 'draw', amount: moved.length },
+        scope, supportScope, context, source)
+    }
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
@@ -737,12 +745,7 @@ function applyEffect(
     case 'discard': {
       const chosen = allocate(actor, context.discardUids, effect.amount, context)
       const moved = chosen.map((uid) => actor.hand.find((card) => card.uid === uid)!)
-      actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
-      actor.discard = [...actor.discard, ...moved]
-      if (moved.length > 0) {
-        if (!state.discardedThisTurn.includes(actor.id)) state.discardedThisTurn.push(actor.id)
-        note(`${actor.name} discards ${moved.length}`)
-      }
+      discardByCardEffect(state, actor, moved, context)
       return
     }
     case 'exhaustFromHand': {
@@ -851,10 +854,11 @@ function applyEffect(
         return
       }
       const looked = revealed.length
+      const tossed = revealed.filter((card) => chosen.includes(card.uid))
       const piles = scry({ draw: actor.draw, hand: actor.hand, discard: actor.discard },
         effect.amount, chosen)
       actor.draw = piles.draw
-      actor.discard = piles.discard
+      discardByCardEffect(state, actor, tossed, context)
       // An empty draw pile means no cards were looked at, so nothing scried.
       if (looked > 0) fireTriggers(state, { kind: 'onScry' }, actor)
       return
@@ -934,6 +938,50 @@ function exhaustCards(state: CombatState, actor: Player, cards: readonly Player[
   const lasting = cards.filter((held) => cardDef(held.defId).owner !== 'status')
   actor.exhaust = [...actor.exhaust, ...lasting]
   for (let i = 0; i < cards.length; i++) fireTriggers(state, { kind: 'onExhaust' }, actor)
+}
+
+/** Discard from a card effect, deferring reactions until its printed text ends (p.12). */
+function discardByCardEffect(
+  state: CombatState,
+  actor: Player,
+  cards: readonly CardInstance[],
+  context?: PlayContext,
+): void {
+  if (cards.length === 0) return
+  const uids = new Set(cards.map((card) => card.uid))
+  actor.hand = actor.hand.filter((card) => !uids.has(card.uid))
+  actor.draw = actor.draw.filter((card) => !uids.has(card.uid))
+  actor.discard = [...actor.discard.filter((card) => !uids.has(card.uid)), ...cards]
+  if (!state.discardedThisTurn.includes(actor.id)) state.discardedThisTurn.push(actor.id)
+  state.log = [...state.log, `${actor.name} discards ${cards.length}`]
+
+  if (context?.pendingDiscards) {
+    context.pendingDiscards.push({ playerId: actor.id, cards: [...cards] })
+    return
+  }
+  resolveDiscardReactions(state, actor, cards)
+}
+
+function resolveDiscardReactions(
+  state: CombatState,
+  actor: Player,
+  cards: readonly CardInstance[],
+): void {
+  for (const held of cards) {
+    const def = faceOf(cardDef(held.defId), held.upgraded)
+    if (!def.discardReaction) continue
+    for (const effect of def.discardReaction.effects) {
+      applyEffect(state, actor, effect, 'enemy', 'self', { enemyUid: null, playerId: actor.id }, def.name)
+    }
+    if (def.discardReaction.exhaust) {
+      actor.hand = actor.hand.filter((card) => card.uid !== held.uid)
+      actor.draw = actor.draw.filter((card) => card.uid !== held.uid)
+      actor.discard = actor.discard.filter((card) => card.uid !== held.uid)
+      exhaustCards(state, actor, [held])
+      state.log = [...state.log, `${actor.name} exhausts ${def.name}`]
+    }
+  }
+  fireTriggers(state, { kind: 'onDiscard' }, actor)
 }
 
 /**
@@ -1322,6 +1370,7 @@ export function playCard(
     evokeIndex: 0,
     invalidEvokeTarget: false,
     invalidScryChoice: false,
+    pendingDiscards: [],
   }
   if (resolvesOnPlay) {
     for (const effect of effects) {
@@ -1338,6 +1387,12 @@ export function playCard(
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
   if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget || ctx.invalidScryChoice) return state
+
+  for (const pending of ctx.pendingDiscards ?? []) {
+    const owner = findPlayer(next, pending.playerId)
+    if (owner) resolveDiscardReactions(next, owner, pending.cards)
+    if (combatIsOver(next)) return settle(next)
+  }
 
   if (def.exhaust) {
     exhaustCards(next, actor, [held])

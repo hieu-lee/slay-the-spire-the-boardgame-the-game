@@ -88,6 +88,7 @@ function effectText(effect: Effect): string {
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
+    case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
@@ -124,6 +125,7 @@ function triggerText(trigger: Trigger): string {
     case 'onPlayCard': return trigger.cardType
       ? `after you play a ${trigger.cardType} card`
       : 'after you play a card'
+    case 'onDiscard': return 'whenever a card effect makes you discard one or more cards'
     case 'onExhaust': return 'whenever you exhaust a card'
     case 'onDraw': return 'whenever you draw a card'
     case 'onEnterStance': return trigger.stance
@@ -172,6 +174,9 @@ function accessibleName(def: CardDef, cost = def.cost): string {
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
       : def.effects.map(effectText)),
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
+    ...(def.discardReaction?.effects ?? []).map((effect) =>
+      `when discarded by a card effect, ${effectText(effect)}`),
+    def.discardReaction?.exhaust ? 'exhausts after its discard effect' : '',
     def.toDrawTop ? 'returns to the top of your draw pile when played' : '',
     def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',

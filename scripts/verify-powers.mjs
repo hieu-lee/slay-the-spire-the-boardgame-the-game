@@ -116,6 +116,27 @@ check('Dark Embrace draws a card for each card exhausted', () => {
   assertEqual(next.players[0].draw.length, 4, 'from the draw pile')
 })
 
+check('After Image gains one Block per discard effect, not per discarded card', () => {
+  CARDS.fixture_discard_two = {
+    id: 'fixture_discard_two', name: 'Fixture Discard Two', owner: 'silent',
+    type: 'skill', rarity: 'common', cost: 0,
+    effects: [{ kind: 'discard', amount: 2 }],
+  }
+  const source = instance('fixture_discard_two')
+  const first = instance('slice')
+  const second = instance('deflect')
+  const state = playCard(combat([
+    player({
+      character: 'silent', hand: [source, first, second],
+      powers: [instance('after_image')],
+    }),
+  ], [enemy()]), 'p1', source.uid, {
+    enemyUid: null, playerId: null, discardUids: [first.uid, second.uid],
+  })
+  assertEqual(state.players[0].block, 1)
+  assertEqual(state.players[0].discard.length, 3)
+})
+
 check('two exhaust Powers both fire on the same exhaust', () => {
   const grit = instance('true_grit')
   const doomed = instance('strike_ironclad')
@@ -347,6 +368,7 @@ suite('trigger matching')
 check('a trigger only fires for its own event', () => {
   assert(triggerMatches({ kind: 'startOfTurn' }, { kind: 'startOfTurn' }))
   assert(!triggerMatches({ kind: 'startOfTurn' }, { kind: 'endOfTurn' }))
+  assert(triggerMatches({ kind: 'onDiscard' }, { kind: 'onDiscard' }))
 })
 
 check('a die trigger reads the roll', () => {

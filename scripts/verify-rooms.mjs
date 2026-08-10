@@ -1146,6 +1146,33 @@ check('Setup+ publishes Energy only to its chosen ally and Exhausts atomically',
   assertEqual(seen.find((player) => player.id === a.playerId).exhaust.length, 1)
 })
 
+check('Calculated Gamble publishes Reflex, Tactician, and After Image atomically', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const gamble = { uid: 'room-gamble', defId: 'calculated_gamble', upgraded: false }
+  Object.assign(actor, {
+    hand: [
+      gamble,
+      { uid: 'room-reflex', defId: 'reflex', upgraded: false },
+      { uid: 'room-tactician', defId: 'tactician', upgraded: false },
+      { uid: 'room-gamble-kept', defId: 'slice', upgraded: false },
+    ],
+    draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `room-gamble-private-${index}`, defId: 'deflect', upgraded: false,
+    })),
+    discard: [], exhaust: [], energy: 0, block: 0,
+    powers: [{ uid: 'room-after-image', defId: 'after_image', upgraded: false }],
+  })
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: gamble.uid, preflight: true })
+  const seen = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(seen.hand.length, 5)
+  assertEqual(seen.energy, 2)
+  assertEqual(seen.block, 1)
+  assertEqual(seen.exhaust.length, 2)
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-gamble-private-')),
+    'Calculated Gamble leaked its private draws to the teammate')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
