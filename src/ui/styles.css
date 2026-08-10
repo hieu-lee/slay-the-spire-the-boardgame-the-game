@@ -2074,6 +2074,19 @@ button:disabled {
   color: #e8d7a8;
 }
 
+.power__counter {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  z-index: 2;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: rgb(10 8 7 / 0.88);
+  color: #f5d47b;
+  font-size: 0.48rem;
+  line-height: 1.15;
+}
+
 /* Hover, focus or click enlarges the real card, which already carries its own
    rules text — cheaper and more accurate than restating the effect in prose
    beside it. The enlarged card itself is rendered into the body; see

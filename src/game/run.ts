@@ -176,6 +176,8 @@ export function createPlayer(
     shivDamageBonus: 0,
     cardBlockBonus: 0,
     hitPoison: 0,
+    starterStrikeDamageBonus: 0,
+    starterDefendBlockBonus: 0,
     miracles: 0,
     stance: 'neutral',
     orbs: [null, null, null],
@@ -344,6 +346,8 @@ function readyForCombat(rng: RngState, player: Player): Player {
     stance: 'neutral',
     orbs: [null, null, null],
     orbEvokeBonus: 0,
+    starterStrikeDamageBonus: 0,
+    starterDefendBlockBonus: 0,
   }
 }
 

@@ -1087,6 +1087,8 @@ function redactPlayer(player, viewerId) {
     shivDamageBonus: player.shivDamageBonus ?? 0,
     cardBlockBonus: player.cardBlockBonus ?? 0,
     hitPoison: player.hitPoison ?? 0,
+    starterStrikeDamageBonus: player.starterStrikeDamageBonus ?? 0,
+    starterDefendBlockBonus: player.starterDefendBlockBonus ?? 0,
     miracles: player.miracles,
     stance: player.stance,
     orbs: player.orbs,

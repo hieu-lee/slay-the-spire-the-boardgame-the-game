@@ -349,6 +349,10 @@ export type PlayContext = {
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
   sourceCardType?: CardType
+  /** Definition id of the card currently resolving, for Apotheosis. */
+  sourceCardId?: string
+  /** Power instance currently resolving its trigger, for counters and self-Exhaust. */
+  sourcePowerUid?: string
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
   sourceAttackCounted?: boolean
 }
@@ -429,6 +433,8 @@ function holds(
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
     case 'drawPileEmpty':
       return actor.draw.length === 0
+    case 'handEmpty':
+      return actor.hand.length === 0
     case 'drewSkill':
     case 'retainedLastTurn':
       return false
@@ -574,7 +580,8 @@ function applyEffect(
         const wasAlive = !target.dead
         // Bane's bonus reads the enemy being struck, so the printed number is
         // worked out per target rather than once for the card.
-        const each = amountOf(effect.amount, state, actor, target)
+        const each = amountOf(effect.amount, state, actor, target) +
+          (context.sourceCardId?.startsWith('strike_') ? (actor.starterStrikeDamageBonus ?? 0) : 0)
         let blocked = 0
         let curled = false
         let poisonAppliedTotal = 0
@@ -666,7 +673,8 @@ function applyEffect(
         && effect.amount.bonus
         && holds(effect.amount.bonus.when, state, actor)
       const icons = 1 + Number(Boolean(bonusIcon))
-      const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0)
+      const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0) +
+        (context.sourceCardId?.startsWith('defend_') ? (actor.starterDefendBlockBonus ?? 0) : 0)
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
         grantBlock(state, target, amount)
@@ -790,6 +798,24 @@ function applyEffect(
     case 'limitRoundHpLoss': {
       actor.hpLossLimitThisRound = Math.min(actor.hpLossLimitThisRound ?? effect.amount, effect.amount)
       note(`${actor.name} cannot lose more than ${effect.amount} HP this round`)
+      return
+    }
+    case 'upgradeStarterCards': {
+      actor.starterStrikeDamageBonus = (actor.starterStrikeDamageBonus ?? 0) + effect.amount
+      actor.starterDefendBlockBonus = (actor.starterDefendBlockBonus ?? 0) + effect.amount
+      note(`${actor.name}'s starter Strikes and Defends get +${effect.amount}`)
+      return
+    }
+    case 'countdownDamage': {
+      const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
+      if (!held) return
+      held.counter = (held.counter ?? 0) + 1
+      note(`${actor.name} places cube ${held.counter} of ${effect.cubes}`)
+      if (held.counter < effect.cubes) return
+      applyEffect(state, actor, { kind: 'damage', amount: effect.damage }, 'allEnemies', 'self', context, source)
+      actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+      exhaustCards(state, actor, [held])
+      note(`${actor.name} exhausts The Bomb`)
       return
     }
     case 'switchRows': {
@@ -1703,6 +1729,7 @@ export function playCard(
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
+    sourceCardId: def.id,
     sourceAttackCounted: false,
   }
   if (resolvesOnPlay) {
@@ -1856,6 +1883,13 @@ function beginPlayerTurn(next: CombatState): CombatState {
 
 type StartTurnSource = { ability: Omit<StartTurnAbility, 'overflowShivs'>; source: TriggerSource }
 
+function triggerTargets(state: CombatState, player: Player, source: TriggerSource) {
+  return (source.scope === 'enemy' || source.scope === 'row') &&
+    source.effects.some((effect) => reachesEnemy(effect, player))
+    ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+    : undefined
+}
+
 function startTurnSources(state: CombatState): StartTurnSource[] {
   if (state.phase !== 'start') return []
   const events: TriggerEvent[] = [
@@ -1870,9 +1904,7 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
         id: `${player.id}/${source.id}`,
         playerId: player.id,
         label: source.name,
-        targets: source.scope === 'enemy' && source.effects.some((effect) => reachesEnemy(effect, player))
-          ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
-          : undefined,
+        targets: triggerTargets(state, player, source),
       },
     }))))
 }
@@ -1968,7 +2000,11 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
-    .map((source) => ({ id: source.id, label: source.name.replace(`${player.name}'s `, '') }))
+    .map((source) => ({
+      id: source.id,
+      label: source.name.replace(`${player.name}'s `, ''),
+      targets: triggerTargets(state, player, source),
+    }))
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
   }
@@ -2102,7 +2138,16 @@ export function beginEndPlayerTurn(
       if (localId.startsWith('relic:') || localId.startsWith('power:')) {
         const source = triggerSources(player, { kind: 'endOfTurn' })
           .find((candidate) => candidate.id === localId)
-        if (source) resolveTriggerSource(next, player, source)
+        const target = endTurnChoiceTarget(choice)
+        // A row is chosen when the order is submitted. Preserve that row if
+        // an earlier ability kills its enemy anchor, without teaching ordinary
+        // card plays that a dead enemy is a valid target.
+        const selectedRow = source?.scope === 'row'
+          ? next.enemies.find((enemy) => enemy.uid === target)?.row
+          : undefined
+        if (source && ((source.scope !== 'row' && triggerTargets(next, player, source) &&
+          resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
+          !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow))) return state
       } else if (localId === 'strength') {
         const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
         if (loss > 0) {
@@ -2493,6 +2538,7 @@ type TriggerSource = {
   scope: TargetScope
   supportScope: TargetScope
   oncePerTurn: boolean
+  powerUid?: string
 }
 
 function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string): TriggerSource[] {
@@ -2522,6 +2568,7 @@ function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string
       scope: def.target ?? 'enemy',
       supportScope: def.supportTarget ?? 'self',
       oncePerTurn: def.oncePerTurn === true,
+      powerUid: held.uid,
     })
   }
   return sources
@@ -2534,6 +2581,7 @@ function resolveTriggerSource(
   allowCombatOver = false,
   shivEnemyUids?: readonly (string | null)[],
   enemyUid?: string,
+  enemyRow?: number,
 ): boolean {
   const useKey = `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -2544,10 +2592,12 @@ function resolveTriggerSource(
   const target = livingEnemies(state)[0]
   const context: PlayContext = {
     enemyUid: enemyUid ?? target?.uid ?? null,
+    enemyRow,
     playerId: player.id,
     shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
     shivTargetIndex: 0,
     invalidShivTarget: false,
+    sourcePowerUid: source.powerUid,
   }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
@@ -2626,6 +2676,8 @@ export function createCombat(
       shivDamageBonus: 0,
       cardBlockBonus: 0,
       hitPoison: 0,
+      starterStrikeDamageBonus: 0,
+      starterDefendBlockBonus: 0,
     })),
     enemies,
     discardedThisTurn: [],

@@ -36,6 +36,8 @@ export type CardInstance = {
   endTurnProtected?: boolean
   /** This exact card was kept by Retain at the end of the previous Player Turn. */
   retainedLastTurn?: boolean
+  /** Cubes accumulated on a Power such as The Bomb. */
+  counter?: number
 }
 
 export type RelicInstance = {
@@ -88,6 +90,9 @@ export type Player = {
   shivDamageBonus: number
   cardBlockBonus: number
   hitPoison: number
+  /** Apotheosis bonuses for the four printed starter Strike/Defend cards. */
+  starterStrikeDamageBonus?: number
+  starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
   stance: Stance

@@ -1142,6 +1142,127 @@ check('Madness discount survives reconnect and cannot be spent as a Miracle paym
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 0)
 })
 
+check('Apotheosis bonuses survive reconnect while the remaining hand stays private', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const apotheosis = { uid: 'room-apotheosis', defId: 'apotheosis', upgraded: true }
+  const strike = { uid: 'room-apotheosis-strike', defId: 'strike_ironclad', upgraded: false }
+  const defend = { uid: 'room-apotheosis-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [apotheosis, strike, defend], energy: 3, block: 0 })
+  apply(room, a.token, { kind: 'playCard', cardUid: apotheosis.uid, preflight: true })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(owner.starterStrikeDamageBonus, 1)
+  assertEqual(owner.starterDefendBlockBonus, 1)
+  const teammate = snapshotFor(room, b.token)
+  assert(!allStrings(teammate).includes(strike.uid) && !allStrings(teammate).includes(defend.uid),
+    'Apotheosis leaked the owner\'s improved hand')
+  const enemyHp = room.run.combat.enemies[0].hp
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: defend.uid, playerId: a.playerId, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies[0].hp, enemyHp - 2)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 2)
+})
+
+check('Panache row choice is coordinator-owned and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  actor.hand = []
+  other.hand = []
+  actor.powers = [{ uid: 'room-panache', defId: 'panache', upgraded: true }]
+  room.run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    row: index, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const snapshot = snapshotFor(room, rejoined.token)
+  const ability = snapshot.endTurnAbilities.find((entry) => entry.label.includes('Panache'))
+  assertEqual(ability.targets.length, room.run.combat.enemies.length)
+  const target = room.run.combat.enemies[1]
+  const firstHp = room.run.combat.enemies[0].hp
+  apply(room, rejoined.token, {
+    kind: 'resolveEndTurn', abilityOrder: [`${ability.id}@${target.uid}`],
+  })
+  assertEqual(room.run.combat.enemies[0].hp, firstHp)
+  assertEqual(room.run.combat.enemies[1].hp, 15)
+})
+
+check('an authoritative Panache plan keeps its row after Poison kills the chosen anchor', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  actor.hand = []
+  other.hand = []
+  actor.powers = [{ uid: 'room-panache-anchor', defId: 'panache', upgraded: false }]
+  const [anchor, survivor] = room.run.combat.enemies
+  Object.assign(anchor, { row: 0, hp: 1, maxHp: 1, poison: 1, dead: false })
+  Object.assign(survivor, { row: 1, hp: 20, maxHp: 20, poison: 0, dead: false })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const abilities = snapshotFor(room, a.token).endTurnAbilities
+  const poison = abilities.find((entry) => entry.label.includes('Poison'))
+  const panache = abilities.find((entry) => entry.label.includes('Panache'))
+  apply(room, a.token, {
+    kind: 'resolveEndTurn', abilityOrder: [poison.id, `${panache.id}@${anchor.uid}`],
+  })
+  assertEqual(room.run.combat.enemies[0].dead, true)
+  assertEqual(room.run.combat.enemies[1].hp, 20,
+    'Panache should fizzle after its valid chosen row becomes empty')
+})
+
+check('a crafted row-card action cannot use a dead enemy as its anchor', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const entrance = { uid: 'room-dead-row-target', defId: 'dramatic_entrance', upgraded: false }
+  actor.hand = [entrance]
+  actor.energy = 0
+  const [dead, living] = room.run.combat.enemies
+  Object.assign(dead, { row: 0, hp: 0, dead: true })
+  Object.assign(living, { row: 0, hp: 20, maxHp: 20, dead: false })
+  let rejected = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: entrance.uid, enemyUid: dead.uid, preflight: true,
+    })
+  } catch (error) {
+    rejected = error
+  }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.run.combat.enemies[1].hp, 20)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand[0].uid, entrance.uid)
+})
+
+check('The Bomb counter is public across reconnect and its third cube Exhausts authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const bomb = { uid: 'room-bomb', defId: 'the_bomb', upgraded: true, counter: 2 }
+  actor.hand = []
+  other.hand = []
+  actor.powers = [bomb]
+  for (const enemy of room.run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  const before = snapshotFor(room, b.token)
+  const publicBomb = before.run.combat.players.find((player) => player.id === a.playerId).powers[0]
+  assertEqual(publicBomb.counter, 2)
+  assertEqual(before.run.combat.players.find((player) => player.id === a.playerId).hand, null)
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  assertDeepEqual(room.run.combat.enemies.map((enemy) => enemy.hp), Array(room.run.combat.enemies.length).fill(8))
+  const current = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(current.powers.length, 0)
+  assertEqual(current.exhaust.some((card) => card.uid === bomb.uid), true)
+})
+
 check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

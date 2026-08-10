@@ -1324,6 +1324,133 @@ await shot('06zf-madness-spent')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hpLossLimitThisRound == null)
 
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-panache', defId: 'panache', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 0,
+  })
+  run.combat.players[1].hand = []
+  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    row: index, hp: 20, maxHp: 20, block: 0, weak: 0, vulnerable: 0, poison: 0, dead: false,
+  }))
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const panacheCard = page.getByRole('button', { name: /^Panache\+,/ })
+await panacheCard.waitFor()
+const panacheLabel = await panacheCard.getAttribute('aria-label')
+await panacheCard.click()
+const panachePower = page.getByRole('button', { name: /^Panache\+?:/ })
+await panachePower.waitFor()
+const panachePowerLabel = await panachePower.getAttribute('aria-label')
+check('Panache+ exposes its empty-hand row effect accessibly', () => {
+  assert(panacheLabel.includes('deal 5 damage if your hand is empty'), panacheLabel)
+  assert(panacheLabel.includes('hits a whole row and any boss'), panacheLabel)
+  assert(panachePowerLabel.includes('5 damage'), panachePowerLabel)
+  assert(panachePowerLabel.includes('if your hand is empty'), panachePowerLabel)
+  assert(panachePowerLabel.includes('to one enemy row and any boss'), panachePowerLabel)
+  assert(panachePowerLabel.includes('at the end of each turn'), panachePowerLabel)
+})
+await panachePower.scrollIntoViewIfNeeded()
+await panachePower.click()
+await shot('06zg-panache-power')
+await page.locator('.end-turn-order summary').click()
+const panacheTarget = page.getByRole('combobox', { name: /Target for .*Panache/ })
+const panacheTargetUid = await panacheTarget.locator('option').nth(1).getAttribute('value')
+await panacheTarget.selectOption(panacheTargetUid)
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[1].hp === 15)
+const panache = await readState()
+check('Panache+ resolves the selected row at end of turn', () => {
+  assertEqual(panache.enemies[0].hp, 20)
+  assertEqual(panache.enemies[1].hp, 15)
+})
+await shot('06zh-panache-row-hit')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-apotheosis', defId: 'apotheosis', upgraded: true },
+      { uid: 'ui-apotheosis-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 2,
+    starterStrikeDamageBonus: 0,
+    starterDefendBlockBonus: 0,
+  })
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const apotheosisCard = page.getByRole('button', { name: /^Apotheosis\+,/ })
+await apotheosisCard.waitFor()
+const apotheosisLabel = await apotheosisCard.getAttribute('aria-label')
+await apotheosisCard.click()
+const apotheosisPower = page.getByRole('button', { name: /^Apotheosis\+?:/ })
+await apotheosisPower.waitFor()
+const apotheosisPowerLabel = await apotheosisPower.getAttribute('aria-label')
+check('Apotheosis+ remains visible as a Power and states both starter bonuses', () => {
+  assert(apotheosisLabel.includes('starter Strikes deal +1 damage'), apotheosisLabel)
+  assert(apotheosisLabel.includes('starter Defends gain +1 Block'), apotheosisLabel)
+  assert(apotheosisPowerLabel.includes('starter Strikes deal +1 damage'), apotheosisPowerLabel)
+  assert(apotheosisPowerLabel.includes('starter Defends gain +1 Block'), apotheosisPowerLabel)
+})
+await apotheosisPower.click()
+await shot('06zi-apotheosis-power')
+await page.getByRole('button', { name: /^Strike, cost 1,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 18))
+const apotheosis = await readState()
+check('Apotheosis adds one damage to a starter Strike', () => {
+  assertEqual(apotheosis.enemies.filter((enemy) => enemy.hp === 18).length, 1)
+})
+await shot('06zj-apotheosis-strike')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [],
+    discard: [],
+    exhaust: [],
+    powers: [{ uid: 'ui-bomb', defId: 'the_bomb', upgraded: true, counter: 2 }],
+  })
+  run.combat.players[1].hand = []
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const bombPower = page.getByRole('button', { name: /^The Bomb\+?:/ })
+await bombPower.waitFor()
+const bombLabel = await bombPower.getAttribute('aria-label')
+const bombCounter = await bombPower.locator('.power__counter').textContent()
+check('The Bomb+ exposes its public cube countdown visually and accessibly', () => {
+  assert(bombLabel.includes('at 3 cubes deal 12 damage to every enemy, then Exhaust this Power'), bombLabel)
+  assert(bombLabel.includes('2 of 3 cubes'), bombLabel)
+  assertEqual(bombCounter, '◆2/3')
+})
+await bombPower.scrollIntoViewIfNeeded()
+await bombPower.click()
+await shot('06zk-bomb-two-cubes')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 0)
+const bomb = await readState()
+check('The Bomb+ third cube damages every enemy and Exhausts the Power', () => {
+  assert(bomb.enemies.every((enemy) => enemy.hp === 8), 'The Bomb did not deal 12 to every enemy')
+  assertEqual(bomb.players[0].exhaust.some((card) => card.uid === 'ui-bomb'), true)
+})
+await shot('06zl-bomb-exploded')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
+  !window.__STS_DEBUG__.getState().players[0].powers.some((card) => card.uid === 'ui-bomb'))
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

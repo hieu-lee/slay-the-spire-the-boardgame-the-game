@@ -70,6 +70,8 @@ export type Condition =
   | { kind: 'orbsAtLeast'; amount: number }
   /** Grand Finale: the face-down draw pile is empty. */
   | { kind: 'drawPileEmpty' }
+  /** Panache checks this when its ordered end-of-turn ability resolves. */
+  | { kind: 'handEmpty' }
   /** Escape Plan: the immediately preceding draw effect drew a Skill. */
   | { kind: 'drewSkill' }
   /** Outmaneuver: this exact card was kept by Retain last turn. */
@@ -164,6 +166,10 @@ type EffectKind =
   | { kind: 'discountNextCard' }
   /** Total HP lost this round cannot exceed this amount. */
   | { kind: 'limitRoundHpLoss'; amount: number }
+  /** Permanently improve this combat's starter Strikes and Defends. */
+  | { kind: 'upgradeStarterCards'; amount: number }
+  /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
+  | { kind: 'countdownDamage'; cubes: number; damage: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -1637,6 +1643,26 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'discountNextCard' }],
     upgrade: { retain: true },
+  }),
+  panache: card({
+    id: 'panache', name: 'Panache', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'endOfTurn' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 3, when: { kind: 'handEmpty' } }],
+    upgrade: { effects: [{ kind: 'damage', amount: 5, when: { kind: 'handEmpty' } }] },
+  }),
+  apotheosis: card({
+    id: 'apotheosis', name: 'Apotheosis', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'upgradeStarterCards', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+  the_bomb: card({
+    id: 'the_bomb', name: 'The Bomb', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'endOfTurn' },
+    target: 'allEnemies',
+    effects: [{ kind: 'countdownDamage', cubes: 3, damage: 10 }],
+    upgrade: { effects: [{ kind: 'countdownDamage', cubes: 3, damage: 12 }] },
   }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

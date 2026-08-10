@@ -55,6 +55,7 @@ function conditionText(condition: Condition): string {
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
     case 'drawPileEmpty': return 'your draw pile is empty'
+    case 'handEmpty': return 'your hand is empty'
     case 'drewSkill': return 'the card just drawn is a Skill'
     case 'retainedLastTurn': return 'this card was Retained last turn'
   }
@@ -101,6 +102,8 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
     case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
+    case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`

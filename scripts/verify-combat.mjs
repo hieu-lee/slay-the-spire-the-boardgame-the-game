@@ -1,10 +1,12 @@
 import {
   activatePotion,
   beginEndPlayerTurn,
+  chooseEndTurnTarget,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
+  endTurnAbilities,
   enemyTurn,
   livingEnemies,
   playCard,
@@ -1998,6 +2000,9 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'apparition', exhaust: [1, 1] },
     { id: 'dark_shackles', block: [2, 3], exhaust: [1, 1] },
     { id: 'madness', exhaust: [1, 1] },
+    { id: 'panache', powers: [1, 1] },
+    { id: 'apotheosis', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'the_bomb', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -2843,6 +2848,125 @@ check('Madness discounts exactly the next card this turn and gains Retain when u
   const retained = instance('madness', true)
   const kept = endPlayerTurn(combat([makePlayer({ hand: [retained] })], [makeEnemy()]))
   assertDeepEqual(kept.players[0].hand.map((card) => card.uid), [retained.uid])
+})
+
+check('Panache targets a row and reads the hand when its ordered end-turn ability resolves', () => {
+  for (const upgraded of [false, true]) {
+    const panache = instance('panache', upgraded)
+    const played = playCard(combat([makePlayer({ hand: [panache], energy: 0 })], [
+      makeEnemy({ uid: 'left', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', row: 2, hp: 20, maxHp: 20, isBoss: true }),
+    ]), 'p1', panache.uid, { enemyUid: null, playerId: null })
+    const ability = endTurnAbilities(played).find((entry) => entry.label.includes('Panache'))
+    assertEqual(ability.targets.length, 3)
+    const ended = beginEndPlayerTurn(played, [chooseEndTurnTarget(ability.id, 'left')])
+    const damage = upgraded ? 5 : 3
+    assertDeepEqual(ended.enemies.map((enemy) => enemy.hp), [20 - damage, 20, 20 - damage])
+  }
+
+  const panache = instance('panache')
+  const apparition = instance('apparition')
+  const state = combat([makePlayer({ hand: [apparition], powers: [panache] })], [
+    makeEnemy({ hp: 20, maxHp: 20 }),
+  ])
+  const abilities = endTurnAbilities(state)
+  const power = abilities.find((entry) => entry.label.includes('Panache'))
+  const ethereal = abilities.find((entry) => entry.label.includes('Apparition'))
+  const panacheFirst = beginEndPlayerTurn(state, [
+    chooseEndTurnTarget(power.id, 'e1'), ethereal.id,
+  ])
+  assertEqual(panacheFirst.enemies[0].hp, 20, 'Panache should see the still-held Ethereal card')
+  const etherealFirst = beginEndPlayerTurn(state, [
+    ethereal.id, chooseEndTurnTarget(power.id, 'e1'),
+  ])
+  assertEqual(etherealFirst.enemies[0].hp, 17, 'Ethereal may empty the hand before Panache resolves')
+
+  const poisonAnchor = combat([makePlayer({ hand: [], powers: [instance('panache')] })], [
+    makeEnemy({ uid: 'anchor', row: 0, hp: 1, maxHp: 1, poison: 1 }),
+    makeEnemy({ uid: 'same-row', row: 0, hp: 20, maxHp: 20 }),
+  ])
+  const poisonAbilities = endTurnAbilities(poisonAnchor)
+  const poison = poisonAbilities.find((entry) => entry.label.includes('Poison'))
+  const anchoredPanache = poisonAbilities.find((entry) => entry.label.includes('Panache'))
+  const resolved = beginEndPlayerTurn(poisonAnchor, [
+    poison.id, chooseEndTurnTarget(anchoredPanache.id, 'anchor'),
+  ])
+  assert(resolved !== poisonAnchor, 'a dead row anchor should not roll back the end-turn plan')
+  assertEqual(resolved.enemies[0].dead, true)
+  assertEqual(resolved.enemies[1].hp, 17)
+
+  const emptyRow = combat([makePlayer({ hand: [], powers: [instance('panache')] })], [
+    makeEnemy({ uid: 'sole-anchor', row: 0, hp: 1, maxHp: 1, poison: 1 }),
+    makeEnemy({ uid: 'other-row', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  const emptyRowAbilities = endTurnAbilities(emptyRow)
+  const solePoison = emptyRowAbilities.find((entry) => entry.label.includes('Poison'))
+  const solePanache = emptyRowAbilities.find((entry) => entry.label.includes('Panache'))
+  const fizzled = beginEndPlayerTurn(emptyRow, [
+    solePoison.id, chooseEndTurnTarget(solePanache.id, 'sole-anchor'),
+  ])
+  assert(fizzled !== emptyRow, 'an emptied chosen row should fizzle rather than roll back')
+  assertEqual(fizzled.enemies[0].dead, true)
+  assertEqual(fizzled.enemies[1].hp, 20)
+
+  const entrance = instance('dramatic_entrance')
+  const staleCardTarget = combat([makePlayer({ hand: [entrance], energy: 0 })], [
+    makeEnemy({ uid: 'dead-card-anchor', row: 0, hp: 0, maxHp: 5, dead: true }),
+    makeEnemy({ uid: 'live-card-target', row: 0, hp: 20, maxHp: 20 }),
+  ])
+  assertEqual(playCard(staleCardTarget, 'p1', entrance.uid, {
+    enemyUid: 'dead-card-anchor', playerId: null,
+  }), staleCardTarget, 'ordinary row cards must still reject a dead target')
+})
+
+check('Apotheosis improves only starter Strikes and Defends for the combat', () => {
+  for (const upgraded of [false, true]) {
+    const apotheosis = instance('apotheosis', upgraded)
+    const strike = instance('strike_ironclad')
+    const defend = instance('defend_ironclad', true)
+    const bash = instance('bash')
+    const state = combat([makePlayer({ hand: [apotheosis, strike, defend, bash], energy: 6 })], [
+      makeEnemy({ hp: 20, maxHp: 20 }),
+    ])
+    const empowered = playCard(state, 'p1', apotheosis.uid, { enemyUid: null, playerId: null })
+    assertEqual(empowered.players[0].energy, upgraded ? 5 : 4)
+    assertEqual(empowered.players[0].starterStrikeDamageBonus, 1)
+    assertEqual(empowered.players[0].starterDefendBlockBonus, 1)
+    const struck = playCard(empowered, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(struck.enemies[0].hp, 18)
+    const defended = playCard(struck, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(defended.players[0].block, 3, 'Defend+ should keep its printed 2 and add 1')
+    const bashed = playCard(defended, 'p1', bash.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(bashed.enemies[0].hp, 16, 'another starter-rarity card is not a Strike')
+  }
+  const reset = createCombat(createRng(99), [makePlayer({
+    starterStrikeDamageBonus: 3, starterDefendBlockBonus: 3,
+  })], [makeEnemy()])
+  assertEqual(reset.players[0].starterStrikeDamageBonus, 0)
+  assertEqual(reset.players[0].starterDefendBlockBonus, 0)
+})
+
+check('The Bomb counts three end turns, damages every enemy, then Exhausts itself', () => {
+  for (const upgraded of [false, true]) {
+    const bomb = instance('the_bomb', upgraded)
+    let state = playCard(combat([makePlayer({ hand: [bomb], energy: 2 })], [
+      makeEnemy({ uid: 'left', hp: 30, maxHp: 30 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 30, maxHp: 30 }),
+    ]), 'p1', bomb.uid, { enemyUid: null, playerId: null })
+    for (let cube = 1; cube <= 3; cube++) {
+      const ability = endTurnAbilities(state).find((entry) => entry.label.includes('The Bomb'))
+      state = beginEndPlayerTurn(state, [ability.id])
+      if (cube < 3) {
+        assertEqual(state.players[0].powers[0].counter, cube)
+        state = { ...state, phase: 'player' }
+      }
+    }
+    const damage = upgraded ? 12 : 10
+    assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [30 - damage, 30 - damage])
+    assertEqual(state.players[0].powers.some((card) => card.uid === bomb.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === bomb.uid), true)
+  }
 })
 
 check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {
