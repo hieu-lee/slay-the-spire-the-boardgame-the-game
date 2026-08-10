@@ -2090,6 +2090,76 @@ check('Mayhem keeps its forced card private, owner-authoritative, and settles di
     'reconnect restored a settled Mayhem card')
 })
 
+check('Havoc keeps its immediate draw private and blocks every other room action', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-havoc', defId: 'havoc', upgraded: false }
+  const held = { uid: 'room-havoc-held', defId: 'defend_ironclad', upgraded: false }
+  const secret = { uid: 'room-havoc-secret', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(ann, { hand: [havoc, held], draw: [secret], discard: [], exhaust: [], energy: 1 })
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  const owner = snapshotFor(room, a.token)
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(owner.run.combat.startTurnProgress.forcedCard.cardUid, secret.uid)
+  assertEqual(owner.run.combat.startTurnProgress.forcedCard.sourceCardId, 'havoc')
+  assertEqual(teammate.run.combat.startTurnProgress.forcedCard.cardUid, null)
+  assert(!allStrings(teammate).includes(secret.uid), 'Havoc leaked its draw to a teammate')
+
+  for (const [token, action] of [
+    [a.token, { kind: 'playCard', cardUid: held.uid, preflight: true }],
+    [b.token, { kind: 'endTurn' }],
+  ]) {
+    let refused = null
+    try { apply(room, token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'another action bypassed Havoc\'s immediate play')
+  }
+
+  const disconnectRoom = structuredClone(room)
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: secret.uid, enemyUid: target.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.enemies[0].hp, 9)
+  assertEqual(resolved.energy, 0, 'Havoc charged more than its own printed cost')
+  assertEqual(resolved.exhaust.at(-1).uid, secret.uid)
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+
+  markDisconnected(disconnectRoom, a.token)
+  const abandoned = disconnectRoom.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(disconnectRoom.run.combat.startTurnProgress, undefined)
+  assertEqual(abandoned.exhaust.at(-1).uid, secret.uid, 'disconnect discarded Havoc\'s forced card')
+  assert(allStrings(snapshotFor(disconnectRoom, b.token)).includes(secret.uid),
+    'the settled card did not become public in Exhaust')
+})
+
+check('Havoc resolves its child before Enraged and cannot strand online defeat', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-havoc-lethal', defId: 'havoc', upgraded: true }
+  const strike = { uid: 'room-havoc-lethal-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 2, startTurnProgress: undefined })
+  Object.assign(actor, { hand: [havoc], draw: [strike], hp: 1, energy: 0 })
+  room.run.combat.enemies = [{
+    ...room.run.combat.enemies[0], defId: 'gremlin_nob', hp: 1, maxHp: 1,
+    block: 0, dead: false, abilityUsed: false,
+  }]
+
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hp, 1,
+    'Enraged fired before the immediate card online')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'won')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  const resolved = apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(resolved.changed, true, 'a stale forced marker blocked online combat resolution')
+})
+
 check('a disconnected Mayhem owner resolves a previewed Thinking Ahead fallback', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

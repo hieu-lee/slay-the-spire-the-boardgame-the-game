@@ -2196,6 +2196,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'sadistic_nature', powers: [1, 1] },
     { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
+    { id: 'havoc', hand: [1, 1] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
@@ -3266,6 +3267,113 @@ check('Warcry draws 2/3, topdecks one chosen hand card, and Exhausts', () => {
     assertEqual(next.players[0].hand.length, drawn.length)
     assertEqual(next.players[0].exhaust.at(-1).uid, warcry.uid)
   }
+})
+
+check('Havoc forces its draw for 0 Energy and Exhausts every non-Power', () => {
+  for (const upgraded of [false, true]) {
+    const havoc = instance('havoc', upgraded)
+    const held = instance('defend_ironclad')
+    const strike = instance('strike_ironclad')
+    const state = combat([makePlayer({ hand: [havoc, held], draw: [strike], energy: upgraded ? 0 : 1 })], [
+      makeEnemy({ hp: 10, maxHp: 10 }),
+    ])
+    const forced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+    assertEqual(forced.players[0].energy, 0)
+    assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, strike.uid)
+    assertEqual(forced.startTurnProgress?.forcedCard?.sourceCardId, 'havoc')
+    assertEqual(forced.startTurnProgress?.forcedCard?.exhaustNonPower, true)
+    assertEqual(playCard(forced, 'p1', held.uid, { enemyUid: null, playerId: null }), forced,
+      'another hand card cannot bypass the immediate play')
+    const played = playCard(forced, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, 9)
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [strike.uid])
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [havoc.uid])
+    assertEqual(played.startTurnProgress, undefined)
+  }
+
+  const havoc = instance('havoc')
+  const inflame = instance('inflame')
+  const powerForced = playCard(combat([
+    makePlayer({ hand: [havoc], draw: [inflame], energy: 1 }),
+  ], [makeEnemy()]), 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  const powered = playCard(powerForced, 'p1', inflame.uid, { enemyUid: null, playerId: null })
+  assertDeepEqual(powered.players[0].powers.map((card) => card.uid), [inflame.uid])
+  assertEqual(powered.players[0].exhaust.length, 0, 'Havoc never Exhausts a Power')
+
+  const dazeHavoc = instance('havoc')
+  const daze = instance('daze')
+  const unplayable = playCard(combat([makePlayer({
+    hand: [dazeHavoc], draw: [daze], energy: 1, powers: [instance('feel_no_pain')],
+  })], [makeEnemy()]), 'p1', dazeHavoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(unplayable.startTurnProgress, undefined)
+  assertEqual(unplayable.players[0].block, 1, 'an unplayable draw is still Exhausted')
+  assert(!unplayable.players[0].hand.some((card) => card.uid === daze.uid))
+  assert(!unplayable.players[0].discard.some((card) => card.uid === daze.uid))
+})
+
+check('Havoc finishes its immediate child before cleanup and post-card reactions', () => {
+  const havoc = instance('havoc', true)
+  const lethal = instance('strike_ironclad')
+  const state = {
+    ...combat([makePlayer({ hand: [havoc], draw: [lethal], hp: 1, energy: 0 })], [
+      makeEnemy({ defId: 'gremlin_nob', hp: 1, maxHp: 1 }),
+    ]),
+    turn: 2,
+  }
+  const forced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(forced.players[0].hp, 1, 'Enraged fired before Havoc\'s immediate card')
+  assertEqual(forced.players[0].discard.length, 0, 'Havoc cleaned up before its child finished')
+  const won = playCard(forced, 'p1', lethal.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(won.phase, 'won')
+  assertEqual(won.players[0].hp, 1, 'a defeated Nob still reacted to Havoc')
+
+  const guardedHavoc = instance('havoc', true)
+  const guardedStrike = instance('strike_ironclad')
+  const guardedState = {
+    ...combat([makePlayer({
+      hand: [guardedHavoc], draw: [guardedStrike], hp: 3, energy: 0,
+      shivs: 1, miracles: 1, potions: ['block_potion'],
+    })], [makeEnemy({ defId: 'gremlin_nob', hp: 5, maxHp: 5 })]),
+    turn: 2,
+  }
+  const pending = playCard(guardedState, 'p1', guardedHavoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(beginEndPlayerTurn(pending), pending, 'End turn bypassed Havoc')
+  assertEqual(spendMiracle(pending, 'p1'), pending, 'a Miracle bypassed Havoc')
+  assertEqual(spendShiv(pending, 'p1', 'e1'), pending, 'a Shiv bypassed Havoc')
+  assertEqual(activatePotion(pending, 'p1', 'block_potion', { targetPlayerId: 'p1' }), pending,
+    'a potion bypassed Havoc')
+  const played = playCard(pending, 'p1', guardedStrike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(played.players[0].hp, 2)
+  assertDeepEqual(played.players[0].discard.map((card) => card.uid), [guardedHavoc.uid])
+  assert(played.log.findIndex((line) => line.includes('played Strike')) <
+    played.log.findIndex((line) => line.includes('Enraged')),
+  'Enraged was logged before Havoc\'s immediate child')
+})
+
+check('nested forced cards preserve the outer Start-of-Turn queue', () => {
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const havoc = instance('havoc', true)
+  const strike = instance('strike_ironclad')
+  const defend = instance('defend_ironclad')
+  const state = combat([makePlayer({
+    powers: [instance('mayhem'), instance('mayhem')],
+    draw: [...opening, havoc, strike, defend],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const abilities = startTurnAbilities(prepared)
+  const first = resolveStartPlayerTurn(prepared, abilities.map((ability) => ({
+    id: ability.id, shivEnemyUids: [],
+  })))
+  const nested = playCard(first, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(nested.startTurnProgress?.forcedCard?.cardUid, strike.uid)
+  assertEqual(nested.startTurnProgress?.choices.length, 1, 'Havoc dropped the second Mayhem')
+  const afterStrike = playCard(nested, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(afterStrike.startTurnProgress?.forcedCard?.cardUid, defend.uid,
+    'the queued Mayhem did not resume after Havoc')
+  const finished = playCard(afterStrike, 'p1', defend.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.phase, 'player')
+  assertEqual(finished.startTurnProgress, undefined)
 })
 
 check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {

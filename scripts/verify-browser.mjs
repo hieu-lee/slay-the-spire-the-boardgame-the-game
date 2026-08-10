@@ -1581,6 +1581,56 @@ await shot('06zpb-warcry-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-havoc', defId: 'havoc', upgraded: true },
+      { uid: 'ui-havoc-held', defId: 'defend_ironclad', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-havoc-forced', defId: 'strike_ironclad', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const havocCard = page.getByRole('button', { name: /^Havoc\+, cost 0,/ })
+await havocCard.waitFor()
+const havocLabel = await havocCard.getAttribute('aria-label')
+await havocCard.click()
+await page.getByText('Havoc — play the drawn card for 0 Energy').waitFor()
+const havocForced = page.getByRole('button', { name: /^Strike, cost 0,/ })
+await havocForced.waitFor()
+const heldDuringHavoc = page.getByRole('button', { name: /^Defend,/ })
+const havocForcedEnabled = await havocForced.isEnabled()
+const heldDuringHavocEnabled = await heldDuringHavoc.isEnabled()
+const havocEndTurnActions = await page.getByRole('button', { name: 'End turn' }).count()
+const havocShivActions = await page.getByRole('button', { name: /Use Shiv/ }).count()
+const havocMiracleActions = await page.getByRole('button', { name: /Use Miracle/ }).count()
+check('Havoc+ explains its cleanup and locks the hand to its free draw', () => {
+  assert(havocLabel.includes('exhaust it unless it is a Power'), havocLabel)
+  assertEqual(havocForcedEnabled, true)
+  assertEqual(heldDuringHavocEnabled, false)
+  assertEqual(havocEndTurnActions, 0)
+  assertEqual(havocShivActions, 0)
+  assertEqual(havocMiracleActions, 0)
+})
+await shot('06zpc-havoc-forced-card')
+await havocForced.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().startTurnProgress)
+const havoc = await readState()
+check('Havoc+ plays its draw for 0 Energy and Exhausts the Attack', () => {
+  assertEqual(havoc.players[0].energy, 0)
+  assertEqual(havoc.enemies[0].hp, 9)
+  assertEqual(havoc.players[0].exhaust.at(-1).uid, 'ui-havoc-forced')
+})
+await shot('06zpd-havoc-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

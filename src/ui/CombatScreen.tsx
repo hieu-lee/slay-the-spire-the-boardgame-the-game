@@ -1473,8 +1473,8 @@ export function CombatScreen({
     : null
   const forcedPrompt = forcedCard && !pending
     ? forcedCard.playerId === viewerId
-      ? "Mayhem — play the drawn card for 0 Energy"
-      : `Waiting for ${state.players.find((player) => player.id === forcedCard.playerId)?.name ?? 'another player'} to play Mayhem's card`
+      ? `${cardDef(forcedCard.sourceCardId ?? 'mayhem').name} — play the drawn card for 0 Energy`
+      : `Waiting for ${state.players.find((player) => player.id === forcedCard.playerId)?.name ?? 'another player'} to play ${cardDef(forcedCard.sourceCardId ?? 'mayhem').name}'s card`
     : null
   const prompt = forcedPrompt ?? startTurnPrompt ?? (pendingPotionDef
     ? pendingPotionDef.target === 'row'
@@ -1525,7 +1525,7 @@ export function CombatScreen({
         <span className="combat__actions">
           {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
             <>
-              {state.phase === 'player' && !orderingStage ? [...new Set(viewer.potions)].map((potionId) => {
+              {state.phase === 'player' && !forcedCard && !orderingStage ? [...new Set(viewer.potions)].map((potionId) => {
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
@@ -1555,7 +1555,7 @@ export function CombatScreen({
                   </button>
                 )
               }) : null}
-              {state.phase === 'player' && !orderingStage && viewer.shivs > 0 ? (
+              {state.phase === 'player' && !forcedCard && !orderingStage && viewer.shivs > 0 ? (
                 <button
                   type="button"
                   disabled={Boolean(pending?.choiceCards)}
@@ -1572,7 +1572,7 @@ export function CombatScreen({
                   {spendingShiv ? '✓ ' : ''}Use Shiv
                 </button>
               ) : null}
-              {state.phase === 'player' && !orderingStage && viewer.miracles > 0 ? (
+              {state.phase === 'player' && !forcedCard && !orderingStage && viewer.miracles > 0 ? (
                 <button
                   type="button"
                   disabled={Boolean(pending?.choiceCards)}
@@ -1615,7 +1615,7 @@ export function CombatScreen({
                   </select>
                 </label>
               ) : null}
-              {state.phase === 'player' && (abilities.length > 1 ||
+              {state.phase === 'player' && !forcedCard && (abilities.length > 1 ||
                 abilities.some((ability) => (ability.targets?.length ?? 0) > 1)) ? (
                 <details className="end-turn-order">
                   <summary>End-turn order ({abilities.length})</summary>
@@ -1648,14 +1648,14 @@ export function CombatScreen({
                 </details>
               ) : null}
               {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
-              <button type="button" onClick={finishTurn}
+              {!forcedCard ? <button type="button" onClick={finishTurn}
                 disabled={Boolean(pending?.choiceCards) || (orderingStage && viewer.id !== endTurnCoordinatorId)}>
                 {state.phase === 'discard'
                   ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
                   : orderingStage
                     ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
                     : 'End turn'}
-              </button>
+              </button> : null}
             </>
           ) : null}
           {state.phase === 'start' && !forcedCard ? (
@@ -2061,7 +2061,7 @@ export function CombatScreen({
                 !usingCard &&
                 !orderingStage &&
                 (!pending?.choiceCards || pending.card.uid === card.uid) &&
-                (state.phase === 'player' || card.uid === forcedCardUid ||
+                ((state.phase === 'player' && !forcedCard) || card.uid === forcedCardUid ||
                   (pending?.card.uid === forcedCardUid && pending.choice !== null && !pending.choiceCards)) &&
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable

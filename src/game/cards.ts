@@ -202,8 +202,8 @@ type EffectKind =
   | { kind: 'scry'; amount: number }
   /** Put chosen cards from hand on top of the draw pile, in chosen order. */
   | { kind: 'topdeck'; amount: number }
-  /** Draw a card and immediately play it for 0 Energy, as Mayhem does. */
-  | { kind: 'drawAndPlayFree' }
+  /** Draw a card and immediately play it for 0 Energy. */
+  | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
@@ -752,6 +752,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
     exhaust: true,
     upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
+  havoc: card({
+    id: 'havoc', name: 'Havoc', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'drawAndPlayFree', exhaustNonPower: true }],
+    upgrade: { cost: 0 },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,

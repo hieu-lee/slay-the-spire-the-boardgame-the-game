@@ -55,7 +55,14 @@ export type CombatState = {
   /** Unresolved Start-of-Turn work, including Mayhem's private forced play. */
   startTurnProgress?: {
     choices: StartTurnChoice[]
-    forcedCard?: { playerId: string; cardUid: string | null }
+    forcedCard?: {
+      playerId: string
+      cardUid: string | null
+      sourceCardId: string
+      exhaustNonPower: boolean
+      /** Havoc cards waiting for their immediately-played child to finish. */
+      deferredHavocs?: { card: CardInstance; exhaust: boolean }[]
+    }
   }
   log: string[]
 }
@@ -1225,15 +1232,25 @@ function applyEffect(
       if (!drawn) return
       const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
       if (!cardIsPlayable(drawnDef, state, actor)) {
-        discardByCardEffect(state, actor, [drawn])
-        note(`${actor.name} cannot play ${drawnDef.name} with Mayhem`)
+        if (effect.exhaustNonPower && drawnDef.type !== 'power') {
+          actor.hand = actor.hand.filter((card) => card.uid !== drawn.uid)
+          exhaustCards(state, actor, [drawn], context)
+        } else {
+          discardByCardEffect(state, actor, [drawn])
+        }
+        note(`${actor.name} cannot play ${drawnDef.name} with ${cardDef(context.sourceCardId ?? 'mayhem').name}`)
         return
       }
       state.startTurnProgress = {
         choices: [],
-        forcedCard: { playerId: actor.id, cardUid: drawn.uid },
+        forcedCard: {
+          playerId: actor.id,
+          cardUid: drawn.uid,
+          sourceCardId: context.sourceCardId ?? 'mayhem',
+          exhaustNonPower: effect.exhaustNonPower === true,
+        },
       }
-      note(`${actor.name} must play Mayhem's drawn card for 0 Energy`)
+      note(`${actor.name} must play ${cardDef(context.sourceCardId ?? 'mayhem').name}'s drawn card for 0 Energy`)
       return
     }
   }
@@ -1692,6 +1709,46 @@ function hasInvalidRowSwitch(
   return !chosen || chosen.dead || chosen.id === actor.id
 }
 
+function resolveEnraged(state: CombatState, actor: Player): void {
+  for (const enemy of state.enemies) {
+    const ability = enemyDef(enemy.defId).ability
+    if (enemy.dead || ability?.kind !== 'enraged' || state.turn < ability.fromTurn) continue
+    const hpBefore = actor.hp
+    const blockBefore = actor.block
+    damagePlayer(actor, ability.damage)
+    const name = enemyLabel(state.enemies, enemy)
+    const lost = hpBefore - actor.hp
+    const blocked = blockBefore - actor.block
+    state.log = [
+      ...state.log,
+      lost > 0
+        ? `${name}'s Enraged hit ${actor.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+        : `${actor.name} blocked ${name}'s Enraged (${blocked} spent)`,
+    ]
+    if (actor.dead) {
+      state.log = [...state.log, `${actor.name} has fallen`]
+      return
+    }
+  }
+}
+
+/** Completes nested Havocs from the innermost card back to the outermost. */
+function finishDeferredHavocs(
+  state: CombatState,
+  actor: Player,
+  deferred: readonly { card: CardInstance; exhaust: boolean }[],
+): void {
+  for (const { card, exhaust } of [...deferred].reverse()) {
+    if (combatIsOver(state)) return
+    if (exhaust) exhaustCards(state, actor, [card])
+    else actor.discard = [...actor.discard, card]
+    if (combatIsOver(state)) return
+    fireTriggers(state, { kind: 'onPlayCard', cardType: 'skill' }, actor, card.uid)
+    if (combatIsOver(state)) return
+    resolveEnraged(state, actor)
+  }
+}
+
 /**
  * Plays a card from a player's hand. Returns the same state reference when the
  * play is illegal: not that player's card, not enough energy, wrong phase.
@@ -1703,7 +1760,9 @@ export function playCard(
   context: PlayContext = { enemyUid: null, playerId: null },
 ): CombatState {
   const forced = state.startTurnProgress?.forcedCard
-  const forcedPlay = state.phase === 'start' && forced?.playerId === playerId && forced.cardUid === cardUid
+  const forcedPlay = (state.phase === 'start' || state.phase === 'player') &&
+    forced?.playerId === playerId && forced.cardUid === cardUid
+  if (forced && !forcedPlay) return state
   if (state.phase !== 'player' && !forcedPlay) return state
   const player = findPlayer(state, playerId)
   if (!player || player.dead) return state
@@ -1841,6 +1900,22 @@ export function playCard(
     }
   }
 
+  // Havoc's child is part of Havoc's resolution. Its own cleanup, card-play
+  // triggers, and Enraged reaction therefore wait until that child finishes.
+  // A Havoc drawn by another Havoc extends the same small stack.
+  if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
+    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    next.startTurnProgress.forcedCard.deferredHavocs = [
+      ...(forced?.deferredHavocs ?? []),
+      { card: forgetRetain(held), exhaust: def.exhaust === true ||
+        (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt },
+    ]
+    if (forcedChoices) {
+      next.startTurnProgress.choices = forcedChoices.map((choice) => ({ ...choice }))
+    }
+    return settle(next)
+  }
+
   // Survivor reads "2 Block. Discard 1 card." — the discard is the COST, not a
   // suggestion. Off the network an empty or bogus list would otherwise buy the
   // card's effects for nothing. The whole play is resolved into a clone first,
@@ -1857,7 +1932,8 @@ export function playCard(
   }
 
   const played = forgetRetain(held)
-  if (def.exhaust || (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
+  if (def.exhaust || (forcedPlay && forced.exhaustNonPower && def.type !== 'power') ||
+    (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
     exhaustCards(next, actor, [played], ctx)
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, played]
@@ -1894,30 +1970,11 @@ export function playCard(
   // `held.uid` is excluded: a Power that reacts to cards being played was not
   // in front of you when THIS card was played, so it does not see it.
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
+  if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
 
-  if (def.type === 'skill') {
-    for (const enemy of next.enemies) {
-      const ability = enemyDef(enemy.defId).ability
-      if (enemy.dead || ability?.kind !== 'enraged' || next.turn < ability.fromTurn) continue
-      const hpBefore = actor.hp
-      const blockBefore = actor.block
-      damagePlayer(actor, ability.damage)
-      const name = enemyLabel(next.enemies, enemy)
-      const lost = hpBefore - actor.hp
-      const blocked = blockBefore - actor.block
-      next.log = [
-        ...next.log,
-        lost > 0
-          ? `${name}'s Enraged hit ${actor.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-          : `${actor.name} blocked ${name}'s Enraged (${blocked} spent)`,
-      ]
-      if (actor.dead) {
-        next.log = [...next.log, `${actor.name} has fallen`]
-        break
-      }
-    }
-  }
+  if (def.type === 'skill') resolveEnraged(next, actor)
 
+  finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
   return finishForcedCardPlay(settle(next), forcedChoices)
 }
 
@@ -2135,21 +2192,33 @@ function finishForcedCardPlay(
   state: CombatState,
   choices: readonly StartTurnChoice[] | null,
 ): CombatState {
-  return choices === null || combatIsOver(state) ? state : continueStartTurn(state, choices)
+  if (choices === null || combatIsOver(state)) return state
+  if (state.startTurnProgress?.forcedCard) {
+    state.startTurnProgress.choices = choices.map((choice) => ({ ...choice }))
+    return state
+  }
+  return continueStartTurn(state, choices)
 }
 
-/** Discards a disconnected owner's private Mayhem card and resumes the queued abilities. */
+/** Settles a disconnected owner's private forced card and resumes queued abilities. */
 export function abandonForcedCard(state: CombatState, playerId: string): CombatState {
   const forced = state.startTurnProgress?.forcedCard
-  if (state.phase !== 'start' || forced?.playerId !== playerId || typeof forced.cardUid !== 'string') return state
+  if ((state.phase !== 'start' && state.phase !== 'player') || forced?.playerId !== playerId ||
+    typeof forced.cardUid !== 'string') return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   const card = actor?.hand.find((held) => held.uid === forced.cardUid)
   if (!actor || !card) return state
   const choices = [...(next.startTurnProgress?.choices ?? [])]
   next.startTurnProgress = undefined
-  discardByCardEffect(next, actor, [card])
-  next.log = [...next.log, `${actor.name}'s Mayhem card was discarded after disconnecting`]
+  if (forced.exhaustNonPower && faceOf(cardDef(card.defId), card.upgraded).type !== 'power') {
+    actor.hand = actor.hand.filter((held) => held.uid !== card.uid)
+    exhaustCards(next, actor, [card])
+  } else {
+    discardByCardEffect(next, actor, [card])
+  }
+  next.log = [...next.log, `${actor.name}'s ${cardDef(forced.sourceCardId ?? 'mayhem').name} card was settled after disconnecting`]
+  finishDeferredHavocs(next, actor, forced.deferredHavocs ?? [])
   return finishForcedCardPlay(settle(next), choices)
 }
 
@@ -2284,7 +2353,7 @@ export function beginEndPlayerTurn(
   state: CombatState,
   order: EndTurnOrder = defaultEndTurnOrder(endTurnAbilities(state)),
 ): CombatState {
-  if (state.phase !== 'player') return state
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard) return state
   const abilities = endTurnAbilities(state)
   if (!validEndTurnOrder(abilities, order)) return state
 
@@ -2863,7 +2932,7 @@ export function createCombat(
 
 /** Spend one Miracle for one Energy during the shared Player Turn (p.17). */
 export function spendMiracle(state: CombatState, playerId: string): CombatState {
-  if (state.phase !== 'player') return state
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || player.dead || player.miracles < 1 || player.energy >= CAPS.energy) return state
   const next = clone(state)
@@ -2876,7 +2945,7 @@ export function spendMiracle(state: CombatState, playerId: string): CombatState 
 
 /** Spend one Shiv as its own one-damage attack (p.17). */
 export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
-  if (state.phase !== 'player') return state
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || player.dead || player.shivs < 1) return state
   if (resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
@@ -2904,7 +2973,7 @@ export function activatePotion(
   potionId: string,
   context: PotionContext = {},
 ): CombatState {
-  if (state.phase !== 'player') return state
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard) return state
   const player = findPlayer(state, playerId)
   if (!player || player.dead || !player.potions.includes(potionId)) return state
   const def = potionDef(potionId)

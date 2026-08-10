@@ -38,7 +38,12 @@ export type VisibleCombat = {
   powerTriggersUsedThisTurn: string[]
   startTurnProgress?: {
     choices: StartTurnChoice[]
-    forcedCard?: { playerId: string; cardUid: string | null }
+    forcedCard?: {
+      playerId: string
+      cardUid: string | null
+      sourceCardId: string
+      exhaustNonPower: boolean
+    }
   }
   log: string[]
 }

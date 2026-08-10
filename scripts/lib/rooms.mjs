@@ -234,7 +234,7 @@ export function markDisconnected(room, seatToken) {
 
 function settleForcedCards(room) {
   let combat = room.run?.combat
-  while (combat?.phase === 'start' && combat.startTurnProgress?.forcedCard) {
+  while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
     const ownerId = combat.startTurnProgress.forcedCard.playerId
     const owner = room.seats.find((seat) => seat.playerId === ownerId)
     if (owner?.connected !== false) break
@@ -292,7 +292,8 @@ export function apply(room, seatToken, action) {
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
-  const forcedForSeat = room.run.combat?.phase === 'start' && forcedCard?.playerId === seat.playerId &&
+  const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
+    forcedCard?.playerId === seat.playerId &&
     typeof forcedCard.cardUid === 'string'
   if (staged && (!player?.hand.some((card) => card.uid === staged.cardUid) ||
     (room.run.combat?.phase !== 'player' && !(forcedForSeat && forcedCard.cardUid === staged.cardUid)))) {
@@ -312,6 +313,10 @@ export function apply(room, seatToken, action) {
     // to RNG-mutating actions only if simultaneous-play latency becomes a problem.
     fail('Wait for the revealed card to finish')
   }
+  if (forcedCard && !(
+    forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
+    action.cardUid === forcedCard.cardUid
+  )) fail('Finish the forced card before taking another action')
 
   if (action?.kind === 'previewCard') {
     if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
@@ -1092,6 +1097,8 @@ function redactCombat(combat, viewerId) {
       forcedCard: progress.forcedCard ? {
         playerId: progress.forcedCard.playerId,
         cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
+        sourceCardId: progress.forcedCard.sourceCardId ?? 'mayhem',
+        exhaustNonPower: progress.forcedCard.exhaustNonPower === true,
       } : undefined,
     } : undefined,
     log: combat.log,

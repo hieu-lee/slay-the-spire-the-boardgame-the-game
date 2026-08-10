@@ -124,7 +124,9 @@ function effectText(effect: Effect): string {
     case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
-    case 'drawAndPlayFree': return `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`
+    case 'drawAndPlayFree': return effect.exhaustNonPower
+      ? `draw 1 card, then immediately play it for 0 Energy; exhaust it unless it is a Power${condition}`
+      : `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`
     case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
     case 'heal': return `heal ${effect.amount}${condition}`
