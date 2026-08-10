@@ -108,6 +108,24 @@ check('the card art on disk matches the index exactly', () => {
   assertEqual(cardFiles.length, expected, 'every index entry should have exactly one file per face')
 })
 
+check('character card art stays at source resolution', () => {
+  if (cardFiles.length === 0) return
+  const files = cardFiles
+    .filter((file) => /^(ironclad|silent|defect|watcher)__/.test(file))
+    .map((file) => join(cardRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect character card dimensions')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'webpinfo should inspect every character card')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    return width >= 744 && height >= 1039 ? [] : [`${file} is ${width}x${height}`]
+  })
+  assert(faults.length === 0, `low-resolution character card art:\n    ${faults.join('\n    ')}`)
+})
+
 // Card art is the bulk of the payload; a careless re-sync at full resolution
 // would add hundreds of megabytes without anyone noticing until clone time.
 check('card art stays within its size budget', () => {

@@ -1,14 +1,15 @@
 // Downloads every card, relic and potion scan and converts it to a web-sized
 // WebP under public/assets/cards/.
 //
-// The source images are 744x1039 PNGs of about 350 KB each. At 665 images that
-// is roughly 230 MB, far too much to ship. Cards render at ~300 CSS px wide, so
-// they are downscaled to 320px and re-encoded, which lands around 15 KB each.
+// The source images are 744x1039 PNGs of about 350 KB each. Character cards
+// retain that resolution; relics, potions and other scans use 320px. Lossy WebP
+// keeps the complete library within its 25 MB payload budget.
 //
 // Usage:
 //   node scripts/sync-card-assets.mjs             # fetch anything missing
 //   node scripts/sync-card-assets.mjs --force     # re-fetch everything
-//   node scripts/sync-card-assets.mjs --width=480 # higher fidelity
+//   node scripts/sync-card-assets.mjs --force --characters # upgrade existing character cards
+//   node scripts/sync-card-assets.mjs --width=480 --quality=74 # override export settings
 //   node scripts/sync-card-assets.mjs --limit=20  # sample, for a quick check
 import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -25,11 +26,14 @@ const flag = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback
 }
 const force = args.includes('--force')
-const width = Number(flag('width', '320'))
+const charactersOnly = args.includes('--characters')
+const width = Number(flag('width', '0'))
+const quality = Number(flag('quality', '0'))
 const limit = Number(flag('limit', '0'))
 const concurrency = Number(flag('jobs', '8'))
 
 const index = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
+const isCharacter = (entry) => ['ironclad', 'silent', 'defect', 'watcher'].includes(entry.tier.split('/')[0])
 
 // Fail before downloading 650 files rather than after each one fails to encode.
 function requireTool(command, hint) {
@@ -62,6 +66,7 @@ function sourceUrl(entry, upgraded) {
 
 const jobs = []
 for (const entry of index) {
+  if (charactersOnly && !isCharacter(entry)) continue
   jobs.push({ entry, upgraded: false })
   if (entry.hasUpgrade) jobs.push({ entry, upgraded: true })
 }
@@ -84,30 +89,36 @@ async function fetchOne({ entry, upgraded }) {
   const target = join(outRoot, `${key}.webp`)
   if (!force && existsSync(target) && statSync(target).size > 0) return { key, skipped: true }
 
-  const url = sourceUrl(entry, upgraded)
-  const response = await fetch(url)
-  if (!response.ok) return { key, error: `HTTP ${response.status} for ${url}` }
-  const source = join(outRoot, `.${key}.src.png`)
+  const master = join(repoRoot, 'public/assets/cards-hd', `${key}.png`)
+  const hasMaster = existsSync(master)
+  const source = hasMaster ? master : join(outRoot, `.${key}.src.png`)
   const scaled = join(outRoot, `.${key}.scaled.png`)
-  writeFileSync(source, Buffer.from(await response.arrayBuffer()))
+  const targetWidth = width || (isCharacter(entry) ? 744 : 320)
+  const targetQuality = quality || (isCharacter(entry) ? 74 : 82)
+  if (!hasMaster) {
+    const url = sourceUrl(entry, upgraded)
+    const response = await fetch(url)
+    if (!response.ok) return { key, error: `HTTP ${response.status} for ${url}` }
+    writeFileSync(source, Buffer.from(await response.arrayBuffer()))
+  }
 
   // Two steps on purpose: this ffmpeg build has no WebP encoder, and ffmpeg's
   // lanczos scaler is better than cwebp's built-in resize.
   const scale = await run('ffmpeg', [
     '-v', 'error', '-y',
     '-i', source,
-    '-vf', `scale=${width}:-1:flags=lanczos`,
+    '-vf', hasMaster && width === 0 ? 'null' : `scale=${targetWidth}:-1:flags=lanczos`,
     scaled,
   ])
   if (scale.code !== 0) {
-    rmSync(source, { force: true })
+    if (!hasMaster) rmSync(source, { force: true })
     return { key, error: scale.stderr.trim() || 'ffmpeg scale failed' }
   }
 
-  // Card art is illustration, so lossy at q82 is visually indistinguishable at
-  // this size and roughly a twentieth of the bytes.
-  const encode = await run('cwebp', ['-quiet', '-q', '82', scaled, '-o', target])
-  rmSync(source, { force: true })
+  // Card art is illustration, so lossy WebP keeps scans sharp at a fraction of
+  // the bytes. Quality is configurable for full-resolution character exports.
+  const encode = await run('cwebp', ['-quiet', '-q', String(targetQuality), scaled, '-o', target])
+  if (!hasMaster) rmSync(source, { force: true })
   rmSync(scaled, { force: true })
   if (encode.code !== 0) {
     // cwebp may have written a partial file before failing. Leaving it would
