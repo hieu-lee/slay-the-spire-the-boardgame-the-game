@@ -144,6 +144,8 @@ type EffectKind =
   | { kind: 'hit'; amount: Amount; times?: Amount }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
   | { kind: 'damage'; amount: number }
+  /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
+  | { kind: 'damagePerAttackIntent'; amount: number }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
   /** The caster loses HP, ignoring Block, as a printed card effect. */
@@ -770,6 +772,19 @@ export const CARDS: Record<string, CardDef> = {
     id: 'headbutt', name: 'Headbutt', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverDiscard', amount: 1 }],
     upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverDiscard', amount: 1 }] },
+  }),
+  power_through: card({
+    id: 'power_through', name: 'Power Through', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'addDaze', amount: 1, pile: 'draw' }],
+    upgrade: {
+      effects: [{ kind: 'block', amount: 4, toChosen: true }, { kind: 'addDaze', amount: 1, pile: 'draw' }],
+    },
+  }),
+  flame_barrier: card({
+    id: 'flame_barrier', name: 'Flame Barrier', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'block', amount: 3 }, { kind: 'damagePerAttackIntent', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 4 }, { kind: 'damagePerAttackIntent', amount: 1 }] },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,

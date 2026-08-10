@@ -1756,6 +1756,83 @@ check('Headbutt skips the discard chooser when that pile is empty', () => {
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  if (!ally) throw new Error('the Power Through playtest needs a teammate')
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-power-through', defId: 'power_through', upgraded: true }],
+    discard: [], draw: [{ uid: 'ui-power-through-draw', defId: 'strike_ironclad', upgraded: false }],
+    exhaust: [], powers: [], energy: 1, block: 0,
+  })
+  Object.assign(ally, { block: 0, dead: false })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const powerThroughCard = page.getByRole('button', { name: /^Power Through\+, cost 1,/ })
+const powerThroughLabel = await powerThroughCard.getAttribute('aria-label')
+await powerThroughCard.click()
+const powerThroughTarget = page.locator('.seat--targetable:not(.seat--viewer)').first()
+await powerThroughTarget.waitFor()
+await powerThroughTarget.scrollIntoViewIfNeeded()
+await page.locator('.prompt').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished))
+})
+await shot('06zpi-power-through-ally-target')
+await powerThroughTarget.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw[0]?.defId === 'daze')
+const poweredThrough = await readState()
+check('Power Through+ blocks any teammate while its Daze goes to the caster draw-top', () => {
+  assert(powerThroughLabel.includes('gain 4 Block'), powerThroughLabel)
+  assert(powerThroughLabel.includes('support effect may target any player'), powerThroughLabel)
+  assert(powerThroughLabel.includes('put 1 Daze on your draw pile'), powerThroughLabel)
+  assertEqual(poweredThrough.players[0].block, 0)
+  assertEqual(poweredThrough.players[1].block, 4)
+  assertEqual(poweredThrough.players[0].draw[0].defId, 'daze')
+  assertEqual(poweredThrough.players[0].energy, 0)
+})
+await shot('06zpj-power-through-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const template = run.combat.enemies[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined, die: 1 })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-flame-barrier', defId: 'flame_barrier', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, block: 0, row: 0,
+  })
+  run.combat.enemies = [
+    { ...template, uid: 'ui-flame-same', defId: 'cultist', row: 0, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'ui-flame-other', defId: 'cultist', row: 1, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'ui-flame-boss', defId: 'cultist', row: 1, isBoss: true,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'ui-flame-idle', defId: 'gremlin_nob', row: 0, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+  ]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const flameBarrierCard = page.getByRole('button', { name: /^Flame Barrier\+, cost 2,/ })
+const flameBarrierLabel = await flameBarrierCard.getAttribute('aria-label')
+await flameBarrierCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 4)
+await page.locator('.board').evaluate((board) => { board.scrollTop = 0 })
+const flamed = await readState()
+check('Flame Barrier+ reads current intents and burns only enemies attacking its player', () => {
+  assert(flameBarrierLabel.includes('gain 4 Block'), flameBarrierLabel)
+  assert(flameBarrierLabel.includes('per Attack icon in its intent'), flameBarrierLabel)
+  assertEqual(flamed.enemies.find((enemy) => enemy.uid === 'ui-flame-same').hp, 4)
+  assertEqual(flamed.enemies.find((enemy) => enemy.uid === 'ui-flame-other').hp, 5)
+  assertEqual(flamed.enemies.find((enemy) => enemy.uid === 'ui-flame-boss').hp, 4)
+  assertEqual(flamed.enemies.find((enemy) => enemy.uid === 'ui-flame-idle').hp, 5)
+})
+await shot('06zpk-flame-barrier-intents')
+await page.locator('.board').evaluate((board) => { board.scrollTop = board.scrollHeight })
+await shot('06zpl-flame-barrier-row-intents')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

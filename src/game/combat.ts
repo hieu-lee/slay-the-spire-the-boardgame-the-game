@@ -696,6 +696,18 @@ function applyEffect(
       }
       return
     }
+    case 'damagePerAttackIntent': {
+      for (const target of state.enemies) {
+        if (target.dead) continue
+        const icons = actionsFor(enemyDef(target.defId), state.die, target.actionIndex)
+          .filter((action) => action.kind === 'attack' &&
+            (action.aoe || target.isBoss || target.row === actor.row))
+          .reduce((total, action) => total + (action.kind === 'attack' ? action.times ?? 1 : 0), 0)
+        if (icons > 0) damageEnemyLogged(state, target, effect.amount * icons, who)
+        if (combatIsOver(state)) return
+      }
+      return
+    }
     case 'loseHp': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const name = enemyLabel(state.enemies, target)

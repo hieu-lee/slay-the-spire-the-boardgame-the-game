@@ -2352,6 +2352,53 @@ check('Headbutt returns one public discard card to the hidden draw top authorita
     'the recovered card stayed visible after returning face-down')
 })
 
+check('Power Through gives an ally Block while its Daze stays private to the caster', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const powerThrough = { uid: 'room-power-through', defId: 'power_through', upgraded: true }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [powerThrough], draw: [], discard: [], energy: 1, block: 0 })
+  ally.block = 0
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: powerThrough.uid, playerId: ally.id, preflight: true,
+  })
+  const resolvedActor = room.run.combat.players.find((player) => player.id === actor.id)
+  const resolvedAlly = room.run.combat.players.find((player) => player.id === ally.id)
+  assertEqual(resolvedActor.block, 0)
+  assertEqual(resolvedAlly.block, 4)
+  assertEqual(resolvedActor.draw[0].defId, 'daze')
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(owner.drawCount, 1)
+  assert(!allStrings(snapshotFor(room, b.token)).includes(resolvedActor.draw[0].uid),
+    'Power Through leaked the caster\'s Daze identity to a teammate')
+})
+
+check('Flame Barrier resolves current intents from its online owner\'s row', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const barrier = { uid: 'room-flame-barrier', defId: 'flame_barrier', upgraded: true }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1, die: 1 })
+  Object.assign(actor, { hand: [barrier], energy: 2, block: 0, row: 0 })
+  const template = room.run.combat.enemies[0]
+  room.run.combat.enemies = [
+    { ...template, uid: 'room-flame-same', defId: 'cultist', row: 0, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'room-flame-other', defId: 'cultist', row: 1, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'room-flame-boss', defId: 'cultist', row: 1, isBoss: true,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+  ]
+
+  apply(room, a.token, { kind: 'playCard', cardUid: barrier.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.block, 4)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-same').hp, 4)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-other').hp, 5)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-boss').hp, 4)
+})
+
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)

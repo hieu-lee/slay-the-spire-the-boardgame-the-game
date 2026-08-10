@@ -21,6 +21,7 @@ import {
   startTurnAbilities,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
+import { ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
 import {
@@ -2095,6 +2096,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'heavy_blade', enemyHp: [17, 17] },
     { id: 'seeing_red', energy: [4, 5], exhaust: [1, 1], player: { energy: 3 } },
     { id: 'wild_strike', enemyHp: [17, 16], daze: [1, 1] },
+    { id: 'power_through', block: [3, 4], daze: [1, 1] },
+    { id: 'flame_barrier', block: [3, 4] },
     { id: 'blade_dance', shivs: [2, 3] },
     { id: 'cloak_and_dagger', block: [1, 1], shivs: [1, 2] },
     { id: 'sneaky_strike', enemyHp: [17, 16] },
@@ -3410,6 +3413,55 @@ check('Headbutt moves exactly one chosen discard card to draw-top after damage',
   assertEqual(playCard(lethal, 'p1', lethalHeadbutt.uid, {
     enemyUid: 'e1', playerId: null, recoverDiscardUid: recoverable.uid,
   }).phase, 'won')
+})
+
+check('Power Through blocks any player but puts its Daze on the caster draw-top', () => {
+  for (const upgraded of [false, true]) {
+    const powerThrough = instance('power_through', upgraded)
+    const state = combat([
+      makePlayer({ hand: [powerThrough], draw: [instance('strike_ironclad')], energy: 1 }),
+      makePlayer({ id: 'p2', name: 'Silent', row: 1 }),
+    ], [makeEnemy()])
+    const played = playCard(state, 'p1', powerThrough.uid, { enemyUid: null, playerId: 'p2' })
+    assertEqual(played.players[0].block, 0)
+    assertEqual(played.players[1].block, upgraded ? 4 : 3)
+    assertEqual(played.players[0].draw[0].defId, 'daze')
+    assertEqual(played.players[1].draw.some((card) => card.defId === 'daze'), false)
+    assertEqual(played.players[0].energy, 0)
+  }
+})
+
+check('Flame Barrier damages only enemies whose current intent attacks its player', () => {
+  ENEMIES.flame_barrier_multi_hit_fixture = {
+    id: 'flame_barrier_multi_hit_fixture', name: 'Multi-hit fixture', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+  }
+  try {
+    for (const upgraded of [false, true]) {
+      const barrier = instance('flame_barrier', upgraded)
+      const state = {
+        ...combat([makePlayer({ hand: [barrier], row: 0, energy: 2 })], [
+          makeEnemy({ uid: 'same-row', row: 0, defId: 'cultist', hp: 5, maxHp: 5 }),
+          makeEnemy({ uid: 'other-row', row: 1, defId: 'cultist', hp: 5, maxHp: 5 }),
+          makeEnemy({ uid: 'boss', row: 2, defId: 'cultist', isBoss: true, hp: 5, maxHp: 5 }),
+          makeEnemy({ uid: 'idle', row: 0, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 0 }),
+          makeEnemy({ uid: 'off-row-aoe', row: 1, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 1 }),
+          makeEnemy({ uid: 'multi-hit', row: 0, defId: 'flame_barrier_multi_hit_fixture', hp: 5, maxHp: 5 }),
+        ]),
+        die: 1,
+      }
+      const played = playCard(state, 'p1', barrier.uid, { enemyUid: null, playerId: null })
+      assertEqual(played.players[0].block, upgraded ? 4 : 3)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'same-row').hp, 4)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'other-row').hp, 5)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'boss').hp, 4)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'idle').hp, 5)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'off-row-aoe').hp, 4)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'multi-hit').hp, 3)
+    }
+  } finally {
+    delete ENEMIES.flame_barrier_multi_hit_fixture
+  }
 })
 
 check('nested forced cards preserve the outer Start-of-Turn queue', () => {
