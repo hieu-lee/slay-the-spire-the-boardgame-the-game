@@ -1093,6 +1093,17 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: { base: 0, per: 'attacksInHand' } }],
     upgrade: { cost: 0 },
   }),
+  blood_for_blood: card({
+    id: 'blood_for_blood',
+    name: 'Blood for Blood',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 3,
+    costAfterHpLoss: 1,
+    effects: [{ kind: 'hit', amount: 4 }],
+    upgrade: { costAfterHpLoss: 0 },
+  }),
   heavy_blade: card({
     id: 'heavy_blade',
     name: 'Heavy Blade',

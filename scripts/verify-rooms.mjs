@@ -1558,6 +1558,21 @@ check('Rage counts only its owner\'s Attacks through room authority', () => {
   assertEqual(resolved.energy, 0)
 })
 
+check('Blood for Blood uses the owner\'s combat-wide HP-loss discount through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const blood = { uid: 'room-blood-for-blood', defId: 'blood_for_blood', upgraded: true }
+  Object.assign(actor, { hand: [blood], energy: 0, lostHpThisCombat: true })
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: blood.uid, enemyUid: target.uid, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, 6)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 0)
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

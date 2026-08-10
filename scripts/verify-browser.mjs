@@ -1661,6 +1661,51 @@ check('Rage counts Attacks still in hand and its upgrade costs 0 through real co
   assertDeepEqual(raged.players[0].discard.map((card) => card.uid), ['ui-rage', 'ui-rage-plus'])
 })
 await shot('06zx-rage-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const target = run.combat.enemies.find((enemy) => !enemy.isBoss) ?? run.combat.enemies[0]
+  for (const enemy of run.combat.enemies) enemy.dead = enemy.uid !== target.uid
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, dead: false, vulnerable: 0 })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-blood-for-blood', defId: 'blood_for_blood', upgraded: false },
+      { uid: 'ui-blood-for-blood-plus', defId: 'blood_for_blood', upgraded: true },
+    ],
+    discard: [], exhaust: [], energy: 2, strength: 0, weak: 0, lostHpThisCombat: false,
+  })
+  debug.setRun(run)
+})
+const bloodCard = page.getByRole('button', { name: /^Blood for Blood,/ })
+const bloodPlusCard = page.getByRole('button', { name: /^Blood for Blood\+,/ })
+await Promise.all([bloodCard.waitFor(), bloodPlusCard.waitFor()])
+const bloodLabel = await bloodCard.getAttribute('aria-label')
+const bloodPlusLabel = await bloodPlusCard.getAttribute('aria-label')
+assert(await bloodCard.isDisabled(), 'Blood for Blood should cost 3 before HP loss')
+await shot('06zy-blood-for-blood-hd-cards')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], { lostHpThisCombat: true, energy: 1 })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Blood for Blood,"]')?.disabled)
+await bloodCard.click()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+await bloodPlusCard.click()
+await page.locator('.enemy--targeted:not(:disabled)').click()
+const bloodied = await readState()
+check('Blood for Blood unlocks its 1/0 HP-loss costs through real controls', () => {
+  assert(bloodLabel.includes('costs 1 after you lose hit points this combat'), bloodLabel)
+  assert(bloodPlusLabel.includes('costs 0 after you lose hit points this combat'), bloodPlusLabel)
+  assertEqual(bloodied.enemies.find((enemy) => !enemy.dead).hp, 12)
+  assertEqual(bloodied.players[0].energy, 0)
+  assertDeepEqual(bloodied.players[0].discard.map((card) => card.uid), [
+    'ui-blood-for-blood', 'ui-blood-for-blood-plus',
+  ])
+})
+await shot('06zz-blood-for-blood-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

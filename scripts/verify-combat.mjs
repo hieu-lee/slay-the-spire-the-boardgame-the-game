@@ -847,6 +847,21 @@ check('Rage gains one Block per other Attack in hand and upgrades to cost 0', ()
   }
 })
 
+check('Blood for Blood discounts after HP loss and upgrades that discount to 0', () => {
+  const fullPrice = instance('blood_for_blood')
+  const unaffordable = combat([makePlayer({ hand: [fullPrice], energy: 2 })], [makeEnemy()])
+  assertEqual(playCard(unaffordable, 'p1', fullPrice.uid, { enemyUid: 'e1', playerId: null }), unaffordable)
+
+  for (const upgraded of [false, true]) {
+    const blood = instance('blood_for_blood', upgraded)
+    const state = combat([makePlayer({ hand: [blood], energy: upgraded ? 0 : 1 })], [makeEnemy()])
+    state.players[0].lostHpThisCombat = true
+    const played = playCard(state, 'p1', blood.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, 2)
+    assertEqual(played.players[0].energy, 0)
+  }
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -1704,12 +1719,12 @@ check('the campfire only works at a campfire', () => {
   // The engine function is exported and the local UI calls it directly, so it
   // cannot rely on the room layer's guard.
   const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
-  const treasure = Object.values(run.map.rooms).find((room) => room.kind === 'treasure')
-  assert(treasure, 'precondition: the act should contain a treasure room')
-  const parked = { ...run, phase: 'room', map: { ...run.map, position: treasure.id } }
+  const otherRoom = Object.values(run.map.rooms).find((room) => room.kind !== 'campfire')
+  assert(otherRoom, 'precondition: the act should contain a non-campfire room')
+  const parked = { ...run, phase: 'room', map: { ...run.map, position: otherRoom.id } }
   assert(
     resolveCampfire(parked, { p1: { choice: 'rest' } }) === parked,
-    'resting in a treasure room must be refused',
+    'resting in a non-campfire room must be refused',
   )
 })
 
@@ -2108,6 +2123,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'clash', enemyHp: [17, 16] },
     { id: 'spot_weakness', strength: [1, 1] },
     { id: 'rage', block: [0, 0], energy: [E - 1, E] },
+    { id: 'blood_for_blood', enemyHp: [16, 16], energy: [E - 3, E - 3] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
