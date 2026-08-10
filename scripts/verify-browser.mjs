@@ -1735,6 +1735,42 @@ check('Limit Break doubles Strength to 8 and flips Exhaust through real controls
   assertDeepEqual(limited.players[0].discard.map((card) => card.uid), ['ui-limit-break-plus'])
 })
 await shot('070a-limit-break-resolved')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...template, uid: 'ui-feed-enemy-a', row: 0, hp: 3, maxHp: 3, block: 0, dead: false, isBoss: false },
+    { ...template, uid: 'ui-feed-enemy-b', row: 1, hp: 3, maxHp: 3, block: 0, dead: false, isBoss: false },
+    { ...template, uid: 'ui-feed-enemy-c', row: 2, hp: 20, maxHp: 20, block: 0, dead: false, isBoss: false },
+  ]
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-feed', defId: 'feed', upgraded: false },
+      { uid: 'ui-feed-plus', defId: 'feed', upgraded: true },
+    ],
+    discard: [], exhaust: [], energy: 2, strength: 0, weak: 0,
+  })
+  debug.setRun(run)
+})
+const feedCard = page.getByRole('button', { name: /^Feed,/ })
+const feedPlusCard = page.getByRole('button', { name: /^Feed\+,/ })
+await Promise.all([feedCard.waitFor(), feedPlusCard.waitFor()])
+const feedLabel = await feedCard.getAttribute('aria-label')
+const feedPlusLabel = await feedPlusCard.getAttribute('aria-label')
+await shot('070b-feed-hd-cards')
+await feedCard.click()
+await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"]').first().click()
+await feedPlusCard.click()
+await page.locator('.enemy--targeted:not(:disabled)[aria-label*="3 of 3 hit points"]').first().click()
+const fed = await readState()
+check('Feed gains 1/2 Strength on kills and Exhausts through real controls', () => {
+  assert(feedLabel.includes('gain 1 Strength if the target dies') && feedLabel.includes('exhausts when played'), feedLabel)
+  assert(feedPlusLabel.includes('gain 2 Strength if the target dies') && feedPlusLabel.includes('exhausts when played'), feedPlusLabel)
+  assertEqual(fed.players[0].strength, 3)
+  assertDeepEqual(fed.players[0].exhaust.map((card) => card.uid), ['ui-feed', 'ui-feed-plus'])
+})
+await shot('070c-feed-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

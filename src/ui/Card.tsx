@@ -130,6 +130,7 @@ function effectText(effect: Effect): string {
     case 'gainHitPoison': return `each hit also applies ${effect.amount} Poison${condition}`
     case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
+    case 'gainStrengthIfTargetDead': return `gain ${effect.amount} Strength if the target dies${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`

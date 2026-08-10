@@ -1587,6 +1587,20 @@ check('Limit Break doubles only its owner\'s Strength through room authority', (
   assertDeepEqual(resolved.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [limit.uid])
 })
 
+check('Feed grants kill Strength through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const feed = { uid: 'room-feed', defId: 'feed', upgraded: true }
+  room.run.combat.enemies.push({ ...target, uid: 'room-feed-spare', row: target.row + 1, hp: 10, maxHp: 10 })
+  Object.assign(actor, { hand: [feed], energy: 1, strength: 7, discard: [], exhaust: [] })
+  Object.assign(target, { hp: 3, maxHp: 3, block: 0, dead: false })
+  apply(room, a.token, { kind: 'playCard', cardUid: feed.uid, enemyUid: target.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.strength, 8)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [feed.uid])
+})
+
 check('Storm of Steel overflow resolves through room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

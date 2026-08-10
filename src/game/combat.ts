@@ -1073,6 +1073,16 @@ function applyEffect(
       if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy`)
       return
     }
+    case 'gainStrengthIfTargetDead': {
+      const target = typeof context.enemyUid === 'string'
+        ? state.enemies.find((enemy) => enemy.uid === context.enemyUid)
+        : undefined
+      if (!target?.dead) return
+      const before = actor.strength
+      actor.strength = gainStrength(actor.strength, effect.amount)
+      if (actor.strength > before) note(`${actor.name} gains ${actor.strength - before} Strength`)
+      return
+    }
     case 'scry': {
       // Scry shows the top X and lets the player bin any of them; the rest go
       // back on top IN THE SAME ORDER (p.24).

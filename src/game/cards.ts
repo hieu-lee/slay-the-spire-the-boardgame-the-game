@@ -187,6 +187,7 @@ type EffectKind =
   | { kind: 'doubleEnergy'; max: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
+  | { kind: 'gainStrengthIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
@@ -526,6 +527,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'doubleStrength' }],
     exhaust: true,
     upgrade: { exhaust: false },
+  }),
+  feed: card({
+    id: 'feed', name: 'Feed', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'hit', amount: 3 }, { kind: 'gainStrengthIfTargetDead', amount: 1 }],
+    exhaust: true,
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'gainStrengthIfTargetDead', amount: 2 }] },
   }),
   corruption: card({
     id: 'corruption', name: 'Corruption', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 3,
