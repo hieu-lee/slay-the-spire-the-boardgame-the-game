@@ -159,6 +159,7 @@ function triggerText(trigger: Trigger): string {
     case 'onScry': return 'whenever you scry'
     case 'onGainBlock': return 'whenever you gain Block'
     case 'onApplyPoison': return 'when you put Poison on an enemy'
+    case 'onPutEnemyToken': return 'whenever you put a token on an enemy'
     case 'onShuffle': return 'whenever you shuffle your discard pile'
   }
 }

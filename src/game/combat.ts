@@ -179,6 +179,22 @@ function poisonApplied(state: CombatState, actor: Player, context: PlayContext):
   else fireTriggers(state, { kind: 'onApplyPoison' }, actor)
 }
 
+function enemyTokensApplied(
+  state: CombatState,
+  actor: Player,
+  target: Enemy,
+  gained: number,
+  context: PlayContext,
+): void {
+  for (let i = 0; i < gained; i++) {
+    if (context.pendingEnemyTokenTriggers) {
+      context.pendingEnemyTokenTriggers.push({ playerId: actor.id, enemyUid: target.uid })
+    } else {
+      fireTriggers(state, { kind: 'onPutEnemyToken', enemyUid: target.uid }, actor)
+    }
+  }
+}
+
 function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
   const ability = enemyDef(enemy.defId).ability
   if (ability?.kind !== 'sporeCloud') return
@@ -333,6 +349,8 @@ export type PlayContext = {
   pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
   /** Poison gains whose reactions wait until this card finishes its printed text. */
   pendingPoisonTriggers?: string[]
+  /** Enemy token gains whose per-token reactions wait until this card finishes. */
+  pendingEnemyTokenTriggers?: { playerId: string; enemyUid: string }[]
   /** Exhausts whose card and Power reactions wait until this card finishes its printed text. */
   pendingExhaustTriggers?: { playerId: string; card: CardInstance }[]
   /** Internal result of the immediately preceding direct draw effect. */
@@ -613,6 +631,7 @@ function applyEffect(
         if (poisonAppliedTotal > 0) {
           state.log = [...state.log, `${actor.name}'s Envenom applies ${poisonAppliedTotal} Poison to ${name}`]
           for (let i = 0; i < poisonEvents; i++) poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, poisonAppliedTotal, context)
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
@@ -696,6 +715,7 @@ function applyEffect(
         // Only when the token actually went on: at the cap nothing happened,
         // and saying otherwise tells the player a card did something it did not.
         if (target.vulnerable > before) note(`${enemyLabel(state.enemies, target)} is vulnerable`)
+        enemyTokensApplied(state, actor, target, target.vulnerable - before, context)
       }
       return
     }
@@ -704,6 +724,7 @@ function applyEffect(
         const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
         if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
+        enemyTokensApplied(state, actor, target, target.weak - before, context)
       }
       return
     }
@@ -732,6 +753,7 @@ function applyEffect(
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, gained, context)
         }
       }
       return
@@ -753,6 +775,7 @@ function applyEffect(
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, gained, context)
         }
       }
       return
@@ -1725,6 +1748,7 @@ export function playCard(
     exhaustedByCard: 0,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
+    pendingEnemyTokenTriggers: [],
     pendingExhaustTriggers: [],
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
@@ -1775,6 +1799,12 @@ export function playCard(
   for (const ownerId of ctx.pendingPoisonTriggers ?? []) {
     const owner = findPlayer(next, ownerId)
     if (owner) fireTriggers(next, { kind: 'onApplyPoison' }, owner)
+    if (combatIsOver(next)) return settle(next)
+  }
+
+  for (const pending of ctx.pendingEnemyTokenTriggers ?? []) {
+    const owner = findPlayer(next, pending.playerId)
+    if (owner) fireTriggers(next, { kind: 'onPutEnemyToken', enemyUid: pending.enemyUid }, owner)
     if (combatIsOver(next)) return settle(next)
   }
 
@@ -2619,7 +2649,7 @@ function fireTriggersInner(
     if (only && player.id !== only.id) continue
 
     for (const source of triggerSources(player, event, excludeUid)) {
-      resolveTriggerSource(state, player, source, allowCombatOver)
+      resolveTriggerSource(state, player, source, allowCombatOver, undefined, event.enemyUid)
       if (!allowCombatOver && combatIsOver(state)) return
     }
   }

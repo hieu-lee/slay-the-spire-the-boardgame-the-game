@@ -1664,6 +1664,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'countdownDamage', cubes: 3, damage: 10 }],
     upgrade: { effects: [{ kind: 'countdownDamage', cubes: 3, damage: 12 }] },
   }),
+  sadistic_nature: card({
+    id: 'sadistic_nature', name: 'Sadistic Nature', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'onPutEnemyToken' },
+    target: 'enemy',
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'removeAllOrbs' }],

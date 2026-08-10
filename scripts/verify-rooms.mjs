@@ -1263,6 +1263,32 @@ check('The Bomb counter is public across reconnect and its third cube Exhausts a
   assertEqual(current.exhaust.some((card) => card.uid === bomb.uid), true)
 })
 
+check('Sadistic Nature uses authoritative per-token gains and survives reconnect without leaking hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const sadistic = { uid: 'room-sadistic', defId: 'sadistic_nature', upgraded: true }
+  const catalyst = { uid: 'room-sadistic-catalyst', defId: 'catalyst', upgraded: true }
+  Object.assign(actor, { hand: [sadistic, catalyst], energy: 1 })
+  const [untouched, target] = room.run.combat.enemies
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { defId: 'cultist', hp: 30, maxHp: 30, poison: 0, block: 0, dead: false })
+  }
+  target.poison = 5
+  apply(room, a.token, { kind: 'playCard', cardUid: sadistic.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  assert(allStrings(teammate).includes(sadistic.uid), 'the face-up Sadistic Nature Power stayed hidden')
+  assert(!allStrings(teammate).includes(catalyst.uid), 'Sadistic Nature leaked the owner\'s Catalyst')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: catalyst.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies[0].hp, 30)
+  assertEqual(room.run.combat.enemies[1].poison, 15)
+  assertEqual(room.run.combat.enemies[1].hp, 10,
+    '10 added Poison cubes should trigger Sadistic Nature+ 10 times')
+})
+
 check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

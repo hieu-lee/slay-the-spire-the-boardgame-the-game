@@ -1451,6 +1451,57 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Re
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
   !window.__STS_DEBUG__.getState().players[0].powers.some((card) => card.uid === 'ui-bomb'))
 
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-sadistic', defId: 'sadistic_nature', upgraded: true },
+      { uid: 'ui-sadistic-catalyst', defId: 'catalyst', upgraded: true },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    defId: 'cultist', hp: 30, maxHp: 30, block: 0,
+    weak: 0, vulnerable: 0, poison: 5, dead: false,
+  })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const sadisticCard = page.getByRole('button', { name: /^Sadistic Nature\+,/ })
+await sadisticCard.waitFor()
+const sadisticCardLabel = await sadisticCard.getAttribute('aria-label')
+await sadisticCard.click()
+const sadisticPower = page.getByRole('button', { name: /^Sadistic Nature\+?:/ })
+await sadisticPower.waitFor()
+const sadisticPowerLabel = await sadisticPower.getAttribute('aria-label')
+check('Sadistic Nature+ exposes its per-token exact-enemy trigger accessibly', () => {
+  assert(sadisticCardLabel.includes('whenever you put a token on an enemy'), sadisticCardLabel)
+  assert(sadisticCardLabel.includes('deal 2 damage'), sadisticCardLabel)
+  assert(sadisticPowerLabel.includes('2 damage to one enemy whenever you put a token on an enemy'), sadisticPowerLabel)
+})
+await sadisticPower.click()
+await shot('06zm-sadistic-nature-power')
+await page.getByRole('button', { name: /^Catalyst\+,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => {
+  const enemy = window.__STS_DEBUG__.getState().enemies[0]
+  return enemy.poison === 15 && enemy.hp === 10
+})
+const sadistic = await readState()
+check('Sadistic Nature+ fires ten times when Catalyst adds ten Poison cubes', () => {
+  assertEqual(sadistic.enemies[0].poison, 15)
+  assertEqual(sadistic.enemies[0].hp, 10)
+})
+await shot('06zn-sadistic-catalyst')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].powers
+  .some((card) => card.uid === 'ui-sadistic'))
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

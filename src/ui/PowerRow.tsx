@@ -248,6 +248,7 @@ const WHEN: Record<string, string> = {
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
+  onPutEnemyToken: 'whenever you put a token on an enemy',
   onShuffle: 'whenever you shuffle',
 }
 

@@ -19,6 +19,7 @@ import {
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
+import { CAPS } from '../src/game/types.ts'
 import {
   advanceAct,
   createRun,
@@ -2003,6 +2004,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'panache', powers: [1, 1] },
     { id: 'apotheosis', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'the_bomb', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'sadistic_nature', powers: [1, 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -2967,6 +2969,50 @@ check('The Bomb counts three end turns, damages every enemy, then Exhausts itsel
     assertEqual(state.players[0].powers.some((card) => card.uid === bomb.uid), false)
     assertEqual(state.players[0].exhaust.some((card) => card.uid === bomb.uid), true)
   }
+})
+
+check('Sadistic Nature fires once per enemy token actually added, on that enemy', () => {
+  for (const upgraded of [false, true]) {
+    const sadistic = instance('sadistic_nature', upgraded)
+    const shockwave = instance('shockwave')
+    const state = combat([makePlayer({ hand: [sadistic, shockwave], energy: 3 })], [
+      makeEnemy({ uid: 'left', hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 0, hp: 20, maxHp: 20 }),
+    ])
+    const powered = playCard(state, 'p1', sadistic.uid, { enemyUid: null, playerId: null })
+    const tokened = playCard(powered, 'p1', shockwave.uid, { enemyUid: 'left', playerId: null })
+    const damage = upgraded ? 4 : 2
+    assertDeepEqual(tokened.enemies.map((enemy) => enemy.hp), [20 - damage, 20 - damage])
+    assertDeepEqual(tokened.enemies.map((enemy) => [enemy.vulnerable, enemy.weak]), [[1, 1], [1, 1]])
+  }
+
+  const cappedPower = instance('sadistic_nature', true)
+  const blind = instance('blind')
+  const capped = playCard(playCard(combat([
+    makePlayer({ hand: [cappedPower, blind], energy: 0 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20, weak: CAPS.weak })]), 'p1', cappedPower.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', blind.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(capped.enemies[0].hp, 20, 'a token blocked by the cap must not trigger Sadistic Nature')
+
+  const catalystPower = instance('sadistic_nature', true)
+  const catalyst = instance('catalyst', true)
+  const multiplied = playCard(playCard(combat([
+    makePlayer({ hand: [catalystPower, catalyst], energy: 1 }),
+  ], [makeEnemy({ hp: 30, maxHp: 30, poison: 5 })]), 'p1', catalystPower.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', catalyst.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(multiplied.enemies[0].poison, 15)
+  assertEqual(multiplied.enemies[0].hp, 10, 'Catalyst added 10 cubes, so Sadistic Nature+ fires 10 times')
+
+  const ownerPower = instance('sadistic_nature', true)
+  const allyBlind = instance('blind')
+  const otherOwner = playCard(combat([
+    makePlayer({ powers: [ownerPower] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', hand: [allyBlind], energy: 0 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p2', allyBlind.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(otherOwner.enemies[0].weak, 1)
+  assertEqual(otherOwner.enemies[0].hp, 20, 'another player\'s token does not trigger your Power')
 })
 
 check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {
