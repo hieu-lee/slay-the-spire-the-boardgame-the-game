@@ -2197,6 +2197,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'havoc', hand: [1, 1] },
+    { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
@@ -3348,6 +3349,22 @@ check('Havoc finishes its immediate child before cleanup and post-card reactions
   assert(played.log.findIndex((line) => line.includes('played Strike')) <
     played.log.findIndex((line) => line.includes('Enraged')),
   'Enraged was logged before Havoc\'s immediate child')
+})
+
+check('Perfected Strike counts every other hand card whose name contains Strike', () => {
+  for (const upgraded of [false, true]) {
+    const perfected = instance('perfected_strike', upgraded)
+    const otherPerfected = instance('perfected_strike')
+    const strike = instance('strike_ironclad')
+    const swift = instance('swift_strike')
+    const defend = instance('defend_ironclad')
+    const state = combat([makePlayer({
+      hand: [perfected, otherPerfected, strike, swift, defend], energy: 2,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    const played = playCard(state, 'p1', perfected.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.enemies[0].hp, upgraded ? 11 : 14)
+    assertEqual(played.players[0].energy, 0)
+  }
 })
 
 check('nested forced cards preserve the outer Start-of-Turn queue', () => {

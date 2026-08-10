@@ -530,6 +530,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): n
       return actor.strength
     case 'cardsInHand':
       return actor.hand?.length ?? 0
+    case 'strikesInHand':
+      return actor.hand?.filter((card) => cardDef(card.defId).name.includes('Strike')).length ?? 0
     case 'skillsInHand':
       return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
     case 'attacksInHand':

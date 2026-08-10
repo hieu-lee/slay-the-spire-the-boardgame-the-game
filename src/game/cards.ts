@@ -85,6 +85,7 @@ export type CountOf =
   | 'block'
   | 'strength'
   | 'cardsInHand'
+  | 'strikesInHand'
   | 'skillsInHand'
   | 'attacksInHand'
   | 'attacksPlayedThisTurn'
@@ -757,6 +758,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'havoc', name: 'Havoc', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 1,
     effects: [{ kind: 'drawAndPlayFree', exhaustNonPower: true }],
     upgrade: { cost: 0 },
+  }),
+  perfected_strike: card({
+    id: 'perfected_strike', name: 'Perfected Strike', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand', scale: 2 } }] },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,

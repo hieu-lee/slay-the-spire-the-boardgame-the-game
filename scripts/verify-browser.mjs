@@ -1631,6 +1631,40 @@ await shot('06zpd-havoc-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-perfect', defId: 'perfected_strike', upgraded: true },
+      { uid: 'ui-perfect-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-perfect-twin', defId: 'twin_strike', upgraded: false },
+      { uid: 'ui-perfect-swift', defId: 'swift_strike', upgraded: false },
+      { uid: 'ui-perfect-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 2,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const perfectedCard = page.getByRole('button', { name: /^Perfected Strike\+, cost 2,/ })
+await perfectedCard.waitFor()
+const perfectedLabel = await perfectedCard.getAttribute('aria-label')
+await shot('06zpe-perfected-strike-ready')
+await perfectedCard.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 11)
+const perfected = await readState()
+check('Perfected Strike+ counts only other Strike-named cards in hand', () => {
+  assert(perfectedLabel.includes('3 plus 2 per other card in hand containing Strike'), perfectedLabel)
+  assertEqual(perfected.enemies[0].hp, 11)
+  assertEqual(perfected.players[0].energy, 0)
+})
+await shot('06zpf-perfected-strike-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,
