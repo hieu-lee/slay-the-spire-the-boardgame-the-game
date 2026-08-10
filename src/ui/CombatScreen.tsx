@@ -22,6 +22,7 @@ import {
   nextEvokeChoice,
   overflowShivCount,
   playCard,
+  playCost,
   previewCardChoice,
   resolveStartPlayerTurn,
   spendMiracle,
@@ -296,6 +297,9 @@ function describeSeat(player: Player): string {
     parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
   }
   if (player.drawLocked) parts.push('cannot draw more cards this turn')
+  if (player.hpLossLimitThisRound !== undefined) {
+    parts.push(`Apparition protection, ${Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0))} hit point loss remaining this round`)
+  }
   if (player.character === 'defect') {
     parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
   }
@@ -344,7 +348,7 @@ function canAfford(
     player.orbs.every((orb) => !orb)) {
     return false
   }
-  const cost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const cost = playCost(def, player)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   return cost === 'X' || cost <= player.energy + (spendMiracle ? 1 : 0)
 }
@@ -1921,6 +1925,11 @@ export function CombatScreen({
                       {occupant.drawLocked ? (
                         <span className="seat__pending">Cannot draw more cards this turn</span>
                       ) : null}
+                      {occupant.hpLossLimitThisRound !== undefined ? (
+                        <span className="seat__pending">
+                          Apparition · {Math.max(0, occupant.hpLossLimitThisRound - (occupant.hpLostThisRound ?? 0))} HP loss remaining
+                        </span>
+                      ) : null}
                       {occupant.potions.length > 0 ? (
                         <span className="seat__potions" title="Held potions">
                           <Icon name="potion" size={14} /> {potionSummary(occupant)}
@@ -2031,7 +2040,7 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
-              cost={cardCost(faceOf(cardDef(card.defId), card.upgraded), viewer.powers.length, viewer.lostHpThisCombat)}
+              cost={playCost(faceOf(cardDef(card.defId), card.upgraded), viewer)}
               playable={
                 !usingCard &&
                 !orderingStage &&

@@ -1212,6 +1212,118 @@ check('Panacea+ clears Weak and Vulnerable from every player and Exhausts', () =
 await page.locator('.seat').first().scrollIntoViewIfNeeded()
 await shot('06z-panacea-party-cleansed')
 
+const colorlessBatch1Restore = await readRun()
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-apparition', defId: 'apparition', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 1,
+    hpLostThisRound: 0,
+    hpLossLimitThisRound: undefined,
+  })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const apparitionCard = page.getByRole('button', { name: /^Apparition\+,/ })
+await apparitionCard.waitFor()
+const apparitionLabel = await apparitionCard.getAttribute('aria-label')
+await apparitionCard.scrollIntoViewIfNeeded()
+await shot('06za-apparition-ready')
+await apparitionCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hpLossLimitThisRound === 1)
+const apparition = await readState()
+const apparitionSeatLabel = await page.locator('.seat--viewer').getAttribute('aria-label')
+const apparitionStatus = await page.locator('.seat--viewer .seat__pending').textContent()
+check('Apparition+ visibly protects the round and Exhausts without Ethereal', () => {
+  assert(apparitionLabel.includes('cannot lose more than 1 hit points this round'), apparitionLabel)
+  assert(!apparitionLabel.includes('ethereal'), apparitionLabel)
+  assertEqual(apparition.players[0].hpLossLimitThisRound, 1)
+  assertEqual(apparition.players[0].exhaust.some((card) => card.uid === 'ui-apparition'), true)
+  assert(apparitionSeatLabel.includes('Apparition protection, 1 hit point loss remaining this round'), apparitionSeatLabel)
+  assert(apparitionStatus.includes('Apparition · 1 HP loss remaining'), apparitionStatus)
+})
+await shot('06zb-apparition-protected')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { die: 1 })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-dark-shackles', defId: 'dark_shackles', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    block: 0,
+  })
+  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    defId: index === 0 ? 'cultist' : 'red_louse',
+    row: actor.row,
+    isBoss: false,
+    dead: false,
+    hp: 20,
+    maxHp: 20,
+    actionIndex: 0,
+  }))
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const shacklesCard = page.getByRole('button', { name: /^Dark Shackles\+,/ })
+await shacklesCard.waitFor()
+const shacklesLabel = await shacklesCard.getAttribute('aria-label')
+await shacklesCard.scrollIntoViewIfNeeded()
+await shot('06zc-dark-shackles-intents')
+await shacklesCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 3)
+const shackles = await readState()
+check('Dark Shackles+ reads visible enemy intents without a target prompt', () => {
+  assert(shacklesLabel.includes('3 per enemy intending to attack you'), shacklesLabel)
+  assertEqual(shackles.players[0].block, 3)
+  assertEqual(shackles.players[0].exhaust.some((card) => card.uid === 'ui-dark-shackles'), true)
+})
+await shot('06zd-dark-shackles-block')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-madness', defId: 'madness', upgraded: true },
+      { uid: 'ui-madness-target', defId: 'hand_of_greed', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    freeCardsThisTurn: 0,
+  })
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const madnessCard = page.getByRole('button', { name: /^Madness\+,/ })
+await madnessCard.waitFor()
+const madnessLabel = await madnessCard.getAttribute('aria-label')
+await madnessCard.click()
+const freeGreed = page.getByRole('button', { name: /^Hand of Greed, cost 0,/ })
+await freeGreed.waitFor()
+await freeGreed.scrollIntoViewIfNeeded()
+await shot('06ze-madness-free-card')
+await freeGreed.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].freeCardsThisTurn === 0)
+const madness = await readState()
+check('Madness+ exposes Retain and discounts exactly the next card', () => {
+  assert(madnessLabel.includes('your next card this turn costs 0'), madnessLabel)
+  assert(madnessLabel.includes('retain'), madnessLabel)
+  assertEqual(madness.players[0].energy, 0)
+  assertEqual(madness.players[0].freeCardsThisTurn, 0)
+  assertEqual(madness.players[0].exhaust.some((card) => card.uid === 'ui-madness'), true)
+})
+await shot('06zf-madness-spent')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hpLossLimitThisRound == null)
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

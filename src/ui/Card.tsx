@@ -37,6 +37,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   cardsInHand: 'other card in hand',
   skillsInHand: 'Skill in hand',
   attacksPlayedThisTurn: 'other Attack played this turn',
+  attackingEnemies: 'enemy intending to attack you',
 }
 
 function conditionText(condition: Condition): string {
@@ -98,6 +99,8 @@ function effectText(effect: Effect): string {
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
+    case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`

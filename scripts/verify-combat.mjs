@@ -8,6 +8,7 @@ import {
   enemyTurn,
   livingEnemies,
   playCard,
+  playCost,
   previewCardChoice,
   resolveEnemyTargets,
   spendMiracle,
@@ -1994,6 +1995,9 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'hand_of_greed', enemyHp: [16, 16] },
     { id: 'panacea', exhaust: [1, 1] },
     { id: 'purity', exhaust: [1, 1] },
+    { id: 'apparition', exhaust: [1, 1] },
+    { id: 'dark_shackles', block: [2, 3], exhaust: [1, 1] },
+    { id: 'madness', exhaust: [1, 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -2772,6 +2776,73 @@ check('Panacea redirects its base face and clears every player when upgraded', (
     assertEqual(cured.players[1].weak, 0)
     assertEqual(cured.players[1].vulnerable, 0)
   }
+})
+
+check('Apparition caps every kind of HP loss for the round and then expires', () => {
+  for (const upgraded of [false, true]) {
+    const apparition = instance('apparition', upgraded)
+    const offering = instance('offering')
+    const protectedState = playCard(combat([
+      makePlayer({ hand: [apparition, offering], draw: Array.from({ length: 3 }, () => instance('defend_ironclad')) }),
+    ], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', apparition.uid, {
+      enemyUid: null, playerId: null,
+    })
+    const selfHit = playCard(protectedState, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assertEqual(selfHit.players[0].hp, 9, 'Offering should spend the one allowed HP loss')
+    const attacked = enemyTurn(endPlayerTurn(selfHit))
+    assertEqual(attacked.players[0].hp, 9, 'later enemy damage should lose no more HP this round')
+    assertEqual(attacked.players[0].block, 0, 'Apparition should not preserve Block from the attack')
+    const nextRound = startPlayerTurn(attacked)
+    assertEqual(nextRound.players[0].hpLossLimitThisRound, undefined)
+    assertEqual(nextRound.players[0].hpLostThisRound, 0)
+  }
+})
+
+check('Apparition loses Ethereal when upgraded', () => {
+  const base = instance('apparition')
+  const upgraded = instance('apparition', true)
+  const baseEnd = endPlayerTurn(combat([makePlayer({ hand: [base] })], [makeEnemy()]))
+  const upgradedEnd = endPlayerTurn(combat([makePlayer({ hand: [upgraded] })], [makeEnemy()]))
+  assertDeepEqual(baseEnd.players[0].exhaust.map((card) => card.uid), [base.uid])
+  assertDeepEqual(upgradedEnd.players[0].discard.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Dark Shackles counts enemies whose current intent attacks its player', () => {
+  for (const upgraded of [false, true]) {
+    const shackles = instance('dark_shackles', upgraded)
+    const state = {
+      ...combat([makePlayer({ hand: [shackles], row: 0, energy: 0 })], [
+        makeEnemy({ uid: 'same-row', row: 0, defId: 'cultist' }),
+        makeEnemy({ uid: 'other-row', row: 1, defId: 'cultist' }),
+        makeEnemy({ uid: 'boss', row: 2, defId: 'cultist', isBoss: true }),
+        makeEnemy({ uid: 'no-attack', row: 0, defId: 'red_louse' }),
+      ]),
+      die: 1,
+    }
+    const played = playCard(state, 'p1', shackles.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, upgraded ? 6 : 4)
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [shackles.uid])
+  }
+})
+
+check('Madness discounts exactly the next card this turn and gains Retain when upgraded', () => {
+  const madness = instance('madness')
+  const first = instance('hand_of_greed')
+  const second = instance('hand_of_greed')
+  const state = combat([makePlayer({ hand: [madness, first, second], energy: 0 })], [
+    makeEnemy({ hp: 30, maxHp: 30 }),
+  ])
+  const primed = playCard(state, 'p1', madness.uid, { enemyUid: null, playerId: null })
+  assertEqual(playCost(faceOf(cardDef(first.defId), false), primed.players[0]), 0)
+  const free = playCard(primed, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(free.players[0].energy, 0)
+  assertEqual(free.players[0].freeCardsThisTurn, 0)
+  assertEqual(playCard(free, 'p1', second.uid, { enemyUid: 'e1', playerId: null }), free,
+    'a second paid card should not inherit the discount')
+
+  const retained = instance('madness', true)
+  const kept = endPlayerTurn(combat([makePlayer({ hand: [retained] })], [makeEnemy()]))
+  assertDeepEqual(kept.players[0].hand.map((card) => card.uid), [retained.uid])
 })
 
 check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {

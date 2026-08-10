@@ -84,6 +84,7 @@ export type CountOf =
   | 'cardsInHand'
   | 'skillsInHand'
   | 'attacksPlayedThisTurn'
+  | 'attackingEnemies'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -159,6 +160,10 @@ type EffectKind =
   | { kind: 'cycleHand' }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
+  /** The next card played this turn costs 0 Energy. */
+  | { kind: 'discountNextCard' }
+  /** Total HP lost this round cannot exceed this amount. */
+  | { kind: 'limitRoundHpLoss'; amount: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -1613,6 +1618,25 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'exhaustAny', amount: 3 }],
     upgrade: { effects: [{ kind: 'exhaustAny', amount: 5 }] },
+  }),
+  apparition: card({
+    id: 'apparition', name: 'Apparition', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 1,
+    ethereal: true,
+    exhaust: true,
+    effects: [{ kind: 'limitRoundHpLoss', amount: 1 }],
+    upgrade: { ethereal: false },
+  }),
+  dark_shackles: card({
+    id: 'dark_shackles', name: 'Dark Shackles', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 3 } }] },
+  }),
+  madness: card({
+    id: 'madness', name: 'Madness', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'discountNextCard' }],
+    upgrade: { retain: true },
   }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

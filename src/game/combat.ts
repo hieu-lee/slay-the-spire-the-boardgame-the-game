@@ -233,12 +233,31 @@ function damageEnemyLogged(
   }
 }
 
+function losePlayerHp(player: Player, amount: number): number {
+  const remaining = player.hpLossLimitThisRound === undefined
+    ? amount
+    : Math.min(amount, Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0)))
+  const outcome = applyHpLoss(player.hp, remaining)
+  if (outcome.hpLost > 0) {
+    player.lostHpThisCombat = true
+    player.hpLostThisRound = (player.hpLostThisRound ?? 0) + outcome.hpLost
+  }
+  player.hp = outcome.hp
+  if (player.hp === 0) player.dead = true
+  return outcome.hpLost
+}
+
 function damagePlayer(player: Player, damage: number): void {
   const outcome = applyDamage(player.block, player.hp, damage)
   player.block = outcome.block
-  if (outcome.hp < player.hp) player.lostHpThisCombat = true
-  player.hp = outcome.hp
-  if (player.hp === 0) player.dead = true
+  losePlayerHp(player, outcome.hpLost)
+}
+
+/** The Energy actually charged for a card on this player's current board. */
+export function playCost(def: CardDef, player: Pick<Player, 'powers' | 'lostHpThisCombat' | 'freeCardsThisTurn'>): number | 'X' {
+  return (player.freeCardsThisTurn ?? 0) > 0
+    ? 0
+    : cardCost(def, player.powers.length, player.lostHpThisCombat)
 }
 
 /**
@@ -440,12 +459,12 @@ export function cardPlayConditionMet(
   return !def.playCondition || holds(def.playCondition, state, actor)
 }
 
-type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
   hand: readonly CardInstance[] | null
 }
 
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: CountablePlayer): number {
+function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -461,6 +480,11 @@ function countOf(count: CountOf, actor: CountablePlayer): number {
       return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
     case 'attacksPlayedThisTurn':
       return actor.attacksPlayedThisTurn ?? 0
+    case 'attackingEnemies':
+      if (!state) return 0
+      return state.enemies.filter((enemy) => !enemy.dead && actionsFor(
+        enemyDef(enemy.defId), state.die, enemy.actionIndex,
+      ).some((action) => action.kind === 'attack' && (action.aoe || enemy.isBoss || enemy.row === actor.row))).length
   }
 }
 
@@ -474,7 +498,7 @@ function amountOf(
   if (typeof amount === 'number') return amount
   let total = amount.base
   if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
-  if (amount.per) total += countOf(amount.per, actor) * (amount.scale ?? 1)
+  if (amount.per) total += countOf(amount.per, actor, state) * (amount.scale ?? 1)
   if (target && amount.targetTokens) {
     for (const token of amount.targetTokens) total += target[token]
   }
@@ -629,11 +653,8 @@ function applyEffect(
       return
     }
     case 'loseOwnHp': {
-      const outcome = applyHpLoss(actor.hp, effect.amount)
-      if (outcome.hp < actor.hp) actor.lostHpThisCombat = true
-      actor.hp = outcome.hp
-      if (actor.hp === 0) actor.dead = true
-      note(`${actor.name} loses ${outcome.hpLost} HP`)
+      const lost = losePlayerHp(actor, effect.amount)
+      note(`${actor.name} loses ${lost} HP`)
       return
     }
     case 'block': {
@@ -759,6 +780,16 @@ function applyEffect(
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
+      return
+    }
+    case 'discountNextCard': {
+      actor.freeCardsThisTurn = (actor.freeCardsThisTurn ?? 0) + 1
+      note(`${actor.name}'s next card costs 0 this turn`)
+      return
+    }
+    case 'limitRoundHpLoss': {
+      actor.hpLossLimitThisRound = Math.min(actor.hpLossLimitThisRound ?? effect.amount, effect.amount)
+      note(`${actor.name} cannot lose more than ${effect.amount} HP this round`)
       return
     }
     case 'switchRows': {
@@ -1296,7 +1327,7 @@ export function previewCardChoice(
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const printedCost = playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -1578,7 +1609,7 @@ export function playCard(
     context.playerIds?.length !== playerChoiceCount ||
     context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
   )) return state
-  const printedCost = cardCost(def, player.powers.length, player.lostHpThisCombat)
+  const printedCost = playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
   if (miracleOnCard && (
@@ -1626,6 +1657,7 @@ export function playCard(
   // which is what stops a card that draws from drawing itself (p.12).
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
+  if ((actor.freeCardsThisTurn ?? 0) > 0) actor.freeCardsThisTurn = actor.freeCardsThisTurn! - 1
   if (miracleOnCard) {
     actor.miracles -= 1
     actor.energy += 1
@@ -1796,6 +1828,9 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.energy = 3
     player.block = 0
     player.drawLocked = false
+    player.hpLostThisRound = 0
+    player.hpLossLimitThisRound = undefined
+    player.freeCardsThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
   for (const player of next.players) {
@@ -2005,11 +2040,8 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
         ? `${def.name} damages ${player.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
         : `${player.name} blocks ${def.name}${blocked > 0 ? ` (${blocked} spent)` : ''}`]
     } else if (effect.kind === 'loseHp') {
-      const outcome = applyHpLoss(player.hp, effect.amount)
-      state.log = [...state.log, `${def.name}: ${player.name} loses ${outcome.hpLost} HP`]
-      if (outcome.hp < player.hp) player.lostHpThisCombat = true
-      player.hp = outcome.hp
-      if (player.hp === 0) player.dead = true
+      const lost = losePlayerHp(player, effect.amount)
+      state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
     } else if (effect.kind === 'gainWeak') {
       const before = player.weak
       player.weak = gainWeak(player.weak, effect.amount)
@@ -2587,6 +2619,9 @@ export function createCombat(
     players: players.map((player) => ({
       ...player,
       lostHpThisCombat: false,
+      hpLostThisRound: 0,
+      hpLossLimitThisRound: undefined,
+      freeCardsThisTurn: 0,
       attacksPlayedThisTurn: 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,

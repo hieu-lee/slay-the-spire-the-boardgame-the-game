@@ -37,6 +37,7 @@ import {
   leaveRoom,
   overflowShivCount,
   playCard,
+  playCost,
   previewCardChoice,
   potionDef,
   revealCardReward,
@@ -289,8 +290,9 @@ export function apply(room, seatToken, action) {
     const held = player?.hand.find((card) => card.uid === action.cardUid)
     const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
     const spendMiracle = action.spendMiracle === true
+    const cost = def && player ? playCost(def, player) : null
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
-      def.cost === 'X' || def.cost === 0)) fail('That Miracle cannot pay for this card')
+      cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
     const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
     const enemyUid = needsEnemy ? action.enemyUid : null
@@ -1077,6 +1079,9 @@ function redactPlayer(player, viewerId) {
     weak: player.weak,
     drawLocked: player.drawLocked === true,
     lostHpThisCombat: player.lostHpThisCombat === true,
+    hpLostThisRound: player.hpLostThisRound ?? 0,
+    hpLossLimitThisRound: player.hpLossLimitThisRound,
+    freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     shivs: player.shivs,
     shivDamageBonus: player.shivDamageBonus ?? 0,

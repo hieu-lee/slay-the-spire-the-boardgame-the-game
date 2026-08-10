@@ -19,7 +19,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -1079,6 +1079,67 @@ check('Panacea+ clears every living player in the shared snapshot', () => {
   }
   const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
   assertEqual(currentActor.exhaust.some((card) => card.uid === panacea.uid), true)
+})
+
+check('Apparition protection is authoritative and visible without exposing hands', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const apparition = { uid: 'room-apparition', defId: 'apparition', upgraded: false }
+  Object.assign(actor, { hand: [apparition], hp: 10, maxHp: 10, energy: 1 })
+  apply(room, a.token, { kind: 'playCard', cardUid: apparition.uid, preflight: true })
+  const protectedActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(protectedActor.hpLossLimitThisRound, 1)
+  assertEqual(protectedActor.exhaust.some((card) => card.uid === apparition.uid), true)
+  const teammate = snapshotFor(room, b.token)
+  const seen = teammate.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(seen.hpLossLimitThisRound, 1)
+  assertEqual(seen.hand, null)
+})
+
+check('Dark Shackles uses server-owned enemy intents', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const shackles = { uid: 'room-dark-shackles', defId: 'dark_shackles', upgraded: true }
+  Object.assign(actor, { hand: [shackles], energy: 0, block: 0, row: 0 })
+  room.run.combat.die = 1
+  room.run.combat.enemies = [
+    { ...room.run.combat.enemies[0], uid: 'room-attacker', row: 0, defId: 'cultist', dead: false },
+    { ...room.run.combat.enemies[0], uid: 'room-bystander', row: 1, defId: 'cultist', dead: false },
+  ]
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: shackles.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 3)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).block, 3)
+})
+
+check('Madness discount survives reconnect and cannot be spent as a Miracle payment', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const madness = { uid: 'room-madness', defId: 'madness', upgraded: true }
+  const greedy = { uid: 'room-madness-target', defId: 'hand_of_greed', upgraded: false }
+  Object.assign(actor, { hand: [madness, greedy], energy: CAPS.energy, miracles: 1 })
+  apply(room, a.token, { kind: 'playCard', cardUid: madness.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 1)
+  assert(!allStrings(teammate).includes(greedy.uid), 'Madness leaked the discounted card to a teammate')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  let miracleError = null
+  try {
+    apply(room, rejoined.token, {
+      kind: 'playCard', cardUid: greedy.uid, enemyUid: room.run.combat.enemies[0].uid,
+      spendMiracle: true, preflight: true,
+    })
+  } catch (error) {
+    miracleError = error
+  }
+  assertEqual(miracleError?.name, 'RoomError')
+  const result = apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: greedy.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  const current = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(current.energy, CAPS.energy)
+  assertEqual(current.freeCardsThisTurn, 0)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 0)
 })
 
 check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {

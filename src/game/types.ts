@@ -75,6 +75,12 @@ export type Player = {
   drawLocked: boolean
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
+  /** HP already lost this round, including damage and direct HP loss. */
+  hpLostThisRound?: number
+  /** Apparition caps the total HP this player can lose during this round. */
+  hpLossLimitThisRound?: number
+  /** Madness makes this many subsequently played cards cost 0 this turn. */
+  freeCardsThisTurn?: number
   attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number
