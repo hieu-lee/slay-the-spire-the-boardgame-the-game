@@ -1592,6 +1592,41 @@ check('Clash explains and enforces its all-Attack hand restriction through real 
   assertDeepEqual(clashed.players[0].discard.map((card) => card.uid), ['ui-clash', 'ui-clash-plus'])
 })
 await shot('06zt-clash-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { die: 4, phase: 'player' })
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-spot-weakness', defId: 'spot_weakness', upgraded: false },
+      { uid: 'ui-spot-weakness-plus', defId: 'spot_weakness', upgraded: true },
+    ],
+    discard: [], exhaust: [], energy: 2,
+  })
+  run.combat.players[1].strength = 0
+  debug.setRun(run)
+})
+const spotCard = page.getByRole('button', { name: /^Spot Weakness,/ })
+const spotPlusCard = page.getByRole('button', { name: /^Spot Weakness\+,/ })
+await Promise.all([spotCard.waitFor(), spotPlusCard.waitFor()])
+const spotLabel = await spotCard.getAttribute('aria-label')
+const spotPlusLabel = await spotPlusCard.getAttribute('aria-label')
+await shot('06zu-spot-weakness-hd-cards')
+await spotCard.click()
+await page.locator('.seat--targetable').filter({ hasText: 'Silent' }).click()
+await spotPlusCard.click()
+await page.locator('.seat--targetable').filter({ hasText: 'Silent' }).click()
+const spotted = await readState()
+check('Spot Weakness upgrades its die range and gives Strength to an ally through real controls', () => {
+  assert(spotLabel.includes('if the die shows 1 or 2 or 3'), spotLabel)
+  assert(spotPlusLabel.includes('if the die shows 1 or 2 or 3 or 4'), spotPlusLabel)
+  assertEqual(spotted.players[1].strength, 1)
+  assertDeepEqual(spotted.players[0].discard.map((card) => card.uid), [
+    'ui-spot-weakness', 'ui-spot-weakness-plus',
+  ])
+})
+await shot('06zv-spot-weakness-resolved')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

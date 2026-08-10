@@ -817,6 +817,23 @@ check('Clash requires an all-Attack hand and upgrades from 3 to 4 damage', () =>
   }
 })
 
+check('Spot Weakness gives any player Strength on its printed die faces', () => {
+  for (const upgraded of [false, true]) {
+    const spot = instance('spot_weakness', upgraded)
+    const state = {
+      ...combat([
+        makePlayer({ hand: [spot], energy: 1 }),
+        makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
+      ], [makeEnemy()]),
+      die: 4,
+    }
+    const played = playCard(state, 'p1', spot.uid, { enemyUid: null, playerId: 'p2' })
+    assertEqual(played.players[1].strength, upgraded ? 1 : 0)
+    assertEqual(played.players[0].energy, 0)
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [spot.uid])
+  }
+})
+
 check('a card that discards cannot discard itself', () => {
   const survivor = instance('survivor')
   const state = combat([makePlayer({ hand: [survivor] })], [makeEnemy()])
@@ -2076,6 +2093,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
     { id: 'clash', enemyHp: [17, 16] },
+    { id: 'spot_weakness', strength: [1, 1] },
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },

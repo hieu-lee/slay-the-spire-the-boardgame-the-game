@@ -1069,6 +1069,19 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'hit', amount: 3 }],
     upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
   }),
+  spot_weakness: card({
+    id: 'spot_weakness',
+    name: 'Spot Weakness',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'gainStrength', amount: 1, toChosen: true, when: { kind: 'dieShows', faces: [1, 2, 3] } }],
+    upgrade: {
+      effects: [{ kind: 'gainStrength', amount: 1, toChosen: true, when: { kind: 'dieShows', faces: [1, 2, 3, 4] } }],
+    },
+  }),
   heavy_blade: card({
     id: 'heavy_blade',
     name: 'Heavy Blade',

@@ -1500,6 +1500,7 @@ check('Clash enforces its hand restriction through room authority', () => {
   const clash = { uid: 'room-clash', defId: 'clash', upgraded: true }
   const defend = { uid: 'room-clash-defend', defId: 'defend_ironclad', upgraded: false }
   Object.assign(actor, { hand: [clash, defend], energy: 0, discard: [] })
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
   const hp = target.hp
   let refused = false
   try {
@@ -1518,6 +1519,22 @@ check('Clash enforces its hand restriction through room authority', () => {
   const resolved = room.run.combat
   assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, hp - 4)
   assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [clash.uid])
+})
+
+check('Spot Weakness applies its upgraded die face to an ally through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const spot = { uid: 'room-spot-weakness', defId: 'spot_weakness', upgraded: true }
+  Object.assign(room.run.combat, { die: 4 })
+  Object.assign(actor, { hand: [spot], energy: 1, discard: [] })
+  ally.strength = 0
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: spot.uid, playerId: b.playerId, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertEqual(resolved.players.find((player) => player.id === b.playerId).strength, 1)
+  assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [spot.uid])
 })
 
 check('Storm of Steel overflow resolves through room authority', () => {
