@@ -2149,6 +2149,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'riddle_with_holes', shivs: [4, 5] },
     { id: 'battle_trance', hand: [3, 4] },
     { id: 'rupture', strength: [1, 1] },
+    { id: 'whirlwind', enemyHp: [20, 19], energySpent: [0, 0] },
     { id: 'burning_pact', hand: [2, 3] },
     { id: 'sever_soul', enemyHp: [17, 16] },
     { id: 'second_wind', block: [0, 0] },
@@ -2304,6 +2305,7 @@ check('every newly transcribed card does what its face prints', () => {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
       }
+      if (face.cost === 'X') context.energySpent = spec.energySpent?.[at] ?? 0
       const enemyChoices = face.effects.reduce(
         (sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
       const playerChoices = face.effects.reduce(
@@ -2813,6 +2815,76 @@ check('Rupture gains Strength, loses HP through Block, and upgrades only its cos
   assertEqual(lost.phase, 'lost')
   assertEqual(lost.players[0].strength, 1, 'Strength resolves before the printed HP loss')
   assertEqual(lost.players[0].discard.length, 0, 'cleanup cannot continue after a lethal clause')
+})
+
+check('Whirlwind spends chosen X Energy on one row and gains one upgraded hit', () => {
+  for (const upgraded of [false, true]) {
+    const whirlwind = instance('whirlwind', upgraded)
+    const state = combat([makePlayer({ hand: [whirlwind], energy: 3 })], [
+      makeEnemy({ uid: 'chosen', row: 0, hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'same-row', row: 0, hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'other-row', row: 1, hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'boss', row: 1, hp: 10, maxHp: 10, isBoss: true }),
+    ])
+    const played = playCard(state, 'p1', whirlwind.uid, {
+      enemyUid: 'chosen', playerId: null, energySpent: 2,
+    })
+    const damage = upgraded ? 3 : 2
+    assertDeepEqual(played.enemies.map((enemy) => enemy.hp), [10 - damage, 10 - damage, 10, 10 - damage])
+    assertEqual(played.players[0].energy, 1)
+    assertEqual(played.players[0].discard[0].uid, whirlwind.uid)
+  }
+})
+
+check('Whirlwind validates X atomically and zero Energy follows each face', () => {
+  for (const energySpent of [undefined, -1, 1.5, 4]) {
+    const whirlwind = instance('whirlwind')
+    const state = combat([makePlayer({ hand: [whirlwind], energy: 3 })], [makeEnemy()])
+    const context = { enemyUid: 'e1', playerId: null }
+    if (energySpent !== undefined) context.energySpent = energySpent
+    assert(playCard(state, 'p1', whirlwind.uid, context) === state,
+      `forged X value ${String(energySpent)} changed combat`)
+  }
+
+  const base = instance('whirlwind')
+  const baseState = combat([makePlayer({ hand: [base], energy: 3 })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  const spentZero = playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(spentZero.enemies[0].hp, 10)
+  assertEqual(spentZero.players[0].energy, 3)
+  assertEqual(spentZero.players[0].discard[0].uid, base.uid)
+
+  const upgraded = instance('whirlwind', true)
+  const upgradedState = combat(
+    [makePlayer({ hand: [upgraded], energy: 3 })], [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  assert(playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  }) === upgradedState, 'Whirlwind+ still needs a row for its X+1 hit')
+  const upgradedZero = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: 'e1', playerId: null, energySpent: 0,
+  })
+  assertEqual(upgradedZero.enemies[0].hp, 9)
+  assertEqual(upgradedZero.players[0].energy, 3)
+
+  const forced = instance('whirlwind', true)
+  const forcedState = {
+    ...combat([makePlayer({ hand: [forced], energy: 3 })], [makeEnemy({ hp: 10, maxHp: 10 })]),
+    phase: 'start',
+    startTurnProgress: {
+      choices: [],
+      forcedCard: { playerId: 'p1', cardUid: forced.uid, sourceCardId: 'mayhem', exhaustNonPower: false },
+    },
+  }
+  assert(playCard(forcedState, 'p1', forced.uid, {
+    enemyUid: 'e1', playerId: null, energySpent: 2,
+  }) === forcedState, 'a free forced X card cannot forge a paid X value')
+  const forcedPlay = playCard(forcedState, 'p1', forced.uid, {
+    enemyUid: 'e1', playerId: null, energySpent: 0,
+  })
+  assertEqual(forcedPlay.enemies[0].hp, 9, 'a free Whirlwind+ resolves as X = 0, then adds one hit')
+  assertEqual(forcedPlay.players[0].energy, 3)
 })
 
 check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {

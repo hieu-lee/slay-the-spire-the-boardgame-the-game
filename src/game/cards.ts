@@ -86,6 +86,7 @@ export type CountOf =
   | 'strength'
   | 'cardsInHand'
   | 'cardsInExhaust'
+  | 'energySpent'
   | 'strikesInHand'
   | 'skillsInHand'
   | 'attacksInHand'
@@ -644,6 +645,12 @@ export const CARDS: Record<string, CardDef> = {
     id: 'rupture', name: 'Rupture', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'loseOwnHp', amount: 1 }],
     upgrade: { cost: 0 },
+  }),
+  whirlwind: card({
+    id: 'whirlwind', name: 'Whirlwind', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 'X',
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1, times: { base: 0, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'energySpent' } }] },
   }),
 
   bash: card({

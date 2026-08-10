@@ -867,10 +867,14 @@ function dispatch(run, seat, action) {
       if (recoverExhaustUid !== undefined && typeof recoverExhaustUid !== 'string') {
         fail('Exhaust recovery must be a card id')
       }
+      if (action.energySpent !== undefined && !Number.isInteger(action.energySpent)) {
+        fail('X Energy must be a whole number')
+      }
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,
         playerId: action.playerId ?? seat.playerId,
+        energySpent: action.energySpent,
         playerIds,
         switchWithPlayerId: action.switchWithPlayerId ?? null,
         mode: action.mode,

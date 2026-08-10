@@ -456,6 +456,55 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    hand: [{ uid: 'online-whirlwind', defId: 'whirlwind', upgraded: true }],
+    discard: [], draw: [], energy: 3, strength: 0, weak: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const enemyTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.enemies = [
+    { ...enemyTemplate, uid: 'online-whirlwind-anchor', defId: 'cultist', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...enemyTemplate, uid: 'online-whirlwind-same', defId: 'green_louse', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true },
+    { ...enemyTemplate, uid: 'online-whirlwind-other', defId: 'red_louse', row: 1, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...enemyTemplate, uid: 'online-whirlwind-boss', defId: 'gremlin_nob', row: 1, isBoss: true,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+  ]
+  const publishWhirlwindFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishWhirlwindFixture.ok, 'could not publish the online Whirlwind fixture')
+  await a.getByRole('button', { name: /^Whirlwind\+,/ }).click()
+  await a.getByText('Choose Energy for Whirlwind+').waitFor()
+  const teammateEnergyPrompts = await b.getByText('Choose Energy for Whirlwind+').count()
+  await a.getByRole('button', { name: 'Spend 2' }).click()
+  await a.locator('.enemy--targeted').first().waitFor()
+  let submittedWhirlwindEnergy
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedWhirlwindEnergy = route.request().postDataJSON()?.action?.energySpent
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /^Cultist,/ }).click()
+  for (let attempt = 0; attempt < 50 &&
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').energy !== 1; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const onlineWhirlwind = liveRoom.run.combat
+  check('online Whirlwind keeps its X choice private and authoritative', () => {
+    assertEqual(teammateEnergyPrompts, 0)
+    assertEqual(submittedWhirlwindEnergy, 2)
+    assertEqual(onlineWhirlwind.players.find((player) => player.name === 'Ann').energy, 1)
+    assertDeepEqual(onlineWhirlwind.enemies.map((enemy) => enemy.hp), [7, 7, 10, 7])
+  })
+  await a.screenshot({ path: join(outDir, '02-whirlwind-x-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [{ uid: 'online-headbutt', defId: 'headbutt', upgraded: true }],
     discard: [
       { uid: 'online-headbutt-defend', defId: 'defend_ironclad', upgraded: false },

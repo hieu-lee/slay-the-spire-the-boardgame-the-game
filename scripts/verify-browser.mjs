@@ -1939,6 +1939,136 @@ await shot('06zpr-rupture-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  const template = run.combat.enemies[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-whirlwind', defId: 'whirlwind', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 6, strength: 0, weak: 0,
+    row: 0,
+  })
+  const ally = run.combat.players.find((player) => player.id !== actor.id)
+  if (ally) ally.row = 1
+  run.combat.enemies = [
+    { ...template, uid: 'ui-whirlwind-anchor', defId: 'cultist', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...template, uid: 'ui-whirlwind-same', defId: 'green_louse', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true },
+    { ...template, uid: 'ui-whirlwind-other', defId: 'red_louse', row: 1, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...template, uid: 'ui-whirlwind-boss', defId: 'gremlin_nob', row: 1, isBoss: true,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+  ]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const whirlwindCard = page.getByRole('button', { name: /^Whirlwind\+, cost X,/ })
+const whirlwindLabel = await whirlwindCard.getAttribute('aria-label')
+await whirlwindCard.click()
+await page.getByText('Choose Energy for Whirlwind+').waitFor()
+const whirlwindTargetsBeforeEnergy = await page.locator('.enemy--targeted').count()
+check('Whirlwind+ asks how much Energy to spend before exposing row targets', () => {
+  assert(whirlwindLabel.includes('1 per Energy spent on this card times'), whirlwindLabel)
+  assert(whirlwindLabel.includes('hits a whole row and any boss'), whirlwindLabel)
+  assertEqual(whirlwindTargetsBeforeEnergy, 0)
+})
+await page.setViewportSize({ width: 390, height: 844 })
+await page.waitForTimeout(60)
+const narrowWhirlwindPicker = await page.evaluate(() => {
+  const prompt = document.querySelector('.prompt')?.getBoundingClientRect()
+  const spenders = [...document.querySelectorAll('.prompt button')]
+    .filter((button) => button.textContent?.startsWith('Spend '))
+  const last = spenders.at(-1)?.getBoundingClientRect()
+  return { count: spenders.length, promptRight: prompt?.right ?? Infinity, lastRight: last?.right ?? Infinity }
+})
+check('the full six-Energy Whirlwind picker wraps inside a narrow viewport', () => {
+  assertEqual(narrowWhirlwindPicker.count, 7)
+  assert(narrowWhirlwindPicker.promptRight <= 390, `prompt extends to ${narrowWhirlwindPicker.promptRight}px`)
+  assert(narrowWhirlwindPicker.lastRight <= 390, `Spend 6 extends to ${narrowWhirlwindPicker.lastRight}px`)
+})
+await shot('06zpsa-whirlwind-energy-mobile')
+await page.setViewportSize({ width: 1440, height: 900 })
+await shot('06zps-whirlwind-energy')
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.getByText(/Choose an enemy.*whole row/).waitFor()
+await shot('06zpt-whirlwind-row-target')
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 4)
+const whirled = await readState()
+check('Whirlwind+ spends only the chosen Energy and hits that row plus the boss X+1 times', () => {
+  assertDeepEqual(whirled.enemies.map((enemy) => enemy.hp), [7, 7, 10, 7])
+  assertEqual(whirled.players[0].energy, 4)
+  assertEqual(whirled.players[0].discard[0].uid, 'ui-whirlwind')
+})
+await shot('06zpu-whirlwind-resolved')
+
+for (const freeKind of ['forced', 'discounted']) {
+  await page.evaluate(({ baseline, freeKind }) => {
+    const run = structuredClone(baseline)
+    const actor = run.combat.players[0]
+    Object.assign(run.combat, {
+      phase: freeKind === 'forced' ? 'start' : 'player', turn: 1,
+      startTurnProgress: freeKind === 'forced' ? {
+        choices: [],
+        forcedCard: {
+          playerId: actor.id, cardUid: `ui-${freeKind}-base-whirlwind`,
+          sourceCardId: 'mayhem', exhaustNonPower: false,
+        },
+      } : undefined,
+    })
+    Object.assign(actor, {
+      hand: [{ uid: `ui-${freeKind}-base-whirlwind`, defId: 'whirlwind', upgraded: false }],
+      discard: [], draw: [], exhaust: [], powers: [], energy: 3, strength: 0, weak: 0,
+      freeCardsThisTurn: freeKind === 'discounted' ? 1 : 0,
+    })
+    run.combat.enemies = run.combat.enemies.slice(0, 1)
+    Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, row: actor.row })
+    window.__STS_DEBUG__.setRun(run)
+  }, { baseline: colorlessBatch1Restore, freeKind })
+  await page.getByRole('button', { name: /^Whirlwind, cost 0,/ }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard[0]?.defId === 'whirlwind')
+  const freeBaseWhirlwind = await readState()
+  const freeBasePrompt = await page.locator('.prompt').count()
+  check(`a ${freeKind} base Whirlwind resolves as X zero without deadlocking`, () => {
+    assertEqual(freeBasePrompt, 0)
+    assertEqual(freeBaseWhirlwind.enemies[0].hp, 10)
+    assertEqual(freeBaseWhirlwind.players[0].energy, 3)
+  })
+}
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, {
+    phase: 'start', turn: 1,
+    startTurnProgress: {
+      choices: [],
+      forcedCard: {
+        playerId: actor.id, cardUid: 'ui-forced-whirlwind', sourceCardId: 'mayhem', exhaustNonPower: false,
+      },
+    },
+  })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-forced-whirlwind', defId: 'whirlwind', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 3, strength: 0, weak: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, row: actor.row })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: /^Whirlwind\+, cost 0,/ }).click()
+await page.getByText(/Choose an enemy.*whole row/).waitFor()
+const forcedWhirlwindEnergyPrompt = await page.getByText('Choose Energy for Whirlwind+').count()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const forcedWhirlwind = await readState()
+check('a free forced Whirlwind+ skips X choice and resolves as X zero', () => {
+  assertEqual(forcedWhirlwindEnergyPrompt, 0)
+  assertEqual(forcedWhirlwind.enemies[0].hp, 9)
+  assertEqual(forcedWhirlwind.players[0].energy, 3)
+})
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

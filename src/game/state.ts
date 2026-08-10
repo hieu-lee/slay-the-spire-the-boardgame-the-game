@@ -15,13 +15,8 @@
 //   - Effects can now read the board: a clause can carry a condition, and an
 //     amount can carry a bonus or a count. Fourteen questions are transcribed
 //     (`Condition` in cards.ts), plus Orb, Orb-type, Block, Strength, hand and attack counts.
-//     Per-Miracle counts are not there yet, nor is X-cost.
-//     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
-//     well, because the readers disagree about what it means: `playCard`
-//     charges the player's whole energy pool, the hand always shows the card
-//     as affordable, the cost badge prints "X", and a `discardTopCosts` check
-//     matches it against no number at all. Spending X needs the player to
-//     choose an amount and nothing collects one.
+//     Per-Miracle counts are not there yet. X-cost cards collect and validate
+//     the Energy amount as part of the same atomic play action.
 //   - Ethereal and every Curse's in-combat text are live. Parasite's removal
 //     penalty and Ascender's Bane's removal protection wait on card removal,
 //     which arrives with the Merchant rather than as an unreachable API.
@@ -40,9 +35,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 169 of 259 unique character cards are live.
+//   - 170 of 259 unique character cards are live.
 //     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 90 have not been transcribed at
+//     The other 89 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.

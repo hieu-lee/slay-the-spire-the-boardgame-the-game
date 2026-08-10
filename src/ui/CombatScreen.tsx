@@ -78,6 +78,8 @@ type UnknownCardAction = { refreshAttempt: number; cardUid: string }
 /** What a card still needs before it can be played. */
 type Pending = {
   card: CardInstance
+  /** Energy chosen for an X-cost card; null until the player decides. */
+  energySpent: number | null
   needsEnemy: boolean
   /**
    * The card can land its support on someone other than the caster, as Defend+,
@@ -160,13 +162,14 @@ function requirementsOf(
   allies: number,
   viewer: Player,
   state: CombatState,
-): Omit<Pending, 'card' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
+  energySpent?: number,
+): Omit<Pending, 'card' | 'energySpent' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
   // an enemy and the engine would then throw the choice away. The viewer goes
   // in because a counted attack with nothing to count reaches nobody, and
   // asking where to point it is asking a question with no consequence.
-  const cardTarget = cardNeedsEnemy(def, viewer, false)
+  const cardTarget = cardNeedsEnemy(def, viewer, false, energySpent)
   const shivsGained = cardShivsOnPlay(def)
   const overflowShivs = overflowShivCount(state, shivsGained)
   const spentShivs = cardShivChoiceCount(def, viewer)
@@ -223,9 +226,15 @@ function pendingFor(
   viewer: Player,
 ): Pending {
   const def = faceOf(cardDef(card.defId), card.upgraded)
-  const requirements = requirementsOf(def, state.players.filter((player) => !player.dead).length, viewer, state)
+  const forced = state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
+    state.startTurnProgress.forcedCard.cardUid === card.uid
+  const energySpent = !forced && playCost(def, viewer) === 'X' ? null : 0
+  const requirements = requirementsOf(
+    def, state.players.filter((player) => !player.dead).length, viewer, state, energySpent ?? undefined,
+  )
   return {
     card,
+    energySpent,
     ...requirements,
     enemyUid: null,
     playerId: null,
@@ -1073,8 +1082,12 @@ export function CombatScreen({
   const variableChoiceSatisfied = pending?.choice?.kind !== 'discardAny' && pending?.choice?.kind !== 'exhaustAny' ||
     pending.choiceConfirmed && pending.picked.length >= variableMinimum
   const modeSatisfied = !pendingDef?.modes || pending?.mode !== null
-  const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied && modeSatisfied
-  const pendingNeedsCardEnemy = pendingDef ? cardNeedsEnemy(pendingDef, viewer, false) : false
+  const energyChoiceSatisfied = pendingDef?.cost !== 'X' || pending?.energySpent !== null
+  const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied &&
+    modeSatisfied && energyChoiceSatisfied
+  const pendingNeedsCardEnemy = pendingDef
+    ? cardNeedsEnemy(pendingDef, viewer, false, pending?.energySpent ?? undefined)
+    : false
   const pendingEvokeChoice = pendingDef && pending
     ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined)
     : null
@@ -1097,6 +1110,7 @@ export function CombatScreen({
       enemyUid: next.enemyUid,
       enemyUids: next.enemyUids,
       playerId: next.playerId ?? viewer!.id,
+      energySpent: next.energySpent ?? undefined,
       playerIds: next.playerIds,
       switchWithPlayerId: next.switchChoiceDone ? next.switchPlayerId : null,
       mode: next.mode ?? undefined,
@@ -1203,6 +1217,7 @@ export function CombatScreen({
             nextEvokeChoice(def, authoritative.player, [])) {
             setPending({
               ...next,
+              energySpent: playCost(def, authoritative.player) === 'X' ? null : 0,
               needsEnemy,
               needsAlly,
               needsSwitch,
@@ -1270,7 +1285,8 @@ export function CombatScreen({
       (!def.modes || next.mode !== null) &&
       !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
-      (!cardNeedsEnemy(def, viewer!, false) || next.enemyUid !== null) &&
+      (def.cost !== 'X' || next.energySpent !== null) &&
+      (!cardNeedsEnemy(def, viewer!, false, next.energySpent ?? undefined) || next.enemyUid !== null) &&
       next.enemyUids.length >= next.enemyChoices &&
       next.shivEnemyUids.length >= next.spentShivs + next.overflowShivs &&
       next.playerIds.length >= next.playerChoices &&
@@ -1541,6 +1557,8 @@ export function CombatScreen({
         : `Choose ${pendingPotionDef.target ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
     : spendingShiv
     ? 'Choose an enemy for the Shiv'
+    : pendingDef?.cost === 'X' && pending?.energySpent === null
+      ? `Choose Energy for ${pendingDef.name}`
     : pendingDef?.modes && !modeSatisfied
       ? `Choose how to play ${pendingDef.name}`
     : pending?.choiceCards && !pending.choiceConfirmed
@@ -1813,6 +1831,14 @@ export function CombatScreen({
               Skip remaining overflow attacks
             </button>
           ) : null}
+          {pendingDef?.cost === 'X' && pending?.energySpent === null
+            ? Array.from({ length: viewer.energy + 1 }, (_, energy) => (
+              <button type="button" className="prompt__mode" key={energy}
+                onClick={() => stageOrCommit({ ...pending, energySpent: energy })}>
+                Spend {energy}
+              </button>
+            ))
+            : null}
           {(pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed ? (
             <button type="button" className="prompt__mode"
               disabled={pending.picked.length < variableMinimum}

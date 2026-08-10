@@ -36,6 +36,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   strength: 'Strength',
   cardsInHand: 'other card in hand',
   cardsInExhaust: 'card in your Exhaust pile',
+  energySpent: 'Energy spent on this card',
   strikesInHand: 'other card in hand containing Strike',
   skillsInHand: 'Skill in hand',
   attacksInHand: 'Attack in hand',

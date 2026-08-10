@@ -300,6 +300,8 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
+  /** Energy chosen for an X-cost card. Zero is legal. */
+  energySpent?: number
   /** One enemy per independently targeted printed token. Duplicates are legal. */
   enemyUids?: string[]
   /** One player per independently targeted printed Block icon. Duplicates are legal. */
@@ -529,7 +531,7 @@ type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength'
 }
 
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): number {
+function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, energySpent = 0): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -543,6 +545,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): n
       return actor.hand?.length ?? 0
     case 'cardsInExhaust':
       return actor.exhaust.length
+    case 'energySpent':
+      return energySpent
     case 'strikesInHand':
       return actor.hand?.filter((card) => cardDef(card.defId).name.includes('Strike')).length ?? 0
     case 'skillsInHand':
@@ -565,11 +569,12 @@ function amountOf(
   state: CombatState,
   actor: Player,
   target?: Enemy,
+  context?: PlayContext,
 ): number {
   if (typeof amount === 'number') return amount
   let total = amount.base
   if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
-  if (amount.per) total += countOf(amount.per, actor, state) * (amount.scale ?? 1)
+  if (amount.per) total += countOf(amount.per, actor, state, context?.energySpent) * (amount.scale ?? 1)
   if (target && amount.targetTokens) {
     for (const token of amount.targetTokens) total += target[token]
   }
@@ -624,7 +629,7 @@ function applyEffect(
       // Barrage deals one hit per Orb, so the swing count is read off the board
       // once, before the first target — not per target, which would let an
       // area-of-effect card re-count between enemies.
-      const times = effect.times === undefined ? 1 : amountOf(effect.times, state, actor)
+      const times = effect.times === undefined ? 1 : amountOf(effect.times, state, actor, undefined, context)
       // A counted attack can come to nothing — Barrage held with no Orbs. It is
       // a legal play and still costs the Energy, but it lands no hits, and both
       // Weak and Vulnerable are spent by a hit LANDING (p.24). Paying them out
@@ -645,7 +650,7 @@ function applyEffect(
         const wasAlive = !target.dead
         // Bane's bonus reads the enemy being struck, so the printed number is
         // worked out per target rather than once for the card.
-        const each = amountOf(effect.amount, state, actor, target) +
+        const each = amountOf(effect.amount, state, actor, target, context) +
           (context.sourceCardId?.startsWith('strike_') ? (actor.starterStrikeDamageBonus ?? 0) : 0)
         let blocked = 0
         let curled = false
@@ -746,7 +751,7 @@ function applyEffect(
       // Deflect and Steam Barrier both read the CASTER's board, not the ally
       // they may be handing the Block to, so this is worked out once.
       const printedCard = context.sourceCardType === 'attack' || context.sourceCardType === 'skill'
-      const base = amountOf(effect.amount, state, actor)
+      const base = amountOf(effect.amount, state, actor, undefined, context)
       const bonusIcon = typeof effect.amount !== 'number'
         && effect.amount.bonus
         && holds(effect.amount.bonus.when, state, actor)
@@ -851,7 +856,7 @@ function applyEffect(
         // Reserve the line before drawing: a draw can reshuffle and fire
         // triggers that log, and those belong under this line, not above it.
         const at = state.log.length
-        const drawnCards = drawInto(state, target, amountOf(effect.amount, state, actor))
+        const drawnCards = drawInto(state, target, amountOf(effect.amount, state, actor, undefined, context))
         if (target.id === actor.id) {
           context.drewSkill = drawnCards.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill')
         }
@@ -1578,6 +1583,7 @@ const ENEMY_EFFECTS = [
 function reachesEnemy(
   effect: Effect,
   actor: CountablePlayer | undefined,
+  energySpent?: number,
 ): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
   if (effect.kind === 'hitPerExhaust') return !actor || actor.hand === null || actor.hand.length > 1
@@ -1585,7 +1591,10 @@ function reachesEnemy(
   const times = effect.times
   if (typeof times === 'number') return times > 0
   if (times.bonus) return true
-  return times.base + (times.per ? countOf(times.per, actor) : 0) > 0
+  return times.base + (times.per
+    ? countOf(times.per, actor, undefined,
+      times.per === 'energySpent' && energySpent === undefined ? 1 : energySpent)
+    : 0) > 0
 }
 
 /**
@@ -1604,12 +1613,14 @@ export function cardNeedsEnemy(
   def: CardDef,
   actor?: CountablePlayer,
   includeEvokes = true,
+  energySpent?: number,
 ): boolean {
   if (def.type === 'power' && def.trigger) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
   const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
   return effects.some((effect) =>
-    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) && reachesEnemy(effect, actor))
+    (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) &&
+      reachesEnemy(effect, actor, energySpent))
 }
 
 /** Independent printed targets collected before an atomic card play. */
@@ -1702,8 +1713,9 @@ function needsChosenEnemy(
   chosenUid: string | null,
   actor: Player,
   includeEvokes = true,
+  energySpent?: number,
 ): boolean {
-  if (!cardNeedsEnemy(def, actor, includeEvokes)) return false
+  if (!cardNeedsEnemy(def, actor, includeEvokes, energySpent)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 
@@ -1870,7 +1882,11 @@ export function playCard(
       (required === 0 && chosen !== undefined)) return state
   }
   const printedCost = forcedPlay ? 0 : playCost(def, player)
-  const cost = printedCost === 'X' ? player.energy : printedCost
+  const xCost = printedCost === 'X'
+  if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < 0 ||
+    context.energySpent! > player.energy)) return state
+  if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
+  const cost = xCost ? context.energySpent! : printedCost
   const miracleOnCard = context.spendMiracle === true
   if (forcedPlay && miracleOnCard) return state
   if (miracleOnCard && (
@@ -1895,7 +1911,8 @@ export function playCard(
   // Energy, discard itself and do nothing. The UI never allows it, but the room
   // server hands this function messages straight off the network, so the check
   // belongs here rather than in the client.
-  if (needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids)) return state
+  if (needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids,
+    xCost ? cost : 0)) return state
   // A co-op target can die or disconnect after the client stages the card.
   // Refuse the stale command instead of silently redirecting its support
   // effect to the caster.
@@ -1964,6 +1981,7 @@ export function playCard(
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
     sourceCardId: def.id,
+    energySpent: xCost ? cost : 0,
     sourceAttackCounted: false,
   }
   if (resolvesOnPlay) {

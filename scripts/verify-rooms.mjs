@@ -1766,6 +1766,43 @@ check('Rage counts only its owner\'s Attacks through room authority', () => {
   assertEqual(resolved.energy, 0)
 })
 
+check('Whirlwind keeps X Energy and row damage authoritative online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const anchor = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const whirlwind = { uid: 'room-whirlwind', defId: 'whirlwind', upgraded: true }
+  Object.assign(actor, { hand: [whirlwind], energy: 3, discard: [] })
+  Object.assign(anchor, { row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  room.run.combat.enemies.push(
+    { ...anchor, uid: 'room-whirlwind-same', hp: 10 },
+    { ...anchor, uid: 'room-whirlwind-other', row: 1, hp: 10 },
+    { ...anchor, uid: 'room-whirlwind-boss', row: 1, isBoss: true, hp: 10 },
+  )
+  const before = JSON.stringify(room.run)
+  for (const energySpent of [undefined, '2', -1, 4]) {
+    let refused = false
+    try {
+      apply(room, a.token, {
+        kind: 'playCard', cardUid: whirlwind.uid, enemyUid: anchor.uid,
+        energySpent, preflight: true,
+      })
+    } catch {
+      refused = true
+    }
+    assert(refused, `room accepted forged X Energy ${String(energySpent)}`)
+    assertEqual(JSON.stringify(room.run), before, 'a refused X play partially changed the run')
+  }
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: whirlwind.uid, enemyUid: anchor.uid,
+    energySpent: 2, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertDeepEqual([
+    anchor.uid, 'room-whirlwind-same', 'room-whirlwind-other', 'room-whirlwind-boss',
+  ].map((uid) => resolved.enemies.find((enemy) => enemy.uid === uid).hp), [7, 7, 10, 7])
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 1)
+})
+
 check('Blood for Blood uses the owner\'s combat-wide HP-loss discount through room authority', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
