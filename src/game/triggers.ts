@@ -31,6 +31,8 @@ export type Trigger =
   | { kind: 'onGainBlock' }
   /** Fires when this player actually adds one or more Poison cubes to an enemy. */
   | { kind: 'onApplyPoison' }
+  /** Fires once per Weak, Vulnerable, or Poison token this player actually puts on an enemy. */
+  | { kind: 'onPutEnemyToken' }
   | { kind: 'onShuffle' }
 
 /** What actually happened, so a trigger can decide whether it applies. */
@@ -42,6 +44,8 @@ export type TriggerEvent = {
   cardType?: CardType
   /** The stance just entered, for `onEnterStance`. */
   stance?: Stance
+  /** Enemy that received a token, for `onPutEnemyToken`. */
+  enemyUid?: string
 }
 
 /** Whether a trigger fires for an event. */

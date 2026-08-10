@@ -52,6 +52,11 @@ export type CombatState = {
   stanceChangedThisTurn: string[]
   /** Power instance ids already spent by a printed once-per-turn trigger. */
   powerTriggersUsedThisTurn: string[]
+  /** Unresolved Start-of-Turn work, including Mayhem's private forced play. */
+  startTurnProgress?: {
+    choices: StartTurnChoice[]
+    forcedCard?: { playerId: string; cardUid: string | null }
+  }
   log: string[]
 }
 
@@ -179,6 +184,22 @@ function poisonApplied(state: CombatState, actor: Player, context: PlayContext):
   else fireTriggers(state, { kind: 'onApplyPoison' }, actor)
 }
 
+function enemyTokensApplied(
+  state: CombatState,
+  actor: Player,
+  target: Enemy,
+  gained: number,
+  context: PlayContext,
+): void {
+  for (let i = 0; i < gained; i++) {
+    if (context.pendingEnemyTokenTriggers) {
+      context.pendingEnemyTokenTriggers.push({ playerId: actor.id, enemyUid: target.uid })
+    } else {
+      fireTriggers(state, { kind: 'onPutEnemyToken', enemyUid: target.uid }, actor)
+    }
+  }
+}
+
 function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
   const ability = enemyDef(enemy.defId).ability
   if (ability?.kind !== 'sporeCloud') return
@@ -233,12 +254,31 @@ function damageEnemyLogged(
   }
 }
 
+function losePlayerHp(player: Player, amount: number): number {
+  const remaining = player.hpLossLimitThisRound === undefined
+    ? amount
+    : Math.min(amount, Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0)))
+  const outcome = applyHpLoss(player.hp, remaining)
+  if (outcome.hpLost > 0) {
+    player.lostHpThisCombat = true
+    player.hpLostThisRound = (player.hpLostThisRound ?? 0) + outcome.hpLost
+  }
+  player.hp = outcome.hp
+  if (player.hp === 0) player.dead = true
+  return outcome.hpLost
+}
+
 function damagePlayer(player: Player, damage: number): void {
   const outcome = applyDamage(player.block, player.hp, damage)
   player.block = outcome.block
-  if (outcome.hp < player.hp) player.lostHpThisCombat = true
-  player.hp = outcome.hp
-  if (player.hp === 0) player.dead = true
+  losePlayerHp(player, outcome.hpLost)
+}
+
+/** The Energy actually charged for a card on this player's current board. */
+export function playCost(def: CardDef, player: Pick<Player, 'powers' | 'lostHpThisCombat' | 'freeCardsThisTurn'>): number | 'X' {
+  return (player.freeCardsThisTurn ?? 0) > 0
+    ? 0
+    : cardCost(def, player.powers, player.lostHpThisCombat)
 }
 
 /**
@@ -265,6 +305,8 @@ export type PlayContext = {
   discardUids?: string[]
   /** Cards chosen to exhaust from hand, for effects like True Grit. */
   exhaustUids?: string[]
+  /** Cards chosen to return to the top of the draw pile. */
+  topdeckUids?: string[]
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
   /** One chosen target or explicit skip per immediate Shiv, in effect order. */
@@ -314,6 +356,8 @@ export type PlayContext = {
   pendingDiscards?: { playerId: string; cards: CardInstance[] }[]
   /** Poison gains whose reactions wait until this card finishes its printed text. */
   pendingPoisonTriggers?: string[]
+  /** Enemy token gains whose per-token reactions wait until this card finishes. */
+  pendingEnemyTokenTriggers?: { playerId: string; enemyUid: string }[]
   /** Exhausts whose card and Power reactions wait until this card finishes its printed text. */
   pendingExhaustTriggers?: { playerId: string; card: CardInstance }[]
   /** Internal result of the immediately preceding direct draw effect. */
@@ -326,16 +370,22 @@ export type PlayContext = {
   invalidDiscardChoice?: boolean
   /** A variable exhaust exceeded its limit, repeated a card, or named a card outside the hand. */
   invalidExhaustChoice?: boolean
+  /** A topdeck choice named a duplicate or a card outside the current hand. */
+  invalidTopdeckChoice?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
   sourceCardType?: CardType
+  /** Definition id of the card currently resolving, for Apotheosis. */
+  sourceCardId?: string
+  /** Power instance currently resolving its trigger, for counters and self-Exhaust. */
+  sourcePowerUid?: string
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
   sourceAttackCounted?: boolean
 }
 
 export type CardChoicePreview = {
-  kind: 'discard' | 'scry'
+  kind: 'discard' | 'scry' | 'topdeck'
   cards: CardInstance[]
 }
 
@@ -412,6 +462,8 @@ function holds(
       return actor.orbs.filter((orb) => orb !== null).length >= condition.amount
     case 'drawPileEmpty':
       return actor.draw.length === 0
+    case 'handEmpty':
+      return actor.hand.length === 0
     case 'drewSkill':
     case 'retainedLastTurn':
       return false
@@ -442,12 +494,24 @@ export function cardPlayConditionMet(
   return !def.playCondition || holds(def.playCondition, state, actor)
 }
 
-type CountablePlayer = Pick<Player, 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
+/** Whether a card can resolve at all before Energy and player choices are considered. */
+export function cardIsPlayable(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  drawCount = actor.draw.length,
+): boolean {
+  if (def.unplayable || !cardPlayConditionMet(def, state, actor, drawCount)) return false
+  return !(def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
+    actor.orbs.every((orb) => !orb))
+}
+
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn'> & {
   hand: readonly CardInstance[] | null
 }
 
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: CountablePlayer): number {
+function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState): number {
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -465,6 +529,11 @@ function countOf(count: CountOf, actor: CountablePlayer): number {
       return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'attack').length ?? 0
     case 'attacksPlayedThisTurn':
       return actor.attacksPlayedThisTurn ?? 0
+    case 'attackingEnemies':
+      if (!state) return 0
+      return state.enemies.filter((enemy) => !enemy.dead && actionsFor(
+        enemyDef(enemy.defId), state.die, enemy.actionIndex,
+      ).some((action) => action.kind === 'attack' && (action.aoe || enemy.isBoss || enemy.row === actor.row))).length
   }
 }
 
@@ -478,7 +547,7 @@ function amountOf(
   if (typeof amount === 'number') return amount
   let total = amount.base
   if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
-  if (amount.per) total += countOf(amount.per, actor) * (amount.scale ?? 1)
+  if (amount.per) total += countOf(amount.per, actor, state) * (amount.scale ?? 1)
   if (target && amount.targetTokens) {
     for (const token of amount.targetTokens) total += target[token]
   }
@@ -554,7 +623,8 @@ function applyEffect(
         const wasAlive = !target.dead
         // Bane's bonus reads the enemy being struck, so the printed number is
         // worked out per target rather than once for the card.
-        const each = amountOf(effect.amount, state, actor, target)
+        const each = amountOf(effect.amount, state, actor, target) +
+          (context.sourceCardId?.startsWith('strike_') ? (actor.starterStrikeDamageBonus ?? 0) : 0)
         let blocked = 0
         let curled = false
         let poisonAppliedTotal = 0
@@ -586,6 +656,7 @@ function applyEffect(
         if (poisonAppliedTotal > 0) {
           state.log = [...state.log, `${actor.name}'s Envenom applies ${poisonAppliedTotal} Poison to ${name}`]
           for (let i = 0; i < poisonEvents; i++) poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, poisonAppliedTotal, context)
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
@@ -633,11 +704,8 @@ function applyEffect(
       return
     }
     case 'loseOwnHp': {
-      const outcome = applyHpLoss(actor.hp, effect.amount)
-      if (outcome.hp < actor.hp) actor.lostHpThisCombat = true
-      actor.hp = outcome.hp
-      if (actor.hp === 0) actor.dead = true
-      note(`${actor.name} loses ${outcome.hpLost} HP`)
+      const lost = losePlayerHp(actor, effect.amount)
+      note(`${actor.name} loses ${lost} HP`)
       return
     }
     case 'block': {
@@ -649,7 +717,8 @@ function applyEffect(
         && effect.amount.bonus
         && holds(effect.amount.bonus.when, state, actor)
       const icons = 1 + Number(Boolean(bonusIcon))
-      const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0)
+      const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0) +
+        (context.sourceCardId?.startsWith('defend_') ? (actor.starterDefendBlockBonus ?? 0) : 0)
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
         grantBlock(state, target, amount)
@@ -671,6 +740,7 @@ function applyEffect(
         // Only when the token actually went on: at the cap nothing happened,
         // and saying otherwise tells the player a card did something it did not.
         if (target.vulnerable > before) note(`${enemyLabel(state.enemies, target)} is vulnerable`)
+        enemyTokensApplied(state, actor, target, target.vulnerable - before, context)
       }
       return
     }
@@ -679,6 +749,7 @@ function applyEffect(
         const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
         if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
+        enemyTokensApplied(state, actor, target, target.weak - before, context)
       }
       return
     }
@@ -713,6 +784,7 @@ function applyEffect(
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, gained, context)
         }
       }
       return
@@ -734,6 +806,7 @@ function applyEffect(
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
+          enemyTokensApplied(state, actor, target, gained, context)
         }
       }
       return
@@ -769,6 +842,34 @@ function applyEffect(
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
+      return
+    }
+    case 'discountNextCard': {
+      actor.freeCardsThisTurn = (actor.freeCardsThisTurn ?? 0) + 1
+      note(`${actor.name}'s next card costs 0 this turn`)
+      return
+    }
+    case 'limitRoundHpLoss': {
+      actor.hpLossLimitThisRound = Math.min(actor.hpLossLimitThisRound ?? effect.amount, effect.amount)
+      note(`${actor.name} cannot lose more than ${effect.amount} HP this round`)
+      return
+    }
+    case 'upgradeStarterCards': {
+      actor.starterStrikeDamageBonus = (actor.starterStrikeDamageBonus ?? 0) + effect.amount
+      actor.starterDefendBlockBonus = (actor.starterDefendBlockBonus ?? 0) + effect.amount
+      note(`${actor.name}'s starter Strikes and Defends get +${effect.amount}`)
+      return
+    }
+    case 'countdownDamage': {
+      const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
+      if (!held) return
+      held.counter = (held.counter ?? 0) + 1
+      note(`${actor.name} places cube ${held.counter} of ${effect.cubes}`)
+      if (held.counter < effect.cubes) return
+      applyEffect(state, actor, { kind: 'damage', amount: effect.damage }, 'allEnemies', 'self', context, source)
+      actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+      exhaustCards(state, actor, [held])
+      note(`${actor.name} exhausts The Bomb`)
       return
     }
     case 'switchRows': {
@@ -1103,6 +1204,38 @@ function applyEffect(
       if (looked > 0) fireTriggers(state, { kind: 'onScry' }, actor)
       return
     }
+    case 'topdeck': {
+      const requested = context.topdeckUids ?? []
+      if (requested.length !== Math.min(effect.amount, actor.hand.length) ||
+        new Set(requested).size !== requested.length ||
+        requested.some((uid) => !actor.hand.some((card) => card.uid === uid))) {
+        context.invalidTopdeckChoice = true
+        return
+      }
+      const chosen = allocate(actor, requested, effect.amount, context)
+      const moved = chosen.map((uid) => actor.hand.find((card) => card.uid === uid)!)
+      const picked = new Set(chosen)
+      actor.hand = actor.hand.filter((card) => !picked.has(card.uid))
+      actor.draw = addToDrawTop(actor, moved.map(forgetRetain)).draw
+      if (moved.length > 0) note(`${actor.name} puts ${moved.length} card on top of their draw pile`)
+      return
+    }
+    case 'drawAndPlayFree': {
+      const [drawn] = drawInto(state, actor, 1)
+      if (!drawn) return
+      const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
+      if (!cardIsPlayable(drawnDef, state, actor)) {
+        discardByCardEffect(state, actor, [drawn])
+        note(`${actor.name} cannot play ${drawnDef.name} with Mayhem`)
+        return
+      }
+      state.startTurnProgress = {
+        choices: [],
+        forcedCard: { playerId: actor.id, cardUid: drawn.uid },
+      }
+      note(`${actor.name} must play Mayhem's drawn card for 0 Energy`)
+      return
+    }
   }
 }
 
@@ -1296,7 +1429,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
     if (effect.kind === 'draw') drew = true
-    if (effect.kind === 'scry' || (drew && effect.kind === 'discard')) return true
+    if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck'))) return true
   }
   return false
 }
@@ -1311,12 +1444,14 @@ export function previewCardChoice(
   playerId: string,
   cardUid: string,
 ): CardChoicePreview | null {
-  if (state.phase !== 'player') return null
+  const forced = state.startTurnProgress?.forcedCard
+  if (state.phase !== 'player' && !(state.phase === 'start' && forced?.playerId === playerId &&
+    forced.cardUid === cardUid)) return null
   const player = findPlayer(state, playerId)
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const printedCost = cardCost(def, player.powers, player.lostHpThisCombat)
+  const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -1334,6 +1469,8 @@ export function previewCardChoice(
       return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
     } else if (drew && effect.kind === 'discard') {
       return { kind: 'discard', cards: actor.hand }
+    } else if (drew && effect.kind === 'topdeck') {
+      return { kind: 'topdeck', cards: actor.hand }
     }
   }
   return null
@@ -1565,7 +1702,9 @@ export function playCard(
   cardUid: string,
   context: PlayContext = { enemyUid: null, playerId: null },
 ): CombatState {
-  if (state.phase !== 'player') return state
+  const forced = state.startTurnProgress?.forcedCard
+  const forcedPlay = state.phase === 'start' && forced?.playerId === playerId && forced.cardUid === cardUid
+  if (state.phase !== 'player' && !forcedPlay) return state
   const player = findPlayer(state, playerId)
   if (!player || player.dead) return state
 
@@ -1573,8 +1712,7 @@ export function playCard(
   if (!held) return state
 
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  if (def.unplayable) return state
-  if (!cardPlayConditionMet(def, state, player)) return state
+  if (!cardIsPlayable(def, state, player)) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
@@ -1598,9 +1736,10 @@ export function playCard(
     context.playerIds?.length !== playerChoiceCount ||
     context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
   )) return state
-  const printedCost = cardCost(def, player.powers, player.lostHpThisCombat)
+  const printedCost = forcedPlay ? 0 : playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
+  if (forcedPlay && miracleOnCard) return state
   if (miracleOnCard && (
     player.miracles < 1 || player.energy !== CAPS.energy || def.cost === 'X' || cost === 0
   )) return state
@@ -1629,13 +1768,6 @@ export function playCard(
   // effect to the caster.
   if (hasInvalidChosenPlayer(state, def, context.playerId)) return state
   if (hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)) return state
-  // Evoking with no orbs charged the Energy, discarded the card and did
-  // nothing at all — with the UI still asking which enemy to point it at.
-  if (effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
-    player.orbs.every((orb) => !orb)) {
-    return state
-  }
-
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   // The player was just found in `state`, so a clone must contain them too.
@@ -1644,8 +1776,11 @@ export function playCard(
 
   // The card leaves hand before resolving and belongs to no pile until cleanup,
   // which is what stops a card that draws from drawing itself (p.12).
+  const forcedChoices = forcedPlay ? [...(state.startTurnProgress?.choices ?? [])] : null
+  if (forcedPlay) next.startTurnProgress = undefined
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
+  if ((actor.freeCardsThisTurn ?? 0) > 0) actor.freeCardsThisTurn = actor.freeCardsThisTurn! - 1
   if (miracleOnCard) {
     actor.miracles -= 1
     actor.energy += 1
@@ -1671,6 +1806,7 @@ export function playCard(
     ...context,
     enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
     playerIds: context.playerIds ? [...context.playerIds] : undefined,
+    topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
     evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
     evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
@@ -1683,14 +1819,17 @@ export function playCard(
     invalidScryChoice: false,
     invalidDiscardChoice: false,
     invalidExhaustChoice: false,
+    invalidTopdeckChoice: false,
     discardedByCard: 0,
     exhaustedByCard: 0,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
+    pendingEnemyTokenTriggers: [],
     pendingExhaustTriggers: [],
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
+    sourceCardId: def.id,
     sourceAttackCounted: false,
   }
   if (resolvesOnPlay) {
@@ -1698,7 +1837,7 @@ export function playCard(
       applyEffect(next, actor, effect, scope, supportScope, ctx)
       // Combat endings are immediate (p.13), including halfway through a
       // card. Nothing printed later, nor cleanup or play triggers, resolves.
-      if (combatIsOver(next)) return settle(next)
+      if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
     }
   }
 
@@ -1708,12 +1847,13 @@ export function playCard(
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
   if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
-    ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice) return state
+    ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice ||
+    ctx.invalidTopdeckChoice) return state
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)
     if (owner) resolveDiscardReactions(next, owner, pending.cards)
-    if (combatIsOver(next)) return settle(next)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   }
 
   const played = forgetRetain(held)
@@ -1730,13 +1870,19 @@ export function playCard(
   for (const pending of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pending.playerId)
     if (owner) resolveExhaustReaction(next, owner, pending.card)
-    if (combatIsOver(next)) return settle(next)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   }
 
   for (const ownerId of ctx.pendingPoisonTriggers ?? []) {
     const owner = findPlayer(next, ownerId)
     if (owner) fireTriggers(next, { kind: 'onApplyPoison' }, owner)
-    if (combatIsOver(next)) return settle(next)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+  }
+
+  for (const pending of ctx.pendingEnemyTokenTriggers ?? []) {
+    const owner = findPlayer(next, pending.playerId)
+    if (owner) fireTriggers(next, { kind: 'onPutEnemyToken', enemyUid: pending.enemyUid }, owner)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   }
 
   if (def.type === 'attack' && !ctx.sourceAttackCounted) {
@@ -1772,7 +1918,7 @@ export function playCard(
     }
   }
 
-  return settle(next)
+  return finishForcedCardPlay(settle(next), forcedChoices)
 }
 
 /**
@@ -1798,6 +1944,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
   next.powerTriggersUsedThisTurn = []
+  next.startTurnProgress = undefined
   // Where this round's log starts, so the divider can be placed above anything
   // the Start of Turn itself writes.
   const drewFrom = next.log.length
@@ -1816,6 +1963,9 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.energy = 3
     if (!player.powers.some((power) => cardDef(power.defId).retainBlock)) player.block = 0
     player.drawLocked = false
+    player.hpLostThisRound = 0
+    player.hpLossLimitThisRound = undefined
+    player.freeCardsThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
   for (const player of next.players) {
@@ -1841,6 +1991,13 @@ function beginPlayerTurn(next: CombatState): CombatState {
 
 type StartTurnSource = { ability: Omit<StartTurnAbility, 'overflowShivs'>; source: TriggerSource }
 
+function triggerTargets(state: CombatState, player: Player, source: TriggerSource) {
+  return (source.scope === 'enemy' || source.scope === 'row') &&
+    source.effects.some((effect) => reachesEnemy(effect, player))
+    ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+    : undefined
+}
+
 function startTurnSources(state: CombatState): StartTurnSource[] {
   if (state.phase !== 'start') return []
   const events: TriggerEvent[] = [
@@ -1855,11 +2012,18 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
         id: `${player.id}/${source.id}`,
         playerId: player.id,
         label: source.name,
-        targets: source.scope === 'enemy' && source.effects.some((effect) => reachesEnemy(effect, player))
-          ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
-          : undefined,
+        targets: triggerTargets(state, player, source),
       },
     }))))
+}
+
+function pendingStartTurnSources(state: CombatState): StartTurnSource[] {
+  if (state.startTurnProgress?.forcedCard) return []
+  const sources = startTurnSources(state)
+  const queued = state.startTurnProgress?.choices
+  if (!queued) return sources
+  const ids = new Set(queued.map((choice) => choice.id))
+  return sources.filter(({ ability }) => ids.has(ability.id))
 }
 
 function validStartTurnOrder(sources: readonly StartTurnSource[], order: readonly string[]): boolean {
@@ -1869,11 +2033,11 @@ function validStartTurnOrder(sources: readonly StartTurnSource[], order: readonl
 }
 
 /** Ordered Start-of-Turn abilities, with overflow recomputed for that exact order. */
-export function startTurnAbilities(
+function startTurnAbilitiesFor(
   state: CombatState,
+  sources: readonly StartTurnSource[],
   order?: readonly string[],
 ): StartTurnAbility[] {
-  const sources = startTurnSources(state)
   const ids = order ?? sources.map(({ ability }) => ability.id)
   if (!validStartTurnOrder(sources, ids)) return []
   const byId = new Map(sources.map((entry) => [entry.ability.id, entry]))
@@ -1890,6 +2054,14 @@ export function startTurnAbilities(
   })
 }
 
+/** Ordered Start-of-Turn abilities, with overflow recomputed for that exact order. */
+export function startTurnAbilities(
+  state: CombatState,
+  order?: readonly string[],
+): StartTurnAbility[] {
+  return startTurnAbilitiesFor(state, pendingStartTurnSources(state), order)
+}
+
 export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
   return startTurnAbilities(state).map((ability) => ({
     id: ability.id,
@@ -1903,8 +2075,8 @@ export function resolveStartPlayerTurn(
   state: CombatState,
   choices: readonly StartTurnChoice[],
 ): CombatState {
-  if (state.phase !== 'start') return state
-  const sources = startTurnSources(state)
+  if (state.phase !== 'start' || state.startTurnProgress?.forcedCard) return state
+  const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
   if (!validStartTurnOrder(sources, order)) return state
   const abilities = startTurnAbilities(state, order)
@@ -1917,19 +2089,68 @@ export function resolveStartPlayerTurn(
     choice.shivEnemyUids.some((uid) => uid !== null && !alive.has(uid)))) return state
 
   const next = clone(state)
-  const byId = new Map(startTurnSources(next).map((entry) => [entry.ability.id, entry]))
-  for (const choice of choices) {
-    const entry = byId.get(choice.id)
+  next.startTurnProgress = undefined
+  return continueStartTurn(next, choices, state)
+}
+
+function continueStartTurn(
+  state: CombatState,
+  choices: readonly StartTurnChoice[],
+  rollback?: CombatState,
+): CombatState {
+  const next = state
+  for (let index = 0; index < choices.length; index++) {
+    const choice = choices[index]!
+    const entry = startTurnSources(next).find(({ ability }) => ability.id === choice.id)
     const player = entry && findPlayer(next, entry.ability.playerId)
-    if (!entry || !player || (entry.ability.targets &&
-      resolveEnemyTargets(next, 'enemy', choice.enemyUid ?? null).length === 0) ||
-      !resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid)) {
-      return state
+    const ability = entry ? startTurnAbilitiesFor(next, [entry])[0] : undefined
+    if (!entry || !player || !ability ||
+      (ability.targets
+        ? !ability.targets.some((target) => target.uid === choice.enemyUid)
+        : choice.enemyUid !== undefined) ||
+      choice.shivEnemyUids.length !== ability.overflowShivs ||
+      choice.shivEnemyUids.some((uid) => uid !== null &&
+        !livingEnemies(next).some((enemy) => enemy.uid === uid))) {
+      next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
+      return rollback ?? next
+    }
+    const checkpoint = rollback ? null : clone(next)
+    if (!resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid)) {
+      if (rollback) return rollback
+      checkpoint!.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
+      return checkpoint!
+    }
+    if (next.startTurnProgress?.forcedCard) {
+      next.startTurnProgress.choices = choices.slice(index + 1).map((pending) => ({ ...pending }))
+      return settle(next)
     }
     if (combatIsOver(next)) return settle(next)
   }
+  next.startTurnProgress = undefined
   next.phase = 'player'
   return settle(next)
+}
+
+function finishForcedCardPlay(
+  state: CombatState,
+  choices: readonly StartTurnChoice[] | null,
+): CombatState {
+  return choices === null || combatIsOver(state) ? state : continueStartTurn(state, choices)
+}
+
+/** Discards a disconnected owner's private Mayhem card and resumes the queued abilities. */
+export function abandonForcedCard(state: CombatState, playerId: string): CombatState {
+  const forced = state.startTurnProgress?.forcedCard
+  if (state.phase !== 'start' || forced?.playerId !== playerId || typeof forced.cardUid !== 'string') return state
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)
+  const card = actor?.hand.find((held) => held.uid === forced.cardUid)
+  if (!actor || !card) return state
+  const choices = [...(next.startTurnProgress?.choices ?? [])]
+  next.startTurnProgress = undefined
+  discardByCardEffect(next, actor, [card])
+  next.log = [...next.log, `${actor.name}'s Mayhem card was discarded after disconnecting`]
+  return finishForcedCardPlay(settle(next), choices)
 }
 
 /** Backwards-compatible deterministic start for simulations with no UI choice. */
@@ -1953,7 +2174,11 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
-    .map((source) => ({ id: source.id, label: source.name.replace(`${player.name}'s `, '') }))
+    .map((source) => ({
+      id: source.id,
+      label: source.name.replace(`${player.name}'s `, ''),
+      targets: triggerTargets(state, player, source),
+    }))
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
   }
@@ -2025,11 +2250,8 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
         ? `${def.name} damages ${player.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
         : `${player.name} blocks ${def.name}${blocked > 0 ? ` (${blocked} spent)` : ''}`]
     } else if (effect.kind === 'loseHp') {
-      const outcome = applyHpLoss(player.hp, effect.amount)
-      state.log = [...state.log, `${def.name}: ${player.name} loses ${outcome.hpLost} HP`]
-      if (outcome.hp < player.hp) player.lostHpThisCombat = true
-      player.hp = outcome.hp
-      if (player.hp === 0) player.dead = true
+      const lost = losePlayerHp(player, effect.amount)
+      state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
     } else if (effect.kind === 'gainWeak') {
       const before = player.weak
       player.weak = gainWeak(player.weak, effect.amount)
@@ -2090,7 +2312,16 @@ export function beginEndPlayerTurn(
       if (localId.startsWith('relic:') || localId.startsWith('power:')) {
         const source = triggerSources(player, { kind: 'endOfTurn' })
           .find((candidate) => candidate.id === localId)
-        if (source) resolveTriggerSource(next, player, source)
+        const target = endTurnChoiceTarget(choice)
+        // A row is chosen when the order is submitted. Preserve that row if
+        // an earlier ability kills its enemy anchor, without teaching ordinary
+        // card plays that a dead enemy is a valid target.
+        const selectedRow = source?.scope === 'row'
+          ? next.enemies.find((enemy) => enemy.uid === target)?.row
+          : undefined
+        if (source && ((source.scope !== 'row' && triggerTargets(next, player, source) &&
+          resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
+          !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow))) return state
       } else if (localId === 'strength') {
         const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
         if (loss > 0) {
@@ -2481,6 +2712,7 @@ type TriggerSource = {
   scope: TargetScope
   supportScope: TargetScope
   oncePerTurn: boolean
+  powerUid?: string
 }
 
 function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string): TriggerSource[] {
@@ -2510,6 +2742,7 @@ function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string
       scope: def.target ?? 'enemy',
       supportScope: def.supportTarget ?? 'self',
       oncePerTurn: def.oncePerTurn === true,
+      powerUid: held.uid,
     })
   }
   return sources
@@ -2522,6 +2755,7 @@ function resolveTriggerSource(
   allowCombatOver = false,
   shivEnemyUids?: readonly (string | null)[],
   enemyUid?: string,
+  enemyRow?: number,
 ): boolean {
   const useKey = `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -2532,10 +2766,12 @@ function resolveTriggerSource(
   const target = livingEnemies(state)[0]
   const context: PlayContext = {
     enemyUid: enemyUid ?? target?.uid ?? null,
+    enemyRow,
     playerId: player.id,
     shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
     shivTargetIndex: 0,
     invalidShivTarget: false,
+    sourcePowerUid: source.powerUid,
   }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
@@ -2557,7 +2793,7 @@ function fireTriggersInner(
     if (only && player.id !== only.id) continue
 
     for (const source of triggerSources(player, event, excludeUid)) {
-      resolveTriggerSource(state, player, source, allowCombatOver)
+      resolveTriggerSource(state, player, source, allowCombatOver, undefined, event.enemyUid)
       if (!allowCombatOver && combatIsOver(state)) return
     }
   }
@@ -2607,10 +2843,15 @@ export function createCombat(
     players: players.map((player) => ({
       ...player,
       lostHpThisCombat: false,
+      hpLostThisRound: 0,
+      hpLossLimitThisRound: undefined,
+      freeCardsThisTurn: 0,
       attacksPlayedThisTurn: 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,
       hitPoison: 0,
+      starterStrikeDamageBonus: 0,
+      starterDefendBlockBonus: 0,
     })),
     enemies,
     discardedThisTurn: [],

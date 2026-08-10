@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto'
 import {
   CAPS,
+  abandonForcedCard,
   activatePotion,
   advanceAct,
   cardDef,
@@ -37,6 +38,7 @@ import {
   leaveRoom,
   overflowShivCount,
   playCard,
+  playCost,
   previewCardChoice,
   potionDef,
   revealCardReward,
@@ -226,7 +228,30 @@ export function markDisconnected(room, seatToken) {
   settleReward(room)
   settleEndTurn(room)
   settleDiscard(room)
+  settleForcedCards(room)
   return snapshotFor(room, seatToken)
+}
+
+function settleForcedCards(room) {
+  let combat = room.run?.combat
+  while (combat?.phase === 'start' && combat.startTurnProgress?.forcedCard) {
+    const ownerId = combat.startTurnProgress.forcedCard.playerId
+    const owner = room.seats.find((seat) => seat.playerId === ownerId)
+    if (owner?.connected !== false) break
+    if (room.cardPreviews?.[ownerId]) {
+      if (!resolveAbandonedPreviews(room)) break
+      combat = room.run?.combat
+      continue
+    }
+    const next = abandonForcedCard(combat, ownerId)
+    if (next === combat) break
+    room.run = { ...room.run, combat: next }
+    combat = next
+    if (room.cardPreviews?.[ownerId]) {
+      room.cardPreviews = { ...room.cardPreviews }
+      delete room.cardPreviews[ownerId]
+    }
+  }
 }
 
 /**
@@ -266,7 +291,11 @@ export function apply(room, seatToken, action) {
 
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
-  if (staged && (!player?.hand.some((card) => card.uid === staged.cardUid) || room.run.combat?.phase !== 'player')) {
+  const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
+  const forcedForSeat = room.run.combat?.phase === 'start' && forcedCard?.playerId === seat.playerId &&
+    typeof forcedCard.cardUid === 'string'
+  if (staged && (!player?.hand.some((card) => card.uid === staged.cardUid) ||
+    (room.run.combat?.phase !== 'player' && !(forcedForSeat && forcedCard.cardUid === staged.cardUid)))) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
   }
@@ -289,8 +318,9 @@ export function apply(room, seatToken, action) {
     const held = player?.hand.find((card) => card.uid === action.cardUid)
     const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
     const spendMiracle = action.spendMiracle === true
+    const cost = forcedForSeat && forcedCard.cardUid === action.cardUid ? 0 : def && player ? playCost(def, player) : null
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
-      def.cost === 'X' || def.cost === 0)) fail('That Miracle cannot pay for this card')
+      cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
     const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
     const enemyUid = needsEnemy ? action.enemyUid : null
@@ -340,21 +370,28 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
-  if (room.run.combat?.phase === 'start') fail('Finish the Start-of-Turn abilities')
+  if (room.run.combat?.phase === 'start' && !(
+    forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
+    action.cardUid === forcedCard.cardUid
+  )) fail('Finish the Start-of-Turn abilities')
 
   const before = room.run
   const next = dispatch(before, seat, action)
   if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
 
   room.run = next
+  settleForcedCards(room)
+  const current = room.run
   if (action?.kind === 'playCard' && locked?.cardUid === action.cardUid) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
   }
   if (room.cardPreviews) {
-    const combat = next.combat
+    const combat = current.combat
     room.cardPreviews = Object.fromEntries(Object.entries(room.cardPreviews).filter(([playerId, preview]) =>
-      combat?.phase === 'player' && combat.players
+      (combat?.phase === 'player' || (combat?.phase === 'start' &&
+        combat.startTurnProgress?.forcedCard?.playerId === playerId &&
+        combat.startTurnProgress.forcedCard.cardUid === preview.cardUid)) && combat.players
         .find((candidate) => candidate.id === playerId)?.hand.some((card) => card.uid === preview.cardUid)))
   }
   // Any accepted combat action can change a hand, including an ally's. Orders
@@ -367,7 +404,7 @@ export function apply(room, seatToken, action) {
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
-  if (next.map.position !== before.map.position || next.phase !== before.phase) {
+  if (current.map.position !== before.map.position || current.phase !== before.phase) {
     room.campfireChoices = undefined
     room.rewardChoices = undefined
     room.rewardConfirmed = undefined
@@ -442,6 +479,7 @@ function resolveAbandonedPreviews(room) {
         enemyUid: preview.enemyUid,
         discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
+        topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         spendMiracle: preview.spendMiracle,
         preflight: true,
       })
@@ -513,6 +551,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
   })))
   if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')
   room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -811,6 +850,10 @@ function dispatch(run, seat, action) {
       if (action.scryDiscardUids !== undefined && (
         !Array.isArray(action.scryDiscardUids) || scryDiscardUids.length !== action.scryDiscardUids.length
       )) fail('Scry choices must be a list of card ids')
+      const topdeckUids = uidList(action.topdeckUids)
+      if (action.topdeckUids !== undefined && (
+        !Array.isArray(action.topdeckUids) || topdeckUids.length !== action.topdeckUids.length
+      )) fail('Topdeck choices must be a list of card ids')
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,
@@ -829,6 +872,7 @@ function dispatch(run, seat, action) {
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
         scryDiscardUids,
+        topdeckUids,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
@@ -1037,11 +1081,19 @@ function redactRun(run, viewerId) {
 }
 
 function redactCombat(combat, viewerId) {
+  const progress = combat.startTurnProgress
   return {
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
+    startTurnProgress: progress ? {
+      choices: structuredClone(progress.choices),
+      forcedCard: progress.forcedCard ? {
+        playerId: progress.forcedCard.playerId,
+        cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
+      } : undefined,
+    } : undefined,
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
@@ -1077,11 +1129,16 @@ function redactPlayer(player, viewerId) {
     weak: player.weak,
     drawLocked: player.drawLocked === true,
     lostHpThisCombat: player.lostHpThisCombat === true,
+    hpLostThisRound: player.hpLostThisRound ?? 0,
+    hpLossLimitThisRound: player.hpLossLimitThisRound,
+    freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     shivs: player.shivs,
     shivDamageBonus: player.shivDamageBonus ?? 0,
     cardBlockBonus: player.cardBlockBonus ?? 0,
     hitPoison: player.hitPoison ?? 0,
+    starterStrikeDamageBonus: player.starterStrikeDamageBonus ?? 0,
+    starterDefendBlockBonus: player.starterDefendBlockBonus ?? 0,
     miracles: player.miracles,
     stance: player.stance,
     orbs: player.orbs,

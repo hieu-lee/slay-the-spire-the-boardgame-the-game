@@ -71,6 +71,8 @@ export type Condition =
   | { kind: 'orbsAtLeast'; amount: number }
   /** Grand Finale: the face-down draw pile is empty. */
   | { kind: 'drawPileEmpty' }
+  /** Panache checks this when its ordered end-of-turn ability resolves. */
+  | { kind: 'handEmpty' }
   /** Escape Plan: the immediately preceding draw effect drew a Skill. */
   | { kind: 'drewSkill' }
   /** Outmaneuver: this exact card was kept by Retain last turn. */
@@ -86,6 +88,7 @@ export type CountOf =
   | 'skillsInHand'
   | 'attacksInHand'
   | 'attacksPlayedThisTurn'
+  | 'attackingEnemies'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -162,6 +165,14 @@ type EffectKind =
   | { kind: 'cycleHand' }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
+  /** The next card played this turn costs 0 Energy. */
+  | { kind: 'discountNextCard' }
+  /** Total HP lost this round cannot exceed this amount. */
+  | { kind: 'limitRoundHpLoss'; amount: number }
+  /** Permanently improve this combat's starter Strikes and Defends. */
+  | { kind: 'upgradeStarterCards'; amount: number }
+  /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
+  | { kind: 'countdownDamage'; cubes: number; damage: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -189,6 +200,10 @@ type EffectKind =
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'gainStrengthIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
+  /** Put chosen cards from hand on top of the draw pile, in chosen order. */
+  | { kind: 'topdeck'; amount: number }
+  /** Draw a card and immediately play it for 0 Energy, as Mayhem does. */
+  | { kind: 'drawAndPlayFree' }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
@@ -1701,6 +1716,64 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'exhaustAny', amount: 3 }],
     upgrade: { effects: [{ kind: 'exhaustAny', amount: 5 }] },
+  }),
+  apparition: card({
+    id: 'apparition', name: 'Apparition', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 1,
+    ethereal: true,
+    exhaust: true,
+    effects: [{ kind: 'limitRoundHpLoss', amount: 1 }],
+    upgrade: { ethereal: false },
+  }),
+  dark_shackles: card({
+    id: 'dark_shackles', name: 'Dark Shackles', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 3 } }] },
+  }),
+  madness: card({
+    id: 'madness', name: 'Madness', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'discountNextCard' }],
+    upgrade: { retain: true },
+  }),
+  panache: card({
+    id: 'panache', name: 'Panache', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'endOfTurn' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 3, when: { kind: 'handEmpty' } }],
+    upgrade: { effects: [{ kind: 'damage', amount: 5, when: { kind: 'handEmpty' } }] },
+  }),
+  apotheosis: card({
+    id: 'apotheosis', name: 'Apotheosis', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'upgradeStarterCards', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+  the_bomb: card({
+    id: 'the_bomb', name: 'The Bomb', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'endOfTurn' },
+    target: 'allEnemies',
+    effects: [{ kind: 'countdownDamage', cubes: 3, damage: 10 }],
+    upgrade: { effects: [{ kind: 'countdownDamage', cubes: 3, damage: 12 }] },
+  }),
+  sadistic_nature: card({
+    id: 'sadistic_nature', name: 'Sadistic Nature', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'onPutEnemyToken' },
+    target: 'enemy',
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
+  thinking_ahead: card({
+    id: 'thinking_ahead', name: 'Thinking Ahead', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
+  mayhem: card({
+    id: 'mayhem', name: 'Mayhem', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'drawAndPlayFree' }],
+    upgrade: { cost: 1 },
   }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

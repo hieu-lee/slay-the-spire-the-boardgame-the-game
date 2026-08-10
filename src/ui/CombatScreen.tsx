@@ -5,6 +5,7 @@ import {
   activatePotion,
   beginEndPlayerTurn,
   cardEnemyChoiceCount,
+  cardIsPlayable,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardPlayerChoiceCount,
@@ -22,6 +23,7 @@ import {
   nextEvokeChoice,
   overflowShivCount,
   playCard,
+  playCost,
   previewCardChoice,
   resolveStartPlayerTurn,
   spendMiracle,
@@ -54,7 +56,7 @@ type CombatScreenProps = {
   /** Private cards revealed by a staged online play, visible only to this seat. */
   cardPreview?: {
     cardUid: string
-    kind: 'discard' | 'scry'
+    kind: 'discard' | 'scry' | 'topdeck'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null
@@ -110,7 +112,7 @@ type Pending = {
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
   choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry'
+    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck'
     amount: number
     minimum?: number
   } | null
@@ -179,6 +181,7 @@ function requirementsOf(
   const discardAny = def.effects.some((effect) => effect.kind === 'discardAny')
   const exhaust = def.effects.find((effect) => effect.kind === 'exhaustFromHand')
   const exhaustAny = def.effects.find((effect) => effect.kind === 'exhaustAny')
+  const topdeck = def.effects.find((effect) => effect.kind === 'topdeck')
   const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
@@ -191,6 +194,8 @@ function requirementsOf(
       ? { kind: 'exhaustAny' as const, amount: exhaustAny.amount, minimum: exhaustAny.minimum }
       : scried
         ? { kind: 'scry' as const, amount: scried.amount }
+        : topdeck
+          ? { kind: 'topdeck' as const, amount: topdeck.amount }
         : null
   return {
     needsEnemy,
@@ -296,6 +301,9 @@ function describeSeat(player: Player): string {
     parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
   }
   if (player.drawLocked) parts.push('cannot draw more cards this turn')
+  if (player.hpLossLimitThisRound !== undefined) {
+    parts.push(`Apparition protection, ${Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0))} hit point loss remaining this round`)
+  }
   if (player.character === 'defect') {
     parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
   }
@@ -335,16 +343,8 @@ function canAfford(
   drawCount = player.draw.length,
 ): boolean {
   const def = faceOf(cardDef(card.defId), card.upgraded)
-  if (def.unplayable) return false
-  if (!cardPlayConditionMet(def, state, player, drawCount)) return false
-  // An evoke with nothing charged is refused by the engine, and a refusal is
-  // reference-equality — the UI has no way to explain it. Better to grey the
-  // card out than to let the click land and appear to do nothing at all.
-  if (def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
-    player.orbs.every((orb) => !orb)) {
-    return false
-  }
-  const cost = cardCost(def, player.powers, player.lostHpThisCombat)
+  if (!cardIsPlayable(def, state, player, drawCount)) return false
+  const cost = playCost(def, player)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   return cost === 'X' || cost <= player.energy + (spendMiracle ? 1 : 0)
 }
@@ -438,6 +438,10 @@ export function CombatScreen({
   const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const forcedCard = state.startTurnProgress?.forcedCard
+  const forcedCardUid = forcedCard?.playerId === viewerId && typeof forcedCard.cardUid === 'string'
+    ? forcedCard.cardUid
+    : null
   const stateRef = useRef(state)
   const versionRef = useRef(authoritativeVersion ?? -1)
   const refreshRef = useRef(authoritativeRefresh)
@@ -1069,6 +1073,7 @@ export function CombatScreen({
         ? next.picked
         : undefined,
       scryDiscardUids: next.choice?.kind === 'scry' ? next.picked : undefined,
+      topdeckUids: next.choice?.kind === 'topdeck' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
       shivEnemyUids: next.shivEnemyUids,
       evokeSlots: next.evokeSlots,
@@ -1466,7 +1471,12 @@ export function CombatScreen({
     : pendingStartEnemy
       ? `${pendingStartEnemy.label} — choose an enemy`
     : null
-  const prompt = startTurnPrompt ?? (pendingPotionDef
+  const forcedPrompt = forcedCard && !pending
+    ? forcedCard.playerId === viewerId
+      ? "Mayhem — play the drawn card for 0 Energy"
+      : `Waiting for ${state.players.find((player) => player.id === forcedCard.playerId)?.name ?? 'another player'} to play Mayhem's card`
+    : null
+  const prompt = forcedPrompt ?? startTurnPrompt ?? (pendingPotionDef
     ? pendingPotionDef.target === 'row'
       ? `Choose a row for ${pendingPotionDef.name}`
       : pendingPotionOverflow > 0
@@ -1479,6 +1489,8 @@ export function CombatScreen({
     : pending?.choiceCards && !pending.choiceConfirmed
       ? pending.choice?.kind === 'scry'
         ? `Scry ${pending.choice.amount} — choose any cards to discard`
+        : pending.choice?.kind === 'topdeck'
+          ? `Thinking Ahead — choose ${choiceNeeded} card to put on top`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
     : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed
       ? pending.choice.kind === 'discardAny'
@@ -1646,7 +1658,7 @@ export function CombatScreen({
               </button>
             </>
           ) : null}
-          {state.phase === 'start' ? (
+          {state.phase === 'start' && !forcedCard ? (
             <>
               <details className="end-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
@@ -1781,7 +1793,7 @@ export function CombatScreen({
               Keep rows
             </button>
           ) : null}
-          {!pendingStartEnemy && !pendingStartShiv && !pending?.choiceCards ? <button
+          {!pendingStartEnemy && !pendingStartShiv && !pending?.choiceCards && !forcedCard ? <button
             type="button"
             className="prompt__cancel"
             onClick={() => {
@@ -1802,11 +1814,17 @@ export function CombatScreen({
           onCancel={(event) => event.preventDefault()}>
           <div className="choice-modal__panel">
             <h2 id="choice-modal-title">
-              {pending.choice.kind === 'scry' ? `Scry ${pending.choice.amount}` : `Choose ${choiceNeeded} to discard`}
+              {pending.choice.kind === 'scry'
+                ? `Scry ${pending.choice.amount}`
+                : pending.choice.kind === 'topdeck'
+                  ? `Choose ${choiceNeeded} for the top of your draw pile`
+                  : `Choose ${choiceNeeded} to discard`}
             </h2>
             <p>
               {pending.choice.kind === 'scry'
                 ? 'Select any revealed cards to discard; unselected cards stay on top in order.'
+                : pending.choice.kind === 'topdeck'
+                  ? `${pending.picked.length}/${choiceNeeded} selected. The card is committed.`
                 : `${pending.picked.length}/${choiceNeeded} selected.${pending.picked.length > 0
                   ? ` Discard order (later is higher): ${pending.picked.map((uid, index) => {
                     const card = pending.choiceCards!.find((held) => held.uid === uid)!
@@ -1824,6 +1842,8 @@ export function CombatScreen({
             <button type="button" disabled={!handChoiceSatisfied} onClick={confirmChoice}>
               {pending.choice.kind === 'scry'
                 ? pending.picked.length === 0 ? 'Keep all' : `Discard ${pending.picked.length} and continue`
+                : pending.choice.kind === 'topdeck'
+                  ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
           </div>
@@ -1920,6 +1940,11 @@ export function CombatScreen({
                       ) : null}
                       {occupant.drawLocked ? (
                         <span className="seat__pending">Cannot draw more cards this turn</span>
+                      ) : null}
+                      {occupant.hpLossLimitThisRound !== undefined ? (
+                        <span className="seat__pending">
+                          Apparition · {Math.max(0, occupant.hpLossLimitThisRound - (occupant.hpLostThisRound ?? 0))} HP loss remaining
+                        </span>
                       ) : null}
                       {occupant.potions.length > 0 ? (
                         <span className="seat__potions" title="Held potions">
@@ -2031,16 +2056,20 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
-              cost={cardCost(faceOf(cardDef(card.defId), card.upgraded), viewer.powers, viewer.lostHpThisCombat)}
+              cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer)}
               playable={
                 !usingCard &&
                 !orderingStage &&
                 (!pending?.choiceCards || pending.card.uid === card.uid) &&
-                state.phase === 'player' &&
+                (state.phase === 'player' || card.uid === forcedCardUid ||
+                  (pending?.card.uid === forcedCardUid && pending.choice !== null && !pending.choiceCards)) &&
                 // While a card is staged, other cards stay clickable only as
                 // choice targets; an unaffordable card must never be stageable
                 // or it strands the player in a pending state it cannot commit.
-                (canAfford(state, viewer, card, miracleOnCard, drawCount) ||
+                (card.uid === forcedCardUid ||
+                  (pending?.card.uid === forcedCardUid && pending.choice !== null &&
+                    !pending.choiceCards && card.uid !== pending.card.uid) ||
+                  canAfford(state, viewer, card, miracleOnCard, drawCount) ||
                   pending?.card.uid === card.uid ||
                   (pending?.choice != null && card.uid !== pending.card.uid))
               }

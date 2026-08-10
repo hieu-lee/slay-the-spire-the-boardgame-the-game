@@ -1,21 +1,28 @@
 import {
   activatePotion,
   beginEndPlayerTurn,
+  chooseEndTurnTarget,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   createCombat,
   endPlayerTurn,
+  endTurnAbilities,
   enemyTurn,
   livingEnemies,
   playCard,
+  playCost,
+  preparePlayerTurn,
   previewCardChoice,
   resolveEnemyTargets,
+  resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  startTurnAbilities,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
+import { CAPS } from '../src/game/types.ts'
 import {
   advanceAct,
   createRun,
@@ -2180,6 +2187,15 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'hand_of_greed', enemyHp: [16, 16] },
     { id: 'panacea', exhaust: [1, 1] },
     { id: 'purity', exhaust: [1, 1] },
+    { id: 'apparition', exhaust: [1, 1] },
+    { id: 'dark_shackles', block: [2, 3], exhaust: [1, 1] },
+    { id: 'madness', exhaust: [1, 1] },
+    { id: 'panache', powers: [1, 1] },
+    { id: 'apotheosis', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'the_bomb', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'sadistic_nature', powers: [1, 1] },
+    { id: 'thinking_ahead', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
+    { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
     { id: 'hyperbeam', enemyHp: [15, 13] },
@@ -2293,6 +2309,9 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.discardAfterDraw) {
         const amount = Array.isArray(spec.discardAfterDraw) ? spec.discardAfterDraw[at] : 1
         context.discardUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, amount).map((held) => held.uid)
+      }
+      if (spec.topdeckAfterDraw) {
+        context.topdeckUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, 1).map((held) => held.uid)
       }
       const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
@@ -2958,6 +2977,366 @@ check('Panacea redirects its base face and clears every player when upgraded', (
     assertEqual(cured.players[1].weak, 0)
     assertEqual(cured.players[1].vulnerable, 0)
   }
+})
+
+check('Apparition caps every kind of HP loss for the round and then expires', () => {
+  for (const upgraded of [false, true]) {
+    const apparition = instance('apparition', upgraded)
+    const offering = instance('offering')
+    const protectedState = playCard(combat([
+      makePlayer({ hand: [apparition, offering], draw: Array.from({ length: 3 }, () => instance('defend_ironclad')) }),
+    ], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', apparition.uid, {
+      enemyUid: null, playerId: null,
+    })
+    const selfHit = playCard(protectedState, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assertEqual(selfHit.players[0].hp, 9, 'Offering should spend the one allowed HP loss')
+    const attacked = enemyTurn(endPlayerTurn(selfHit))
+    assertEqual(attacked.players[0].hp, 9, 'later enemy damage should lose no more HP this round')
+    assertEqual(attacked.players[0].block, 0, 'Apparition should not preserve Block from the attack')
+    const nextRound = startPlayerTurn(attacked)
+    assertEqual(nextRound.players[0].hpLossLimitThisRound, undefined)
+    assertEqual(nextRound.players[0].hpLostThisRound, 0)
+  }
+})
+
+check('Apparition loses Ethereal when upgraded', () => {
+  const base = instance('apparition')
+  const upgraded = instance('apparition', true)
+  const baseEnd = endPlayerTurn(combat([makePlayer({ hand: [base] })], [makeEnemy()]))
+  const upgradedEnd = endPlayerTurn(combat([makePlayer({ hand: [upgraded] })], [makeEnemy()]))
+  assertDeepEqual(baseEnd.players[0].exhaust.map((card) => card.uid), [base.uid])
+  assertDeepEqual(upgradedEnd.players[0].discard.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Dark Shackles counts enemies whose current intent attacks its player', () => {
+  for (const upgraded of [false, true]) {
+    const shackles = instance('dark_shackles', upgraded)
+    const state = {
+      ...combat([makePlayer({ hand: [shackles], row: 0, energy: 0 })], [
+        makeEnemy({ uid: 'same-row', row: 0, defId: 'cultist' }),
+        makeEnemy({ uid: 'other-row', row: 1, defId: 'cultist' }),
+        makeEnemy({ uid: 'boss', row: 2, defId: 'cultist', isBoss: true }),
+        makeEnemy({ uid: 'no-attack', row: 0, defId: 'red_louse' }),
+      ]),
+      die: 1,
+    }
+    const played = playCard(state, 'p1', shackles.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, upgraded ? 6 : 4)
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [shackles.uid])
+  }
+})
+
+check('Madness discounts exactly the next card this turn and gains Retain when upgraded', () => {
+  const madness = instance('madness')
+  const first = instance('hand_of_greed')
+  const second = instance('hand_of_greed')
+  const state = combat([makePlayer({ hand: [madness, first, second], energy: 0 })], [
+    makeEnemy({ hp: 30, maxHp: 30 }),
+  ])
+  const primed = playCard(state, 'p1', madness.uid, { enemyUid: null, playerId: null })
+  assertEqual(playCost(faceOf(cardDef(first.defId), false), primed.players[0]), 0)
+  const free = playCard(primed, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(free.players[0].energy, 0)
+  assertEqual(free.players[0].freeCardsThisTurn, 0)
+  assertEqual(playCard(free, 'p1', second.uid, { enemyUid: 'e1', playerId: null }), free,
+    'a second paid card should not inherit the discount')
+
+  const retained = instance('madness', true)
+  const kept = endPlayerTurn(combat([makePlayer({ hand: [retained] })], [makeEnemy()]))
+  assertDeepEqual(kept.players[0].hand.map((card) => card.uid), [retained.uid])
+})
+
+check('Panache targets a row and reads the hand when its ordered end-turn ability resolves', () => {
+  for (const upgraded of [false, true]) {
+    const panache = instance('panache', upgraded)
+    const played = playCard(combat([makePlayer({ hand: [panache], energy: 0 })], [
+      makeEnemy({ uid: 'left', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', row: 2, hp: 20, maxHp: 20, isBoss: true }),
+    ]), 'p1', panache.uid, { enemyUid: null, playerId: null })
+    const ability = endTurnAbilities(played).find((entry) => entry.label.includes('Panache'))
+    assertEqual(ability.targets.length, 3)
+    const ended = beginEndPlayerTurn(played, [chooseEndTurnTarget(ability.id, 'left')])
+    const damage = upgraded ? 5 : 3
+    assertDeepEqual(ended.enemies.map((enemy) => enemy.hp), [20 - damage, 20, 20 - damage])
+  }
+
+  const panache = instance('panache')
+  const apparition = instance('apparition')
+  const state = combat([makePlayer({ hand: [apparition], powers: [panache] })], [
+    makeEnemy({ hp: 20, maxHp: 20 }),
+  ])
+  const abilities = endTurnAbilities(state)
+  const power = abilities.find((entry) => entry.label.includes('Panache'))
+  const ethereal = abilities.find((entry) => entry.label.includes('Apparition'))
+  const panacheFirst = beginEndPlayerTurn(state, [
+    chooseEndTurnTarget(power.id, 'e1'), ethereal.id,
+  ])
+  assertEqual(panacheFirst.enemies[0].hp, 20, 'Panache should see the still-held Ethereal card')
+  const etherealFirst = beginEndPlayerTurn(state, [
+    ethereal.id, chooseEndTurnTarget(power.id, 'e1'),
+  ])
+  assertEqual(etherealFirst.enemies[0].hp, 17, 'Ethereal may empty the hand before Panache resolves')
+
+  const poisonAnchor = combat([makePlayer({ hand: [], powers: [instance('panache')] })], [
+    makeEnemy({ uid: 'anchor', row: 0, hp: 1, maxHp: 1, poison: 1 }),
+    makeEnemy({ uid: 'same-row', row: 0, hp: 20, maxHp: 20 }),
+  ])
+  const poisonAbilities = endTurnAbilities(poisonAnchor)
+  const poison = poisonAbilities.find((entry) => entry.label.includes('Poison'))
+  const anchoredPanache = poisonAbilities.find((entry) => entry.label.includes('Panache'))
+  const resolved = beginEndPlayerTurn(poisonAnchor, [
+    poison.id, chooseEndTurnTarget(anchoredPanache.id, 'anchor'),
+  ])
+  assert(resolved !== poisonAnchor, 'a dead row anchor should not roll back the end-turn plan')
+  assertEqual(resolved.enemies[0].dead, true)
+  assertEqual(resolved.enemies[1].hp, 17)
+
+  const emptyRow = combat([makePlayer({ hand: [], powers: [instance('panache')] })], [
+    makeEnemy({ uid: 'sole-anchor', row: 0, hp: 1, maxHp: 1, poison: 1 }),
+    makeEnemy({ uid: 'other-row', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  const emptyRowAbilities = endTurnAbilities(emptyRow)
+  const solePoison = emptyRowAbilities.find((entry) => entry.label.includes('Poison'))
+  const solePanache = emptyRowAbilities.find((entry) => entry.label.includes('Panache'))
+  const fizzled = beginEndPlayerTurn(emptyRow, [
+    solePoison.id, chooseEndTurnTarget(solePanache.id, 'sole-anchor'),
+  ])
+  assert(fizzled !== emptyRow, 'an emptied chosen row should fizzle rather than roll back')
+  assertEqual(fizzled.enemies[0].dead, true)
+  assertEqual(fizzled.enemies[1].hp, 20)
+
+  const entrance = instance('dramatic_entrance')
+  const staleCardTarget = combat([makePlayer({ hand: [entrance], energy: 0 })], [
+    makeEnemy({ uid: 'dead-card-anchor', row: 0, hp: 0, maxHp: 5, dead: true }),
+    makeEnemy({ uid: 'live-card-target', row: 0, hp: 20, maxHp: 20 }),
+  ])
+  assertEqual(playCard(staleCardTarget, 'p1', entrance.uid, {
+    enemyUid: 'dead-card-anchor', playerId: null,
+  }), staleCardTarget, 'ordinary row cards must still reject a dead target')
+})
+
+check('Apotheosis improves only starter Strikes and Defends for the combat', () => {
+  for (const upgraded of [false, true]) {
+    const apotheosis = instance('apotheosis', upgraded)
+    const strike = instance('strike_ironclad')
+    const defend = instance('defend_ironclad', true)
+    const bash = instance('bash')
+    const state = combat([makePlayer({ hand: [apotheosis, strike, defend, bash], energy: 6 })], [
+      makeEnemy({ hp: 20, maxHp: 20 }),
+    ])
+    const empowered = playCard(state, 'p1', apotheosis.uid, { enemyUid: null, playerId: null })
+    assertEqual(empowered.players[0].energy, upgraded ? 5 : 4)
+    assertEqual(empowered.players[0].starterStrikeDamageBonus, 1)
+    assertEqual(empowered.players[0].starterDefendBlockBonus, 1)
+    const struck = playCard(empowered, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(struck.enemies[0].hp, 18)
+    const defended = playCard(struck, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(defended.players[0].block, 3, 'Defend+ should keep its printed 2 and add 1')
+    const bashed = playCard(defended, 'p1', bash.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(bashed.enemies[0].hp, 16, 'another starter-rarity card is not a Strike')
+  }
+  const reset = createCombat(createRng(99), [makePlayer({
+    starterStrikeDamageBonus: 3, starterDefendBlockBonus: 3,
+  })], [makeEnemy()])
+  assertEqual(reset.players[0].starterStrikeDamageBonus, 0)
+  assertEqual(reset.players[0].starterDefendBlockBonus, 0)
+})
+
+check('The Bomb counts three end turns, damages every enemy, then Exhausts itself', () => {
+  for (const upgraded of [false, true]) {
+    const bomb = instance('the_bomb', upgraded)
+    let state = playCard(combat([makePlayer({ hand: [bomb], energy: 2 })], [
+      makeEnemy({ uid: 'left', hp: 30, maxHp: 30 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 30, maxHp: 30 }),
+    ]), 'p1', bomb.uid, { enemyUid: null, playerId: null })
+    for (let cube = 1; cube <= 3; cube++) {
+      const ability = endTurnAbilities(state).find((entry) => entry.label.includes('The Bomb'))
+      state = beginEndPlayerTurn(state, [ability.id])
+      if (cube < 3) {
+        assertEqual(state.players[0].powers[0].counter, cube)
+        state = { ...state, phase: 'player' }
+      }
+    }
+    const damage = upgraded ? 12 : 10
+    assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [30 - damage, 30 - damage])
+    assertEqual(state.players[0].powers.some((card) => card.uid === bomb.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === bomb.uid), true)
+  }
+})
+
+check('Sadistic Nature fires once per enemy token actually added, on that enemy', () => {
+  for (const upgraded of [false, true]) {
+    const sadistic = instance('sadistic_nature', upgraded)
+    const shockwave = instance('shockwave')
+    const state = combat([makePlayer({ hand: [sadistic, shockwave], energy: 3 })], [
+      makeEnemy({ uid: 'left', hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'right', row: 0, hp: 20, maxHp: 20 }),
+    ])
+    const powered = playCard(state, 'p1', sadistic.uid, { enemyUid: null, playerId: null })
+    const tokened = playCard(powered, 'p1', shockwave.uid, { enemyUid: 'left', playerId: null })
+    const damage = upgraded ? 4 : 2
+    assertDeepEqual(tokened.enemies.map((enemy) => enemy.hp), [20 - damage, 20 - damage])
+    assertDeepEqual(tokened.enemies.map((enemy) => [enemy.vulnerable, enemy.weak]), [[1, 1], [1, 1]])
+  }
+
+  const cappedPower = instance('sadistic_nature', true)
+  const blind = instance('blind')
+  const capped = playCard(playCard(combat([
+    makePlayer({ hand: [cappedPower, blind], energy: 0 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20, weak: CAPS.weak })]), 'p1', cappedPower.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', blind.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(capped.enemies[0].hp, 20, 'a token blocked by the cap must not trigger Sadistic Nature')
+
+  const catalystPower = instance('sadistic_nature', true)
+  const catalyst = instance('catalyst', true)
+  const multiplied = playCard(playCard(combat([
+    makePlayer({ hand: [catalystPower, catalyst], energy: 1 }),
+  ], [makeEnemy({ hp: 30, maxHp: 30, poison: 5 })]), 'p1', catalystPower.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', catalyst.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(multiplied.enemies[0].poison, 15)
+  assertEqual(multiplied.enemies[0].hp, 10, 'Catalyst added 10 cubes, so Sadistic Nature+ fires 10 times')
+
+  const ownerPower = instance('sadistic_nature', true)
+  const allyBlind = instance('blind')
+  const otherOwner = playCard(combat([
+    makePlayer({ powers: [ownerPower] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', hand: [allyBlind], energy: 0 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p2', allyBlind.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(otherOwner.enemies[0].weak, 1)
+  assertEqual(otherOwner.enemies[0].hp, 20, 'another player\'s token does not trigger your Power')
+})
+
+check('Thinking Ahead draws first, then returns exactly one chosen card to the draw top', () => {
+  for (const upgraded of [false, true]) {
+    const thinking = instance('thinking_ahead', upgraded)
+    const held = instance('strike_ironclad')
+    const drawn = Array.from({ length: upgraded ? 3 : 2 }, () => instance('defend_ironclad'))
+    const state = combat([makePlayer({ hand: [thinking, held], draw: drawn })], [makeEnemy()])
+    const preview = previewCardChoice(state, 'p1', thinking.uid)
+    assertEqual(preview?.kind, 'topdeck')
+    assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, ...drawn.map((card) => card.uid)])
+    const chosen = drawn.at(-1)
+    const next = playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: [chosen.uid],
+    })
+    assert(next !== state)
+    assertEqual(next.players[0].draw[0]?.uid, chosen.uid)
+    assertEqual(next.players[0].hand.length, drawn.length)
+    assertEqual(next.players[0].exhaust.at(-1)?.uid, thinking.uid)
+
+    assertEqual(playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: ['not-in-hand'],
+    }), state, 'a stale private choice must reject the whole play')
+    assertEqual(playCard(state, 'p1', thinking.uid, {
+      enemyUid: null, playerId: null, topdeckUids: [held.uid, drawn[0].uid],
+    }), state, 'extra topdeck choices must not be silently ignored')
+  }
+
+  const thinking = instance('thinking_ahead')
+  const onlyDraw = instance('strike_ironclad')
+  const reshuffled = [instance('defend_ironclad'), instance('bash')]
+  const state = combat([makePlayer({ hand: [thinking], draw: [onlyDraw], discard: reshuffled })], [makeEnemy()])
+  const preview = previewCardChoice(state, 'p1', thinking.uid)
+  assertEqual(preview.cards.length, 2, 'the preview follows a mid-draw reshuffle')
+  const next = playCard(state, 'p1', thinking.uid, {
+    enemyUid: null, playerId: null, topdeckUids: [preview.cards[1].uid],
+  })
+  assertEqual(next.players[0].draw[0].uid, preview.cards[1].uid)
+})
+
+check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {
+  for (const upgraded of [false, true]) {
+    assertEqual(faceOf(CARDS.mayhem, upgraded).cost, upgraded ? 1 : 2)
+    const mayhem = instance('mayhem', upgraded)
+    const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+    const meteor = instance('meteor_strike')
+    const state = combat([makePlayer({ powers: [mayhem], draw: [...opening, meteor], energy: 0 })], [
+      makeEnemy({ hp: 20, maxHp: 20 }),
+    ])
+    Object.assign(state, { phase: 'roundEnd', turn: 1 })
+    const prepared = preparePlayerTurn(state)
+    const [ability] = startTurnAbilities(prepared)
+    const forced = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+    assertEqual(forced.phase, 'start')
+    assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, meteor.uid)
+    assertEqual(forced.players[0].energy, 3)
+    const played = playCard(forced, 'p1', meteor.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.phase, 'player')
+    assertEqual(played.players[0].energy, 3, 'Mayhem pays the entire printed cost')
+    assertEqual(played.enemies[0].hp, 10)
+    assertEqual(played.players[0].attacksPlayedThisTurn, 1, 'the forced card counts as played')
+  }
+
+  const mayhem = instance('mayhem')
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const daze = instance('daze')
+  const state = combat([makePlayer({ powers: [mayhem], draw: [...opening, daze] })], [makeEnemy()])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const [ability] = startTurnAbilities(prepared)
+  const resolved = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+  assertEqual(resolved.phase, 'player', 'an unplayable Mayhem draw is discarded without a prompt')
+  assertEqual(resolved.players[0].discard.at(-1)?.uid, daze.uid)
+
+  const emptyDualCast = instance('dual_cast')
+  const noOrbState = combat([makePlayer({
+    character: 'defect', powers: [instance('mayhem')], draw: [...opening, emptyDualCast], orbs: [null, null, null],
+  })], [makeEnemy()])
+  Object.assign(noOrbState, { phase: 'roundEnd', turn: 1 })
+  const noOrbPrepared = preparePlayerTurn(noOrbState)
+  const [noOrbAbility] = startTurnAbilities(noOrbPrepared)
+  const noOrbResolved = resolveStartPlayerTurn(noOrbPrepared, [{ id: noOrbAbility.id, shivEnemyUids: [] }])
+  assertEqual(noOrbResolved.phase, 'player', 'an impossible Evoke cannot strand Mayhem')
+  assertEqual(noOrbResolved.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
+
+  const madness = instance('madness')
+  const forcedStrike = instance('strike_ironclad')
+  const chainedState = combat([makePlayer({
+    powers: [instance('mayhem'), instance('mayhem')],
+    draw: [...opening, madness, forcedStrike],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  Object.assign(chainedState, { phase: 'roundEnd', turn: 1 })
+  const chainedPrepared = preparePlayerTurn(chainedState)
+  const chainedAbilities = startTurnAbilities(chainedPrepared)
+  const firstForced = resolveStartPlayerTurn(chainedPrepared, chainedAbilities.map((ability) => ({
+    id: ability.id, shivEnemyUids: [],
+  })))
+  const secondForced = playCard(firstForced, 'p1', madness.uid, { enemyUid: null, playerId: null })
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.cardUid, forcedStrike.uid)
+  assertEqual(secondForced.players[0].freeCardsThisTurn, 1)
+  const chained = playCard(secondForced, 'p1', forcedStrike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(chained.phase, 'player')
+  assertEqual(chained.players[0].freeCardsThisTurn, 0,
+    'Mayhem\'s forced card still consumes Madness\'s next-card discount')
+})
+
+check('a queued post-Mayhem ability rolls back a partial stale-target resolution', () => {
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const forcedDefend = instance('defend_ironclad')
+  const state = combat([makePlayer({
+    powers: [instance('mayhem'), instance('infinite_blades', true)],
+    draw: [...opening, forcedDefend],
+    shivs: 5,
+  })], [makeEnemy({ hp: 1, maxHp: 1 }), makeEnemy({ uid: 'e2', row: 1, hp: 20, maxHp: 20 })])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const [mayhem, blades] = startTurnAbilities(prepared)
+  const forced = resolveStartPlayerTurn(prepared, [
+    { id: mayhem.id, shivEnemyUids: [] },
+    { id: blades.id, shivEnemyUids: ['e1', 'e1'] },
+  ])
+  const stale = playCard(forced, 'p1', forcedDefend.uid, { enemyUid: null, playerId: null })
+  assertEqual(stale.enemies[0].hp, 1, 'the first overflow hit must roll back with the stale second target')
+  assertEqual(stale.players[0].attacksPlayedThisTurn, 0)
+  assertEqual(stale.startTurnProgress?.choices.length, 1)
+
+  const retried = resolveStartPlayerTurn(stale, [{ id: blades.id, shivEnemyUids: ['e2', 'e2'] }])
+  assertEqual(retried.enemies[1].hp, 18)
+  assertEqual(retried.players[0].attacksPlayedThisTurn, 2,
+    'retrying a two-Shiv gain must not retain a hit from the failed attempt')
 })
 
 check('Reprogram, Melter, Hyperbeam, and Sunder resolve their ordered cleanup clauses', () => {

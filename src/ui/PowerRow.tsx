@@ -144,7 +144,8 @@ export function PowerRow({ powers }: PowerRowProps) {
       <ul className="powers" aria-label="Powers in play">
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
-          const described = describePower(def)
+          const countdown = def.effects.find((effect) => effect.kind === 'countdownDamage')
+          const described = `${describePower(def)}${countdown ? `, ${card.counter ?? 0} of ${countdown.cubes} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
@@ -189,6 +190,9 @@ export function PowerRow({ powers }: PowerRowProps) {
                 <span className="power__fallback" aria-hidden="true">
                   {def.name}
                 </span>
+                {countdown ? (
+                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{countdown.cubes}</span>
+                ) : null}
               </button>
             </li>
           )
@@ -219,8 +223,10 @@ export function describePower(def: CardDef): string {
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
     ? `whenever you play a ${def.trigger.cardType} card`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
-  const where = def.target === 'allEnemies'
+  const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
+  const where = effectOwnsScope ? '' : def.target === 'allEnemies'
     ? ' to every enemy'
+    : def.target === 'row' ? ' to one enemy row and any boss'
     : def.target === 'enemy' ? ' to one enemy' : ''
   const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
   if (!effects) return def.name
@@ -244,6 +250,7 @@ const WHEN: Record<string, string> = {
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
+  onPutEnemyToken: 'whenever you put a token on an enemy',
   onShuffle: 'whenever you shuffle',
 }
 
@@ -274,7 +281,7 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'draw':
       return `draw ${effect.amount}`
     case 'damage':
-      return `${effect.amount} damage`
+      return `${effect.amount} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':
       return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':
@@ -291,6 +298,12 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `Attack and Skill Block gets +${effect.amount}`
     case 'gainHitPoison':
       return `hits apply ${effect.amount} Poison`
+    case 'upgradeStarterCards':
+      return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'countdownDamage':
+      return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'drawAndPlayFree':
+      return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':

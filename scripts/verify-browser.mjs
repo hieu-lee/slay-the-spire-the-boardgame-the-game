@@ -1212,6 +1212,429 @@ check('Panacea+ clears Weak and Vulnerable from every player and Exhausts', () =
 await page.locator('.seat').first().scrollIntoViewIfNeeded()
 await shot('06z-panacea-party-cleansed')
 
+const colorlessBatch1Restore = await readRun()
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-apparition', defId: 'apparition', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 1,
+    hpLostThisRound: 0,
+    hpLossLimitThisRound: undefined,
+  })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const apparitionCard = page.getByRole('button', { name: /^Apparition\+,/ })
+await apparitionCard.waitFor()
+const apparitionLabel = await apparitionCard.getAttribute('aria-label')
+await apparitionCard.scrollIntoViewIfNeeded()
+await shot('06za-apparition-ready')
+await apparitionCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hpLossLimitThisRound === 1)
+const apparition = await readState()
+const apparitionSeatLabel = await page.locator('.seat--viewer').getAttribute('aria-label')
+const apparitionStatus = await page.locator('.seat--viewer .seat__pending').textContent()
+check('Apparition+ visibly protects the round and Exhausts without Ethereal', () => {
+  assert(apparitionLabel.includes('cannot lose more than 1 hit points this round'), apparitionLabel)
+  assert(!apparitionLabel.includes('ethereal'), apparitionLabel)
+  assertEqual(apparition.players[0].hpLossLimitThisRound, 1)
+  assertEqual(apparition.players[0].exhaust.some((card) => card.uid === 'ui-apparition'), true)
+  assert(apparitionSeatLabel.includes('Apparition protection, 1 hit point loss remaining this round'), apparitionSeatLabel)
+  assert(apparitionStatus.includes('Apparition · 1 HP loss remaining'), apparitionStatus)
+})
+await shot('06zb-apparition-protected')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { die: 1 })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-dark-shackles', defId: 'dark_shackles', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    block: 0,
+  })
+  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    defId: index === 0 ? 'cultist' : 'red_louse',
+    row: actor.row,
+    isBoss: false,
+    dead: false,
+    hp: 20,
+    maxHp: 20,
+    actionIndex: 0,
+  }))
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const shacklesCard = page.getByRole('button', { name: /^Dark Shackles\+,/ })
+await shacklesCard.waitFor()
+const shacklesLabel = await shacklesCard.getAttribute('aria-label')
+await shacklesCard.scrollIntoViewIfNeeded()
+await shot('06zc-dark-shackles-intents')
+await shacklesCard.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 3)
+const shackles = await readState()
+check('Dark Shackles+ reads visible enemy intents without a target prompt', () => {
+  assert(shacklesLabel.includes('3 per enemy intending to attack you'), shacklesLabel)
+  assertEqual(shackles.players[0].block, 3)
+  assertEqual(shackles.players[0].exhaust.some((card) => card.uid === 'ui-dark-shackles'), true)
+})
+await shot('06zd-dark-shackles-block')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-madness', defId: 'madness', upgraded: true },
+      { uid: 'ui-madness-target', defId: 'hand_of_greed', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    energy: 0,
+    freeCardsThisTurn: 0,
+  })
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const madnessCard = page.getByRole('button', { name: /^Madness\+,/ })
+await madnessCard.waitFor()
+const madnessLabel = await madnessCard.getAttribute('aria-label')
+await madnessCard.click()
+const freeGreed = page.getByRole('button', { name: /^Hand of Greed, cost 0,/ })
+await freeGreed.waitFor()
+await freeGreed.scrollIntoViewIfNeeded()
+await shot('06ze-madness-free-card')
+await freeGreed.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].freeCardsThisTurn === 0)
+const madness = await readState()
+check('Madness+ exposes Retain and discounts exactly the next card', () => {
+  assert(madnessLabel.includes('your next card this turn costs 0'), madnessLabel)
+  assert(madnessLabel.includes('retain'), madnessLabel)
+  assertEqual(madness.players[0].energy, 0)
+  assertEqual(madness.players[0].freeCardsThisTurn, 0)
+  assertEqual(madness.players[0].exhaust.some((card) => card.uid === 'ui-madness'), true)
+})
+await shot('06zf-madness-spent')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hpLossLimitThisRound == null)
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-panache', defId: 'panache', upgraded: true }],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 0,
+  })
+  run.combat.players[1].hand = []
+  run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    row: index, hp: 20, maxHp: 20, block: 0, weak: 0, vulnerable: 0, poison: 0, dead: false,
+  }))
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const panacheCard = page.getByRole('button', { name: /^Panache\+,/ })
+await panacheCard.waitFor()
+const panacheLabel = await panacheCard.getAttribute('aria-label')
+await panacheCard.click()
+const panachePower = page.getByRole('button', { name: /^Panache\+?:/ })
+await panachePower.waitFor()
+const panachePowerLabel = await panachePower.getAttribute('aria-label')
+check('Panache+ exposes its empty-hand row effect accessibly', () => {
+  assert(panacheLabel.includes('deal 5 damage if your hand is empty'), panacheLabel)
+  assert(panacheLabel.includes('hits a whole row and any boss'), panacheLabel)
+  assert(panachePowerLabel.includes('5 damage'), panachePowerLabel)
+  assert(panachePowerLabel.includes('if your hand is empty'), panachePowerLabel)
+  assert(panachePowerLabel.includes('to one enemy row and any boss'), panachePowerLabel)
+  assert(panachePowerLabel.includes('at the end of each turn'), panachePowerLabel)
+})
+await panachePower.scrollIntoViewIfNeeded()
+await panachePower.click()
+await shot('06zg-panache-power')
+await page.locator('.end-turn-order summary').click()
+const panacheTarget = page.getByRole('combobox', { name: /Target for .*Panache/ })
+const panacheTargetUid = await panacheTarget.locator('option').nth(1).getAttribute('value')
+await panacheTarget.selectOption(panacheTargetUid)
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[1].hp === 15)
+const panache = await readState()
+check('Panache+ resolves the selected row at end of turn', () => {
+  assertEqual(panache.enemies[0].hp, 20)
+  assertEqual(panache.enemies[1].hp, 15)
+})
+await shot('06zh-panache-row-hit')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-apotheosis', defId: 'apotheosis', upgraded: true },
+      { uid: 'ui-apotheosis-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 2,
+    starterStrikeDamageBonus: 0,
+    starterDefendBlockBonus: 0,
+  })
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const apotheosisCard = page.getByRole('button', { name: /^Apotheosis\+,/ })
+await apotheosisCard.waitFor()
+const apotheosisLabel = await apotheosisCard.getAttribute('aria-label')
+await apotheosisCard.click()
+const apotheosisPower = page.getByRole('button', { name: /^Apotheosis\+?:/ })
+await apotheosisPower.waitFor()
+const apotheosisPowerLabel = await apotheosisPower.getAttribute('aria-label')
+check('Apotheosis+ remains visible as a Power and states both starter bonuses', () => {
+  assert(apotheosisLabel.includes('starter Strikes deal +1 damage'), apotheosisLabel)
+  assert(apotheosisLabel.includes('starter Defends gain +1 Block'), apotheosisLabel)
+  assert(apotheosisPowerLabel.includes('starter Strikes deal +1 damage'), apotheosisPowerLabel)
+  assert(apotheosisPowerLabel.includes('starter Defends gain +1 Block'), apotheosisPowerLabel)
+})
+await apotheosisPower.click()
+await shot('06zi-apotheosis-power')
+await page.getByRole('button', { name: /^Strike, cost 1,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 18))
+const apotheosis = await readState()
+check('Apotheosis adds one damage to a starter Strike', () => {
+  assertEqual(apotheosis.enemies.filter((enemy) => enemy.hp === 18).length, 1)
+})
+await shot('06zj-apotheosis-strike')
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [],
+    discard: [],
+    exhaust: [],
+    powers: [{ uid: 'ui-bomb', defId: 'the_bomb', upgraded: true, counter: 2 }],
+  })
+  run.combat.players[1].hand = []
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const bombPower = page.getByRole('button', { name: /^The Bomb\+?:/ })
+await bombPower.waitFor()
+const bombLabel = await bombPower.getAttribute('aria-label')
+const bombCounter = await bombPower.locator('.power__counter').textContent()
+check('The Bomb+ exposes its public cube countdown visually and accessibly', () => {
+  assert(bombLabel.includes('at 3 cubes deal 12 damage to every enemy, then Exhaust this Power'), bombLabel)
+  assert(bombLabel.includes('2 of 3 cubes'), bombLabel)
+  assertEqual(bombCounter, '◆2/3')
+})
+await bombPower.scrollIntoViewIfNeeded()
+await bombPower.click()
+await shot('06zk-bomb-two-cubes')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 0)
+const bomb = await readState()
+check('The Bomb+ third cube damages every enemy and Exhausts the Power', () => {
+  assert(bomb.enemies.every((enemy) => enemy.hp === 8), 'The Bomb did not deal 12 to every enemy')
+  assertEqual(bomb.players[0].exhaust.some((card) => card.uid === 'ui-bomb'), true)
+})
+await shot('06zl-bomb-exploded')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
+  !window.__STS_DEBUG__.getState().players[0].powers.some((card) => card.uid === 'ui-bomb'))
+
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [
+      { uid: 'ui-sadistic', defId: 'sadistic_nature', upgraded: true },
+      { uid: 'ui-sadistic-catalyst', defId: 'catalyst', upgraded: true },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    defId: 'cultist', hp: 30, maxHp: 30, block: 0,
+    weak: 0, vulnerable: 0, poison: 5, dead: false,
+  })
+  debug.setRun(run)
+}, colorlessBatch1Restore)
+const sadisticCard = page.getByRole('button', { name: /^Sadistic Nature\+,/ })
+await sadisticCard.waitFor()
+const sadisticCardLabel = await sadisticCard.getAttribute('aria-label')
+await sadisticCard.click()
+const sadisticPower = page.getByRole('button', { name: /^Sadistic Nature\+?:/ })
+await sadisticPower.waitFor()
+const sadisticPowerLabel = await sadisticPower.getAttribute('aria-label')
+check('Sadistic Nature+ exposes its per-token exact-enemy trigger accessibly', () => {
+  assert(sadisticCardLabel.includes('whenever you put a token on an enemy'), sadisticCardLabel)
+  assert(sadisticCardLabel.includes('deal 2 damage'), sadisticCardLabel)
+  assert(sadisticPowerLabel.includes('2 damage to one enemy whenever you put a token on an enemy'), sadisticPowerLabel)
+})
+await sadisticPower.click()
+await shot('06zm-sadistic-nature-power')
+await page.getByRole('button', { name: /^Catalyst\+,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => {
+  const enemy = window.__STS_DEBUG__.getState().enemies[0]
+  return enemy.poison === 15 && enemy.hp === 10
+})
+const sadistic = await readState()
+check('Sadistic Nature+ fires ten times when Catalyst adds ten Poison cubes', () => {
+  assertEqual(sadistic.enemies[0].poison, 15)
+  assertEqual(sadistic.enemies[0].hp, 10)
+})
+await shot('06zn-sadistic-catalyst')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].powers
+  .some((card) => card.uid === 'ui-sadistic'))
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-thinking', defId: 'thinking_ahead', upgraded: true },
+      { uid: 'ui-thinking-held', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: Array.from({ length: 3 }, (_, index) => ({
+      uid: `ui-thinking-draw-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+    discard: [], exhaust: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const thinkingCard = page.getByRole('button', { name: /^Thinking Ahead\+,/ })
+await thinkingCard.waitFor()
+const thinkingLabel = await thinkingCard.getAttribute('aria-label')
+await thinkingCard.click()
+const thinkingDialog = page.getByRole('dialog', { name: 'Choose 1 for the top of your draw pile' })
+await thinkingDialog.waitFor()
+check('Thinking Ahead+ exposes its private topdeck choice accessibly', () => {
+  assert(thinkingLabel.includes('draw 3 cards'), thinkingLabel)
+  assert(thinkingLabel.includes('put 1 card from your hand on top of your draw pile'), thinkingLabel)
+})
+await shot('06zo-thinking-ahead-choice')
+await thinkingDialog.locator('.card').last().click()
+await thinkingDialog.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].exhaust
+  .some((card) => card.uid === 'ui-thinking'))
+const thinking = await readState()
+check('Thinking Ahead+ draws three and topdecks the selected card', () => {
+  assertEqual(thinking.players[0].draw[0].uid, 'ui-thinking-draw-2')
+  assertEqual(thinking.players[0].hand.length, 3)
+})
+await shot('06zp-thinking-ahead-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [], discard: [], exhaust: [], energy: 0,
+    powers: [{ uid: 'ui-mayhem', defId: 'mayhem', upgraded: true }],
+    draw: [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-mayhem-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+      })),
+      { uid: 'ui-mayhem-forced', defId: 'meteor_strike', upgraded: true },
+    ],
+  })
+  for (const player of run.combat.players.slice(1)) Object.assign(player, {
+    hand: [], discard: [], powers: [],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-mayhem-ally-${player.id}-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.getByText('Mayhem — play the drawn card for 0 Energy').waitFor()
+const forcedMayhem = page.getByRole('button', { name: /^Meteor Strike\+, cost 0,/ })
+await forcedMayhem.waitFor()
+const mayhemPowerLabel = await page.locator('.power[aria-label^="Mayhem+"]').getAttribute('aria-label')
+const forcedMayhemEnabled = await forcedMayhem.isEnabled()
+check('Mayhem announces its discard fallback and enables an otherwise unaffordable card', () => {
+  assert(mayhemPowerLabel.includes('if it cannot be played, discard it'), mayhemPowerLabel)
+  assertEqual(forcedMayhemEnabled, true)
+})
+await shot('06zq-mayhem-forced-card')
+await forcedMayhem.click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const mayhem = await readState()
+check('Mayhem forces its private card for 0 Energy and resumes Start of Turn', () => {
+  assertEqual(mayhem.players[0].energy, 3)
+  assertEqual(mayhem.enemies[0].hp, 8)
+  assertEqual(mayhem.startTurnProgress, undefined)
+})
+await shot('06zr-mayhem-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [], discard: [], exhaust: [], energy: 0, block: 0,
+    powers: [{ uid: 'ui-mayhem-choice', defId: 'mayhem', upgraded: false }],
+    draw: [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        uid: `ui-mayhem-choice-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+      })),
+      { uid: 'ui-mayhem-survivor', defId: 'survivor', upgraded: false },
+    ],
+  })
+  for (const player of run.combat.players.slice(1)) Object.assign(player, {
+    hand: [], powers: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-mayhem-choice-ally-${player.id}-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.getByRole('button', { name: /^Survivor, cost 0,/ }).click()
+await page.getByText(/Discard 1 card.*0\/1 chosen/).waitFor()
+const forcedChoiceFodder = page.getByRole('button', { name: /^Defend,/ }).first()
+const forcedChoiceFodderEnabled = await forcedChoiceFodder.isEnabled()
+check('Mayhem keeps hand cards enabled as mandatory forced-play choices', () => {
+  assertEqual(forcedChoiceFodderEnabled, true)
+})
+await forcedChoiceFodder.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const mayhemChoice = await readState()
+check('Mayhem resumes after the forced card pays its hand choice', () => {
+  assertEqual(mayhemChoice.players[0].energy, 3)
+  assertEqual(mayhemChoice.players[0].block, 2)
+  assertEqual(mayhemChoice.players[0].discard.some((card) => card.uid === 'ui-mayhem-survivor'), true)
+})
+await shot('06zs-mayhem-hand-choice-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.waitForFunction((enemyCount) => {
+  const state = window.__STS_DEBUG__.getState()
+  return state.enemies.length === enemyCount &&
+    !state.players[0].powers.some((card) => card.uid === 'ui-mayhem')
+}, colorlessBatch1Restore.combat.enemies.length)
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -1900,6 +2323,9 @@ await page.evaluate(() => {
     orbs: [null, null, null, null, null],
     energy: 1,
   })
+  for (const enemy of run.combat.enemies) {
+    if (!enemy.dead) Object.assign(enemy, { hp: 30, maxHp: 30, block: 0, vulnerable: 0 })
+  }
   run.combat.log = []
   debug.setRun(run)
 })
@@ -2919,43 +3345,26 @@ check('a hit is felt, and keeps being felt for the rest of the combat', () => {
 
 // Two blows landing inside the same 380ms window: the class has to CHANGE, or
 // the browser never restarts the animation and the second hit is not felt.
-const beats = await page.evaluate(async () => {
-  const seen = []
-  const advanced = []
+await flinchCount(0)
+await page.evaluate(() => {
+  window.__STS_FLINCHES__ = []
   document.addEventListener('animationstart', (event) => {
-    if (event.animationName.startsWith('struck')) seen.push(event.animationName)
+    if (event.animationName.startsWith('struck')) window.__STS_FLINCHES__.push(event.animationName)
   })
-  for (let i = 0; i < 2; i++) {
-    // Re-read the bridge every time: App rebuilds it on each render, so a
-    // captured reference keeps returning the state it closed over and the
-    // second "hit" would silently write back the hit points already there.
-    const debug = window.__STS_DEBUG__
-    const run = structuredClone(debug.getRun())
-    run.combat.players[0].hp -= 1
-    const before = seen.length
-    debug.setRun(run)
-    await new Promise((resolve) => {
-      const deadline = performance.now() + 500
-      const poll = () => seen.length > before || performance.now() >= deadline
-        ? resolve()
-        : requestAnimationFrame(poll)
-      poll()
-    })
-    advanced.push(seen.length > before)
-    if (i === 0) {
-      // Drain any duplicate event from this render before taking the next
-      // baseline. Two frames remain well inside the 380ms flinch window.
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    }
-  }
-  return { advanced, names: seen }
 })
+for (let i = 0; i < 2; i++) {
+  const before = await page.evaluate(() => window.__STS_FLINCHES__.length)
+  await hurtViewer()
+  await page.waitForFunction((count) => window.__STS_FLINCHES__.length > count, before)
+}
+const beats = await page.evaluate(() => ({
+  count: window.__STS_FLINCHES__.length,
+  names: window.__STS_FLINCHES__,
+}))
 check('two hits in quick succession are both felt', () => {
-  // The browser event is the user-visible invariant. React may briefly remove
-  // and restore the same animation or alternate keyframes, so its name is an
-  // implementation detail; either path is correct if both blows start one.
-  assertDeepEqual(beats.advanced, [true, true],
-    `each blow should start a flinch: ${beats.names.join(', ')}`)
+  assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
+  assertEqual(new Set(beats.names).size, 2,
+    `the two flinches must use different animations to restart: ${beats.names.join(', ')}`)
 })
 
 // The enemy's remaining hit points are the number the whole turn is planned

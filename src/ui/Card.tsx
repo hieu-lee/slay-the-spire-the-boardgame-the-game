@@ -38,6 +38,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   skillsInHand: 'Skill in hand',
   attacksInHand: 'Attack in hand',
   attacksPlayedThisTurn: 'other Attack played this turn',
+  attackingEnemies: 'enemy intending to attack you',
 }
 
 function conditionText(condition: Condition): string {
@@ -56,6 +57,7 @@ function conditionText(condition: Condition): string {
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
     case 'drawPileEmpty': return 'your draw pile is empty'
+    case 'handEmpty': return 'your hand is empty'
     case 'drewSkill': return 'the card just drawn is a Skill'
     case 'retainedLastTurn': return 'this card was Retained last turn'
   }
@@ -104,6 +106,10 @@ function effectText(effect: Effect): string {
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
+    case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
+    case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
@@ -117,6 +123,8 @@ function effectText(effect: Effect): string {
     case 'channelDieOrb': return `channel Lightning on die 1 or 2, Frost on 3 or 4, Dark on 5 or 6${condition}`
     case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
+    case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
+    case 'drawAndPlayFree': return `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`
     case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
     case 'heal': return `heal ${effect.amount}${condition}`
@@ -160,6 +168,7 @@ function triggerText(trigger: Trigger): string {
     case 'onScry': return 'whenever you scry'
     case 'onGainBlock': return 'whenever you gain Block'
     case 'onApplyPoison': return 'when you put Poison on an enemy'
+    case 'onPutEnemyToken': return 'whenever you put a token on an enemy'
     case 'onShuffle': return 'whenever you shuffle your discard pile'
   }
 }
