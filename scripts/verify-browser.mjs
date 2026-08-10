@@ -1750,6 +1750,70 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeSilentCh
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
   .some((card) => card.uid.startsWith('ui-')))
 
+const runBeforeShivPowers = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  Object.assign(actor, {
+    character: 'silent',
+    hand: [
+      { uid: 'ui-storm-steel', defId: 'storm_of_steel', upgraded: true },
+      { uid: 'ui-storm-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'ui-storm-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    powers: [], energy: 6, shivs: 4, attacksPlayedThisTurn: 0,
+  })
+  ally.shivs = 1
+  if (run.combat.enemies.length < 2) {
+    run.combat.enemies.push({
+      ...run.combat.enemies[0], uid: 'ui-storm-added-enemy', row: run.combat.enemies[0].row + 1,
+    })
+  }
+  run.combat.enemies = run.combat.enemies.slice(0, 2).map((enemy, index) => ({
+    ...enemy, uid: `ui-storm-enemy-${index}`, hp: 20, maxHp: 20, block: 0,
+    weak: 0, vulnerable: 0, poison: 0, abilityUsed: true, dead: false, row: index,
+  }))
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Storm of Steel\+,/ }).waitFor()
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const shivPowerCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artLoaded: card.querySelector('img')?.naturalWidth > 0,
+})))
+check('Storm of Steel renders its complete upgraded rules', () => {
+  assert(shivPowerCards.every((card) => card.artLoaded))
+  assert(shivPowerCards.some((card) => card.label.startsWith('Storm of Steel+,') &&
+    card.label.includes('discard any number') && card.label.includes('1 Shiv per card discarded plus 1')))
+})
+await shot('07s-silent-storm-of-steel-ready')
+await page.getByRole('button', { name: /^Storm of Steel\+,/ }).click()
+const prematureStormSkip = await page.getByRole('button', { name: 'Skip remaining overflow attacks' }).count()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.getByRole('button', { name: 'Discard 2' }).click()
+await page.getByText('Choose overflow Shiv target 1/3, or skip the rest').waitFor()
+await page.getByRole('button', { name: 'Skip remaining overflow attacks' }).waitFor()
+await page.locator('.enemy').nth(0).click()
+await page.locator('.enemy').nth(1).click()
+await page.locator('.enemy').nth(0).click()
+const shivPowers = await readState()
+check('Storm of Steel dynamically targets overflow Shivs after its discard choice', () => {
+  assertEqual(prematureStormSkip, 0, 'overflow cannot skip the unresolved discard choice')
+  assertEqual(shivPowers.players[0].shivs, 4)
+  assertEqual(shivPowers.players[1].shivs, 1)
+  assertDeepEqual(shivPowers.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [18, 19])
+  assertEqual(shivPowers.players[0].attacksPlayedThisTurn, 3)
+})
+await page.locator('.enemy').first().scrollIntoViewIfNeeded()
+await shot('07t-silent-storm-of-steel-resolved')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeShivPowers)
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].hand
+  .some((card) => card.uid.startsWith('ui-')))
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

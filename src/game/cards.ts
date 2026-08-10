@@ -165,6 +165,8 @@ type EffectKind =
   /** Gain one Energy per card this card's preceding variable discard took, plus a flat bonus. */
   | { kind: 'gainEnergyPerDiscard'; bonus: number }
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
+  /** Gain one Shiv per card this card's variable discard took, plus a flat bonus. */
+  | { kind: 'gainShivPerDiscard'; bonus: number }
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: number }
@@ -1770,6 +1772,11 @@ export const CARDS: Record<string, CardDef> = {
     oncePerTurn: true,
     effects: [{ kind: 'block', amount: 2 }],
     upgrade: { cost: 1 },
+  }),
+  storm_of_steel: card({
+    id: 'storm_of_steel', name: 'Storm of Steel', owner: 'silent', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'discardAny' }, { kind: 'gainShivPerDiscard', bonus: 0 }],
+    upgrade: { effects: [{ kind: 'discardAny' }, { kind: 'gainShivPerDiscard', bonus: 1 }] },
   }),
 }
 

@@ -1306,6 +1306,68 @@ check('Concentrate can discard an online hand larger than the fixed choice cap',
   assert(resolved.exhaust.some((card) => card.uid === concentrate.uid), 'Concentrate did not Exhaust')
 })
 
+check('Storm of Steel overflow resolves through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === a.playerId)
+  const enemies = room.run.combat.enemies.slice(0, 2)
+  if (enemies.length < 2) {
+    enemies.push({ ...enemies[0], uid: 'room-storm-second', row: enemies[0].row + 1 })
+    room.run.combat.enemies.push(enemies[1])
+  }
+  Object.assign(enemies[0], { hp: 5, maxHp: 5, block: 0, dead: false, abilityUsed: true })
+  Object.assign(enemies[1], { hp: 5, maxHp: 5, block: 0, dead: false, abilityUsed: true })
+  const fodder = [
+    { uid: 'room-storm-a', defId: 'strike_silent', upgraded: false },
+    { uid: 'room-storm-b', defId: 'defend_silent', upgraded: false },
+  ]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'room-storm', defId: 'storm_of_steel', upgraded: true },
+      ...fodder,
+    ],
+    energy: 6,
+    shivs: 4,
+  })
+  ally.shivs = 1
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-storm', discardUids: fodder.map((card) => card.uid),
+    expectedShivOverflow: 3, shivEnemyUids: [enemies[0].uid, enemies[1].uid, enemies[0].uid],
+    preflight: true,
+  })
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [3, 4])
+})
+
+check('Storm of Steel can target more overflow Shivs than the fixed choice cap', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies[0]
+  const choices = Array.from({ length: UID_LIMIT + 1 }, (_unused, index) => ({
+    uid: `room-storm-many-${index}`, defId: 'strike_silent', upgraded: false,
+  }))
+  Object.assign(actor, {
+    hand: [{ uid: 'room-storm-many', defId: 'storm_of_steel', upgraded: false }, ...choices],
+    energy: 3,
+    shivs: 4,
+  })
+  ally.shivs = 1
+  Object.assign(target, {
+    defId: 'cultist', hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true,
+  })
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: 'room-storm-many',
+    discardUids: choices.map((card) => card.uid),
+    expectedShivOverflow: choices.length,
+    shivEnemyUids: choices.map(() => target.uid),
+    preflight: true,
+  })
+
+  assertEqual(room.run.combat.enemies[0].hp, 50 - choices.length)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

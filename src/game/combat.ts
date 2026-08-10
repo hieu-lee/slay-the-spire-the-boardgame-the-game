@@ -791,6 +791,10 @@ function applyEffect(
       }
       return
     }
+    case 'gainShivPerDiscard':
+      return applyEffect(state, actor, {
+        kind: 'gainShiv', amount: (context.discardedByCard ?? 0) + effect.bonus,
+      }, scope, supportScope, context, source)
     case 'gainMiracle': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.miracles

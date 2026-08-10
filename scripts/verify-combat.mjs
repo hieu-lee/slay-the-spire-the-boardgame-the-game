@@ -1809,6 +1809,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'bouncing_flask', poison: [2, 3] },
     { id: 'concentrate', energy: [1, 2], player: { energy: 1 } },
     { id: 'distraction', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'storm_of_steel', shivs: [0, 1] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -3410,6 +3411,46 @@ check('Distraction grants Block only on the first real Poison gain each turn', (
   ], [makeEnemy({ poison: 30 })])
   const ignored = playCard(capped, 'p1', cappedPoison.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(ignored.players[0].block, 0, 'an ignored Poison cube does not spend the once-per-turn trigger')
+})
+
+check('Storm of Steel turns every chosen discard into a Shiv, plus one when upgraded', () => {
+  for (const upgraded of [false, true]) {
+    const storm = instance('storm_of_steel', upgraded)
+    const first = instance('strike_silent')
+    const second = instance('defend_silent')
+    const state = combat([
+      makePlayer({ character: 'silent', hand: [storm, first, second], energy: 3 }),
+    ], [makeEnemy()])
+    const played = playCard(state, 'p1', storm.uid, {
+      enemyUid: null,
+      playerId: null,
+      discardUids: [first.uid, second.uid],
+    })
+    assertEqual(played.players[0].shivs, upgraded ? 3 : 2)
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [first.uid, second.uid, storm.uid])
+  }
+
+  const upgraded = instance('storm_of_steel', true)
+  const empty = playCard(combat([
+    makePlayer({ character: 'silent', hand: [upgraded], energy: 3 }),
+  ], [makeEnemy()]), 'p1', upgraded.uid, { enemyUid: null, playerId: null, discardUids: [] })
+  assertEqual(empty.players[0].shivs, 1, 'Storm of Steel+ grants its extra Shiv after discarding none')
+
+  const overflow = instance('storm_of_steel', false)
+  const fodder = [instance('strike_silent'), instance('defend_silent')]
+  const thrown = playCard(combat([
+    makePlayer({ character: 'silent', hand: [overflow, ...fodder], energy: 3, shivs: 4 }),
+    makePlayer({ id: 'p2', shivs: 1 }),
+  ], [makeEnemy({ uid: 'e1', hp: 5, maxHp: 5 }), makeEnemy({ uid: 'e2', hp: 5, maxHp: 5 })]),
+  'p1', overflow.uid, {
+    enemyUid: null,
+    playerId: null,
+    discardUids: fodder.map((card) => card.uid),
+    shivEnemyUids: ['e1', 'e2'],
+  })
+  assertDeepEqual(thrown.enemies.map((enemy) => enemy.hp), [4, 4])
+  assertEqual(thrown.players[0].shivs, 4, 'overflow Shivs are thrown without taking unavailable cubes')
+  assertEqual(thrown.players[0].attacksPlayedThisTurn, 2, 'each overflow Shiv is a separate attack')
 })
 
 check('a Miracle can be spent for Energy only during the Player Turn', () => {

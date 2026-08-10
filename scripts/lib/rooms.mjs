@@ -698,17 +698,23 @@ const targetList = (value) => Array.isArray(value)
   : undefined
 
 function overflowChoices(combat, effects, action) {
+  const discarded = Array.isArray(action.discardUids) ? action.discardUids.length : 0
   const gained = effects.reduce(
-    (sum, effect) => sum + (effect.kind === 'gainShiv' ? effect.amount : 0),
+    (sum, effect) => sum + (effect.kind === 'gainShiv'
+      ? effect.amount
+      : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0),
     0,
   )
-  const targets = uidList(action.shivEnemyUids) ?? []
   const overflow = overflowShivCount(combat, gained)
   if (
     action.expectedShivOverflow !== undefined &&
     (!Number.isInteger(action.expectedShivOverflow) || action.expectedShivOverflow !== overflow)
   ) {
     fail('The shared Shiv supply changed; choose targets again')
+  }
+  const targets = action.shivEnemyUids ?? []
+  if (!Array.isArray(targets) || targets.length > overflow || targets.some((uid) => typeof uid !== 'string')) {
+    fail('Choose every overflow Shiv target or explicitly skip the rest')
   }
   if (overflow > 0) {
     if (!Number.isInteger(action.expectedShivOverflow)) {
@@ -734,7 +740,18 @@ function dispatch(run, seat, action) {
       const card = player?.hand.find((held) => held.uid === action.cardUid)
       if (!card) fail('That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
-      const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, action)
+      const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
+      const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
+      if (action.discardUids !== undefined && (
+        !Array.isArray(action.discardUids) ||
+        (variableDiscard
+          ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
+          : discardUids.length !== action.discardUids.length)
+      )) fail('Discard choices must be a valid list of card ids')
+      const shivEffects = def.type === 'power' && def.trigger && def.resolvesOnPlay !== true ? [] : def.effects
+      const { overflow, targets: shivEnemyUids } = overflowChoices(run.combat, shivEffects, {
+        ...action, discardUids,
+      })
       const enemyUids = uidList(action.enemyUids)
       const playerIds = uidList(action.playerIds)
       if (action.enemyUids !== undefined && (
@@ -747,14 +764,6 @@ function dispatch(run, seat, action) {
       if (action.scryDiscardUids !== undefined && (
         !Array.isArray(action.scryDiscardUids) || scryDiscardUids.length !== action.scryDiscardUids.length
       )) fail('Scry choices must be a list of card ids')
-      const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
-      const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
-      if (action.discardUids !== undefined && (
-        !Array.isArray(action.discardUids) ||
-        (variableDiscard
-          ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
-          : discardUids.length !== action.discardUids.length)
-      )) fail('Discard choices must be a valid list of card ids')
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,

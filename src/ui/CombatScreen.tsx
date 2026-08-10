@@ -153,7 +153,7 @@ function requirementsOf(
   // in because a counted attack with nothing to count reaches nobody, and
   // asking where to point it is asking a question with no consequence.
   const cardTarget = cardNeedsEnemy(def, viewer, false)
-  const shivsGained = gainedShivs(def.effects)
+  const shivsGained = cardShivsOnPlay(def)
   const overflowShivs = overflowShivCount(state, shivsGained)
   const enemyChoices = cardEnemyChoiceCount(def)
   const playerChoices = cardPlayerChoiceCount(def)
@@ -216,8 +216,16 @@ function pendingFor(
   }
 }
 
-function gainedShivs(effects: readonly Effect[]): number {
-  return effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv' ? effect.amount : 0), 0)
+function gainedShivs(effects: readonly Effect[], discarded = 0): number {
+  return effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
+    ? effect.amount
+    : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0), 0)
+}
+
+function cardShivsOnPlay(def: CardDef, discarded = 0): number {
+  return def.type === 'power' && def.trigger && def.resolvesOnPlay !== true
+    ? 0
+    : gainedShivs(def.effects, discarded)
 }
 
 /**
@@ -550,7 +558,8 @@ export function CombatScreen({
       if (!viewer.hand.some((card) => card.uid === current.card.uid)) return null
       const def = faceOf(cardDef(current.card.defId), current.card.upgraded)
       if (!cardPlayConditionMet(def, state, viewer, drawCount)) return null
-      const overflowShivs = overflowShivCount(state, gainedShivs(def.effects))
+      const overflowShivs = overflowShivCount(state,
+        cardShivsOnPlay(def, current.choice?.kind === 'discardAny' ? current.picked.length : 0))
       const overflowChanged = overflowShivs !== current.overflowShivs
       const enemyChoices = cardEnemyChoiceCount(def)
       const playerChoices = cardPlayerChoiceCount(def)
@@ -596,6 +605,9 @@ export function CombatScreen({
         switchPlayerId,
         switchChoiceDone,
         shivEnemyUids,
+        choiceConfirmed: overflowChanged && overflowShivs === 0 && current.choice?.kind === 'discardAny'
+          ? false
+          : current.choiceConfirmed,
         evokeSlots,
         evokeEnemyUids,
       }
@@ -984,7 +996,8 @@ export function CombatScreen({
             return
           }
           const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
-          const overflowShivs = overflowShivCount(authoritative.combat, gainedShivs(def.effects))
+          const overflowShivs = overflowShivCount(authoritative.combat,
+            cardShivsOnPlay(def, next.choice?.kind === 'discardAny' ? next.picked.length : 0))
           const enemyChoices = cardEnemyChoiceCount(def)
           const playerChoices = cardPlayerChoiceCount(def)
           const needsEnemy = cardNeedsEnemy(def, authoritative.player, false) || overflowShivs > 0 || enemyChoices > 0
@@ -1009,6 +1022,9 @@ export function CombatScreen({
               playerIds: authoritative.combat.players.filter((player) => !player.dead).length === 1
                 ? Array(playerChoices).fill(authoritative.player.id)
                 : [],
+              choiceConfirmed: overflowShivs === 0 && next.choice?.kind === 'discardAny'
+                ? false
+                : next.choiceConfirmed,
               switchPlayerId: null,
               switchChoiceDone: false,
               shivEnemyUids: [],
@@ -1029,6 +1045,17 @@ export function CombatScreen({
 
   function stageOrCommit(next: Pending) {
     const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+    const overflowShivs = overflowShivCount(state,
+      cardShivsOnPlay(def, next.choice?.kind === 'discardAny' ? next.picked.length : 0))
+    if (overflowShivs !== next.overflowShivs) {
+      next = {
+        ...next,
+        overflowShivs,
+        needsEnemy: cardNeedsEnemy(def, viewer!, false) || overflowShivs > 0 || next.enemyChoices > 0,
+        shivEnemyUids: [],
+      }
+      setPending(next)
+    }
     const poolSize = next.choiceCards?.length ?? Math.max(0, viewer!.hand.length - 1)
     const owed = next.choice && next.choice.kind !== 'scry' && next.choice.kind !== 'discardAny'
       ? Math.min(next.choice.amount, poolSize)
@@ -1481,7 +1508,7 @@ export function CombatScreen({
       {prompt ? (
         <p className="prompt" role="status">
           {prompt}
-          {pending && overflowOnly ? (
+          {pending && overflowOnly && choiceSatisfied ? (
             <button type="button" className="prompt__cancel" onClick={() => commit(pending, true)}>
               Skip remaining overflow attacks
             </button>

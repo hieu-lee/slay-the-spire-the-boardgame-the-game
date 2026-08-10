@@ -754,6 +754,111 @@ try {
   })
   liveRoom.run.combat.players.forEach((player) => { player.block = 0 })
 
+  const annBeforeStorm = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeStorm = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  const stormRestore = {
+    ann: structuredClone({
+      hand: annBeforeStorm.hand, discard: annBeforeStorm.discard, energy: annBeforeStorm.energy,
+      shivs: annBeforeStorm.shivs, attacksPlayedThisTurn: annBeforeStorm.attacksPlayedThisTurn,
+    }),
+    bo: {
+      energy: boBeforeStorm.energy, miracles: boBeforeStorm.miracles, shivs: boBeforeStorm.shivs,
+      attacksPlayedThisTurn: boBeforeStorm.attacksPlayedThisTurn,
+    },
+    enemies: liveRoom.run.combat.enemies.map((enemy) => structuredClone(enemy)),
+  }
+  Object.assign(annBeforeStorm, {
+    hand: [
+      { uid: 'online-storm-race', defId: 'storm_of_steel', upgraded: true },
+      { uid: 'online-storm-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'online-storm-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    energy: 3,
+    shivs: 0,
+    attacksPlayedThisTurn: 0,
+  })
+  Object.assign(boBeforeStorm, { energy: 0, miracles: 1, shivs: 5 })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true })
+  }
+  const publishStormFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishStormFixture.ok, 'could not publish the Storm of Steel supply-race fixture')
+  await a.getByRole('button', { name: /^Storm of Steel\+,/ }).click()
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByRole('button', { name: /^Defend,/ }).click()
+  await a.getByRole('button', { name: 'Discard 2' }).click()
+  await a.getByText('Choose overflow Shiv target 1/3, or skip the rest').waitFor()
+  for (let spent = 0; spent < 3; spent += 1) {
+    await b.getByRole('button', { name: 'Use Shiv' }).click()
+    await b.locator('.enemy:not([disabled])').first().click()
+  }
+  await a.getByRole('button', { name: 'Discard 2' }).waitFor()
+  await a.getByRole('button', { name: 'Discard 2' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Storm of Steel+,')))
+  const completedStormRace = await snapshot(a)
+  check('Storm of Steel stays actionable when a teammate removes every overflow target', () => {
+    const ann = completedStormRace.run.combat.players.find((player) => player.name === 'Ann')
+    const bo = completedStormRace.run.combat.players.find((player) => player.name === 'Bo')
+    assertEqual(ann.shivs, 3)
+    assertEqual(bo.shivs, 2)
+  })
+
+  const annBeforeStormRefusal = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeStormRefusal = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annBeforeStormRefusal, {
+    hand: [
+      { uid: 'online-storm-refusal', defId: 'storm_of_steel', upgraded: true },
+      { uid: 'online-storm-refusal-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'online-storm-refusal-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    energy: 3,
+    shivs: 0,
+  })
+  Object.assign(boBeforeStormRefusal, { energy: 0, miracles: 1, shivs: 5 })
+  const publishStormRefusal = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishStormRefusal.ok, 'could not publish the Storm refusal fixture')
+  await a.getByRole('button', { name: /^Storm of Steel\+,/ }).click()
+  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByRole('button', { name: /^Defend,/ }).click()
+  await a.getByRole('button', { name: 'Discard 2' }).click()
+  await a.getByText('Choose overflow Shiv target 1/3, or skip the rest').waitFor()
+  let stormRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 2
+    const response = await route.fetch()
+    stormRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('.enemy:not([disabled])').first().click()
+  await a.locator('.enemy:not([disabled])').first().click()
+  await a.locator('.enemy:not([disabled])').first().click()
+  await a.getByRole('button', { name: 'Discard 2' }).waitFor()
+  const expectedStormConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedStormConflict >= 0, 'the refused Storm did not surface as an HTTP conflict')
+  failures.splice(expectedStormConflict, 1)
+  assertEqual(stormRefusalStatus, 409)
+  await a.getByRole('button', { name: 'Discard 2' }).click()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Storm of Steel+,')))
+  const completedStormRefusal = await snapshot(a)
+  check('a refused Storm reopens confirmation when authoritative overflow becomes zero', () => {
+    const ann = completedStormRefusal.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.shivs, 3)
+    assert(!ann.hand.some((card) => card.uid === 'online-storm-refusal'))
+  })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), stormRestore.ann)
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), stormRestore.bo)
+  liveRoom.run.combat.enemies = stormRestore.enemies
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')
