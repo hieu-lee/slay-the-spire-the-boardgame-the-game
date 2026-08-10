@@ -2206,6 +2206,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'havoc', hand: [1, 1] },
     { id: 'combust', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'evolve', powers: [1, 1], energy: [E - 1, E] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'headbutt', enemyHp: [18, 17] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },

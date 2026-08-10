@@ -852,7 +852,6 @@ function applyEffect(
     }
     case 'draw': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
-        const before = target.hand.length
         // Reserve the line before drawing: a draw can reshuffle and fire
         // triggers that log, and those belong under this line, not above it.
         const at = state.log.length
@@ -860,7 +859,7 @@ function applyEffect(
         if (target.id === actor.id) {
           context.drewSkill = drawnCards.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill')
         }
-        const drawn = target.hand.length - before
+        const drawn = drawnCards.length
         if (drawn > 0) {
           const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
           state.log = [...state.log.slice(0, at), line, ...state.log.slice(at)]
@@ -1362,7 +1361,7 @@ function drawInto(state: CombatState, actor: Player, amount: number): CardInstan
       state.log = [...state.log, `${actor.name} shuffles their discard pile back in`]
       fireTriggers(state, { kind: 'onShuffle' }, actor)
     }
-    fireTriggers(state, { kind: 'onDraw' }, actor)
+    fireTriggers(state, { kind: 'onDraw', cardType: cardDef(drawnCards[i]!.defId).type }, actor)
   }
   return drawnCards
 }
@@ -2890,7 +2889,9 @@ function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, 
  * sensible way to surface it mid-resolution, and a truncated chain is a better
  * failure than a frozen tab. If a real card ever chains deeper than this, the
  * cap is the thing to revisit — a legitimate combo would look like a card
- * quietly under-performing rather than an error.
+ * quietly under-performing rather than an error. Draw events are exempt: a
+ * draw-only chain consumes the finite draw/discard piles, while any cyclic
+ * non-draw event it fires still passes through this guard.
  */
 export const MAX_TRIGGER_DEPTH = 8
 let triggerDepth = 0
@@ -2901,12 +2902,13 @@ function fireTriggers(
   only?: Player,
   excludeUid?: string,
 ): void {
-  if (triggerDepth >= MAX_TRIGGER_DEPTH) return
-  triggerDepth++
+  const finiteDrawChain = event.kind === 'onDraw'
+  if (!finiteDrawChain && triggerDepth >= MAX_TRIGGER_DEPTH) return
+  if (!finiteDrawChain) triggerDepth++
   try {
     fireTriggersInner(state, event, only, excludeUid)
   } finally {
-    triggerDepth--
+    if (!finiteDrawChain) triggerDepth--
   }
 }
 

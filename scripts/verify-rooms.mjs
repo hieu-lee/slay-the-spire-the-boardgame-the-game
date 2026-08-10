@@ -4068,4 +4068,27 @@ check('online seats can activate only their own once-per-turn Combust', () => {
   assertEqual(repeated?.name, 'RoomError', 'Combust activated twice in one turn')
 })
 
+check('online Evolve resolves chained Status draws without revealing the new hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [{ uid: 'room-evolve-shrug', defId: 'shrug_it_off', upgraded: false }]
+  actor.draw = [
+    { uid: 'room-evolve-daze-a', defId: 'daze', upgraded: false },
+    { uid: 'room-evolve-daze-b', defId: 'daze', upgraded: false },
+    { uid: 'room-evolve-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.powers = [{ uid: 'room-evolve', defId: 'evolve', upgraded: false }]
+  actor.discard = []
+  actor.energy = 3
+
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-evolve-shrug', preflight: true })
+  const mine = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(mine.hand.map((card) => card.defId), ['daze', 'daze', 'strike_ironclad'])
+  assertEqual(theirs.hand, null)
+  assertEqual(theirs.handCount, 3)
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-evolve-daze')),
+    'Evolve leaked the owner hand through the teammate snapshot')
+})
+
 report('co-op rooms')

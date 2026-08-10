@@ -169,7 +169,9 @@ function triggerText(trigger: Trigger): string {
       : 'after you play a card'
     case 'onDiscard': return 'whenever a card effect makes you discard one or more cards'
     case 'onExhaust': return 'whenever you exhaust a card'
-    case 'onDraw': return 'whenever you draw a card'
+    case 'onDraw': return trigger.cardType
+      ? `whenever you draw a ${trigger.cardType} card`
+      : 'whenever you draw a card'
     case 'onEnterStance': return trigger.stance
       ? `whenever you enter ${trigger.stance}`
       : 'whenever you enter a stance'

@@ -625,6 +625,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'damage', amount: 1 }],
     upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
   }),
+  evolve: card({
+    id: 'evolve', name: 'Evolve', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onDraw', cardType: 'status' },
+    effects: [{ kind: 'draw', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
   inflame: card({
     id: 'inflame', name: 'Inflame', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 2,
     resolvesOnPlay: true,

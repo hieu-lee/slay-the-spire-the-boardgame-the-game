@@ -25,7 +25,7 @@ export type Trigger =
   /** Once when one card effect makes this player discard one or more cards. */
   | { kind: 'onDiscard' }
   | { kind: 'onExhaust' }
-  | { kind: 'onDraw' }
+  | { kind: 'onDraw'; cardType?: CardType }
   | { kind: 'onEnterStance'; stance?: Stance }
   | { kind: 'onScry' }
   | { kind: 'onGainBlock' }
@@ -57,6 +57,9 @@ export function triggerMatches(trigger: Trigger, event: TriggerEvent): boolean {
   }
   if (trigger.kind === 'onPlayCard') {
     // No cardType on the trigger means "any card".
+    return trigger.cardType === undefined || trigger.cardType === event.cardType
+  }
+  if (trigger.kind === 'onDraw') {
     return trigger.cardType === undefined || trigger.cardType === event.cardType
   }
   if (trigger.kind === 'onEnterStance') {

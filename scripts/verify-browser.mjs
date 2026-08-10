@@ -5353,6 +5353,46 @@ check('Combust+ visibly targets a row, includes the boss, and locks after use', 
 })
 await shot('16b-combust-resolved')
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-evolve', defId: 'evolve', upgraded: true },
+      { uid: 'ui-evolve-shrug', defId: 'shrug_it_off', upgraded: false },
+    ],
+    draw: [
+      { uid: 'ui-evolve-daze-a', defId: 'daze', upgraded: false },
+      { uid: 'ui-evolve-daze-b', defId: 'daze', upgraded: false },
+      { uid: 'ui-evolve-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 3, block: 0,
+  })
+  run.combat.powerTriggersUsedThisTurn = []
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const evolveLabel = await page.getByRole('button', { name: /^Evolve\+,/ }).getAttribute('aria-label')
+check('Evolve+ renders its sharp scan and announces its Status-only trigger', () => {
+  assert(evolveLabel.includes('whenever you draw a status card') && evolveLabel.includes('draw 1 card'))
+})
+await shot('16c-evolve-ready')
+await page.getByRole('button', { name: /^Evolve\+,/ }).click()
+const evolvePowerLabel = await page.locator('.power[aria-label^="Evolve"]').getAttribute('aria-label')
+await page.getByRole('button', { name: /^Shrug It Off,/ }).click()
+const evolveResolved = await readState()
+check('Evolve chains once for each drawn Status through the real controls', () => {
+  assert(evolvePowerLabel.includes('whenever you draw a status card'))
+  assertDeepEqual(evolveResolved.players[0].hand.map((card) => card.defId),
+    ['daze', 'daze', 'strike_ironclad'])
+  assertEqual(evolveResolved.players[0].block, 2)
+  assertEqual(evolveResolved.players[0].energy, 2)
+})
+await shot('16d-evolve-resolved')
+
 writeFileSync(
   join(outDir, 'summary.json'),
   JSON.stringify(
