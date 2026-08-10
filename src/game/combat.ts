@@ -314,6 +314,8 @@ export type PlayContext = {
   exhaustUids?: string[]
   /** Cards chosen to return to the top of the draw pile. */
   topdeckUids?: string[]
+  /** Card chosen to move from discard to the top of the draw pile. */
+  recoverDiscardUid?: string
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
   /** One chosen target or explicit skip per immediate Shiv, in effect order. */
@@ -379,6 +381,8 @@ export type PlayContext = {
   invalidExhaustChoice?: boolean
   /** A topdeck choice named a duplicate or a card outside the current hand. */
   invalidTopdeckChoice?: boolean
+  /** A recovery choice was missing or named a card outside the discard pile. */
+  invalidRecoverChoice?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
@@ -1229,6 +1233,21 @@ function applyEffect(
       if (moved.length > 0) note(`${actor.name} puts ${moved.length} card on top of their draw pile`)
       return
     }
+    case 'recoverDiscard': {
+      const required = Math.min(effect.amount, actor.discard.length)
+      const chosen = context.recoverDiscardUid
+      if ((required === 1 && (!chosen || !actor.discard.some((card) => card.uid === chosen))) ||
+        (required === 0 && chosen !== undefined)) {
+        context.invalidRecoverChoice = true
+        return
+      }
+      if (!chosen) return
+      const moved = actor.discard.find((card) => card.uid === chosen)!
+      actor.discard = actor.discard.filter((card) => card.uid !== chosen)
+      actor.draw = addToDrawTop(actor, [forgetRetain(moved)]).draw
+      note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their draw pile`)
+      return
+    }
     case 'drawAndPlayFree': {
       const [drawn] = drawInto(state, actor, 1)
       if (!drawn) return
@@ -1797,6 +1816,13 @@ export function playCard(
     context.playerIds?.length !== playerChoiceCount ||
     context.playerIds.some((id) => !state.players.some((candidate) => candidate.id === id && !candidate.dead))
   )) return state
+  const recover = effects.find((effect) => effect.kind === 'recoverDiscard')
+  if (recover) {
+    const required = Math.min(recover.amount, player.discard.length)
+    const chosen = context.recoverDiscardUid
+    if ((required === 1 && (!chosen || !player.discard.some((card) => card.uid === chosen))) ||
+      (required === 0 && chosen !== undefined)) return state
+  }
   const printedCost = forcedPlay ? 0 : playCost(def, player)
   const cost = printedCost === 'X' ? player.energy : printedCost
   const miracleOnCard = context.spendMiracle === true
@@ -1881,6 +1907,7 @@ export function playCard(
     invalidDiscardChoice: false,
     invalidExhaustChoice: false,
     invalidTopdeckChoice: false,
+    invalidRecoverChoice: false,
     discardedByCard: 0,
     exhaustedByCard: 0,
     pendingDiscards: [],
@@ -1925,7 +1952,7 @@ export function playCard(
   // the way every other refusal does: by handing back the very same reference.
   if (ctx.shortfall || ctx.invalidShivTarget || ctx.invalidEvokeTarget ||
     ctx.invalidScryChoice || ctx.invalidDiscardChoice || ctx.invalidExhaustChoice ||
-    ctx.invalidTopdeckChoice) return state
+    ctx.invalidTopdeckChoice || ctx.invalidRecoverChoice) return state
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)

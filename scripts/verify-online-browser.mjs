@@ -452,6 +452,76 @@ try {
     assert(finaleUnlockedOnline, 'Grand Finale stayed disabled after the hidden draw pile emptied')
     assert(finaleClearedAfterRefill, 'a staged Grand Finale kept its targets after the draw pile refilled')
   })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-headbutt', defId: 'headbutt', upgraded: true }],
+    discard: [
+      { uid: 'online-headbutt-defend', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'online-headbutt-bash', defId: 'bash', upgraded: false },
+    ],
+    draw: [], energy: 1,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false })
+  }
+  const publishHeadbuttFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishHeadbuttFixture.ok, 'could not publish the online Headbutt fixture')
+  await a.getByRole('button', { name: /^Headbutt\+,/ }).click()
+  const onlineHeadbutt = a.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+  await onlineHeadbutt.waitFor()
+  await onlineHeadbutt.getByRole('button', { name: /^Bash,/ }).click()
+  await onlineHeadbutt.getByRole('button', { name: 'Put selected card on top' }).click()
+  await a.locator('.enemy--targeted').first().waitFor()
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').discard = [
+    { uid: 'online-headbutt-new-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  liveRoom.version += 1
+  let headbuttRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    headbuttRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('.enemy--targeted').first().click()
+  for (let attempt = 0; attempt < 50 && headbuttRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(headbuttRefusalStatus, 409, 'the stale Headbutt did not reach the room refusal path')
+  await onlineHeadbutt.waitFor()
+  await onlineHeadbutt.getByText(/^0\/1 selected from discard/).waitFor()
+  const staleHeadbuttChoice = await onlineHeadbutt.getByRole('button', { name: /^Bash,/ }).count()
+  await onlineHeadbutt.getByRole('button', { name: /^Strike,/ }).click()
+  await onlineHeadbutt.getByRole('button', { name: 'Put selected card on top' }).click()
+  await a.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
+  await a.locator('.enemy--targeted').first().click()
+  for (let attempt = 0; attempt < 50 &&
+    liveRoom.run.combat.players.find((player) => player.name === 'Ann').draw[0]?.uid !==
+      'online-headbutt-new-strike'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  await onlineHeadbutt.waitFor({ state: 'hidden' })
+  const expectedHeadbuttConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedHeadbuttConflict >= 0, 'the refused Headbutt did not surface as an HTTP conflict')
+  failures.splice(expectedHeadbuttConflict, 1)
+  check('a refused online Headbutt rebuilds its public choice from authoritative discard', () => {
+    assertEqual(headbuttRefusalStatus, 409)
+    assertEqual(staleHeadbuttChoice, 0)
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.draw[0].uid, 'online-headbutt-new-strike')
+    assert(liveRoom.run.combat.enemies.some((enemy) => enemy.hp === 7),
+      'the corrected Headbutt did not hit its chosen enemy')
+  })
+  // This suite deliberately drives one seat hard enough to exercise the real
+  // limiter later; let this added refusal window expire before continuing.
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 10_100))
+
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(boLive, boBeforeFinale)

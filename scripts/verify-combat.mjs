@@ -2198,6 +2198,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'warcry', hand: [1, 2], exhaust: [1, 1], topdeckAfterDraw: true },
     { id: 'havoc', hand: [1, 1] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
+    { id: 'headbutt', enemyHp: [18, 17] },
     { id: 'mayhem', powers: [1, 1], energy: [E - 2, E - 1] },
     { id: 'reprogram', strength: [1, 1], energy: [E - 1, E] },
     { id: 'melter', enemyHp: [18, 17] },
@@ -3365,6 +3366,50 @@ check('Perfected Strike counts every other hand card whose name contains Strike'
     assertEqual(played.enemies[0].hp, upgraded ? 11 : 14)
     assertEqual(played.players[0].energy, 0)
   }
+})
+
+check('Headbutt moves exactly one chosen discard card to draw-top after damage', () => {
+  for (const upgraded of [false, true]) {
+    const headbutt = instance('headbutt', upgraded)
+    const lower = instance('defend_ironclad')
+    const chosen = instance('bash')
+    const state = combat([makePlayer({
+      hand: [headbutt], discard: [lower, chosen], draw: [instance('strike_ironclad')], energy: 1,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    const played = playCard(state, 'p1', headbutt.uid, {
+      enemyUid: 'e1', playerId: null, recoverDiscardUid: lower.uid,
+    })
+    assertEqual(played.enemies[0].hp, upgraded ? 7 : 8)
+    assertEqual(played.players[0].draw[0].uid, lower.uid)
+    assertDeepEqual(played.players[0].discard.map((card) => card.uid), [chosen.uid, headbutt.uid])
+    assertEqual(played.players[0].energy, 0)
+
+    assertEqual(playCard(state, 'p1', headbutt.uid, { enemyUid: 'e1', playerId: null }), state,
+      'a missing discard choice paid Headbutt')
+    assertEqual(playCard(state, 'p1', headbutt.uid, {
+      enemyUid: 'e1', playerId: null, recoverDiscardUid: headbutt.uid,
+    }), state, 'a hand card was accepted as a discard choice')
+  }
+
+  const headbutt = instance('headbutt')
+  const empty = combat([makePlayer({ hand: [headbutt], discard: [], energy: 1 })], [makeEnemy()])
+  const played = playCard(empty, 'p1', headbutt.uid, { enemyUid: 'e1', playerId: null })
+  assert(played !== empty, 'an empty discard pile made Headbutt unplayable')
+  assertEqual(played.players[0].discard.at(-1).uid, headbutt.uid)
+
+  const lethalHeadbutt = instance('headbutt')
+  const recoverable = instance('bash')
+  const lethal = combat([makePlayer({
+    hand: [lethalHeadbutt], discard: [recoverable], energy: 1,
+  })], [makeEnemy({ hp: 2, maxHp: 2 })])
+  assertEqual(playCard(lethal, 'p1', lethalHeadbutt.uid, { enemyUid: 'e1', playerId: null }), lethal,
+    'lethal damage bypassed the mandatory recovery choice')
+  assertEqual(playCard(lethal, 'p1', lethalHeadbutt.uid, {
+    enemyUid: 'e1', playerId: null, recoverDiscardUid: 'not-in-discard',
+  }), lethal, 'lethal damage bypassed a stale recovery choice')
+  assertEqual(playCard(lethal, 'p1', lethalHeadbutt.uid, {
+    enemyUid: 'e1', playerId: null, recoverDiscardUid: recoverable.uid,
+  }).phase, 'won')
 })
 
 check('nested forced cards preserve the outer Start-of-Turn queue', () => {

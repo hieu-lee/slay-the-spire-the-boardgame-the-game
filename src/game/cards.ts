@@ -203,6 +203,8 @@ type EffectKind =
   | { kind: 'scry'; amount: number }
   /** Put chosen cards from hand on top of the draw pile, in chosen order. */
   | { kind: 'topdeck'; amount: number }
+  /** Put one chosen card from the face-up discard pile on the draw top. */
+  | { kind: 'recoverDiscard'; amount: 1 }
   /** Draw a card and immediately play it for 0 Energy. */
   | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
@@ -763,6 +765,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'perfected_strike', name: 'Perfected Strike', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 2,
     effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand' } }],
     upgrade: { effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand', scale: 2 } }] },
+  }),
+  headbutt: card({
+    id: 'headbutt', name: 'Headbutt', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverDiscard', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverDiscard', amount: 1 }] },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,

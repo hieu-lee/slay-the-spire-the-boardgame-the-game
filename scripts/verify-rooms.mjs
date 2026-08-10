@@ -2308,6 +2308,50 @@ check('Warcry uses the same private authoritative topdeck choice', () => {
   assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
 })
 
+check('Headbutt returns one public discard card to the hidden draw top authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const headbutt = { uid: 'room-headbutt', defId: 'headbutt', upgraded: true }
+  const lower = { uid: 'room-headbutt-lower', defId: 'defend_ironclad', upgraded: false }
+  const chosen = { uid: 'room-headbutt-chosen', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [headbutt], discard: [lower, chosen], draw: [], energy: 1 })
+  const enemy = room.run.combat.enemies[0]
+  Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, preflight: true },
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, recoverDiscardUid: 7, preflight: true },
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, recoverDiscardUid: headbutt.uid, preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'a malformed Headbutt choice was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Headbutt mutated authority')
+  }
+
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid,
+      recoverDiscardUid: chosen.uid, preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Headbutt')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid,
+    recoverDiscardUid: chosen.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.enemies[0].hp, 7)
+  assertEqual(resolved.draw[0].uid, chosen.uid)
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [lower.uid, headbutt.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).includes(chosen.uid),
+    'the recovered card stayed visible after returning face-down')
+})
+
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
   const { room, a, b } = twoSeatRoom()
   const mine = () => room.run.combat.players.find((player) => player.id === a.playerId)

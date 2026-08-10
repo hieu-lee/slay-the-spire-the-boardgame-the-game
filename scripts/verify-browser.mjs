@@ -1665,6 +1665,97 @@ await shot('06zpf-perfected-strike-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-headbutt', defId: 'headbutt', upgraded: true }],
+    discard: [
+      { uid: 'ui-headbutt-lower', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'ui-headbutt-chosen', defId: 'bash', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-headbutt-draw', defId: 'strike_ironclad', upgraded: false }],
+    exhaust: [], powers: [], energy: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const headbuttCard = page.getByRole('button', { name: /^Headbutt\+, cost 1,/ })
+await headbuttCard.waitFor()
+const headbuttLabel = await headbuttCard.getAttribute('aria-label')
+await headbuttCard.click()
+const headbuttDialog = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+await headbuttDialog.waitFor()
+const headbuttPrompt = await page.getByText('Headbutt+ — choose a card from your discard pile').textContent()
+const headbuttCancelCount = await headbuttDialog.getByRole('button', { name: 'Cancel' }).count()
+await page.keyboard.press('Escape')
+await headbuttDialog.waitFor({ state: 'hidden' })
+const cancelledHeadbutt = await readState()
+check('Headbutt\'s public discard chooser is cancelable and announced accurately', () => {
+  assertEqual(headbuttPrompt, 'Headbutt+ — choose a card from your discard pile')
+  assertEqual(headbuttCancelCount, 1)
+  assertEqual(cancelledHeadbutt.players[0].energy, 1)
+  assertEqual(cancelledHeadbutt.players[0].hand[0].uid, 'ui-headbutt')
+  assertEqual(cancelledHeadbutt.players[0].discard.length, 2)
+  assertEqual(cancelledHeadbutt.enemies[0].hp, 10)
+})
+await headbuttCard.click()
+await headbuttDialog.waitFor()
+await headbuttDialog.getByRole('button', { name: /^Bash,/ }).click()
+await page.waitForTimeout(150)
+await shot('06zpg-headbutt-discard-choice')
+await headbuttDialog.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.getByRole('button', { name: 'Cancel' }).click()
+await page.waitForSelector('.enemy--targeted', { state: 'detached' })
+const cancelledConfirmedHeadbutt = await readState()
+check('Headbutt remains cancelable after confirming its discard choice', () => {
+  assertEqual(cancelledConfirmedHeadbutt.players[0].energy, 1)
+  assertEqual(cancelledConfirmedHeadbutt.players[0].hand[0].uid, 'ui-headbutt')
+  assertEqual(cancelledConfirmedHeadbutt.players[0].discard.length, 2)
+  assertEqual(cancelledConfirmedHeadbutt.enemies[0].hp, 10)
+})
+await headbuttCard.click()
+await headbuttDialog.waitFor()
+await headbuttDialog.getByRole('button', { name: /^Bash,/ }).click()
+await headbuttDialog.getByRole('button', { name: 'Put selected card on top' }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw[0]?.uid === 'ui-headbutt-chosen')
+const headbutted = await readState()
+check('Headbutt+ chooses any discard card, attacks, and returns that card to draw-top', () => {
+  assert(headbuttLabel.includes('deal 3 damage'), headbuttLabel)
+  assert(headbuttLabel.includes('put a card from your discard pile on top of your draw pile'), headbuttLabel)
+  assertEqual(headbutted.enemies[0].hp, 7)
+  assertEqual(headbutted.players[0].draw[0].uid, 'ui-headbutt-chosen')
+  assertDeepEqual(headbutted.players[0].discard.map((card) => card.uid),
+    ['ui-headbutt-lower', 'ui-headbutt'])
+})
+await shot('06zph-headbutt-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-headbutt-empty', defId: 'headbutt', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: /^Headbutt, cost 1,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+const emptyHeadbuttDialogs = await page.getByRole('dialog').count()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 8)
+check('Headbutt skips the discard chooser when that pile is empty', () => {
+  assertEqual(emptyHeadbuttDialogs, 0)
+})
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     hand: [], discard: [], exhaust: [], energy: 0,

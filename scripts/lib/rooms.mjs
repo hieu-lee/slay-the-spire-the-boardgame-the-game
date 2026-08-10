@@ -859,6 +859,10 @@ function dispatch(run, seat, action) {
       if (action.topdeckUids !== undefined && (
         !Array.isArray(action.topdeckUids) || topdeckUids.length !== action.topdeckUids.length
       )) fail('Topdeck choices must be a list of card ids')
+      const recoverDiscardUid = action.recoverDiscardUid
+      if (recoverDiscardUid !== undefined && typeof recoverDiscardUid !== 'string') {
+        fail('Discard recovery must be a card id')
+      }
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,
@@ -878,6 +882,7 @@ function dispatch(run, seat, action) {
         // fall back to the first filled slot.
         scryDiscardUids,
         topdeckUids,
+        recoverDiscardUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
