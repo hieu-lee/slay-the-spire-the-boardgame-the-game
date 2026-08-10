@@ -1130,6 +1130,22 @@ check('Catalyst+ publishes multiplied Poison and Exhaust atomically', () => {
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).exhaust.length, 1)
 })
 
+check('Setup+ publishes Energy only to its chosen ally and Exhausts atomically', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const setup = { uid: 'room-setup', defId: 'setup', upgraded: true }
+  Object.assign(actor, { hand: [setup], energy: 0 })
+  ally.energy = 0
+  const result = apply(room, a.token, {
+    kind: 'playCard', cardUid: setup.uid, playerId: b.playerId, preflight: true,
+  })
+  const seen = result.snapshot.run.combat.players
+  assertEqual(seen.find((player) => player.id === a.playerId).energy, 0)
+  assertEqual(seen.find((player) => player.id === b.playerId).energy, 2)
+  assertEqual(seen.find((player) => player.id === a.playerId).exhaust.length, 1)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

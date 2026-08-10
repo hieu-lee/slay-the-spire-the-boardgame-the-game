@@ -1420,6 +1420,68 @@ await shot('07i-silent-poison-finale-combo')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-setup', defId: 'setup', upgraded: true },
+      { uid: 'ui-blur', defId: 'blur', upgraded: true },
+      { uid: 'ui-all-out-attack', defId: 'all_out_attack', upgraded: true },
+      { uid: 'ui-expertise', defId: 'expertise', upgraded: true },
+      { uid: 'ui-all-out-discard', defId: 'slice', upgraded: false },
+    ],
+    draw: [
+      { uid: 'ui-power-draw-1', defId: 'strike_silent', upgraded: false },
+      { uid: 'ui-power-draw-2', defId: 'defend_silent', upgraded: false },
+      { uid: 'ui-power-draw-3', defId: 'slice', upgraded: false },
+      { uid: 'ui-power-draw-4', defId: 'deflect', upgraded: false },
+      { uid: 'ui-power-draw-5', defId: 'neutralize', upgraded: false },
+      { uid: 'ui-power-draw-6', defId: 'strike_silent', upgraded: false },
+      { uid: 'ui-power-draw-7', defId: 'defend_silent', upgraded: false },
+      { uid: 'ui-power-draw-8', defId: 'backflip', upgraded: false },
+      { uid: 'ui-power-draw-9', defId: 'acrobatics', upgraded: false },
+      { uid: 'ui-power-draw-10', defId: 'blade_dance', upgraded: false },
+    ],
+    discard: [],
+    exhaust: [],
+    powers: [],
+    energy: 6,
+    block: 0,
+    shivs: 0,
+    hp: 20,
+    maxHp: 20,
+  })
+  for (const player of run.combat.players) Object.assign(player, { hp: 20, maxHp: 20, dead: false })
+  run.combat.players[1].energy = 0
+  run.combat.discardedThisTurn = [actor.id]
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: 30 + index, maxHp: 30 + index, block: 0, poison: 0, dead: false,
+  }))
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Setup\+,/ }).click()
+await page.locator('.seat--targetable:not(.seat--viewer)').click()
+await page.getByRole('button', { name: /^Blur\+,/ }).click()
+await page.getByRole('button', { name: /^All-Out Attack\+,/ }).click()
+await page.locator('.prompt').filter({ hasText: 'Discard 1' }).waitFor()
+await page.getByRole('button', { name: /^Slice,/ }).click()
+await page.getByRole('button', { name: /^Expertise\+,/ }).click()
+const silentTurnCards = await readState()
+check('Silent turn cards resolve discard, draw-to-size, Block, and all-enemy damage', () => {
+  assertEqual(silentTurnCards.players[0].powers.length, 0)
+  assertEqual(silentTurnCards.players[0].block, 4)
+  assertEqual(silentTurnCards.players[0].energy, 3)
+  assertEqual(silentTurnCards.players[1].energy, 2)
+  assert(silentTurnCards.players[0].exhaust.some((card) => card.uid === 'ui-setup'))
+  assertEqual(silentTurnCards.players[0].hand.length, 7)
+  assert(silentTurnCards.players[0].discard.some((card) => card.uid === 'ui-all-out-discard'))
+  assert(silentTurnCards.enemies.every((enemy) => enemy.hp === enemy.maxHp - 3))
+})
+await shot('07j-silent-turn-cards')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0

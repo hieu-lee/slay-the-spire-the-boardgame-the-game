@@ -87,6 +87,7 @@ function effectText(effect: Effect): string {
     case 'poison': return `apply ${effect.amount} Poison${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} cards${condition}`
+    case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`

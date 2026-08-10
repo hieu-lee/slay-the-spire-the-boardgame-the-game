@@ -1789,6 +1789,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'flechettes', enemyHp: [20, 19] },
     { id: 'adrenaline', energy: [6, 6], hand: [2, 2], exhaust: [1, 1] },
     { id: 'grand_finale', player: { draw: [] }, enemyHp: [10, 8] },
+    { id: 'blur', block: [2, 3] },
+    { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
+    { id: 'all_out_attack', enemyHp: [18, 17] },
+    { id: 'expertise', hand: [6, 6] },
   ]
 
   // A hardcoded list silently stops covering card sixteen. Everything outside
@@ -2680,6 +2684,53 @@ check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full pri
     ]), 'p1', finale.uid, { enemyUid: 'left', playerId: null })
     const damage = upgraded ? 12 : 10
     assertDeepEqual(played.enemies.map((enemy) => enemy.hp), [20 - damage, 20, 20 - damage])
+  }
+})
+
+check('Blur gains its printed discard-this-turn bonus on both faces', () => {
+  for (const upgraded of [false, true]) {
+    const blur = instance('blur', upgraded)
+    const plain = playCard(combat([
+      makePlayer({ character: 'silent', hand: [blur] }),
+    ], [makeEnemy()]), 'p1', blur.uid, { enemyUid: null, playerId: null })
+    assertEqual(plain.players[0].block, upgraded ? 3 : 2)
+
+    const discarded = combat([
+      makePlayer({ character: 'silent', hand: [blur] }),
+    ], [makeEnemy()])
+    discarded.discardedThisTurn = ['p1']
+    const boosted = playCard(discarded, 'p1', blur.uid, { enemyUid: null, playerId: null })
+    assertEqual(boosted.players[0].block, upgraded ? 4 : 3)
+  }
+})
+
+check('All-Out Attack discards the chosen card after hitting every enemy', () => {
+  for (const upgraded of [false, true]) {
+    const attack = instance('all_out_attack', upgraded)
+    const chosen = instance('deflect')
+    const kept = instance('slice')
+    const state = playCard(combat([
+      makePlayer({ character: 'silent', hand: [attack, chosen, kept] }),
+    ], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
+    ]), 'p1', attack.uid, { enemyUid: null, playerId: null, discardUids: [chosen.uid] })
+    const damage = upgraded ? 3 : 2
+    assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [10 - damage, 10 - damage])
+    assertDeepEqual(state.players[0].hand.map((card) => card.uid), [kept.uid])
+    assertDeepEqual(state.players[0].discard.map((card) => card.uid), [chosen.uid, attack.uid])
+  }
+})
+
+check('Expertise draws only the cards needed to reach its printed hand size', () => {
+  for (const upgraded of [false, true]) {
+    const expertise = instance('expertise', upgraded)
+    const held = [instance('slice'), instance('deflect')]
+    const state = playCard(combat([
+      makePlayer({ character: 'silent', hand: [expertise, ...held], draw: Array.from({ length: 8 }, () => instance('strike_silent')) }),
+    ], [makeEnemy()]), 'p1', expertise.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hand.length, upgraded ? 7 : 6)
+    assertEqual(state.players[0].draw.length, upgraded ? 3 : 4)
   }
 })
 

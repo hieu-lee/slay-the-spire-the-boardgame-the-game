@@ -138,6 +138,7 @@ type EffectKind =
   | { kind: 'poison'; amount: number }
   | { kind: 'multiplyPoison'; factor: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
+  | { kind: 'drawToHandSize'; size: number }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
   /** Optionally exchange the caster's row with another living player. */
@@ -1616,6 +1617,33 @@ export const CARDS: Record<string, CardDef> = {
     playCondition: { kind: 'drawPileEmpty' },
     effects: [{ kind: 'hit', amount: 10 }],
     upgrade: { effects: [{ kind: 'hit', amount: 12 }] },
+  }),
+  blur: card({
+    id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'block', amount: {
+      base: 2, bonus: { plus: 1, when: { kind: 'discardedThisTurn' } },
+    } }],
+    upgrade: { effects: [{ kind: 'block', amount: {
+      base: 3, bonus: { plus: 1, when: { kind: 'discardedThisTurn' } },
+    } }] },
+  }),
+  setup: card({
+    id: 'setup', name: 'Setup', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 0,
+    supportTarget: 'anyPlayer',
+    exhaust: true,
+    effects: [{ kind: 'gainEnergy', amount: 1, toChosen: true }],
+    upgrade: { effects: [{ kind: 'gainEnergy', amount: 2, toChosen: true }] },
+  }),
+  all_out_attack: card({
+    id: 'all_out_attack', name: 'All-Out Attack', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 1,
+    target: 'allEnemies',
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'discard', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'discard', amount: 1 }] },
+  }),
+  expertise: card({
+    id: 'expertise', name: 'Expertise', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'drawToHandSize', size: 6 }],
+    upgrade: { effects: [{ kind: 'drawToHandSize', size: 7 }] },
   }),
 }
 

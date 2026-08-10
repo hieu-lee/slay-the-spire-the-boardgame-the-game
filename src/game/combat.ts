@@ -627,6 +627,10 @@ function applyEffect(
       }
       return
     }
+    case 'drawToHandSize':
+      return applyEffect(state, actor, {
+        kind: 'draw', amount: Math.max(0, effect.size - actor.hand.length),
+      }, scope, supportScope, context, source)
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
