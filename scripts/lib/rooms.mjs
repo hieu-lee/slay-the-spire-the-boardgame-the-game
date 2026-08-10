@@ -501,12 +501,14 @@ function resolveStartTurn(room, seat, action, seatToken) {
   const choices = action.choices
   if (!Array.isArray(choices) || choices.length > UID_LIMIT || choices.some((choice) =>
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
+    (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
     choice.shivEnemyUids.length > CAPS.shivs ||
     choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string'))) {
     fail('Start-of-Turn choices must contain every ability and valid Shiv targets')
   }
   const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
     id: choice.id,
+    enemyUid: choice.enemyUid,
     shivEnemyUids: [...choice.shivEnemyUids],
   })))
   if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')

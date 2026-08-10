@@ -217,8 +217,12 @@ export function describePower(def: CardDef): string {
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
     ? `whenever you play a ${def.trigger.cardType} card`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
-  const what = def.effects.map(describeEffect).filter(Boolean).join(', ')
-  if (!what) return def.name
+  const where = def.target === 'allEnemies'
+    ? ' to every enemy'
+    : def.target === 'enemy' ? ' to one enemy' : ''
+  const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
+  if (!effects) return def.name
+  const what = `${effects}${where}`
   return when
     ? `${def.name}: ${what} ${when}${def.oncePerTurn ? ', once per turn' : ''}`
     : `${def.name}: ${what}`

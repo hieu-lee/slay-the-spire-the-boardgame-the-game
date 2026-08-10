@@ -1006,6 +1006,64 @@ try {
   assert(publishInfiniteRestore.ok, 'could not restore the post-Infinite online fixture')
   await a.locator('.combat[data-phase="player"]').waitFor()
 
+  const noxiousRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeNoxious = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeNoxious = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(annBeforeNoxious, {
+    hand: [],
+    powers: [{ uid: 'online-noxious', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `online-noxious-ann-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  Object.assign(boBeforeNoxious, {
+    hand: [],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `online-noxious-bo-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, poison: 0, dead: false, abilityUsed: true })
+  }
+  const publishNoxiousFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'startTurn' } }),
+  })
+  assert(publishNoxiousFixture.ok, 'could not publish the Noxious Fumes Start-of-Turn fixture')
+  await Promise.all([
+    a.locator('.combat[data-phase="start"]').waitFor(),
+    b.locator('.combat[data-phase="start"]').waitFor(),
+  ])
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes — choose an enemy'))
+  const teammateNoxiousPrompts = await b.locator('.prompt').count()
+  const teammateNoxiousTargets = await b.locator('.enemy--targeted').count()
+  check('waiting teammates cannot target Noxious Fumes', () => {
+    assertEqual(teammateNoxiousPrompts, 0)
+    assertEqual(teammateNoxiousTargets, 0)
+  })
+  await a.locator('.enemy:not([disabled])').last().click()
+  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
+  await a.locator('.combat[data-phase="player"]').waitFor()
+  const resolvedNoxious = await snapshot(a)
+  check('Noxious Fumes sends its chosen enemy through the online action', () => {
+    const poison = resolvedNoxious.run.combat.enemies.map((enemy) => enemy.poison)
+    assertEqual(poison.filter((amount) => amount === 1).length, 1)
+    assertEqual(poison.reduce((sum, amount) => sum + amount, 0), 1)
+    assertEqual(resolvedNoxious.startTurnAbilities, undefined)
+  })
+  liveRoom.run.combat = noxiousRestore
+  const boAfterNoxious = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boAfterNoxious, { miracles: 1, energy: 0 })
+  const publishNoxiousRestore = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishNoxiousRestore.ok, 'could not restore the post-Noxious online fixture')
+  await a.locator('.combat[data-phase="player"]').waitFor()
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')

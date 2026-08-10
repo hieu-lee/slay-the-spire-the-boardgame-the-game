@@ -1757,6 +1757,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainShiv', amount: 1 }],
     upgrade: { effects: [{ kind: 'gainShiv', amount: 2 }] },
   }),
+  noxious_fumes: card({
+    id: 'noxious_fumes', name: 'Noxious Fumes', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    target: 'enemy',
+    effects: [{ kind: 'poison', amount: 1 }],
+    upgrade: { target: 'allEnemies' },
+  }),
   envenom: card({
     id: 'envenom', name: 'Envenom', owner: 'silent', type: 'power', rarity: 'rare', cost: 3,
     resolvesOnPlay: true,

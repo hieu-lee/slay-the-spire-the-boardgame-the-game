@@ -274,7 +274,7 @@ if (afterEnemies.phase === 'roundEnd') {
 // The suite used to stop a few clicks in, which is how a combat that could not
 // reach round 2 shipped green. A whole fight is the only thing that proves the
 // loop closes.
-async function playOutCombat(limit = 40) {
+async function playOutCombat(limit = 60) {
   for (let step = 0; step < limit; step++) {
     const state = await readState()
     if (state.phase === 'won' || state.phase === 'lost') return state
@@ -307,7 +307,8 @@ async function playOutCombat(limit = 40) {
     }
     await endTurn()
   }
-  throw new Error('the combat never ended')
+  const stalled = await readState()
+  throw new Error(`the combat never ended: phase=${stalled.phase}, turn=${stalled.turn}, enemies=${stalled.enemies.map((enemy) => enemy.hp).join(',')}`)
 }
 
 const finished = await playOutCombat()
@@ -1934,6 +1935,87 @@ check('Infinite Blades orders, targets, and explicitly skips Start-of-Turn overf
 await page.locator('.enemy').first().scrollIntoViewIfNeeded()
 await shot('07y-silent-infinite-blades-resolved')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeInfiniteBlades)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
+
+const runBeforeNoxiousFumes = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(actor, {
+    character: 'silent', hand: [], discard: [], exhaust: [], energy: 0,
+    powers: [{ uid: 'ui-noxious-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `ui-noxious-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  for (const ally of run.combat.players.slice(1)) {
+    Object.assign(ally, { hand: [], draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `ui-noxious-${ally.id}-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })) })
+  }
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true,
+  }))
+  Object.assign(run.combat.enemies[0], { hp: 0, dead: true })
+  debug.setRun(run)
+})
+const noxiousPower = page.locator('.power[aria-label^="Noxious Fumes"]')
+await noxiousPower.waitFor()
+const noxiousLabel = await noxiousPower.getAttribute('aria-label')
+check('Noxious Fumes announces its recurring single-enemy Poison', () => {
+  assert(noxiousLabel.includes('1 Poison to one enemy') && noxiousLabel.includes('start of each turn'), noxiousLabel)
+})
+await noxiousPower.click()
+await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await shot('07z-silent-noxious-fumes-ready')
+await noxiousPower.click()
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.locator('.combat[data-phase="start"]').waitFor()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes') &&
+  document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+const noxiousDeadTargets = await page.locator('.enemy[disabled].enemy--targeted').count()
+const noxiousLiveTargets = await page.locator('.enemy:not([disabled]).enemy--targeted').count()
+const noxiousLivingEnemies = (await readState()).enemies.filter((enemy) => !enemy.dead).length
+check('Start-of-Turn targeting highlights living enemies but not defeated ones', () => {
+  assertEqual(noxiousDeadTargets, 0)
+  assertEqual(noxiousLiveTargets, noxiousLivingEnemies)
+})
+await shot('07za-silent-noxious-fumes-target')
+await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.getByRole('button', { name: 'Reset start choices' }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const noxiousBase = await readState()
+check('base Noxious Fumes poisons only its chosen enemy at the next Start of Turn', () => {
+  assertEqual(noxiousBase.enemies.filter((enemy) => enemy.poison === 1).length, 1)
+  assertEqual(noxiousBase.enemies.reduce((sum, enemy) => sum + enemy.poison, 0), 1)
+})
+await shot('07zb-silent-noxious-fumes-resolved')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 2 })
+  run.combat.players[0].powers = [
+    { uid: 'ui-noxious-fumes-plus', defId: 'noxious_fumes', upgraded: true },
+  ]
+  for (const enemy of run.combat.enemies) enemy.poison = 0
+  debug.setRun(run)
+})
+const noxiousUpgraded = page.locator('.power[aria-label^="Noxious Fumes+"]')
+await noxiousUpgraded.waitFor()
+const noxiousUpgradedLabel = await noxiousUpgraded.getAttribute('aria-label')
+await page.getByRole('button', { name: 'Start turn 3' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const noxiousAll = await readState()
+check('upgraded Noxious Fumes automatically poisons every enemy', () => {
+  assert(noxiousUpgradedLabel.includes('1 Poison to every enemy'), noxiousUpgradedLabel)
+  assert(noxiousAll.enemies.every((enemy) => enemy.poison === (enemy.dead ? 0 : 1)))
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeNoxiousFumes)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
 
 await page.evaluate(() => {

@@ -56,6 +56,7 @@ function enterFirstCombat(room, seatToken) {
       kind: 'resolveStartTurn',
       choices: abilities.map((ability) => ({
         id: ability.id,
+        enemyUid: ability.targets?.[0]?.uid,
         shivEnemyUids: Array(ability.overflowShivs).fill(null),
       })),
     })
@@ -1481,6 +1482,46 @@ check('Infinite Blades pauses Start of Turn for authoritative overflow choices',
   assertDeepEqual(resolved.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [0, 19])
   assertEqual(resolved.run.combat.players.find((player) => player.id === b.playerId).attacksPlayedThisTurn, 2)
   assertEqual(resolved.startTurnAbilities, undefined)
+})
+
+check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => {
+  const { room, a } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, {
+    powers: [{ uid: 'room-noxious', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-noxious-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, poison: 0, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, a.token)
+  const [ability] = pending.startTurnAbilities
+  assertEqual(pending.run.combat.phase, 'start')
+  assertEqual(ability.targets.length, room.run.combat.enemies.length)
+  const [stale, chosen] = room.run.combat.enemies
+  Object.assign(stale, { hp: 0, dead: true })
+  let staleChoice = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurn',
+      choices: [{ id: ability.id, enemyUid: stale.uid, shivEnemyUids: [] }],
+    })
+  } catch (error) {
+    staleChoice = error
+  }
+  assertEqual(staleChoice?.name, 'RoomError', 'a dead Noxious Fumes target was accepted')
+  assertEqual(chosen.poison, 0, 'a stale target partially resolved the Power')
+  apply(room, a.token, {
+    kind: 'resolveStartTurn',
+    choices: [{ id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] }],
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).poison, 1)
 })
 
 check('face-down reward stacks are counted, never listed', () => {

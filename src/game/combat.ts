@@ -68,12 +68,15 @@ export type StartTurnAbility = {
   id: string
   playerId: string
   label: string
+  /** A recurring single-enemy effect still needs its owner to choose. */
+  targets?: { uid: string; label: string }[]
   /** Shivs this ability cannot take from the shared supply and may throw now. */
   overflowShivs: number
 }
 
 export type StartTurnChoice = {
   id: string
+  enemyUid?: string
   /** One living enemy id or explicit skip per overflow Shiv. */
   shivEnemyUids: (string | null)[]
 }
@@ -1761,6 +1764,9 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
         id: `${player.id}/${source.id}`,
         playerId: player.id,
         label: source.name,
+        targets: source.scope === 'enemy' && source.effects.some((effect) => reachesEnemy(effect, player))
+          ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+          : undefined,
       },
     }))))
 }
@@ -1796,6 +1802,7 @@ export function startTurnAbilities(
 export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
   return startTurnAbilities(state).map((ability) => ({
     id: ability.id,
+    enemyUid: ability.targets?.[0]?.uid,
     shivEnemyUids: Array(ability.overflowShivs).fill(null),
   }))
 }
@@ -1812,6 +1819,9 @@ export function resolveStartPlayerTurn(
   const abilities = startTurnAbilities(state, order)
   const alive = new Set(livingEnemies(state).map((enemy) => enemy.uid))
   if (choices.some((choice, index) =>
+    (abilities[index]!.targets
+      ? !abilities[index]!.targets!.some((target) => target.uid === choice.enemyUid)
+      : choice.enemyUid !== undefined) ||
     choice.shivEnemyUids.length !== abilities[index]!.overflowShivs ||
     choice.shivEnemyUids.some((uid) => uid !== null && !alive.has(uid)))) return state
 
@@ -1820,7 +1830,9 @@ export function resolveStartPlayerTurn(
   for (const choice of choices) {
     const entry = byId.get(choice.id)
     const player = entry && findPlayer(next, entry.ability.playerId)
-    if (!entry || !player || !resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids)) {
+    if (!entry || !player || (entry.ability.targets &&
+      resolveEnemyTargets(next, 'enemy', choice.enemyUid ?? null).length === 0) ||
+      !resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid)) {
       return state
     }
     if (combatIsOver(next)) return settle(next)
@@ -1842,7 +1854,8 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
   const prepared = preparePlayerTurn(state)
   if (prepared === state || prepared.phase !== 'start') return prepared
   const abilities = startTurnAbilities(prepared)
-  return abilities.length > 1 || abilities.some((ability) => ability.overflowShivs > 0)
+  return abilities.length > 1 || abilities.some((ability) =>
+    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1)
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
 }
@@ -2334,8 +2347,8 @@ function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, 
  * Relics and Powers are the same mechanism — a permanent thing in front of you
  * that reacts — so they share one dispatcher rather than drifting apart.
  *
- * Effects resolve against their owner, targeting the first living enemy where a
- * target is needed, since an ongoing effect never stops to ask.
+ * Legacy trigger paths target the first living enemy where needed. The
+ * table-facing Start-of-Turn phase supplies its explicit ordered choices.
  */
 /**
  * How deep a trigger chain may go. A Power that gains Block whenever it gains
@@ -2417,6 +2430,7 @@ function resolveTriggerSource(
   source: TriggerSource,
   allowCombatOver = false,
   shivEnemyUids?: readonly (string | null)[],
+  enemyUid?: string,
 ): boolean {
   const useKey = `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -2426,7 +2440,7 @@ function resolveTriggerSource(
   }
   const target = livingEnemies(state)[0]
   const context: PlayContext = {
-    enemyUid: target?.uid ?? null,
+    enemyUid: enemyUid ?? target?.uid ?? null,
     playerId: player.id,
     shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
     shivTargetIndex: 0,

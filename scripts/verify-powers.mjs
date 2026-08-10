@@ -18,7 +18,7 @@ import {
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { triggerMatches } from '../src/game/triggers.ts'
 import { createRng } from '../src/game/rng.ts'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 let uid = 0
 const instance = (defId, upgraded = false) => ({ uid: `c${uid++}`, defId, upgraded })
@@ -541,6 +541,38 @@ check('Infinite Blades resolves shared-supply overflow in the chosen Start-of-Tu
     shivEnemyUids: ability.id.includes(second.uid) ? [null, null] : [],
   })))
   assertEqual(skipped.enemies[0].hp, 20, 'explicit skips deal no damage')
+})
+
+check('Noxious Fumes targets one enemy next turn, while its upgrade poisons all enemies', () => {
+  const fumes = instance('noxious_fumes')
+  const beforePlay = combat(
+    [player({ id: 'p1', name: 'Ann', character: 'silent', hand: [fumes], energy: 1, draw: deck() })],
+    [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 })],
+  )
+  const played = playCard(beforePlay, 'p1', fumes.uid, {})
+  assertDeepEqual(played.enemies.map((target) => target.poison), [0, 0],
+    'a Start-of-Turn Power fired when it was played')
+
+  const prepared = preparePlayerTurn({ ...played, phase: 'roundEnd' })
+  const [ability] = startTurnAbilities(prepared)
+  assertDeepEqual(ability.targets.map((target) => target.uid), ['e1', 'e2'])
+  assert(resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }]) === prepared,
+    'base Noxious Fumes resolved without its enemy choice')
+  const chosen = resolveStartPlayerTurn(prepared, [{
+    id: ability.id,
+    enemyUid: 'e2',
+    shivEnemyUids: [],
+  }])
+  assertDeepEqual(chosen.enemies.map((target) => target.poison), [0, 1])
+
+  const upgraded = startPlayerTurn(combat(
+    [player({
+      id: 'p1', name: 'Ann', character: 'silent',
+      powers: [instance('noxious_fumes', true)], draw: deck(),
+    })],
+    [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 })],
+  ))
+  assertDeepEqual(upgraded.enemies.map((target) => target.poison), [1, 1])
 })
 
 check('the Start of Turn reshuffle fires an on-shuffle Power', () => {
