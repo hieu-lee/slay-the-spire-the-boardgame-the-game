@@ -131,7 +131,7 @@ function rewardDeck(character: CharacterId, rare: boolean): string[] {
   return Object.values(CARDS).flatMap((def) => {
     if (def.owner !== character) return []
     if (rare) return def.rarity === 'rare' ? [def.id] : []
-    if (def.rarity === 'common') return [def.id, def.id]
+    if (def.rarity === 'common') return Array(def.id === 'claw_claw_pack' ? 8 : 2).fill(def.id)
     return def.rarity === 'uncommon' ? [def.id] : []
   })
 }
@@ -179,6 +179,7 @@ export function createPlayer(
     cardBlockBonus: 0,
     hitPoison: 0,
     starterStrikeDamageBonus: 0,
+    clawCubesGainedThisCombat: 0,
     starterDefendBlockBonus: 0,
     miracles: 0,
     stance: 'neutral',
@@ -355,6 +356,7 @@ function readyForCombat(rng: RngState, player: Player): Player {
     orbEndTurnBonus: 0,
     lightningEndTurnBonus: 0,
     starterStrikeDamageBonus: 0,
+    clawCubesGainedThisCombat: 0,
     starterDefendBlockBonus: 0,
   }
 }

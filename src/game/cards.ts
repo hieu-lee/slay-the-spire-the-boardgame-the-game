@@ -96,6 +96,7 @@ export type CountOf =
   | 'attacksInHand'
   | 'attacksPlayedThisTurn'
   | 'attackingEnemies'
+  | 'clawCubesGainedThisCombat'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -209,6 +210,7 @@ type EffectKind =
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
+  | { kind: 'gainClawCube'; amount: number }
   | { kind: 'doubleEnergy'; max: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
@@ -1422,6 +1424,22 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'hit', amount: { base: 1, bonus: { plus: 3, when: { kind: 'discardTopCosts', cost: 0 } } } }],
     },
+  }),
+  claw_claw_pack: card({
+    id: 'claw_claw_pack',
+    name: 'Claw (Claw Pack)',
+    owner: 'defect',
+    type: 'attack',
+    rarity: 'common',
+    cost: 0,
+    effects: [
+      { kind: 'gainClawCube', amount: 1 },
+      { kind: 'hit', amount: { base: 0, per: 'clawCubesGainedThisCombat' } },
+    ],
+    upgrade: { effects: [
+      { kind: 'gainClawCube', amount: 1 },
+      { kind: 'hit', amount: { base: 1, per: 'clawCubesGainedThisCombat' } },
+    ] },
   }),
 
   crescendo: card({

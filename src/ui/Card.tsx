@@ -44,6 +44,7 @@ const COUNT_LABEL: Record<CountOf, string> = {
   attacksInHand: 'Attack in hand',
   attacksPlayedThisTurn: 'other Attack played this turn',
   attackingEnemies: 'enemy intending to attack you',
+  clawCubesGainedThisCombat: 'Claw cube gained this combat',
 }
 
 function conditionText(condition: Condition): string {
@@ -167,6 +168,7 @@ function effectText(effect: Effect): string {
     case 'gainShivDamageBonus': return `Shivs deal +${effect.amount} damage${condition}`
     case 'gainCardBlockBonus': return `each Block on your Attacks and Skills gets +${effect.amount}${condition}`
     case 'gainHitPoison': return `each hit also applies ${effect.amount} Poison${condition}`
+    case 'gainClawCube': return `gain ${effect.amount} Claw cube${condition}`
     case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'gainStrengthIfTargetDead': return `gain ${effect.amount} Strength if the target dies${condition}`

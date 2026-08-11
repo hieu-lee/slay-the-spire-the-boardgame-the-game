@@ -96,6 +96,8 @@ export type Player = {
   hitPoison: number
   /** Apotheosis bonuses for the four printed starter Strike/Defend cards. */
   starterStrikeDamageBonus?: number
+  /** Collector's Edition Claw cubes gained during this combat. */
+  clawCubesGainedThisCombat?: number
   starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number

@@ -594,7 +594,8 @@ export function cardIsPlayable(
     actor.orbs.every((orb) => !orb))
 }
 
-type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'attacksPlayedThisTurn' | 'exhaust'> & {
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' |
+  'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat'> & {
   hand: readonly CardInstance[] | null
 }
 
@@ -632,6 +633,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return state.enemies.filter((enemy) => !enemy.dead && actionsFor(
         enemyDef(enemy.defId), state.die, enemy.actionIndex,
       ).some((action) => action.kind === 'attack' && (action.aoe || enemy.isBoss || enemy.row === actor.row))).length
+    case 'clawCubesGainedThisCombat':
+      return actor.clawCubesGainedThisCombat ?? 0
   }
 }
 
@@ -1312,6 +1315,11 @@ function applyEffect(
     case 'gainHitPoison': {
       actor.hitPoison += effect.amount
       note(`${actor.name}'s hits apply ${effect.amount} Poison`)
+      return
+    }
+    case 'gainClawCube': {
+      actor.clawCubesGainedThisCombat = (actor.clawCubesGainedThisCombat ?? 0) + effect.amount
+      note(`${actor.name} gains ${effect.amount} Claw cube`)
       return
     }
     case 'doubleEnergy': {
@@ -3541,6 +3549,7 @@ export function createCombat(
       cardBlockBonus: 0,
       hitPoison: 0,
       starterStrikeDamageBonus: 0,
+      clawCubesGainedThisCombat: 0,
       starterDefendBlockBonus: 0,
       darkOrbEvokeBonus: 0,
       lightningEndTurnBonus: 0,

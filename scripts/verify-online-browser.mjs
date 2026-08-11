@@ -17,6 +17,7 @@ const vite = await createViteServer({
   root: repoRoot,
   logLevel: 'silent',
   server: {
+    host: '127.0.0.1',
     port: 0,
     proxy: {
       '/api': { target: roomOrigin },

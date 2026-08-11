@@ -2567,6 +2567,25 @@ check('Recycle authoritatively gains Energy from its chosen Exhaust', () => {
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), [fuel.uid])
 })
 
+check('Collector Claw cubes stay authoritative and public to the party', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const claw = { uid: 'room-claw-pack', defId: 'claw_claw_pack', upgraded: true }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [claw], discard: [], energy: 0, clawCubesGainedThisCombat: 2 })
+  const enemy = room.run.combat.enemies[0]
+  Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false })
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: claw.uid, enemyUid: enemy.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.clawCubesGainedThisCombat, 3)
+  assertEqual(room.run.combat.enemies[0].hp, 6)
+  assertEqual(snapshotFor(room, a.token).run.combat.players[0].clawCubesGainedThisCombat, 3)
+  assertEqual(snapshotFor(room, b.token).run.combat.players[0].clawCubesGainedThisCombat, 3)
+})
+
 check('Exhume moves one public Exhaust card into only its owner\'s private hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

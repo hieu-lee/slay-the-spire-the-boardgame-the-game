@@ -2118,6 +2118,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'turbo', energy: [5, 6], exhaust: [1, 1], dazeDiscard: [1, 1], player: { energy: 3 } },
     { id: 'skim', hand: [3, 4] },
     { id: 'claw', enemyHp: [19, 19] },
+    { id: 'claw_claw_pack', enemyHp: [19, 18] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -4443,6 +4444,24 @@ check('Recycle gains the exhausted card cost and doubles Energy for X', () => {
   })
   assertEqual(doubled.players[0].energy, 4, 'an exhausted X-cost card doubles current Energy')
   assertDeepEqual(doubled.players[0].exhaust.map((card) => card.uid), [xCost.uid])
+})
+
+check('Collector Claws gain one shared combat cube before dealing scaled damage', () => {
+  const first = instance('claw_claw_pack')
+  const second = instance('claw_claw_pack')
+  const upgraded = instance('claw_claw_pack', true)
+  let state = combat([makePlayer({
+    character: 'defect', hand: [first, second, upgraded], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  for (const card of [first, second, upgraded]) {
+    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+  }
+  assertEqual(state.players[0].clawCubesGainedThisCombat, 3)
+  assertEqual(state.enemies[0].hp, 13, 'the three Claws hit for 1, 2, then 4')
+  assertEqual(state.players[0].energy, 1, 'Collector Claws cost 0')
+
+  const reset = combat([makePlayer({ clawCubesGainedThisCombat: 7 })], [makeEnemy()])
+  assertEqual(reset.players[0].clawCubesGainedThisCombat, 0, 'Claw cubes reset each combat')
 })
 
 check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {

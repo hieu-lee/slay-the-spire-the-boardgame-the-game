@@ -11,6 +11,7 @@ type TokenRowProps = {
   poison?: number
   shivs?: number
   miracles?: number
+  clawCubes?: number
 }
 
 type CountKey = Exclude<keyof TokenRowProps, 'orbs'>
@@ -23,6 +24,7 @@ const TOKENS: { key: CountKey; icon: IconName; label: string }[] = [
   { key: 'poison', icon: 'poison', label: 'Poison' },
   { key: 'shivs', icon: 'shiv', label: 'Shivs' },
   { key: 'miracles', icon: 'miracle', label: 'Miracles' },
+  { key: 'clawCubes', icon: 'attack', label: 'Claw cubes' },
 ]
 
 /** Shows tokens and every Defect Orb slot, including empty capacity. */

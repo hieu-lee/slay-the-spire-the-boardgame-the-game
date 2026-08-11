@@ -332,6 +332,7 @@ function describeSeat(player: Player): string {
     ['Weak', player.weak],
     ['Shivs', player.shivs],
     ['Miracles', player.miracles],
+    ['Claw cubes', player.clawCubesGainedThisCombat ?? 0],
   ]
   for (const [label, value] of tokens) if (value > 0) parts.push(`${label} ${value}`)
   if (player.strengthLossAtEndOfTurn > 0) {
@@ -2355,6 +2356,7 @@ export function CombatScreen({
                         weak={occupant.weak}
                         shivs={occupant.shivs}
                         miracles={occupant.miracles}
+                        clawCubes={occupant.clawCubesGainedThisCombat}
                       />
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">

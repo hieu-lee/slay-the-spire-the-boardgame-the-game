@@ -227,6 +227,12 @@ check('reward stacks contain only live cards of their character and rarity', () 
       assertEqual(def.owner, player.character)
       assert(def.rarity === 'common' || def.rarity === 'uncommon', `${id} has rarity ${def.rarity}`)
     }
+    if (player.character === 'defect') {
+      assertEqual(player.cardRewards.filter((id) => id === 'claw_claw_pack').length, 8,
+        'the Collector Claw pack contributes all eight physical copies')
+      assertEqual(player.cardRewards.filter((id) => id === 'claw').length, 2,
+        'the retail Claw keeps the standard common-card count')
+    }
   }
 })
 

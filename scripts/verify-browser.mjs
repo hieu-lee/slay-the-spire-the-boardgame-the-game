@@ -1965,6 +1965,48 @@ await shot('06zphgi-recycle-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [
+      { uid: 'ui-claw-pack-1', defId: 'claw_claw_pack', upgraded: false },
+      { uid: 'ui-claw-pack-2', defId: 'claw_claw_pack', upgraded: true },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2,
+    clawCubesGainedThisCombat: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const clawPack = page.getByRole('button', { name: /^Claw \(Claw Pack\), cost 0,/ })
+const clawPackPlus = page.getByRole('button', { name: /^Claw \(Claw Pack\)\+, cost 0,/ })
+const clawPackLabel = await clawPack.getAttribute('aria-label')
+const clawPackPlusLabel = await clawPackPlus.getAttribute('aria-label')
+await shot('06zphgj-claw-pack-ready')
+await clawPack.click()
+await page.locator('.enemy--targeted').click()
+await clawPackPlus.click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 16)
+const clawed = await readState()
+const clawSeatLabel = await page.getByRole('button', { name: /^Defect,/ }).getAttribute('aria-label')
+const clawTokenTitle = await page.locator('.token--clawCubes').getAttribute('title')
+check('Collector Claw faces visibly share their combat cube scaling', () => {
+  assert(clawPackLabel.includes('gain 1 Claw cube'), clawPackLabel)
+  assert(clawPackLabel.includes('1 per Claw cube gained this combat'), clawPackLabel)
+  assert(clawPackPlusLabel.includes('1 plus 1 per Claw cube gained this combat'), clawPackPlusLabel)
+  assertEqual(clawed.players[0].clawCubesGainedThisCombat, 2)
+  assertEqual(clawed.enemies[0].hp, 16)
+  assertEqual(clawed.players[0].energy, 2)
+  assert(clawSeatLabel.includes('Claw cubes 2'), clawSeatLabel)
+  assertEqual(clawTokenTitle, 'Claw cubes 2')
+})
+await shot('06zphgk-claw-pack-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Core Surge playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })

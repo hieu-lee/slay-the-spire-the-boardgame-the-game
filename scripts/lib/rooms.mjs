@@ -1267,6 +1267,7 @@ function redactPlayer(player, viewerId) {
     cardBlockBonus: player.cardBlockBonus ?? 0,
     hitPoison: player.hitPoison ?? 0,
     starterStrikeDamageBonus: player.starterStrikeDamageBonus ?? 0,
+    clawCubesGainedThisCombat: player.clawCubesGainedThisCombat ?? 0,
     starterDefendBlockBonus: player.starterDefendBlockBonus ?? 0,
     miracles: player.miracles,
     stance: player.stance,
