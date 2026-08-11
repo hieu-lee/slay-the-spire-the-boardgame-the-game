@@ -106,6 +106,8 @@ export type Player = {
   orbEvokeBonus?: number
   /** Added to each Orb's printed end-of-turn effect for this combat. */
   orbEndTurnBonus?: number
+  /** Static Discharge adds only to Lightning end-of-turn effects. */
+  lightningEndTurnBonus?: number
 
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */

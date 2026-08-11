@@ -1273,6 +1273,7 @@ function redactPlayer(player, viewerId) {
     orbs: player.orbs,
     orbEvokeBonus: player.orbEvokeBonus ?? 0,
     orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
+    lightningEndTurnBonus: player.lightningEndTurnBonus ?? 0,
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,

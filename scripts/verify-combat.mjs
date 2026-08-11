@@ -2232,6 +2232,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'capacitor', powers: [1, 1] },
     { id: 'consume', powers: [1, 1] },
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'static_discharge', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -4331,6 +4332,38 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
   const ethereal = beginEndPlayerTurn(combat([makePlayer({ hand: [base, upgraded] })], [makeEnemy()]))
   assertDeepEqual(ethereal.players[0].exhaust.map((card) => card.uid), [base.uid])
   assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
+  assertEqual(faceOf(CARDS.static_discharge, false).effects[0].amount, 1)
+  assertEqual(faceOf(CARDS.static_discharge, true).effects[0].amount, 2)
+
+  const discharge = instance('static_discharge', true)
+  const defragment = instance('defragment', true)
+  let state = combat([makePlayer({
+    character: 'defect', hand: [discharge, defragment], energy: 6,
+    orbs: ['lightning', 'frost', 'dark'],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', discharge.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', defragment.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].lightningEndTurnBonus, 2)
+  assertEqual(state.players[0].orbEndTurnBonus, 1)
+  assertEqual(state.players[0].powers.length, 2)
+
+  const ended = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1'])
+  assertEqual(ended.enemies[0].hp, 16, 'Lightning gets both Static Discharge and Defragment')
+  assertEqual(ended.players[0].block, 2, 'Frost gets Defragment but not Static Discharge')
+
+  const dual = instance('dual_cast')
+  const evokeState = combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1,
+    orbs: ['lightning', 'lightning', null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  evokeState.players[0].lightningEndTurnBonus = 2
+  const evoked = playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
 })
 
 check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {

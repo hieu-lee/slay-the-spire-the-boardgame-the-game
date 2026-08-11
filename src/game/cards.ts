@@ -204,6 +204,7 @@ type EffectKind =
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
   | { kind: 'gainOrbEndTurnBonus'; amount: number }
+  | { kind: 'gainLightningEndTurnBonus'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
@@ -1989,6 +1990,12 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainOrbEndTurnBonus', amount: 1 }],
     upgrade: { ethereal: false },
+  }),
+  static_discharge: card({
+    id: 'static_discharge', name: 'Static Discharge', owner: 'defect', type: 'power', rarity: 'rare', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainLightningEndTurnBonus', amount: 1 }],
+    upgrade: { effects: [{ kind: 'gainLightningEndTurnBonus', amount: 2 }] },
   }),
   core_surge: card({
     id: 'core_surge', name: 'Core Surge', owner: 'defect', type: 'attack', rarity: 'rare', cost: 1,

@@ -1856,6 +1856,45 @@ await shot('06zphf-defragment-orbs-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  for (const player of run.combat.players) Object.assign(player, {
+    hand: [], discard: [], draw: [], exhaust: [], powers: [], orbs: [null, null, null],
+    block: 0, stance: 'neutral', dead: false,
+  })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-static-discharge', defId: 'static_discharge', upgraded: true }],
+    energy: 2, orbs: ['lightning', 'frost', null],
+    orbEndTurnBonus: 0, lightningEndTurnBonus: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    hp: 10, maxHp: 10, block: 0, poison: 0, dead: false, abilityUsed: true,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const staticDischargeCard = page.getByRole('button', { name: /^Static Discharge\+, cost 2,/ })
+const staticDischargeLabel = await staticDischargeCard.getAttribute('aria-label')
+await shot('06zphga-static-discharge-ready')
+await staticDischargeCard.click()
+await page.getByRole('button', {
+  name: /^Static Discharge\+: Lightning Orb end-of-turn effects get \+2$/,
+}).waitFor()
+await shot('06zphgb-static-discharge-power')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+const discharged = await readState()
+check('Static Discharge+ visibly boosts Lightning end-of-turn damage but not Frost Block', () => {
+  assert(staticDischargeLabel.includes('Lightning Orb end-of-turn effects get +2'), staticDischargeLabel)
+  assertEqual(discharged.players[0].lightningEndTurnBonus, 2)
+  assertEqual(discharged.enemies[0].hp, 7)
+  assertEqual(discharged.players[0].block, 1)
+})
+await shot('06zphgc-static-discharge-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Core Surge playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
