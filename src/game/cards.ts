@@ -209,6 +209,8 @@ type EffectKind =
   | { kind: 'gainDarkOrbEvokeBonus'; amount: number }
   | { kind: 'gainOrbEndTurnBonus'; amount: number }
   | { kind: 'gainLightningEndTurnBonus'; amount: number }
+  /** Loop: choose one charged Orb and repeat its end-of-turn ability. */
+  | { kind: 'triggerOrbEndTurn'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
@@ -1753,6 +1755,12 @@ export const CARDS: Record<string, CardDef> = {
     id: 'equilibrium', name: 'Equilibrium', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 2,
     effects: [{ kind: 'block', amount: 3 }, { kind: 'retainAtEndOfTurn', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 4 }, { kind: 'retainAtEndOfTurn', amount: 2 }] },
+  }),
+  loop: card({
+    id: 'loop', name: 'Loop', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'triggerOrbEndTurn', amount: 1 }],
+    upgrade: { effects: [{ kind: 'triggerOrbEndTurn', amount: 2 }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

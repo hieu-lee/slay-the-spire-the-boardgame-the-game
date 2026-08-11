@@ -723,6 +723,49 @@ check('one Lightning Orb still pauses online when its enemy target is a choice',
   assertEqual(room.run.combat.enemies[1].hp, secondHp - 1)
 })
 
+check('Loop Orb choices are public, authoritative, and reject forged targets online', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const loop = { uid: 'room-loop', defId: 'loop', upgraded: true }
+  Object.assign(actor, { hand: [loop], energy: 1, orbs: ['lightning', 'frost', 'dark'] })
+  other.hand = []
+  const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  const firstHp = firstEnemy.hp
+  const secondHp = secondEnemy.hp
+
+  apply(room, a.token, { kind: 'playCard', cardUid: loop.uid, preflight: true })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const mine = snapshotFor(room, a.token)
+  const theirs = snapshotFor(room, b.token)
+  const ability = mine.endTurnAbilities.find((entry) => entry.label.includes('Loop'))
+  assertDeepEqual(theirs.endTurnAbilities.find((entry) => entry.id === ability.id), ability,
+    'face-up Loop choices should be identical for every seat')
+  const target = ability.targets.find((choice) => choice.uid.endsWith(secondEnemy.uid))
+  const order = mine.endTurnOrder.map((choice) => choice.startsWith(`${ability.id}@`)
+    ? `${ability.id}@${target.uid}`
+    : choice)
+
+  let forged = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveEndTurn',
+      abilityOrder: order.map((choice) => choice.startsWith(`${ability.id}@`)
+        ? `${ability.id}@99:not-an-enemy`
+        : choice),
+    })
+  } catch (error) {
+    forged = error
+  }
+  assertEqual(forged?.name, 'RoomError', 'a forged Loop Orb choice was accepted')
+
+  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: order })
+  assertEqual(room.run.combat.enemies[0].hp, firstHp - 1)
+  assertEqual(room.run.combat.enemies[1].hp, secondHp - 2)
+  assertEqual(room.run.combat.players.find((player) => player.id === actor.id).block, 1)
+})
+
 check('an online Lightning plan with a dynamically dead target stays editable', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []

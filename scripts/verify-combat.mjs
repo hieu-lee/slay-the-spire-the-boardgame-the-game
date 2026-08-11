@@ -2237,6 +2237,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'amplify', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'recycle', energy: [E - 1, E] },
     { id: 'equilibrium', block: [3, 4], energy: [E - 2, E - 2] },
+    { id: 'loop', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -4384,6 +4385,42 @@ check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
     enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
+})
+
+check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {
+  for (const upgraded of [false, true]) {
+    const loop = instance('loop', upgraded)
+    const played = playCard(combat([makePlayer({
+      name: 'Defect', character: 'defect', hand: [loop], energy: 1,
+      orbs: ['lightning', 'frost', 'dark'],
+    })], [
+      makeEnemy({ uid: 'e1', hp: 6, maxHp: 6 }),
+      makeEnemy({ uid: 'e2', row: 1, hp: 6, maxHp: 6 }),
+    ]), 'p1', loop.uid, { enemyUid: null, playerId: null })
+    const abilities = endTurnAbilities(played)
+    const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
+    assert(loopAbility, 'Loop must publish its ordered end-turn ability')
+    assertDeepEqual(loopAbility.targets.map((target) => target.label), [
+      'Lightning Orb 1 → Cultist (row 0)',
+      'Lightning Orb 1 → Cultist (row 1)',
+      'Frost Orb 2',
+    ])
+    const loopTarget = upgraded ? loopAbility.targets[1] : loopAbility.targets[2]
+    const order = abilities.map((ability) => ability.id === loopAbility.id
+      ? chooseEndTurnTarget(ability.id, loopTarget.uid)
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
+    const ended = beginEndPlayerTurn(played, order)
+    assertEqual(ended.enemies[0].hp, 5, 'the normal Lightning Orb still triggers once')
+    assertEqual(ended.enemies[1].hp, upgraded ? 4 : 6,
+      'Loop+ repeats the selected Lightning Orb against its selected target')
+    assertEqual(ended.players[0].block, upgraded ? 1 : 2,
+      'base Loop can select Frost while every normal Orb still resolves')
+
+    const forged = abilities.map((ability) => ability.id === loopAbility.id
+      ? chooseEndTurnTarget(ability.id, '99:not-an-enemy')
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
+    assertEqual(beginEndPlayerTurn(played, forged), played, 'a forged Loop Orb choice is atomic')
+  }
 })
 
 check('Amplify boosts only Dark Orb Evoke damage', () => {

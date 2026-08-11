@@ -1170,7 +1170,7 @@ button:disabled {
   position: absolute;
   z-index: 20;
   right: 0;
-  min-width: min(22rem, calc(100vw - 2rem));
+  min-width: min(30rem, calc(100vw - 2rem));
   margin: 0.25rem 0 0;
   padding: 0.45rem;
   list-style: none;
@@ -1192,7 +1192,7 @@ button:disabled {
 }
 
 .end-turn-order li select {
-  max-width: 8rem;
+  width: min(14rem, 42vw);
   padding: 0.1rem 0.35rem;
   border: 1px solid var(--edge);
   border-radius: 4px;
@@ -1205,6 +1205,30 @@ button:disabled {
 .end-turn-order li button {
   min-width: 1.8rem;
   padding: 0.1rem 0.35rem;
+}
+
+@media (max-width: 600px) {
+  .end-turn-order li {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .end-turn-order li > span {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .end-turn-order li select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .end-turn-order li > button:first-of-type {
+    grid-column: 2;
+  }
+
+  .end-turn-order li > button:last-of-type {
+    grid-column: 3;
+  }
 }
 
 /* ---------- enemy portrait ---------- */

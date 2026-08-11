@@ -1312,6 +1312,9 @@ function applyEffect(
       note(`${actor.name}'s Lightning Orb end-of-turn effects get +${effect.amount}`)
       return
     }
+    case 'triggerOrbEndTurn':
+      // Loop resolves here only through its chosen end-turn ability.
+      return
     case 'gainShivDamageBonus': {
       actor.shivDamageBonus += effect.amount
       note(`${actor.name}'s Shivs deal +${effect.amount} damage`)
@@ -2493,6 +2496,28 @@ function triggerTargets(state: CombatState, player: Player, source: TriggerSourc
     : undefined
 }
 
+const loopOrbTarget = (slot: number, enemyUid?: string): string => `${slot}:${enemyUid ?? ''}`
+
+function parseLoopOrbTarget(value: string | undefined): { slot: number; enemyUid: string | null } | undefined {
+  if (value === undefined) return undefined
+  const colon = value.indexOf(':')
+  const slot = Number(value.slice(0, colon))
+  if (colon < 1 || !Number.isInteger(slot) || slot < 0) return undefined
+  return { slot, enemyUid: value.slice(colon + 1) || null }
+}
+
+function loopOrbTargets(state: CombatState, player: Player): EndTurnAbility['targets'] {
+  const targets = player.orbs.flatMap((orb, slot) => orb === 'frost'
+    ? [{ uid: loopOrbTarget(slot), label: `Frost Orb ${slot + 1}` }]
+    : orb === 'lightning'
+      ? livingEnemies(state).map((enemy) => ({
+        uid: loopOrbTarget(slot, enemy.uid),
+        label: `Lightning Orb ${slot + 1} → ${enemyLabel(state.enemies, enemy)}`,
+      }))
+      : [])
+  return targets.length > 0 ? targets : undefined
+}
+
 function startTurnSources(state: CombatState): StartTurnSource[] {
   if (state.phase !== 'start') return []
   const events: TriggerEvent[] = [
@@ -2868,7 +2893,9 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
     .map((source) => ({
       id: source.id,
       label: source.name.replace(`${player.name}'s `, ''),
-      targets: triggerTargets(state, player, source),
+      targets: source.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
+        ? loopOrbTargets(state, player)
+        : triggerTargets(state, player, source),
     }))
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
@@ -3004,15 +3031,20 @@ export function beginEndPlayerTurn(
         const source = triggerSources(player, { kind: 'endOfTurn' })
           .find((candidate) => candidate.id === localId)
         const target = endTurnChoiceTarget(choice)
+        const loop = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
+        const loopChoice = loop ? parseLoopOrbTarget(target) : undefined
         // A row is chosen when the order is submitted. Preserve that row if
         // an earlier ability kills its enemy anchor, without teaching ordinary
         // card plays that a dead enemy is a valid target.
         const selectedRow = source?.scope === 'row'
           ? next.enemies.find((enemy) => enemy.uid === target)?.row
           : undefined
-        if (source && ((source.scope !== 'row' && triggerTargets(next, player, source) &&
-          resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
-          !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow))) return state
+        if (source && (loop
+          ? !resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
+            loopChoice ? [loopChoice.slot] : undefined, loopChoice ? [loopChoice.enemyUid] : undefined)
+          : ((source.scope !== 'row' && triggerTargets(next, player, source) &&
+            resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
+            !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow)))) return state
       } else if (localId === 'strength') {
         const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
         if (loss > 0) {
@@ -3480,6 +3512,23 @@ function resolveTriggerSource(
     const used = (state.powerTriggersUsedThisTurn ??= [])
     if (used.includes(useKey)) return true
     used.push(useKey)
+  }
+  const loop = source.effects.find((effect) => effect.kind === 'triggerOrbEndTurn')
+  if (loop) {
+    const slot = evokeSlots?.[0]
+    if (slot === undefined) return loopOrbTargets(state, player) === undefined
+    const orb = player.orbs[slot]
+    const target = evokeEnemyUids?.[0] ?? undefined
+    if ((orb !== 'lightning' && orb !== 'frost') || (orb === 'lightning' && !target) ||
+      (orb === 'frost' && target !== undefined)) return false
+    for (let index = 0; index < loop.amount; index++) {
+      if (!resolveOrbAtEndOfTurn(state, player, slot, target)) {
+        if (index === 0) return false
+        break
+      }
+      if (combatIsOver(state)) break
+    }
+    return true
   }
   const target = livingEnemies(state)[0]
   const context: PlayContext = {

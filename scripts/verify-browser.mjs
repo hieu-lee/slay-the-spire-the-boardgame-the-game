@@ -2013,6 +2013,62 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-loop', defId: 'loop', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1, block: 0,
+    orbs: ['lightning', 'frost', 'dark'], orbEndTurnBonus: 0, lightningEndTurnBonus: 0,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 2)
+  Object.assign(run.combat.enemies[0], {
+    defId: 'cultist', row: 0, hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  })
+  Object.assign(run.combat.enemies[1], {
+    defId: 'red_louse', row: 1, hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const loopCard = page.getByRole('button', { name: /^Loop\+, cost 1,/ })
+const loopLabel = await loopCard.getAttribute('aria-label')
+await loopCard.click()
+await page.getByRole('button', { name: /^Loop\+: trigger 1 Orb's end-of-turn ability 2 times/ }).waitFor()
+await page.locator('.end-turn-order > summary').click()
+const loopTarget = page.getByRole('combobox', { name: /Target for Defect — Loop/ })
+const loopTargetUid = await loopTarget.locator('option', { hasText: 'Lightning Orb 1 → Red Louse' }).getAttribute('value')
+await loopTarget.selectOption(loopTargetUid)
+await shot('06zphgic1-loop-order')
+await page.setViewportSize({ width: 390, height: 844 })
+const mobileLoopOrder = await page.locator('.end-turn-order[open] > ol').evaluate((panel) => {
+  const rect = panel.getBoundingClientRect()
+  return {
+    insideViewport: rect.left >= 0 && rect.right <= innerWidth,
+    rowsFit: [...panel.querySelectorAll('li')].every((row) => row.scrollWidth <= row.clientWidth),
+  }
+})
+check('Loop target choices stay inside a narrow end-turn tray', () => {
+  assert(mobileLoopOrder.insideViewport, 'the end-turn tray left the viewport')
+  assert(mobileLoopOrder.rowsFit, 'an end-turn ability row overflowed its tray')
+})
+await shot('06zphgic1a-loop-mobile-order')
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+const looped = await readState()
+check('Loop+ visibly chooses one Orb and repeats its end-of-turn ability twice', () => {
+  assert(loopLabel.includes("trigger 1 Orb's end-of-turn ability 2 times"), loopLabel)
+  assertEqual(looped.enemies[0].hp, 19, 'the ordinary Lightning end-turn ability still resolves')
+  assertEqual(looped.enemies[1].hp, 18, 'Loop+ hits the selected enemy twice')
+  assertEqual(looped.players[0].block, 1, 'the ordinary Frost end-turn ability still resolves')
+})
+await shot('06zphgic2-loop-resolved')
+await page.getByRole('button', { name: /Confirm Defect/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-claw-pack-1', defId: 'claw_claw_pack', upgraded: false },
       { uid: 'ui-claw-pack-2', defId: 'claw_claw_pack', upgraded: true },
