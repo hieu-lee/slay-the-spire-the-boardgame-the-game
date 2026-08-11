@@ -67,7 +67,7 @@ type CombatScreenProps = {
   cardPreview?: {
     cardUid: string
     copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck'
+    kind: 'discard' | 'scry' | 'topdeck' | 'search'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null
@@ -133,7 +133,7 @@ type Pending = {
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
   choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover' | 'recoverExhaust'
+    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search'
     amount: number
     minimum?: number
   } | null
@@ -208,6 +208,7 @@ function requirementsOf(
   const topdeck = def.effects.find((effect) => effect.kind === 'topdeck')
   const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
   const recoverExhaust = def.effects.find((effect) => effect.kind === 'recoverExhaust')
+  const search = def.effects.find((effect) => effect.kind === 'searchDraw')
   const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
@@ -226,6 +227,8 @@ function requirementsOf(
           ? { kind: 'recover' as const, amount: recover.amount }
         : recoverExhaust && viewer.exhaust.length > 0
           ? { kind: 'recoverExhaust' as const, amount: recoverExhaust.amount }
+        : search
+          ? { kind: 'search' as const, amount: search.amount }
         : null
   return {
     needsEnemy,
@@ -1376,6 +1379,7 @@ export function CombatScreen({
       topdeckUids: next.choice?.kind === 'topdeck' ? next.picked : undefined,
       recoverDiscardUid: next.choice?.kind === 'recover' ? next.picked[0] : undefined,
       recoverExhaustUid: next.choice?.kind === 'recoverExhaust' ? next.picked[0] : undefined,
+      searchDrawUids: next.choice?.kind === 'search' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
       shivEnemyUids: next.shivEnemyUids,
       evokeSlots: next.evokeSlots,
@@ -1901,6 +1905,8 @@ export function CombatScreen({
           ? `${pendingDef?.name ?? 'Card'} — choose a card from your discard pile`
         : pending.choice?.kind === 'recoverExhaust'
           ? `${pendingDef?.name ?? 'Card'} — choose a card from your Exhaust pile`
+        : pending.choice?.kind === 'search'
+          ? `${pendingDef?.name ?? 'Card'} — choose ${choiceNeeded} from your draw pile`
         : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
     : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed
       ? pending.choice.kind === 'discardAny'
@@ -2313,6 +2319,8 @@ export function CombatScreen({
                   ? 'Choose a card from your discard pile'
                 : pending.choice.kind === 'recoverExhaust'
                   ? 'Choose a card from your Exhaust pile'
+                : pending.choice.kind === 'search'
+                  ? `Choose ${choiceNeeded} from your draw pile`
                   : `Choose ${choiceNeeded} to discard`}
             </h2>
             <p>
@@ -2324,6 +2332,8 @@ export function CombatScreen({
                   ? `${pending.picked.length}/${choiceNeeded} selected from discard.`
                 : pending.choice.kind === 'recoverExhaust'
                   ? `${pending.picked.length}/${choiceNeeded} selected from Exhaust.`
+                : pending.choice.kind === 'search'
+                  ? `${pending.picked.length}/${choiceNeeded} selected; the rest will be shuffled.`
                 : `${pending.picked.length}/${choiceNeeded} selected.${pending.picked.length > 0
                   ? ` Discard order (later is higher): ${pending.picked.map((uid, index) => {
                     const card = pending.choiceCards!.find((held) => held.uid === uid)!
@@ -2349,6 +2359,8 @@ export function CombatScreen({
                     : 'Put selected card on top'
                 : pending.choice.kind === 'recoverExhaust'
                   ? 'Return selected card to hand'
+                : pending.choice.kind === 'search'
+                  ? `Put selected card${choiceNeeded === 1 ? '' : 's'} in hand and shuffle`
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
             {pending.cardInHand &&

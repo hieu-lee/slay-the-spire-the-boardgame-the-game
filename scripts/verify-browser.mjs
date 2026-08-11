@@ -2070,6 +2070,42 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-seek', defId: 'seek', upgraded: true }],
+    draw: [
+      { uid: 'ui-seek-strike', defId: 'strike_defect', upgraded: false },
+      { uid: 'ui-seek-defend', defId: 'defend_defect', upgraded: false },
+      { uid: 'ui-seek-zap', defId: 'zap', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 0,
+  })
+  run.combat.players = [actor]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const seekCard = page.getByRole('button', { name: /^Seek\+, cost 0,/ })
+const seekLabel = await seekCard.getAttribute('aria-label')
+await seekCard.click()
+const seekDialog = page.getByRole('dialog', { name: 'Choose 2 from your draw pile' })
+await seekDialog.waitFor()
+await seekDialog.getByRole('button', { name: /^Strike,/ }).click()
+await seekDialog.getByRole('button', { name: /^Zap,/ }).click()
+await shot('06zphgcl-seek-private-choice')
+await seekDialog.getByRole('button', { name: 'Put selected cards in hand and shuffle' }).click()
+await seekDialog.waitFor({ state: 'hidden' })
+const sought = await readState()
+check('Seek+ visibly searches two private draw cards, shuffles, and Exhausts', () => {
+  assert(seekLabel.includes('search your draw pile for 2 cards'), seekLabel)
+  assertDeepEqual(sought.players[0].hand.map((card) => card.uid), ['ui-seek-strike', 'ui-seek-zap'])
+  assertDeepEqual(sought.players[0].draw.map((card) => card.uid), ['ui-seek-defend'])
+  assert(sought.players[0].exhaust.some((card) => card.uid === 'ui-seek'))
+})
+await shot('06zphgcm-seek-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-amplify', defId: 'amplify', upgraded: true },
       { uid: 'ui-amplify-dual-cast', defId: 'dual_cast', upgraded: false },

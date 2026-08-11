@@ -91,7 +91,7 @@ export type RoomSnapshot = {
   cardPreview?: {
     cardUid: string
     copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck'
+    kind: 'discard' | 'scry' | 'topdeck' | 'search'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null

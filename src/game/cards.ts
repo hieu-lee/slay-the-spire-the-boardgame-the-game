@@ -235,6 +235,8 @@ type EffectKind =
   | { kind: 'recoverDiscard'; amount: 1; toHand?: boolean }
   /** Put one chosen card from the face-up Exhaust pile into hand. */
   | { kind: 'recoverExhaust'; amount: 1 }
+  /** Choose cards from the private draw pile, put them in hand, then shuffle it. */
+  | { kind: 'searchDraw'; amount: number }
   /** Draw a card and immediately play it for 0 Energy. */
   | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
@@ -1804,6 +1806,12 @@ export const CARDS: Record<string, CardDef> = {
     id: 'multi_cast', name: 'Multi-Cast', owner: 'defect', type: 'skill', rarity: 'rare', cost: 'X',
     effects: [{ kind: 'evoke', times: { base: 0, per: 'energySpent' } }],
     upgrade: { effects: [{ kind: 'evoke', times: { base: 1, per: 'energySpent' } }] },
+  }),
+  seek: card({
+    id: 'seek', name: 'Seek', owner: 'defect', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'searchDraw', amount: 1 }],
+    upgrade: { effects: [{ kind: 'searchDraw', amount: 2 }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

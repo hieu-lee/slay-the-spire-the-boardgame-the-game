@@ -2186,6 +2186,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'electrodynamics', powers: [1, 1], orbCount: [2, 3] },
     { id: 'fission', exhaust: [1, 1] },
     { id: 'multi_cast', energySpent: [0, 0], energy: [E, E] },
+    { id: 'seek', hand: [1, 2], exhaust: [1, 1], searchDraw: true },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
     { id: 'bludgeon', enemyHp: [13, 10] },
@@ -2358,6 +2359,11 @@ check('every newly transcribed card does what its face prints', () => {
       }
       if (spec.topdeckAfterDraw) {
         context.topdeckUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, 1).map((held) => held.uid)
+      }
+      if (spec.searchDraw) {
+        const amount = face.effects.find((effect) => effect.kind === 'searchDraw').amount
+        context.searchDrawUids = previewCardChoice(state, 'p1', card.uid).cards
+          .slice(0, amount).map((held) => held.uid)
       }
       const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
@@ -4713,6 +4719,50 @@ check('a copied Multi-Cast validates choices against its original Energy payment
   assertDeepEqual(copied.players[0].orbs, [null, 'frost', null])
   assertDeepEqual(copied.enemies.map((enemy) => enemy.hp), [17, 14])
   assertEqual(copied.phase, 'player')
+})
+
+check('Seek privately searches its draw pile, takes 1/2 cards, shuffles, and Exhausts', () => {
+  const sought = [instance('strike_defect'), instance('defend_defect'), instance('zap')]
+  const base = instance('seek')
+  const state = combat([makePlayer({
+    character: 'defect', hand: [base], draw: sought, energy: 0,
+  })], [makeEnemy()])
+  const preview = previewCardChoice(state, 'p1', base.uid)
+  assertEqual(preview.kind, 'search')
+  assertDeepEqual(preview.cards.map((card) => card.uid), sought.map((card) => card.uid))
+  assertEqual(playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  }), state, 'Seek accepted a missing draw-pile choice')
+  const searched = playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[2].uid],
+  })
+  assertDeepEqual(searched.players[0].hand.map((card) => card.uid), [sought[2].uid])
+  assertDeepEqual(searched.players[0].draw.map((card) => card.uid).sort(),
+    [sought[0].uid, sought[1].uid].sort())
+  assert(searched.players[0].exhaust.some((card) => card.uid === base.uid))
+  assertEqual(searched.rng.calls, state.rng.calls + 1, 'Seek did not shuffle the two-card remainder')
+
+  const upgraded = instance('seek', true)
+  const plusState = combat([makePlayer({
+    character: 'defect', hand: [upgraded], draw: sought, energy: 0,
+  })], [makeEnemy()])
+  assertEqual(playCard(plusState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[0].uid, sought[0].uid],
+  }), plusState, 'Seek+ accepted a duplicate draw-pile choice')
+  const plus = playCard(plusState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[2].uid, sought[0].uid],
+  })
+  assertDeepEqual(plus.players[0].hand.map((card) => card.uid), [sought[2].uid, sought[0].uid])
+  assertDeepEqual(plus.players[0].draw.map((card) => card.uid), [sought[1].uid])
+  assert(plus.log.some((line) => line.includes('searches 2 cards into their hand')))
+
+  const empty = instance('seek')
+  const emptyState = combat([makePlayer({ character: 'defect', hand: [empty], draw: [], energy: 0 })], [makeEnemy()])
+  assertEqual(previewCardChoice(emptyState, 'p1', empty.uid).cards.length, 0)
+  const emptyPlayed = playCard(emptyState, 'p1', empty.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  })
+  assert(emptyPlayed.players[0].exhaust.some((card) => card.uid === empty.uid))
 })
 
 check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {

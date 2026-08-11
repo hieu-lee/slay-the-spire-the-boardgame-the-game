@@ -160,6 +160,7 @@ function effectText(effect: Effect): string {
       ? 'put a card from your discard pile into your hand'
       : 'put a card from your discard pile on top of your draw pile'
     case 'recoverExhaust': return 'put a card from your Exhaust pile into your hand'
+    case 'searchDraw': return `search your draw pile for ${effect.amount} card${effect.amount === 1 ? '' : 's'}, put ${effect.amount === 1 ? 'it' : 'them'} in your hand, then shuffle`
     case 'drawAndPlayFree': return effect.exhaustNonPower
       ? `draw 1 card, then immediately play it for 0 Energy; exhaust it unless it is a Power${condition}`
       : `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`

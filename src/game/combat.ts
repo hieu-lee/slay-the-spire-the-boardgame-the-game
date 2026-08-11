@@ -24,7 +24,7 @@ import { addToDrawTop, drawCards, discardHand, scry } from './piles.ts'
 import { potionDef, relicDef } from './relics.ts'
 import { triggerMatches } from './triggers.ts'
 import type { Trigger, TriggerEvent } from './triggers.ts'
-import { nextInt } from './rng.ts'
+import { nextInt, shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
 import type { CardInstance, CardType, Enemy, OrbType, Player } from './types.ts'
@@ -445,6 +445,8 @@ export type PlayContext = {
   /** Card chosen to move from discard to the top of the draw pile. */
   recoverDiscardUid?: string
   recoverExhaustUid?: string
+  /** Cards chosen from a privately revealed draw pile by Seek. */
+  searchDrawUids?: string[]
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
   spendMiracle?: boolean
   /** One chosen target or explicit skip per immediate Shiv, in effect order. */
@@ -516,6 +518,8 @@ export type PlayContext = {
   invalidTopdeckChoice?: boolean
   /** A recovery choice was missing or named a card outside the discard pile. */
   invalidRecoverChoice?: boolean
+  /** Seek named duplicates, the wrong count, or cards outside the draw pile. */
+  invalidSearchChoice?: boolean
   /** Whether the card being played was kept by Retain last turn. */
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
@@ -529,7 +533,7 @@ export type PlayContext = {
 }
 
 export type CardChoicePreview = {
-  kind: 'discard' | 'scry' | 'topdeck'
+  kind: 'discard' | 'scry' | 'topdeck' | 'search'
   cards: CardInstance[]
 }
 
@@ -543,7 +547,7 @@ export type PotionContext = {
 function invalidPlayChoice(context: PlayContext): boolean {
   return Boolean(context.shortfall || context.invalidShivTarget || context.invalidEvokeTarget ||
     context.invalidScryChoice || context.invalidDiscardChoice || context.invalidExhaustChoice ||
-    context.invalidTopdeckChoice || context.invalidRecoverChoice)
+    context.invalidTopdeckChoice || context.invalidRecoverChoice || context.invalidSearchChoice)
 }
 
 function resolutionContext(
@@ -557,6 +561,7 @@ function resolutionContext(
     enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
     playerIds: context.playerIds ? [...context.playerIds] : undefined,
     topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
+    searchDrawUids: context.searchDrawUids ? [...context.searchDrawUids] : undefined,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
     evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
     evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
@@ -572,6 +577,7 @@ function resolutionContext(
     invalidExhaustChoice: false,
     invalidTopdeckChoice: false,
     invalidRecoverChoice: false,
+    invalidSearchChoice: false,
     discardedByCard: 0,
     exhaustedByCard: 0,
     exhaustedCardCost: undefined,
@@ -1548,6 +1554,21 @@ function applyEffect(
       note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their hand`)
       return
     }
+    case 'searchDraw': {
+      const requested = context.searchDrawUids ?? []
+      const required = Math.min(effect.amount, actor.draw.length)
+      if (requested.length !== required || new Set(requested).size !== requested.length ||
+        requested.some((uid) => !actor.draw.some((card) => card.uid === uid))) {
+        context.invalidSearchChoice = true
+        return
+      }
+      const chosen = requested.map((uid) => actor.draw.find((card) => card.uid === uid)!)
+      const picked = new Set(requested)
+      actor.draw = shuffle(state.rng, actor.draw.filter((card) => !picked.has(card.uid)))
+      actor.hand = [...actor.hand, ...chosen.map(forgetRetain)]
+      if (chosen.length > 0) note(`${actor.name} searches ${chosen.length} card${chosen.length === 1 ? '' : 's'} into their hand`)
+      return
+    }
     case 'drawAndPlayFree': {
       const [drawn] = drawInto(state, actor, 1)
       if (!drawn) return
@@ -1766,6 +1787,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
   let drew = false
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
+    if (effect.kind === 'searchDraw') return true
     if (effect.kind === 'draw') drew = true
     if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck'))) return true
   }
@@ -1800,7 +1822,9 @@ export function previewCardChoice(
   let drew = false
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
-    if (effect.kind === 'draw') {
+    if (effect.kind === 'searchDraw') {
+      return { kind: 'search', cards: actor.draw }
+    } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor))
       drew = true
     } else if (effect.kind === 'scry') {
@@ -2235,6 +2259,13 @@ function cardResolutionChoicesAreValid(
     if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
       (required === 0 && chosen !== undefined)) return false
   }
+  const search = effects.find((effect) => effect.kind === 'searchDraw')
+  if (search) {
+    const chosen = context.searchDrawUids ?? []
+    const required = Math.min(search.amount, player.draw.length)
+    if (chosen.length !== required || new Set(chosen).size !== chosen.length ||
+      chosen.some((uid) => !player.draw.some((card) => card.uid === uid))) return false
+  }
 
   const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode, energySpent)
   if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return false
@@ -2605,7 +2636,9 @@ export function previewCardCopyChoice(state: CombatState, playerId: string): Car
   let drew = false
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
-    if (effect.kind === 'draw') {
+    if (effect.kind === 'searchDraw') {
+      return { kind: 'search', cards: actor.draw }
+    } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor, undefined, {
         enemyUid: null, playerId, energySpent: pending.energySpent,
       }))

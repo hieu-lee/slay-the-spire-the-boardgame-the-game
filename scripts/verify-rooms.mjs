@@ -3568,6 +3568,51 @@ check('an Echo Form Multi-Cast copy cannot forge its original Energy payment', (
   assertEqual(room.run.combat.phase, 'player')
 })
 
+check('Seek keeps the draw pile and searched cards private and server-authoritative', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const seek = { uid: 'room-seek', defId: 'seek', upgraded: true }
+  const hidden = [
+    { uid: 'room-seek-a', defId: 'strike_defect', upgraded: false },
+    { uid: 'room-seek-b', defId: 'defend_defect', upgraded: false },
+    { uid: 'room-seek-c', defId: 'zap', upgraded: false },
+  ]
+  Object.assign(actor, {
+    character: 'defect', hand: [seek], draw: hidden, discard: [], exhaust: [], energy: 0,
+  })
+
+  const preview = apply(room, a.token, { kind: 'previewCard', cardUid: seek.uid }).snapshot.cardPreview
+  assertEqual(preview.kind, 'search')
+  assertDeepEqual(preview.cards.map((card) => card.uid), hidden.map((card) => card.uid))
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+
+  let refused = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: seek.uid, searchDrawUids: [hidden[0].uid, 'forged'], preflight: true,
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'Seek accepted a card outside its private preview')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: seek.uid,
+    searchDrawUids: [hidden[2].uid, hidden[0].uid], preflight: true,
+  })
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  const peer = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(owner.hand.map((card) => card.uid), [hidden[2].uid, hidden[0].uid])
+  assertEqual(owner.drawCount, 1)
+  assert(owner.exhaust.some((card) => card.uid === seek.uid))
+  assertEqual(peer.hand, null)
+  assertEqual(peer.handCount, 2)
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-seek-')),
+    'the searched cards leaked after resolution')
+})
+
 check('an unknown token cannot act at all', () => {
   const { room } = twoSeatRoom()
   let threw = false

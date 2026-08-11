@@ -779,6 +779,48 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    character: 'defect',
+    hand: [{ uid: 'online-seek', defId: 'seek', upgraded: true }],
+    draw: [
+      { uid: 'online-seek-strike', defId: 'strike_defect', upgraded: false },
+      { uid: 'online-seek-defend', defId: 'defend_defect', upgraded: false },
+      { uid: 'online-seek-zap', defId: 'zap', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 0, doubledCardsThisTurn: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const publishSeek = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishSeek.ok, 'could not publish the online Seek fixture')
+  await a.getByRole('button', { name: /^Seek\+, cost 0,/ }).click()
+  const seekDialog = a.getByRole('dialog', { name: 'Choose 2 from your draw pile' })
+  await seekDialog.waitFor()
+  const teammateSeekDialog = await b.getByRole('dialog', { name: 'Choose 2 from your draw pile' }).count()
+  await seekDialog.getByRole('button', { name: /^Strike,/ }).click()
+  await seekDialog.getByRole('button', { name: /^Zap,/ }).click()
+  let submittedSeek
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedSeek = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await seekDialog.getByRole('button', { name: 'Put selected cards in hand and shuffle' }).click()
+  await seekDialog.waitFor({ state: 'hidden' })
+  check('online Seek keeps its draw search private and submits only chosen ids', () => {
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(teammateSeekDialog, 0)
+    assertDeepEqual(submittedSeek.searchDrawUids, ['online-seek-strike', 'online-seek-zap'])
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-seek-strike', 'online-seek-zap'])
+    assertDeepEqual(ann.draw.map((card) => card.uid), ['online-seek-defend'])
+    assert(ann.exhaust.some((card) => card.uid === 'online-seek'))
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [
       { uid: 'online-copy-preview-tap', defId: 'double_tap', upgraded: true },
       { uid: 'online-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },

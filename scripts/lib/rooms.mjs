@@ -555,6 +555,10 @@ function resolveAbandonedPreviews(room) {
   for (const [playerId, preview] of Object.entries(room.cardPreviews ?? {})) {
     const seat = room.seats.find((candidate) => candidate.playerId === playerId)
     if (!seat || seat.connected) continue
+    const held = room.run?.combat?.players.find((player) => player.id === playerId)?.hand
+      .find((card) => card.uid === preview.cardUid)
+    const searchAmount = held ? faceOf(cardDef(held.defId), held.upgraded).effects
+      .find((effect) => effect.kind === 'searchDraw')?.amount ?? 0 : 0
     try {
       apply(room, seat.token, {
         kind: 'playCard',
@@ -563,6 +567,9 @@ function resolveAbandonedPreviews(room) {
         discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
         topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
+        searchDrawUids: preview.kind === 'search'
+          ? preview.cards.slice(0, searchAmount).map((card) => card.uid)
+          : undefined,
         spendMiracle: preview.spendMiracle,
         preflight: true,
       })
@@ -946,6 +953,10 @@ function dispatch(run, seat, action) {
       if (action.topdeckUids !== undefined && (
         !Array.isArray(action.topdeckUids) || topdeckUids.length !== action.topdeckUids.length
       )) fail('Topdeck choices must be a list of card ids')
+      const searchDrawUids = uidList(action.searchDrawUids)
+      if (action.searchDrawUids !== undefined && (
+        !Array.isArray(action.searchDrawUids) || searchDrawUids.length !== action.searchDrawUids.length
+      )) fail('Draw-pile choices must be a list of card ids')
       const recoverDiscardUid = action.recoverDiscardUid
       if (recoverDiscardUid !== undefined && typeof recoverDiscardUid !== 'string') {
         fail('Discard recovery must be a card id')
@@ -977,6 +988,7 @@ function dispatch(run, seat, action) {
         // fall back to the first filled slot.
         scryDiscardUids,
         topdeckUids,
+        searchDrawUids,
         recoverDiscardUid,
         recoverExhaustUid,
         evokeSlots: slotList(action.evokeSlots),
