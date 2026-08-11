@@ -273,7 +273,9 @@ export function OnlineGame({ onLocal }: Props) {
           savedEndTurnOrder={snapshot.endTurnOrder}
           endTurnCoordinatorId={snapshot.endTurnCoordinatorId}
           partyStartTurnAbilities={snapshot.startTurnAbilities}
+          partyStartTurnScryAbilities={snapshot.startTurnScryAbilities}
           startTurnCoordinatorId={snapshot.startTurnCoordinatorId}
+          partyStartTurnScry={snapshot.startTurnScry}
           savedDiscardOrder={snapshot.discardOrder}
           cardPreview={snapshot.cardPreview}
           authoritativeVersion={snapshot.version}

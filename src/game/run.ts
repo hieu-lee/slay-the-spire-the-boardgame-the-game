@@ -390,7 +390,7 @@ export function enterRoom(state: RunState, roomId: string): RunState {
     const enemies = buildEncounter(rng, state.act, players, room.kind, first)
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
-    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies))
+    const combat = startPlayerTurnWithChoices(createCombat(rng, players, enemies, room.id))
     return { ...next, phase: 'combat', players, combat }
   }
 

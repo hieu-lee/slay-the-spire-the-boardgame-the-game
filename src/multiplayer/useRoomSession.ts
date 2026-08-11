@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice } from '../game/combat.ts'
+import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, RunPhase } from '../game/run.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
@@ -30,6 +30,7 @@ export type VisiblePlayer = Omit<
 }
 
 export type VisibleCombat = {
+  combatId: string
   turn: number
   die: number
   phase: CombatPhase
@@ -40,6 +41,11 @@ export type VisibleCombat = {
   nextTriggerId: number
   startTurnProgress?: {
     choices: StartTurnChoice[]
+    beforeDraw?: {
+      drewFrom: number
+      sources: { playerId: string; sourceId: string }[]
+      ordered: boolean
+    }
     forcedCard?: {
       playerId: string
       cardUid: string | null
@@ -89,6 +95,14 @@ export type RoomSnapshot = {
   endTurnCoordinatorId?: string | null
   startTurnAbilities?: StartTurnAbility[]
   startTurnCoordinatorId?: string | null
+  startTurnScryAbilities?: StartTurnScryAbility[]
+  startTurnScry?: {
+    id: string
+    playerId: string
+    label: string
+    amount: number
+    cards: CardInstance[] | null
+  }
   discardOrder?: string[]
   cardPreview?: {
     cardUid: string

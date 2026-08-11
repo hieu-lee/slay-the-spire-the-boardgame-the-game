@@ -35,9 +35,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 207 of 259 unique character cards are live.
+//   - 208 of 259 unique character cards are live.
 //     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 52 have not been transcribed at
+//     The other 51 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -131,6 +131,7 @@ export {
   nextEvokeChoice,
   enemyLabel,
   overflowShivCount,
+  orderStartTurnScries,
   pendingTriggerAbility,
   powerAbilityKey,
   powerAbilityUsed,
@@ -141,6 +142,7 @@ export {
   previewCardChoice,
   previewCardCopyChoice,
   resolveStartPlayerTurn,
+  resolveStartTurnScry,
   resolveEnemyTargets,
   resolvePendingTrigger,
   spendMiracle,
@@ -148,10 +150,12 @@ export {
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnScryAbilities,
+  startTurnScryPreview,
   defaultStartTurnChoices,
   validEndTurnOrder,
 } from './combat.ts'
-export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, StartTurnAbility, StartTurnChoice } from './combat.ts'
+export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, StartTurnAbility, StartTurnChoice, StartTurnScryAbility, StartTurnScryPreview } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

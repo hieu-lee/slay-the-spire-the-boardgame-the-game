@@ -1508,6 +1508,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 2 }] },
   }),
+  foresight: card({
+    id: 'foresight', name: 'Foresight', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'beforeDraw' },
+    effects: [{ kind: 'scry', amount: 3 }],
+    upgrade: { effects: [{ kind: 'scry', amount: 4 }] },
+  }),
   indignation: card({
     id: 'indignation', name: 'Indignation', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [

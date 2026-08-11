@@ -42,6 +42,8 @@ export type CombatPhase =
   | 'lost'
 
 export type CombatState = {
+  /** Stable room-scoped identity used to reject delayed actions from an earlier fight. */
+  combatId: string
   rng: RngState
   turn: number
   /** One shared die roll drives every die effect for the whole round (p.12). */
@@ -61,6 +63,12 @@ export type CombatState = {
   /** Unresolved Start-of-Turn work, including Mayhem's private forced play. */
   startTurnProgress?: {
     choices: StartTurnChoice[]
+    /** Private Scry abilities that must finish after Reset and before Draw. */
+    beforeDraw?: {
+      drewFrom: number
+      sources: { playerId: string; sourceId: string }[]
+      ordered: boolean
+    }
     /** The Draw step paused on a trigger before the shared die was rolled. */
     rollPending?: { drewFrom: number }
     forcedCard?: {
@@ -145,6 +153,16 @@ export type StartTurnChoice = {
   evokeSlots?: number[]
   evokeEnemyUids?: (string | null)[]
 }
+
+export type StartTurnScryPreview = {
+  id: string
+  playerId: string
+  label: string
+  amount: number
+  cards: CardInstance[]
+}
+
+export type StartTurnScryAbility = Omit<StartTurnScryPreview, 'cards'>
 
 const END_TURN_TARGET = '@'
 export const endTurnChoiceId = (choice: string): string => choice.split(END_TURN_TARGET, 1)[0]!
@@ -1833,6 +1851,7 @@ function allocate(
 
 /** Whether playing this card reveals hidden cards before asking for a choice. */
 export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?: Player): boolean {
+  if (def.type === 'power' && def.resolvesOnPlay !== true) return false
   let drew = false
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
@@ -2382,6 +2401,7 @@ export function playCard(
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
   const printedCost = forcedPlay ? 0 : playCost(def, player)
   if (def.cost === 'X' && printedCost !== 'X' && (def.minimumX ?? 0) > 0) return state
   const xCost = printedCost === 'X'
@@ -2397,7 +2417,9 @@ export function playCard(
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
   // Choices are checked together at the trust boundary. The same validator is
   // reused when Double Tap resolves its separately targeted copy.
-  if (!cardResolutionChoicesAreValid(state, player, def, effects, context, xCost ? cost : 0)) return state
+  if (resolvesOnPlay && !cardResolutionChoicesAreValid(
+    state, player, def, effects, context, xCost ? cost : 0,
+  )) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   // The player was just found in `state`, so a clone must contain them too.
@@ -2428,7 +2450,6 @@ export function playCard(
   // A Power with a trigger does nothing when played: its effects are what the
   // trigger does, every time it fires. Resolving them here as well would pay
   // out Demon Form's Strength immediately AND at every Start of Turn.
-  const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
   // `spentUids` and `shortfall` are this play's verdict, not the caller's
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
@@ -2787,6 +2808,27 @@ function finishStartTurnDraw(next: CombatState, drewFrom: number, roll: boolean)
   ]
 }
 
+function continueStartTurnDraw(next: CombatState, drewFrom: number): CombatState {
+  for (const player of next.players) {
+    if (player.dead) continue
+    drawInto(next, player, 5)
+  }
+
+  flushPendingTriggers(next)
+  if (combatIsOver(next)) {
+    finishStartTurnDraw(next, drewFrom, false)
+    return settle(next)
+  }
+  if (next.pendingTriggers.length > 0) {
+    next.startTurnProgress = { choices: [], rollPending: { drewFrom } }
+    return next
+  }
+  // One roll per round; every die effect this round reads this value. It comes
+  // after every Draw-step reaction, so the die cannot inform those choices.
+  finishStartTurnDraw(next, drewFrom, true)
+  return next
+}
+
 /** Start of Turn: reset, draw 5, then roll the shared die (p.12). Mutates `next`. */
 function beginPlayerTurn(next: CombatState): CombatState {
   next.phase = 'start'
@@ -2822,24 +2864,101 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.cardsPlayedThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
-  for (const player of next.players) {
-    if (player.dead) continue
-    drawInto(next, player, 5)
-  }
-
-  flushPendingTriggers(next)
-  if (combatIsOver(next)) {
-    finishStartTurnDraw(next, drewFrom, false)
-    return settle(next)
-  }
-  if (next.pendingTriggers.length > 0) {
-    next.startTurnProgress = { choices: [], rollPending: { drewFrom } }
+  const beforeDraw = next.players.flatMap((player) => player.dead ? [] :
+    triggerSources(player, { kind: 'beforeDraw' }).map((source) => ({
+      playerId: player.id, sourceId: source.id,
+    })))
+  if (beforeDraw.length > 0) {
+    next.startTurnProgress = {
+      choices: [], beforeDraw: { drewFrom, sources: beforeDraw, ordered: beforeDraw.length === 1 },
+    }
     return next
   }
-  // One roll per round; every die effect this round reads this value. It comes
-  // after every Draw-step reaction, so the die cannot inform those choices.
-  finishStartTurnDraw(next, drewFrom, true)
+  return continueStartTurnDraw(next, drewFrom)
+}
+
+export function startTurnScryPreview(state: CombatState): StartTurnScryPreview | undefined {
+  const beforeDraw = state.startTurnProgress?.beforeDraw
+  const pending = state.phase === 'start' && state.pendingTriggers.length === 0 && beforeDraw?.ordered
+    ? beforeDraw.sources[0]
+    : undefined
+  const player = pending && findPlayer(state, pending.playerId)
+  const source = player && pending ? triggerSourceById(player, pending.sourceId) : undefined
+  const effect = source?.trigger.kind === 'beforeDraw'
+    ? source.effects.find((candidate) => candidate.kind === 'scry')
+    : undefined
+  if (!player || !source || !effect || effect.kind !== 'scry') return undefined
+  return {
+    id: `${state.combatId}/${state.turn}/${player.id}/${source.id}`,
+    playerId: player.id,
+    label: source.name,
+    amount: effect.amount,
+    cards: player.draw.slice(0, effect.amount),
+  }
+}
+
+export function startTurnScryAbilities(state: CombatState): StartTurnScryAbility[] {
+  const progress = state.phase === 'start' ? state.startTurnProgress?.beforeDraw : undefined
+  if (!progress || progress.ordered) return []
+  return progress.sources.flatMap((pending) => {
+    const player = findPlayer(state, pending.playerId)
+    const source = player && triggerSourceById(player, pending.sourceId)
+    const effect = source?.trigger.kind === 'beforeDraw'
+      ? source.effects.find((candidate) => candidate.kind === 'scry')
+      : undefined
+    return player && source && effect?.kind === 'scry' ? [{
+      id: `${state.combatId}/${state.turn}/${player.id}/${source.id}`,
+      playerId: player.id,
+      label: source.name,
+      amount: effect.amount,
+    }] : []
+  })
+}
+
+export function orderStartTurnScries(state: CombatState, order: readonly string[]): CombatState {
+  const progress = state.phase === 'start' ? state.startTurnProgress?.beforeDraw : undefined
+  if (!progress || progress.ordered || state.pendingTriggers.length > 0) return state
+  const byId = new Map(progress.sources.map((source) => [
+    `${state.combatId}/${state.turn}/${source.playerId}/${source.sourceId}`, source,
+  ]))
+  if (order.length !== byId.size || new Set(order).size !== byId.size ||
+    order.some((id) => !byId.has(id))) return state
+  const next = clone(state)
+  next.startTurnProgress!.beforeDraw!.sources = order.map((id) => ({ ...byId.get(id)! }))
+  next.startTurnProgress!.beforeDraw!.ordered = true
   return next
+}
+
+function continueBeforeDraw(state: CombatState): CombatState {
+  const progress = state.startTurnProgress?.beforeDraw
+  if (!progress || progress.sources.length > 0 || state.pendingTriggers.length > 0) return settle(state)
+  state.startTurnProgress = undefined
+  return finishPreparedStartTurnWithChoices(continueStartTurnDraw(state, progress.drewFrom))
+}
+
+/** Resolves the current owner's private pre-draw Scry and advances the Draw step. */
+export function resolveStartTurnScry(
+  state: CombatState,
+  playerId: string,
+  sourceId: string,
+  discardUids: readonly string[],
+): CombatState {
+  const preview = startTurnScryPreview(state)
+  const pending = state.startTurnProgress?.beforeDraw?.sources[0]
+  if (!preview || !pending || preview.playerId !== playerId || preview.id !== sourceId) return state
+  const player = findPlayer(state, playerId)
+  const source = player && triggerSourceById(player, pending.sourceId)
+  if (!player || !source) return state
+
+  const next = clone(state)
+  const progress = next.startTurnProgress!.beforeDraw!
+  progress.sources = progress.sources.slice(1)
+  const actor = findPlayer(next, playerId)!
+  const liveSource = triggerSourceById(actor, pending.sourceId)!
+  if (!resolveTriggerSource(
+    next, actor, liveSource, false, undefined, undefined, undefined, undefined, undefined, discardUids,
+  )) return state
+  return continueBeforeDraw(next)
 }
 
 type StartTurnSource = { ability: Omit<StartTurnAbility, 'overflowShivs'>; source: TriggerSource }
@@ -2874,7 +2993,7 @@ function loopOrbTargets(state: CombatState, player: Player): EndTurnAbility['tar
 }
 
 function startTurnSources(state: CombatState): StartTurnSource[] {
-  if (state.phase !== 'start') return []
+  if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending) return []
   const events: TriggerEvent[] = [
     ...(state.turn === 1 ? [{ kind: 'startOfCombat' as const }] : []),
     { kind: 'startOfTurn' },
@@ -3115,6 +3234,7 @@ export function resolveStartPlayerTurn(
   choices: readonly StartTurnChoice[],
 ): CombatState {
   if (state.phase !== 'start' || state.startTurnProgress?.forcedCard ||
+    state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
@@ -3273,7 +3393,14 @@ export function abandonForcedCard(state: CombatState, playerId: string): CombatS
 
 /** Backwards-compatible deterministic start for simulations with no UI choice. */
 export function startPlayerTurn(state: CombatState): CombatState {
-  const prepared = preparePlayerTurn(state)
+  let prepared = preparePlayerTurn(state)
+  const scries = startTurnScryAbilities(prepared)
+  if (scries.length > 0) prepared = orderStartTurnScries(prepared, scries.map((ability) => ability.id))
+  for (let preview = startTurnScryPreview(prepared); preview; preview = startTurnScryPreview(prepared)) {
+    const next = resolveStartTurnScry(prepared, preview.playerId, preview.id, [])
+    if (next === prepared) break
+    prepared = next
+  }
   return prepared === state || prepared.phase !== 'start'
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
@@ -3283,6 +3410,12 @@ export function startPlayerTurn(state: CombatState): CombatState {
 export function startPlayerTurnWithChoices(state: CombatState): CombatState {
   const prepared = preparePlayerTurn(state)
   if (prepared === state || prepared.phase !== 'start') return prepared
+  if (prepared.startTurnProgress?.beforeDraw) return prepared
+  return finishPreparedStartTurnWithChoices(prepared)
+}
+
+function finishPreparedStartTurnWithChoices(prepared: CombatState): CombatState {
+  if (prepared.phase !== 'start' || prepared.startTurnProgress || prepared.pendingTriggers.length > 0) return prepared
   const abilities = startTurnAbilities(prepared)
   return abilities.length > 1 || abilities.some((ability) =>
     ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 || ability.evokeChoice)
@@ -4011,6 +4144,7 @@ function resolveTriggerSource(
   enemyRow?: number,
   evokeSlots?: readonly number[],
   evokeEnemyUids?: readonly (string | null)[],
+  scryDiscardUids?: readonly string[],
 ): boolean {
   const useKey = source.powerUid ? powerAbilityKey(player.id, source.powerUid) : `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -4046,6 +4180,7 @@ function resolveTriggerSource(
     invalidShivTarget: false,
     evokeSlots: evokeSlots ? [...evokeSlots] : undefined,
     evokeEnemyUids: evokeEnemyUids ? [...evokeEnemyUids] : undefined,
+    scryDiscardUids: scryDiscardUids ? [...scryDiscardUids] : undefined,
     evokeIndex: 0,
     invalidEvokeTarget: false,
     sourcePowerUid: source.powerUid,
@@ -4061,7 +4196,7 @@ function resolveTriggerSource(
   } else {
     releasePendingTriggers(state, context)
   }
-  return !context.invalidShivTarget && !context.invalidEvokeTarget
+  return !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice
 }
 
 function flushPendingTriggers(state: CombatState): void {
@@ -4144,9 +4279,13 @@ export function resolvePendingTrigger(
     next.startTurnProgress = undefined
     finishStartTurnDraw(next, rollPending.drewFrom, !combatIsOver(next))
   }
+  if (next.pendingTriggers.length === 0 && next.startTurnProgress?.beforeDraw) {
+    return continueBeforeDraw(next)
+  }
   const settled = settle(next)
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.phase === 'start' &&
-    settled.startTurnProgress && !settled.startTurnProgress.forcedCard) {
+    settled.startTurnProgress && !settled.startTurnProgress.forcedCard &&
+    !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending) {
     return continueStartTurn(settled, settled.startTurnProgress.choices)
   }
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.endTurnProgress) {
@@ -4234,8 +4373,10 @@ export function createCombat(
   rng: RngState,
   players: Player[],
   enemies: Enemy[],
+  combatId = `${rng.seed}:${rng.calls}`,
 ): CombatState {
   return {
+    combatId,
     rng,
     turn: 0,
     die: 1,

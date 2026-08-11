@@ -40,6 +40,7 @@ import {
   faceOf,
   leaveRoom,
   overflowShivCount,
+  orderStartTurnScries,
   pendingTriggerAbility,
   playCard,
   playCardCopy,
@@ -54,10 +55,13 @@ import {
   resolveEnemyTargets,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
+  resolveStartTurnScry,
   spendMiracle,
   spendShiv,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnScryAbilities,
+  startTurnScryPreview,
   validEndTurnOrder,
 } from '../../src/game/state.ts'
 
@@ -248,6 +252,16 @@ function settleForcedCards(room) {
       const owner = room.seats.find((seat) => seat.playerId === pending?.playerId)
       if (!pending || owner?.connected !== false) break
       const next = resolvePendingTrigger(combat, pending.playerId, pending.id, pending.rows?.[0]?.row)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.phase === 'start') {
+      const preview = startTurnScryPreview(combat)
+      const owner = room.seats.find((seat) => seat.playerId === preview?.playerId)
+      if (!preview || owner?.connected !== false) break
+      const next = resolveStartTurnScry(combat, preview.playerId, preview.id, [])
       if (next === combat) break
       room.run = { ...room.run, combat: next }
       combat = next
@@ -477,6 +491,8 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
   if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
+  if (action?.kind === 'orderStartTurnScries') return orderBeforeDrawScries(room, seat, action, seatToken)
+  if (action?.kind === 'resolveStartTurnScry') return resolveBeforeDrawScry(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
@@ -678,6 +694,38 @@ function resolveStartTurn(room, seat, action, seatToken) {
     evokeEnemyUids: targetList(choice.evokeEnemyUids),
   })))
   if (next === combat) fail('The Start-of-Turn order or targets are stale')
+  room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function resolveBeforeDrawScry(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  const preview = combat && startTurnScryPreview(combat)
+  if (!combat || !preview) fail('The party is not resolving a pre-draw Scry')
+  if (preview.playerId !== seat.playerId) fail('Only the Scry owner may see or resolve these cards')
+  if (action.sourceId !== preview.id || !Array.isArray(action.discardUids) ||
+    action.discardUids.length > preview.amount ||
+    action.discardUids.some((uid) => typeof uid !== 'string')) {
+    fail('Scry discards must name revealed cards')
+  }
+  const next = resolveStartTurnScry(combat, seat.playerId, action.sourceId, action.discardUids)
+  if (next === combat) fail('The Scry choice is stale')
+  room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function orderBeforeDrawScries(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  if (!combat || combat.phase !== 'start') fail('The party is not ordering pre-draw Scries')
+  if (seat.playerId !== startTurnCoordinator(room)) fail('Only the start-turn coordinator can resolve the order')
+  if (!Array.isArray(action.order) || action.order.length > UID_LIMIT ||
+    action.order.some((id) => typeof id !== 'string')) fail('Scry order must name every ability once')
+  const next = orderStartTurnScries(combat, action.order)
+  if (next === combat) fail('The pre-draw Scry order is stale')
   room.run = { ...room.run, combat: next }
   settleForcedCards(room)
   room.version += 1
@@ -1192,7 +1240,17 @@ export function snapshotFor(room, seatToken) {
     startTurnAbilities: room.run?.combat?.phase === 'start'
       ? startTurnAbilities(room.run.combat)
       : undefined,
+    startTurnScryAbilities: room.run?.combat?.phase === 'start'
+      ? startTurnScryAbilities(room.run.combat)
+      : undefined,
     startTurnCoordinatorId: room.run?.combat?.phase === 'start' ? startTurnCoordinator(room) : undefined,
+    startTurnScry: room.run?.combat ? (() => {
+      const preview = startTurnScryPreview(room.run.combat)
+      return preview ? {
+        ...preview,
+        cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
+      } : undefined
+    })() : undefined,
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,
@@ -1250,6 +1308,7 @@ function redactRun(run, viewerId) {
 function redactCombat(combat, viewerId) {
   const progress = combat.startTurnProgress
   return {
+    combatId: combat.combatId,
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,
@@ -1258,6 +1317,7 @@ function redactCombat(combat, viewerId) {
     nextTriggerId: combat.nextTriggerId ?? 0,
     startTurnProgress: progress ? {
       choices: structuredClone(progress.choices),
+      beforeDraw: progress.beforeDraw ? structuredClone(progress.beforeDraw) : undefined,
       forcedCard: progress.forcedCard ? {
         playerId: progress.forcedCard.playerId,
         cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,

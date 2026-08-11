@@ -15,6 +15,8 @@ import type { CardType, Stance } from './types.ts'
 export type Trigger =
   /** Turn 1 only (p.12). */
   | { kind: 'startOfCombat' }
+  /** Start of Turn, after Reset but before the shared Draw step. */
+  | { kind: 'beforeDraw' }
   | { kind: 'startOfTurn' }
   | { kind: 'endOfTurn' }
   | { kind: 'endOfCombat' }

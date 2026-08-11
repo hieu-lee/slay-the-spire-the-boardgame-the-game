@@ -4459,6 +4459,67 @@ check('Nirvana, Indignation, and Inner Peace resolve through the real controls',
   assertDeepEqual(watcherBatch.enemies.map((enemy) => enemy.vulnerable), [1, 0])
   assertEqual(watcherBatch.players[0].draw.length, 3)
 })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, {
+    phase: 'player', turn: 1, startTurnProgress: undefined, pendingTriggers: [], powerTriggersUsedThisTurn: [],
+  })
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', hand: [{ uid: 'ui-foresight', defId: 'foresight', upgraded: true }],
+    draw: Array.from({ length: 6 }, (_, index) => ({
+      uid: `ui-foresight-draw-${index}`, defId: index % 2 ? 'defend_watcher' : 'strike_watcher', upgraded: false,
+    })),
+    discard: [], exhaust: [], powers: [
+      { uid: 'ui-foresight-existing', defId: 'foresight', upgraded: false },
+    ], energy: 1, block: 5,
+  })
+  debug.setRun(run)
+})
+const foresightCard = page.getByRole('button', { name: /^Foresight\+,/ })
+await foresightCard.waitFor()
+assert(await artWidth(foresightCard) >= 700, 'expected upscaled Foresight art')
+await foresightCard.click()
+const foresightPowerLabel = await page.getByRole('button', { name: /^Foresight\+:/ }).getAttribute('aria-label')
+check('Foresight+ exposes its pre-draw Scry accessibly', () => {
+  assert(foresightPowerLabel.includes('Scry 4'), foresightPowerLabel)
+  assert(foresightPowerLabel.includes('at the start of your turn, before you draw'), foresightPowerLabel)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [] })
+  Object.assign(run.combat.players[0], { hand: [], discard: [], block: 5 })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.getByText('Before-draw Scry order (2)').waitFor()
+await page.getByRole('button', { name: 'Confirm before-draw order' }).click()
+const foresightDialog = page.getByRole('dialog', { name: 'Foresight — Scry 3' })
+await foresightDialog.waitFor()
+const foresightPaused = await readState()
+check('Foresight pauses after Reset and before the shared Draw step', () => {
+  assertEqual(foresightPaused.phase, 'start')
+  assertEqual(foresightPaused.players[0].block, 0)
+  assertEqual(foresightPaused.players[0].hand.length, 0)
+  assertEqual(foresightPaused.players[0].draw.length, 6)
+})
+await foresightDialog.getByRole('button', { name: /^Defend,/ }).first().click()
+await shot('07x-foresight-before-draw-scry')
+await foresightDialog.getByRole('button', { name: 'Discard 1 and continue' }).click()
+const upgradedForesightDialog = page.getByRole('dialog', { name: 'Foresight — Scry 4' })
+await upgradedForesightDialog.waitFor()
+await upgradedForesightDialog.getByRole('button', { name: 'Keep all and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const foresightResolved = await readState()
+check('Foresight resolves its private Scry before drawing five', () => {
+  assertEqual(foresightResolved.players[0].hand.length, 5)
+  assertEqual(foresightResolved.players[0].draw.length, 0)
+  assertEqual(foresightResolved.players[0].discard.length, 1)
+  assert(foresightResolved.die >= 1 && foresightResolved.die <= 6)
+})
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')

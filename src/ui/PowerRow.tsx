@@ -247,6 +247,7 @@ export function describePower(def: CardDef): string {
 
 const WHEN: Record<string, string> = {
   startOfCombat: 'at the start of combat',
+  beforeDraw: 'at the start of your turn, before you draw',
   startOfTurn: 'at the start of each turn',
   endOfTurn: 'at the end of each turn',
   endOfCombat: 'at the end of combat',
@@ -291,6 +292,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${effect.amount} Strength`
     case 'draw':
       return `draw ${effect.amount}`
+    case 'scry':
+      return `Scry ${effect.amount}`
     case 'damage':
       return `${amountLabel(effect.amount)} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':

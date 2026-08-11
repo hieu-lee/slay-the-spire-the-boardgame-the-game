@@ -4685,6 +4685,92 @@ check('Nirvana resolves a private Scry authoritatively after reconnect', () => {
     'Nirvana Scry leaked cards kept in the draw pile')
 })
 
+check('Foresight orders private pre-draw choices and rejects replayed actions', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const teammate = room.run.combat.players.find((player) => player.id === b.playerId)
+  const secrets = Array.from({ length: 6 }, (_, index) => ({
+    uid: `room-foresight-secret-${index}`, defId: index % 2 ? 'defend_watcher' : 'strike_watcher', upgraded: false,
+  }))
+  Object.assign(room.run.combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [],
+  })
+  Object.assign(actor, {
+    character: 'watcher', hand: [], draw: secrets, discard: [], block: 0,
+    powers: [
+      { uid: 'room-foresight-base', defId: 'foresight', upgraded: false },
+      { uid: 'room-foresight-upgraded', defId: 'foresight', upgraded: true },
+    ],
+  })
+  Object.assign(teammate, {
+    hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-foresight-teammate-${index}`, defId: 'strike_silent', upgraded: false,
+    })), discard: [],
+  })
+
+  apply(room, b.token, { kind: 'startTurn' })
+  const orderView = snapshotFor(room, a.token)
+  assertEqual(orderView.startTurnScry, undefined, 'private cards appeared before the party chose an order')
+  assertDeepEqual(orderView.startTurnScryAbilities.map((ability) => ability.amount), [3, 4])
+  apply(room, a.token, {
+    kind: 'orderStartTurnScries',
+    order: [...orderView.startTurnScryAbilities].reverse().map((ability) => ability.id),
+  })
+  const ownerView = snapshotFor(room, a.token)
+  const teammateView = snapshotFor(room, b.token)
+  assertEqual(ownerView.startTurnScry.playerId, a.playerId)
+  assertEqual(ownerView.startTurnScry.amount, 4)
+  assertDeepEqual(ownerView.startTurnScry.cards.map((card) => card.uid), secrets.slice(0, 4).map((card) => card.uid))
+  assertEqual(teammateView.startTurnScry.cards, null)
+  assert(!secrets.some((card) => allStrings(teammateView).includes(card.uid)),
+    'Foresight leaked its owner\'s draw pile to a teammate')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand.length, 0,
+    'the shared Draw step ran before Foresight')
+
+  let forged = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurnScry', sourceId: ownerView.startTurnScry.id, discardUids: [secrets[0].uid],
+    })
+  } catch (error) {
+    forged = error
+  }
+  assertEqual(forged?.name, 'RoomError', 'a teammate resolved another player\'s private Foresight')
+
+  const disconnected = structuredClone(room)
+  markDisconnected(disconnected, a.token)
+  assertEqual(disconnected.run.combat.phase, 'player', 'a disconnected Scry owner held the table')
+  assertEqual(disconnected.run.combat.startTurnProgress, undefined)
+  joinRoom(disconnected, { token: a.token })
+  const rejoined = snapshotFor(disconnected, a.token)
+  assertEqual(rejoined.run.combat.players.find((player) => player.id === a.playerId).handCount, 5)
+  assert(!secrets.some((card) => allStrings(snapshotFor(disconnected, b.token)).includes(card.uid)),
+    'the automatically kept Foresight cards leaked after disconnect')
+
+  apply(room, a.token, {
+    kind: 'resolveStartTurnScry', sourceId: ownerView.startTurnScry.id, discardUids: [secrets[1].uid],
+  })
+  const second = snapshotFor(room, a.token).startTurnScry
+  assertEqual(second.amount, 3)
+  let replayed = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurnScry', sourceId: ownerView.startTurnScry.id, discardUids: [],
+    })
+  } catch (error) {
+    replayed = error
+  }
+  assertEqual(replayed?.name, 'RoomError', 'a replayed keep-all action consumed the next Foresight')
+  assertEqual(snapshotFor(room, a.token).startTurnScry.id, second.id)
+  apply(room, a.token, { kind: 'resolveStartTurnScry', sourceId: second.id, discardUids: [] })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand.length, 5)
+  const publicAfter = snapshotFor(room, b.token)
+  assert(allStrings(publicAfter).includes(secrets[1].uid), 'the face-up Foresight discard stayed hidden')
+  assert(![secrets[0], ...secrets.slice(2)].some((card) => allStrings(publicAfter).includes(card.uid)),
+    'Foresight leaked cards kept and drawn into the owner\'s hand')
+})
+
 check('Indignation chooses no target outside Wrath and upgrades to a row', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

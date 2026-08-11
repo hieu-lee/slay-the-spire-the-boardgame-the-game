@@ -28,6 +28,7 @@ import {
   lightningTargetsRows,
   nextEvokeChoice,
   overflowShivCount,
+  orderStartTurnScries,
   pendingTriggerAbility,
   playCard,
   playCardCopy,
@@ -37,16 +38,19 @@ import {
   powerAbilityKey,
   powerAbilityUsed,
   resolveStartPlayerTurn,
+  resolveStartTurnScry,
   resolvePendingTrigger,
   spendMiracle,
   spendShiv,
   startTurnAbilities,
+  startTurnScryAbilities,
+  startTurnScryPreview,
   startPlayerTurnWithChoices,
   validEndTurnOrder,
 } from '../game/combat.ts'
 import type {
   CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, PowerContext,
-  StartTurnAbility, StartTurnChoice,
+  StartTurnAbility, StartTurnChoice, StartTurnScryAbility, StartTurnScryPreview,
 } from '../game/combat.ts'
 import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
@@ -81,7 +85,9 @@ type CombatScreenProps = {
   savedEndTurnOrder?: string[]
   endTurnCoordinatorId?: string | null
   partyStartTurnAbilities?: StartTurnAbility[]
+  partyStartTurnScryAbilities?: StartTurnScryAbility[]
   startTurnCoordinatorId?: string | null
+  partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */
@@ -190,6 +196,7 @@ function requirementsOf(
   energySpent?: number,
   cardInHand = true,
 ): Omit<Pending, 'card' | 'cardInHand' | 'energySpent' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
+  const onPlayEffects = def.type === 'power' && def.resolvesOnPlay !== true ? [] : def.effects
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
   // an enemy and the engine would then throw the choice away. The viewer goes
@@ -199,22 +206,22 @@ function requirementsOf(
   const shivsGained = cardShivsOnPlay(def)
   const overflowShivs = overflowShivCount(state, shivsGained)
   const spentShivs = cardShivChoiceCount(def, viewer)
-  const enemyChoices = cardEnemyChoiceCount(def)
-  const playerChoices = cardPlayerChoiceCount(def)
+  const enemyChoices = onPlayEffects.length > 0 ? cardEnemyChoiceCount(def) : 0
+  const playerChoices = onPlayEffects.length > 0 ? cardPlayerChoiceCount(def) : 0
   const needsEnemy = cardTarget || spentShivs > 0 || overflowShivs > 0 || enemyChoices > 0
   // With one player on the board there is nobody to choose between, so asking
   // "who gets it" is a prompt with a single possible answer.
   const needsAlly = def.supportTarget === 'anyPlayer' && allies > 1
-  const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && allies > 1
-  const discard = def.effects.find((effect) => effect.kind === 'discard')
-  const discardAny = def.effects.some((effect) => effect.kind === 'discardAny')
-  const exhaust = def.effects.find((effect) => effect.kind === 'exhaustFromHand')
-  const exhaustAny = def.effects.find((effect) => effect.kind === 'exhaustAny')
-  const topdeck = def.effects.find((effect) => effect.kind === 'topdeck')
-  const recover = def.effects.find((effect) => effect.kind === 'recoverDiscard')
-  const recoverExhaust = def.effects.find((effect) => effect.kind === 'recoverExhaust')
-  const search = def.effects.find((effect) => effect.kind === 'searchDraw')
-  const scried = def.effects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
+  const needsSwitch = onPlayEffects.some((effect) => effect.kind === 'switchRows') && allies > 1
+  const discard = onPlayEffects.find((effect) => effect.kind === 'discard')
+  const discardAny = onPlayEffects.some((effect) => effect.kind === 'discardAny')
+  const exhaust = onPlayEffects.find((effect) => effect.kind === 'exhaustFromHand')
+  const exhaustAny = onPlayEffects.find((effect) => effect.kind === 'exhaustAny')
+  const topdeck = onPlayEffects.find((effect) => effect.kind === 'topdeck')
+  const recover = onPlayEffects.find((effect) => effect.kind === 'recoverDiscard')
+  const recoverExhaust = onPlayEffects.find((effect) => effect.kind === 'recoverExhaust')
+  const search = onPlayEffects.find((effect) => effect.kind === 'searchDraw')
+  const scried = onPlayEffects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
     ? { kind: 'discard' as const, amount: discard.amount }
@@ -274,7 +281,7 @@ function pendingFor(
     switchChoiceDone: false,
     enemyUids: [],
     playerIds: state.players.filter((player) => !player.dead).length === 1
-      ? Array(cardPlayerChoiceCount(def)).fill(viewer.id)
+      ? Array(requirements.playerChoices).fill(viewer.id)
       : [],
     shivEnemyUids: [],
     evokeSlots: [],
@@ -469,7 +476,9 @@ export function CombatScreen({
   savedEndTurnOrder,
   endTurnCoordinatorId,
   partyStartTurnAbilities,
+  partyStartTurnScryAbilities,
   startTurnCoordinatorId,
+  partyStartTurnScry,
   cardPreview,
   authoritativeVersion,
   authoritativeRefresh,
@@ -491,14 +500,18 @@ export function CombatScreen({
   const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
   const [endTurnError, setEndTurnError] = useState('')
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
+  const [startTurnScryOrder, setStartTurnScryOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
   const [startTurnTargets, setStartTurnTargets] = useState<Record<string, (string | null | undefined)[]>>({})
   const [startTurnEvokeSlots, setStartTurnEvokeSlots] = useState<Record<string, number[]>>({})
   const [startTurnEvokeTargets, setStartTurnEvokeTargets] = useState<
     Record<string, (string | null | undefined)[]>
   >({})
+  const [startTurnScryPicked, setStartTurnScryPicked] = useState<string[]>([])
+  const [resolvingStartTurnScry, setResolvingStartTurnScry] = useState(false)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
+  const startTurnScryDialogRef = useRef<HTMLDialogElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const followViewerRow = useRef(true)
   const programmaticScrollTop = useRef<number | null>(null)
@@ -512,6 +525,19 @@ export function CombatScreen({
   const viewer = state.players.find((player) => player.id === viewerId)
   const pendingTrigger = pendingTriggerAbility(state)
   const forcedCard = state.startTurnProgress?.forcedCard
+  const activeStartTurnScry = partyStartTurnScry ?? (!onAction ? startTurnScryPreview(state) : undefined)
+  const startTurnScryKey = activeStartTurnScry
+    ? `${activeStartTurnScry.playerId}:${activeStartTurnScry.label}:${activeStartTurnScry.cards?.map((card) => card.uid).join(',') ?? 'hidden'}`
+    : ''
+  const baseStartTurnScries = state.phase === 'start' && !activeStartTurnScry && !pendingTrigger
+    ? (partyStartTurnScryAbilities ?? startTurnScryAbilities(state))
+    : []
+  const startTurnScryIds = startTurnScryOrder.length === baseStartTurnScries.length &&
+    startTurnScryOrder.every((id) => baseStartTurnScries.some((ability) => ability.id === id))
+    ? startTurnScryOrder
+    : baseStartTurnScries.map((ability) => ability.id)
+  const orderedStartTurnScries = startTurnScryIds.map((id) =>
+    baseStartTurnScries.find((ability) => ability.id === id)).filter((ability) => ability !== undefined)
   const forcedCardUid = forcedCard?.playerId === viewerId && typeof forcedCard.cardUid === 'string'
     ? forcedCard.cardUid
     : null
@@ -666,6 +692,19 @@ export function CombatScreen({
       if (!dialog.open) dialog.showModal()
     } else if (dialog.open) dialog.close()
   }, [pending?.choiceCards, pending?.choiceConfirmed])
+
+  useEffect(() => {
+    setStartTurnScryPicked([])
+    setResolvingStartTurnScry(false)
+  }, [startTurnScryKey])
+
+  useEffect(() => {
+    const dialog = startTurnScryDialogRef.current
+    const owned = activeStartTurnScry?.playerId === viewerId && activeStartTurnScry.cards !== null
+    if (owned) {
+      if (dialog && !dialog.open) dialog.showModal()
+    } else if (dialog?.open) dialog.close()
+  }, [startTurnScryKey, activeStartTurnScry?.playerId, activeStartTurnScry?.cards, viewerId])
 
   // A teammate can spend Shivs or kill a staged target while this client is
   // choosing Cunning Potion's overflow attacks. Restart a changed count and
@@ -1099,6 +1138,42 @@ export function CombatScreen({
     const targets = [...(startTurnEvokeTargets[pendingStartEvokeTarget.ability.id] ?? [])]
     targets[pendingStartEvokeTarget.index] = enemyUid
     setStartTurnEvokeTargets({ ...startTurnEvokeTargets, [pendingStartEvokeTarget.ability.id]: targets })
+  }
+
+  function moveStartTurnScry(id: string, delta: -1 | 1) {
+    const from = startTurnScryIds.indexOf(id)
+    const to = from + delta
+    if (!canResolveStartTurn || from < 0 || to < 0 || to >= startTurnScryIds.length) return
+    const order = [...startTurnScryIds]
+    ;[order[from], order[to]] = [order[to]!, order[from]!]
+    setStartTurnScryOrder(order)
+  }
+
+  function finishStartTurnScryOrder() {
+    if (!canResolveStartTurn || orderedStartTurnScries.length !== baseStartTurnScries.length) return
+    if (onAction) onAction({ kind: 'orderStartTurnScries', order: startTurnScryIds })
+    else onChange?.(orderStartTurnScries(state, startTurnScryIds))
+  }
+
+  function chooseStartTurnScryCard(card: CardInstance) {
+    if (!activeStartTurnScry?.cards || resolvingStartTurnScry) return
+    setStartTurnScryPicked((picked) => picked.includes(card.uid)
+      ? picked.filter((uid) => uid !== card.uid)
+      : [...picked, card.uid])
+  }
+
+  async function finishStartTurnScry() {
+    if (!activeStartTurnScry?.cards || activeStartTurnScry.playerId !== viewerId || resolvingStartTurnScry) return
+    setResolvingStartTurnScry(true)
+    if (onAction) {
+      await onAction({
+        kind: 'resolveStartTurnScry', sourceId: activeStartTurnScry.id, discardUids: startTurnScryPicked,
+      })
+      setResolvingStartTurnScry(false)
+      return
+    }
+    onChange?.(resolveStartTurnScry(state, viewerId, activeStartTurnScry.id, startTurnScryPicked))
+    setResolvingStartTurnScry(false)
   }
 
   function finishStartTurn() {
@@ -1911,7 +1986,10 @@ export function CombatScreen({
       ? `${pendingTrigger.label} — choose a row`
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
-  const prompt = triggerPrompt ?? forcedPrompt ?? startTurnPrompt ?? (pendingPowerDef
+  const beforeDrawPrompt = activeStartTurnScry && activeStartTurnScry.playerId !== viewer.id
+    ? `Waiting for ${state.players.find((player) => player.id === activeStartTurnScry.playerId)?.name ?? 'another player'} to Scry before drawing`
+    : null
+  const prompt = triggerPrompt ?? forcedPrompt ?? beforeDrawPrompt ?? startTurnPrompt ?? (pendingPowerDef
     ? `Choose ${pendingPowerDef.target === 'row' ? 'a row' : 'an enemy'} for ${pendingPowerDef.name}`
     : pendingPotionDef
     ? pendingPotionDef.target === 'row'
@@ -2149,7 +2227,32 @@ export function CombatScreen({
               </button> : null}
             </>
           ) : null}
-          {state.phase === 'start' && !forcedCard && !pendingTrigger ? (
+          {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
+          orderedStartTurnScries.length > 0 ? (
+            <>
+              <details className="end-turn-order" open>
+                <summary>Before-draw Scry order ({orderedStartTurnScries.length})</summary>
+                <ol>
+                  {orderedStartTurnScries.map((ability, index) => (
+                    <li key={ability.id}>
+                      <span>{ability.label} — Scry {ability.amount}</span>
+                      <button type="button" disabled={!canResolveStartTurn || index === 0}
+                        aria-label={`Move ${ability.label} earlier`}
+                        onClick={() => moveStartTurnScry(ability.id, -1)}>↑</button>
+                      <button type="button" disabled={!canResolveStartTurn || index === orderedStartTurnScries.length - 1}
+                        aria-label={`Move ${ability.label} later`}
+                        onClick={() => moveStartTurnScry(ability.id, 1)}>↓</button>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+              <button type="button" disabled={!canResolveStartTurn} onClick={finishStartTurnScryOrder}>
+                {canResolveStartTurn ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
+              </button>
+            </>
+          ) : null}
+          {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
+          orderedStartTurnScries.length === 0 ? (
             <>
               <details className="end-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
@@ -2330,6 +2433,28 @@ export function CombatScreen({
             Cancel
           </button> : null}
         </p>
+      ) : null}
+
+      {activeStartTurnScry?.playerId === viewerId && activeStartTurnScry.cards ? (
+        <dialog ref={startTurnScryDialogRef} className="choice-modal" aria-labelledby="start-turn-scry-title"
+          onCancel={(event) => event.preventDefault()}>
+          <div className="choice-modal__panel">
+            <h2 id="start-turn-scry-title">Foresight — Scry {activeStartTurnScry.amount}</h2>
+            <p>Select any revealed cards to discard; unselected cards stay on top in order.</p>
+            <div className="choice-modal__cards">
+              {activeStartTurnScry.cards.map((card) => (
+                <Card key={card.uid} card={card} selected={startTurnScryPicked.includes(card.uid)}
+                  onClick={chooseStartTurnScryCard} />
+              ))}
+              {activeStartTurnScry.cards.length === 0 ? <span className="muted">No cards were revealed.</span> : null}
+            </div>
+            <button type="button" disabled={resolvingStartTurnScry} onClick={() => void finishStartTurnScry()}>
+              {startTurnScryPicked.length === 0
+                ? 'Keep all and continue'
+                : `Discard ${startTurnScryPicked.length} and continue`}
+            </button>
+          </div>
+        </dialog>
       ) : null}
 
       {pending?.choiceCards && pending.choice && !pending.choiceConfirmed ? (

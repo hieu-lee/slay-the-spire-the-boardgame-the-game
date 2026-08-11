@@ -15,6 +15,7 @@ import {
   livingEnemies,
   lightningRowTarget,
   nextEvokeChoice,
+  orderStartTurnScries,
   playCard,
   playCardCopy,
   playCost,
@@ -24,10 +25,13 @@ import {
   resolveEnemyTargets,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
+  resolveStartTurnScry,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
   startTurnAbilities,
+  startTurnScryAbilities,
+  startTurnScryPreview,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
@@ -350,6 +354,94 @@ check('start of turn resets energy and block and draws five', () => {
   assertEqual(next.players[0].block, 0, 'player Block clears at the start of the Player Turn')
   assertEqual(next.players[0].hand.length, 5, 'five cards are drawn')
   assert(next.die >= 1 && next.die <= 6, `the shared die should be 1-6, got ${next.die}`)
+})
+
+check('Foresight pauses after Reset, Scries privately, then draws and rolls', () => {
+  for (const upgraded of [false, true]) {
+    const deck = Array.from({ length: 6 }, (_, index) => instance(index % 2 ? 'defend_watcher' : 'strike_watcher'))
+    const foresight = instance('foresight', upgraded)
+    const state = combat([makePlayer({
+      character: 'watcher', energy: 1, block: 7, hand: [foresight], draw: deck,
+      powers: [instance('nirvana')],
+    })], [makeEnemy()])
+    assertEqual(cardNeedsChoicePreview(faceOf(cardDef('foresight'), upgraded), state, state.players[0]), false,
+      'playing Foresight must not ask for its triggered Scry')
+    const armed = playCard(state, 'p1', foresight.uid, { enemyUid: null, playerId: null })
+    assertDeepEqual(armed.players[0].draw.map((card) => card.uid), deck.map((card) => card.uid),
+      'Foresight must not Scry when it is played')
+    const prepared = preparePlayerTurn(armed)
+    const preview = startTurnScryPreview(prepared)
+    assertEqual(prepared.players[0].energy, 3, 'Reset happens before Foresight')
+    assertEqual(prepared.players[0].block, 0, 'Reset clears Block before Foresight')
+    assertEqual(prepared.players[0].hand.length, 0, 'Foresight must happen before Draw')
+    assertEqual(preview?.amount, upgraded ? 4 : 3)
+    assertDeepEqual(preview?.cards.map((card) => card.uid), deck.slice(0, upgraded ? 4 : 3).map((card) => card.uid))
+    assertEqual(startTurnAbilities(prepared).length, 0, 'post-draw abilities cannot resolve before Foresight')
+    assertEqual(resolveStartTurnScry(prepared, 'p2', preview.id, []), prepared,
+      'another player cannot resolve private Scry')
+    assertEqual(resolveStartTurnScry(prepared, 'p1', preview.id, ['forged']), prepared,
+      'Scry rejects an unrevealed card')
+    assertEqual(resolveStartTurnScry(prepared, 'p1', preview.id, [deck[0].uid, deck[0].uid]), prepared,
+      'Scry rejects duplicate choices')
+
+    const resolved = resolveStartTurnScry(prepared, 'p1', preview.id, [deck[1].uid])
+    assertEqual(resolved.phase, 'player')
+    assertDeepEqual(resolved.players[0].hand.map((card) => card.uid),
+      [deck[0], ...deck.slice(2)].map((card) => card.uid), 'Draw follows the updated Scry order')
+    assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [deck[1].uid])
+    assertEqual(resolved.players[0].block, 1, 'Nirvana resolves from Foresight before Draw')
+    assert(resolved.die >= 1 && resolved.die <= 6, 'the shared die rolls after Foresight and Draw')
+
+    const nextRound = preparePlayerTurn({ ...resolved, phase: 'roundEnd' })
+    const nextPreview = startTurnScryPreview(nextRound)
+    assert(nextPreview.id !== preview.id, 'Foresight action id repeated on the next turn')
+    assertEqual(resolveStartTurnScry(nextRound, 'p1', preview.id, []), nextRound,
+      'replaying last turn\'s keep-all action consumed the next Foresight')
+  }
+
+  const empty = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: [], powers: [instance('foresight'), instance('nirvana')], block: 0,
+  })], [makeEnemy()]))
+  const emptyPreview = startTurnScryPreview(empty)
+  const resolvedEmpty = resolveStartTurnScry(empty, 'p1', emptyPreview.id, [])
+  assertEqual(resolvedEmpty.players[0].block, 0, 'looking at no cards does not trigger Nirvana')
+})
+
+check('multiple Foresights use the chosen order and reject a replayed source', () => {
+  const deck = Array.from({ length: 7 }, (_, index) => instance(index % 2 ? 'defend_watcher' : 'strike_watcher'))
+  const prepared = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: deck,
+    powers: [instance('foresight'), instance('foresight', true)],
+  })], [makeEnemy()]))
+  const abilities = startTurnScryAbilities(prepared)
+  assertDeepEqual(abilities.map((ability) => ability.amount), [3, 4])
+  assertEqual(startTurnScryPreview(prepared), undefined, 'private cards appeared before the party chose an order')
+  assertEqual(orderStartTurnScries(prepared, [abilities[0].id]), prepared, 'an incomplete order was accepted')
+
+  const ordered = orderStartTurnScries(prepared, [abilities[1].id, abilities[0].id])
+  const first = startTurnScryPreview(ordered)
+  assertEqual(first?.amount, 4)
+  const afterFirst = resolveStartTurnScry(ordered, 'p1', first.id, [])
+  const second = startTurnScryPreview(afterFirst)
+  assertEqual(second?.amount, 3)
+  assertEqual(resolveStartTurnScry(afterFirst, 'p1', first.id, []), afterFirst,
+    'replaying the first keep-all action consumed the second Foresight')
+  const finished = resolveStartTurnScry(afterFirst, 'p1', second.id, [])
+  assertEqual(finished.phase, 'player')
+  assertEqual(finished.players[0].hand.length, 5)
+})
+
+check('Foresight rejects an action replayed from an earlier combat', () => {
+  const power = instance('foresight')
+  const player = () => makePlayer({
+    character: 'watcher', draw: [instance('strike_watcher')], powers: [power],
+  })
+  const first = preparePlayerTurn(createCombat(createRng(42), [player()], [makeEnemy()], 'fight-a'))
+  const staleId = startTurnScryPreview(first).id
+  const second = preparePlayerTurn(createCombat(createRng(42), [player()], [makeEnemy()], 'fight-b'))
+  assert(startTurnScryPreview(second).id !== staleId, 'Foresight action id repeated in a later combat')
+  assertEqual(resolveStartTurnScry(second, 'p1', staleId, []), second,
+    'replaying another combat\'s keep-all action consumed Foresight')
 })
 
 check('the die is rolled once per round and is deterministic for a seed', () => {
@@ -2129,6 +2221,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'mental_fortress', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'rushdown', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'nirvana', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'foresight', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'indignation', stance: ['wrath', 'wrath'], initialStance: 'neutral', energy: [E - 1, E - 1] },
     { id: 'inner_peace', stance: ['calm', 'calm'], initialStance: 'neutral', energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },

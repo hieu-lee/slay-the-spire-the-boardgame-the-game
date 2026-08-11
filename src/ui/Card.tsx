@@ -201,6 +201,7 @@ function effectText(effect: Effect): string {
 function triggerText(trigger: Trigger): string {
   switch (trigger.kind) {
     case 'startOfCombat': return 'at the start of combat'
+    case 'beforeDraw': return 'at the start of your turn, before you draw'
     case 'startOfTurn': return 'at the start of your turn'
     case 'endOfTurn': return 'at the end of your turn'
     case 'endOfCombat': return 'at the end of combat'
