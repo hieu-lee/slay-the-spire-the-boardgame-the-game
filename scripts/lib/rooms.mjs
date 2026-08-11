@@ -615,15 +615,21 @@ function resolveStartTurn(room, seat, action, seatToken) {
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
     (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
     choice.shivEnemyUids.length > CAPS.shivs ||
-    choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string'))) {
-    fail('Start-of-Turn choices must contain every ability and valid Shiv targets')
+    choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string') ||
+    (choice.evokeSlots !== undefined && (!Array.isArray(choice.evokeSlots) ||
+      choice.evokeSlots.length > UID_LIMIT)) ||
+    (choice.evokeEnemyUids !== undefined && (!Array.isArray(choice.evokeEnemyUids) ||
+      choice.evokeEnemyUids.length > UID_LIMIT)))) {
+    fail('Start-of-Turn choices must contain every ability and valid targets')
   }
   const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
     id: choice.id,
     enemyUid: choice.enemyUid,
     shivEnemyUids: [...choice.shivEnemyUids],
+    evokeSlots: slotList(choice.evokeSlots),
+    evokeEnemyUids: targetList(choice.evokeEnemyUids),
   })))
-  if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')
+  if (next === combat) fail('The Start-of-Turn order or targets are stale')
   room.run = { ...room.run, combat: next }
   settleForcedCards(room)
   room.version += 1

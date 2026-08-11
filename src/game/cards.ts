@@ -1726,6 +1726,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'channel', orb: 'dark', amount: 1 }],
     upgrade: { cost: 0 },
   }),
+  storm: card({
+    id: 'storm', name: 'Storm', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'channel', orb: 'lightning', amount: 1 }],
+    upgrade: { effects: [{ kind: 'channel', orb: 'lightning', amount: 2 }] },
+  }),
   machine_learning: card({
     id: 'machine_learning', name: 'Machine Learning', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
     trigger: { kind: 'startOfTurn' },

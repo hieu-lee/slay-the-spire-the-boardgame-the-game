@@ -2057,6 +2057,66 @@ check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => 
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).poison, 1)
 })
 
+check('Storm preserves full-slot Orb and target choices across coordinator reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const bo = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, { draw: Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-storm-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
+  })) })
+  Object.assign(bo, {
+    character: 'defect',
+    powers: [{ uid: 'room-storm', defId: 'storm', upgraded: true }],
+    orbs: ['frost', 'lightning', 'dark'],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-storm-bo-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token)
+  const [ability] = pending.startTurnAbilities
+  assertEqual(ability.evokeChoice.options.length, 3)
+  let malformed = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurn',
+      choices: [{
+        id: ability.id, shivEnemyUids: [], evokeSlots: ['length'], evokeEnemyUids: [null],
+      }],
+    })
+  } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError', 'a crafted Orb slot escaped room validation')
+  assertEqual(room.run.combat.phase, 'start')
+
+  markDisconnected(room, a.token)
+  const transferred = snapshotFor(room, b.token)
+  assertEqual(transferred.startTurnCoordinatorId, b.playerId)
+  assertEqual(transferred.startTurnAbilities[0].evokeChoice.options.length, 3)
+  const target = room.run.combat.enemies[1]
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [{
+      id: ability.id,
+      shivEnemyUids: [],
+      evokeSlots: [2, 0],
+      evokeEnemyUids: [target.uid, null],
+    }],
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  const resolvedBo = room.run.combat.players.find((player) => player.id === b.playerId)
+  const resolvedTarget = room.run.combat.enemies.find((enemy) => enemy.uid === target.uid)
+  assertDeepEqual(resolvedBo.orbs, ['lightning', 'lightning', 'lightning'])
+  assertEqual(resolvedBo.block, 1)
+  assertEqual(resolvedTarget.hp, 16)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {

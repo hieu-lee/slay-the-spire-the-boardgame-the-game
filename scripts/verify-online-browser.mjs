@@ -1873,6 +1873,87 @@ try {
   assert(publishNoxiousRestore.ok, 'could not restore the post-Noxious online fixture')
   await a.locator('.combat[data-phase="player"]').waitFor()
 
+  const orbStormRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeOrbStorm = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeOrbStorm = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(annBeforeOrbStorm, {
+    character: 'defect', hand: [], block: 0,
+    powers: [
+      { uid: 'online-machine-learning', defId: 'machine_learning', upgraded: false },
+      { uid: 'online-storm', defId: 'storm', upgraded: true },
+    ],
+    orbs: ['frost', 'lightning', 'dark'],
+    draw: Array.from({ length: 6 }, (_, index) => ({
+      uid: `online-storm-ann-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  Object.assign(boBeforeOrbStorm, {
+    hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `online-storm-bo-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  for (const enemy of liveRoom.run.combat.enemies) {
+    Object.assign(enemy, { hp: 50, maxHp: 50, block: 0, dead: false, abilityUsed: true })
+  }
+  const publishOrbStormFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'startTurn' } }),
+  })
+  assert(publishOrbStormFixture.ok, 'could not publish the Storm Start-of-Turn fixture')
+  await Promise.all([
+    a.locator('.combat[data-phase="start"]').waitFor(),
+    b.locator('.combat[data-phase="start"]').waitFor(),
+  ])
+  await a.getByRole('button', { name: 'dark slot 3' }).waitFor()
+  const teammateStormPrompts = await b.locator('.prompt').count()
+  const teammateStormTargets = await b.locator('.enemy--targeted').count()
+  check('waiting teammates cannot choose Storm Orbs or targets', () => {
+    assertEqual(teammateStormPrompts, 0)
+    assertEqual(teammateStormTargets, 0)
+  })
+  await a.reload({ waitUntil: 'networkidle' })
+  await a.locator('.combat[data-phase="start"]').waitFor()
+  await a.getByRole('button', { name: 'dark slot 3' }).waitFor()
+  await a.screenshot({ path: join(outDir, '02f-online-storm-reconnected.png'), fullPage: true })
+  await a.getByRole('button', { name: 'dark slot 3' }).click()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
+  const orbStormTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.defId === 'cultist')
+  assert(orbStormTarget, 'online Storm fixture needs its Cultist target')
+  await a.getByRole('button', { name: /Cultist/ }).click()
+  await a.getByRole('button', { name: 'frost slot 1' }).click()
+  let submittedOrbStormChoice
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedOrbStormChoice = route.request().postDataJSON()?.action?.choices
+      ?.find((choice) => choice.evokeSlots?.length > 0)
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
+  await a.locator('.combat[data-phase="player"]').waitFor()
+  const resolvedOrbStorm = await snapshot(a)
+  check('Storm survives reconnect and submits sequential Orb choices authoritatively', () => {
+    const ann = resolvedOrbStorm.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(submittedOrbStormChoice.evokeSlots, [2, 0])
+    assertDeepEqual(submittedOrbStormChoice.evokeEnemyUids, [orbStormTarget.uid, null])
+    assertDeepEqual(ann.orbs, ['lightning', 'lightning', 'lightning'])
+    assertEqual(ann.block, 1)
+    assertEqual(resolvedOrbStorm.run.combat.enemies.find((enemy) => enemy.uid === orbStormTarget.uid).hp, 45)
+    assertEqual(resolvedOrbStorm.startTurnAbilities, undefined)
+  })
+  await a.screenshot({ path: join(outDir, '02g-online-storm-resolved.png'), fullPage: true })
+  liveRoom.run.combat = orbStormRestore
+  const boAfterOrbStorm = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(boAfterOrbStorm, { miracles: 1, energy: 0 })
+  const publishOrbStormRestore = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': bCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishOrbStormRestore.ok, 'could not restore the post-Storm online fixture')
+  await a.locator('.combat[data-phase="player"]').waitFor()
+
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
   const boMiracleLogsBefore = await a.locator('.combat__log li')

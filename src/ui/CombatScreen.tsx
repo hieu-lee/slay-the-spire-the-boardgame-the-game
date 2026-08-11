@@ -81,6 +81,11 @@ type CombatScreenProps = {
 type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
 type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
 type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean }
+type PendingStartChoice =
+  | { kind: 'enemy'; ability: StartTurnAbility }
+  | { kind: 'shiv'; ability: StartTurnAbility; index: number }
+  | { kind: 'evokeTarget'; ability: StartTurnAbility; index: number }
+  | { kind: 'evoke'; ability: StartTurnAbility }
 
 /** What a card still needs before it can be played. */
 type Pending = {
@@ -464,6 +469,10 @@ export function CombatScreen({
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
   const [startTurnTargets, setStartTurnTargets] = useState<Record<string, (string | null | undefined)[]>>({})
+  const [startTurnEvokeSlots, setStartTurnEvokeSlots] = useState<Record<string, number[]>>({})
+  const [startTurnEvokeTargets, setStartTurnEvokeTargets] = useState<
+    Record<string, (string | null | undefined)[]>
+  >({})
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
@@ -498,7 +507,8 @@ export function CombatScreen({
     ? (partyStartTurnAbilities ?? startTurnAbilities(state))
     : []
   const startAbilityKey = baseStartAbilities.map((ability) =>
-    `${ability.id}:${ability.overflowShivs}:${ability.targets?.map((target) => target.uid).join(',') ?? ''}`).join('\0')
+    `${ability.id}:${ability.overflowShivs}:${ability.targets?.map((target) => target.uid).join(',') ?? ''}:` +
+    `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}`).join('\0')
 
   const { struck, beat } = useStruck(state)
 
@@ -785,6 +795,8 @@ export function CombatScreen({
       setStartTurnOrder([])
       setStartTurnEnemyTargets({})
       setStartTurnTargets({})
+      setStartTurnEvokeSlots({})
+      setStartTurnEvokeTargets({})
     }
   }, [state.phase])
 
@@ -799,6 +811,8 @@ export function CombatScreen({
       ability.id,
       Array(ability.overflowShivs).fill(undefined),
     ])))
+    setStartTurnEvokeSlots(Object.fromEntries(baseStartAbilities.map((ability) => [ability.id, []])))
+    setStartTurnEvokeTargets(Object.fromEntries(baseStartAbilities.map((ability) => [ability.id, []])))
   }, [startAbilityKey, state.phase])
 
   useEffect(() => {
@@ -931,19 +945,46 @@ export function CombatScreen({
   const startIds = startTurnOrder.length === baseStartAbilities.length
     ? startTurnOrder
     : baseStartAbilities.map((ability) => ability.id)
-  const orderedStartAbilities = startTurnAbilities(state, startIds)
+  const startChoiceDrafts: StartTurnChoice[] = startIds.map((id) => ({
+    id,
+    enemyUid: startTurnEnemyTargets[id],
+    shivEnemyUids: (startTurnTargets[id] ?? [])
+      .filter((uid): uid is string | null => uid !== undefined),
+    evokeSlots: startTurnEvokeSlots[id] ?? [],
+    evokeEnemyUids: (startTurnEvokeTargets[id] ?? [])
+      .filter((uid): uid is string | null => uid !== undefined),
+  }))
+  const orderedStartAbilities = startTurnAbilities(state, startIds, startChoiceDrafts)
   const canResolveStartTurn = !onAction || viewer.id === startTurnCoordinatorId
-  const pendingStartEnemy = canResolveStartTurn
-    ? orderedStartAbilities.find((ability) =>
-      ability.targets && startTurnEnemyTargets[ability.id] === undefined)
+  const pendingStartChoice = canResolveStartTurn
+    ? orderedStartAbilities.flatMap<PendingStartChoice>((ability) => {
+      if (ability.targets &&
+        (startTurnEnemyTargets[ability.id] === undefined || ability.enemyTargetStale)) {
+        return [{ kind: 'enemy', ability }]
+      }
+      const shivIndex = Array.from({ length: ability.overflowShivs })
+        .findIndex((_unused, index) => startTurnTargets[ability.id]?.[index] === undefined ||
+          ability.staleShivIndex === index)
+      if (shivIndex >= 0) return [{ kind: 'shiv', ability, index: shivIndex }]
+      const evokeTargetIndex = (startTurnEvokeTargets[ability.id] ?? [])
+        .findIndex((target) => target === undefined)
+      if (evokeTargetIndex >= 0) {
+        return [{ kind: 'evokeTarget', ability, index: evokeTargetIndex }]
+      }
+      return ability.evokeChoice ? [{ kind: 'evoke', ability }] : []
+    })[0]
     : undefined
-  const pendingStartShiv = canResolveStartTurn && !pendingStartEnemy
-    ? orderedStartAbilities.flatMap((ability) =>
-      Array.from({ length: ability.overflowShivs }, (_unused, index) => ({ ability, index })))
-      .find(({ ability, index }) => startTurnTargets[ability.id]?.[index] === undefined)
-    : undefined
+  const pendingStartEnemy = pendingStartChoice?.kind === 'enemy' ? pendingStartChoice.ability : undefined
+  const pendingStartShiv = pendingStartChoice?.kind === 'shiv' ? pendingStartChoice : undefined
+  const pendingStartEvokeTarget = pendingStartChoice?.kind === 'evokeTarget' ? pendingStartChoice : undefined
+  const pendingStartEvoke = pendingStartChoice?.kind === 'evoke' ? pendingStartChoice.ability : undefined
   const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length &&
-    !pendingStartEnemy && !pendingStartShiv
+    !pendingStartEnemy && !pendingStartShiv && !pendingStartEvokeTarget && !pendingStartEvoke
+  const isStartTurnEnemyTarget = (enemyUid: string) =>
+    Boolean(pendingStartEnemy?.targets?.some((target) => target.uid === enemyUid)) ||
+    Boolean(pendingStartShiv && (!pendingStartShiv.ability.shivTargets ||
+      pendingStartShiv.ability.shivTargets.some((target) => target.uid === enemyUid))) ||
+    Boolean(pendingStartEvokeTarget?.ability.evokeTargets?.some((target) => target.uid === enemyUid))
 
   function moveStartTurnAbility(id: string, delta: -1 | 1) {
     const from = startIds.indexOf(id)
@@ -961,18 +1002,56 @@ export function CombatScreen({
       ability.id,
       Array(ability.overflowShivs).fill(undefined),
     ])))
+    setStartTurnEvokeSlots(Object.fromEntries(plan.map((ability) => [ability.id, []])))
+    setStartTurnEvokeTargets(Object.fromEntries(plan.map((ability) => [ability.id, []])))
   }
 
   function chooseStartTurnEnemy(enemyUid: string) {
     if (!pendingStartEnemy || !canResolveStartTurn) return
+    if (!pendingStartEnemy.targets?.some((target) => target.uid === enemyUid)) return
     setStartTurnEnemyTargets({ ...startTurnEnemyTargets, [pendingStartEnemy.id]: enemyUid })
   }
 
   function chooseStartTurnShiv(enemyUid: string | null) {
     if (!pendingStartShiv || !canResolveStartTurn) return
+    if (enemyUid !== null && pendingStartShiv.ability.shivTargets &&
+      !pendingStartShiv.ability.shivTargets.some((target) => target.uid === enemyUid)) return
     const targets = [...(startTurnTargets[pendingStartShiv.ability.id] ?? [])]
     targets[pendingStartShiv.index] = enemyUid
     setStartTurnTargets({ ...startTurnTargets, [pendingStartShiv.ability.id]: targets })
+  }
+
+  function chooseStartTurnEvoke(slot: number) {
+    if (!pendingStartEvoke?.evokeChoice || !canResolveStartTurn) return
+    const picked = pendingStartEvoke.evokeChoice.options.find((option) => option.slot === slot)
+    if (!picked) return
+    setStartTurnEvokeSlots({
+      ...startTurnEvokeSlots,
+      [pendingStartEvoke.id]: [...(startTurnEvokeSlots[pendingStartEvoke.id] ?? []), slot],
+    })
+    const existingTargets = startTurnEvokeTargets[pendingStartEvoke.id] ?? []
+    const fallbackTarget = [
+      ...Object.values(startTurnEvokeTargets).flat(),
+      ...Object.values(startTurnTargets).flat(),
+      ...Object.values(startTurnEnemyTargets),
+    ].reverse().find((uid): uid is string => typeof uid === 'string')
+    setStartTurnEvokeTargets({
+      ...startTurnEvokeTargets,
+      [pendingStartEvoke.id]: [
+        ...existingTargets,
+        picked.orb === 'frost'
+          ? null
+          : pendingStartEvoke.evokeTargets?.length === 0 ? fallbackTarget : undefined,
+      ],
+    })
+  }
+
+  function chooseStartTurnEvokeEnemy(enemyUid: string) {
+    if (!pendingStartEvokeTarget || !canResolveStartTurn) return
+    if (!pendingStartEvokeTarget.ability.evokeTargets?.some((target) => target.uid === enemyUid)) return
+    const targets = [...(startTurnEvokeTargets[pendingStartEvokeTarget.ability.id] ?? [])]
+    targets[pendingStartEvokeTarget.index] = enemyUid
+    setStartTurnEvokeTargets({ ...startTurnEvokeTargets, [pendingStartEvokeTarget.ability.id]: targets })
   }
 
   function finishStartTurn() {
@@ -981,6 +1060,8 @@ export function CombatScreen({
       id: ability.id,
       enemyUid: startTurnEnemyTargets[ability.id],
       shivEnemyUids: (startTurnTargets[ability.id] ?? []).map((uid) => uid ?? null),
+      evokeSlots: [...(startTurnEvokeSlots[ability.id] ?? [])],
+      evokeEnemyUids: (startTurnEvokeTargets[ability.id] ?? []).map((uid) => uid ?? null),
     }))
     if (onAction) onAction({ kind: 'resolveStartTurn', choices })
     else onChange?.(resolveStartPlayerTurn(state, choices))
@@ -1573,6 +1654,10 @@ export function CombatScreen({
       chooseStartTurnShiv(enemy.uid)
       return
     }
+    if (pendingStartEvokeTarget) {
+      chooseStartTurnEvokeEnemy(enemy.uid)
+      return
+    }
     if (pendingPotion) {
       if (pendingPotionDef?.target === 'enemy') {
         consumePotion(pendingPotion, { enemyUid: enemy.uid })
@@ -1706,6 +1791,10 @@ export function CombatScreen({
     ? `${pendingStartShiv.ability.label} — choose overflow Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}, or skip`
     : pendingStartEnemy
       ? `${pendingStartEnemy.label} — choose an enemy`
+    : pendingStartEvokeTarget
+      ? `${pendingStartEvokeTarget.ability.label} — choose a target for the Evoked Orb`
+    : pendingStartEvoke?.evokeChoice
+      ? `${pendingStartEvoke.label} — choose an Orb to Evoke`
     : null
   const forcedPrompt = forcedCard && !pending
     ? forcedCard.playerId === viewerId
@@ -1937,12 +2026,15 @@ export function CombatScreen({
                       : false
                     const decided = (startTurnTargets[ability.id] ?? [])
                       .filter((target) => target !== undefined).length
+                    const evoked = startTurnEvokeSlots[ability.id]?.length ?? 0
                     return (
                       <li key={ability.id}>
                         <span>{ability.label}{ability.targets
                           ? ` — target ${targetChosen ? 1 : 0}/1`
                           : ''}{ability.overflowShivs > 0
                           ? ` — overflow ${decided}/${ability.overflowShivs}`
+                          : ''}{evoked > 0 || ability.evokeChoice
+                          ? ` — Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`
                           : ''}</span>
                         <button type="button" disabled={!canResolveStartTurn || index === 0}
                           aria-label={`Move ${ability.label} earlier`}
@@ -1958,7 +2050,8 @@ export function CombatScreen({
               {orderedStartAbilities.some((ability) =>
                 (ability.targets?.length ?? 0) > 1 && startTurnEnemyTargets[ability.id] !== undefined) ||
                 Object.values(startTurnTargets).some((targets) =>
-                  targets.some((target) => target !== undefined)) ? (
+                  targets.some((target) => target !== undefined)) ||
+                Object.values(startTurnEvokeSlots).some((slots) => slots.length > 0) ? (
                 <button type="button" disabled={!canResolveStartTurn}
                   onClick={() => {
                     setStartTurnEnemyTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
@@ -1969,6 +2062,8 @@ export function CombatScreen({
                       ability.id,
                       Array(ability.overflowShivs).fill(undefined),
                     ])))
+                    setStartTurnEvokeSlots(Object.fromEntries(orderedStartAbilities.map((ability) => [ability.id, []])))
+                    setStartTurnEvokeTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [ability.id, []])))
                   }}>
                   Reset start choices
                 </button>
@@ -2015,6 +2110,15 @@ export function CombatScreen({
               Skip this Shiv
             </button>
           ) : null}
+          {pendingStartEvoke?.evokeChoice && !pendingStartEvokeTarget
+            ? pendingStartEvoke.evokeChoice.options.map((option) => (
+              <button type="button" className="prompt__orb" key={option.slot}
+                onClick={() => chooseStartTurnEvoke(option.slot)}>
+                <span className={`token token--orb token--orb-${option.orb}`} />
+                {option.orb} slot {option.slot + 1}
+              </button>
+            ))
+            : null}
           {pending && overflowOnly && choiceSatisfied ? (
             <button type="button" className="prompt__cancel" onClick={() => commit(pending, true)}>
               Skip remaining overflow attacks
@@ -2069,7 +2173,7 @@ export function CombatScreen({
               Keep rows
             </button>
           ) : null}
-          {!pendingStartEnemy && !pendingStartShiv &&
+          {!pendingStartEnemy && !pendingStartShiv && !pendingStartEvokeTarget && !pendingStartEvoke &&
             (!pending?.choiceCards ||
               (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust') &&
               pending.choiceConfirmed) &&
@@ -2163,7 +2267,7 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={(Boolean(pendingStartEnemy || pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                 ))) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -2291,7 +2395,7 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={(Boolean(pendingStartEnemy || pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                      targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                       ))) && !enemy.dead}
                       onClick={onEnemyClick}

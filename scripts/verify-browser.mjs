@@ -3668,6 +3668,236 @@ check('upgraded Noxious Fumes automatically poisons every enemy', () => {
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeNoxiousFumes)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
 
+const runBeforeStorm = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 1, log: [] })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect', hand: [], discard: [], exhaust: [], energy: 0,
+    powers: [{ uid: 'ui-storm-plus', defId: 'storm', upgraded: true }],
+    orbs: ['frost', 'lightning', 'dark'], block: 0,
+    draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `ui-storm-draw-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const ally of run.combat.players.slice(1)) {
+    Object.assign(ally, { hand: [], draw: Array.from({ length: 10 }, (_, index) => ({
+      uid: `ui-storm-${ally.id}-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })) })
+  }
+  run.combat.enemies = run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  }))
+  debug.setRun(run)
+})
+const stormPower = page.locator('.power[aria-label^="Storm+"]')
+await stormPower.waitFor()
+const stormLabel = await stormPower.getAttribute('aria-label')
+check('Storm+ announces its recurring two-Lightning effect', () => {
+  assert(stormLabel.includes('channel 2 lightning Orbs') && stormLabel.includes('start of each turn'), stormLabel)
+})
+await stormPower.click()
+await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await shot('07zc-defect-storm-ready')
+await stormPower.click()
+await page.getByRole('button', { name: 'Start turn 2' }).click()
+await page.locator('.combat[data-phase="start"]').waitFor()
+await page.getByRole('button', { name: 'dark slot 3' }).waitFor()
+await shot('07zd-defect-storm-orb-choice')
+await page.getByRole('button', { name: 'dark slot 3' }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
+await shot('07ze-defect-storm-dark-target')
+const stormTarget = (await readState()).enemies.find((enemy) => enemy.defId === 'jaw_worm')
+assert(stormTarget, 'Storm browser fixture needs its Jaw Worm target')
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: 'frost slot 1' }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const stormResolved = await readState()
+check('Storm+ resolves sequential chosen Orb slots and separate Dark target', () => {
+  assertDeepEqual(stormResolved.players[0].orbs, ['lightning', 'lightning', 'lightning'])
+  assertEqual(stormResolved.players[0].block, 1)
+  assertEqual(stormResolved.enemies.find((enemy) => enemy.uid === stormTarget.uid).hp, 16)
+  assert(stormResolved.enemies.filter((enemy) => enemy.uid !== stormTarget.uid)
+    .every((enemy) => enemy.hp === 20))
+})
+await shot('07zf-defect-storm-resolved')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(actor, {
+    hand: [], block: 0, orbs: ['lightning', 'lightning', 'lightning'],
+    powers: [
+      { uid: 'ui-storm-lethal-first', defId: 'storm', upgraded: false },
+      { uid: 'ui-storm-lethal-second', defId: 'storm', upgraded: false },
+      { uid: 'ui-storm-lethal-fumes', defId: 'noxious_fumes', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-storm-lethal-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const ally of run.combat.players.slice(1)) {
+    Object.assign(ally, { hand: [], draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-storm-lethal-${ally.id}-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })) })
+  }
+  for (const enemy of run.combat.enemies) {
+    Object.assign(enemy, {
+      hp: enemy.defId === 'jaw_worm' ? 2 : 10,
+      maxHp: enemy.defId === 'jaw_worm' ? 2 : 10,
+      block: 0, dead: false, abilityUsed: true,
+    })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 3' }).click()
+await page.getByRole('button', { name: 'lightning slot 1' }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+await page.getByRole('button', { name: 'lightning slot 1' }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
+const safeStormTargets = await page.locator('.enemy--targeted').allTextContents()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const deadStormTargetRejected = await page.locator('.prompt').textContent()
+await page.getByRole('button', { name: /Cultist/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes'))
+const safePowerTargets = await page.locator('.enemy--targeted').allTextContents()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const deadPowerTargetRejected = await page.locator('.prompt').textContent()
+await page.getByRole('button', { name: /Cultist/ }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.locator('.combat[data-phase="player"]').waitFor()
+const stormLethalResolved = await readState()
+check('Storm removes an earlier lethal target from the next Orb choice', () => {
+  assertEqual(safePowerTargets.length, 1)
+  assert(safePowerTargets[0].includes('Cultist'), safePowerTargets[0])
+  assert(deadPowerTargetRejected.includes('Noxious Fumes'))
+  assertEqual(safeStormTargets.length, 1)
+  assert(safeStormTargets[0].includes('Cultist'), safeStormTargets[0])
+  assert(deadStormTargetRejected.includes('target for the Evoked Orb'))
+  assert(stormLethalResolved.enemies.find((enemy) => enemy.defId === 'jaw_worm').dead)
+  assertEqual(stormLethalResolved.enemies.find((enemy) => enemy.defId === 'cultist').hp, 8)
+  assertEqual(stormLethalResolved.enemies.find((enemy) => enemy.defId === 'cultist').poison, 1)
+})
+await shot('07zg-defect-storm-lethal-target-filter')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(actor, {
+    hand: [], orbs: ['lightning', 'lightning', 'lightning'],
+    powers: [
+      { uid: 'ui-storm-final', defId: 'storm', upgraded: true },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-storm-final-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const enemy of run.combat.enemies) {
+    const finalTarget = enemy.defId === 'jaw_worm'
+    Object.assign(enemy, {
+      hp: finalTarget ? 2 : 0, maxHp: finalTarget ? 2 : 10,
+      block: 0, dead: !finalTarget, abilityUsed: true,
+    })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 4' }).click()
+await page.getByRole('button', { name: 'lightning slot 1' }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const finalStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
+const finalStormReady = await finalStormResolve.isEnabled()
+const skippedPostLethalStorm = await page.getByRole('button', { name: 'lightning slot 1' }).count()
+await finalStormResolve.click()
+await page.locator('.combat[data-phase="won"]').waitFor()
+const finalStormState = await readState()
+check('Storm+ skips its second channel after the first Evoke wins combat', () => {
+  assert(finalStormReady)
+  assertEqual(skippedPostLethalStorm, 0)
+  assert(finalStormState.enemies.find((enemy) => enemy.defId === 'jaw_worm').dead)
+})
+await shot('07zh-defect-storm-final-target-fallback')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(actor, {
+    hand: [], shivs: 5, orbs: ['lightning', 'lightning', 'lightning'],
+    powers: [
+      { uid: 'ui-storm-before-final-shiv', defId: 'storm', upgraded: false },
+      { uid: 'ui-blades-after-final-storm', defId: 'infinite_blades', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-storm-before-shiv-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const ally of run.combat.players.slice(1)) ally.shivs = 0
+  for (const enemy of run.combat.enemies) {
+    const finalTarget = enemy.defId === 'jaw_worm'
+    Object.assign(enemy, {
+      hp: finalTarget ? 2 : 0, maxHp: finalTarget ? 2 : 10,
+      block: 0, dead: !finalTarget, abilityUsed: true,
+    })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 5' }).click()
+await page.getByRole('button', { name: 'lightning slot 1' }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const postStormShivResolve = page.getByRole('button', { name: 'Resolve start of turn' })
+const postStormShivReady = await postStormShivResolve.isEnabled()
+const skippedPostLethalStormShiv = await page.getByText(/overflow Shiv target/).count()
+await postStormShivResolve.click()
+await page.locator('.combat[data-phase="won"]').waitFor()
+check('a lethal Storm skips later overflow Shiv choices', () => {
+  assert(postStormShivReady)
+  assertEqual(skippedPostLethalStormShiv, 0)
+})
+await shot('07zi-defect-storm-skips-later-shiv')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(actor, {
+    hand: [], shivs: 5, orbs: ['lightning', 'lightning', 'lightning'],
+    powers: [
+      { uid: 'ui-storm-final-blades', defId: 'infinite_blades', upgraded: false },
+      { uid: 'ui-storm-final-after-shiv', defId: 'storm', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-storm-final-shiv-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const ally of run.combat.players.slice(1)) ally.shivs = 0
+  for (const enemy of run.combat.enemies) {
+    const finalTarget = enemy.defId === 'jaw_worm'
+    Object.assign(enemy, {
+      hp: finalTarget ? 1 : 0, maxHp: finalTarget ? 1 : 10,
+      block: 0, dead: !finalTarget, abilityUsed: true,
+    })
+  }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Start turn 6' }).click()
+await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const postShivStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
+const postShivStormReady = await postShivStormResolve.isEnabled()
+const skippedPostLethalShivStorm = await page.getByRole('button', { name: 'lightning slot 1' }).count()
+await postShivStormResolve.click()
+await page.locator('.combat[data-phase="won"]').waitFor()
+check('a lethal overflow Shiv skips later Storm choices', () => {
+  assert(postShivStormReady)
+  assertEqual(skippedPostLethalShivStorm, 0)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeStorm)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

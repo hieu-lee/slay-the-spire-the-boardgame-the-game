@@ -6,6 +6,7 @@ import {
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   createCombat,
+  defaultStartTurnChoices,
   endPlayerTurn,
   endTurnAbilities,
   enemyTurn,
@@ -2150,6 +2151,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'ftl', enemyHp: [19, 18], hand: [1, 1] },
     { id: 'force_field', block: [3, 4] },
     { id: 'tempest', energySpent: [1, 1], energy: [E - 1, E - 1], orb: ['lightning', 'lightning'], exhaust: [1, 1] },
+    { id: 'storm', powers: [1, 1] },
     { id: 'doom_and_gloom', enemyHp: [18, 17], orb: ['dark', 'dark'] },
     { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
@@ -2990,6 +2992,228 @@ check('Force Field discounts for Powers and Tempest channels once per X Energy',
   })
   assertDeepEqual(overflowed.players[0].orbs, ['lightning', 'lightning', 'lightning'])
   assertEqual(overflowed.players[0].block, 1, 'the chosen Frost evoke still resolves')
+})
+
+check('Storm pauses start of turn for every full-slot Orb and target choice', () => {
+  for (const upgraded of [false, true]) {
+    const storm = instance('storm', upgraded)
+    const state = combat([
+      makePlayer({ character: 'defect', powers: [storm], orbs: ['frost', 'dark', 'lightning'] }),
+    ], [makeEnemy({ hp: 10, maxHp: 10 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+    Object.assign(state, { phase: 'roundEnd', turn: 1 })
+    const prepared = preparePlayerTurn(state)
+    const [ability] = startTurnAbilities(prepared)
+    assertEqual(ability.evokeChoice.options.length, 3)
+    assertEqual(resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }]), prepared,
+      'Storm resolved without the required Orb choice')
+
+    const choice = upgraded
+      ? { id: ability.id, shivEnemyUids: [], evokeSlots: [1, 0], evokeEnemyUids: ['e2', null] }
+      : { id: ability.id, shivEnemyUids: [], evokeSlots: [1], evokeEnemyUids: ['e2'] }
+    const resolved = resolveStartPlayerTurn(prepared, [choice])
+    assertEqual(resolved.phase, 'player')
+    assertDeepEqual(resolved.players[0].orbs,
+      upgraded ? ['lightning', 'lightning', 'lightning'] : ['frost', 'lightning', 'lightning'])
+    assertEqual(resolved.players[0].block, upgraded ? 1 : 0)
+    assertEqual(resolved.enemies[1].hp, 6, 'the Dark Orb did not use its chosen target')
+  }
+
+  const state = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('storm', true), instance('storm', true)],
+    orbs: ['frost', 'dark', 'lightning'],
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const choices = defaultStartTurnChoices(prepared)
+  assertEqual(choices.reduce((sum, choice) => sum + (choice.evokeSlots?.length ?? 0), 0), 4)
+  const resolved = resolveStartPlayerTurn(prepared, choices)
+  assertEqual(resolved.phase, 'player')
+  assertDeepEqual(resolved.players[0].orbs, ['lightning', 'dark', 'lightning'])
+
+  const lethal = combat([makePlayer({
+    character: 'defect', powers: [instance('storm', true)], orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  Object.assign(lethal, { phase: 'roundEnd', turn: 1 })
+  const lethalPrepared = preparePlayerTurn(lethal)
+  const lethalAbility = startTurnAbilities(lethalPrepared)[0]
+  const afterFirstLethal = startTurnAbilities(lethalPrepared, undefined, [{
+    id: lethalAbility.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'],
+  }])[0]
+  assertDeepEqual(afterFirstLethal.evokeTargets.map((target) => target.uid), ['e2'])
+  const waitingForSafeTarget = startTurnAbilities(lethalPrepared, undefined, [{
+    id: lethalAbility.id, shivEnemyUids: [], evokeSlots: [0, 0], evokeEnemyUids: ['e1'],
+  }])[0]
+  assertEqual(waitingForSafeTarget.evokeChoice, undefined)
+  assertDeepEqual(waitingForSafeTarget.evokeTargets.map((target) => target.uid), ['e2'])
+  const lethalChoices = defaultStartTurnChoices(lethalPrepared)
+  assertDeepEqual(lethalChoices[0].evokeEnemyUids, ['e1', 'e2'])
+  const lethalResolved = resolveStartPlayerTurn(lethalPrepared, lethalChoices)
+  assertEqual(lethalResolved.phase, 'player')
+  assert(lethalResolved.enemies[0].dead)
+  assertEqual(lethalResolved.enemies[1].hp, 8)
+
+  const finalEnemy = combat([makePlayer({
+    character: 'defect', powers: [instance('storm', true)], orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 })])
+  Object.assign(finalEnemy, { phase: 'roundEnd', turn: 1 })
+  const finalPrepared = preparePlayerTurn(finalEnemy)
+  const finalChoices = defaultStartTurnChoices(finalPrepared)
+  assertDeepEqual(finalChoices[0].evokeSlots, [0],
+    'Storm+ still asked for a second Orb after the first Evoke won combat')
+  assertDeepEqual(finalChoices[0].evokeEnemyUids, ['e1'])
+  const finalResolved = resolveStartPlayerTurn(finalPrepared, finalChoices)
+  assertEqual(finalResolved.phase, 'won')
+  assert(finalResolved.enemies[0].dead)
+
+  const hiddenDraw = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('machine_learning'), instance('storm')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy()])
+  Object.assign(hiddenDraw, { phase: 'roundEnd', turn: 1 })
+  const hiddenPrepared = preparePlayerTurn(hiddenDraw)
+  delete hiddenPrepared.players[0].draw
+  delete hiddenPrepared.rng
+  const hiddenAbilities = startTurnAbilities(hiddenPrepared)
+  assertEqual(hiddenAbilities.length, 2)
+  assertEqual(hiddenAbilities[1].evokeChoice.options.length, 3,
+    'a redacted Machine Learning preview hid Storm\'s Orb choices')
+
+  for (const laterPower of ['noxious_fumes', 'infinite_blades']) {
+    const postLethal = combat([makePlayer({
+      character: 'defect', shivs: laterPower === 'infinite_blades' ? 5 : 0,
+      powers: [instance('storm'), instance(laterPower)],
+      orbs: ['lightning', 'lightning', 'lightning'],
+    })], [makeEnemy({ hp: 2, maxHp: 2 })])
+    Object.assign(postLethal, { phase: 'roundEnd', turn: 1 })
+    const postLethalPrepared = preparePlayerTurn(postLethal)
+    const postLethalAbilities = startTurnAbilities(postLethalPrepared)
+    const postLethalPlan = startTurnAbilities(
+      postLethalPrepared,
+      postLethalAbilities.map((ability) => ability.id),
+      [
+        { id: postLethalAbilities[0].id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'] },
+        { id: postLethalAbilities[1].id, shivEnemyUids: [] },
+      ],
+    )
+    assertEqual(postLethalPlan[1].targets, undefined,
+      `${laterPower} kept a target after Storm won combat`)
+    assertEqual(postLethalPlan[1].overflowShivs, 0,
+      `${laterPower} kept an overflow Shiv after Storm won combat`)
+    assertEqual(resolveStartPlayerTurn(postLethalPrepared, [
+      { id: postLethalAbilities[0].id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'] },
+      { id: postLethalAbilities[1].id, shivEnemyUids: [] },
+    ]).phase, 'won')
+  }
+
+  const lethalShivs = combat([makePlayer({
+    character: 'silent', shivs: 5, powers: [instance('infinite_blades', true)],
+  })], [makeEnemy({ hp: 1, maxHp: 1 })])
+  Object.assign(lethalShivs, { phase: 'roundEnd', turn: 1 })
+  const lethalShivsPrepared = preparePlayerTurn(lethalShivs)
+  const [lethalShivAbility] = startTurnAbilities(lethalShivsPrepared)
+  const lethalShivChoice = { id: lethalShivAbility.id, shivEnemyUids: ['e1'] }
+  assertEqual(startTurnAbilities(lethalShivsPrepared, undefined, [lethalShivChoice])[0].overflowShivs, 1,
+    'Infinite Blades+ still asked for its second Shiv after the first won combat')
+  assertEqual(resolveStartPlayerTurn(lethalShivsPrepared, [lethalShivChoice]).phase, 'won')
+
+  const orderedTargets = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('storm', true), instance('noxious_fumes')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  Object.assign(orderedTargets, { phase: 'roundEnd', turn: 1 })
+  const orderedPrepared = preparePlayerTurn(orderedTargets)
+  const orderedAbilities = startTurnAbilities(orderedPrepared)
+  const orderedStorm = orderedAbilities.find((ability) => ability.label.includes('Storm'))
+  const orderedFumes = orderedAbilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  const stagedTargets = startTurnAbilities(orderedPrepared, [orderedStorm.id, orderedFumes.id], [
+    { id: orderedStorm.id, shivEnemyUids: [], evokeSlots: [0, 0], evokeEnemyUids: ['e1', 'e2'] },
+    { id: orderedFumes.id, enemyUid: 'e1', shivEnemyUids: [] },
+  ])
+  const stagedFumes = stagedTargets.find((ability) => ability.id === orderedFumes.id)
+  assert(stagedFumes.enemyTargetStale)
+  assertDeepEqual(stagedFumes.targets.map((target) => target.uid), ['e2'])
+  const orderedDefaults = defaultStartTurnChoices(orderedPrepared)
+  assertEqual(orderedDefaults.find((choice) => choice.id === orderedFumes.id).enemyUid, 'e2')
+  const orderedResolved = resolveStartPlayerTurn(orderedPrepared, orderedDefaults)
+  assertEqual(orderedResolved.phase, 'player')
+  assertEqual(orderedResolved.enemies[1].hp, 8)
+  assertEqual(orderedResolved.enemies[1].poison, 1)
+
+  const orderedShivs = combat([makePlayer({
+    character: 'defect', shivs: 5,
+    powers: [instance('storm', true), instance('infinite_blades')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  Object.assign(orderedShivs, { phase: 'roundEnd', turn: 1 })
+  const shivPrepared = preparePlayerTurn(orderedShivs)
+  const shivAbilities = startTurnAbilities(shivPrepared)
+  const shivStorm = shivAbilities.find((ability) => ability.label.includes('Storm'))
+  const blades = shivAbilities.find((ability) => ability.label.includes('Infinite Blades'))
+  const stagedShivs = startTurnAbilities(shivPrepared, [shivStorm.id, blades.id], [
+    { id: shivStorm.id, shivEnemyUids: [], evokeSlots: [0, 0], evokeEnemyUids: ['e1', 'e2'] },
+    { id: blades.id, shivEnemyUids: ['e1'] },
+  ]).find((ability) => ability.id === blades.id)
+  assertEqual(stagedShivs.staleShivIndex, 0)
+  assertDeepEqual(stagedShivs.shivTargets.map((target) => target.uid), ['e2'])
+
+  const modifiedShiv = combat([makePlayer({
+    character: 'defect', shivs: 5,
+    relics: [{ defId: 'akabeko', spent: false }],
+    powers: [instance('infinite_blades'), instance('storm')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  Object.assign(modifiedShiv, { phase: 'roundEnd', turn: 0 })
+  const modifiedPrepared = preparePlayerTurn(modifiedShiv)
+  const modifiedAbilities = startTurnAbilities(modifiedPrepared)
+  const akabeko = modifiedAbilities.find((ability) => ability.label.includes('Akabeko'))
+  const modifiedBlades = modifiedAbilities.find((ability) => ability.label.includes('Infinite Blades'))
+  const modifiedStorm = modifiedAbilities.find((ability) => ability.label.includes('Storm'))
+  const modifiedPlan = startTurnAbilities(modifiedPrepared,
+    [akabeko.id, modifiedBlades.id, modifiedStorm.id], [
+      { id: akabeko.id, shivEnemyUids: [] },
+      { id: modifiedBlades.id, shivEnemyUids: ['e1'] },
+      { id: modifiedStorm.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'] },
+    ]).find((ability) => ability.id === modifiedStorm.id)
+  assertEqual(modifiedPlan.evokeChoice, undefined)
+  assertDeepEqual(modifiedPlan.evokeTargets.map((target) => target.uid), ['e2'])
+
+  const triggeredDamage = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('noxious_fumes'), instance('sadistic_nature'), instance('storm')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 1, maxHp: 1 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  Object.assign(triggeredDamage, { phase: 'roundEnd', turn: 1 })
+  const triggeredPrepared = preparePlayerTurn(triggeredDamage)
+  const triggeredDefaults = defaultStartTurnChoices(triggeredPrepared)
+  const triggeredStorm = startTurnAbilities(triggeredPrepared)
+    .find((ability) => ability.label.includes('Storm'))
+  assertEqual(triggeredDefaults.find((choice) => choice.id === triggeredStorm.id).evokeEnemyUids[0], 'e2')
+  const triggeredResolved = resolveStartPlayerTurn(triggeredPrepared, triggeredDefaults)
+  assertEqual(triggeredResolved.phase, 'player')
+  assert(triggeredResolved.enemies[0].dead)
+  assertEqual(triggeredResolved.enemies[1].hp, 8)
+
+  const triggeredShivs = combat([makePlayer({
+    character: 'silent', shivs: 5,
+    powers: [instance('sadistic_nature'), instance('infinite_blades', true), instance('storm')],
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  triggeredShivs.players[0].hitPoison = 1
+  Object.assign(triggeredShivs, { phase: 'roundEnd', turn: 1 })
+  const triggeredShivPrepared = preparePlayerTurn(triggeredShivs)
+  const triggeredShivAbilities = startTurnAbilities(triggeredShivPrepared)
+  const triggeredBlades = triggeredShivAbilities.find((ability) => ability.label.includes('Infinite Blades'))
+  const stormAfterShivs = triggeredShivAbilities.find((ability) => ability.label.includes('Storm'))
+  const triggeredShivPlan = startTurnAbilities(triggeredShivPrepared,
+    [triggeredBlades.id, stormAfterShivs.id], [
+      { id: triggeredBlades.id, shivEnemyUids: ['e1', 'e1'] },
+      { id: stormAfterShivs.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [] },
+    ]).find((ability) => ability.id === triggeredBlades.id)
+  assertEqual(triggeredShivPlan.staleShivIndex, 1)
+  assertDeepEqual(triggeredShivPlan.shivTargets.map((target) => target.uid), ['e2'])
 })
 
 check('FTL copies are separate cards, while Shivs do not consume its first-card bonus', () => {

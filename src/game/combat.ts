@@ -93,8 +93,17 @@ export type StartTurnAbility = {
   label: string
   /** A recurring single-enemy effect still needs its owner to choose. */
   targets?: { uid: string; label: string }[]
+  /** The staged direct target was killed by an earlier ordered ability. */
+  enemyTargetStale?: boolean
   /** Shivs this ability cannot take from the shared supply and may throw now. */
   overflowShivs: number
+  /** A staged overflow Shiv target was killed by an earlier ordered ability. */
+  staleShivIndex?: number
+  shivTargets?: { uid: string; label: string }[]
+  /** Next full-slot Orb choice after the choices already staged for this ability. */
+  evokeChoice?: EvokeChoice
+  /** Living enemies after staged Evokes, for the next Lightning/Dark target. */
+  evokeTargets?: { uid: string; label: string }[]
 }
 
 export type StartTurnChoice = {
@@ -102,6 +111,9 @@ export type StartTurnChoice = {
   enemyUid?: string
   /** One living enemy id or explicit skip per overflow Shiv. */
   shivEnemyUids: (string | null)[]
+  /** Chosen Orb slot and Lightning/Dark target for each forced Evoke, in order. */
+  evokeSlots?: number[]
+  evokeEnemyUids?: (string | null)[]
 }
 
 const END_TURN_TARGET = '@'
@@ -1704,11 +1716,10 @@ export function cardShivChoiceCount(
 
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
-function evokePlan(
-  def: CardDef,
+function effectEvokePlan(
+  effects: readonly Effect[],
   actor: Pick<Player, 'orbs'> & CountablePlayer,
   slots: readonly number[],
-  mode?: number,
   energySpent = 0,
 ) {
   const orbs = [...actor.orbs]
@@ -1736,7 +1747,6 @@ function evokePlan(
     return true
   }
 
-  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
   for (const effect of effects) {
     if (effect.when?.kind === 'orbsAtLeast' &&
       orbs.filter((orb) => orb !== null).length < effect.when.amount) continue
@@ -1749,22 +1759,35 @@ function evokePlan(
             : 0)
         : 1
       for (let count = 0; count < amount; count++) {
-        if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid }
+        if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid, orbs }
         const open = orbs.indexOf(null)
         if (open >= 0) orbs[open] = effect.kind === 'channel' ? effect.orb : 'lightning'
       }
     } else if (effect.kind === 'evoke' || effect.kind === 'recurseOrb') {
       if (effect.kind === 'recurseOrb') {
-        if (!evoke()) return { chosen, index, next, invalid }
+        if (!evoke()) return { chosen, index, next, invalid, orbs }
         const open = orbs.indexOf(null)
         const orb = chosen.at(-1)
         if (open >= 0 && orb) orbs[open] = orb
         continue
       }
-      for (let count = 0; count < effect.times; count++) if (!evoke()) return { chosen, index, next, invalid }
+      for (let count = 0; count < effect.times; count++) {
+        if (!evoke()) return { chosen, index, next, invalid, orbs }
+      }
     }
   }
-  return { chosen, index, next, invalid }
+  return { chosen, index, next, invalid, orbs }
+}
+
+function evokePlan(
+  def: CardDef,
+  actor: Pick<Player, 'orbs'> & CountablePlayer,
+  slots: readonly number[],
+  mode?: number,
+  energySpent = 0,
+) {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  return effectEvokePlan(effects, actor, slots, energySpent)
 }
 
 /** The next Orb choice a staged card needs, after its earlier choices. */
@@ -2443,20 +2466,131 @@ function startTurnAbilitiesFor(
   state: CombatState,
   sources: readonly StartTurnSource[],
   order?: readonly string[],
+  choices: readonly StartTurnChoice[] = [],
 ): StartTurnAbility[] {
   const ids = order ?? sources.map(({ ability }) => ability.id)
   if (!validStartTurnOrder(sources, ids)) return []
   const byId = new Map(sources.map((entry) => [entry.ability.id, entry]))
-  let held = state.players.reduce((sum, player) => sum + player.shivs, 0)
+  const choiceById = new Map(choices.map((choice) => [choice.id, choice]))
+  let plannedState = clone(state)
+  let plannedShivs = state.players.reduce((sum, player) => sum + player.shivs, 0)
+  let planningBlocked = false
+  let planningEnded = false
   return ids.map((id) => {
     const entry = byId.get(id)!
-    const player = findPlayer(state, entry.ability.playerId)!
+    if (planningEnded) return { ...entry.ability, targets: undefined, overflowShivs: 0 }
+    const simulationState = clone(plannedState)
+    const player = findPlayer(simulationState, entry.ability.playerId)!
+    const planningPlayer = player
+    const plannedEnemies = simulationState.enemies
+    const targetOptions = () => plannedEnemies.filter((enemy) => !enemy.dead)
+      .map((enemy) => ({ uid: enemy.uid, label: enemyLabel(plannedEnemies, enemy) }))
+    const choice = choiceById.get(id)
     const shivs = entry.source.effects.reduce((sum, effect) => sum + (
-      effect.kind === 'gainShiv' && effectIsActive(effect, state, player) ? effect.amount : 0
+      effect.kind === 'gainShiv' && effectIsActive(effect, plannedState, player) ? effect.amount : 0
     ), 0)
-    const gained = Math.min(Math.max(0, CAPS.shivs - held), shivs)
-    held += gained
-    return { ...entry.ability, overflowShivs: shivs - gained }
+    const gained = Math.min(Math.max(0, CAPS.shivs - plannedShivs), shivs)
+    const overflowShivs = shivs - gained
+    plannedShivs += gained
+    const targets = entry.ability.targets ? targetOptions() : undefined
+    const enemyTargetStale = Boolean(targets?.length && choice?.enemyUid !== undefined &&
+      !targets.some((target) => target.uid === choice.enemyUid))
+    if (entry.ability.targets && targets!.length > 0 &&
+      (choice?.enemyUid === undefined || enemyTargetStale)) planningBlocked = true
+    let staleShivIndex: number | undefined
+    let shivTargets: StartTurnAbility['shivTargets']
+    let shivEndedCombat = false
+    if (!planningBlocked) {
+      const chosenShivs = choice?.shivEnemyUids ?? []
+      for (let index = 0; !planningBlocked && index < overflowShivs; index++) {
+        if (index >= chosenShivs.length) {
+          staleShivIndex = index
+          shivTargets = targetOptions()
+          planningBlocked = true
+          break
+        }
+        const uid = chosenShivs[index]
+        if (uid == null) continue
+        const target = plannedEnemies.find((enemy) => !enemy.dead && enemy.uid === uid)
+        if (!target) {
+          if (targetOptions().length === 0) continue
+          staleShivIndex = index
+          shivTargets = targetOptions()
+          planningBlocked = true
+          break
+        }
+        applyEffect(
+          simulationState,
+          planningPlayer,
+          { kind: 'hit', amount: 1 + planningPlayer.shivDamageBonus },
+          'enemy', 'self', { enemyUid: uid, playerId: null }, 'Shiv',
+        )
+        if (targetOptions().length === 0) {
+          shivEndedCombat = true
+          break
+        }
+      }
+    }
+    let evokeChoice: EvokeChoice | undefined
+    let evokeTargets: StartTurnAbility['evokeTargets']
+    let evokePlanComplete = false
+    let evokeEndedCombat = false
+    if (!planningBlocked) {
+      const plan = effectEvokePlan(entry.source.effects, planningPlayer, choice?.evokeSlots ?? [])
+      for (let index = 0; index < plan.chosen.length; index++) {
+        const orb = plan.chosen[index]
+        if (orb === 'frost') continue
+        const target = plannedEnemies.find((enemy) =>
+          !enemy.dead && enemy.uid === choice?.evokeEnemyUids?.[index])
+        if (!target) {
+          evokeTargets = targetOptions()
+          planningBlocked = true
+          break
+        }
+        damageEnemy(target, (orb === 'lightning' ? 2 : 3 + player.powers.length) +
+          (player.orbEvokeBonus ?? 0))
+        if (targetOptions().length === 0) {
+          evokeEndedCombat = true
+          break
+        }
+      }
+      if (!planningBlocked) {
+        evokeChoice = evokeEndedCombat ? undefined : plan.next ?? undefined
+        if (plan.invalid || (plan.next && !evokeEndedCombat)) {
+          evokeTargets = targetOptions()
+          planningBlocked = true
+        } else {
+          planningPlayer.orbs = plan.orbs
+          evokePlanComplete = true
+        }
+      }
+    }
+    if (!planningBlocked && evokePlanComplete) {
+      const privateDraw = entry.source.effects.some((effect) => effect.kind === 'draw')
+      const forcedDraw = entry.source.effects.some((effect) => effect.kind === 'drawAndPlayFree')
+      if (forcedDraw) {
+        planningBlocked = true
+      } else if (!privateDraw) {
+        const exact = clone(plannedState)
+        const exactPlayer = findPlayer(exact, entry.ability.playerId)!
+        if (resolveTriggerSource(
+          exact, exactPlayer, entry.source, false, choice?.shivEnemyUids, choice?.enemyUid, undefined,
+          choice?.evokeSlots, choice?.evokeEnemyUids,
+        )) {
+          plannedState = exact
+          if (combatIsOver(exact)) planningEnded = true
+          if (planningEnded || exact.startTurnProgress?.forcedCard) planningBlocked = true
+        } else {
+          planningBlocked = true
+        }
+      }
+    }
+    return {
+      ...entry.ability, targets, enemyTargetStale,
+      overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
+      staleShivIndex, shivTargets,
+      evokeChoice, evokeTargets,
+    }
   })
 }
 
@@ -2464,16 +2598,43 @@ function startTurnAbilitiesFor(
 export function startTurnAbilities(
   state: CombatState,
   order?: readonly string[],
+  choices: readonly StartTurnChoice[] = [],
 ): StartTurnAbility[] {
-  return startTurnAbilitiesFor(state, pendingStartTurnSources(state), order)
+  return startTurnAbilitiesFor(state, pendingStartTurnSources(state), order, choices)
 }
 
 export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
-  return startTurnAbilities(state).map((ability) => ({
+  let lastEnemyUid: string | undefined
+  const choices = startTurnAbilities(state).map((ability) => ({
     id: ability.id,
     enemyUid: ability.targets?.[0]?.uid,
     shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [] as number[],
+    evokeEnemyUids: [] as (string | null)[],
   }))
+  while (true) {
+    const abilities = startTurnAbilities(state, undefined, choices)
+    const staleEnemy = abilities.find((ability) => ability.enemyTargetStale && ability.targets?.[0])
+    if (staleEnemy) {
+      choices.find((choice) => choice.id === staleEnemy.id)!.enemyUid = staleEnemy.targets![0]!.uid
+      continue
+    }
+    const staleShiv = abilities.find((ability) => ability.staleShivIndex !== undefined)
+    if (staleShiv?.shivTargets?.[0]) {
+      choices.find((choice) => choice.id === staleShiv.id)!
+        .shivEnemyUids[staleShiv.staleShivIndex!] = staleShiv.shivTargets[0].uid
+      continue
+    }
+    const pending = abilities.find((ability) => ability.evokeChoice)
+    if (!pending?.evokeChoice) return choices
+    const choice = choices.find((candidate) => candidate.id === pending.id)!
+    const picked = pending.evokeChoice.options[0]
+    if (!picked) return choices
+    const targetUid = pending.evokeTargets?.[0]?.uid ?? lastEnemyUid ?? livingEnemies(state)[0]?.uid
+    choice.evokeSlots!.push(picked.slot)
+    choice.evokeEnemyUids!.push(picked.orb === 'frost' ? null : targetUid ?? null)
+    if (picked.orb !== 'frost' && targetUid) lastEnemyUid = targetUid
+  }
 }
 
 /** Resolves the ordered ability phase prepared by `preparePlayerTurn`. */
@@ -2485,18 +2646,60 @@ export function resolveStartPlayerTurn(
   const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
   if (!validStartTurnOrder(sources, order)) return state
-  const abilities = startTurnAbilities(state, order)
-  const alive = new Set(livingEnemies(state).map((enemy) => enemy.uid))
-  if (choices.some((choice, index) =>
-    (abilities[index]!.targets
-      ? !abilities[index]!.targets!.some((target) => target.uid === choice.enemyUid)
-      : choice.enemyUid !== undefined) ||
-    choice.shivEnemyUids.length !== abilities[index]!.overflowShivs ||
-    choice.shivEnemyUids.some((uid) => uid !== null && !alive.has(uid)))) return state
 
   const next = clone(state)
   next.startTurnProgress = undefined
   return continueStartTurn(next, choices, state)
+}
+
+function validStartTurnShivChoice(
+  state: CombatState,
+  player: Player,
+  overflowShivs: number,
+  enemyUids: readonly (string | null)[],
+): boolean {
+  if (enemyUids.length > overflowShivs) return false
+  const simulation = clone(state)
+  const actor = findPlayer(simulation, player.id)!
+  for (const enemyUid of enemyUids) {
+    if (combatIsOver(simulation)) return false
+    if (enemyUid === null) continue
+    const target = livingEnemies(simulation).find((enemy) => enemy.uid === enemyUid)
+    if (!target) return false
+    applyEffect(
+      simulation, actor, { kind: 'hit', amount: 1 + actor.shivDamageBonus },
+      'enemy', 'self', { enemyUid, playerId: null }, 'Shiv',
+    )
+  }
+  return enemyUids.length === overflowShivs || combatIsOver(simulation)
+}
+
+function validStartTurnEvokeChoice(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  choice: StartTurnChoice,
+): boolean {
+  const slots = choice.evokeSlots ?? []
+  const targets = choice.evokeEnemyUids ?? []
+  const plan = effectEvokePlan(source.effects, player, slots)
+  if (plan.invalid || plan.index !== slots.length || plan.chosen.length !== targets.length) {
+    return false
+  }
+  const simulation = clone(state)
+  const actor = findPlayer(simulation, player.id)!
+  for (let index = 0; index < plan.chosen.length; index++) {
+    const orb = plan.chosen[index]!
+    if (orb === 'frost') {
+      if (targets[index] !== null) return false
+      continue
+    }
+    const target = livingEnemies(simulation).find((enemy) => enemy.uid === targets[index])
+    if (!target) return false
+    damageEnemy(target, (orb === 'lightning' ? 2 : 3 + actor.powers.length) +
+      (actor.orbEvokeBonus ?? 0))
+  }
+  return !plan.next || livingEnemies(simulation).length === 0
 }
 
 function continueStartTurn(
@@ -2514,14 +2717,16 @@ function continueStartTurn(
       (ability.targets
         ? !ability.targets.some((target) => target.uid === choice.enemyUid)
         : choice.enemyUid !== undefined) ||
-      choice.shivEnemyUids.length !== ability.overflowShivs ||
-      choice.shivEnemyUids.some((uid) => uid !== null &&
-        !livingEnemies(next).some((enemy) => enemy.uid === uid))) {
+      !validStartTurnShivChoice(next, player, ability.overflowShivs, choice.shivEnemyUids) ||
+      !validStartTurnEvokeChoice(next, player, entry.source, choice)) {
       next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return rollback ?? next
     }
     const checkpoint = rollback ? null : clone(next)
-    if (!resolveTriggerSource(next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid)) {
+    if (!resolveTriggerSource(
+      next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid, undefined,
+      choice.evokeSlots, choice.evokeEnemyUids,
+    )) {
       if (rollback) return rollback
       checkpoint!.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return checkpoint!
@@ -2585,7 +2790,7 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
   if (prepared === state || prepared.phase !== 'start') return prepared
   const abilities = startTurnAbilities(prepared)
   return abilities.length > 1 || abilities.some((ability) =>
-    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1)
+    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 || ability.evokeChoice)
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
 }
@@ -3177,6 +3382,8 @@ function resolveTriggerSource(
   shivEnemyUids?: readonly (string | null)[],
   enemyUid?: string,
   enemyRow?: number,
+  evokeSlots?: readonly number[],
+  evokeEnemyUids?: readonly (string | null)[],
 ): boolean {
   const useKey = source.powerUid ? powerAbilityKey(player.id, source.powerUid) : `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -3192,13 +3399,17 @@ function resolveTriggerSource(
     shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
     shivTargetIndex: 0,
     invalidShivTarget: false,
+    evokeSlots: evokeSlots ? [...evokeSlots] : undefined,
+    evokeEnemyUids: evokeEnemyUids ? [...evokeEnemyUids] : undefined,
+    evokeIndex: 0,
+    invalidEvokeTarget: false,
     sourcePowerUid: source.powerUid,
   }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
     if (!allowCombatOver && combatIsOver(state)) return true
   }
-  return !context.invalidShivTarget
+  return !context.invalidShivTarget && !context.invalidEvokeTarget
 }
 
 function fireTriggersInner(
