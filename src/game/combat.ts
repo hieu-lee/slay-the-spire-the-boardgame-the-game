@@ -1268,6 +1268,11 @@ function applyEffect(
       note(`${actor.name}'s Orb Evoke effects get +${effect.amount}`)
       return
     }
+    case 'gainDarkOrbEvokeBonus': {
+      actor.darkOrbEvokeBonus = (actor.darkOrbEvokeBonus ?? 0) + effect.amount
+      note(`${actor.name}'s Dark Orb Evoke effects get +${effect.amount}`)
+      return
+    }
     case 'gainOrbEndTurnBonus': {
       actor.orbEndTurnBonus = (actor.orbEndTurnBonus ?? 0) + effect.amount
       note(`${actor.name}'s Orb end-of-turn effects get +${effect.amount}`)
@@ -2575,7 +2580,8 @@ function startTurnAbilitiesFor(
           planningBlocked = true
           break
         }
-        damageEnemy(target, (orb === 'lightning' ? 2 : 3 + player.powers.length) +
+        damageEnemy(target, (orb === 'lightning' ? 2 :
+          3 + player.powers.length + (player.darkOrbEvokeBonus ?? 0)) +
           (player.orbEvokeBonus ?? 0))
         if (targetOptions().length === 0) {
           evokeEndedCombat = true
@@ -2724,7 +2730,8 @@ function validStartTurnEvokeChoice(
     }
     const target = livingEnemies(simulation).find((enemy) => enemy.uid === targets[index])
     if (!target) return false
-    damageEnemy(target, (orb === 'lightning' ? 2 : 3 + actor.powers.length) +
+    damageEnemy(target, (orb === 'lightning' ? 2 :
+      3 + actor.powers.length + (actor.darkOrbEvokeBonus ?? 0)) +
       (actor.orbEvokeBonus ?? 0))
   }
   return !plan.next || livingEnemies(simulation).length === 0
@@ -3288,7 +3295,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
     } else damageEnemyLogged(
       state,
       target,
-      3 + actor.powers.length + (actor.orbEvokeBonus ?? 0),
+      3 + actor.powers.length + (actor.orbEvokeBonus ?? 0) + (actor.darkOrbEvokeBonus ?? 0),
       `${actor.name}'s Dark orb`,
     )
   }
@@ -3519,6 +3526,7 @@ export function createCombat(
       hitPoison: 0,
       starterStrikeDamageBonus: 0,
       starterDefendBlockBonus: 0,
+      darkOrbEvokeBonus: 0,
       lightningEndTurnBonus: 0,
     })),
     enemies,

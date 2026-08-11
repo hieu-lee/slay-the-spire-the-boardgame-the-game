@@ -104,6 +104,8 @@ export type Player = {
   orbs: (OrbType | null)[]
   /** Added to each Orb's printed Evoke effect for this combat. */
   orbEvokeBonus?: number
+  /** Amplify adds only to Dark Orb Evoke damage. */
+  darkOrbEvokeBonus?: number
   /** Added to each Orb's printed end-of-turn effect for this combat. */
   orbEndTurnBonus?: number
   /** Static Discharge adds only to Lightning end-of-turn effects. */

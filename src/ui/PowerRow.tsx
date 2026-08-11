@@ -297,6 +297,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':
       return `Orb Evoke effects get +${effect.amount}`
+    case 'gainDarkOrbEvokeBonus':
+      return `Dark Orb Evoke effects get +${effect.amount}`
     case 'gainOrbEndTurnBonus':
       return `Orb end-of-turn effects get +${effect.amount}`
     case 'gainLightningEndTurnBonus':

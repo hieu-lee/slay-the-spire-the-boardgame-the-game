@@ -203,6 +203,7 @@ type EffectKind =
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
+  | { kind: 'gainDarkOrbEvokeBonus'; amount: number }
   | { kind: 'gainOrbEndTurnBonus'; amount: number }
   | { kind: 'gainLightningEndTurnBonus'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
@@ -1996,6 +1997,12 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainLightningEndTurnBonus', amount: 1 }],
     upgrade: { effects: [{ kind: 'gainLightningEndTurnBonus', amount: 2 }] },
+  }),
+  amplify: card({
+    id: 'amplify', name: 'Amplify', owner: 'defect', type: 'power', rarity: 'rare', cost: 1,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainDarkOrbEvokeBonus', amount: 3 }],
+    upgrade: { effects: [{ kind: 'gainDarkOrbEvokeBonus', amount: 5 }] },
   }),
   core_surge: card({
     id: 'core_surge', name: 'Core Surge', owner: 'defect', type: 'attack', rarity: 'rare', cost: 1,

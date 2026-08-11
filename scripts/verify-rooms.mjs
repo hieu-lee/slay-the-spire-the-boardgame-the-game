@@ -2923,6 +2923,7 @@ check('pile sizes are still visible — they are public at a real table', () => 
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
   actor.orbEvokeBonus = 2
+  actor.darkOrbEvokeBonus = 5
   actor.orbEndTurnBonus = 3
   actor.lightningEndTurnBonus = 4
   const snapshot = snapshotFor(room, a.token)
@@ -2934,10 +2935,12 @@ check('pile sizes are still visible — they are public at a real table', () => 
   const peerView = snapshotFor(room, b.token).run.combat.players
     .find((player) => player.id === a.playerId)
   assertEqual(ownerView.orbEvokeBonus, 2, 'owner reconnect lost the face-up Orb Evoke bonus')
+  assertEqual(ownerView.darkOrbEvokeBonus, 5, 'owner reconnect lost the face-up Dark Orb Evoke bonus')
   assertEqual(ownerView.orbEndTurnBonus, 3, 'owner reconnect lost the face-up Orb end-turn bonus')
   assertEqual(ownerView.lightningEndTurnBonus, 4,
     'owner reconnect lost the face-up Lightning end-turn bonus')
   assertEqual(peerView.orbEvokeBonus, 2, 'teammate could not see the face-up Orb Evoke bonus')
+  assertEqual(peerView.darkOrbEvokeBonus, 5, 'teammate could not see the face-up Dark Orb Evoke bonus')
   assertEqual(peerView.orbEndTurnBonus, 3, 'teammate could not see the face-up Orb end-turn bonus')
   assertEqual(peerView.lightningEndTurnBonus, 4,
     'teammate could not see the face-up Lightning end-turn bonus')

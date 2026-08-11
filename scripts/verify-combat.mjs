@@ -2233,6 +2233,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'consume', powers: [1, 1] },
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'static_discharge', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'amplify', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -3073,6 +3074,22 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
   const finalResolved = resolveStartPlayerTurn(finalPrepared, finalChoices)
   assertEqual(finalResolved.phase, 'won')
   assert(finalResolved.enemies[0].dead)
+
+  const amplifiedDark = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('amplify', true), instance('storm', true)],
+    orbs: ['dark', 'lightning', 'frost'],
+  })], [makeEnemy({ hp: 10, maxHp: 10 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  amplifiedDark.players[0].darkOrbEvokeBonus = 5
+  Object.assign(amplifiedDark, { phase: 'roundEnd', turn: 1 })
+  const amplifiedPrepared = preparePlayerTurn(amplifiedDark)
+  const amplifiedChoices = defaultStartTurnChoices(amplifiedPrepared)
+  assertDeepEqual(amplifiedChoices[0].evokeEnemyUids, ['e1', 'e2'],
+    'Amplify damage must remove the first target from Storm+ planning')
+  const amplifiedResolved = resolveStartPlayerTurn(amplifiedPrepared, amplifiedChoices)
+  assertEqual(amplifiedResolved.phase, 'player')
+  assert(amplifiedResolved.enemies[0].dead)
+  assertEqual(amplifiedResolved.enemies[1].hp, 8)
 
   const hiddenDraw = combat([makePlayer({
     character: 'defect',
@@ -4364,6 +4381,42 @@ check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
     enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
+})
+
+check('Amplify boosts only Dark Orb Evoke damage', () => {
+  assertEqual(faceOf(CARDS.amplify, false).effects[0].amount, 3)
+  assertEqual(faceOf(CARDS.amplify, true).effects[0].amount, 5)
+
+  const amplify = instance('amplify', true)
+  const consume = instance('consume')
+  const dual = instance('dual_cast')
+  let state = combat([makePlayer({
+    character: 'defect', hand: [amplify, consume, dual], energy: 4,
+    orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', amplify.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', consume.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].darkOrbEvokeBonus, 5)
+  assertEqual(state.players[0].orbEvokeBonus, 1)
+  const dark = playCard(state, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
+  assertEqual(dark.enemies[0].hp, 9,
+    'Dark combines its printed damage, both Powers, Consume, and Amplify+')
+
+  for (const orb of ['lightning', 'frost']) {
+    const card = instance('dual_cast')
+    const unaffectedState = combat([makePlayer({
+      character: 'defect', hand: [card], energy: 1, orbs: [orb, orb, null],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    unaffectedState.players[0].darkOrbEvokeBonus = 5
+    const context = orb === 'frost'
+      ? { enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'] }
+    const evoked = playCard(unaffectedState, 'p1', card.uid, context)
+    if (orb === 'frost') assertEqual(evoked.players[0].block, 2)
+    else assertEqual(evoked.enemies[0].hp, 16)
+  }
 })
 
 check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {

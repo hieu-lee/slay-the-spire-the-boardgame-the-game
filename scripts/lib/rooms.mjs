@@ -1272,6 +1272,7 @@ function redactPlayer(player, viewerId) {
     stance: player.stance,
     orbs: player.orbs,
     orbEvokeBonus: player.orbEvokeBonus ?? 0,
+    darkOrbEvokeBonus: player.darkOrbEvokeBonus ?? 0,
     orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     lightningEndTurnBonus: player.lightningEndTurnBonus ?? 0,
     dead: player.dead,

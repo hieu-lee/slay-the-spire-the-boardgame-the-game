@@ -161,6 +161,7 @@ function effectText(effect: Effect): string {
     case 'removeAllOrbs': return `remove all of your Orbs${condition}`
     case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
     case 'gainOrbEvokeBonus': return `Orb Evoke effects get +${effect.amount}${condition}`
+    case 'gainDarkOrbEvokeBonus': return `Dark Orb Evoke effects get +${effect.amount}${condition}`
     case 'gainOrbEndTurnBonus': return `Orb end-of-turn effects get +${effect.amount}${condition}`
     case 'gainLightningEndTurnBonus': return `Lightning Orb end-of-turn effects get +${effect.amount}${condition}`
     case 'gainShivDamageBonus': return `Shivs deal +${effect.amount} damage${condition}`

@@ -1895,6 +1895,45 @@ await shot('06zphgc-static-discharge-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [
+      { uid: 'ui-amplify', defId: 'amplify', upgraded: true },
+      { uid: 'ui-amplify-dual-cast', defId: 'dual_cast', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2,
+    orbs: ['dark', null, null], orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const amplifyCard = page.getByRole('button', { name: /^Amplify\+, cost 1,/ })
+const amplifyLabel = await amplifyCard.getAttribute('aria-label')
+await shot('06zphgd-amplify-ready')
+await amplifyCard.click()
+await page.getByRole('button', { name: /^Amplify\+: Dark Orb Evoke effects get \+5$/ }).waitFor()
+await shot('06zphge-amplify-power')
+await page.getByRole('button', { name: /^Dual Cast,/ }).click()
+await page.getByRole('button', { name: /dark slot 1/i }).click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 11)
+const amplified = await readState()
+check('Amplify+ visibly boosts Dark Evoke damage without changing its Power-count bonus', () => {
+  assert(amplifyLabel.includes('Dark Orb Evoke effects get +5'), amplifyLabel)
+  assertEqual(amplified.players[0].darkOrbEvokeBonus, 5)
+  assertEqual(amplified.enemies[0].hp, 11)
+  assertDeepEqual(amplified.players[0].orbs, [null, null, null])
+  assertEqual(amplified.players[0].energy, 0)
+})
+await shot('06zphgf-amplify-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Core Surge playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
