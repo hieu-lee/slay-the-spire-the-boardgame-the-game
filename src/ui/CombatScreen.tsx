@@ -1204,14 +1204,16 @@ export function CombatScreen({
         setUsingPotion(false)
       }
       const awaitReconciliation = (refreshAttempt = refreshRef.current) => {
-        const current = stateRef.current.players.find((player) => player.id === viewerId)
-        if (
-          (current && current.potions.filter((held) => held === potionId).length < potionCountBefore) ||
-          (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)
-        ) unlock()
-        else if (refreshAttempt !== undefined) {
-          unknownPotionAction.current = { refreshAttempt, potionId, countBefore: potionCountBefore }
-        } else unlock()
+        setTimeout(() => {
+          const current = stateRef.current.players.find((player) => player.id === viewerId)
+          if (
+            (current && current.potions.filter((held) => held === potionId).length < potionCountBefore) ||
+            (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)
+          ) unlock()
+          else if (refreshAttempt !== undefined) {
+            unknownPotionAction.current = { refreshAttempt, potionId, countBefore: potionCountBefore }
+          } else unlock()
+        }, 0)
       }
       const retry = (outcome: ActionOutcome | void) => {
         if (outcome?.status !== 'refused' && outcome?.status !== 'reconciled') return

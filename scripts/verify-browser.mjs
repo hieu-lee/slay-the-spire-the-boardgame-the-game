@@ -1958,6 +1958,50 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-fission', defId: 'fission', upgraded: true }],
+    discard: [], exhaust: [], powers: [], energy: 0,
+    draw: [
+      { uid: 'ui-fission-draw-a', defId: 'strike_defect', upgraded: false },
+      { uid: 'ui-fission-draw-b', defId: 'defend_defect', upgraded: false },
+      { uid: 'ui-fission-draw-c', defId: 'zap', upgraded: false },
+    ],
+    orbs: ['lightning', 'frost', 'dark'], orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 2)
+  for (const enemy of run.combat.enemies) Object.assign(enemy, {
+    hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const fissionCard = page.getByRole('button', { name: /^Fission\+, cost 0,/ })
+const fissionLabel = await fissionCard.getAttribute('aria-label')
+await fissionCard.click()
+await page.getByRole('button', { name: /dark slot 3/i }).waitFor()
+await shot('06zphgcg-fission-orb-choice')
+await page.getByRole('button', { name: /dark slot 3/i }).click()
+await page.locator('.enemy--targeted').nth(1).click()
+await page.getByRole('button', { name: /frost slot 2/i }).click()
+await page.getByRole('button', { name: /lightning slot 1/i }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
+const fissioned = await readState()
+check('Fission+ visibly Evokes every chosen Orb before paying Energy and cards', () => {
+  assert(fissionLabel.includes('evoke every Orb; gain 1 Energy and draw 1 card for each'), fissionLabel)
+  assertDeepEqual(fissioned.players[0].orbs, [null, null, null])
+  assertEqual(fissioned.players[0].energy, 3)
+  assertEqual(fissioned.players[0].block, 1)
+  assertDeepEqual(fissioned.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b), [17, 18])
+  assert(fissioned.players[0].exhaust.some((card) => card.defId === 'fission'))
+})
+await shot('06zphgch-fission-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-amplify', defId: 'amplify', upgraded: true },
       { uid: 'ui-amplify-dual-cast', defId: 'dual_cast', upgraded: false },

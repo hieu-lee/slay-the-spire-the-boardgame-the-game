@@ -2183,6 +2183,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
     { id: 'electrodynamics', powers: [1, 1], orbCount: [2, 3] },
+    { id: 'fission', exhaust: [1, 1] },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
     { id: 'bludgeon', enemyHp: [13, 10] },
@@ -4504,6 +4505,45 @@ check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning 
   assertDeepEqual(autoResolved.enemies.map((enemy) => enemy.hp), [18, 20, 18])
   assertEqual(startPlayerTurn(roundEnd).phase, 'player',
     'the deterministic start path did not resolve an Electrodynamics row choice')
+})
+
+check('Fission removes or Evokes every chosen Orb, then pays once per Orb', () => {
+  const draw = [instance('strike_defect'), instance('defend_defect'), instance('zap')]
+  const base = instance('fission')
+  const removed = playCard(combat([makePlayer({
+    character: 'defect', hand: [base], draw, energy: 1, orbs: ['lightning', 'frost', 'dark'],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', base.uid, {
+    enemyUid: null, playerId: null,
+  })
+  assertDeepEqual(removed.players[0].orbs, [null, null, null])
+  assertEqual(removed.players[0].energy, 4)
+  assertEqual(removed.players[0].hand.length, 3)
+  assertEqual(removed.players[0].block, 0)
+  assertEqual(removed.enemies[0].hp, 20, 'base Fission Evoked an Orb')
+  assert(removed.players[0].exhaust.some((card) => card.uid === base.uid))
+
+  const upgraded = instance('fission', true)
+  const state = combat([makePlayer({
+    character: 'defect', hand: [upgraded], draw, energy: 1, orbs: ['lightning', 'frost', 'dark'],
+  })], [
+    makeEnemy({ uid: 'lightning-target', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'dark-target', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertDeepEqual(nextEvokeChoice(faceOf(CARDS.fission, true), state.players[0], [0, 1]).options,
+    [{ slot: 2, orb: 'dark' }])
+  assertEqual(playCard(state, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['lightning-target', null],
+  }), state, 'Fission+ resolved without choosing every Orb')
+  const evoked = playCard(state, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0, 1, 2],
+    evokeEnemyUids: ['lightning-target', null, 'dark-target'],
+  })
+  assertDeepEqual(evoked.players[0].orbs, [null, null, null])
+  assertEqual(evoked.players[0].energy, 4)
+  assertEqual(evoked.players[0].hand.length, 3)
+  assertEqual(evoked.players[0].block, 1)
+  assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 17])
+  assert(evoked.players[0].exhaust.some((card) => card.uid === upgraded.uid))
 })
 
 check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {

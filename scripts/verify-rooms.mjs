@@ -3452,6 +3452,52 @@ check('Electrodynamics row evokes stay server-authoritative and reconnect-visibl
   assert(peer.powers.some((power) => power.defId === 'electrodynamics'))
 })
 
+check('Fission choices stay server-authoritative and its draws remain private after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const fission = { uid: 'room-fission', defId: 'fission', upgraded: true }
+  const drawn = [
+    { uid: 'room-fission-draw-a', defId: 'strike_defect', upgraded: false },
+    { uid: 'room-fission-draw-b', defId: 'defend_defect', upgraded: false },
+    { uid: 'room-fission-draw-c', defId: 'zap', upgraded: false },
+  ]
+  Object.assign(actor, {
+    character: 'defect', hand: [fission], draw: drawn, discard: [], exhaust: [], energy: 0,
+    orbs: ['lightning', 'frost', 'dark'],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false })
+
+  let refused = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: fission.uid, evokeSlots: [0, 1],
+      evokeEnemyUids: [first.uid, null], preflight: true,
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'the server accepted a partial Fission+ Orb plan')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: fission.uid, evokeSlots: [0, 1, 2],
+    evokeEnemyUids: [first.uid, null, second.uid], preflight: true,
+  })
+  const owner = snapshotFor(room, joinRoom(room, { token: a.token }).token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  const peer = snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertDeepEqual(owner.orbs, [null, null, null])
+  assertEqual(owner.energy, 3)
+  assertEqual(owner.hand.length, 3)
+  assert(owner.exhaust.some((card) => card.uid === fission.uid))
+  assertEqual(peer.hand, null)
+  assertEqual(peer.handCount, 3)
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-fission-draw-')),
+    'Fission leaked its draws to a teammate')
+})
+
 check('an unknown token cannot act at all', () => {
   const { room } = twoSeatRoom()
   let threw = false

@@ -207,6 +207,8 @@ type EffectKind =
   | { kind: 'evoke'; times: number }
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
+  /** Fission: clear every charged Orb, optionally Evoking each, then gain one Energy and draw per Orb. */
+  | { kind: 'fission'; evoke: boolean }
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
@@ -1790,6 +1792,12 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'lightningTargetsRow' }, { kind: 'channel', orb: 'lightning', amount: 3 }],
     },
+  }),
+  fission: card({
+    id: 'fission', name: 'Fission', owner: 'defect', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'fission', evoke: false }],
+    upgrade: { effects: [{ kind: 'fission', evoke: true }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

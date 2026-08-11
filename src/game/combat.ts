@@ -1383,6 +1383,21 @@ function applyEffect(
       }
       return
     }
+    case 'fission': {
+      const count = actor.orbs.filter((orb) => orb !== null).length
+      if (effect.evoke) {
+        for (let index = 0; index < count; index++) {
+          evokeOrb(state, actor, context)
+          if (combatIsOver(state)) return
+        }
+      } else {
+        actor.orbs = actor.orbs.map(() => null)
+        if (count > 0) note(`${actor.name} removes ${count} Orbs`)
+      }
+      applyEffect(state, actor, { kind: 'gainEnergy', amount: count }, scope, supportScope, context, source)
+      applyEffect(state, actor, { kind: 'draw', amount: count }, scope, supportScope, context, source)
+      return
+    }
     case 'removeAllOrbs': {
       const removed = actor.orbs.filter((orb) => orb !== null).length
       actor.orbs = actor.orbs.map(() => null)
@@ -1937,7 +1952,14 @@ function effectEvokePlan(
         const open = orbs.indexOf(null)
         if (open >= 0) orbs[open] = effect.kind === 'channel' ? effect.orb : 'lightning'
       }
-    } else if (effect.kind === 'evoke' || effect.kind === 'recurseOrb') {
+    } else if (effect.kind === 'evoke' || effect.kind === 'recurseOrb' ||
+      (effect.kind === 'fission' && effect.evoke)) {
+      if (effect.kind === 'fission') {
+        while (orbs.some((orb) => orb !== null)) {
+          if (!evoke()) return { chosen, index, next, invalid, orbs }
+        }
+        continue
+      }
       if (effect.kind === 'recurseOrb') {
         if (!evoke()) return { chosen, index, next, invalid, orbs }
         const open = orbs.indexOf(null)

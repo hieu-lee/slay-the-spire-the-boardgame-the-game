@@ -149,6 +149,9 @@ function effectText(effect: Effect): string {
     case 'evoke': return `evoke ${effect.times} orbs${condition}`
     case 'channelDieOrb': return `channel Lightning on die 1 or 2, Frost on 3 or 4, Dark on 5 or 6${condition}`
     case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`
+    case 'fission': return effect.evoke
+      ? `evoke every Orb; gain 1 Energy and draw 1 card for each${condition}`
+      : `remove every Orb; gain 1 Energy and draw 1 card for each${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
     case 'recoverDiscard': return effect.toHand
