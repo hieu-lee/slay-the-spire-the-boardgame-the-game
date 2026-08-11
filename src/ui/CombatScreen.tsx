@@ -722,7 +722,7 @@ export function CombatScreen({
       const evokeSlots = invalidEvokeTarget ? [] : current.evokeSlots
       const evokeEnemyUids = invalidEvokeTarget ? [] : current.evokeEnemyUids
       if (overflowChanged && !needsEnemy && !current.needsAlly && !needsSwitch && !current.choice &&
-        !nextEvokeChoice(def, viewer, evokeSlots) &&
+        !nextEvokeChoice(def, viewer, evokeSlots, current.mode ?? undefined, current.energySpent ?? 0) &&
         !evokeEnemyUids.some((target) => target === undefined)) return null
       if (
         overflowShivs === current.overflowShivs &&
@@ -1206,7 +1206,7 @@ export function CombatScreen({
     ? cardNeedsEnemy(pendingDef, viewer, false, pending?.energySpent ?? undefined)
     : false
   const pendingEvokeChoice = pendingDef && pending
-    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined)
+    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.energySpent ?? 0)
     : null
   const pendingEvokeTarget = pending?.evokeEnemyUids.findIndex((target) => target === undefined) ?? -1
   const evokeChoicesDone = pendingEvokeChoice === null && pendingEvokeTarget < 0
@@ -1339,7 +1339,7 @@ export function CombatScreen({
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           setMiracleOnCard(usingMiracle)
           if (needsEnemy || needsAlly || playerChoices > 0 || needsSwitch || def.modes || next.choice ||
-            nextEvokeChoice(def, authoritative.player, [])) {
+            nextEvokeChoice(def, authoritative.player, [], undefined, 0)) {
             setPending({
               ...next,
               energySpent: next.cardInHand
@@ -1410,7 +1410,7 @@ export function CombatScreen({
     const ready = selectionReady && minimumPaid && (!next.choiceCards || next.choiceConfirmed) &&
       (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' || next.choiceConfirmed) &&
       (!def.modes || next.mode !== null) &&
-      !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined) &&
+      !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined, next.energySpent ?? 0) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
       (def.cost !== 'X' || next.energySpent !== null) &&
       (!cardNeedsEnemy(def, viewer!, false, next.energySpent ?? undefined) || next.enemyUid !== null) &&
@@ -1544,7 +1544,8 @@ export function CombatScreen({
     if (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' &&
       !next.needsEnemy && !next.needsAlly &&
       next.playerIds.length >= next.playerChoices && !next.needsSwitch && owed === 0 &&
-      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots)) commit(next)
+      (def.cost !== 'X' || next.energySpent !== null) &&
+      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots, undefined, next.energySpent ?? 0)) commit(next)
   }
 
   function onChoiceCardClick(card: CardInstance) {

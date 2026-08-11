@@ -2059,6 +2059,7 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   const actor = run.combat.players[0]
   Object.assign(actor, {
+    name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-ftl-power-first', defId: 'inflame', upgraded: false },
       { uid: 'ui-ftl-late', defId: 'ftl', upgraded: false },
@@ -2080,6 +2081,41 @@ check('FTL does not draw after another card through the real controls', () => {
   assertEqual(lateFtl.players[0].hand.length, 0)
   assertEqual(lateFtl.players[0].draw[0].uid, 'ui-ftl-stays-drawn')
 })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-force-field', defId: 'force_field', upgraded: true },
+      { uid: 'ui-tempest', defId: 'tempest', upgraded: true },
+    ],
+    discard: [], draw: [], exhaust: [],
+    powers: [
+      { uid: 'ui-force-power-a', defId: 'machine_learning', upgraded: false },
+      { uid: 'ui-force-power-b', defId: 'heatsinks', upgraded: false },
+    ],
+    energy: 4, block: 0, orbs: [null, null, null], cardsPlayedThisTurn: 0,
+  })
+  debug.setRun(run)
+})
+const forceFieldCard = page.getByRole('button', { name: /^Force Field\+, cost 1,/ })
+const tempestCard = page.getByRole('button', { name: /^Tempest\+, cost X,/ })
+const tempestLabel = await tempestCard.getAttribute('aria-label')
+await shot('06zpy-defect-power-cards-ready')
+await forceFieldCard.click()
+await tempestCard.click()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+const defectPowerCards = await readState()
+check('Force Field discounts and Tempest+ resolves X through the real controls', () => {
+  assert(tempestLabel.includes('channel 1 plus 1 per Energy spent on this card lightning orbs'), tempestLabel)
+  assertEqual(defectPowerCards.players[0].block, 4)
+  assertEqual(defectPowerCards.players[0].energy, 1)
+  assertEqual(defectPowerCards.players[0].orbs.length, 3)
+  assertEqual(defectPowerCards.players[0].exhaust[0].uid, 'ui-tempest')
+})
+await shot('06zpz-force-field-tempest-resolved')
 
 for (const freeKind of ['forced', 'discounted']) {
   await page.evaluate(({ baseline, freeKind }) => {

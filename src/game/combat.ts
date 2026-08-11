@@ -1174,7 +1174,7 @@ function applyEffect(
       // after an Orb was really placed: a lethal forced evoke ends combat first.
       const at = state.log.length
       let channeled = 0
-      for (let i = 0; i < effect.amount; i++) {
+      for (let i = 0; i < amountOf(effect.amount, state, actor, undefined, context); i++) {
         if (channelOrb(state, actor, effect.orb, context)) channeled += 1
         if (combatIsOver(state)) break
       }
@@ -1704,7 +1704,13 @@ export function cardShivChoiceCount(
 
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
-function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly number[], mode?: number) {
+function evokePlan(
+  def: CardDef,
+  actor: Pick<Player, 'orbs'> & CountablePlayer,
+  slots: readonly number[],
+  mode?: number,
+  energySpent = 0,
+) {
   const orbs = [...actor.orbs]
   const chosen: OrbType[] = []
   let index = 0
@@ -1735,7 +1741,13 @@ function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly nu
     if (effect.when?.kind === 'orbsAtLeast' &&
       orbs.filter((orb) => orb !== null).length < effect.when.amount) continue
     if (effect.kind === 'channel' || effect.kind === 'channelDieOrb') {
-      const amount = effect.kind === 'channel' ? effect.amount : 1
+      const amount = effect.kind === 'channel'
+        ? typeof effect.amount === 'number'
+          ? effect.amount
+          : effect.amount.base + (effect.amount.per
+            ? countOf(effect.amount.per, actor, undefined, energySpent) * (effect.amount.scale ?? 1)
+            : 0)
+        : 1
       for (let count = 0; count < amount; count++) {
         if (orbs.every((orb) => orb !== null) && !evoke()) return { chosen, index, next, invalid }
         const open = orbs.indexOf(null)
@@ -1758,11 +1770,12 @@ function evokePlan(def: CardDef, actor: Pick<Player, 'orbs'>, slots: readonly nu
 /** The next Orb choice a staged card needs, after its earlier choices. */
 export function nextEvokeChoice(
   def: CardDef,
-  actor: Pick<Player, 'orbs'>,
+  actor: Pick<Player, 'orbs'> & CountablePlayer,
   slots: readonly number[],
   mode?: number,
+  energySpent = 0,
 ): EvokeChoice | null {
-  return evokePlan(def, actor, slots, mode).next
+  return evokePlan(def, actor, slots, mode, energySpent).next
 }
 
 function needsChosenEnemy(
@@ -1924,7 +1937,7 @@ function cardResolutionChoicesAreValid(
       (required === 0 && chosen !== undefined)) return false
   }
 
-  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode)
+  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode, context.energySpent ?? 0)
   if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return false
   if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return false
   if (context.evokeEnemyUids) {

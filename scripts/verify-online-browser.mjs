@@ -503,6 +503,51 @@ try {
   await a.screenshot({ path: join(outDir, '02-whirlwind-x-resolved.png'), fullPage: true })
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const annBeforeTempest = structuredClone(annLive)
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-tempest', defId: 'tempest', upgraded: true }],
+    discard: [], draw: [], exhaust: [], energy: 3, orbs: [null, null, null],
+  })
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  boLive.miracles = 1
+  const publishTempestFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishTempestFixture.ok, 'could not publish the online Tempest fixture')
+  const submittedTempestEnergies = []
+  const tempestActionUrl = `**/api/rooms/${code}/action`
+  await a.route(tempestActionUrl, async (route) => {
+    const action = route.request().postDataJSON()?.action
+    if (action?.kind === 'playCard' && action.cardUid === 'online-tempest') {
+      submittedTempestEnergies.push(action.energySpent)
+    }
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  })
+  await a.getByRole('button', { name: /^Tempest\+,/ }).click()
+  await a.getByText('Choose Energy for Tempest+').waitFor()
+  const teammateTempestPrompts = await b.getByText('Choose Energy for Tempest+').count()
+  await a.getByRole('button', { name: 'Spend 2' }).click()
+  for (let attempt = 0; attempt < 50 &&
+    !liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust
+      .some((card) => card.uid === 'online-tempest'); attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  await a.unroute(tempestActionUrl)
+  const onlineTempest = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  check('online Tempest waits for its private X choice and submits once', () => {
+    assertEqual(teammateTempestPrompts, 0)
+    assertDeepEqual(submittedTempestEnergies, [2])
+    assertEqual(onlineTempest.energy, 1)
+    assertEqual(onlineTempest.orbs.filter(Boolean).length, 3)
+    assert(onlineTempest.exhaust.some((card) => card.uid === 'online-tempest'))
+  })
+  await a.screenshot({ path: join(outDir, '02b-tempest-x-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  Object.assign(annLive, annBeforeTempest)
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
     hand: [], powers: [{ uid: 'online-combust', defId: 'combust', upgraded: true }],

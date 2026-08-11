@@ -194,7 +194,7 @@ type EffectKind =
   | { kind: 'useAllShivs'; bonus: number }
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
-  | { kind: 'channel'; orb: OrbType; amount: number }
+  | { kind: 'channel'; orb: OrbType; amount: Amount }
   | { kind: 'evoke'; times: number }
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
@@ -1694,6 +1694,20 @@ export const CARDS: Record<string, CardDef> = {
         { kind: 'hit', amount: 2 },
         { kind: 'draw', amount: 1, when: { kind: 'firstCardPlayedThisTurn' } },
       ],
+    },
+  }),
+  force_field: card({
+    id: 'force_field', name: 'Force Field', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 3,
+    powerCostReduction: 1,
+    effects: [{ kind: 'block', amount: 3 }],
+    upgrade: { effects: [{ kind: 'block', amount: 4 }] },
+  }),
+  tempest: card({
+    id: 'tempest', name: 'Tempest', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 'X',
+    exhaust: true,
+    effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 0, per: 'energySpent' } }],
+    upgrade: {
+      effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 1, per: 'energySpent' } }],
     },
   }),
   doom_and_gloom: card({

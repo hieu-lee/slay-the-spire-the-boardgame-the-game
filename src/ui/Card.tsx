@@ -137,7 +137,7 @@ function effectText(effect: Effect): string {
     case 'useAllShivs': return `use all Shivs now; each deals +${effect.bonus} damage as a separate attack${condition}`
     case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`
     case 'enterStance': return `enter ${effect.stance}${condition}`
-    case 'channel': return `channel ${effect.amount} ${effect.orb} orbs${condition}`
+    case 'channel': return `channel ${amountText(effect.amount)} ${effect.orb} ${effect.amount === 1 ? 'orb' : 'orbs'}${condition}`
     case 'evoke': return `evoke ${effect.times} orbs${condition}`
     case 'channelDieOrb': return `channel Lightning on die 1 or 2, Frost on 3 or 4, Dark on 5 or 6${condition}`
     case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`

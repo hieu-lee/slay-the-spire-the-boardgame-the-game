@@ -10,6 +10,7 @@ import {
   endTurnAbilities,
   enemyTurn,
   livingEnemies,
+  nextEvokeChoice,
   playCard,
   playCardCopy,
   playCost,
@@ -2147,6 +2148,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'prepared', hand: [0, 0], discardAfterDraw: [1, 2] },
     { id: 'beam_cell', enemyHp: [19, 19], vulnerable: [1, 1] },
     { id: 'ftl', enemyHp: [19, 18], hand: [1, 1] },
+    { id: 'force_field', block: [3, 4] },
+    { id: 'tempest', energySpent: [1, 1], energy: [E - 1, E - 1], orb: ['lightning', 'lightning'], exhaust: [1, 1] },
     { id: 'doom_and_gloom', enemyHp: [18, 17], orb: ['dark', 'dark'] },
     { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
     { id: 'prostrate', block: [1, 2], miracles: [1, 1] },
@@ -2946,6 +2949,47 @@ check('FTL draws only when it is the first card played this turn', () => {
   assertEqual(playedLate.players[0].hand.length, 0, 'a later FTL did not draw')
   assertEqual(playedLate.players[0].draw[0].uid, drawn.uid)
   assertEqual(playedLate.players[0].cardsPlayedThisTurn, 2)
+})
+
+check('Force Field discounts for Powers and Tempest channels once per X Energy', () => {
+  for (const [powerCount, expectedEnergy] of [[0, 2], [2, 4], [4, 5]]) {
+    const forceField = instance('force_field')
+    const powers = Array.from({ length: powerCount }, (_, at) => ({
+      ...instance('machine_learning'), uid: `force-power-${at}`,
+    }))
+    const state = combat([makePlayer({ hand: [forceField], powers, energy: 5 })], [makeEnemy()])
+    const played = playCard(state, 'p1', forceField.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(played.players[0].energy, expectedEnergy)
+    assertEqual(played.players[0].block, 3)
+  }
+
+  for (const upgraded of [false, true]) {
+    for (const energySpent of [0, 2]) {
+      const tempest = instance('tempest', upgraded)
+      const state = combat([makePlayer({ hand: [tempest], energy: 3 })], [makeEnemy()])
+      const played = playCard(state, 'p1', tempest.uid, {
+        enemyUid: null, playerId: null, energySpent,
+      })
+      assertEqual(played.players[0].energy, 3 - energySpent)
+      assertEqual(played.players[0].orbs.filter(Boolean).length, energySpent + (upgraded ? 1 : 0))
+      assertEqual(played.players[0].exhaust[0].uid, tempest.uid)
+    }
+  }
+
+  const overflowTempest = instance('tempest')
+  const overflowState = combat([
+    makePlayer({ hand: [overflowTempest], energy: 3, orbs: ['frost', 'lightning', 'dark'] }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assertEqual(nextEvokeChoice(CARDS.tempest, overflowState.players[0], [], undefined, 2)?.options.length, 3)
+  assertEqual(playCard(overflowState, 'p1', overflowTempest.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+  }), overflowState, 'Tempest cannot choose full-slot evocations for the player')
+  const overflowed = playCard(overflowState, 'p1', overflowTempest.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+    evokeSlots: [2, 0], evokeEnemyUids: ['e1', null],
+  })
+  assertDeepEqual(overflowed.players[0].orbs, ['lightning', 'lightning', 'lightning'])
+  assertEqual(overflowed.players[0].block, 1, 'the chosen Frost evoke still resolves')
 })
 
 check('FTL copies are separate cards, while Shivs do not consume its first-card bonus', () => {
