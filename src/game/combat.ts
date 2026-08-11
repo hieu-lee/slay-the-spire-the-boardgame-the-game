@@ -600,6 +600,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
+    case 'frostOrbs':
+      return actor.orbs.filter((orb) => orb === 'frost').length
     case 'orbTypes':
       return new Set(actor.orbs.filter((orb) => orb !== null)).size
     case 'block':
@@ -1340,8 +1342,9 @@ function applyEffect(
       if (!chosen) return
       const moved = actor.discard.find((card) => card.uid === chosen)!
       actor.discard = actor.discard.filter((card) => card.uid !== chosen)
-      actor.draw = addToDrawTop(actor, [forgetRetain(moved)]).draw
-      note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their draw pile`)
+      if (effect.toHand) actor.hand = [...actor.hand, forgetRetain(moved)]
+      else actor.draw = addToDrawTop(actor, [forgetRetain(moved)]).draw
+      note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their ${effect.toHand ? 'hand' : 'draw pile'}`)
       return
     }
     case 'recoverExhaust': {

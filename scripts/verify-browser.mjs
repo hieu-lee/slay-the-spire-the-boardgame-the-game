@@ -1756,6 +1756,69 @@ check('Headbutt skips the discard chooser when that pile is empty', () => {
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-hologram', defId: 'hologram', upgraded: false }],
+    discard: [
+      { uid: 'ui-hologram-strike', defId: 'strike_defect', upgraded: false },
+      { uid: 'ui-hologram-defend', defId: 'defend_defect', upgraded: false },
+    ],
+    draw: [], exhaust: [], powers: [], energy: 1, block: 0,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const hologramCard = page.getByRole('button', { name: /^Hologram, cost 1,/ })
+const hologramLabel = await hologramCard.getAttribute('aria-label')
+await hologramCard.click()
+const hologramDialog = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+await hologramDialog.getByRole('button', { name: /^Strike,/ }).click()
+await shot('06zpha-hologram-discard-choice')
+await hologramDialog.getByRole('button', { name: 'Return selected card to hand' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand[0]?.uid === 'ui-hologram-strike')
+const hologrammed = await readState()
+check('Hologram blocks, recovers the chosen discard to hand, and Exhausts', () => {
+  assert(hologramLabel.includes('gain 1 Block'), hologramLabel)
+  assert(hologramLabel.includes('put a card from your discard pile into your hand'), hologramLabel)
+  assert(hologramLabel.includes('exhausts when played'), hologramLabel)
+  assertEqual(hologrammed.players[0].block, 1)
+  assertDeepEqual(hologrammed.players[0].hand.map((card) => card.uid), ['ui-hologram-strike'])
+  assertDeepEqual(hologrammed.players[0].discard.map((card) => card.uid), ['ui-hologram-defend'])
+  assertDeepEqual(hologrammed.players[0].exhaust.map((card) => card.uid), ['ui-hologram'])
+})
+await shot('06zphb-hologram-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-blizzard', defId: 'blizzard', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1,
+    strength: 0, weak: 0, orbs: ['frost', 'lightning', 'frost'],
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 1, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const blizzardCard = page.getByRole('button', { name: /^Blizzard\+, cost 1,/ })
+const blizzardLabel = await blizzardCard.getAttribute('aria-label')
+await shot('06zphc-blizzard-ready')
+await blizzardCard.click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 5)
+const blizzarded = await readState()
+check('Blizzard+ visibly deals one 3-damage hit per Frost Orb', () => {
+  assert(blizzardLabel.includes('3 damage once per Frost Orb'), blizzardLabel)
+  assertEqual(blizzarded.enemies[0].hp, 5)
+  assertEqual(blizzarded.players[0].energy, 0)
+})
+await shot('06zphd-blizzard-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })

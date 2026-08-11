@@ -83,6 +83,7 @@ export type Condition =
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
 export type CountOf =
   | 'orbs'
+  | 'frostOrbs'
   | 'orbTypes'
   | 'block'
   | 'strength'
@@ -211,8 +212,8 @@ type EffectKind =
   | { kind: 'scry'; amount: number }
   /** Put chosen cards from hand on top of the draw pile, in chosen order. */
   | { kind: 'topdeck'; amount: number }
-  /** Put one chosen card from the face-up discard pile on the draw top. */
-  | { kind: 'recoverDiscard'; amount: 1 }
+  /** Put one chosen card from the face-up discard pile on the draw top or into hand. */
+  | { kind: 'recoverDiscard'; amount: 1; toHand?: boolean }
   /** Put one chosen card from the face-up Exhaust pile into hand. */
   | { kind: 'recoverExhaust'; amount: 1 }
   /** Draw a card and immediately play it for 0 Energy. */
@@ -1709,6 +1710,17 @@ export const CARDS: Record<string, CardDef> = {
     upgrade: {
       effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 1, per: 'energySpent' } }],
     },
+  }),
+  blizzard: card({
+    id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'frostOrbs' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3, times: { base: 0, per: 'frostOrbs' } }] },
+  }),
+  hologram: card({
+    id: 'hologram', name: 'Hologram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: 1 }, { kind: 'recoverDiscard', amount: 1, toHand: true }],
+    upgrade: { exhaust: false },
   }),
   doom_and_gloom: card({
     id: 'doom_and_gloom', name: 'Doom and Gloom', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 2,

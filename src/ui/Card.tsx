@@ -31,6 +31,7 @@ type CardProps = {
  */
 const COUNT_LABEL: Record<CountOf, string> = {
   orbs: 'charged orb',
+  frostOrbs: 'Frost Orb',
   orbTypes: 'different orb type',
   block: 'Block',
   strength: 'Strength',
@@ -143,7 +144,9 @@ function effectText(effect: Effect): string {
     case 'recurseOrb': return `evoke an Orb, then channel that Orb${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
-    case 'recoverDiscard': return 'put a card from your discard pile on top of your draw pile'
+    case 'recoverDiscard': return effect.toHand
+      ? 'put a card from your discard pile into your hand'
+      : 'put a card from your discard pile on top of your draw pile'
     case 'recoverExhaust': return 'put a card from your Exhaust pile into your hand'
     case 'drawAndPlayFree': return effect.exhaustNonPower
       ? `draw 1 card, then immediately play it for 0 Energy; exhaust it unless it is a Power${condition}`

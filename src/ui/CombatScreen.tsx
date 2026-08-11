@@ -2243,7 +2243,9 @@ export function CombatScreen({
                 : pending.choice.kind === 'topdeck'
                   ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : pending.choice.kind === 'recover'
-                  ? 'Put selected card on top'
+                  ? pendingDef?.effects.some((effect) => effect.kind === 'recoverDiscard' && effect.toHand)
+                    ? 'Return selected card to hand'
+                    : 'Put selected card on top'
                 : pending.choice.kind === 'recoverExhaust'
                   ? 'Return selected card to hand'
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}

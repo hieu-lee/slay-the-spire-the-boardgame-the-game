@@ -2151,6 +2151,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'ftl', enemyHp: [19, 18], hand: [1, 1] },
     { id: 'force_field', block: [3, 4] },
     { id: 'tempest', energySpent: [1, 1], energy: [E - 1, E - 1], orb: ['lightning', 'lightning'], exhaust: [1, 1] },
+    { id: 'blizzard', enemyHp: [20, 20] },
+    { id: 'hologram', block: [1, 1], exhaust: [1, 0] },
     { id: 'storm', powers: [1, 1] },
     { id: 'doom_and_gloom', enemyHp: [18, 17], orb: ['dark', 'dark'] },
     { id: 'overclock', hand: [2, 3], dazeDiscard: [1, 1] },
@@ -3214,6 +3216,47 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
     ]).find((ability) => ability.id === triggeredBlades.id)
   assertEqual(triggeredShivPlan.staleShivIndex, 1)
   assertDeepEqual(triggeredShivPlan.shivTargets.map((target) => target.uid), ['e2'])
+})
+
+check('Blizzard counts only Frost Orbs and Hologram recovers a chosen discard', () => {
+  for (const upgraded of [false, true]) {
+    const blizzard = instance('blizzard', upgraded)
+    const frozen = combat([makePlayer({
+      character: 'defect', hand: [blizzard], orbs: ['frost', 'lightning', 'frost'], energy: 3,
+    })], [makeEnemy({ hp: 10, maxHp: 10, block: 1 })])
+    const resolved = playCard(frozen, 'p1', blizzard.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(resolved.enemies[0].hp, upgraded ? 5 : 7,
+      'Blizzard did not resolve one separate hit per Frost Orb')
+  }
+
+  const emptyBlizzard = instance('blizzard')
+  const empty = combat([makePlayer({
+    character: 'defect', hand: [emptyBlizzard], orbs: ['lightning', 'dark', null], energy: 3,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assertEqual(cardNeedsEnemy(CARDS.blizzard, empty.players[0]), false)
+  const noFrost = playCard(empty, 'p1', emptyBlizzard.uid, { enemyUid: null, playerId: null })
+  assertEqual(noFrost.enemies[0].hp, 10)
+  assertEqual(noFrost.players[0].energy, 2)
+
+  for (const upgraded of [false, true]) {
+    const hologram = instance('hologram', upgraded)
+    const recovered = instance('strike_defect')
+    const other = instance('defend_defect')
+    const state = combat([makePlayer({
+      character: 'defect', hand: [hologram], discard: [recovered, other], energy: 3,
+    })], [makeEnemy()])
+    assertEqual(playCard(state, 'p1', hologram.uid, { enemyUid: null, playerId: null }), state,
+      'Hologram resolved without its mandatory discard choice')
+    const resolved = playCard(state, 'p1', hologram.uid, {
+      enemyUid: null, playerId: null, recoverDiscardUid: recovered.uid,
+    })
+    assertEqual(resolved.players[0].block, 1)
+    assertDeepEqual(resolved.players[0].hand.map((card) => card.uid), [recovered.uid])
+    assertDeepEqual(resolved.players[0].discard.map((card) => card.uid),
+      upgraded ? [other.uid, hologram.uid] : [other.uid])
+    assertDeepEqual(resolved.players[0].exhaust.map((card) => card.uid),
+      upgraded ? [] : [hologram.uid])
+  }
 })
 
 check('FTL copies are separate cards, while Shivs do not consume its first-card bonus', () => {
