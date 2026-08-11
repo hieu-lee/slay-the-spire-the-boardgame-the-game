@@ -13,6 +13,7 @@ type EnemyCardProps = {
   /** The round's shared die, which decides what a die-pattern enemy will do. */
   die: number
   targeted?: boolean
+  disabled?: boolean
   /** Just took damage: flinch, so the hit is felt and not merely recorded. */
   struck?: boolean
   /** Which hit this is, so a second blow restarts the animation. */
@@ -58,7 +59,7 @@ function intentParts(action: EnemyAction): IntentPart[] {
     case 'attackSequence':
       return action.hits.map((hit) => ({ icon: 'attack', value: hit.amount, aoe: hit.aoe }))
     case 'block':
-      return [{ icon: 'block', value: action.amount }]
+      return [{ icon: 'block', value: action.perPlayer ? `${action.amount}/player` : action.amount }]
     case 'gainStrength':
       return [{ icon: 'strength', value: action.amount, prefix: '+' }]
     case 'blockAllEnemies':
@@ -101,6 +102,14 @@ function intentParts(action: EnemyAction): IntentPart[] {
       return [{ icon: 'monster', label: 'dies', visibleLabel: 'Dies' }]
     case 'addAbilityCube':
       return [{ icon: 'monster', value: action.amount, label: 'ability cube', visibleLabel: 'Cube' }]
+    case 'transform':
+      return [{ icon: 'monster', label: `enters ${action.defId.replaceAll('_', ' ')}`, visibleLabel: 'Mode' }]
+    case 'guardianModeShift':
+      return [{ icon: 'attack', value: action.amount, label: 'if Block remains; otherwise enters Defensive Mode' }]
+    case 'removeInvincible':
+      return [{ icon: 'monster', label: 'removes Invincible', visibleLabel: 'Invincible off' }]
+    case 'shuffleStatus':
+      return [{ icon: action.card === 'burn' ? 'burn' : 'monster', value: action.amount, label: `shuffle ${action.card} into every deck`, visibleLabel: action.card }]
     case 'actsLast':
       return [{ icon: 'monster', label: 'acts last', visibleLabel: 'Acts last' }]
     case 'idle':
@@ -153,11 +162,60 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilit
   return parts.join(', ')
 }
 
+function displayedAbilityText(
+  ability: ReturnType<typeof enemyAbilities>[number],
+  enemy: Enemy,
+  defId: string,
+  die: number,
+  compact: boolean,
+): string {
+  if (ability.kind === 'confusion') return compact
+    ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
+    : `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
+  if (ability.kind === 'thorns') return compact
+    ? `Thorns · ${enemy.abilityCubes ?? 0} cubes`
+    : `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
+  if (ability.kind === 'beatOfDeath') return compact
+    ? `Beat of Death · ${enemy.abilityCubes ?? 0} cubes`
+    : `Beat of Death: ${enemy.abilityCubes ?? 0} cubes; deals that much damage to every player at end of turn`
+  if (ability.kind === 'immuneOnSlots') return ability.slots.includes(enemy.actionIndex)
+    ? 'Cannot lose HP this turn'
+    : compact ? 'HP immunity · inactive' : 'Cannot lose HP while the cube is on a marked action'
+  if (ability.kind === 'invincible') return enemy.abilityUsed
+    ? compact ? 'Invincible · removed' : 'Invincible: removed'
+    : compact
+      ? `Invincible · no Weak · floor ${ability.hpPerPlayer}/player`
+      : `Invincible: cannot gain Weak or fall below ${ability.hpPerPlayer} HP per player`
+  if (ability.kind === 'facing') {
+    if (ability.effect === 'spear') return compact
+      ? 'Facing · start: gain 2 Burn'
+      : 'Facing: gain 2 Burn at the start of turn while facing Spire Spear'
+    const penalty = enemy.actionIndex === 0 ? 'lose 1 Energy' : enemy.actionIndex === 1 ? 'cannot draw' : 'deal 0 damage'
+    return compact ? `Facing · ${penalty}` : `Facing: ${penalty} this turn while facing Spire Shield`
+  }
+  if (ability.kind === 'rebirth') {
+    if (defId === 'time_eater') {
+      if (enemy.abilityUsed) return compact ? 'Haste · spent' : 'Haste: spent'
+      return compact
+        ? `Haste · ${ability.hpPerPlayer} HP/player · +1 Strength · clear Weak/Vulnerable · Poison remains`
+        : `Haste: when first defeated, return with ${ability.hpPerPlayer} HP per player, gain 1 Strength, remove all Weak and Vulnerable; Poison remains`
+    }
+    if (defId === 'the_champ') return compact
+      ? `Anger · Fury at ${ability.hpPerPlayer}/player`
+      : `Anger: when first defeated, enter Fury with ${ability.hpPerPlayer} HP per player`
+    if (defId === 'awakened_one_phase_1') return compact
+      ? `Awaken · return at end of turn${(enemy.ascension ?? 0) >= 10 ? ' · Strength from largest Power count' : ''}`
+      : `Awaken: return at end of turn in a second form${(enemy.ascension ?? 0) >= 10 ? ' and gain Strength equal to the largest number of Powers a player has in play' : ''}`
+  }
+  return abilityText(ability, compact)
+}
+
 export function EnemyCard({
   enemy,
   label,
   die,
   targeted = false,
+  disabled = false,
   struck = false,
   beat = 0,
   onClick,
@@ -169,18 +227,9 @@ export function EnemyCard({
     intent.push(...intentParts({ kind: 'actsLast' }))
   }
   const abilities = enemyAbilities(def)
-  const spentAbility = abilities.some((ability) => ability.kind === 'curlUp') && enemy.abilityUsed
   const abilityLabels = abilities.map((ability) => {
-    const text = ability.kind === 'confusion'
-      ? `Confusion: the first card played this turn costs ${ability.byRoll[die] ?? '?'} Energy`
-      : ability.kind === 'thorns'
-        ? `Thorns: ${enemy.abilityCubes ?? 0} cubes; after an Attack, ${ability.damagePerCube} damage per cube`
-      : ability.kind === 'immuneOnSlots'
-        ? ability.slots.includes(enemy.actionIndex)
-          ? 'Cannot lose HP this turn'
-          : 'Cannot lose HP while the cube is on a marked action'
-      : abilityText(ability)
-    return `${text}${spentAbility && ability.kind === 'curlUp' ? ', spent' : ''}`
+    const text = displayedAbilityText(ability, enemy, def.id, die, false)
+    return `${text}${enemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
   })
   const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
 
@@ -198,7 +247,8 @@ export function EnemyCard({
     <button
       type="button"
       className={className}
-      disabled={enemy.dead}
+      style={def.bossAct ? { backgroundImage: `linear-gradient(rgb(14 12 10 / 0.72), rgb(14 12 10 / 0.88)), url(/assets/backgrounds/boss-act-${def.bossAct}.webp)` } : undefined}
+      disabled={enemy.dead || disabled}
       onClick={() => onClick?.(enemy)}
       aria-label={describeEnemy(enemy, label, intent, abilityLabels)}
     >
@@ -226,30 +276,26 @@ export function EnemyCard({
       </span>
       {abilities.length > 0 ? (
         <span
-          className={`enemy__ability${spentAbility ? ' enemy__ability--spent' : ''}`}
+          className="enemy__ability"
           title={abilityLabels.join('\n')}
         >
-          {abilities.map((ability, index) => (
-            <span key={`${ability.kind}-${index}`}>
-              {spentAbility && ability.kind === 'curlUp'
-                ? 'Curl Up · spent'
-                : ability.kind === 'confusion'
-                  ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
-                  : ability.kind === 'thorns'
-                    ? `Thorns · ${enemy.abilityCubes ?? 0} cubes`
-                  : ability.kind === 'immuneOnSlots'
-                    ? ability.slots.includes(enemy.actionIndex)
-                      ? 'Cannot lose HP this turn'
-                      : 'HP immunity · inactive'
-                  : abilityText(ability, true)}
-            </span>
-          ))}
+          {abilities.map((ability, index) => {
+            const spent = enemy.abilityUsed && (ability.kind === 'curlUp' ||
+              (ability.kind === 'rebirth' && def.id === 'time_eater'))
+            return (
+              <span className={spent ? 'enemy__ability--spent' : undefined} key={`${ability.kind}-${index}`}>
+                {spent && ability.kind === 'curlUp'
+                  ? 'Curl Up · spent'
+                  : displayedAbilityText(ability, enemy, def.id, die, true)}
+              </span>
+            )
+          })}
         </span>
       ) : null}
 
       <span className="enemy__portrait">
         <img
-          src={`/assets/enemies/${enemy.defId}.webp`}
+          src={`/assets/enemies/${def.artId ?? enemy.defId}.webp`}
           alt=""
           loading="lazy"
           onError={(event) => {

@@ -74,7 +74,12 @@ export const ACT_SHAPE: MapShape = { middleRows: 6, maxWidth: 4 }
  * Generates one act's map. Every room is reachable from the row below it, and
  * every room leads somewhere, so the party can never strand itself.
  */
-export function generateMap(rng: RngState, act: number, shape: MapShape = ACT_SHAPE): SpireMap {
+export function generateMap(
+  rng: RngState,
+  act: number,
+  shape: MapShape = ACT_SHAPE,
+  ascension = 0,
+): SpireMap {
   const rows: string[][] = []
   const rooms: Record<string, Room> = {}
 
@@ -87,6 +92,19 @@ export function generateMap(rng: RngState, act: number, shape: MapShape = ACT_SH
     })
     rows.push(ids)
     return ids
+  }
+
+  // The Act IV elite is added only by Ascension 11; lower levels go straight
+  // to the Heart (Ascension reference card).
+  if (act === 4) {
+    if (ascension < 11) {
+      addRow(['boss'])
+      return { act, rooms, rows, position: null }
+    }
+    const elite = addRow(['elite'])[0]!
+    const boss = addRow(['boss'])[0]!
+    rooms[elite]!.exits = [boss]
+    return { act, rooms, rows, position: null }
   }
 
   // The bottom row is a single fixed encounter (p.9).

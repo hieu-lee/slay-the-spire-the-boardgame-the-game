@@ -11,6 +11,7 @@ import { MapScreen } from './MapScreen.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { RunPotionBar } from './RunPotionBar.tsx'
+import { BetweenCombatScreen } from './BetweenCombatScreen.tsx'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -304,6 +305,12 @@ export function OnlineGame({ onLocal }: Props) {
           onAction={room.act}
         />
       ) : null}
+      {run.phase === 'betweenCombat' ? (
+        <BetweenCombatScreen players={run.players.map(playerForUi)} editablePlayerId={snapshot.you.playerId}
+          readyPlayerIds={snapshot.betweenCombatReady}
+          onSwitchRow={(_playerId, row) => room.act({ kind: 'switchBetweenBossRow', row })}
+          onContinue={() => room.act({ kind: 'readyPendingBoss' })} />
+      ) : null}
       {run.phase === 'room' && roomKind === 'campfire' && viewer ? (
         <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats} onAction={room.act} />
       ) : null}
@@ -315,8 +322,8 @@ export function OnlineGame({ onLocal }: Props) {
       ) : null}
       {run.phase === 'victory' ? (
         <section className="room-screen">
-          <h2>Act {run.act} complete</h2>
-          <button type="button" onClick={() => room.act({ kind: 'advanceAct' })}>Climb to Act {run.act + 1}</button>
+          <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          {run.act < 4 ? <button type="button" onClick={() => room.act({ kind: 'advanceAct' })}>Climb to Act {run.act + 1}</button> : null}
         </section>
       ) : null}
       {run.phase === 'defeat' ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2></section> : null}

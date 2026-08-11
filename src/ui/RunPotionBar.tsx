@@ -16,9 +16,10 @@ export function RunPotionBar({ player, players, ascension, onUse, onTrade }: Pro
   const [pending, setPending] = useState(false)
   const usable = player.potions.filter((id) => id === 'blood_potion' || id === 'entropic_brew')
   const cap = ascension >= 4 ? 2 : 3
-  const recipients = players.filter((candidate) => !candidate.dead && candidate.id !== player.id && candidate.potions.length < cap)
+  const recipients = players.filter((candidate) => !candidate.dead && candidate.id !== player.id &&
+    !candidate.relics.some((relic) => relic.defId === 'sozu') && candidate.potions.length < cap)
   if (usable.length === 0 && (player.potions.length === 0 || recipients.length === 0)) return null
-  const entropicNeedsDiscard = player.potions.length >= cap
+  const entropicNeedsDiscard = !player.relics.some((relic) => relic.defId === 'sozu') && player.potions.length >= cap
   return (
     <div className="run-potions" aria-label="Potions outside combat">
       {[...new Set(usable)].map((id) => {

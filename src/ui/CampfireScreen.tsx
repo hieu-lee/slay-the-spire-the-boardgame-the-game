@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
+import { canRestAtCampfire, canSmithAtCampfire, canUpgradeCard } from '../game/run.ts'
 import type { CampfireChoice } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
@@ -23,7 +24,7 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
-    return decision.choice === 'rest' || decision.cardUid !== undefined
+    return decision.choice === 'rest' || decision.choice === 'skip' || decision.cardUid !== undefined
   })
 
   return (
@@ -36,8 +37,10 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
       <div className="campfire__players">
         {living.map((player) => {
           const decision = decisions[player.id]
-          const upgradable = player.deck.filter((card) => !card.upgraded)
+          const upgradable = player.deck.filter(canUpgradeCard)
           const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
+          const canRest = canRestAtCampfire(player)
+          const canSmith = canSmithAtCampfire(player)
           return (
             <div className="campfire__player" key={player.id}>
               <span className="campfire__name">
@@ -47,6 +50,7 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
               <div className="campfire__choices">
                 <button
                   type="button"
+                  disabled={!canRest}
                   className={decision?.choice === 'rest' ? 'is-chosen' : ''}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
@@ -58,7 +62,7 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
                 <button
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}
-                  disabled={upgradable.length === 0}
+                  disabled={!canSmith}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
                   }
@@ -66,6 +70,12 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
                   Smith
                   <span className="muted"> upgrade</span>
                 </button>
+                {!canRest && !canSmith ? (
+                  <button type="button" className={decision?.choice === 'skip' ? 'is-chosen' : ''}
+                    onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'skip' } }))}>
+                    Do nothing
+                  </button>
+                ) : null}
               </div>
 
               {decision?.choice === 'smith' ? (

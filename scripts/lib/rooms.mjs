@@ -23,6 +23,9 @@ import {
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardShivChoiceCount,
+  canRestAtCampfire,
+  canSmithAtCampfire,
+  canUpgradeCard,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
@@ -48,9 +51,12 @@ import {
   resolveEnemyTargets,
   resolveStartPlayerTurn,
   spendMiracle,
+  spendHolyWater,
   spendShiv,
   startPlayerTurnWithChoices,
+  startPendingBoss,
   startTurnAbilities,
+  switchBetweenCombatRow,
   tradeRunPotion,
   useRunPotion,
   validEndTurnOrder,
@@ -166,6 +172,7 @@ export function joinRoom(room, { name, character, token: existing, random, conne
       settleReward(room)
       settleEndTurn(room)
       settleDiscard(room)
+      settleBetweenCombat(room)
     }
     return returning
   }
@@ -231,7 +238,22 @@ export function markDisconnected(room, seatToken) {
   settleReward(room)
   settleEndTurn(room)
   settleDiscard(room)
+  settleBetweenCombat(room)
   return snapshotFor(room, seatToken)
+}
+
+function settleBetweenCombat(room) {
+  const run = room.run
+  if (!run || run.phase !== 'betweenCombat' || !run.pendingBossDefId || !room.betweenCombatReady) return null
+  const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
+  if (connected.size === 0) return null
+  const waiting = run.players
+    .filter((player) => !player.dead && connected.has(player.id) && !room.betweenCombatReady[player.id])
+    .map((player) => player.id)
+  if (waiting.length > 0) return waiting
+  room.run = startPendingBoss(run)
+  room.betweenCombatReady = undefined
+  return null
 }
 
 /**
@@ -344,6 +366,15 @@ export function apply(room, seatToken, action) {
 
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
+  if (action?.kind === 'readyPendingBoss') {
+    if (room.run.phase !== 'betweenCombat' || !room.run.pendingBossDefId) fail('There is no pending boss')
+    const living = room.run.players.filter((candidate) => !candidate.dead).map((candidate) => candidate.id)
+    if (!living.includes(seat.playerId)) fail('This seat cannot ready for the next boss')
+    room.betweenCombatReady = { ...room.betweenCombatReady, [seat.playerId]: true }
+    settleBetweenCombat(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
   if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
@@ -376,6 +407,10 @@ export function apply(room, seatToken, action) {
   room.endTurnAbilities = undefined
   room.endTurnOrder = undefined
   room.endTurnPublicIds = undefined
+  if (before.phase === 'betweenCombat' && ['switchBetweenBossRow', 'usePotion', 'tradePotion'].includes(action?.kind)) {
+    room.betweenCombatReady = undefined
+  }
+  if (next.phase !== 'betweenCombat') room.betweenCombatReady = undefined
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
@@ -491,6 +526,7 @@ function resolveAbandonedForced(room) {
     player.forcedCardUids = []
     player.freeCardUids = (player.freeCardUids ?? []).filter((uid) => !forced.has(uid))
     player.copyOriginalUids = (player.copyOriginalUids ?? []).filter((uid) => !forced.has(uid))
+    player.copyOriginalPaidUids = (player.copyOriginalPaidUids ?? []).filter((uid) => !forced.has(uid))
     combat.log = [...combat.log, `${player.name}'s ${abandoned.length} immediate card${abandoned.length === 1 ? '' : 's'} discarded after disconnect`]
   }
   room.run = { ...room.run, combat }
@@ -622,12 +658,22 @@ function campfire(room, seat, action, seatToken) {
   // not exactly 'rest' as a Smith, and a Smith naming no card silently does
   // nothing — so 'Rest' with a capital R quietly burned a seat's only heal.
   const choice = action.choices?.[seat.playerId]
-  if (!choice || (choice.choice !== 'rest' && choice.choice !== 'smith')) {
-    fail('Choose Rest or Smith')
+  if (!choice || !['rest', 'smith', 'skip'].includes(choice.choice)) {
+    fail('Choose Rest, Smith, or the required no-action fallback')
+  }
+  const player = run.players.find((candidate) => candidate.id === seat.playerId)
+  if (!player || player.dead) fail('This seat cannot choose at the campfire')
+  if (choice.choice === 'rest' && !canRestAtCampfire(player)) {
+    fail("Coffee Dripper prevents Rest")
+  }
+  if (choice.choice === 'smith' && !canSmithAtCampfire(player)) {
+    fail('Fusion Hammer prevents Smith')
+  }
+  if (choice.choice === 'skip' && (canRestAtCampfire(player) || canSmithAtCampfire(player))) {
+    fail('Do nothing is available only when neither Rest nor Smith is legal')
   }
   if (choice.choice === 'smith') {
-    const player = run.players.find((candidate) => candidate.id === seat.playerId)
-    const target = player?.deck.find((card) => card.uid === choice.cardUid && !card.upgraded)
+    const target = player?.deck.find((card) => card.uid === choice.cardUid && canUpgradeCard(card))
     if (!target) fail('Choose one of your own cards that is not already upgraded')
   }
 
@@ -712,6 +758,8 @@ function cardReward(room, seat, action, seatToken) {
   if (typeof choice === 'object' && choice !== null) {
     if (!Object.hasOwn(choice, 'card') || !Object.hasOwn(choice, 'potionRecipientId')
       || !Object.hasOwn(choice, 'discardPotionId') || !Object.hasOwn(choice, 'relicId')
+      || (choice.relicCardUids !== undefined && (!Array.isArray(choice.relicCardUids)
+        || choice.relicCardUids.length > UID_LIMIT || choice.relicCardUids.some((uid) => typeof uid !== 'string')))
       || !validRewardDecision(run, offer, choice)) {
       fail('Choose one valid option for each printed reward')
     }
@@ -905,9 +953,19 @@ function dispatch(run, seat, action) {
 
     case 'resolveCombat':
       return resolveCombat(run)
+    case 'switchBetweenBossRow': {
+      const next = switchBetweenCombatRow(run, seat.playerId, action.row)
+      if (next === run) fail('That row switch is not legal now')
+      return next
+    }
     case 'spendMiracle': {
       if (!run.combat) fail('No combat in progress')
       const combat = spendMiracle(run.combat, seat.playerId)
+      return combat === run.combat ? run : { ...run, combat }
+    }
+    case 'spendHolyWater': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = spendHolyWater(run.combat, seat.playerId)
       return combat === run.combat ? run : { ...run, combat }
     }
     case 'spendShiv': {
@@ -1036,6 +1094,7 @@ export function snapshotFor(room, seatToken) {
       ? structuredClone(room.rewardChoices[viewerId])
       : undefined,
     rewardDecided: Object.keys(room.rewardChoices ?? {}),
+    betweenCombatReady: Object.keys(room.betweenCombatReady ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
@@ -1105,6 +1164,7 @@ function redactCombat(combat, viewerId) {
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,
+    startTurnStage: combat.startTurnStage,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
@@ -1142,12 +1202,15 @@ function redactPlayer(player, viewerId) {
     vulnerable: player.vulnerable,
     weak: player.weak,
     drawLocked: player.drawLocked === true,
+    damageDealtZeroThisTurn: player.damageDealtZeroThisTurn === true,
+    facingEnemyUid: player.facingEnemyUid ?? null,
     lostHpThisCombat: player.lostHpThisCombat === true,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
     nextCardCost: player.nextCardCost ?? null,
     cardCopyQueue: player.cardCopyQueue ?? [],
     copyOriginalUids: mine ? player.copyOriginalUids ?? [] : [],
+    copyOriginalPaidUids: mine ? player.copyOriginalPaidUids ?? [] : [],
     freeCardUids: mine ? player.freeCardUids ?? [] : [],
     forcedCardUids: mine ? player.forcedCardUids ?? [] : [],
     hpLossLimitThisTurn: player.hpLossLimitThisTurn ?? null,
@@ -1157,6 +1220,7 @@ function redactPlayer(player, viewerId) {
     cardBlockBonus: player.cardBlockBonus ?? 0,
     hitPoison: player.hitPoison ?? 0,
     miracles: player.miracles,
+    holyWaterCubes: player.holyWaterCubes ?? 0,
     stance: player.stance,
     orbs: player.orbs,
     dead: player.dead,

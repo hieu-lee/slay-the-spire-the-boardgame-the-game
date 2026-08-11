@@ -25,6 +25,7 @@ import {
   previewCardChoice,
   resolveStartPlayerTurn,
   spendMiracle,
+  spendHolyWater,
   spendShiv,
   startTurnAbilities,
   startPlayerTurnWithChoices,
@@ -808,7 +809,9 @@ export function CombatScreen({
   const forcedActionAllowed = forcedOwnerId === undefined || forcedOwnerId === viewer.id
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
   const pendingPotionOverflow = potionOverflowRequired
+  const sozu = viewer.relics.some((relic) => relic.defId === 'sozu')
   const pendingEntropicDiscard = pendingPotionDef?.special === 'entropicBrew' &&
+    !sozu &&
     Math.min(2, state.potionSupply.length + 1) > state.potionLimit - (viewer.potions.length - 1)
   const livingPlayers = state.players.filter((player) => !player.dead)
   const confirmedDiscards = decidedPlayerIds
@@ -869,8 +872,14 @@ export function CombatScreen({
   }
 
   function chooseStartTurnEnemy(enemyUid: string) {
-    if (!pendingStartEnemy || !canResolveStartTurn) return
+    if (!pendingStartEnemy || !canResolveStartTurn || !startEnemyChoiceAvailable(enemyUid)) return
     setStartTurnEnemyTargets({ ...startTurnEnemyTargets, [pendingStartEnemy.id]: enemyUid })
+  }
+
+  function startEnemyChoiceAvailable(enemyUid: string) {
+    if (!pendingStartEnemy?.targets?.some((target) => target.uid === enemyUid)) return false
+    return !pendingStartEnemy.id.startsWith('facing:') ||
+      Object.values(startTurnEnemyTargets).filter((target) => target === enemyUid).length < 2
   }
 
   function chooseStartTurnShiv(enemyUid: string | null) {
@@ -927,7 +936,7 @@ export function CombatScreen({
       } else if (onAction) onAction({ kind: 'endTurn' })
       else {
         const next = beginEndPlayerTurn(state, order)
-        if (next === state) setEndTurnError('Choose a living target for every Lightning Orb, then try again.')
+        if (next === state) setEndTurnError('Choose a living target or valid orb slot for every targeted end-of-turn ability, then try again.')
         else {
           setEndTurnError('')
           onChange?.(next)
@@ -1566,6 +1575,7 @@ export function CombatScreen({
                 ) || overflowShivCount(state, shivs) > 0 || potion.special === 'changeDie'
                   || potion.special === 'liquidMemories' || potion.special === 'purity'
                   || potion.special === 'entropicBrew' &&
+                    !sozu &&
                     Math.min(2, state.potionSupply.length + 1) > state.potionLimit - (viewer.potions.length - 1)
                 return (
                   <button
@@ -1630,6 +1640,18 @@ export function CombatScreen({
                   {viewer.energy === CAPS.energy
                     ? `${miracleOnCard ? '✓ ' : ''}Use Miracle on next card`
                     : 'Use Miracle (+1 Energy)'}
+                </button>
+              ) : null}
+              {state.phase === 'player' && !orderingStage && (viewer.holyWaterCubes ?? 0) > 0 ? (
+                <button
+                  type="button"
+                  disabled={forcedOwnerId !== undefined || viewer.energy >= CAPS.energy}
+                  onClick={() => {
+                    if (onAction) onAction({ kind: 'spendHolyWater' })
+                    else onChange?.(spendHolyWater(state, viewer.id))
+                  }}
+                >
+                  Use Holy Water ({viewer.holyWaterCubes} cubes)
                 </button>
               ) : null}
               {state.phase === 'discard' && discardableHand.length > 1 ? (
@@ -1877,6 +1899,11 @@ export function CombatScreen({
               Keep rows
             </button>
           ) : null}
+          {pendingStartEnemy?.targets?.some((target) => target.uid === 'none') && startEnemyChoiceAvailable('none') ? (
+            <button type="button" className="prompt__mode" onClick={() => chooseStartTurnEnemy('none')}>
+              Choose no Facing enemy
+            </button>
+          ) : null}
           {!pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv && !pending?.choiceCards ? <button
             type="button"
             className="prompt__cancel"
@@ -1938,7 +1965,8 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={(Boolean(pendingStartEnemy || pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                disabled={Boolean(pendingStartEnemy && !startEnemyChoiceAvailable(enemy.uid))}
+                targeted={((Boolean(pendingStartEnemy && startEnemyChoiceAvailable(enemy.uid)) || Boolean(pendingStartShiv)) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                 ))) && !enemy.dead}
                 onClick={onEnemyClick}
@@ -2046,7 +2074,8 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={(Boolean(pendingStartEnemy || pendingStartShiv) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                      disabled={Boolean(pendingStartEnemy && !startEnemyChoiceAvailable(enemy.uid))}
+                      targeted={((Boolean(pendingStartEnemy && startEnemyChoiceAvailable(enemy.uid)) || Boolean(pendingStartShiv)) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
                       ))) && !enemy.dead}
                       onClick={onEnemyClick}

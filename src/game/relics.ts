@@ -64,6 +64,34 @@ export const RELICS: Record<string, RelicDef> = {
     effects: [{ kind: 'gainMiracle', amount: 1 }],
     text: 'Start of combat: gain 1 Miracle.',
   },
+  astrolabe: { id: 'astrolabe', name: 'Astrolabe', boss: true, effects: [], text: 'Upgrade 3 cards. Use this immediately, then discard it.' },
+  black_blood: { id: 'black_blood', name: 'Black Blood', boss: true, trigger: { kind: 'endOfCombat' }, effects: [{ kind: 'heal', amount: 2 }], text: 'End of combat: heal 2 HP.' },
+  calling_bell: { id: 'calling_bell', name: 'Calling Bell', boss: true, effects: [], text: 'Gain 3 relics. Gain a Curse. Use this immediately, then discard it.' },
+  coffee_dripper: { id: 'coffee_dripper', name: 'Coffee Dripper', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: "Start of turn: gain 1 Energy. At a Campfire, you can't Rest." },
+  cursed_key: { id: 'cursed_key', name: 'Cursed Key', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: 'Start of turn: gain 1 Energy. When obtained, gain 2 Curses.' },
+  ectoplasm: { id: 'ectoplasm', name: 'Ectoplasm', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: "Start of turn: gain 1 Energy. You can't gain Gold." },
+  empty_cage: { id: 'empty_cage', name: 'Empty Cage', boss: true, effects: [], text: 'Remove 2 cards. Use this immediately, then discard it.' },
+  enchiridion: { id: 'enchiridion', name: 'Enchiridion', boss: true, effects: [], text: 'Gain a rare card reward. Look at 5 cards instead of 3. Use this immediately, then discard it.' },
+  frozen_core: { id: 'frozen_core', name: 'Frozen Core', boss: true, trigger: { kind: 'endOfTurn' }, effects: [{ kind: 'block', amount: 1 }], text: 'End of turn: gain 1 Block.' },
+  fusion_hammer: { id: 'fusion_hammer', name: 'Fusion Hammer', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: "Start of turn: gain 1 Energy. At a Campfire, you can't Smith." },
+  holy_water: { id: 'holy_water', name: 'Holy Water', boss: true, effects: [], text: 'Start of combat: add 2 cubes. Remove a cube: gain 1 Energy.' },
+  mark_of_pain: { id: 'mark_of_pain', name: 'Mark of Pain', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: 'Start of turn: gain 1 Energy. If your HP would go above 6, it becomes 6.' },
+  orrery: { id: 'orrery', name: 'Orrery', boss: true, effects: [], text: 'Gain 4 card rewards. Use this immediately, then discard it.' },
+  pandoras_box: { id: 'pandoras_box', name: "Pandora's Box", boss: true, effects: [], text: 'Transform 3 cards. Use this immediately, then discard it.' },
+  ring_of_the_serpent: { id: 'ring_of_the_serpent', name: 'Ring of the Serpent', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'draw', amount: 1 }], text: 'Start of turn: draw a card.' },
+  snecko_eye: {
+    id: 'snecko_eye', name: 'Snecko Eye', boss: true, effects: [],
+    abilities: [
+      { trigger: { kind: 'dieRelic', faces: [1, 2] }, effects: [{ kind: 'draw', amount: 2 }] },
+      { trigger: { kind: 'dieRelic', faces: [3, 4] }, effects: [{ kind: 'gainEnergy', amount: 1 }] },
+      { trigger: { kind: 'dieRelic', faces: [5, 6] }, effects: [{ kind: 'setNextCardCost', amount: 3 }] },
+    ],
+    text: 'On a 1 or 2: draw 2 cards. On a 3 or 4: gain 1 Energy. On a 5 or 6: gain Confusion.',
+  },
+  sozu: { id: 'sozu', name: 'Sozu', boss: true, trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }], text: "Start of turn: gain 1 Energy. You can't gain potions." },
+  tiny_house: { id: 'tiny_house', name: 'Tiny House', boss: true, effects: [], text: 'Gain a card reward, a potion, and 3 Gold. Upgrade a card. Use this immediately, then discard it.' },
+  white_beast_statue: { id: 'white_beast_statue', name: 'White Beast Statue', boss: true, trigger: { kind: 'endOfCombat' }, effects: [], text: 'End of combat: gain a potion.' },
+  wrist_blade: { id: 'wrist_blade', name: 'Wrist Blade', boss: true, effects: [], text: 'Your 0-cost Attacks deal +1 damage on each hit, including Shivs.' },
   anchor: {
     id: 'anchor',
     name: 'Anchor',
@@ -169,7 +197,7 @@ export const RELICS: Record<string, RelicDef> = {
     effects: [{ kind: 'block', amount: 2, toChosen: true }], supportTarget: 'anyPlayer',
     text: 'On a 4: 2 Block to any player.',
   },
-  old_coin: { id: 'old_coin', name: 'Old Coin', effects: [], text: 'Gain 3 Gold, then discard this relic. At a Merchant or The Courier, discard it and draw again.' },
+  old_coin: { id: 'old_coin', name: 'Old Coin', effects: [], text: 'Gain 10 Gold, then discard this relic. At a Merchant or The Courier, discard it and draw again.' },
   omamori: { id: 'omamori', name: 'Omamori', effects: [], text: "You can't gain Curses." },
   orichalcum: {
     id: 'orichalcum', name: 'Orichalcum', trigger: { kind: 'endOfTurn' },
@@ -372,7 +400,12 @@ export const RELIC_DECK = [
   'sundial', 'the_abacus', 'the_boot', 'the_courier', 'toolbox', 'toxic_egg', 'tungsten_rod',
   'vajra', 'war_paint', 'whetstone', 'wing_boots',
 ] as const
-export const BOSS_RELIC_DECK: string[] = []
+export const BOSS_RELIC_DECK = [
+  'ectoplasm', 'cursed_key', 'wrist_blade', 'holy_water', 'snecko_eye', 'pandoras_box',
+  'coffee_dripper', 'fusion_hammer', 'orrery', 'sozu', 'frozen_core', 'empty_cage',
+  'black_blood', 'ring_of_the_serpent', 'white_beast_statue', 'tiny_house', 'astrolabe',
+  'calling_bell', 'enchiridion', 'mark_of_pain',
+] as const
 
 /** The physical shared potion deck, including repeated cards. */
 export const POTION_DECK = [

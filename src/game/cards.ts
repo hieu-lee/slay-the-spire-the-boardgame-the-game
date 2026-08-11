@@ -162,6 +162,7 @@ type EffectKind =
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
+  | { kind: 'setNextCardCost'; amount: number }
   | { kind: 'gainGold'; amount: number }
   | { kind: 'setHpAtLeast'; amount: number }
   | { kind: 'setHpLossLimit'; amount: number }

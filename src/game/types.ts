@@ -80,12 +80,17 @@ export type Player = {
   attacksPlayedThisTurn: number
   /** Includes statuses, but not Shivs; used by Snecko and Time Eater. */
   cardsPlayedThisTurn?: number
+  /** Act IV's Shield/Spear choice; public and serialized for reconnects. */
+  facingEnemyUid?: string | null
+  damageDealtZeroThisTurn?: boolean
   /** Snecko replaces the first card's printed cost for this turn. */
   nextCardCost?: number | null
   /** Potion-created one-shot card and damage rules. */
   cardCopyQueue?: ('attack' | 'skill')[]
   /** Originals already committed after their separately resolved copy. */
   copyOriginalUids?: string[]
+  /** Paid copied Attacks whose forced original must not gain Wrist Blade. */
+  copyOriginalPaidUids?: string[]
   freeCardUids?: string[]
   forcedCardUids?: string[]
   hpLossLimitThisTurn?: number | null
@@ -98,6 +103,8 @@ export type Player = {
   hitPoison: number
   /** Watcher. */
   miracles: number
+  /** Holy Water's two once-per-combat Energy cubes. */
+  holyWaterCubes?: number
   stance: Stance
   /** Defect. `null` marks an empty slot; slot order carries no meaning. */
   orbs: (OrbType | null)[]
@@ -124,6 +131,8 @@ export type Enemy = {
   actsLast?: boolean
   /** Printed alternate rows selected when this enemy card entered play. */
   ascension?: number
+  /** A mode change printed for the start of the next Player Turn. */
+  pendingDefId?: string
 
   hp: number
   maxHp: number
@@ -145,6 +154,9 @@ export type Enemy = {
 
   /** Boss form/phase. Ordinary enemies stay at zero. */
   phase?: number
+
+  /** Grey cube slots already resolved and skipped on later loops. */
+  spentOnceSlots?: number[]
 
   /** Whether this enemy's once-per-combat special ability has fired. */
   abilityUsed: boolean

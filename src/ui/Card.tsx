@@ -100,6 +100,7 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
+    case 'setNextCardCost': return `your next card costs ${effect.amount} Energy${condition}`
     case 'gainGold': return `gain ${effect.amount} Gold${condition}`
     case 'setHpAtLeast': return `set HP to at least ${effect.amount}${condition}`
     case 'setHpLossLimit': return `lose no more than ${effect.amount} HP this turn${condition}`

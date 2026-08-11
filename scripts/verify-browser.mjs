@@ -56,7 +56,7 @@ page.on('response', (response) => {
 })
 
 const shots = []
-async function shot(label) {
+async function shot(label, target) {
   // Screenshots are the artefact a human reviews, so they must show the app as
   // a player sees it. Captured too early, lazy-loaded card art is still blank
   // and the picture misrepresents the product rather than documenting it.
@@ -68,7 +68,8 @@ async function shot(label) {
     )
     .catch(() => {})
   const file = join(outDir, `${label}.png`)
-  await page.screenshot({ path: file, fullPage: true })
+  if (target) await target.screenshot({ path: file })
+  else await page.screenshot({ path: file, fullPage: true })
   const state = await page.evaluate(() => window.__STS_DEBUG__.getState())
   writeFileSync(join(outDir, `${label}.state.json`), JSON.stringify(state, null, 2))
   shots.push(label)
@@ -544,7 +545,9 @@ await page.locator('.reward-screen').evaluate((element) => { element.scrollTop =
 const deckSizesBeforeReward = rewardRun.players.map((player) => player.deck.length)
 await page.locator('.reward-screen__player').nth(0).locator('.card').first().click()
 const selectedCardPressed = await page.locator('.reward-screen__player').nth(0).locator('.card').first().getAttribute('aria-pressed')
+await page.locator('.reward-screen__player').nth(0).getByRole('button', { name: /Take \d+ Gold$/ }).click()
 await page.getByRole('button', { name: /Skip Silent's card/ }).click()
+await page.locator('.reward-screen__player').nth(1).getByRole('button', { name: 'Skip Gold' }).click()
 const skipSelection = await page.getByRole('button', { name: /Skip Silent's card/ }).evaluate((button) => ({
   pressed: button.getAttribute('aria-pressed'),
   text: button.textContent,
@@ -2395,6 +2398,26 @@ check('Explosive Potion damages the chosen row and any boss, but no other row', 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  player.dead = false
+  player.potions = ['entropic_brew', 'fire_potion']
+  player.relics = [...player.relics.filter((relic) => relic.defId !== 'sozu'), { defId: 'sozu', spent: false }]
+  run.combat.phase = 'player'
+  run.combat.potionLimit = 2
+  debug.setRun(run)
+})
+await page.locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('entropic_brew'))
+const combatSozuBrew = await readState()
+const combatSozuDiscardPrompt = await page.getByText(/Choose a potion to discard before drawing/).count()
+check('a full-belt Sozu holder can consume Entropic Brew for zero draws', () => {
+  assertDeepEqual(combatSozuBrew.players[0].potions, ['fire_potion'])
+  assertEqual(combatSozuDiscardPrompt, 0)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].dead = true
   run.combat.players[0].potions = ['energy_potion']
   debug.setRun(run)
@@ -4018,6 +4041,18 @@ await page.locator('.campfire__deck .card').first().click()
 const leaveLockedAfter = await page.locator('.campfire__leave').isDisabled()
 await page.locator('.campfire__leave').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].potions = ['fire_potion']
+  run.players[1].potions = []
+  run.players[1].relics.push({ defId: 'sozu', spent: false })
+  debug.setRun(run)
+})
+const sozuTrade = await page.getByRole('button', { name: /Give Fire Potion/ }).count()
+check('outside-combat potion UI does not offer a Sozu recipient', () => {
+  assertEqual(sozuTrade, 0)
+})
 const afterCampfire = await readRun()
 
 check('Rest heals and Smith upgrades, and the party returns to the map', () => {
@@ -4031,6 +4066,31 @@ check('Rest heals and Smith upgrades, and the party returns to the map', () => {
     'and upgrades exactly one card',
   )
 })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.players[0].relics.push({ defId: 'coffee_dripper', spent: false })
+  run.players[0].deck = [
+    ...run.players[0].deck.map((card) => ({ ...card, upgraded: true })),
+    { uid: 'browser-campfire-injury', defId: 'injury', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+await page.waitForSelector('.campfire')
+const blockedCampfire = await page.locator('.campfire__player').nth(0).evaluate((panel) => ({
+  rest: panel.querySelector('button:nth-of-type(1)')?.matches(':disabled'),
+  smith: panel.querySelector('button:nth-of-type(2)')?.matches(':disabled'),
+  skip: [...panel.querySelectorAll('button')].some((button) => button.textContent?.includes('Do nothing') && !button.disabled),
+}))
+check('the campfire exposes an accessible no-op when both actions are forbidden', () => {
+  assertDeepEqual(blockedCampfire, { rest: true, smith: true, skip: true })
+})
+await page.locator('.campfire__player').nth(0).getByRole('button', { name: 'Do nothing' }).click()
+await page.locator('.campfire__player').nth(1).getByRole('button', { name: /Rest/ }).click()
+await page.locator('.campfire__leave').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 
 // A card whose width is unbounded turns aspect-ratio into runaway height. This
 // caught a real regression where one enemy portrait grew to ~560px tall and the
@@ -4078,6 +4138,328 @@ check('Try again preserves every Ascension setup modifier', () => {
   assertEqual(ascensionRetry.players[0].hp, 8)
   assert(ascensionRetry.players[0].deck.some((card) => card.defId === 'ascenders_bane'))
 })
+
+// Boss cards use generated transparent portraits over generated act-specific
+// backdrops. Exercise three mechanically distinct cards in the real UI so a
+// missing asset, unreadable ability, or runaway boss layout fails visibly.
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await enterFirstRoom()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    ['guardian_defensive', 40, 0],
+    ['time_eater', 60, 1],
+    ['corrupt_heart', 100, 0],
+  ].map(([defId, hp, actionIndex], index) => ({
+    ...template,
+    uid: `boss-${index}`,
+    defId,
+    hp,
+    maxHp: hp,
+    actionIndex,
+    isBoss: true,
+    abilityUsed: false,
+    abilityCubes: defId === 'corrupt_heart' ? 1 : undefined,
+    dead: false,
+  }))
+  run.combat.phase = 'player'
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.enemy--boss').length === 3)
+const bossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => ({
+  label: card.getAttribute('aria-label'),
+  text: card.textContent,
+  background: getComputedStyle(card).backgroundImage,
+  image: card.querySelector('img')?.getAttribute('src'),
+  loaded: (card.querySelector('img')?.naturalWidth ?? 0) > 0,
+  box: card.getBoundingClientRect().toJSON(),
+})))
+check('boss portraits, backdrops, mechanics, and accessible labels render together', () => {
+  assert(bossVisuals.every((boss) => boss.loaded), 'a generated boss portrait did not load')
+  assert(bossVisuals.every((boss) => boss.background.includes('/assets/backgrounds/boss-act-')),
+    'a boss is missing its act backdrop')
+  assert(bossVisuals.some((boss) => boss.label.includes('Sharp Hide')))
+  assert(bossVisuals.some((boss) => boss.label.includes('Time Warp')))
+  assert(bossVisuals.some((boss) => boss.label.includes('Haste')))
+  assert(bossVisuals.some((boss) => boss.label.includes('gain 1 Strength')
+    && boss.label.includes('remove all Weak and Vulnerable') && boss.label.includes('Poison remains')))
+  assert(bossVisuals.some((boss) => boss.label.includes('Invincible: cannot gain Weak')))
+  assert(bossVisuals.some((boss) => boss.text.includes('Haste')))
+  assert(bossVisuals.some((boss) => boss.text.includes('Invincible · no Weak')))
+  assert(bossVisuals.every((boss) => boss.box.width <= 320 && boss.box.height <= 360),
+    'boss cards must remain card-sized')
+})
+await page.addStyleTag({ content: `
+  .combat { height: auto !important; }
+  .board { flex: none !important; overflow: visible !important; mask-image: none !important; }
+` })
+await page.locator('.board').evaluate((board) => { board.scrollTop = 0 })
+const bossContainment = await page.locator('.board').evaluate((board) => {
+  const outer = board.getBoundingClientRect()
+  return [...board.querySelectorAll('.enemy')].map((card) => {
+    const box = card.getBoundingClientRect()
+    return box.top >= outer.top && box.left >= outer.left && box.bottom <= outer.bottom && box.right <= outer.right
+  })
+})
+check('the boss gallery capture contains every complete card', () => {
+  assertDeepEqual(bossContainment, [true, true, true])
+})
+await shot('17-boss-mechanics-gallery', page.locator('.board'))
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.enemies.find((enemy) => enemy.defId === 'time_eater').abilityUsed = true
+  debug.setRun(run)
+})
+const spentHaste = await page.locator('.enemy--boss').filter({ hasText: 'Haste · spent' }).getAttribute('aria-label')
+const timeEaterAbilities = await page.locator('.enemy--boss').filter({ hasText: 'Haste · spent' })
+  .locator('.enemy__ability > span').evaluateAll((abilities) => abilities.map((ability) => ({
+    text: ability.textContent,
+    decoration: getComputedStyle(ability).textDecorationLine,
+  })))
+check('Time Eater exposes Haste as spent after its one revival', () => {
+  assert(spentHaste.includes('Haste: spent'))
+  assert(timeEaterAbilities.find((ability) => ability.text.includes('Haste'))?.decoration.includes('line-through'))
+  assert(!timeEaterAbilities.find((ability) => ability.text.includes('Time Warp'))?.decoration.includes('line-through'),
+    'spending Haste must not strike through active Time Warp')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...template, uid: 'slime', defId: 'slime_boss', ascension: 10, hp: 23, maxHp: 23, isBoss: true, abilityUsed: false },
+    { ...template, uid: 'awakened', defId: 'awakened_one_phase_1', ascension: 10, hp: 50, maxHp: 50, isBoss: true, abilityUsed: false },
+  ]
+  debug.setRun(run)
+})
+const ascendedAbilities = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => ({
+  text: card.querySelector('.enemy__ability')?.textContent ?? '',
+  label: card.getAttribute('aria-label') ?? '',
+})))
+check('ascended boss abilities are visible and announced', () => {
+  assert(ascendedAbilities.some((ability) => ability.text.includes('Large Slimes +1 Strength')
+    && ability.label.includes('Large Slimes gain 1 Strength')))
+  assert(ascendedAbilities.some((ability) => ability.text.includes('Strength from largest Power count')
+    && ability.label.includes('Strength equal to the largest number of Powers')))
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  run.combat.players = Array.from({ length: 4 }, (_, index) => ({
+    ...structuredClone(player),
+    id: index === 0 ? player.id : `facing-p${index + 1}`,
+    name: index === 0 ? player.name : `Player ${index + 1}`,
+    row: index,
+    facingEnemyUid: null,
+  }))
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...template, uid: 'shield', defId: 'spire_shield', row: 0, hp: 30, maxHp: 30, isBoss: false, abilityUsed: false, dead: false },
+    { ...template, uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42, isBoss: false, abilityUsed: false, dead: false },
+  ]
+  run.combat.phase = 'start'
+  run.combat.startTurnStage = 'facing'
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 2'))
+await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 3'))
+const facingCapacity = await page.locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
+  card.getAttribute('aria-label')?.split(',')[0], {
+    targeted: card.classList.contains('enemy--targeted'), disabled: card.matches(':disabled'),
+  },
+])))
+check('Facing UI semantically disables a side after its two rows are filled', () => {
+  assertDeepEqual(facingCapacity['Spire Shield'], { targeted: false, disabled: true })
+  assertDeepEqual(facingCapacity['Spire Spear'], { targeted: true, disabled: false })
+})
+await page.getByRole('button', { name: /^Spire Spear,/ }).click()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Player 4'))
+await page.getByRole('button', { name: /^Spire Spear,/ }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const capacityState = await readState()
+check('four-player Facing resolves with two players on each side', () => {
+  assertDeepEqual(capacityState.players.map((player) => player.facingEnemyUid), ['shield', 'shield', 'spear', 'spear'])
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...template, uid: 'shield', defId: 'spire_shield', row: 0, hp: 30, maxHp: 30, actionIndex: 0, isBoss: false, abilityUsed: false, dead: false },
+    { ...template, uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42, actionIndex: 0, isBoss: false, abilityUsed: false, dead: false },
+  ]
+  run.combat.players = [run.combat.players[0]]
+  run.combat.players[0].id = run.players[0].id
+  run.combat.players[0].name = run.players[0].name
+  run.combat.players[0].row = 0
+  run.combat.phase = 'start'
+  run.combat.startTurnStage = 'facing'
+  run.combat.players[0].energy = 3
+  run.combat.players[0].facingEnemyUid = null
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+const shieldFacingLabel = await page.getByRole('button', { name: /^Spire Shield,/ }).getAttribute('aria-label')
+check('Facing exposes its current physical penalty to assistive technology', () => {
+  assert(shieldFacingLabel.includes('lose 1 Energy'))
+})
+await page.getByRole('button', { name: /^Spire Shield,/ }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const facingState = await readState()
+check('the browser can choose and resolve Act IV Facing authoritatively', () => {
+  assertEqual(facingState.players[0].facingEnemyUid, 'shield')
+  assertEqual(facingState.players[0].energy, 2)
+  assert(facingState.log.at(-1).includes('loses 1 Energy'))
+})
+// Keep one player opposite each Act IV elite for the visual artefact. Empty
+// rows intentionally compact, which is correct in play but hides Spear's card.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const first = run.combat.players[0]
+  const second = {
+    ...first,
+    id: 'facing-visual-p2', name: 'Silent', character: 'silent', row: 3,
+    hp: 9, maxHp: 9, block: 0, facingEnemyUid: 'spear',
+    deck: [], draw: [], hand: [], discard: [], exhaust: [], powers: [],
+    shivs: 0, miracles: 0, stance: 'neutral', orbs: [null, null, null],
+    relics: [{ defId: 'ring_of_the_snake', spent: false }], potions: [],
+  }
+  run.players.push(structuredClone(second))
+  run.combat.players.push(second)
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.seat:not(.seat--empty)').length === 2)
+const actFourBoxes = await page.locator('.enemy').evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height))
+check('the Act IV capture keeps both elite cards readable', () => {
+  assertEqual(actFourBoxes.length, 2)
+  assert(actFourBoxes.every((height) => height >= 200), `compact enemy card in capture: ${actFourBoxes.join(', ')}`)
+})
+await page.locator('.board').evaluate((board) => { board.scrollTop = 0 })
+const actFourContainment = await page.locator('.board').evaluate((board) => {
+  const outer = board.getBoundingClientRect()
+  return [...board.querySelectorAll('.enemy')].map((card) => {
+    const box = card.getBoundingClientRect()
+    return box.top >= outer.top && box.left >= outer.left && box.bottom <= outer.bottom && box.right <= outer.right
+  })
+})
+check('the Act IV capture contains both complete enemy cards', () => {
+  assertDeepEqual(actFourContainment, [true, true])
+})
+await shot('18-act4-facing', page.locator('.board'))
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'reward'
+  run.combat = null
+  run.rewardDestination = 'victory'
+  run.rewards = [{
+    playerId: run.players[0].id,
+    choices: null,
+    upgraded: false,
+    hasCard: true,
+    hasPotion: false,
+    potionId: null,
+    hasRelic: false,
+    relicChoices: [],
+    rare: true,
+    revealCount: 5,
+  }]
+  debug.setRun(run)
+})
+const enchiridionReveal = await page.getByRole('button', { name: /^Reveal 5 for/ }).count()
+check('Enchiridion labels its five-card reveal correctly', () => {
+  assertEqual(enchiridionReveal, 1)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const owner = run.players[0]
+  owner.rareRewards = ['fiend_fire', 'demon_form', 'bludgeon']
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'astrolabe')
+  run.rewards = [{
+    playerId: owner.id,
+    choices: ['fiend_fire', 'demon_form', 'bludgeon'],
+    upgraded: false,
+    hasCard: true,
+    hasPotion: false,
+    potionId: null,
+    hasRelic: true,
+    relicChoices: ['astrolabe'],
+    bossRelic: true,
+    rare: true,
+  }]
+  debug.setRun(run)
+})
+await page.locator('.reward-screen__cards .card').first().click()
+await page.getByRole('button', { name: 'Astrolabe' }).click()
+await page.getByRole('button', { name: "Collect Ironclad's rewards" }).click()
+await page.getByText(/^Choose cards to upgrade/).waitFor()
+const gainedRareTarget = page.locator('.reward-screen__cards .card[aria-label^="Fiend Fire,"]')
+await gainedRareTarget.click()
+for (let picked = 1; picked < 3; picked++) {
+  await page.locator('.reward-screen__cards .card[aria-pressed="false"]').first().evaluate((card) => card.click())
+}
+await page.getByRole('button', { name: "Collect Ironclad's rewards" }).click()
+const astrolabeRun = await readRun()
+check('the browser can target a just-gained rare card with Astrolabe', () => {
+  assert(astrolabeRun.players[0].deck.some((card) => card.defId === 'fiend_fire' && card.upgraded))
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.act = 3
+  run.phase = 'betweenCombat'
+  run.combat = null
+  run.pendingBossDefId = 'time_eater'
+  run.rewards = []
+  run.rewardDestination = null
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'Between bosses' }).waitFor()
+await page.getByRole('group', { name: 'Ironclad' }).getByRole('button', { name: 'Row 4' }).click()
+await page.getByRole('button', { name: 'Face the next boss' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
+const betweenBossRun = await readRun()
+check('the browser exposes the reconnect-safe between-boss row step', () => {
+  assertEqual(betweenBossRun.players[0].row, 3)
+  assertEqual(betweenBossRun.pendingBossDefId, null)
+  assert(betweenBossRun.combat.enemies.some((enemy) => enemy.defId === 'time_eater'))
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.act = 4
+  run.phase = 'victory'
+  run.combat = null
+  run.rewards = []
+  run.rewardDestination = null
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'The Spire is conquered' }).waitFor()
+const actFiveButtons = await page.getByRole('button', { name: /Climb to Act 5/ }).count()
+check('Heart victory is terminal and exposes no Act V action', () => {
+  assertEqual(actFiveButtons, 0)
+})
+await shot('19-heart-victory')
 
 writeFileSync(
   join(outDir, 'summary.json'),

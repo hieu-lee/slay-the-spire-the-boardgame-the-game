@@ -11,11 +11,11 @@ import type { Enemy } from './types.ts'
 
 export type EnemyAction =
   /** Damage to the player in this enemy's row, or to all players if `aoe`. */
-  | { kind: 'attack'; amount: number; times?: number; aoe?: boolean }
+  | { kind: 'attack'; amount: number; times?: number; aoe?: boolean; facing?: boolean }
   /** Different printed hits that still spend modifiers once as one action. */
   | { kind: 'attackSequence'; hits: { amount: number; aoe?: boolean }[] }
   /** Block and Strength always go on the enemy itself, never on a player (p.14). */
-  | { kind: 'block'; amount: number }
+  | { kind: 'block'; amount: number; perPlayer?: boolean }
   | { kind: 'gainStrength'; amount: number }
   | { kind: 'blockAllEnemies'; amount: number }
   | { kind: 'strengthenAllEnemies'; amount: number }
@@ -34,6 +34,10 @@ export type EnemyAction =
   | { kind: 'leave' }
   | { kind: 'die' }
   | { kind: 'addAbilityCube'; amount: number }
+  | { kind: 'transform'; defId: string }
+  | { kind: 'guardianModeShift'; amount: number }
+  | { kind: 'removeInvincible' }
+  | { kind: 'shuffleStatus'; card: 'burn' | 'slimed'; amount: number }
   /** This printed action is sorted after ordinary enemies for this round. */
   | { kind: 'actsLast' }
   /** Summons resolve at the start of the next round. */
@@ -73,6 +77,15 @@ export type EnemyAbility =
   | { kind: 'immuneOnSlots'; slots: number[] }
   | { kind: 'slow'; damagePerHit: number }
   | { kind: 'rally'; summonDefId: string }
+  | { kind: 'splitOnDeath'; defIds: string[]; largeSlimeStrength?: number }
+  | { kind: 'rebirth'; hpPerPlayer: number; defId?: string; clearWeakVulnerable?: boolean; strength?: number; strengthPerPower?: boolean; timing?: 'endOfTurn' }
+  | { kind: 'sharpHide'; damage: number }
+  | { kind: 'curiosity' }
+  | { kind: 'timeWarp'; limits: number[] }
+  | { kind: 'invincible'; hpPerPlayer: number }
+  | { kind: 'beatOfDeath'; damagePerCube: number; startingCubes: number; maxCubes: number }
+  | { kind: 'void' }
+  | { kind: 'facing'; effect: 'shield' | 'spear' }
 
 export type EnemyDef = {
   id: string
@@ -89,6 +102,10 @@ export type EnemyDef = {
   /** The yellow special ability printed on the card (p.13). */
   ability?: EnemyAbility
   abilities?: EnemyAbility[]
+  /** Reuse a generated portrait across printed forms. */
+  artId?: string
+  /** Generated act-specific boss backdrop. */
+  bossAct?: 1 | 2 | 3 | 4
   /** Highest matching threshold replaces only the listed printed values. */
   ascension?: EnemyAscension[]
 }
@@ -110,6 +127,8 @@ const byPairs = (
   mid: EnemyAction[],
   high: EnemyAction[],
 ): Record<number, EnemyAction[]> => ({ 1: low, 2: low, 3: mid, 4: mid, 5: high, 6: high })
+
+const perPlayer = (hp: number): [number, number, number, number] => [hp, hp * 2, hp * 3, hp * 4]
 
 export const ENEMIES: Record<string, EnemyDef> = {
   small_slime: {
@@ -1179,6 +1198,301 @@ export const ENEMIES: Record<string, EnemyDef> = {
       },
     ],
   },
+
+  slime_boss: {
+    id: 'slime_boss', name: 'Slime Boss', isBoss: true, bossAct: 1,
+    hpByPlayers: perPlayer(22),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'status', card: 'slimed', amount: 3, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 6 }] },
+    ] },
+    ability: { kind: 'splitOnDeath', defIds: ['large_slime', 'acid_slime', 'spike_slime'] },
+    ascension: [{ min: 10, hpByPlayers: [23, 46, 68, 92], pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'status', card: 'slimed', amount: 4, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 6 }] },
+    ] }, ability: { kind: 'splitOnDeath', defIds: ['large_slime', 'acid_slime', 'spike_slime'], largeSlimeStrength: 1 } }],
+  },
+
+  guardian_attack: {
+    id: 'guardian_attack', name: 'The Guardian', isBoss: true, bossAct: 1,
+    hpByPlayers: perPlayer(40), retainsBlock: true,
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 5, perPlayer: true }] },
+      { actions: [{ kind: 'guardianModeShift', amount: 6 }] },
+    ] },
+    ascension: [{ min: 10, pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }, { kind: 'block', amount: 6, perPlayer: true }] },
+      { actions: [{ kind: 'guardianModeShift', amount: 7 }] },
+    ] } }],
+  },
+
+  guardian_defensive: {
+    id: 'guardian_defensive', name: 'The Guardian', isBoss: true, bossAct: 1,
+    hpByPlayers: perPlayer(40), artId: 'guardian_defensive',
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2 }] },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'gainStrength', amount: 1 }, { kind: 'transform', defId: 'guardian_attack' }] },
+    ] },
+    ability: { kind: 'sharpHide', damage: 1 },
+    ascension: [{ min: 10, pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3 }] },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'gainStrength', amount: 1 }, { kind: 'transform', defId: 'guardian_attack' }] },
+    ] } }],
+  },
+
+  hexaghost: {
+    id: 'hexaghost', name: 'Hexaghost', isBoss: true, bossAct: 1,
+    hpByPlayers: [36, 75, 112, 150],
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 1 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'status', card: 'burn', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: [38, 80, 120, 160], pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 1 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'status', card: 'burn', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'block', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+    ] } }],
+  },
+
+  the_collector: {
+    id: 'the_collector', name: 'The Collector', isBoss: true, bossAct: 2,
+    hpByPlayers: perPlayer(57),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'summonUntil', defId: 'torch_head', perPlayer: 2 }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 5 }] },
+      { once: true, actions: [{ kind: 'applyWeak', amount: 2, aoe: true }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }, { kind: 'status', card: 'burn', amount: 2, aoe: true }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: perPlayer(60), pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'summonUntil', defId: 'torch_head', perPlayer: 2 }] },
+      { actions: [{ kind: 'attack', amount: 3 }, { kind: 'strengthenAllEnemies', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 6 }] },
+      { once: true, actions: [{ kind: 'applyWeak', amount: 2, aoe: true }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }, { kind: 'status', card: 'burn', amount: 3, aoe: true }] },
+    ] } }],
+  },
+
+  torch_head: {
+    id: 'torch_head', name: 'Torch Head', hpByPlayers: [9, 9, 9, 9],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
+  },
+
+  the_champ: {
+    id: 'the_champ', name: 'The Champ', isBoss: true, bossAct: 2,
+    hpByPlayers: perPlayer(40),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 4 }] },
+      { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 5 }, { kind: 'block', amount: 3 }] },
+    ] },
+    ability: { kind: 'rebirth', hpPerPlayer: 40, defId: 'the_champ_fury' },
+    ascension: [{
+      min: 10,
+      hpByPlayers: perPlayer(45),
+      pattern: { kind: 'cube', slots: [
+        { actions: [{ kind: 'attack', amount: 4 }] },
+        { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 6 }, { kind: 'block', amount: 3 }] },
+      ] },
+      ability: { kind: 'rebirth', hpPerPlayer: 45, defId: 'the_champ_fury' },
+    }],
+  },
+
+  the_champ_fury: {
+    id: 'the_champ_fury', name: 'The Champ — Fury', isBoss: true, bossAct: 2, artId: 'the_champ',
+    hpByPlayers: perPlayer(40),
+    pattern: { kind: 'cube', slots: [
+      { once: true, actions: [{ kind: 'clearSelfDebuffs' }] },
+      { actions: [{ kind: 'attack', amount: 4, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 1 }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: perPlayer(45), pattern: { kind: 'cube', slots: [
+      { once: true, actions: [{ kind: 'clearSelfDebuffs' }] },
+      { actions: [{ kind: 'attack', amount: 4, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 2 }] },
+    ] } }],
+  },
+
+  bronze_automaton: {
+    id: 'bronze_automaton', name: 'Bronze Automaton', isBoss: true, bossAct: 2,
+    hpByPlayers: perPlayer(55),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'gainStrength', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 1 }, { kind: 'clearSelfDebuffs' }] },
+      { actions: [{ kind: 'attack', amount: 7 }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: perPlayer(60), pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'gainStrength', amount: 1 }, { kind: 'clearSelfDebuffs' }] },
+      { actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+      { actions: [{ kind: 'gainStrength', amount: 1 }, { kind: 'clearSelfDebuffs' }] },
+      { actions: [{ kind: 'attack', amount: 9 }] },
+    ] } }],
+  },
+
+  bronze_orb: {
+    id: 'bronze_orb', name: 'Bronze Orb', hpByPlayers: [19, 19, 19, 19],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'blockNamed', defId: 'bronze_automaton', amount: 3 }],
+    ) },
+  },
+
+  bronze_orb_db3: {
+    id: 'bronze_orb_db3', name: 'Bronze Orb', artId: 'bronze_orb', hpByPlayers: [19, 19, 19, 19],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+      [{ kind: 'blockNamed', defId: 'bronze_automaton', amount: 3 }],
+      [{ kind: 'attack', amount: 3 }],
+    ) },
+  },
+
+  bronze_orb_3bd: {
+    id: 'bronze_orb_3bd', name: 'Bronze Orb', artId: 'bronze_orb', hpByPlayers: [19, 19, 19, 19],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'blockNamed', defId: 'bronze_automaton', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+    ) },
+  },
+
+  bronze_orb_b3d: {
+    id: 'bronze_orb_b3d', name: 'Bronze Orb', artId: 'bronze_orb', hpByPlayers: [19, 19, 19, 19],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'blockNamed', defId: 'bronze_automaton', amount: 3 }],
+      [{ kind: 'attack', amount: 3 }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
+    ) },
+  },
+
+  awakened_one_phase_1: {
+    id: 'awakened_one_phase_1', name: 'Awakened One', isBoss: true, bossAct: 3,
+    hpByPlayers: perPlayer(50),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3 }] },
+      { actions: [{ kind: 'attack', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+    ] },
+    abilities: [
+      { kind: 'curiosity' },
+      { kind: 'rebirth', hpPerPlayer: 50, defId: 'awakened_one_phase_2', strengthPerPower: true, timing: 'endOfTurn' },
+    ],
+    ascension: [{ min: 10, pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3 }] },
+      { actions: [{ kind: 'attack', amount: 6 }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+    ] } }],
+  },
+
+  awakened_one_phase_2: {
+    id: 'awakened_one_phase_2', name: 'Awakened One — Reborn', isBoss: true, bossAct: 3,
+    hpByPlayers: perPlayer(50),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 7 }] },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+    ability: { kind: 'void' },
+    ascension: [{ min: 10, pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 6 }] },
+      { actions: [{ kind: 'attack', amount: 4 }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'gainStrength', amount: 1 }] },
+    ] } }],
+  },
+
+  time_eater: {
+    id: 'time_eater', name: 'Time Eater', isBoss: true, bossAct: 3,
+    hpByPlayers: perPlayer(60),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+      { actions: [{ kind: 'status', card: 'slimed', amount: 3, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 6 }, { kind: 'gainStrength', amount: 1 }] },
+    ] },
+    abilities: [{ kind: 'timeWarp', limits: [5, 4, 3] }, { kind: 'rebirth', hpPerPlayer: 30, clearWeakVulnerable: true, strength: 1 }],
+    ascension: [{ min: 10, hpByPlayers: perPlayer(64), pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3, times: 2 }] },
+      { actions: [{ kind: 'status', card: 'slimed', amount: 3, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 6 }, { kind: 'daze', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+    ] }, abilities: [{ kind: 'timeWarp', limits: [5, 4, 3] }, { kind: 'rebirth', hpPerPlayer: 32, clearWeakVulnerable: true, strength: 1 }] }],
+  },
+
+  donu: {
+    id: 'donu', name: 'Donu', isBoss: true, bossAct: 3,
+    hpByPlayers: perPlayer(50),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'strengthenAllEnemies', amount: 1 }] },
+      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: perPlayer(55) }],
+  },
+
+  deca: {
+    id: 'deca', name: 'Deca', isBoss: true, bossAct: 3,
+    hpByPlayers: perPlayer(50),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+      { actions: [{ kind: 'daze', amount: 1, aoe: true }, { kind: 'status', card: 'slimed', amount: 1, aoe: true }] },
+    ] },
+    ascension: [{ min: 10, hpByPlayers: perPlayer(55), pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 3, times: 3 }] },
+      { actions: [{ kind: 'daze', amount: 1, aoe: true }, { kind: 'status', card: 'slimed', amount: 2, aoe: true }] },
+    ] } }],
+  },
+
+  spire_shield: {
+    id: 'spire_shield', name: 'Spire Shield', elite: true, bossAct: 4,
+    hpByPlayers: perPlayer(30),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'block', amount: 20 }] },
+      { actions: [{ kind: 'attack', amount: 8, facing: true }] },
+      { actions: [{ kind: 'strengthenAllEnemies', amount: 2 }] },
+    ] },
+    ability: { kind: 'facing', effect: 'shield' },
+  },
+
+  spire_spear: {
+    id: 'spire_spear', name: 'Spire Spear', elite: true, bossAct: 4,
+    hpByPlayers: perPlayer(42),
+    pattern: { kind: 'cube', slots: [
+      { actions: [{ kind: 'attack', amount: 2, times: 2, facing: true }] },
+      { actions: [{ kind: 'daze', amount: 2, aoe: true }] },
+      { actions: [{ kind: 'attack', amount: 9, facing: true }] },
+    ] },
+    ability: { kind: 'facing', effect: 'spear' },
+  },
+
+  corrupt_heart: {
+    id: 'corrupt_heart', name: 'Corrupt Heart', isBoss: true, bossAct: 4,
+    hpByPlayers: perPlayer(100),
+    pattern: { kind: 'cube', slots: [
+      { once: true, actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'shuffleStatus', card: 'slimed', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 3 }] },
+      { actions: [{ kind: 'gainStrength', amount: 2 }, { kind: 'addAbilityCube', amount: 1 }, { kind: 'removeInvincible' }] },
+    ] },
+    abilities: [
+      { kind: 'invincible', hpPerPlayer: 50 },
+      { kind: 'beatOfDeath', damagePerCube: 1, startingCubes: 1, maxCubes: 3 },
+    ],
+    ascension: [{ min: 11, hpByPlayers: perPlayer(120), pattern: { kind: 'cube', slots: [
+      { once: true, actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'shuffleStatus', card: 'burn', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 5 }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 3 }] },
+      { actions: [{ kind: 'gainStrength', amount: 2 }, { kind: 'addAbilityCube', amount: 2 }, { kind: 'removeInvincible' }] },
+    ] }, abilities: [
+      { kind: 'invincible', hpPerPlayer: 60 },
+      { kind: 'beatOfDeath', damagePerCube: 1, startingCubes: 1, maxCubes: 5 },
+    ] }],
+  },
 }
 
 export type SummonSupply = Record<string, string[]>
@@ -1192,7 +1506,9 @@ const SUMMON_CARDS: SummonSupply = {
   large_slime: ['large_slime_summon_w4s', 'large_slime_summon_w4s', 'large_slime_summon_4sw', 'large_slime_summon_sw4'],
   fungi_beast: ['fungi_beast'],
   fungi_beast_a7: ['fungi_beast_a7'],
-  cultist: Array(4).fill('cultist'),
+  cultist: Array(8).fill('cultist'),
+  torch_head: Array(8).fill('torch_head'),
+  bronze_orb: ['bronze_orb', 'bronze_orb_db3', 'bronze_orb_3bd', 'bronze_orb_b3d'],
   byrd: ['byrd_s13', 'byrd_s31', 'byrd_31s'],
   mystic: ['mystic', 'mystic_2sh'],
   mugger: Array(2).fill('mugger'),
@@ -1272,6 +1588,19 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'rally': return compact
       ? 'Rally · no Daggers: skip the bottom action'
       : 'Rally: if no Daggers remain, skip the bottom action when moving the cube'
+    case 'splitOnDeath': return compact
+      ? `Split · defeat: summon slimes${ability.largeSlimeStrength ? ` · Large Slimes +${ability.largeSlimeStrength} Strength` : ''}`
+      : `Split: when defeated, summon slimes for every player next turn${ability.largeSlimeStrength ? `; Large Slimes gain ${ability.largeSlimeStrength} Strength` : ''}`
+    case 'rebirth': return compact ? 'Second form · once per combat' : 'When first defeated, return in a second form'
+    case 'sharpHide': return compact ? `Sharp Hide · Attack: ${ability.damage} damage` : `Sharp Hide: after a player attacks this enemy, deal ${ability.damage} damage to that player`
+    case 'curiosity': return compact ? 'Curiosity · attacks +1 per Power' : 'Curiosity: attacks deal 1 extra damage for each Power the target has in play'
+    case 'timeWarp': return compact ? `Time Warp · card limit ${ability.limits.join('/')}` : 'Time Warp: each player cannot play more cards than the current clock value'
+    case 'invincible': return compact ? `Invincible · floor ${ability.hpPerPlayer}/player` : `Invincible: cannot fall below ${ability.hpPerPlayer} HP per player while active`
+    case 'beatOfDeath': return compact ? 'Beat of Death · end-turn damage' : 'Beat of Death: at end of turn, damage every player once per ability cube'
+    case 'void': return compact ? 'Void · draw Slimed: pay 1 Energy to Exhaust it' : 'Void: when a player draws a Slimed, if able they immediately spend 1 Energy to Exhaust it'
+    case 'facing': return compact
+      ? `Facing · choose ${ability.effect}`
+      : `Facing: after start-of-turn effects, players in this enemy's two rows resolve its facing effect`
   }
 }
 

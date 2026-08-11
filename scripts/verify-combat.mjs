@@ -4356,6 +4356,39 @@ check('special physical potions resolve instead of being consumed as no-ops', ()
   assert(state.players[0].discard.some((card) => card.uid === dualCast.uid), 'the impossible original is discarded')
 })
 
+check('Wrist Blade follows the original cost across copied Attacks', () => {
+  const copiedDamage = (defId) => {
+    const card = instance(defId)
+    let state = combat([makePlayer({
+      character: 'silent',
+      hand: [card],
+      potions: ['attack_potion'],
+      relics: [{ defId: 'wrist_blade', spent: false }],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    state = activatePotion(state, 'p1', 'attack_potion')
+    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+    return 20 - state.enemies[0].hp
+  }
+  assertEqual(copiedDamage('strike_ironclad'), 2, 'a paid copied Attack gets no Wrist Blade bonus')
+  assertEqual(copiedDamage('neutralize'), 4, 'a zero-cost copied Attack gets the bonus on both plays')
+})
+
+check('Time Warp cannot strand a committed copied-card original', () => {
+  const strike = instance('strike_ironclad')
+  let state = combat([makePlayer({
+    hand: [strike],
+    potions: ['attack_potion'],
+    cardsPlayedThisTurn: 2,
+  })], [makeEnemy({ defId: 'time_eater', hp: 60, maxHp: 60, actionIndex: 2, isBoss: true })])
+  state = activatePotion(state, 'p1', 'attack_potion')
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.players[0].forcedCardUids, [strike.uid])
+  const resolved = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(resolved.players[0].forcedCardUids, [])
+  assertEqual(resolved.enemies[0].hp, 58, 'the copy and already committed original both resolve')
+})
+
 check('forced card sequences lock every other shared-turn action', () => {
   const forced = instance('strike_ironclad')
   const other = instance('strike_silent')

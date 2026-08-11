@@ -2,7 +2,7 @@ import { generateMap, availableMoves, moveTo, currentRoom, isActComplete, ACT_SH
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
-const build = (seed = 1, act = 1) => generateMap(createRng(seed), act)
+const build = (seed = 1, act = 1, ascension = 0) => generateMap(createRng(seed), act, ACT_SHAPE, ascension)
 
 suite('map')
 
@@ -162,25 +162,41 @@ check('maps carry their act number', () => {
   assertEqual(build(1, 3).act, 3)
 })
 
+check('Act IV adds Shield and Spear only at Ascension 11', () => {
+  const base = build(11, 4)
+  assertEqual(base.rows.length, 1)
+  assertEqual(base.rooms[base.rows[0][0]].kind, 'boss')
+
+  const harder = build(11, 4, 11)
+  assertEqual(harder.rows.length, 2)
+  assertEqual(harder.rooms[harder.rows[0][0]].kind, 'elite')
+  assertEqual(harder.rooms[harder.rows[1][0]].kind, 'boss')
+  assertDeepEqual(harder.rooms[harder.rows[0][0]].exits, [harder.rows[1][0]])
+})
+
 // A run crashed at runtime because the encounter pool named an enemy that was
 // never defined. Nothing caught it until the browser threw.
 import { ENEMIES, enemyDef, startingHp } from '../src/game/enemies.ts'
 import { CARDS } from '../src/game/cards.ts'
 import {
   advanceAct,
+  bossRelicCardChoice,
   createRun,
   enterRoom,
   revealCardReward,
   revealItemReward,
   resolveCampfire,
+  resolveCardReward,
   resolveCardRewards,
   roomChoices,
   resolveCombat,
+  startPendingBoss,
+  switchBetweenCombatRow,
   tradeRunPotion,
   useRunPotion,
   MAX_HP,
 } from '../src/game/run.ts'
-import { RELICS, RELIC_DECK, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
+import { RELICS, RELIC_DECK, BOSS_RELIC_DECK, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
 import { activatePotion } from '../src/game/combat.ts'
 
 suite('run')
@@ -294,6 +310,14 @@ check('every relic and potion a run can hand out actually exists', () => {
     assert(def !== undefined, `ordinary relic "${id}" is not defined`)
     assert(!def.boss, `ordinary relic "${id}" is marked as a boss relic`)
   }
+  assertEqual(BOSS_RELIC_DECK.length, 20, 'the physical Boss Relic deck has 20 cards')
+  assertEqual(new Set(BOSS_RELIC_DECK).size, BOSS_RELIC_DECK.length, 'Boss Relic cards are unique')
+  for (const id of BOSS_RELIC_DECK) {
+    const def = RELICS[id]
+    assert(def !== undefined, `Boss Relic "${id}" is not defined`)
+    assert(def.boss, `Boss Relic "${id}" is not marked as a boss relic`)
+    assert(!RELIC_DECK.includes(id), `Boss Relic "${id}" leaked into the ordinary deck`)
+  }
   for (const character of Object.keys(MAX_HP)) {
     const id = STARTING_RELIC[character]
     assert(RELICS[id] !== undefined, `${character}'s starting relic "${id}" is not defined`)
@@ -306,6 +330,284 @@ check('every relic and potion a run can hand out actually exists', () => {
     assertEqual(def.id, id, `potion key ${id} disagrees with its id ${def.id}`)
     assert(def.text.length > 0, `${id} needs its printed text for the reward UI`)
   }
+})
+
+check('Boss Relics execute acquisition effects instead of becoming inert trophies', () => {
+  const collect = (relicId, bellRelics = ['vajra', 'lantern', 'orichalcum']) => {
+    const run = createRun(600, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+    if (relicId === 'calling_bell') run.itemDecks.relics = [
+      ...bellRelics, ...run.itemDecks.relics.filter((id) => !bellRelics.includes(id)),
+    ]
+    run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((candidate) => candidate !== relicId)
+    run.phase = 'reward'
+    run.rewardDestination = 'victory'
+    run.rewards = [{
+      playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: false,
+      potionId: null, hasRelic: true, relicChoices: [relicId], bossRelic: true,
+    }]
+    const requirement = bossRelicCardChoice(run.players[0], relicId)
+    let collected = resolveCardReward(run, 'p1', {
+      card: null, potionRecipientId: null, discardPotionId: null, relicId,
+      relicCardUids: requirement.cards.slice(0, requirement.count).map((card) => card.uid),
+    })
+    while (collected.phase === 'reward') {
+      const offer = collected.rewards[0]
+      if (offer.hasCard && offer.choices === null) collected = revealCardReward(collected, 'p1')
+      if (offer.hasPotion && !offer.potionId) collected = revealItemReward(collected, 'p1', 'potion')
+      if (offer.hasRelic && offer.relicChoices === null) collected = revealItemReward(collected, 'p1', 'relic')
+      const current = collected.rewards[0]
+      const ordinaryRelic = current.relicChoices?.[0] ?? null
+      const ordinaryCards = bossRelicCardChoice(collected.players[0],
+        current.tinyHouseUpgrade ? 'tiny_house_upgrade' : ordinaryRelic)
+      collected = resolveCardReward(collected, 'p1', {
+        card: current.hasCard ? 0 : null,
+        potionRecipientId: current.potionId ? 'p1' : null,
+        discardPotionId: null,
+        relicId: ordinaryRelic,
+        relicCardUids: ordinaryCards.cards.slice(0, ordinaryCards.count).map((card) => card.uid),
+      })
+    }
+    return collected
+  }
+
+  const astrolabeState = collect('astrolabe')
+  const astrolabe = astrolabeState.players[0]
+  assertEqual(astrolabe.deck.filter((card) => card.upgraded).length, 3)
+  assert(!astrolabe.relics.some((relic) => relic.defId === 'astrolabe'), 'Astrolabe is discarded after use')
+  assert(astrolabeState.itemDecks.bossRelics.includes('astrolabe'), 'discarded Boss Relics return to their deck')
+
+  const bellState = collect('calling_bell')
+  const bell = bellState.players[0]
+  assertEqual(bell.relics.length, 5, 'Calling Bell adds three ordinary relics beside two starting relics')
+  assertEqual(bell.deck.filter((card) => CARDS[card.defId]?.owner === 'curse').length, 1)
+  assertEqual(bellState.itemDecks.curses.length, 12, 'a gained Curse leaves the finite 13-card supply')
+  assert(!bell.relics.some((relic) => relic.defId === 'calling_bell'))
+  const protectedBell = collect('calling_bell', ['omamori', 'vajra', 'lantern']).players[0]
+  assertEqual(protectedBell.deck.filter((card) => CARDS[card.defId]?.owner === 'curse').length, 0,
+    'Calling Bell gains Omamori before attempting to gain its Curse')
+
+  const keyState = collect('cursed_key')
+  const key = keyState.players[0]
+  assert(key.relics.some((relic) => relic.defId === 'cursed_key'))
+  assertEqual(key.deck.filter((card) => CARDS[card.defId]?.owner === 'curse').length, 2)
+  assertEqual(keyState.itemDecks.curses.length, 11)
+  assert(!keyState.itemDecks.bossRelics.includes('cursed_key'), 'persistent Boss Relics stay with their player')
+
+  const empty = collect('empty_cage').players[0]
+  assertEqual(empty.deck.length, 8)
+  assert(!empty.relics.some((relic) => relic.defId === 'empty_cage'))
+
+  const orrery = collect('orrery').players[0]
+  assertEqual(orrery.deck.length, 14)
+  assert(!orrery.relics.some((relic) => relic.defId === 'orrery'))
+
+  const tiny = collect('tiny_house').players[0]
+  assertEqual(tiny.deck.length, 11)
+  assertEqual(tiny.potions.length, 1)
+  assertEqual(tiny.gold, 5, 'Tiny House adds 3 Gold after the solo starting 2')
+  assert(tiny.deck.some((card) => card.upgraded))
+})
+
+check('Tiny House can upgrade the card reward it just granted', () => {
+  let run = createRun(605, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.players[0].cardRewards = ['anger', ...run.players[0].cardRewards.filter((id) => id !== 'anger')]
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'tiny_house')
+  run.phase = 'reward'
+  run.rewardDestination = 'victory'
+  run.rewards = [{
+    playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: false,
+    potionId: null, hasRelic: true, relicChoices: ['tiny_house'], bossRelic: true,
+  }]
+  run = resolveCardReward(run, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: 'tiny_house', relicCardUids: [],
+  })
+  run = revealCardReward(run, 'p1')
+  if (run.rewards[0].hasPotion) run = revealItemReward(run, 'p1', 'potion')
+  run = resolveCardReward(run, 'p1', {
+    card: 0, potionRecipientId: run.rewards[0].potionId ? 'p1' : null,
+    discardPotionId: null, relicId: null, relicCardUids: [],
+  })
+  const gained = run.players[0].deck.at(-1)
+  assertEqual(gained.defId, 'anger')
+  assertEqual(run.rewards[0].tinyHouseUpgrade, true)
+  run = resolveCardReward(run, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: null, relicCardUids: [gained.uid],
+  })
+  assertEqual(run.players[0].deck.find((card) => card.uid === gained.uid).upgraded, true)
+})
+
+check('Calling Bell resolves immediate ordinary Relics through the reward pipeline', () => {
+  let run = createRun(604, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.itemDecks.relics = ['old_coin', 'war_paint', 'whetstone',
+    ...run.itemDecks.relics.filter((id) => !['old_coin', 'war_paint', 'whetstone'].includes(id))]
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'calling_bell')
+  run.phase = 'reward'
+  run.rewardDestination = 'victory'
+  run.rewards = [{
+    playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: false,
+    potionId: null, hasRelic: true, relicChoices: ['calling_bell'], bossRelic: true,
+  }]
+  run = resolveCardReward(run, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: 'calling_bell', relicCardUids: [],
+  })
+  assertEqual(run.rewards[0].remainingRelicRewards, 3)
+  for (const relicId of ['old_coin', 'war_paint', 'whetstone']) {
+    run = revealItemReward(run, 'p1', 'relic')
+    assertEqual(run.rewards[0].relicChoices[0], relicId)
+    const requirement = bossRelicCardChoice(run.players[0], relicId)
+    const picked = requirement.cards.slice(0, requirement.count).map((card) => card.uid)
+    run = resolveCardReward(run, 'p1', {
+      card: null, potionRecipientId: null, discardPotionId: null,
+      relicId, relicCardUids: picked,
+    })
+  }
+  const player = run.players[0]
+  assertEqual(player.gold, 12, 'Old Coin adds 10 Gold after the solo starting 2')
+  assertEqual(player.deck.filter((card) => card.upgraded).length, 4)
+  assert(!player.relics.some((relic) => ['old_coin', 'war_paint', 'whetstone'].includes(relic.defId)))
+  assertDeepEqual(run.itemDecks.relics.slice(-3), ['old_coin', 'war_paint', 'whetstone'])
+})
+
+check('Boss Relic card targets and Pandora transforms obey the physical decks', () => {
+  const run = createRun(601, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const player = run.players[0]
+  player.deck.push(
+    { uid: 'curse', defId: 'injury', upgraded: false },
+    { uid: 'bane', defId: 'ascenders_bane', upgraded: false },
+  )
+  player.cardRewards = ['anger', 'armaments', 'barricade', 'bash']
+  assert(!bossRelicCardChoice(player, 'astrolabe').cards.some((card) => CARDS[card.defId]?.owner === 'curse'))
+  assert(!bossRelicCardChoice(player, 'empty_cage').cards.some((card) => card.defId === 'ascenders_bane'))
+  const noStarters = { deck: [
+    { uid: 'skill-1', defId: 'armaments', upgraded: false },
+    { uid: 'skill-2', defId: 'shrug_it_off', upgraded: false },
+    { uid: 'attack-1', defId: 'anger', upgraded: false },
+    { uid: 'attack-2', defId: 'cleave', upgraded: false },
+  ] }
+  assertEqual(bossRelicCardChoice(noStarters, 'war_paint').count, 1,
+    'without an eligible starter Defend only the other Skill can be upgraded')
+  assertEqual(bossRelicCardChoice(noStarters, 'whetstone').count, 1,
+    'without an eligible starter Strike only the other Attack can be upgraded')
+  const choice = bossRelicCardChoice(player, 'pandoras_box')
+  assert(!choice.cards.some((card) => CARDS[card.defId]?.owner === 'curse'))
+
+  run.phase = 'reward'
+  run.rewardDestination = 'victory'
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'pandoras_box')
+  run.rewards = [{
+    playerId: player.id, choices: [], upgraded: false, hasCard: false, hasPotion: false,
+    potionId: null, hasRelic: true, relicChoices: ['pandoras_box'], bossRelic: true,
+  }]
+  const picked = choice.cards.slice(0, choice.count).map((card) => card.uid)
+  const transformed = resolveCardReward(run, player.id, {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: 'pandoras_box', relicCardUids: picked,
+  })
+  assertDeepEqual(transformed.players[0].deck.slice(-3).map((card) => card.defId), ['anger', 'armaments', 'barricade'])
+  assertDeepEqual(transformed.players[0].cardRewards, ['bash'], 'Transform consumes only each current top reward card')
+})
+
+check('a gained boss rare can be targeted by the subsequently resolved Boss Relic', () => {
+  let run = createRun(1601, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.phase = 'reward'
+  run.rewardDestination = 'victory'
+  run.players[0].rareRewards = ['fiend_fire', 'demon_form', 'bludgeon']
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'astrolabe')
+  run.rewards = [{
+    playerId: 'p1', choices: ['fiend_fire', 'demon_form', 'bludgeon'], upgraded: false,
+    hasCard: true, hasPotion: false, potionId: null, hasRelic: true,
+    relicChoices: ['astrolabe'], bossRelic: true, rare: true,
+  }]
+  run = resolveCardReward(run, 'p1', {
+    card: 0, potionRecipientId: null, discardPotionId: null,
+    relicId: 'astrolabe', relicCardUids: [],
+  })
+  const gained = run.players[0].deck.find((card) => card.defId === 'fiend_fire')
+  assertEqual(run.rewards[0].relicEffectId, 'astrolabe')
+  const requirement = bossRelicCardChoice(run.players[0], 'astrolabe')
+  const picked = [gained, ...requirement.cards.filter((card) => card.uid !== gained.uid)]
+    .slice(0, requirement.count).map((card) => card.uid)
+  run = resolveCardReward(run, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: null, relicCardUids: picked,
+  })
+  assert(run.players[0].deck.find((card) => card.uid === gained.uid).upgraded,
+    'Astrolabe can upgrade the rare card gained first')
+})
+
+check('a boss still offers every rare left when fewer than three remain', () => {
+  const base = createRun(1602, [{ id: 'p1', name: 'Defect', character: 'defect' }])
+  const bossId = base.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...base,
+    players: base.players.map((player) => ({ ...player, rareRewards: ['rainbow', 'meteor_strike'] })),
+    map: { ...base.map, position: base.map.rows.at(-2)[0] },
+  }, bossId)
+  const offered = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+    },
+  })
+  const revealed = revealCardReward(offered, 'p1')
+  assertEqual(revealed.rewards[0].hasCard, true)
+  assertDeepEqual(revealed.rewards[0].choices, ['rainbow', 'meteor_strike'])
+})
+
+check('Boss Relic leftovers return even when an immediate relic creates another reward', () => {
+  const run = createRun(602, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.phase = 'reward'
+  run.rewardDestination = 'victory'
+  run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => !['enchiridion', 'ectoplasm'].includes(id))
+  run.rewards = [{
+    playerId: 'p1', choices: [], upgraded: false, hasCard: false, hasPotion: false,
+    potionId: null, hasRelic: true, relicChoices: ['enchiridion', 'ectoplasm'], bossRelic: true,
+  }]
+  const next = resolveCardReward(run, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: 'enchiridion', relicCardUids: [],
+  })
+  assertEqual(next.phase, 'reward', 'Enchiridion still creates its rare reward')
+  assert(next.itemDecks.bossRelics.includes('enchiridion'), 'the used-and-discarded relic returns')
+  assert(next.itemDecks.bossRelics.includes('ectoplasm'), 'the unchosen relic returns despite the follow-up reward')
+})
+
+check('Empty Cage pays Parasite removal HP', () => {
+  const remove = (hp, defIds, potions = []) => {
+    const run = createRun(603, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+    const player = run.players[0]
+    player.hp = hp
+    player.potions = potions
+    player.deck = defIds.map((defId, index) => ({ uid: `remove-${index}`, defId, upgraded: false }))
+    run.phase = 'reward'
+    run.rewardDestination = 'victory'
+    run.itemDecks.potions = run.itemDecks.potions.filter((id) => !potions.includes(id))
+    run.itemDecks.bossRelics = run.itemDecks.bossRelics.filter((id) => id !== 'empty_cage')
+    run.rewards = [{
+      playerId: player.id, choices: [], upgraded: false, hasCard: false, hasPotion: false,
+      potionId: null, hasRelic: true, relicChoices: ['empty_cage'], bossRelic: true,
+    }]
+    return resolveCardReward(run, player.id, {
+      card: null, potionRecipientId: null, discardPotionId: null,
+      relicId: 'empty_cage', relicCardUids: player.deck.map((card) => card.uid),
+    })
+  }
+  const next = remove(5, ['parasite', 'strike_ironclad'])
+  assertEqual(next.players[0].hp, 3)
+  assertEqual(next.players[0].deck.length, 0)
+
+  const revived = remove(3, ['parasite', 'parasite'], ['fairy_in_a_bottle'])
+  assertEqual(revived.players[0].hp, 2, 'the second removal consumes Fairy instead of killing the player')
+  assertEqual(revived.players[0].dead, false)
+  assertEqual(revived.itemDecks.potions.at(-1), 'fairy_in_a_bottle')
+
+  const exhausted = remove(1, ['parasite', 'parasite'], ['fairy_in_a_bottle'])
+  assertEqual(exhausted.players[0].hp, 0, 'the first removal uses Fairy and the second can still be lethal')
+  assertEqual(exhausted.phase, 'defeat')
 })
 
 check('printed potion and elite relic rewards are dealt from shared finite decks', () => {
@@ -420,6 +722,16 @@ check('Blood Potion and Entropic Brew work outside combat and return to the shar
   assertDeepEqual(entropic.players[0].potions, top)
   assertEqual(entropic.itemDecks.potions.at(-2), 'entropic_brew')
   assertEqual(entropic.itemDecks.potions.at(-1), 'fire_potion')
+
+  const sozu = useRunPotion({
+    ...base,
+    players: [{
+      ...base.players[0], potions: ['entropic_brew', 'fire_potion'],
+      relics: [...base.players[0].relics, { defId: 'sozu', spent: false }],
+    }],
+  }, 'p1', 'entropic_brew')
+  assertDeepEqual(sozu.players[0].potions, ['fire_potion'], 'Sozu blocks gains, not using a held potion')
+  assertEqual(sozu.itemDecks.potions.at(-1), 'entropic_brew')
 })
 
 check('players can trade a held potion outside combat', () => {
@@ -588,7 +900,18 @@ check('winning a combat carries HP forward into the run', () => {
   assertEqual(after.players[0].hp, 4, 'damage taken in combat must persist into the run')
   const foe = entered.combat.enemies.find((enemy) => enemy.row === entered.players[0].row)
   const printedGold = foe.goldReward
-  assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
+  assertEqual(after.players[0].gold, run.players[0].gold, 'printed Gold waits for the reward choice')
+  assertEqual(after.rewards[0].goldReward ?? 0, printedGold)
+  const collected = resolveCardReward(after, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: null,
+    goldTiming: 'before', relicCardUids: [],
+  })
+  assertEqual(collected.players[0].gold, run.players[0].gold + printedGold, 'the chosen Gold reward is paid')
+  const skipped = resolveCardReward(after, 'p1', {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: null,
+    goldTiming: null, relicCardUids: [],
+  })
+  assertEqual(skipped.players[0].gold, run.players[0].gold, 'printed Gold may be skipped')
 })
 
 check('encounter rewards follow each player’s final combat row', () => {
@@ -612,8 +935,8 @@ check('encounter rewards follow each player’s final combat row', () => {
   }
   const after = resolveCombat(won)
   assertEqual(after.players.find((player) => player.id === 'p1').row, 1, 'the row switch persists')
-  assertEqual(after.players.find((player) => player.id === 'p1').gold, 3, 'p1 gets row 1 gold')
   const p1Offer = after.rewards.find((offer) => offer.playerId === 'p1')
+  assertEqual(p1Offer.goldReward, 3, 'p1 is offered row 1 gold')
   assertEqual(p1Offer.upgraded, true, 'p1 gets row 1 upgraded card reward')
 })
 
@@ -953,6 +1276,119 @@ check('a boss room stands up a single boss that acts last', () => {
   assert(entered.combat.enemies[0].isBoss, 'and is marked as a boss so it acts last')
 })
 
+check('each Act draws only its physical boss cards and sets up printed summons', () => {
+  const expected = {
+    1: new Set(['guardian_attack', 'hexaghost', 'slime_boss']),
+    2: new Set(['the_collector', 'bronze_automaton', 'the_champ']),
+    3: new Set(['donu', 'awakened_one_phase_1', 'time_eater']),
+    4: new Set(['corrupt_heart']),
+  }
+  for (const act of [1, 2, 3, 4]) {
+    const seen = new Set()
+    for (let seed = 0; seed < 80; seed++) {
+      const base = createRun(seed, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+      const map = generateMap(base.rng, act)
+      const bossId = map.rows.at(-1)[0]
+      const entered = enterRoom({
+        ...base,
+        act,
+        map: { ...map, position: map.rows.length > 1 ? map.rows.at(-2)[0] : null },
+      }, bossId)
+      const main = entered.combat.enemies.find((enemy) => expected[act].has(enemy.defId))
+      assert(main, `Act ${act} spawned no boss from its deck`)
+      seen.add(main.defId)
+      if (main.defId === 'bronze_automaton') {
+        assertEqual(entered.combat.enemies.filter((enemy) => enemy.defId.startsWith('bronze_orb')).length, 1)
+      } else if (main.defId === 'awakened_one_phase_1') {
+        assertEqual(entered.combat.enemies.filter((enemy) => enemy.defId === 'cultist').length, 2)
+      } else if (main.defId === 'donu') {
+        assert(entered.combat.enemies.some((enemy) => enemy.defId === 'deca'), 'Donu starts beside Deca')
+      }
+    }
+    assertDeepEqual([...seen].sort(), [...expected[act]].sort(), `Act ${act} boss deck coverage`)
+  }
+})
+
+check('Ascension 13 fights two distinct Act III bosses sequentially', () => {
+  const base = createRun(113, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
+  const map = generateMap(base.rng, 3)
+  const entered = enterRoom({ ...base, act: 3, map: { ...map, position: map.rows.at(-2)[0] } }, map.rows.at(-1)[0])
+  const first = entered.combat.enemies.filter((enemy) =>
+    ['donu', 'awakened_one_phase_1', 'time_eater'].includes(enemy.defId))
+  assertEqual(first.length, 1)
+  assert(entered.pendingBossDefId, 'the second boss is reserved outside combat')
+  assert(entered.pendingBossDefId !== first[0].defId, 'the second boss must be different')
+  const potionSupply = [...entered.combat.potionSupply]
+  const second = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      rng: { seed: 123, calls: 1_000_000 },
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+    },
+  })
+  assertEqual(second.phase, 'betweenCombat', 'the party may regroup between the two fights')
+  assertEqual(second.combat, null)
+  assertEqual(second.rewards.length, 0, 'there is no Boss Relic draft between fights')
+  const repositioned = switchBetweenCombatRow(second, 'p1', 3)
+  const started = startPendingBoss(repositioned)
+  const secondMain = started.combat.enemies.filter((enemy) =>
+    ['donu', 'awakened_one_phase_1', 'time_eater'].includes(enemy.defId))
+  assertEqual(started.phase, 'combat')
+  assertEqual(secondMain.length, 1)
+  assertEqual(secondMain[0].defId, entered.pendingBossDefId)
+  assertEqual(started.combat.players[0].row, 3)
+  assertDeepEqual(started.combat.potionSupply, potionSupply,
+    'the no-White-Beast path preserves the physical potion supply between bosses')
+  assertEqual(started.pendingBossDefId, null)
+  assert(started.rng.calls > 1_000_000, 'the second fight continues the authoritative combat RNG stream')
+})
+
+check('White Beast Statue resolves before the second Ascension 13 boss', () => {
+  const base = createRun(115, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
+  const map = generateMap(base.rng, 3)
+  const entered = enterRoom({ ...base, act: 3, map: { ...map, position: map.rows.at(-2)[0] } }, map.rows.at(-1)[0])
+  entered.players[0].relics.push({ defId: 'white_beast_statue', spent: false })
+  entered.combat.players[0].relics.push({ defId: 'white_beast_statue', spent: false })
+  const offered = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+    },
+  })
+  assertEqual(offered.phase, 'reward')
+  assertEqual(offered.rewardDestination, 'combat')
+  assertEqual(offered.combat, null, 'the second boss is prepared only after the between-combat reward')
+  const revealed = revealItemReward(offered, 'p1', 'potion')
+  const potion = revealed.rewards[0].potionId
+  const regrouping = resolveCardReward(revealed, 'p1', {
+    card: null, potionRecipientId: 'p1', discardPotionId: null, relicId: null, relicCardUids: [],
+  })
+  assertEqual(regrouping.phase, 'betweenCombat')
+  assert(regrouping.players[0].potions.includes(potion))
+  const resumed = startPendingBoss(regrouping)
+  assertEqual(resumed.phase, 'combat')
+  assert(resumed.combat.players[0].potions.includes(potion))
+  assert(resumed.combat.players[0].hand.length > 0, 'the prepared second-boss hand survives the reward')
+})
+
+check('defeating the Heart ends the run without rewards or Act V', () => {
+  const base = createRun(114, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const map = generateMap(base.rng, 4)
+  const entered = enterRoom({ ...base, act: 4, map }, map.rows[0][0])
+  const won = resolveCombat({
+    ...entered,
+    combat: { ...entered.combat, phase: 'won', enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })) },
+  })
+  assertEqual(won.phase, 'victory')
+  assertEqual(won.rewards.length, 0)
+  assertEqual(won.rewardDestination, null)
+  assert(advanceAct(won) === won, 'the terminal victory cannot create Act V')
+})
+
 check('an elite room places one elite, not one per player', () => {
   // Find a seed whose first reachable room from the start is an elite.
   let found = false
@@ -1164,6 +1600,27 @@ const PRINTED_HP = {
   giant_head: [80, 160, 240, 320],
   nemesis: [30, 60, 90, 120],
   reptomancer: [35, 70, 105, 140],
+  slime_boss: [22, 44, 66, 88],
+  guardian_attack: [40, 80, 120, 160],
+  guardian_defensive: [40, 80, 120, 160],
+  hexaghost: [36, 75, 112, 150],
+  the_collector: [57, 114, 171, 228],
+  torch_head: [9, 9, 9, 9],
+  the_champ: [40, 80, 120, 160],
+  the_champ_fury: [40, 80, 120, 160],
+  bronze_automaton: [55, 110, 165, 220],
+  bronze_orb: [19, 19, 19, 19],
+  bronze_orb_db3: [19, 19, 19, 19],
+  bronze_orb_3bd: [19, 19, 19, 19],
+  bronze_orb_b3d: [19, 19, 19, 19],
+  awakened_one_phase_1: [50, 100, 150, 200],
+  awakened_one_phase_2: [50, 100, 150, 200],
+  time_eater: [60, 120, 180, 240],
+  donu: [50, 100, 150, 200],
+  deca: [50, 100, 150, 200],
+  spire_shield: [30, 60, 90, 120],
+  spire_spear: [42, 84, 126, 168],
+  corrupt_heart: [100, 200, 300, 400],
 }
 
 check('main-enemy rewards come from the Act-specific encounter card', () => {
@@ -1259,6 +1716,8 @@ check('every enemy HP track matches the number printed on its card', () => {
     Object.keys(PRINTED_HP).length,
     'an enemy was added or removed without updating the printed-HP table',
   )
+  assertDeepEqual(enemyDef('slime_boss', 10).hpByPlayers, [23, 46, 68, 92], 'Slime Boss A10 HP')
+  assertDeepEqual(enemyDef('hexaghost', 10).hpByPlayers, [38, 80, 120, 160], 'Hexaghost A10 HP')
 })
 
 check('the complete Act I enemy, summon, gremlin, and elite roster is live', () => {
@@ -1351,6 +1810,48 @@ check('Smith upgrades exactly the chosen card', () => {
   assertEqual(upgraded.length, 1, 'exactly one card is upgraded')
   assertEqual(upgraded[0].uid, target.uid, 'and it is the one that was chosen')
   assertEqual(next.players[0].hp, 4, 'Smith does not also heal')
+})
+
+check('Coffee Dripper and Fusion Hammer forbid only their printed campfire option', () => {
+  const room = atCampfire()
+  room.players[0].relics.push({ defId: 'coffee_dripper', spent: false })
+  room.players[1].relics.push({ defId: 'fusion_hammer', spent: false })
+  const forbidden = resolveCampfire(room, {
+    p1: { choice: 'rest' },
+    p2: { choice: 'smith', cardUid: room.players[1].deck[0].uid },
+  })
+  assert(forbidden === room, 'a forbidden campfire choice must be revised, not silently wasted')
+
+  const legal = resolveCampfire(room, {
+    p1: { choice: 'smith', cardUid: room.players[0].deck[0].uid },
+    p2: { choice: 'rest' },
+  })
+  assertEqual(legal.phase, 'map')
+  assert(legal.players[0].deck[0].upgraded)
+  assertEqual(legal.players[1].hp, 7)
+})
+
+check('a player with no legal campfire action can explicitly do nothing', () => {
+  const room = atCampfire()
+  room.players[0].relics.push({ defId: 'coffee_dripper', spent: false })
+  room.players[0].deck = [
+    ...room.players[0].deck.map((card) => ({ ...card, upgraded: true })),
+    { uid: 'campfire-injury', defId: 'injury', upgraded: false },
+  ]
+  assert(resolveCampfire(room, {
+    p1: { choice: 'smith', cardUid: 'campfire-injury' }, p2: { choice: 'rest' },
+  }) === room, 'a Curse was accepted as a Smith target')
+  const next = resolveCampfire(room, {
+    p1: { choice: 'skip' },
+    p2: { choice: 'rest' },
+  })
+  assertEqual(next.phase, 'map')
+  assertEqual(next.players[0].hp, room.players[0].hp)
+  assertEqual(next.players[0].deck.at(-1).upgraded, false, 'a Curse has no Smith face')
+  const avoidable = atCampfire()
+  assert(resolveCampfire(avoidable, {
+    p1: { choice: 'skip' }, p2: { choice: 'rest' },
+  }) === avoidable, 'skip is refused while Rest or Smith remains legal')
 })
 
 check('Smith cannot upgrade a card twice', () => {

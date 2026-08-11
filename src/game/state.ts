@@ -22,14 +22,13 @@
 //     as affordable, the cost badge prints "X", and a `discardTopCosts` check
 //     matches it against no number at all. Spending X needs the player to
 //     choose an amount and nothing collects one.
-//   - Ethereal and every Curse's in-combat text are live. Parasite's removal
-//     penalty and Ascender's Bane's removal protection wait on card removal,
-//     which arrives with the Merchant rather than as an unreachable API.
-//   - The live Act I and II enemies resolve their printed special abilities.
-//     Special abilities on later-act enemies remain absent with those cards.
-//   - There is no boss deck: a boss room stands up the toughest elite, marked
-//     as a boss so it acts last. It grants no reward rather than inventing the
-//     stand-in elite's reward. Act I elite rooms draw all three physical cards.
+//   - Ethereal and every Curse's in-combat text are live. Empty Cage enforces
+//     Parasite's removal penalty and Ascender's Bane's removal protection;
+//     general Merchant removal is not implemented yet.
+//   - Every Act I-IV enemy, elite, summon and boss resolves its printed intent
+//     and special ability. Boss rooms draw the physical act deck; A13 draws two
+//     distinct Act III bosses, and Act IV is Shield/Spear followed by the Heart.
+//     The shared 20-card Boss Relic draft and its acquisition/passive effects are live.
 //   - Event, treasure and merchant rooms show a placeholder screen.
 //   - Physical relic and potion reward decks are shared, face down, and return
 //     skipped, discarded, and used potions to the bottom. Item effects listed
@@ -38,19 +37,19 @@
 //     cards, allow one or a skip, return the rest to the bottom, and persist
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
-//     are included, Golden Tickets are absent, and rare rewards never surface.
+//     are included and Golden Tickets are absent. Bosses and Enchiridion surface
+//     the live rare reward stacks.
 //   - 151 of 259 unique character cards are live.
 //     13 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
 //     The other 108 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
-//     effects. 84 enemy definitions cover Acts I-III; Act IV and every boss
-//     remain, and variant physical cards make the definition count larger than
-//     the unique-name count. No events or shops.
-//   - Ascension 2's max-HP loss, Ascension 5's starter Curse, Ascension 6's Act
-//     heal and Ascension 9's starting damage are applied. Ascension 4 waits on
-//     potion limits; the others wait on their elite, event, merchant, boss or
-//     Act IV content.
+//     effects. 105 enemy definitions cover Acts I-IV, including physical intent
+//     variants and boss forms. No events or shops.
+//   - Ascension 2's max-HP loss, Ascension 4's potion limit, Ascension 5's
+//     starter Curse, Ascension 6's Act heal and Ascension 9's starting damage
+//     are applied. The remaining non-enemy changes wait on events, merchants,
+//     keys and campaign rooms.
 //   - Orbs can be individually chosen and targeted for card evokes, forced
 //     full-slot channels and end-of-turn resolution.
 //   - On-play, on-Poison, on-Exhaust and card-effect discard abilities wait until the
@@ -134,6 +133,7 @@ export {
   resolveStartPlayerTurn,
   resolveEnemyTargets,
   spendMiracle,
+  spendHolyWater,
   spendShiv,
   startPlayerTurn,
   startPlayerTurnWithChoices,
@@ -159,6 +159,11 @@ export {
   MAX_HP,
   ROOM_LABEL,
   advanceAct,
+  bossRelicCardChoice,
+  canUpgradeCard,
+  canRestAtCampfire,
+  canSmithAtCampfire,
+  validRelicCardPicks,
   createPlayer,
   createRun,
   enterRoom,
@@ -170,6 +175,8 @@ export {
   resolveCardRewards,
   resolveCombat,
   roomChoices,
+  startPendingBoss,
+  switchBetweenCombatRow,
   useRunPotion,
   tradeRunPotion,
   validRewardDecision,

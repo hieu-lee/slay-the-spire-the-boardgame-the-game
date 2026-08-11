@@ -25,7 +25,7 @@ import { addToDiscardTop, addToDrawTop, drawCards, discardHand, scry } from './p
 import { potionDef, relicDef } from './relics.ts'
 import { triggerMatches } from './triggers.ts'
 import type { Trigger, TriggerEvent } from './triggers.ts'
-import { nextInt } from './rng.ts'
+import { nextInt, shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
 import { CAPS } from './types.ts'
 import type { CardInstance, CardType, Enemy, OrbType, Player } from './types.ts'
@@ -50,11 +50,24 @@ export type CombatState = {
   players: Player[]
   enemies: Enemy[]
   summonSupply: SummonSupply
-  pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
+  pendingSummons: {
+    sourceUid: string
+    row: number
+    defIds: string[]
+    turn: number
+    timing?: 'startOfTurn' | 'endOfTurn'
+    direct?: boolean
+    isBoss?: boolean
+    strength?: number
+    strengthDefId?: string
+    strengthPerPower?: boolean
+  }[]
   discardedThisTurn: string[]
   stanceChangedThisTurn: string[]
   /** Power instance ids already spent by a printed once-per-turn trigger. */
   powerTriggersUsedThisTurn: string[]
+  /** Facing is chosen only after every other Start-of-Turn effect resolves. */
+  startTurnStage?: 'effects' | 'facing'
   potionSupply: string[]
   /** Public stack size used by redacted online clients. */
   potionSupplyCount?: number
@@ -115,6 +128,11 @@ function findPlayer(state: CombatState, playerId: string): Player | undefined {
   return state.players.find((player) => player.id === playerId)
 }
 
+const playerHasRelic = (player: Player, id: string) => player.relics.some((relic) => relic.defId === id)
+const playerHpCeiling = (player: Player) => playerHasRelic(player, 'mark_of_pain')
+  ? Math.min(6, player.maxHp)
+  : player.maxHp
+
 /** Enemies a scope resolves to. A row always includes the boss (p.15). */
 export function resolveEnemyTargets(
   state: CombatState,
@@ -163,7 +181,22 @@ function enemyCannotLoseHp(enemy: Enemy): boolean {
   return immunity?.kind === 'immuneOnSlots' && immunity.slots.includes(enemy.actionIndex)
 }
 
+function enemyHpAfterLoss(state: CombatState, enemy: Enemy, hp: number): number {
+  if (enemyCannotLoseHp(enemy)) return enemy.hp
+  const invincible = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+    .find((ability) => ability.kind === 'invincible')
+  if (invincible?.kind !== 'invincible' || enemy.abilityUsed) return hp
+  return Math.max(hp, invincible.hpPerPlayer * state.players.length)
+}
+
+function loseEnemyHp(state: CombatState, enemy: Enemy, amount: number): { hp: number; hpLost: number } {
+  const outcome = applyHpLoss(enemy.hp, amount)
+  const hp = enemyHpAfterLoss(state, enemy, outcome.hp)
+  return { hp, hpLost: enemy.hp - hp }
+}
+
 function damageEnemy(
+  state: CombatState,
   enemy: Enemy,
   damage: number,
   deferAbilities = false,
@@ -172,7 +205,7 @@ function damageEnemy(
   const blockBefore = enemy.block
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
   enemy.block = outcome.block
-  enemy.hp = enemyCannotLoseHp(enemy) ? hpBefore : outcome.hp
+  enemy.hp = enemyHpAfterLoss(state, enemy, outcome.hp)
   if (enemy.hp === 0) enemy.dead = true
   const ability = enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).find((candidate) => candidate.kind === 'curlUp')
   if (
@@ -220,7 +253,55 @@ function poisonApplied(state: CombatState, actor: Player, context: PlayContext):
 }
 
 function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
-  const spore = enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).find((candidate) => candidate.kind === 'sporeCloud')
+  const abilities = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+  const split = abilities.find((candidate) => candidate.kind === 'splitOnDeath')
+  if (split?.kind === 'splitOnDeath' && !enemy.abilityUsed) {
+    enemy.abilityUsed = true
+    for (const player of state.players.filter((candidate) => !candidate.dead)) {
+      state.pendingSummons.push({
+        sourceUid: enemy.uid,
+        row: player.row,
+        defIds: split.defIds,
+        turn: state.turn + 1,
+        strength: split.largeSlimeStrength,
+        strengthDefId: 'large_slime',
+      })
+    }
+    state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} will Split next turn`]
+  }
+
+  const rebirth = abilities.find((candidate) => candidate.kind === 'rebirth')
+  if (rebirth?.kind === 'rebirth' && !enemy.abilityUsed) {
+    enemy.abilityUsed = true
+    const strength = rebirth.strength ?? 0
+    if (rebirth.timing === 'endOfTurn') {
+      state.pendingSummons.push({
+        sourceUid: enemy.uid,
+        row: enemy.row,
+        defIds: [rebirth.defId ?? enemy.defId],
+        turn: state.turn,
+        timing: 'endOfTurn',
+        direct: true,
+        isBoss: enemy.isBoss,
+        strength,
+        strengthPerPower: rebirth.strengthPerPower && (enemy.ascension ?? 0) >= 10,
+      })
+      state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} will return at the end of the turn`]
+    } else {
+      const nextDefId = rebirth.defId ?? enemy.defId
+      if (nextDefId !== enemy.defId) enemy.actionIndex = 0
+      enemy.defId = nextDefId
+      enemy.dead = false
+      enemy.hp = rebirth.hpPerPlayer * state.players.length
+      enemy.maxHp = Math.max(enemy.maxHp, enemy.hp)
+      enemy.block = 0
+      if (rebirth.clearWeakVulnerable) enemy.weak = enemy.vulnerable = 0
+      enemy.strength = gainStrength(enemy.strength, strength)
+      state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} returns with ${enemy.hp} HP`]
+    }
+  }
+
+  const spore = abilities.find((candidate) => candidate.kind === 'sporeCloud')
   if (spore?.kind === 'sporeCloud') {
     const name = enemyLabel(state.enemies, enemy)
     for (const target of playersInRowOf(state, enemy)) {
@@ -242,6 +323,21 @@ function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
     ally.strength = gainStrength(ally.strength, fury.strength)
     state.log = [...state.log, `${enemyLabel(state.enemies, ally)} enters Fury`]
   }
+}
+
+function enemyHasDeathReaction(state: CombatState, enemy: Enemy): boolean {
+  const own = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+  if (own.some((ability) => ['splitOnDeath', 'rebirth', 'sporeCloud'].includes(ability.kind))) return true
+  return state.enemies.some((ally) => !ally.dead && ally.row === enemy.row &&
+    enemyAbilities(enemyDef(ally.defId, ally.ascension)).some((ability) =>
+      ability.kind === 'furyOnAllyDeath' &&
+      (ability.allyDefId === enemy.defId || enemy.defId.startsWith(`${ability.allyDefId}_`))))
+}
+
+function resolveOrQueueEnemyDeath(state: CombatState, enemy: Enemy, context?: PlayContext): void {
+  if (context?.sourceCardType !== undefined && enemyHasDeathReaction(state, enemy)) {
+    context.pendingEnemyDeathUids?.push(enemy.uid)
+  } else triggerEnemyDeathAbility(state, enemy)
 }
 
 function enemyInGroup(enemy: Enemy, group: 'gremlin' | 'darkling'): boolean {
@@ -279,13 +375,14 @@ function damageEnemyLogged(
   state: CombatState,
   enemy: Enemy,
   damage: number,
+  actor: Player,
   source?: string,
   context?: PlayContext,
 ): void {
   const wasAlive = !enemy.dead
   const hpBefore = enemy.hp
   const deferred = context?.sourceCardType !== undefined
-  const result = damageEnemy(enemy, damage, deferred)
+  const result = damageEnemy(state, enemy, actor.damageDealtZeroThisTurn ? 0 : damage, deferred)
   const name = enemyLabel(state.enemies, enemy)
   if (source) {
     const lost = hpBefore - enemy.hp
@@ -305,7 +402,7 @@ function damageEnemyLogged(
   }
   if (wasAlive && enemy.dead) {
     state.log = [...state.log, `${name} is dead`]
-    triggerEnemyDeathAbility(state, enemy)
+    resolveOrQueueEnemyDeath(state, enemy, context)
   } else if (result.curled) {
     state.log = [...state.log, `${name}'s Curl Up gained Block`]
   }
@@ -337,7 +434,7 @@ function losePlayerHp(state: CombatState, player: Player, amount: number): Playe
     if (fairy >= 0) {
       player.potions.splice(fairy, 1)
       state.potionSupply.push('fairy_in_a_bottle')
-      player.hp = Math.min(2, player.maxHp)
+      player.hp = Math.min(2, playerHpCeiling(player))
       player.dead = false
       revivedHp = player.hp
     } else player.dead = true
@@ -441,10 +538,14 @@ export type PlayContext = {
   sourceRetainedLastTurn?: boolean
   /** Printed type of the card currently resolving, for Footwork. */
   sourceCardType?: CardType
+  /** Wrist Blade's bonus on every hit of a paid 0-cost Attack. */
+  attackHitBonus?: number
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
   sourceAttackCounted?: boolean
   /** Enemy HP losses whose printed reactions wait until this card is complete. */
   pendingEnemyDamage?: { enemyUid: string; amount: number }[]
+  /** Death abilities whose printed reactions wait until this card is complete. */
+  pendingEnemyDeathUids?: string[]
   /** Enemies this Attack targeted, for after-card reactions such as Thorns. */
   pendingAttackTargets?: string[]
 }
@@ -690,12 +791,13 @@ function applyEffect(
           const flying = enemyAbilities(enemyDef(target.defId, target.ascension)).find((ability) => ability.kind === 'flying')
           const slow = enemyAbilities(enemyDef(target.defId, target.ascension))
             .find((ability) => ability.kind === 'slow')
-          const damage = hitDamage(
-            each + (slow?.kind === 'slow' ? slow.damagePerHit : 0),
+          const damage = actor.damageDealtZeroThisTurn ? 0 : hitDamage(
+            each + (context.attackHitBonus ?? 0) + (slow?.kind === 'slow' ? slow.damagePerHit : 0),
             mods,
             { vulnerable: vulnerableAtStart },
           )
           const result = damageEnemy(
+            state,
             target,
             flying?.kind === 'flying' ? Math.min(damage, flying.maxDamagePerHit) : damage,
             context.sourceCardType !== undefined,
@@ -731,7 +833,7 @@ function applyEffect(
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
-          triggerEnemyDeathAbility(state, target)
+          resolveOrQueueEnemyDeath(state, target, context)
         } else if (curled) {
           state.log = [...state.log, `${name}'s Curl Up gained Block`]
         }
@@ -740,7 +842,7 @@ function applyEffect(
           enemyAbilities(enemyDef(target.defId, target.ascension)).some((ability) => ability.kind === 'shift')) {
           grantShiftBlock(state, target, lost)
         }
-        if (combatIsOver(state)) return
+        if (cardResolutionIsOver(state, context)) return
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
@@ -754,7 +856,7 @@ function applyEffect(
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        damageEnemyLogged(state, target, effect.amount, who, context)
+        damageEnemyLogged(state, target, effect.amount, actor, who, context)
         if (combatIsOver(state)) return
       }
       return
@@ -763,7 +865,7 @@ function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const name = enemyLabel(state.enemies, target)
         const wasAlive = !target.dead
-        const outcome = enemyCannotLoseHp(target) ? { hp: target.hp, hpLost: 0 } : applyHpLoss(target.hp, effect.amount)
+        const outcome = loseEnemyHp(state, target, effect.amount)
         // What was actually lost, not what was printed: an enemy on 2 hit
         // points struck for 5 loses 2.
         state.log = [...state.log, `${name} loses ${target.hp - outcome.hp}`]
@@ -773,7 +875,7 @@ function applyEffect(
           // Every other kill in the game announces itself; this one used to
           // write `dead` inline and skip the line.
           if (wasAlive) state.log = [...state.log, `${name} is dead`]
-          if (wasAlive) triggerEnemyDeathAbility(state, target)
+          if (wasAlive) resolveOrQueueEnemyDeath(state, target, context)
         }
         if (outcome.hpLost > 0 && !combatIsOver(state) &&
           enemyAbilities(enemyDef(target.defId, target.ascension)).some((ability) => ability.kind === 'shift')) {
@@ -825,6 +927,9 @@ function applyEffect(
     }
     case 'applyWeak': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
+        const invincible = enemyAbilities(enemyDef(target.defId, target.ascension))
+          .find((ability) => ability.kind === 'invincible')
+        if (invincible?.kind === 'invincible' && !target.abilityUsed) continue
         const before = target.weak
         target.weak = gainWeak(target.weak, effect.amount)
         if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
@@ -932,13 +1037,19 @@ function applyEffect(
       }
       return
     }
+    case 'setNextCardCost':
+      actor.nextCardCost = effect.amount
+      note(`${actor.name}'s next card costs ${effect.amount} Energy`)
+      return
     case 'gainGold':
-      actor.gold += effect.amount
-      note(`${actor.name} gains ${effect.amount} Gold`)
+      if (!playerHasRelic(actor, 'ectoplasm')) {
+        actor.gold += effect.amount
+        note(`${actor.name} gains ${effect.amount} Gold`)
+      }
       return
     case 'setHpAtLeast': {
       const before = actor.hp
-      actor.hp = Math.min(actor.maxHp, Math.max(actor.hp, effect.amount))
+      actor.hp = Math.min(playerHpCeiling(actor), Math.max(actor.hp, effect.amount))
       if (actor.hp > before) note(`${actor.name} heals ${actor.hp - before}`)
       return
     }
@@ -990,19 +1101,21 @@ function applyEffect(
             ...context,
             enemyUid,
             sourceCardType: 'attack',
+            attackHitBonus: 0,
             pendingEnemyDamage: [],
+            pendingEnemyDeathUids: [],
             pendingAttackTargets: [],
           }
           applyEffect(
             state,
             target,
-            { kind: 'hit', amount: 1 + target.shivDamageBonus },
+            { kind: 'hit', amount: 1 + target.shivDamageBonus + (playerHasRelic(target, 'wrist_blade') ? 1 : 0) },
             'enemy',
             'self',
             shivContext,
             'Shiv',
           )
-          if (!combatIsOver(state)) resolvePendingEnemyReactions(state, target, shivContext)
+          if (!cardResolutionIsOver(state, shivContext)) resolvePendingEnemyReactions(state, target, shivContext)
           target.attacksPlayedThisTurn = (target.attacksPlayedThisTurn ?? 0) + 1
           if (combatIsOver(state)) return
         }
@@ -1033,19 +1146,21 @@ function applyEffect(
           ...context,
           enemyUid,
           sourceCardType: 'attack',
+          attackHitBonus: 0,
           pendingEnemyDamage: [],
+          pendingEnemyDeathUids: [],
           pendingAttackTargets: [],
         }
         applyEffect(
           state,
           actor,
-          { kind: 'hit', amount: 1 + actor.shivDamageBonus + effect.bonus },
+          { kind: 'hit', amount: 1 + actor.shivDamageBonus + effect.bonus + (playerHasRelic(actor, 'wrist_blade') ? 1 : 0) },
           'enemy',
           'self',
           shivContext,
           'Shiv',
         )
-        if (!combatIsOver(state)) resolvePendingEnemyReactions(state, actor, shivContext)
+        if (!cardResolutionIsOver(state, shivContext)) resolvePendingEnemyReactions(state, actor, shivContext)
         actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
         if (combatIsOver(state)) return
       }
@@ -1080,7 +1195,7 @@ function applyEffect(
     case 'heal': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.hp
-        target.hp = Math.min(target.maxHp, target.hp + effect.amount)
+        target.hp = Math.min(playerHpCeiling(target), target.hp + effect.amount)
         if (target.hp > before) note(`${target.name} heals ${target.hp - before}`)
       }
       return
@@ -1327,6 +1442,14 @@ function drawInto(state: CombatState, actor: Player, amount: number): CardInstan
       fireTriggers(state, { kind: 'onShuffle' }, actor)
     }
     fireTriggers(state, { kind: 'onDraw', cardOwner: cardDef(drawnCards[i]!.defId).owner }, actor)
+    if (drawnCards[i]!.defId === 'slimed' && state.enemies.some((enemy) => !enemy.dead &&
+      enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'void')) &&
+      actor.energy > 0) {
+      actor.energy -= 1
+      actor.hand = actor.hand.filter((card) => card.uid !== drawnCards[i]!.uid)
+      exhaustCards(state, actor, [drawnCards[i]!])
+      state.log = [...state.log, `${actor.name} spends 1 Energy and Exhausts Slimed to Void`]
+    }
   }
   return drawnCards
 }
@@ -1770,12 +1893,17 @@ function discardForcedCard(state: CombatState, playerId: string, held: CardInsta
   actor.freeCardUids = actor.freeCardUids?.filter((uid) => uid !== held.uid) ?? []
   actor.forcedCardUids = actor.forcedCardUids?.filter((uid) => uid !== held.uid) ?? []
   actor.copyOriginalUids = actor.copyOriginalUids?.filter((uid) => uid !== held.uid) ?? []
+  actor.copyOriginalPaidUids = actor.copyOriginalPaidUids?.filter((uid) => uid !== held.uid) ?? []
   next.log = [...next.log, `${faceOf(cardDef(held.defId), held.upgraded).name} ${reason} and is discarded`]
   return next
 }
 
 /** Enemy abilities triggered by a card resolve only after all its text (p.12). */
 function resolvePendingEnemyReactions(state: CombatState, actor: Player, context: PlayContext): void {
+  for (const uid of new Set(context.pendingEnemyDeathUids ?? [])) {
+    const enemy = state.enemies.find((candidate) => candidate.uid === uid)
+    if (enemy?.dead) triggerEnemyDeathAbility(state, enemy)
+  }
   const damage = new Map<string, number>()
   for (const event of context.pendingEnemyDamage ?? []) {
     damage.set(event.enemyUid, (damage.get(event.enemyUid) ?? 0) + event.amount)
@@ -1800,15 +1928,19 @@ function resolvePendingEnemyReactions(state: CombatState, actor: Player, context
     }
 
     const thorns = abilities.find((ability) => ability.kind === 'thorns')
-    if (!attacked.has(enemy.uid) || thorns?.kind !== 'thorns') continue
-    const amount = (enemy.abilityCubes ?? 0) * thorns.damagePerCube
+    const sharpHide = abilities.find((ability) => ability.kind === 'sharpHide')
+    if (!attacked.has(enemy.uid) ||
+      (thorns?.kind !== 'thorns' && (enemy.dead || sharpHide?.kind !== 'sharpHide'))) continue
+    const amount = thorns?.kind === 'thorns'
+      ? (enemy.abilityCubes ?? 0) * thorns.damagePerCube
+      : sharpHide?.kind === 'sharpHide' ? sharpHide.damage : 0
     if (amount <= 0) continue
     const block = actor.block
     const outcome = damagePlayer(state, actor, amount)
     const blocked = block - actor.block
     state.log = [...state.log, outcome.lost > 0
-      ? `${enemyLabel(state.enemies, enemy)}'s Thorns hit ${actor.name} for ${outcome.lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-      : `${actor.name} blocked ${enemyLabel(state.enemies, enemy)}'s Thorns${blocked > 0 ? ` (${blocked} spent)` : ''}`]
+      ? `${enemyLabel(state.enemies, enemy)}'s ${thorns ? 'Thorns' : 'Sharp Hide'} hit ${actor.name} for ${outcome.lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
+      : `${actor.name} blocked ${enemyLabel(state.enemies, enemy)}'s ${thorns ? 'Thorns' : 'Sharp Hide'}${blocked > 0 ? ` (${blocked} spent)` : ''}`]
     if (outcome.revivedHp !== null) state.log = [...state.log, `${actor.name}'s Fairy in a Bottle revives them at ${outcome.revivedHp} HP`]
     if (actor.dead) {
       state.log = [...state.log, `${actor.name} has fallen`]
@@ -1840,6 +1972,13 @@ export function playCard(
 
   const def = faceOf(cardDef(held.defId), held.upgraded)
   const committedCopyOriginal = player.copyOriginalUids?.includes(cardUid) === true
+  const committedCopyWasPaid = player.copyOriginalPaidUids?.includes(cardUid) === true
+  const timeEater = state.enemies.find((enemy) => !enemy.dead &&
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'timeWarp'))
+  const timeWarp = timeEater && enemyAbilities(enemyDef(timeEater.defId, timeEater.ascension))
+    .find((ability) => ability.kind === 'timeWarp')
+  if (!committedCopyOriginal && timeWarp?.kind === 'timeWarp' &&
+    (player.cardsPlayedThisTurn ?? 0) >= (timeWarp.limits[timeEater!.actionIndex] ?? Number.POSITIVE_INFINITY)) return state
   if (!committedCopyOriginal && !cardCanResolveNow(def, state, player)) {
     return forced ? discardForcedCard(state, playerId, held, 'cannot be played') : state
   }
@@ -1941,6 +2080,9 @@ export function playCard(
         afterActor.freeCardUids = [...new Set([...(afterActor.freeCardUids ?? []), cardUid])]
         afterActor.forcedCardUids = [...new Set([...(afterActor.forcedCardUids ?? []), cardUid])]
         afterActor.copyOriginalUids = [...new Set([...(afterActor.copyOriginalUids ?? []), cardUid])]
+        if (cost !== 0) {
+          afterActor.copyOriginalPaidUids = [...new Set([...(afterActor.copyOriginalPaidUids ?? []), cardUid])]
+        }
         afterCopy.log = [...afterCopy.log, `${def.name}'s original must now be played`]
       } else {
         afterActor.discard.push(held)
@@ -1964,6 +2106,7 @@ export function playCard(
   actor.freeCardUids = actor.freeCardUids?.filter((uid) => uid !== cardUid) ?? []
   actor.forcedCardUids = actor.forcedCardUids?.filter((uid) => uid !== cardUid) ?? []
   actor.copyOriginalUids = actor.copyOriginalUids?.filter((uid) => uid !== cardUid) ?? []
+  actor.copyOriginalPaidUids = actor.copyOriginalPaidUids?.filter((uid) => uid !== cardUid) ?? []
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
   if (miracleOnCard) {
     actor.miracles -= 1
@@ -2010,8 +2153,11 @@ export function playCard(
     drewSkill: false,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
+    attackHitBonus: def.type === 'attack' && cost === 0 && !committedCopyWasPaid &&
+      playerHasRelic(actor, 'wrist_blade') ? 1 : 0,
     sourceAttackCounted: false,
     pendingEnemyDamage: [],
+    pendingEnemyDeathUids: [],
     pendingAttackTargets: [],
   }
   if (resolvesOnPlay) {
@@ -2019,7 +2165,7 @@ export function playCard(
       applyEffect(next, actor, effect, scope, supportScope, ctx)
       // Combat endings are immediate (p.13), including halfway through a
       // card. Nothing printed later, nor cleanup or play triggers, resolves.
-      if (combatIsOver(next)) return settle(next)
+      if (cardResolutionIsOver(next, ctx)) return settle(next)
     }
   }
 
@@ -2074,7 +2220,6 @@ export function playCard(
   if (def.type === 'attack' && !ctx.sourceAttackCounted) {
     actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
   }
-
   // "Abilities triggered by a card do not take effect until the card has
   // finished resolving all of its text" (p.12). Cleanup follows those abilities.
   // `held.uid` is excluded: a Power that reacts to cards being played was not
@@ -2122,17 +2267,15 @@ export function preparePlayerTurn(state: CombatState): CombatState {
   return beginPlayerTurn(clone(state))
 }
 
-/** Start of Turn: reset, draw 5, roll the shared die (p.12). Mutates `next`. */
-function beginPlayerTurn(next: CombatState): CombatState {
-  next.phase = 'start'
-  next.turn += 1
-  const due = next.pendingSummons.filter((summon) => summon.turn <= next.turn)
-  next.pendingSummons = next.pendingSummons.filter((summon) => summon.turn > next.turn)
+function resolveDueSummons(next: CombatState, timing: 'startOfTurn' | 'endOfTurn'): void {
+  const due = next.pendingSummons.filter((summon) =>
+    (summon.timing ?? 'startOfTurn') === timing && summon.turn <= next.turn)
+  next.pendingSummons = next.pendingSummons.filter((summon) => !due.includes(summon))
   for (const summon of due) {
     const source = next.enemies.find((enemy) => enemy.uid === summon.sourceUid)
     const ascension = source?.ascension
     summon.defIds.forEach((name, index) => {
-      const defId = drawSummon(next.summonSupply, name)
+      const defId = summon.direct ? name : drawSummon(next.summonSupply, name)
       if (!defId) {
         next.log = [...next.log, `No ${enemyDef(name).name} remained in the Summons deck`]
         return
@@ -2143,12 +2286,14 @@ function beginPlayerTurn(next: CombatState): CombatState {
         uid: `${summon.sourceUid}-summon-${next.turn}-${summon.row}-${index}`,
         defId,
         row: summon.row,
-        isBoss: false,
+        isBoss: summon.isBoss ?? false,
         ascension,
         hp,
         maxHp: hp,
         block: 0,
-        strength: 0,
+        strength: (summon.strengthDefId === undefined || summon.strengthDefId === name ? summon.strength ?? 0 : 0) + (summon.strengthPerPower
+          ? Math.max(0, ...next.players.filter((player) => !player.dead).map((player) => player.powers.length))
+          : 0),
         vulnerable: 0,
         weak: 0,
         poison: 0,
@@ -2168,9 +2313,24 @@ function beginPlayerTurn(next: CombatState): CombatState {
       next.log = [...next.log, `${def.name} was summoned`]
     })
   }
+}
+
+/** Start of Turn: reset, draw 5, roll the shared die (p.12). Mutates `next`. */
+function beginPlayerTurn(next: CombatState): CombatState {
+  next.phase = 'start'
+  next.turn += 1
+  resolveDueSummons(next, 'startOfTurn')
+  for (const enemy of next.enemies) {
+    if (!enemy.pendingDefId) continue
+    enemy.defId = enemy.pendingDefId
+    enemy.pendingDefId = undefined
+    enemy.actionIndex = 0
+    next.log = [...next.log, `${enemyLabel(next.enemies, enemy)} enters Defensive Mode`]
+  }
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
   next.powerTriggersUsedThisTurn = []
+  next.startTurnStage = 'effects'
   // Where this round's log starts, so the divider can be placed above anything
   // the Start of Turn itself writes.
   const drewFrom = next.log.length
@@ -2194,10 +2354,12 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.nextCardCost = null
     player.cardCopyQueue = []
     player.copyOriginalUids = []
+    player.copyOriginalPaidUids = []
     player.freeCardUids = []
     player.forcedCardUids = []
     player.hpLossLimitThisTurn = null
     player.hpLostThisTurnAmount = 0
+    player.damageDealtZeroThisTurn = false
   }
   for (const player of next.players) {
     if (player.dead) continue
@@ -2234,6 +2396,7 @@ type StartTurnSource = {
   enemyUid?: string
   enemyBlock?: number
   enemyAction?: EnemyAction
+  facingPlayerId?: string
 }
 
 function startTurnSources(state: CombatState): StartTurnSource[] {
@@ -2288,7 +2451,39 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
       label: `${enemyLabel(state.enemies, regrow)} — Regrow`,
     },
   })
-  return [...playerSources, ...enemySources]
+  if (state.startTurnStage !== 'facing') return [...playerSources, ...enemySources]
+  const facingSources: StartTurnSource[] = []
+  const facingEnemies = livingEnemies(state).filter((enemy) =>
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'facing'))
+  if (facingEnemies.length > 0) {
+    for (const player of state.players.filter((candidate) => !candidate.dead)) {
+      const targets = facingEnemies
+        .map((enemy) => ({
+          enemy,
+          inRows: enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) =>
+            ability.kind === 'facing' && (ability.effect === 'spear' ? player.row >= 2 : player.row < 2)),
+        }))
+        .sort((left, right) => Number(right.inRows) - Number(left.inRows))
+        .map(({ enemy }) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+      if (facingEnemies.length === 1) {
+        const enemy = facingEnemies[0]!
+        const facing = enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).find((ability) => ability.kind === 'facing')
+        const inRows = facing?.kind === 'facing' && (facing.effect === 'spear' ? player.row >= 2 : player.row < 2)
+        if (!inRows) targets.unshift({ uid: 'none', label: 'No Facing enemy' })
+        else targets.push({ uid: 'none', label: 'No Facing enemy' })
+      }
+      facingSources.push({
+        facingPlayerId: player.id,
+        ability: {
+          id: `facing:${player.id}`,
+          playerId: player.id,
+          label: `${player.name} — choose Facing`,
+          targets,
+        },
+      })
+    }
+  }
+  return facingSources
 }
 
 function validStartTurnOrder(sources: readonly StartTurnSource[], order: readonly string[]): boolean {
@@ -2354,6 +2549,7 @@ export function resolveStartPlayerTurn(
   for (const choice of choices) {
     const entry = byId.get(choice.id)
     if (!entry) return state
+    if (entry.facingPlayerId) continue
     if (entry.enemyUid) {
       const enemy = entry.enemyAction?.kind === 'reviveAll' && entry.enemyAction.group === 'darkling'
         ? livingEnemies(next).find((candidate) => enemyAbilities(enemyDef(candidate.defId, candidate.ascension))
@@ -2376,16 +2572,72 @@ export function resolveStartPlayerTurn(
     }
     if (combatIsOver(next)) return settle(next)
   }
+  const facingEnemies = livingEnemies(next).filter((candidate) =>
+    enemyAbilities(enemyDef(candidate.defId, candidate.ascension)).some((ability) => ability.kind === 'facing'))
+  if (state.startTurnStage !== 'facing' && facingEnemies.length > 0) {
+    next.startTurnStage = 'facing'
+    return settle(next)
+  }
+  // Facing is its own authoritative stage after every other start effect.
+  const occupiedFacingRows = new Set<number>()
+  for (const choice of choices) {
+    const entry = byId.get(choice.id)
+    if (!entry?.facingPlayerId || !choice.enemyUid) continue
+    const player = findPlayer(next, entry.facingPlayerId)
+    if (choice.enemyUid === 'none') {
+      if (!player || facingEnemies.length !== 1) return state
+      const soleFacing = enemyAbilities(enemyDef(facingEnemies[0]!.defId, facingEnemies[0]!.ascension))
+        .find((ability) => ability.kind === 'facing')
+      if (soleFacing?.kind !== 'facing') return state
+      const rows = soleFacing.effect === 'spear' ? [0, 1] : [2, 3]
+      const row = rows.includes(player.row) && !occupiedFacingRows.has(player.row)
+        ? player.row
+        : rows.find((candidate) => !occupiedFacingRows.has(candidate))
+      if (row === undefined) return state
+      player.row = row
+      player.facingEnemyUid = null
+      occupiedFacingRows.add(row)
+      continue
+    }
+    const enemy = next.enemies.find((candidate) => candidate.uid === choice.enemyUid && !candidate.dead)
+    const facing = enemy && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+      .find((ability) => ability.kind === 'facing')
+    if (!player || !enemy || facing?.kind !== 'facing') return state
+    const rows = facing.effect === 'spear' ? [2, 3] : [0, 1]
+    const row = rows.includes(player.row) && !occupiedFacingRows.has(player.row)
+      ? player.row
+      : rows.find((candidate) => !occupiedFacingRows.has(candidate))
+    if (row === undefined) return state
+    player.row = row
+    occupiedFacingRows.add(row)
+    player.facingEnemyUid = enemy.uid
+    if (facing.effect === 'spear') {
+      const gained = addStatus(next, player, 'burn', 2, enemy.uid)
+      next.log = [...next.log, `${player.name} faces ${enemyLabel(next.enemies, enemy)} and gains ${gained} Burn`]
+    } else if (enemy.actionIndex === 0) {
+      const lost = Math.min(1, player.energy)
+      player.energy -= lost
+      next.log = [...next.log, `${player.name} faces ${enemyLabel(next.enemies, enemy)} and loses ${lost} Energy`]
+    } else if (enemy.actionIndex === 1) {
+      player.drawLocked = true
+      next.log = [...next.log, `${player.name} faces ${enemyLabel(next.enemies, enemy)} and cannot draw this turn`]
+    } else {
+      player.damageDealtZeroThisTurn = true
+      next.log = [...next.log, `${player.name} faces ${enemyLabel(next.enemies, enemy)} and deals 0 damage this turn`]
+    }
+  }
+  next.startTurnStage = undefined
   next.phase = 'player'
   return settle(next)
 }
 
 /** Backwards-compatible deterministic start for simulations with no UI choice. */
 export function startPlayerTurn(state: CombatState): CombatState {
-  const prepared = preparePlayerTurn(state)
-  return prepared === state || prepared.phase !== 'start'
-    ? prepared
-    : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  let next = preparePlayerTurn(state)
+  for (let stage = 0; stage < 2 && next !== state && next.phase === 'start'; stage++) {
+    next = resolveStartPlayerTurn(next, defaultStartTurnChoices(next))
+  }
+  return next
 }
 
 /** Starts a table-facing turn, pausing only when order or overflow matters. */
@@ -2404,7 +2656,17 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
-    .map((source) => ({ id: source.id, label: source.name.replace(`${player.name}'s `, '') }))
+    .map((source) => {
+      const targets = player.orbs.every(Boolean) && source.effects.some((effect) => effect.kind === 'channel')
+        ? player.orbs.flatMap((orb, slot) => orb === 'frost'
+          ? [{ uid: `${slot}:`, label: `Evoke Frost Orb ${slot + 1}` }]
+          : livingEnemies(state).map((enemy) => ({
+              uid: `${slot}:${enemy.uid}`,
+              label: `Evoke ${orb === 'dark' ? 'Dark' : 'Lightning'} Orb ${slot + 1} at ${enemyLabel(state.enemies, enemy)}`,
+            })))
+        : undefined
+      return { id: source.id, label: source.name.replace(`${player.name}'s `, ''), targets }
+    })
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
   }
@@ -2435,8 +2697,15 @@ export function endTurnAbilities(state: CombatState): EndTurnAbility[] {
     playerId: null,
     label: `${enemyLabel(state.enemies, enemy)} — Poison`,
   }])
+  const beat = state.enemies.flatMap((enemy) => enemy.dead ? [] : enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+    .some((ability) => ability.kind === 'beatOfDeath') ? [{
+      id: `beat:${enemy.uid}`,
+      playerId: null,
+      label: `${enemyLabel(state.enemies, enemy)} — Beat of Death`,
+    }] : [])
   return [
     ...poison,
+    ...beat,
     ...state.players.flatMap((player) => player.dead ? [] : playerEndTurnAbilities(state, player).map((ability) => ({
       ...ability,
       id: `${player.id}/${ability.id}`,
@@ -2521,7 +2790,7 @@ export function beginEndPlayerTurn(
     if (id.startsWith('poison:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
       if (enemy && !enemy.dead && enemy.poison > 0) {
-        const outcome = enemyCannotLoseHp(enemy) ? { hp: enemy.hp, hpLost: 0 } : applyHpLoss(enemy.hp, enemy.poison)
+        const outcome = loseEnemyHp(next, enemy, enemy.poison)
         const name = enemyLabel(next.enemies, enemy)
         next.log = [...next.log, `${name} loses ${enemy.hp - outcome.hp} to Poison`]
         enemy.hp = outcome.hp
@@ -2535,6 +2804,28 @@ export function beginEndPlayerTurn(
           grantShiftBlock(next, enemy, outcome.hpLost)
         }
       }
+    } else if (id.startsWith('beat:')) {
+      const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(5) && !candidate.dead)
+      const beat = enemy && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'beatOfDeath')
+      if (enemy && beat?.kind === 'beatOfDeath') {
+        const amount = (enemy.abilityCubes ?? 0) * beat.damagePerCube
+        for (const player of next.players.filter((candidate) => !candidate.dead)) {
+          const block = player.block
+          const outcome = damagePlayer(next, player, amount)
+          const blocked = block - player.block
+          next.log = [...next.log, outcome.lost > 0
+            ? `${enemyLabel(next.enemies, enemy)}'s Beat of Death hit ${player.name} for ${outcome.lost}${blocked ? ` (${blocked} blocked)` : ''}`
+            : `${player.name} blocked Beat of Death${blocked ? ` (${blocked} spent)` : ''}`]
+          if (outcome.revivedHp !== null) {
+            next.log = [...next.log, `${player.name}'s Fairy in a Bottle revives them at ${outcome.revivedHp} HP`]
+          }
+          if (player.dead) {
+            next.log = [...next.log, `${player.name} has fallen`]
+            break
+          }
+        }
+      }
     } else {
       const slash = id.indexOf('/')
       const player = findPlayer(next, id.slice(0, slash))
@@ -2543,7 +2834,21 @@ export function beginEndPlayerTurn(
       if (localId.startsWith('relic:') || localId.startsWith('power:')) {
         const source = triggerSources(player, { kind: 'endOfTurn' })
           .find((candidate) => candidate.id === localId)
-        if (source) resolveTriggerSource(next, player, source)
+        const target = endTurnChoiceTarget(choice)
+        const separator = target?.indexOf(':') ?? -1
+        const evokeSlot = separator >= 0 ? Number(target!.slice(0, separator)) : undefined
+        const evokeEnemyUid = separator >= 0 ? target!.slice(separator + 1) || null : undefined
+        if (source && !resolveTriggerSource(
+          next,
+          player,
+          source,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          evokeSlot === undefined ? undefined : [evokeSlot],
+          evokeSlot === undefined ? undefined : [evokeEnemyUid ?? null],
+        )) return state
       } else if (localId === 'strength') {
         const loss = Math.min(player.strength, player.strengthLossAtEndOfTurn ?? 0)
         if (loss > 0) {
@@ -2616,6 +2921,7 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
     }
   }
 
+  resolveDueSummons(next, 'endOfTurn')
   next.phase = 'enemy'
   return settle(next)
 }
@@ -2654,7 +2960,17 @@ export function enemyTurn(state: CombatState): CombatState {
     const rally = enemyAbilities(def).find((ability) => ability.kind === 'rally')
     const noSummons = rally?.kind === 'rally' && !next.enemies.some((candidate) => !candidate.dead &&
       (candidate.defId === rally.summonDefId || candidate.defId.startsWith(`${rally.summonDefId}_`)))
-    enemy.actionIndex = noSummons && enemy.actionIndex === 1 ? 0 : advanceCube(def, enemy.actionIndex)
+    if (def.pattern.kind === 'cube' && def.pattern.slots[enemy.actionIndex]?.once) {
+      enemy.spentOnceSlots = [...new Set([...(enemy.spentOnceSlots ?? []), enemy.actionIndex])]
+    }
+    let nextIndex = noSummons && enemy.actionIndex === 1 ? 0 : advanceCube(def, enemy.actionIndex)
+    if (def.pattern.kind === 'cube') {
+      for (let skipped = 0; skipped < def.pattern.slots.length; skipped++) {
+        if (!def.pattern.slots[nextIndex]?.once || !enemy.spentOnceSlots?.includes(nextIndex)) break
+        nextIndex = advanceCube(def, nextIndex)
+      }
+    }
+    enemy.actionIndex = nextIndex
   }
 
   // The round is over. The next Start of Turn is its own step (p.12) rather
@@ -2697,6 +3013,8 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
     case 'attack':
     case 'attackSequence': {
       const mods = attackerModsOfEnemy(enemy)
+      const curiosity = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .some((ability) => ability.kind === 'curiosity')
       const hits = action.kind === 'attackSequence'
         ? action.hits
         : Array.from({ length: action.times ?? 1 }, () => ({ amount: action.amount, aoe: action.aoe }))
@@ -2704,7 +3022,11 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       const events: { target: Player; lost: number; blocked: number; revivedHp: number | null }[] = []
       let attacked = false
       attack: for (const hit of hits) {
-        const targets = hit.aoe ? living : playersInRowOf(state, enemy)
+        const targets = hit.aoe
+          ? living
+          : action.kind === 'attack' && action.facing
+            ? living.filter((player) => player.facingEnemyUid === enemy.uid)
+            : playersInRowOf(state, enemy)
         if (targets.length > 0) attacked = true
         for (const target of targets) {
           if (target.dead) continue
@@ -2718,7 +3040,11 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
         // Every hit is modified, but only one Vulnerable token comes off after
         // the whole action resolves (p.14).
           const block = target.block
-          const outcome = damagePlayer(state, target, hitDamage(hit.amount, mods, { vulnerable: before.vulnerable }))
+          const outcome = damagePlayer(state, target, hitDamage(
+            hit.amount + (curiosity ? target.powers.length : 0),
+            mods,
+            { vulnerable: before.vulnerable },
+          ))
           events.push({ target, lost: outcome.lost, blocked: block - target.block, revivedHp: outcome.revivedHp })
           before.lost += outcome.lost
           if (target.dead) break attack
@@ -2786,7 +3112,7 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       // The amount actually gained, not the amount printed: at the cap the
       // enemy gains nothing and the log should not claim otherwise.
       const before = enemy.block
-      enemy.block = gainBlock(enemy.block, action.amount)
+      enemy.block = gainBlock(enemy.block, action.amount * (action.perPlayer ? state.players.length : 1))
       if (enemy.block > before) {
         state.log = [...state.log, `${name} gained ${enemy.block - before} Block`]
       }
@@ -2838,7 +3164,7 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
     }
     case 'blockNamed': {
       const target = state.enemies.find((candidate) => !candidate.dead &&
-        candidate.row === enemy.row &&
+        (candidate.row === enemy.row || candidate.isBoss) &&
         (candidate.defId === action.defId || candidate.defId.startsWith(`${action.defId}_`)))
       if (target) {
         const before = target.block
@@ -2913,14 +3239,42 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
       triggerEnemyDeathAbility(state, enemy)
       return
     case 'addAbilityCube': {
-      const thorns = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-        .find((ability) => ability.kind === 'thorns')
-      if (thorns?.kind !== 'thorns') return
+      const tracked = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'thorns' || ability.kind === 'beatOfDeath')
+      if (tracked?.kind !== 'thorns' && tracked?.kind !== 'beatOfDeath') return
       const before = enemy.abilityCubes ?? 0
-      enemy.abilityCubes = Math.min(thorns.maxCubes, before + action.amount)
+      enemy.abilityCubes = Math.min(tracked.maxCubes, before + action.amount)
       if (enemy.abilityCubes > before) state.log = [...state.log, `${name} added ${enemy.abilityCubes - before} ability cube`]
       return
     }
+    case 'transform':
+      enemy.defId = action.defId
+      enemy.actionIndex = -1
+      state.log = [...state.log, `${name} enters ${enemyDef(action.defId).name.replace('The Guardian', '').trim() || 'Attack Mode'}`]
+      return
+    case 'guardianModeShift':
+      if (enemy.block > 0) {
+        enemy.block = 0
+        applyEnemyAction(state, enemy, { kind: 'attack', amount: action.amount })
+      }
+      else {
+        enemy.pendingDefId = 'guardian_defensive'
+        state.log = [...state.log, `${name} will enter Defensive Mode at the start of the next turn`]
+      }
+      return
+    case 'removeInvincible':
+      enemy.abilityUsed = true
+      state.log = [...state.log, `${name}'s Invincible is removed`]
+      return
+    case 'shuffleStatus':
+      for (const target of living) {
+        const gained = addStatus(state, target, action.card, action.amount, enemy.uid)
+        if (gained === 0) continue
+        target.draw = shuffle(state.rng, [...target.draw, ...target.discard])
+        target.discard = []
+        state.log = [...state.log, `${name} shuffled ${gained} ${action.card} into ${target.name}'s deck`]
+      }
+      return
     case 'summon':
       state.pendingSummons.push({
         sourceUid: enemy.uid,
@@ -3022,6 +3376,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
       state,
       target,
       2 + (actor.orbEvokeBonus ?? 0),
+      actor,
       `${actor.name}'s Lightning orb`,
       context,
     )
@@ -3040,6 +3395,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
       state,
       target,
       3 + actor.powers.length + (actor.orbEvokeBonus ?? 0),
+      actor,
       `${actor.name}'s Dark orb`,
       context,
     )
@@ -3053,7 +3409,7 @@ function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, 
   if (orb === 'lightning') {
     const target = livingEnemies(state).find((enemy) => enemy.uid === targetUid)
     if (!target) return false
-    damageEnemyLogged(state, target, 1, `${actor.name}'s Lightning orb`)
+    damageEnemyLogged(state, target, 1, actor, `${actor.name}'s Lightning orb`)
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1)
@@ -3172,6 +3528,8 @@ function resolveTriggerSource(
   shivEnemyUids?: readonly (string | null)[],
   enemyUid?: string,
   targetPlayerId?: string,
+  evokeSlots?: number[],
+  evokeEnemyUids?: (string | null)[],
 ): boolean {
   const useKey = `${player.id}/${source.id}`
   if (source.oncePerTurn) {
@@ -3185,14 +3543,18 @@ function resolveTriggerSource(
     enemyUid: enemyUid ?? target?.uid ?? null,
     playerId: targetPlayerId ?? player.id,
     shivEnemyUids: shivEnemyUids ? [...shivEnemyUids] : undefined,
+    evokeSlots,
+    evokeEnemyUids,
+    evokeIndex: 0,
     shivTargetIndex: 0,
     invalidShivTarget: false,
+    invalidEvokeTarget: false,
   }
   for (const effect of source.effects) {
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
     if (!allowCombatOver && combatIsOver(state)) return true
   }
-  return !context.invalidShivTarget
+  return !context.invalidShivTarget && !context.invalidEvokeTarget
 }
 
 function fireTriggersInner(
@@ -3224,6 +3586,11 @@ function fireTriggersInner(
 function combatIsOver(state: CombatState): boolean {
   return (state.enemies.every((enemy) => enemy.dead) && state.pendingSummons.length === 0) ||
     state.players.some((player) => player.dead)
+}
+
+function cardResolutionIsOver(state: CombatState, context: PlayContext): boolean {
+  return state.players.some((player) => player.dead) ||
+    (combatIsOver(state) && (context.pendingEnemyDeathUids?.length ?? 0) === 0)
 }
 
 /** Decides whether the combat has ended, and returns the state either way. */
@@ -3266,15 +3633,16 @@ export function createCombat(
       attacksPlayedThisTurn: 0,
       cardsPlayedThisTurn: 0,
       nextCardCost: null,
+      holyWaterCubes: playerHasRelic(player, 'holy_water') ? 2 : 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,
       hitPoison: 0,
     })),
     enemies: enemies.map((enemy) => {
-      const thorns = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-        .find((ability) => ability.kind === 'thorns')
-      return thorns?.kind === 'thorns'
-        ? { ...enemy, abilityCubes: enemy.abilityCubes ?? thorns.startingCubes }
+      const tracked = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'thorns' || ability.kind === 'beatOfDeath')
+      return tracked?.kind === 'thorns' || tracked?.kind === 'beatOfDeath'
+        ? { ...enemy, abilityCubes: enemy.abilityCubes ?? tracked.startingCubes }
         : enemy
     }),
     summonSupply,
@@ -3303,6 +3671,20 @@ export function spendMiracle(state: CombatState, playerId: string): CombatState 
   return next
 }
 
+/** Remove one Holy Water cube for one Energy. */
+export function spendHolyWater(state: CombatState, playerId: string): CombatState {
+  if (state.phase !== 'player') return state
+  if (state.players.some((player) => (player.forcedCardUids?.length ?? 0) > 0)) return state
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!player || player.dead || (player.holyWaterCubes ?? 0) < 1 || player.energy >= CAPS.energy) return state
+  const next = clone(state)
+  const actor = next.players.find((candidate) => candidate.id === playerId)!
+  actor.holyWaterCubes = (actor.holyWaterCubes ?? 0) - 1
+  actor.energy += 1
+  next.log = [...next.log, `${actor.name} removes a Holy Water cube for 1 Energy`]
+  return next
+}
+
 /** Spend one Shiv as its own one-damage attack (p.17). */
 export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
   if (state.phase !== 'player') return state
@@ -3318,19 +3700,21 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
     enemyUid,
     playerId,
     sourceCardType: 'attack',
+    attackHitBonus: 0,
     pendingEnemyDamage: [],
+    pendingEnemyDeathUids: [],
     pendingAttackTargets: [],
   }
   applyEffect(
     next,
     actor,
-    { kind: 'hit', amount: 1 + actor.shivDamageBonus },
+    { kind: 'hit', amount: 1 + actor.shivDamageBonus + (playerHasRelic(actor, 'wrist_blade') ? 1 : 0) },
     'enemy',
     'self',
     context,
     'Shiv',
   )
-  if (!combatIsOver(next)) resolvePendingEnemyReactions(next, actor, context)
+  if (!cardResolutionIsOver(next, context)) resolvePendingEnemyReactions(next, actor, context)
   actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
   return settle(next)
 }
@@ -3359,7 +3743,7 @@ export function activatePotion(
     || purity.some((uid) => !player.hand.some((card) => card.uid === uid))
   )) return state
   const entropicDraws = def.special === 'entropicBrew'
-    ? Math.min(2, state.potionSupply.length + 1)
+    ? playerHasRelic(player, 'sozu') ? 0 : Math.min(2, state.potionSupply.length + 1)
     : 0
   const entropicDiscardNeeded = Math.max(
     0,
@@ -3418,7 +3802,7 @@ export function activatePotion(
       break
     }
     case 'entropicBrew':
-      for (let draw = 0; draw < 2 && next.potionSupply.length > 0; draw++) {
+      for (let draw = 0; !playerHasRelic(actor, 'sozu') && draw < 2 && next.potionSupply.length > 0; draw++) {
         const gained = next.potionSupply.shift()!
         actor.potions.push(gained)
       }

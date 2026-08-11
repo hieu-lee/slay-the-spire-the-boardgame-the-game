@@ -462,6 +462,11 @@ button:disabled {
   border-bottom: 1px dashed var(--edge);
 }
 
+.board__bosses .enemy {
+  flex: 1 1 240px;
+  max-width: 320px;
+}
+
 .row {
   display: grid;
   /* Summons share their main enemy's row. Give that track the remaining width
@@ -606,6 +611,17 @@ button:disabled {
 
 .enemy--boss {
   border-color: var(--blood);
+  background-position: center;
+  background-size: cover;
+  box-shadow: 0 0 20px rgb(125 32 24 / 0.22);
+}
+
+.enemy--boss .enemy__portrait {
+  background: transparent;
+}
+
+.enemy--boss .enemy__portrait > img {
+  object-fit: contain;
 }
 
 .enemy--dead {

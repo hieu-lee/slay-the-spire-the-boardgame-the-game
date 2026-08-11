@@ -309,6 +309,19 @@ check('a Dark orb does nothing at end of turn', () => {
   assertEqual(next.players[0].block, 0)
 })
 
+check('Frozen Core grants its printed Block without mutating orbs', () => {
+  const state = combat([player({
+    orbs: ['dark', 'dark', 'dark'],
+    relics: [{ defId: 'frozen_core', spent: false }],
+  })], [enemy({ uid: 'e1', hp: 20 })])
+  const abilities = endTurnAbilities(state)
+  const core = abilities.find((ability) => ability.label.includes('Frozen Core'))
+  assertEqual(core.targets?.length ?? 0, 0)
+  const next = beginEndPlayerTurn(state, abilities.map((ability) => ability.id))
+  assertEqual(next.players[0].block, 1)
+  assertDeepEqual(next.players[0].orbs, ['dark', 'dark', 'dark'])
+})
+
 check('Eruption enters Wrath and Vigilance enters Calm', () => {
   const eruption = instance('eruption')
   const wrath = playCard(

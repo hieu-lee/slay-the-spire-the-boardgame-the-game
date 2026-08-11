@@ -13,6 +13,8 @@ import {
   roomChoices,
   useRunPotion,
   tradeRunPotion,
+  startPendingBoss,
+  switchBetweenCombatRow,
 } from '../game/run.ts'
 import type { RunState } from '../game/run.ts'
 import { seedFromString } from '../game/rng.ts'
@@ -21,6 +23,7 @@ import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
+import { BetweenCombatScreen } from './BetweenCombatScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { Icon, IconValue } from './Icon.tsx'
 import { OnlineGame } from './OnlineGame.tsx'
@@ -216,6 +219,12 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
         />
       ) : null}
 
+      {run.phase === 'betweenCombat' ? (
+        <BetweenCombatScreen players={run.players}
+          onSwitchRow={(playerId, row) => setRun((current) => switchBetweenCombatRow(current, playerId, row))}
+          onContinue={() => setRun((current) => startPendingBoss(current))} />
+      ) : null}
+
       {run.phase === 'room' && roomKind === 'campfire' ? (
         <CampfireScreen
           players={run.players}
@@ -238,10 +247,12 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
 
       {run.phase === 'victory' ? (
         <section className="room-screen">
-          <h2>Act {run.act} complete</h2>
-          <button type="button" onClick={() => setRun((current) => advanceAct(current))}>
-            Climb to Act {run.act + 1}
-          </button>
+          <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          {run.act < 4 ? (
+            <button type="button" onClick={() => setRun((current) => advanceAct(current))}>
+              Climb to Act {run.act + 1}
+            </button>
+          ) : null}
         </section>
       ) : null}
 

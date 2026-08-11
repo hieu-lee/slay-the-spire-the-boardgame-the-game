@@ -33,6 +33,7 @@ export type VisibleCombat = {
   turn: number
   die: number
   phase: CombatPhase
+  startTurnStage?: 'effects' | 'facing'
   players: VisiblePlayer[]
   enemies: Enemy[]
   pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
@@ -63,6 +64,7 @@ export type RoomSnapshot = {
   campfireDecided: string[]
   rewardChoice?: RewardDecision | number | null
   rewardDecided: string[]
+  betweenCombatReady: string[]
   endTurnDecided: string[]
   endTurnAbilities?: EndTurnAbility[]
   endTurnOrder?: string[]

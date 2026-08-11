@@ -181,8 +181,12 @@ Everything is capped. Caps are shared across all players for a given token type,
 | Weak | **Max 3.** Each hit it deals is **−1**; then remove **one** token. |
 
 **Statuses that do not exist in the board game:** Dexterity, Frail, Artifact, Intangible,
-Thorns, Metallicize, Regen, Confused, Focus, Plated Armor, Wound, Void. Barricade and
+Thorns, Metallicize, Regen, Confused, Focus, Plated Armor, Wound. Barricade and
 Buffer exist only as card names, not as tracked keywords.
+
+Awakened One's **Void** is a boss ability rather than a general status: its
+pink spiral uses a Slimed card. When that Slimed is drawn, if able, immediately
+spend 1 Energy to Exhaust it; with no Energy it remains in hand.
 
 ### Character resources
 

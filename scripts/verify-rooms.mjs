@@ -19,7 +19,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CARDS, ROOM_LABEL, bossRelicCardChoice, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
@@ -288,6 +288,125 @@ check('room-authoritative item rewards survive reconnect and settle atomically',
   assertEqual(playerA.relics.at(-1).defId, relicChoices[0])
   assertEqual(playerB.relics.at(-1).defId, relicChoices[1])
   assertEqual(playerB.potions.at(-1), potionId, 'the recipient gains the passed potion')
+})
+
+check('White Beast Statue routes a full-belt potion through reconnect-safe rewards', () => {
+  const { room, a, b } = twoSeatRoom()
+  const combatOwner = room.run.combat.players.find((player) => player.id === a.playerId)
+  const runOwner = room.run.players.find((player) => player.id === a.playerId)
+  const held = room.run.combat.potionSupply.splice(0, room.run.combat.potionLimit)
+  const top = room.run.combat.potionSupply[0]
+  combatOwner.potions = [...held]
+  runOwner.potions = [...held]
+  combatOwner.relics.push({ defId: 'white_beast_statue', spent: false })
+  runOwner.relics.push({ defId: 'white_beast_statue', spent: false })
+  room.run.combat.phase = 'won'
+  for (const enemy of room.run.combat.enemies) {
+    enemy.hp = 0
+    enemy.dead = true
+    enemy.goldReward = 0
+    enemy.cardReward = null
+    enemy.potionReward = enemy.row === combatOwner.row
+    enemy.relicReward = false
+  }
+  apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(room.run.phase, 'reward')
+  assertEqual(room.run.rewards.find((offer) => offer.playerId === a.playerId).potionId, null)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.rewards[0].hasPotion, true)
+  apply(room, a.token, { kind: 'cardReward', choice: 'revealPotion' })
+  assertEqual(room.run.rewards[0].potionId, top)
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: b.playerId, discardPotionId: null, relicId: null,
+    goldTiming: null, relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assert(room.run.players.find((player) => player.id === b.playerId).potions.includes(top),
+    'the full-belt owner can pass the revealed potion')
+  assertEqual(room.run.phase, 'reward', 'the printed potion remains after White Beast adds its own')
+  const second = room.run.itemDecks.potions[0]
+  apply(room, a.token, { kind: 'cardReward', choice: 'revealPotion' })
+  assertEqual(room.run.rewards[0].potionId, second)
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: null, relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.itemDecks.potions.at(-1), second, 'the separately skipped potion returns to the bottom')
+})
+
+check('the A13 between-boss reward can use and trade potions after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  owner.hp = 5
+  owner.potions = ['energy_potion', 'fire_potion']
+  room.run = {
+    ...room.run,
+    ascension: 13,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'combat',
+    act: 3,
+    pendingBossDefId: 'awakened_one_phase_1',
+    itemDecks: {
+      ...room.run.itemDecks,
+      potions: room.run.itemDecks.potions.filter((id) => id !== 'blood_potion'),
+    },
+    rewards: [{
+      playerId: a.playerId, choices: [], upgraded: false, hasCard: false, hasPotion: true,
+      potionId: 'blood_potion', hasRelic: false, relicChoices: [],
+    }],
+  }
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.combat, null,
+    'the second boss is not prepared before the reward is resolved')
+  apply(room, a.token, { kind: 'tradePotion', potionId: 'fire_potion', toPlayerId: b.playerId })
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: a.playerId, discardPotionId: null,
+    relicId: null, relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.phase, 'betweenCombat')
+  assertDeepEqual(room.run.players.find((player) => player.id === a.playerId).potions,
+    ['energy_potion', 'blood_potion'])
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'blood_potion' })
+  apply(room, a.token, { kind: 'switchBetweenBossRow', row: 3 })
+  apply(room, a.token, { kind: 'readyPendingBoss' })
+  assertEqual(room.run.phase, 'betweenCombat', 'one seat cannot close the shared regrouping window')
+  assertDeepEqual(snapshotFor(room, a.token).betweenCombatReady, [a.playerId])
+  apply(room, b.token, { kind: 'switchBetweenBossRow', row: 2 })
+  assertDeepEqual(snapshotFor(room, a.token).betweenCombatReady, [],
+    'a later row or potion change invalidates earlier readiness')
+  apply(room, a.token, { kind: 'readyPendingBoss' })
+  apply(room, b.token, { kind: 'readyPendingBoss' })
+  const resumed = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.phase, 'combat')
+  assertEqual(room.run.pendingBossDefId, null)
+  assertEqual(resumed.hp, 7, 'the newly gained Blood Potion is usable before boss preparation')
+  assertDeepEqual(resumed.potions, ['energy_potion'])
+  assertEqual(resumed.row, 3)
+  assert(room.run.combat.players.find((player) => player.id === b.playerId).potions.includes('fire_potion'))
+  assert(room.run.combat.enemies.some((enemy) => enemy.defId === 'cultist' && enemy.row === 3),
+    'the chosen row drives the second boss summon placement')
+})
+
+check('a disconnected seat cannot deadlock between-boss readiness', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run = {
+    ...room.run, act: 3, ascension: 13, phase: 'betweenCombat', combat: null,
+    pendingBossDefId: 'time_eater', rewards: [], rewardDestination: null,
+  }
+  markDisconnected(room, b.token)
+  apply(room, a.token, { kind: 'readyPendingBoss' })
+  assertEqual(room.run.phase, 'combat', 'the only connected living seat can continue')
+  joinRoom(room, { token: b.token })
+  const reconnected = snapshotFor(room, b.token)
+  assertEqual(reconnected.run.phase, 'combat')
+  assert(reconnected.run.combat.players.some((player) => player.id === b.playerId),
+    'the returning seat rejoins the prepared second boss')
 })
 
 check('online rewards can be collected in either valid order', () => {
@@ -715,6 +834,29 @@ check('an online seat can use only its own potion with a valid target', () => {
   }
 })
 
+check('Time Warp preserves a copied-card original through reconnect', () => {
+  const { room, a } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const target = room.run.combat.enemies[0]
+  for (const enemy of room.run.combat.enemies) enemy.dead = enemy !== target
+  Object.assign(target, { defId: 'time_eater', hp: 60, maxHp: 60, actionIndex: 2, isBoss: true, dead: false })
+  const strike = { uid: 'time-copy-strike', defId: 'strike_ironclad', upgraded: false }
+  player.hand = [strike]
+  player.energy = 3
+  player.cardsPlayedThisTurn = 2
+  player.potions = ['attack_potion']
+  apply(room, a.token, { kind: 'usePotion', potionId: 'attack_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid })
+  assertDeepEqual(room.run.combat.players.find((candidate) => candidate.id === a.playerId).forcedCardUids, [strike.uid])
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).run.combat.players
+    .find((candidate) => candidate.id === a.playerId).forcedCardUids, [strike.uid])
+  const finished = apply(room, a.token, { kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid })
+  assertEqual(finished.changed, true)
+  assertDeepEqual(room.run.combat.players.find((candidate) => candidate.id === a.playerId).forcedCardUids, [])
+})
+
 check('an online seat can use its between-combat potion without seeing the item deck', () => {
   const { room, a, b } = twoSeatRoom()
   room.run = {
@@ -909,6 +1051,28 @@ check('one Lightning Orb still pauses online when its enemy target is a choice',
   })
   assertEqual(firstEnemy.hp, room.run.combat.enemies[0].hp)
   assertEqual(room.run.combat.enemies[1].hp, secondHp - 1)
+})
+
+check('Frozen Core has no fabricated orb target across reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  owner.orbs = ['frost', 'dark', 'dark']
+  owner.relics.push({ defId: 'frozen_core', spent: false })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const beforeReconnect = snapshotFor(room, a.token)
+  const core = beforeReconnect.endTurnAbilities.find((ability) => ability.label.includes('Frozen Core'))
+  assertEqual(core.targets?.length ?? 0, 0)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).endTurnAbilities, beforeReconnect.endTurnAbilities)
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: beforeReconnect.endTurnOrder,
+  })
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).orbs,
+    ['frost', 'dark', 'dark'])
 })
 
 check('an online Lightning plan with a dynamically dead target stays editable', () => {
@@ -1125,6 +1289,35 @@ check('a draw lock is public to the whole co-op table', () => {
   const seen = snapshotFor(room, b.token).run.combat.players
     .find((player) => player.id === a.playerId)
   assertEqual(seen.drawLocked, true, 'a teammate could not see that further draw effects are blocked')
+})
+
+check('Facing state and its zero-damage penalty survive teammate snapshots and reconnects', () => {
+  const { room, a, b } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  player.facingEnemyUid = 'shield-public'
+  player.damageDealtZeroThisTurn = true
+  const teammate = snapshotFor(room, b.token).run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assertEqual(teammate.facingEnemyUid, 'shield-public')
+  assertEqual(teammate.damageDealtZeroThisTurn, true)
+  joinRoom(room, { token: a.token })
+  const reconnected = snapshotFor(room, a.token).run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assertEqual(reconnected.facingEnemyUid, 'shield-public')
+  assertEqual(reconnected.damageDealtZeroThisTurn, true)
+})
+
+check('Holy Water spending is room-authoritative and reconnect-safe', () => {
+  const { room, a } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  player.holyWaterCubes = 2
+  player.energy = 3
+  const spent = apply(room, a.token, { kind: 'spendHolyWater' }).snapshot.run.combat.players
+    .find((candidate) => candidate.id === a.playerId)
+  assertEqual(spent.energy, 4)
+  assertEqual(spent.holyWaterCubes, 1)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  const reconnected = snapshotFor(room, a.token).run.combat.players.find((candidate) => candidate.id === a.playerId)
+  assertEqual(reconnected.holyWaterCubes, 1)
 })
 
 check('a room validates and publishes an optional row switch atomically with its card', () => {
@@ -1854,6 +2047,41 @@ check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => 
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).poison, 1)
 })
 
+check('Facing is recomputed after start effects and survives coordinator reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const [ann, bo] = room.run.combat.players
+  ann.relics = [{ defId: 'mercury_hourglass', spent: false }]
+  ann.row = 0
+  bo.row = 3
+  room.run.combat.enemies = [
+    { ...room.run.combat.enemies[0], uid: 'shield', defId: 'spire_shield', row: 0, hp: 1, maxHp: 30, dead: false },
+    { ...room.run.combat.enemies[0], uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42, dead: false },
+  ]
+  Object.assign(room.run.combat, { phase: 'start', turn: 2, die: 1, startTurnStage: 'effects' })
+
+  const [hourglass] = snapshotFor(room, a.token).startTurnAbilities
+  apply(room, a.token, {
+    kind: 'resolveStartTurn',
+    choices: [{ id: hourglass.id, enemyUid: 'shield', shivEnemyUids: [] }],
+  })
+  assertEqual(room.run.combat.enemies[0].dead, true)
+  assertEqual(room.run.combat.startTurnStage, 'facing')
+
+  markDisconnected(room, a.token)
+  const reconnected = snapshotFor(room, b.token)
+  assertEqual(reconnected.startTurnCoordinatorId, b.playerId)
+  assert(reconnected.startTurnAbilities.every((ability) =>
+    ability.targets.every((target) => target.uid === 'none' || target.uid === 'spear')))
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: reconnected.startTurnAbilities.map((ability) => ({
+      id: ability.id, enemyUid: ability.targets[0].uid, shivEnemyUids: [],
+    })),
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.players.find((candidate) => candidate.id === b.playerId).facingEnemyUid, 'spear')
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
@@ -2237,6 +2465,19 @@ check('a seat can trade its potion between combats without exposing the item dec
   assertThrows(() => apply(room, b.token, {
     kind: 'tradePotion', potionId: 'fire_potion', toPlayerId: b.playerId,
   }), 'a seat cannot give a potion to itself')
+})
+
+check('Sozu allows using a held Entropic Brew but blocks new potion gains', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.combat = null
+  room.run.phase = 'map'
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  owner.potions = ['entropic_brew', 'fire_potion']
+  owner.relics.push({ defId: 'sozu', spent: false })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'entropic_brew' })
+  assertDeepEqual(owner.potions, ['entropic_brew', 'fire_potion'], 'fixture reference must remain immutable')
+  assertDeepEqual(room.run.players.find((player) => player.id === a.playerId).potions, ['fire_potion'])
+  assertEqual(room.run.itemDecks.potions.at(-1), 'entropic_brew')
 })
 
 check('a disconnected reveal resolves without skipping a third connected player', () => {
@@ -3164,7 +3405,7 @@ check('a player dropping while the table waits does not strand the campfire', ()
   assertEqual(room.run.players[0].hp, 7, 'and Ann gets the rest she chose')
 })
 
-check('a campfire choice must actually be Rest or Smith', () => {
+check('a campfire choice must be Rest, Smith, or an unavoidable no-op', () => {
   // resolveCampfire treats anything that is not exactly 'rest' as a Smith, and
   // a Smith naming no card does nothing — so a near-miss silently burned the
   // seat's only in-act heal.
@@ -3199,6 +3440,42 @@ check('a campfire choice must actually be Rest or Smith', () => {
 
   assertEqual(room.run.phase, 'room', 'and none of that left the campfire')
   assertEqual(room.run.players[0].hp, 4, 'nor healed anyone')
+})
+
+check('a player with no legal campfire action can explicitly do nothing', () => {
+  const { room, a, b } = twoSeatRoom()
+  atCampfire(room)
+  const blocked = room.run.players.find((player) => player.id === a.playerId)
+  blocked.relics.push({ defId: 'coffee_dripper', spent: false })
+  blocked.deck = [
+    ...blocked.deck.map((card) => ({ ...card, upgraded: true })),
+    { uid: 'room-campfire-injury', defId: 'injury', upgraded: false },
+  ]
+  let curseSmith = null
+  try {
+    apply(room, a.token, {
+      kind: 'campfire', choices: { [a.playerId]: { choice: 'smith', cardUid: 'room-campfire-injury' } },
+    })
+  } catch (error) {
+    curseSmith = error
+  }
+  assertEqual(curseSmith?.name, 'RoomError', 'a Curse was accepted as a Smith target')
+  apply(room, a.token, { kind: 'campfire', choices: { [a.playerId]: { choice: 'skip' } } })
+  apply(room, b.token, { kind: 'campfire', choices: { [b.playerId]: { choice: 'rest' } } })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).deck.at(-1).upgraded, false)
+
+  const avoidable = twoSeatRoom()
+  atCampfire(avoidable.room)
+  let refused = null
+  try {
+    apply(avoidable.room, avoidable.a.token, {
+      kind: 'campfire', choices: { [avoidable.a.playerId]: { choice: 'skip' } },
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'an optional skip was accepted')
 })
 
 check('a campfire does not resolve while nobody is connected', () => {
@@ -3267,10 +3544,10 @@ check('a combat in progress cannot be cashed in as a win', () => {
   assertEqual(room.run.players[0].gold, goldBefore, 'and nobody was paid for it')
 })
 
-check('beating the placeholder boss opens the next Act without fake elite rewards', () => {
+check('beating a boss runs the shared Boss Relic draft before the next Act', () => {
   // Without the victory phase the run silently dead-ends after Act 1: the boss
   // room has no exits and advanceAct only accepts a victory.
-  const { room, a } = twoSeatRoom()
+  const { room, a, b } = twoSeatRoom()
   const boss = Object.values(room.run.map.rooms).find((entry) => entry.kind === 'boss')
   assert(boss, 'precondition: the act should end at a boss')
   room.run.phase = 'map'
@@ -3288,13 +3565,219 @@ check('beating the placeholder boss opens the next Act without fake elite reward
       cardReward: null,
     })),
   }
+  room.run.itemDecks.bossRelics = [
+    'ectoplasm', 'sozu', 'coffee_dripper',
+    ...room.run.itemDecks.bossRelics.filter((id) => !['ectoplasm', 'sozu', 'coffee_dripper'].includes(id)),
+  ]
 
   apply(room, a.token, { kind: 'resolveCombat' })
-  assertEqual(room.run.phase, 'victory', 'an elite stand-in must not grant invented boss rewards')
+  assertEqual(room.run.phase, 'reward')
+  assertEqual(room.run.rewards.length, 2)
+  assertEqual(room.run.rewards[0].relicChoices.length, 3, 'two players reveal player count plus one')
+  assertDeepEqual(room.run.rewards[0].relicChoices, room.run.rewards[1].relicChoices,
+    'the Boss Relics are one shared face-up row')
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, 0,
+    'boss Gold waits for an explicit reward choice')
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  const rare = room.run.rewards.find((offer) => offer.playerId === a.playerId).choices[0]
+
+  const safe = room.run.rewards[0].relicChoices.filter((id) => !['calling_bell', 'enchiridion', 'orrery', 'tiny_house'].includes(id))
+  const [first, second] = safe
+  assert(first && second, 'seeded draft needs two relics without follow-up rewards')
+  const firstCards = bossRelicCardChoice(room.run.players.find((player) => player.id === a.playerId), first)
+  const secondCards = bossRelicCardChoice(room.run.players.find((player) => player.id === b.playerId), second)
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: 0, potionRecipientId: null, discardPotionId: null, relicId: first,
+    goldTiming: 'after',
+    relicCardUids: firstCards.cards.slice(0, firstCards.count).map((card) => card.uid),
+  } })
+  apply(room, b.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: second,
+    goldTiming: 'before',
+    relicCardUids: secondCards.cards.slice(0, secondCards.count).map((card) => card.uid),
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.phase, 'victory')
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, 0,
+    'taking Ectoplasm before Gold blocks that reward')
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).gold, 3,
+    'a player may take boss Gold before their Relic')
+  assert(room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.defId === rare),
+    'the chosen rare card reward joins the deck')
 
   apply(room, a.token, { kind: 'advanceAct' })
   assertEqual(room.run.act, 2, 'and the next Act begins')
   assertEqual(room.run.phase, 'map', 'back on a fresh map')
+})
+
+check('Calling Bell reveals mandatory Relics and preserves their choices across reconnect', () => {
+  const { room, a } = twoSeatRoom()
+  room.run = {
+    ...room.run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'map',
+    itemDecks: {
+      ...room.run.itemDecks,
+      relics: ['war_paint', 'whetstone', 'omamori',
+        ...room.run.itemDecks.relics.filter((id) => !['war_paint', 'whetstone', 'omamori'].includes(id))],
+      bossRelics: room.run.itemDecks.bossRelics.filter((id) => id !== 'calling_bell'),
+    },
+    rewards: [{
+      playerId: a.playerId, choices: [], upgraded: false, hasCard: false, hasPotion: false,
+      potionId: null, hasRelic: true, relicChoices: ['calling_bell'], bossRelic: true,
+    }],
+  }
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: 'calling_bell', relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.rewards[0].requiredRelic, true)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.rewards[0].remainingRelicRewards, 3)
+  apply(room, a.token, { kind: 'cardReward', choice: 'revealRelic' })
+  let skipped = null
+  try {
+    apply(room, a.token, { kind: 'cardReward', choice: {
+      card: null, potionRecipientId: null, discardPotionId: null, relicId: null, relicCardUids: [],
+    } })
+  } catch (error) {
+    skipped = error
+  }
+  assertEqual(skipped?.name, 'RoomError', 'a mandatory Calling Bell Relic cannot be skipped')
+  const player = room.run.players.find((candidate) => candidate.id === a.playerId)
+  const requirement = bossRelicCardChoice(player, 'war_paint')
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: 'war_paint',
+    relicCardUids: requirement.cards.slice(0, requirement.count).map((card) => card.uid),
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.players.find((candidate) => candidate.id === a.playerId)
+    .deck.filter((card) => card.upgraded).length, 2)
+  assertEqual(room.run.itemDecks.relics.at(-1), 'war_paint')
+  for (const relicId of ['whetstone', 'omamori']) {
+    apply(room, a.token, { kind: 'cardReward', choice: 'revealRelic' })
+    const currentPlayer = room.run.players.find((candidate) => candidate.id === a.playerId)
+    const nextRequirement = bossRelicCardChoice(currentPlayer, relicId)
+    apply(room, a.token, { kind: 'cardReward', choice: {
+      card: null, potionRecipientId: null, discardPotionId: null, relicId,
+      relicCardUids: nextRequirement.cards.slice(0, nextRequirement.count).map((card) => card.uid),
+    } })
+    apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  }
+  assertEqual(room.run.players.find((candidate) => candidate.id === a.playerId)
+    .deck.some((card) => CARDS[card.defId]?.owner === 'curse'), false,
+  'the third Relic is gained before Calling Bell attempts its Curse')
+})
+
+check('a gained boss rare remains a legal immediate-Relic target across reconnect', () => {
+  const { room, a } = twoSeatRoom()
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  owner.rareRewards = ['fiend_fire', 'demon_form', 'bludgeon']
+  room.run = {
+    ...room.run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'victory',
+    itemDecks: {
+      ...room.run.itemDecks,
+      bossRelics: room.run.itemDecks.bossRelics.filter((id) => id !== 'astrolabe'),
+    },
+    rewards: [{
+      playerId: a.playerId, choices: ['fiend_fire', 'demon_form', 'bludgeon'], upgraded: false,
+      hasCard: true, hasPotion: false, potionId: null, hasRelic: true,
+      relicChoices: ['astrolabe'], bossRelic: true, rare: true,
+    }],
+  }
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: 0, potionRecipientId: null, discardPotionId: null,
+    relicId: 'astrolabe', relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  const gained = room.run.players.find((player) => player.id === a.playerId)
+    .deck.find((card) => card.defId === 'fiend_fire')
+  assertEqual(room.run.rewards[0].relicEffectId, 'astrolabe')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.rewards[0].relicEffectId, 'astrolabe')
+  const requirement = bossRelicCardChoice(
+    room.run.players.find((player) => player.id === a.playerId), 'astrolabe')
+  const picked = [gained, ...requirement.cards.filter((card) => card.uid !== gained.uid)]
+    .slice(0, requirement.count).map((card) => card.uid)
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: null, relicCardUids: picked,
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assert(room.run.players.find((player) => player.id === a.playerId)
+    .deck.find((card) => card.uid === gained.uid).upgraded)
+})
+
+check('Tiny House upgrades after its reconnect-safe card and potion reward', () => {
+  const { room, a, b } = twoSeatRoom()
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  owner.cardRewards = ['anger', ...owner.cardRewards.filter((id) => id !== 'anger')]
+  room.run = {
+    ...room.run,
+    phase: 'reward',
+    combat: null,
+    rewardDestination: 'map',
+    itemDecks: {
+      ...room.run.itemDecks,
+      potions: [...room.run.combat.potionSupply],
+      bossRelics: room.run.itemDecks.bossRelics.filter((id) => id !== 'tiny_house'),
+    },
+    rewards: [{
+      playerId: a.playerId, choices: [], upgraded: false, hasCard: false, hasPotion: false,
+      potionId: null, hasRelic: true, relicChoices: ['tiny_house'], bossRelic: true,
+    }],
+  }
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null, relicId: 'tiny_house', relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'revealPotion' })
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: 0, potionRecipientId: b.playerId, discardPotionId: null, relicId: null, relicCardUids: [],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.rewards[0].tinyHouseUpgrade, true)
+  const gained = room.run.players.find((player) => player.id === a.playerId).deck.at(-1)
+  assertEqual(gained.defId, 'anger')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.rewards[0].tinyHouseUpgrade, true)
+  apply(room, a.token, { kind: 'cardReward', choice: {
+    card: null, potionRecipientId: null, discardPotionId: null,
+    relicId: null, relicCardUids: [gained.uid],
+  } })
+  apply(room, a.token, { kind: 'cardReward', choice: 'collect' })
+  assertEqual(room.run.players.find((player) => player.id === a.playerId)
+    .deck.find((card) => card.uid === gained.uid).upgraded, true)
+})
+
+check('room authority rejects advancing beyond the Heart', () => {
+  const { room, a } = twoSeatRoom()
+  const boss = Object.values(room.run.map.rooms).find((entry) => entry.kind === 'boss')
+  room.run = {
+    ...room.run,
+    act: 4,
+    phase: 'victory',
+    map: {
+      ...room.run.map,
+      act: 4,
+      position: boss.id,
+      rooms: { ...room.run.map.rooms, [boss.id]: { ...boss, visited: true } },
+    },
+  }
+  const before = room.run
+  const result = apply(room, a.token, { kind: 'advanceAct' })
+  assertEqual(result.changed, false)
+  assert(room.run === before, 'the rejected action leaves authoritative state untouched')
 })
 
 check('two unseeded runs are not the same run', () => {

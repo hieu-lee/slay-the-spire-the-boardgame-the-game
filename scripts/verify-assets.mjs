@@ -156,12 +156,13 @@ check('the enemy art table covers every enemy', () => {
   assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
 })
 
-// EnemyCard renders /assets/enemies/<defId>.webp. A missing file is served by
+// EnemyCard renders /assets/enemies/<artId ?? defId>.webp. A missing file is served by
 // Vite's SPA fallback as 200 + HTML, so it renders as a black box rather than
 // a broken image — nothing in the running app complains about it.
 check('every enemy the game can spawn has a portrait', () => {
   if (enemyFiles.length === 0) return // not synced
-  const missing = Object.keys(ENEMIES).filter((defId) => !enemyFiles.includes(`${defId}.webp`))
+  const missing = Object.values(ENEMIES).filter((def) =>
+    !enemyFiles.includes(`${def.artId ?? def.id}.webp`)).map((def) => def.id)
   assert(
     missing.length === 0,
     `enemies with no portrait — re-run \`pnpm sync:enemy-art\`: ${missing.join(', ')}`,
