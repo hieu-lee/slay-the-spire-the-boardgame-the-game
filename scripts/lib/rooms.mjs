@@ -28,6 +28,7 @@ import {
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
+  discardOrderIsValid,
   endTurnAbilities,
   endTurnChoiceId,
   endTurnChoiceTarget,
@@ -641,13 +642,10 @@ function submitDiscard(room, seat, action, seatToken) {
   if (!combat || combat.phase !== 'discard') fail('The party is not ordering discards')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
   if (!player || player.dead) fail('This seat cannot discard')
-  if (!Array.isArray(action.discardOrder) || action.discardOrder.length !== player.hand.length ||
+  if (!Array.isArray(action.discardOrder) || action.discardOrder.length > player.hand.length ||
       action.discardOrder.some((uid) => typeof uid !== 'string')) fail('Discard order must match your hand')
   const order = [...action.discardOrder]
-  const hand = new Set(player.hand.map((card) => card.uid))
-  if (new Set(order).size !== hand.size || order.some((uid) => !hand.has(uid))) {
-    fail('Discard order must contain each card in your hand exactly once')
-  }
+  if (!discardOrderIsValid(player, order)) fail('Discard order may omit only cards this player can Retain')
   room.endTurnOrders = { ...room.endTurnOrders, [seat.playerId]: order }
   room.version += 1
   const waiting = settleDiscard(room)
@@ -1260,6 +1258,7 @@ function redactPlayer(player, viewerId) {
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
+    retainCardsThisTurn: player.retainCardsThisTurn ?? 0,
     cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     shivs: player.shivs,

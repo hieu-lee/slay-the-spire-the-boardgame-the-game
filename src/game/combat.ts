@@ -141,6 +141,11 @@ function findPlayer(state: CombatState, playerId: string): Player | undefined {
   return state.players.find((player) => player.id === playerId)
 }
 
+function rowExists(state: CombatState, row: unknown): row is number {
+  return Number.isInteger(row) && (state.players.some((player) => player.row === row) ||
+    state.enemies.some((enemy) => !enemy.isBoss && enemy.row === row))
+}
+
 /** Enemies a scope resolves to. A row always includes the boss (p.15). */
 export function resolveEnemyTargets(
   state: CombatState,
@@ -965,6 +970,11 @@ function applyEffect(
     case 'doubleNextAttack': {
       actor.doubledAttacksThisTurn = (actor.doubledAttacksThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack will be played twice`)
+      return
+    }
+    case 'retainAtEndOfTurn': {
+      actor.retainCardsThisTurn = (actor.retainCardsThisTurn ?? 0) + effect.amount
+      note(`${actor.name} may Retain ${effect.amount} card${effect.amount === 1 ? '' : 's'} this turn`)
       return
     }
     case 'limitRoundHpLoss': {
@@ -2382,9 +2392,7 @@ export function activatePower(
   const def = faceOf(cardDef(held.defId), held.upgraded)
   if (!def.activeAbility || !def.oncePerTurn || powerAbilityUsed(state, playerId, powerUid)) return state
   if (def.target === 'row') {
-    if (!Number.isInteger(context.enemyRow) || !state.players.some((seat) => seat.row === context.enemyRow)) {
-      return state
-    }
+    if (!rowExists(state, context.enemyRow)) return state
   } else if (cardNeedsEnemy(def, player, true, undefined, true) &&
     resolveEnemyTargets(state, def.target ?? 'enemy', context.enemyUid ?? null).length === 0) return state
 
@@ -2451,6 +2459,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
     player.doubledAttacksThisTurn = 0
+    player.retainCardsThisTurn = 0
     player.cardsPlayedThisTurn = 0
     player.attacksPlayedThisTurn = 0
   }
@@ -3033,6 +3042,16 @@ export function beginEndPlayerTurn(
   return settle(next)
 }
 
+/** Whether an ordered discard may omit the cards Equilibrium lets this player Retain. */
+export function discardOrderIsValid(player: Player, order: readonly string[]): boolean {
+  const hand = new Set(player.hand.map((card) => card.uid))
+  if (new Set(order).size !== order.length || order.some((uid) => !hand.has(uid))) return false
+  const ordered = new Set(order)
+  const optionallyRetained = player.hand.filter((card) =>
+    !ordered.has(card.uid) && !card.endTurnProtected && !faceOf(cardDef(card.defId), card.upgraded).retain)
+  return optionallyRetained.length <= (player.retainCardsThisTurn ?? 0)
+}
+
 /** End of Turn: resolve effects, then discard every hand in chosen order. */
 export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders = {}): CombatState {
   if (state.phase !== 'player' && state.phase !== 'discard') return state
@@ -3046,25 +3065,31 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
   for (const player of prepared.players) {
     const order = discardOrders[player.id]
     if (!order) continue
-    const hand = new Set(player.hand.map((card) => card.uid))
-    if (order.length !== hand.size || new Set(order).size !== hand.size || order.some((uid) => !hand.has(uid))) {
-      return prepared
-    }
+    if (!discardOrderIsValid(player, order)) return prepared
   }
   const next = clone(prepared)
   for (const player of next.players) {
     if (player.dead) continue
     const held = player.hand.length
     const order = discardOrders[player.id]
-    const hand = order ? order.map((uid) => player.hand.find((card) => card.uid === uid)!) : player.hand
+    const ordered = new Set(order ?? player.hand.map((card) => card.uid))
+    const hand = order
+      ? [...order.map((uid) => player.hand.find((card) => card.uid === uid)!),
+        ...player.hand.filter((card) => !ordered.has(card.uid))]
+      : player.hand
+    const chosenRetain = new Set(player.hand
+      .filter((card) => !ordered.has(card.uid) && !card.endTurnProtected &&
+        !faceOf(cardDef(card.defId), card.upgraded).retain)
+      .map((card) => card.uid))
     const keep = hand
-      .filter((held) => held.endTurnProtected || faceOf(cardDef(held.defId), held.upgraded).retain)
+      .filter((held) => chosenRetain.has(held.uid) || held.endTurnProtected ||
+        faceOf(cardDef(held.defId), held.upgraded).retain)
       .map((held) => held.uid)
     const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
     player.hand = piles.hand.map((held) => {
       const clean = forgetRetain({ ...held, endTurnProtected: undefined })
-      return faceOf(cardDef(held.defId), held.upgraded).retain
+      return chosenRetain.has(held.uid) || faceOf(cardDef(held.defId), held.upgraded).retain
         ? { ...clean, retainedLastTurn: true }
         : clean
     })
@@ -3073,6 +3098,7 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
     if (discarded > 0) {
       next.log = [...next.log, `${player.name} discards ${discarded} at end of turn`]
     }
+    player.retainCardsThisTurn = 0
   }
 
   next.phase = 'enemy'
@@ -3543,6 +3569,7 @@ export function createCombat(
       hpLossLimitThisRound: undefined,
       freeCardsThisTurn: 0,
       doubledAttacksThisTurn: 0,
+      retainCardsThisTurn: 0,
       cardsPlayedThisTurn: 0,
       attacksPlayedThisTurn: 0,
       shivDamageBonus: 0,
@@ -3611,9 +3638,7 @@ export function activatePotion(
   const def = potionDef(potionId)
   const target = def.target ?? 'enemy'
   if (def.target === 'row') {
-    if (!Number.isInteger(context.enemyRow) || !state.players.some((seat) => seat.row === context.enemyRow)) {
-      return state
-    }
+    if (!rowExists(state, context.enemyRow)) return state
   } else if (def.target && resolveEnemyTargets(state, target, context.enemyUid ?? null).length === 0) {
     return state
   }

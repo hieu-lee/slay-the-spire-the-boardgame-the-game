@@ -2219,7 +2219,12 @@ try {
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
   liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
     .push({ uid: 'online-order-shame', defId: 'shame', upgraded: false })
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').block = 1
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
+    .push({ uid: 'online-equilibrium-retain', defId: 'reinforced_body', upgraded: false })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), {
+    block: 1,
+    retainCardsThisTurn: 1,
+  })
   liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
     .push({ uid: 'online-order-decay', defId: 'decay', upgraded: false })
   const aCredentials = await credentials(a)
@@ -2306,6 +2311,8 @@ try {
       `Decay log ${decay}, Shame log ${shame}: ${JSON.stringify(afterEndTurnRace.run.combat.log)}`)
   })
   const aDiscardTop = a.getByLabel('Top discard for Ann')
+  const retainReinforcedBody = a.getByRole('button', { name: /Retain Reinforced Body$/ })
+  await retainReinforcedBody.click()
   if (await aDiscardTop.count()) await aDiscardTop.selectOption({ index: 0 })
   const selectedDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''
   await a.getByRole('button', { name: /^Confirm Ann/ }).click()
@@ -2314,9 +2321,13 @@ try {
   await a.reload({ waitUntil: 'networkidle' })
   await a.locator('.app-shell--online .combat[data-phase="discard"]').waitFor()
   const restoredDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''
-  check('refresh restores this seat\'s private discard order', () => {
+  const restoredRetain = await retainReinforcedBody.getAttribute('aria-pressed')
+  check('refresh restores this seat\'s private discard and Retain choices', () => {
     assertEqual(savedDiscard.discardOrder?.at(-1) ?? '', selectedDiscardTop)
+    assert(!savedDiscard.discardOrder?.includes('online-equilibrium-retain'),
+      'the retained card was sent in the discard order')
     assertEqual(restoredDiscardTop, selectedDiscardTop)
+    assertEqual(restoredRetain, 'true')
   })
   await b.getByRole('button', { name: /^Confirm Bo/ }).click()
   await Promise.all([
@@ -2326,7 +2337,10 @@ try {
   const enemyTurn = await snapshot(a)
   const enemyTurnPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
   check('each seat independently confirms the shared end of turn', () => {
-    assert(enemyTurn.run.combat.players.every((player) => player.handCount === 0))
+    const ann = enemyTurn.run.combat.players.find((player) => player.id === enemyTurn.you.playerId)
+    const bo = enemyTurn.run.combat.players.find((player) => player.id !== enemyTurn.you.playerId)
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-equilibrium-retain'])
+    assertEqual(bo.handCount, 0)
     assertEqual(enemyTurn.run.combat.phase, 'enemy')
   })
   check('face-up potion summaries remain visible outside the Player Turn', () => {

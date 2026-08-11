@@ -1148,6 +1148,13 @@ button:disabled {
   max-width: 9rem;
 }
 
+.retain-options {
+  display: inline-flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .end-turn-order {
   position: relative;
   color: var(--ink-dim);

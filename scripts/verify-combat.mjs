@@ -2236,6 +2236,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'static_discharge', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'amplify', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'recycle', energy: [E - 1, E] },
+    { id: 'equilibrium', block: [3, 4], energy: [E - 2, E - 2] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -4446,6 +4447,39 @@ check('Recycle gains the exhausted card cost and doubles Energy for X', () => {
   assertDeepEqual(doubled.players[0].exhaust.map((card) => card.uid), [xCost.uid])
 })
 
+check('Equilibrium grants Block and chooses Retained cards during the discard step', () => {
+  for (const upgraded of [false, true]) {
+    const equilibrium = instance('equilibrium', upgraded)
+    const first = instance('strike_defect')
+    const retained = instance('defend_defect')
+    const secondRetained = instance('zap')
+    const hand = upgraded ? [equilibrium, first, retained, secondRetained] : [equilibrium, first, retained]
+    const played = playCard(combat([makePlayer({
+      character: 'defect', hand, energy: 2,
+    })], [makeEnemy()]), 'p1', equilibrium.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, upgraded ? 4 : 3)
+    assertEqual(played.players[0].retainCardsThisTurn, upgraded ? 2 : 1)
+
+    const ended = endPlayerTurn(played, { p1: [first.uid] })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid),
+      upgraded ? [retained.uid, secondRetained.uid] : [retained.uid])
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true),
+      'Equilibrium retention must count as Retain on the next turn')
+    assertDeepEqual(ended.players[0].discard.map((card) => card.uid), [equilibrium.uid, first.uid])
+    assertEqual(ended.players[0].retainCardsThisTurn, 0)
+  }
+
+  const equilibrium = instance('equilibrium')
+  const first = instance('strike_defect')
+  const second = instance('defend_defect')
+  const played = playCard(combat([makePlayer({
+    character: 'defect', hand: [equilibrium, first, second], energy: 2,
+  })], [makeEnemy()]), 'p1', equilibrium.uid, { enemyUid: null, playerId: null })
+  const refused = endPlayerTurn(played, { p1: [] })
+  assertEqual(refused.phase, 'discard')
+  assertEqual(refused.players[0].hand.length, 2, 'base Equilibrium cannot Retain two cards')
+})
+
 check('Collector Claws gain one shared combat cube before dealing scaled damage', () => {
   const first = instance('claw_claw_pack')
   const second = instance('claw_claw_pack')
@@ -5865,6 +5899,13 @@ check('Explosive Potion damages only the chosen row and its boss', () => {
   const used = activatePotion(state, 'p1', 'explosive_potion', { enemyRow: 1 })
   assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6, 4, 4])
   assertEqual(used.players[0].potions.length, 0)
+
+  const enemyOnlyRow = combat(
+    [makePlayer({ potions: ['explosive_potion'] })],
+    [makeEnemy({ uid: 'distant', row: 2, hp: 6, maxHp: 6 })],
+  )
+  const distant = activatePotion(enemyOnlyRow, 'p1', 'explosive_potion', { enemyRow: 2 })
+  assertEqual(distant.enemies[0].hp, 4, 'an enemy-only board row remains a legal row target')
 })
 
 check('Flex Potion still loses its printed Strength when the gain hits the cap', () => {

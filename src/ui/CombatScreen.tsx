@@ -467,6 +467,7 @@ export function CombatScreen({
   const [usingPower, setUsingPower] = useState(false)
   const [usingCard, setUsingCard] = useState(false)
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
+  const [retainedCards, setRetainedCards] = useState<Record<string, string[]>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
   const [endTurnError, setEndTurnError] = useState('')
@@ -792,6 +793,7 @@ export function CombatScreen({
   useEffect(() => {
     if (state.phase !== 'discard') {
       setDiscardTops({})
+      setRetainedCards({})
       setDiscardOrders({})
     }
     if (state.phase !== 'player') setEndTurnOrder([])
@@ -822,6 +824,11 @@ export function CombatScreen({
   useEffect(() => {
     if (state.phase !== 'discard' || !savedDiscardOrder) return
     setDiscardOrders({ [viewerId]: savedDiscardOrder })
+    const ordered = new Set(savedDiscardOrder)
+    setRetainedCards({
+      [viewerId]: viewer?.hand.filter((card) => !ordered.has(card.uid) && !card.endTurnProtected &&
+        !faceOf(cardDef(card.defId), card.upgraded).retain).map((card) => card.uid) ?? [],
+    })
     const top = savedDiscardOrder.at(-1)
     if (top) setDiscardTops({ [viewerId]: top })
   }, [savedDiscardKey, state.phase, viewerId])
@@ -937,9 +944,15 @@ export function CombatScreen({
     : livingPlayers.filter((player) => discardOrders[player.id]).length
   const discardableHand = viewer.hand.filter((card) =>
     !card.endTurnProtected && !faceOf(cardDef(card.defId), card.upgraded).retain)
-  const viewerDiscardTop = discardTops[viewer.id] && discardableHand.some((card) => card.uid === discardTops[viewer.id])
+  const retainAllowance = viewer.retainCardsThisTurn ?? 0
+  const viewerRetainedCards = (retainedCards[viewer.id] ?? [])
+    .filter((uid) => discardableHand.some((card) => card.uid === uid))
+    .slice(0, retainAllowance)
+  const retainedSet = new Set(viewerRetainedCards)
+  const discardCandidates = discardableHand.filter((card) => !retainedSet.has(card.uid))
+  const viewerDiscardTop = discardTops[viewer.id] && discardCandidates.some((card) => card.uid === discardTops[viewer.id])
     ? discardTops[viewer.id]
-    : discardableHand.at(-1)?.uid ?? ''
+    : discardCandidates.at(-1)?.uid ?? ''
   const abilities = onAction ? (partyEndTurnAbilities ?? []) : endTurnAbilities(state)
   const defaultOrder = defaultEndTurnOrder(abilities)
   const viewerEndTurnOrder = validEndTurnOrder(abilities, endTurnOrder)
@@ -1115,12 +1128,13 @@ export function CombatScreen({
       return
     }
     const selected = discardTops[viewer.id]
-    const top = selected && discardableHand.some((card) => card.uid === selected)
+    const top = selected && discardCandidates.some((card) => card.uid === selected)
       ? selected
-      : discardableHand.at(-1)?.uid
+      : discardCandidates.at(-1)?.uid
+    const cardsToDiscard = viewer.hand.filter((card) => !retainedSet.has(card.uid))
     const order = top
-      ? [...viewer.hand.filter((card) => card.uid !== top), viewer.hand.find((card) => card.uid === top)!]
-      : viewer.hand
+      ? [...cardsToDiscard.filter((card) => card.uid !== top), viewer.hand.find((card) => card.uid === top)!]
+      : cardsToDiscard
     const orders = { ...discardOrders, [viewer.id]: order.map((card) => card.uid) }
     if (onAction) {
       onAction({ kind: 'discardHand', discardOrder: orders[viewer.id] })
@@ -1958,7 +1972,26 @@ export function CombatScreen({
                     : 'Use Miracle (+1 Energy)'}
                 </button>
               ) : null}
-              {state.phase === 'discard' && discardableHand.length > 1 ? (
+              {state.phase === 'discard' && retainAllowance > 0 && discardableHand.length > 0 ? (
+                <span className="retain-options" role="group"
+                  aria-label={`Retain up to ${retainAllowance} cards for ${viewer.name}`}>
+                  {discardableHand.map((card) => {
+                    const retained = retainedSet.has(card.uid)
+                    const name = faceOf(cardDef(card.defId), card.upgraded).name
+                    return <button key={card.uid} type="button" aria-pressed={retained}
+                      disabled={!retained && viewerRetainedCards.length >= retainAllowance}
+                      onClick={() => setRetainedCards((current) => ({
+                        ...current,
+                        [viewer.id]: retained
+                          ? viewerRetainedCards.filter((uid) => uid !== card.uid)
+                          : [...viewerRetainedCards, card.uid],
+                      }))}>
+                      {retained ? '✓ ' : ''}Retain {name}
+                    </button>
+                  })}
+                </span>
+              ) : null}
+              {state.phase === 'discard' && discardCandidates.length > 1 ? (
                 <label className="discard-order">
                   Top discard
                   <select
@@ -1969,7 +2002,7 @@ export function CombatScreen({
                       [viewer.id]: event.target.value,
                     }))}
                   >
-                    {discardableHand.map((card) => {
+                    {discardCandidates.map((card) => {
                       const def = faceOf(cardDef(card.defId), card.upgraded)
                       return <option key={card.uid} value={card.uid}>{`${def.unplayable ? '—' : cardCost(def, viewer.powers, viewer.lostHpThisCombat)} · ${def.name}`}</option>
                     })}

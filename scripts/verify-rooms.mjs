@@ -756,14 +756,19 @@ check('a malformed online discard order is refused as a room error', () => {
   const { room, a, b } = twoSeatRoom()
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  let error = null
-  try {
-    apply(room, a.token, { kind: 'discardHand', discardOrder: 'not-a-list' })
-  } catch (thrown) {
-    error = thrown
+  for (const discardOrder of [
+    'not-a-list',
+    Array.from({ length: room.run.combat.players[0].hand.length + 1 }, (_, index) => `oversized-${index}`),
+  ]) {
+    let error = null
+    try {
+      apply(room, a.token, { kind: 'discardHand', discardOrder })
+    } catch (thrown) {
+      error = thrown
+    }
+    assert(error, 'the malformed action should be refused')
+    assertEqual(error.name, 'RoomError', `got ${error?.name}: ${error?.message}`)
   }
-  assert(error, 'the malformed action should be refused')
-  assertEqual(error.name, 'RoomError', `got ${error?.name}: ${error?.message}`)
 })
 
 check('an unbounded hand can submit its full discard order online', () => {
@@ -2565,6 +2570,44 @@ check('Recycle authoritatively gains Energy from its chosen Exhaust', () => {
   const resolved = room.run.combat.players.find((player) => player.id === actor.id)
   assertEqual(resolved.energy, 4)
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), [fuel.uid])
+})
+
+check('Equilibrium Retain choices are authoritative, private, and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const equilibrium = { uid: 'room-equilibrium', defId: 'equilibrium', upgraded: false }
+  const discarded = { uid: 'room-equilibrium-discard', defId: 'strike_ironclad', upgraded: false }
+  const retained = { uid: 'room-equilibrium-retain', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [equilibrium, discarded, retained], discard: [], energy: 2, block: 0 })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: equilibrium.uid, preflight: true })
+  assertEqual(snapshotFor(room, a.token).run.combat.players
+    .find((player) => player.id === actor.id).retainCardsThisTurn, 1)
+  assertEqual(snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === actor.id).retainCardsThisTurn, 1)
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+
+  let overRetained = null
+  try { apply(room, a.token, { kind: 'discardHand', discardOrder: [] }) } catch (error) { overRetained = error }
+  assertEqual(overRetained?.name, 'RoomError', 'base Equilibrium retained more than one card')
+
+  const discardOrder = [discarded.uid]
+  apply(room, a.token, { kind: 'discardHand', discardOrder })
+  assertDeepEqual(snapshotFor(room, a.token).discardOrder, discardOrder)
+  assertEqual(snapshotFor(room, b.token).discardOrder, undefined, 'another seat saw the private Retain choice')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, rejoined.token).discardOrder, discardOrder,
+    'reconnect lost the omitted card that encodes Equilibrium Retain')
+
+  apply(room, b.token, { kind: 'discardHand', discardOrder: other.hand.map((card) => card.uid) })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [retained.uid])
+  assertEqual(resolved.hand[0].retainedLastTurn, true)
+  assertEqual(resolved.retainCardsThisTurn, 0)
 })
 
 check('Collector Claw cubes stay authoritative and public to the party', () => {

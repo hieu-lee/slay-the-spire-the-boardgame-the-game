@@ -38,6 +38,8 @@ const base = `http://localhost:${address.port}`
 
 const browser = await chromium.launch({ headless: !headed })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+page.setDefaultTimeout(10_000)
+page.setDefaultNavigationTimeout(30_000)
 
 const consoleErrors = []
 const pageErrors = []
@@ -67,7 +69,7 @@ async function shot(label) {
     )
     .catch(() => {})
   const file = join(outDir, `${label}.png`)
-  await page.screenshot({ path: file, fullPage: true })
+  await page.screenshot({ path: file, fullPage: true, timeout: 15_000 })
   const state = await page.evaluate(() => window.__STS_DEBUG__.getState())
   writeFileSync(join(outDir, `${label}.state.json`), JSON.stringify(state, null, 2))
   shots.push(label)
@@ -1961,6 +1963,49 @@ check('Recycle+ visibly Exhausts an X-cost card and doubles current Energy', () 
   assertDeepEqual(recycled.players[0].exhaust.map((card) => card.uid), ['ui-recycle-fuel'])
 })
 await shot('06zphgi-recycle-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [
+      { uid: 'ui-equilibrium', defId: 'equilibrium', upgraded: true },
+      { uid: 'ui-equilibrium-strike', defId: 'strike_defect', upgraded: false },
+      { uid: 'ui-equilibrium-defend', defId: 'defend_defect', upgraded: false },
+      { uid: 'ui-equilibrium-zap', defId: 'zap', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, block: 0, cardBlockBonus: 0,
+    orbs: [null, null, null],
+    retainCardsThisTurn: 0,
+  })
+  run.combat.players = [actor]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const equilibriumCard = page.getByRole('button', { name: /^Equilibrium\+, cost 2,/ })
+const equilibriumLabel = await equilibriumCard.getAttribute('aria-label')
+await shot('06zphgia-equilibrium-ready')
+await equilibriumCard.click()
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await page.getByRole('button', { name: 'Retain Defend' }).click()
+await page.getByRole('button', { name: 'Retain Zap' }).click()
+await shot('06zphgib-equilibrium-retain-choice')
+await page.getByRole('button', { name: /Confirm Defect/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+const equilibrated = await readState()
+check('Equilibrium+ visibly retains two end-of-turn choices and marks their history', () => {
+  assert(equilibriumLabel.includes('gain 4 Block'), equilibriumLabel)
+  assert(equilibriumLabel.includes('may retain 2 cards this turn'), equilibriumLabel)
+  assertEqual(equilibrated.players[0].block, 4)
+  assertDeepEqual(equilibrated.players[0].hand.map((card) => card.uid),
+    ['ui-equilibrium-defend', 'ui-equilibrium-zap'])
+  assert(equilibrated.players[0].hand.every((card) => card.retainedLastTurn === true),
+    'the retained cards need their next-turn history')
+  assertEqual(equilibrated.players[0].retainCardsThisTurn, 0)
+})
+await shot('06zphgic-equilibrium-resolved')
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
@@ -4137,17 +4182,22 @@ await shot('07zd-defect-storm-orb-choice')
 await page.getByRole('button', { name: 'dark slot 3' }).click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('target for the Evoked Orb'))
 await shot('07ze-defect-storm-dark-target')
-const stormTarget = (await readState()).enemies.find((enemy) => enemy.defId === 'jaw_worm')
-assert(stormTarget, 'Storm browser fixture needs its Jaw Worm target')
-await page.getByRole('button', { name: /Jaw Worm/ }).click()
+const stormTargetState = await readState()
+const stormTargetButton = page.locator('.enemy--targeted').first()
+await stormTargetButton.click()
 await page.getByRole('button', { name: 'frost slot 1' }).click()
 await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
 const stormResolved = await readState()
+const stormTarget = stormResolved.enemies.find((enemy) => {
+  const before = stormTargetState.enemies.find((candidate) => candidate.uid === enemy.uid)
+  return before && enemy.hp < before.hp
+})
 check('Storm+ resolves sequential chosen Orb slots and separate Dark target', () => {
+  assert(stormTarget, 'Storm browser fixture needs its chosen target')
   assertDeepEqual(stormResolved.players[0].orbs, ['lightning', 'lightning', 'lightning'])
   assertEqual(stormResolved.players[0].block, 1)
-  assertEqual(stormResolved.enemies.find((enemy) => enemy.uid === stormTarget.uid).hp, 16)
+  assertEqual(stormTarget.hp, 16)
   assert(stormResolved.enemies.filter((enemy) => enemy.uid !== stormTarget.uid)
     .every((enemy) => enemy.hp === 20))
 })
@@ -4173,6 +4223,11 @@ await page.evaluate(() => {
       uid: `ui-storm-lethal-${ally.id}-${index}`, defId: 'defend_ironclad', upgraded: false,
     })) })
   }
+  const source = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...source, uid: 'storm-lethal-jaw', defId: 'jaw_worm', row: 0, poison: 0, isBoss: false },
+    { ...source, uid: 'storm-lethal-cultist', defId: 'cultist', row: 1, poison: 0, isBoss: false },
+  ]
   for (const enemy of run.combat.enemies) {
     Object.assign(enemy, {
       hp: enemy.defId === 'jaw_worm' ? 2 : 10,
@@ -4324,7 +4379,8 @@ check('a lethal overflow Shiv skips later Storm choices', () => {
   assertEqual(skippedPostLethalShivStorm, 0)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeStorm)
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
+await page.waitForFunction((enemyUid) => window.__STS_DEBUG__.getState().enemies[0]?.uid === enemyUid,
+  runBeforeStorm.combat.enemies[0].uid)
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -4446,6 +4502,8 @@ await page.locator('.prompt').evaluate(async (element) => {
 })
 await shot('05h-explosive-potion-row-targeting')
 await page.getByRole('button', { name: `Target row ${explosiveTarget.row + 1}` }).click()
+await page.waitForFunction(() =>
+  !window.__STS_DEBUG__.getState().players[0].potions.includes('explosive_potion'))
 const explodedPotion = await readState()
 check('Explosive Potion damages the chosen row and any boss, but no other row', () => {
   for (const [index, before] of firedPotion.enemies.entries()) {
@@ -4463,6 +4521,7 @@ await page.evaluate(() => {
   run.combat.players[0].potions = ['energy_potion']
   debug.setRun(run)
 })
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].dead === true)
 const deadPotionControls = await page.locator('.combat__actions').getByRole('button', { name: /Energy Potion/ }).count()
 const deadPotionSummary = await page.locator('.seat--viewer .seat__potions').textContent()
 check('a dead seat keeps public potion information but gets no Player Turn controls', () => {

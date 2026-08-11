@@ -179,6 +179,8 @@ type EffectKind =
   | { kind: 'discountNextCard' }
   /** The next Attack played this turn resolves as two separately targeted cards. */
   | { kind: 'doubleNextAttack' }
+  /** Let the player choose this many cards to Retain during this turn's discard step. */
+  | { kind: 'retainAtEndOfTurn'; amount: number }
   /** Total HP lost this round cannot exceed this amount. */
   | { kind: 'limitRoundHpLoss'; amount: number }
   /** Permanently improve this combat's starter Strikes and Defends. */
@@ -1746,6 +1748,11 @@ export const CARDS: Record<string, CardDef> = {
       minimumX: 0,
       effects: [{ kind: 'blockChoices', amount: { base: 0, per: 'energySpent' }, targets: 2 }],
     },
+  }),
+  equilibrium: card({
+    id: 'equilibrium', name: 'Equilibrium', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'block', amount: 3 }, { kind: 'retainAtEndOfTurn', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 4 }, { kind: 'retainAtEndOfTurn', amount: 2 }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
