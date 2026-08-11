@@ -1254,6 +1254,11 @@ function applyEffect(
       note(`${actor.name}'s Orb Evoke effects get +${effect.amount}`)
       return
     }
+    case 'gainOrbEndTurnBonus': {
+      actor.orbEndTurnBonus = (actor.orbEndTurnBonus ?? 0) + effect.amount
+      note(`${actor.name}'s Orb end-of-turn effects get +${effect.amount}`)
+      return
+    }
     case 'gainShivDamageBonus': {
       actor.shivDamageBonus += effect.amount
       note(`${actor.name}'s Shivs deal +${effect.amount} damage`)
@@ -3276,10 +3281,10 @@ function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, 
   if (orb === 'lightning') {
     const target = livingEnemies(state).find((enemy) => enemy.uid === targetUid)
     if (!target) return false
-    damageEnemyLogged(state, target, 1, `${actor.name}'s Lightning orb`)
+    damageEnemyLogged(state, target, 1 + (actor.orbEndTurnBonus ?? 0), `${actor.name}'s Lightning orb`)
   } else if (orb === 'frost') {
     const before = actor.block
-    grantBlock(state, actor, 1)
+    grantBlock(state, actor, 1 + (actor.orbEndTurnBonus ?? 0))
     if (actor.block > before) {
       state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }

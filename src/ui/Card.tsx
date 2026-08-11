@@ -159,6 +159,7 @@ function effectText(effect: Effect): string {
     case 'removeAllOrbs': return `remove all of your Orbs${condition}`
     case 'gainOrbSlots': return `gain ${effect.amount} Orb slots${condition}`
     case 'gainOrbEvokeBonus': return `Orb Evoke effects get +${effect.amount}${condition}`
+    case 'gainOrbEndTurnBonus': return `Orb end-of-turn effects get +${effect.amount}${condition}`
     case 'gainShivDamageBonus': return `Shivs deal +${effect.amount} damage${condition}`
     case 'gainCardBlockBonus': return `each Block on your Attacks and Skills gets +${effect.amount}${condition}`
     case 'gainHitPoison': return `each hit also applies ${effect.amount} Poison${condition}`

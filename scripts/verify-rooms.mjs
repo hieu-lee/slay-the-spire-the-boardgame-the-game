@@ -2920,12 +2920,22 @@ check('the rng state never reaches a client', () => {
 })
 
 check('pile sizes are still visible — they are public at a real table', () => {
-  const { room, a } = twoSeatRoom()
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.orbEvokeBonus = 2
+  actor.orbEndTurnBonus = 3
   const snapshot = snapshotFor(room, a.token)
   for (const player of snapshot.run.combat.players) {
     assert(typeof player.drawCount === 'number', 'draw pile size is missing')
     assert(typeof player.handCount === 'number', 'hand size is missing')
   }
+  const ownerView = snapshot.run.combat.players.find((player) => player.id === a.playerId)
+  const peerView = snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertEqual(ownerView.orbEvokeBonus, 2, 'owner reconnect lost the face-up Orb Evoke bonus')
+  assertEqual(ownerView.orbEndTurnBonus, 3, 'owner reconnect lost the face-up Orb end-turn bonus')
+  assertEqual(peerView.orbEvokeBonus, 2, 'teammate could not see the face-up Orb Evoke bonus')
+  assertEqual(peerView.orbEndTurnBonus, 3, 'teammate could not see the face-up Orb end-turn bonus')
   const other = snapshot.run.combat.players.find((player) => player.id !== a.playerId)
   assert(other.handCount > 0, "another player's hand size should be visible")
 })

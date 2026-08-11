@@ -202,6 +202,7 @@ type EffectKind =
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
+  | { kind: 'gainOrbEndTurnBonus'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
@@ -1968,6 +1969,13 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainOrbEvokeBonus', amount: 1 }],
     upgrade: { cost: 1 },
+  }),
+  defragment: card({
+    id: 'defragment', name: 'Defragment', owner: 'defect', type: 'power', rarity: 'rare', cost: 3,
+    ethereal: true,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainOrbEndTurnBonus', amount: 1 }],
+    upgrade: { ethereal: false },
   }),
   double_energy: card({
     id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

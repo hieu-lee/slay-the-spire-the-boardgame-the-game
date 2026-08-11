@@ -1819,6 +1819,43 @@ await shot('06zphd-blizzard-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  for (const player of run.combat.players) Object.assign(player, {
+    hand: [], discard: [], draw: [], exhaust: [], powers: [], orbs: [null, null, null],
+    block: 0, stance: 'neutral', dead: false,
+  })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-defragment', defId: 'defragment', upgraded: true }],
+    energy: 3, orbs: ['lightning', 'frost', null], orbEndTurnBonus: 0,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], {
+    hp: 10, maxHp: 10, block: 0, poison: 0, dead: false, abilityUsed: true,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const defragmentCard = page.getByRole('button', { name: /^Defragment\+, cost 3,/ })
+const defragmentCardLabel = await defragmentCard.getAttribute('aria-label')
+await defragmentCard.click()
+const defragmentPower = page.getByRole('button', { name: /^Defragment\+: Orb end-of-turn effects get \+1$/ })
+await defragmentPower.waitFor()
+await shot('06zphe-defragment-power')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+const defragmented = await readState()
+check('Defragment+ clearly enters play and boosts both Orb end-turn effects', () => {
+  assert(defragmentCardLabel.includes('Orb end-of-turn effects get +1'), defragmentCardLabel)
+  assert(!defragmentCardLabel.includes('ethereal'), 'Defragment+ must not announce Ethereal')
+  assertEqual(defragmented.players[0].orbEndTurnBonus, 1)
+  assertEqual(defragmented.enemies[0].hp, 8)
+  assertEqual(defragmented.players[0].block, 2)
+})
+await shot('06zphf-defragment-orbs-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })

@@ -2231,6 +2231,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'stack', block: [0, 1] },
     { id: 'capacitor', powers: [1, 1] },
     { id: 'consume', powers: [1, 1] },
+    { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -4292,6 +4293,40 @@ check('Consume, Double Energy, Streamline, and Meteor Strike use their printed b
     if (orb === 'frost') assertEqual(evoked.players[0].block, expected)
     else assertEqual(evoked.enemies[0].hp, expected)
   }
+})
+
+check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when upgraded', () => {
+  assertEqual(faceOf(CARDS.defragment, false).ethereal, true)
+  assertEqual(faceOf(CARDS.defragment, true).ethereal, false)
+
+  const first = instance('defragment')
+  const second = instance('defragment', true)
+  let state = combat([makePlayer({
+    character: 'defect', hand: [first, second], energy: 6, orbs: ['lightning', 'frost', 'dark'],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].orbEndTurnBonus, 2)
+  assertEqual(state.players[0].powers.length, 2)
+
+  const ended = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1'])
+  assertEqual(ended.enemies[0].hp, 17, 'Lightning gets the stacked +2 end-turn bonus')
+  assertEqual(ended.players[0].block, 3, 'Frost gets the stacked +2 end-turn bonus')
+
+  const dual = instance('dual_cast')
+  const evoked = playCard(combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1,
+    orbs: ['lightning', 'lightning', null], orbEndTurnBonus: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(evoked.enemies[0].hp, 16, 'Defragment must not increase Evoke damage')
+
+  const base = instance('defragment')
+  const upgraded = instance('defragment', true)
+  const ethereal = beginEndPlayerTurn(combat([makePlayer({ hand: [base, upgraded] })], [makeEnemy()]))
+  assertDeepEqual(ethereal.players[0].exhaust.map((card) => card.uid), [base.uid])
+  assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [upgraded.uid])
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {

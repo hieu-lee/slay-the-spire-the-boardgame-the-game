@@ -104,6 +104,8 @@ export type Player = {
   orbs: (OrbType | null)[]
   /** Added to each Orb's printed Evoke effect for this combat. */
   orbEvokeBonus?: number
+  /** Added to each Orb's printed end-of-turn effect for this combat. */
+  orbEndTurnBonus?: number
 
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */

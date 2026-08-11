@@ -1271,6 +1271,8 @@ function redactPlayer(player, viewerId) {
     miracles: player.miracles,
     stance: player.stance,
     orbs: player.orbs,
+    orbEvokeBonus: player.orbEvokeBonus ?? 0,
+    orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,
