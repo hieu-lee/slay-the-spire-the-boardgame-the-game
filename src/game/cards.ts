@@ -179,6 +179,8 @@ type EffectKind =
   | { kind: 'discountNextCard' }
   /** The next Attack played this turn resolves as two separately targeted cards. */
   | { kind: 'doubleNextAttack' }
+  /** The next Attack or Skill played this turn resolves as two separate cards. */
+  | { kind: 'doubleNextAttackOrSkill' }
   /** Let the player choose this many cards to Retain during this turn's discard step. */
   | { kind: 'retainAtEndOfTurn'; amount: number }
   /** Total HP lost this round cannot exceed this amount. */
@@ -1771,6 +1773,13 @@ export const CARDS: Record<string, CardDef> = {
     persistent: true,
     effects: [{ kind: 'preventHpLoss', uses: 1 }],
     upgrade: { effects: [{ kind: 'preventHpLoss', uses: 2 }] },
+  }),
+  echo_form: card({
+    id: 'echo_form', name: 'Echo Form', owner: 'defect', type: 'power', rarity: 'rare', cost: 3,
+    ethereal: true,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'doubleNextAttackOrSkill' }],
+    upgrade: { ethereal: false },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

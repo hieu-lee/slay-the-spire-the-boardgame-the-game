@@ -2239,6 +2239,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'equilibrium', block: [3, 4], energy: [E - 2, E - 2] },
     { id: 'loop', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'buffer', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'echo_form', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -6170,6 +6171,161 @@ check('Double Tap plays the next Attack twice with separate targets and modifier
   assertEqual(copied.players[0].energy, 1, 'the virtual copy costs no extra Energy')
   assertEqual(copied.players[0].discard.filter((card) => card.uid === strike.uid).length, 1,
     'the physical Attack is cleaned up exactly once')
+})
+
+check('Echo Form arms at Start of Turn and separately replays the first Attack or Skill', () => {
+  for (const upgraded of [false, true]) {
+    const base = instance('echo_form', upgraded)
+    const ended = endPlayerTurn(combat([makePlayer({ hand: [base] })], [makeEnemy()]))
+    assertEqual(ended.players[0].exhaust.some((card) => card.uid === base.uid), !upgraded,
+      'only base Echo Form is Ethereal')
+    assertEqual(ended.players[0].discard.some((card) => card.uid === base.uid), upgraded,
+      'Echo Form+ must discard instead of Exhausting when left in hand')
+  }
+
+  const echo = instance('echo_form', true)
+  const defend = instance('defend_defect')
+  const armed = startPlayerTurn({
+    ...combat([makePlayer({ character: 'defect', powers: [echo], hand: [defend] })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(armed.players[0].doubledCardsThisTurn, 1)
+  const first = playCard(armed, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(first.phase, 'copy')
+  assertEqual(first.players[0].block, 1)
+  assertDeepEqual(first.pendingCardCopy.sourceNames, ['Echo Form'])
+  const copied = playCardCopy(first, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(copied.phase, 'player')
+  assertEqual(copied.players[0].block, 2)
+  assertEqual(copied.players[0].cardsPlayedThisTurn, 2)
+  assertEqual(copied.players[0].doubledCardsThisTurn, 0)
+  assertEqual(copied.players[0].discard.filter((card) => card.uid === defend.uid).length, 1,
+    'the physical Skill must clean up exactly once after its Echo copy')
+})
+
+check('Echo Form and Double Tap stack as two separate, independently targeted copies', () => {
+  const strike = instance('strike_defect')
+  let state = combat([makePlayer({ character: 'defect', hand: [strike] })], [
+    makeEnemy({ uid: 'first', hp: 6, maxHp: 6 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 6, maxHp: 6 }),
+  ])
+  Object.assign(state.players[0], { doubledCardsThisTurn: 1, doubledAttacksThisTurn: 1 })
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'first', playerId: 'p1' })
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Echo Form', 'Double Tap'])
+  assertDeepEqual(state.players[0].discard, [], 'the physical Attack entered a pile before both copies')
+  state = playCardCopy(state, 'p1', { enemyUid: 'second', playerId: 'p1' })
+  assertEqual(state.phase, 'copy')
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Double Tap'])
+  assertDeepEqual(state.players[0].discard, [], 'the first copy cleaned up the physical Attack')
+  state = playCardCopy(state, 'p1', { enemyUid: 'first', playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [4, 5])
+  assertEqual(state.players[0].cardsPlayedThisTurn, 3)
+  assertEqual(state.players[0].attacksPlayedThisTurn, 3)
+  assertEqual(state.players[0].discard.filter((card) => card.uid === strike.uid).length, 1)
+})
+
+check('Echo Form copies private Skill choices from the current hand', () => {
+  const prepared = instance('prepared')
+  const firstDraw = instance('strike_defect')
+  const secondDraw = instance('defend_defect')
+  let state = combat([makePlayer({
+    character: 'defect', hand: [prepared], draw: [firstDraw, secondDraw],
+  })], [makeEnemy()])
+  state.players[0].doubledCardsThisTurn = 1
+  const firstPreview = previewCardChoice(state, 'p1', prepared.uid)
+  assertDeepEqual(firstPreview.cards.map((card) => card.uid), [firstDraw.uid])
+  state = playCard(state, 'p1', prepared.uid, {
+    enemyUid: null, playerId: 'p1', discardUids: [firstDraw.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  const copyPreview = previewCardCopyChoice(state, 'p1')
+  assertDeepEqual(copyPreview.cards.map((card) => card.uid), [secondDraw.uid])
+  state = playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: 'p1', discardUids: [secondDraw.uid],
+  })
+  assertEqual(state.phase, 'player')
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [firstDraw.uid, secondDraw.uid, prepared.uid])
+})
+
+check('lethal Enraged stops an Echo Form Skill before its copy is queued', () => {
+  const skill = instance('seeing_red', true)
+  const state = combat([makePlayer({ hp: 1, hand: [skill] })], [makeEnemy({ defId: 'gremlin_nob' })])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  const lost = playCard(state, 'p1', skill.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'a defeated owner was left holding the party in copy phase')
+})
+
+check('Echo Form finishes both Havoc children before cleaning up the physical Skill', () => {
+  const havoc = instance('havoc')
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [havoc], draw: [first, second], energy: 1 })], [
+    makeEnemy({ hp: 10, maxHp: 10 }),
+  ])
+  state.players[0].doubledCardsThisTurn = 1
+  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, first.uid)
+  assertEqual(state.players[0].doubledCardsThisTurn, 0)
+  assertEqual(state.pendingCardCopy, undefined, 'Echo bypassed Havoc\'s immediate child')
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.pendingCardCopy?.card.uid, havoc.uid)
+  assertDeepEqual(state.players[0].discard, [], 'Havoc cleaned up before its Echo copy')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, second.uid)
+  assertEqual(state.pendingCardCopy, undefined)
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 8)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [first.uid, second.uid])
+  assertEqual(state.players[0].discard.filter((card) => card.uid === havoc.uid).length, 1)
+})
+
+check('each Echoed Havoc fires its own deferred Enraged reaction before copying', () => {
+  const havoc = instance('havoc')
+  const first = instance('inflame')
+  const second = instance('inflame')
+  let state = combat([makePlayer({ hand: [havoc], draw: [first, second], hp: 3, energy: 1 })], [
+    makeEnemy({ defId: 'gremlin_nob' }),
+  ])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hp, 2, 'the original Havoc did not trigger Enraged before its copy')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].hp, 1, 'the Echo copy did not trigger its own Enraged reaction')
+
+  const lethalHavoc = instance('havoc')
+  const power = instance('inflame')
+  const lethal = combat([makePlayer({ hand: [lethalHavoc], draw: [power], hp: 1, energy: 1 })], [
+    makeEnemy({ defId: 'gremlin_nob' }),
+  ])
+  lethal.turn = 2
+  lethal.players[0].doubledCardsThisTurn = 1
+  const child = playCard(lethal, 'p1', lethalHavoc.uid, { enemyUid: null, playerId: 'p1' })
+  const lost = playCard(child, 'p1', power.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'lethal Enraged still queued the Echo Havoc copy')
+})
+
+check('lethal Enraged clears an Echo copy already in progress', () => {
+  const skill = instance('seeing_red', true)
+  const state = combat([makePlayer({ hp: 2, hand: [skill] })], [makeEnemy({ defId: 'gremlin_nob' })])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  const pending = playCard(state, 'p1', skill.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(pending.phase, 'copy')
+  assertEqual(pending.players[0].hp, 1)
+  const lost = playCardCopy(pending, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'defeat retained a stale Echo copy')
 })
 
 check('Double Tap copies pay their own card-effect choices from the current hand', () => {

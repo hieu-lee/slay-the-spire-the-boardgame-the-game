@@ -80,7 +80,7 @@ type CombatScreenProps = {
 
 type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
 type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
-type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean }
+type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean; copiesBefore?: number }
 type PendingStartChoice =
   | { kind: 'enemy'; ability: StartTurnAbility }
   | { kind: 'shiv'; ability: StartTurnAbility; index: number }
@@ -90,7 +90,7 @@ type PendingStartChoice =
 /** What a card still needs before it can be played. */
 type Pending = {
   card: CardInstance
-  /** False for Double Tap's virtual copy, which is no longer in hand. */
+  /** False for a play-twice virtual copy, which is no longer in hand. */
   cardInHand: boolean
   /** Energy chosen for an X-cost card; null until the player decides. */
   energySpent: number | null
@@ -163,7 +163,7 @@ function roundLog(log: readonly string[]): string[] {
 /** The engine's phase names are for the engine; players get words. */
 const PHASE_LABEL: Record<CombatState['phase'], string> = {
   player: 'Your turn',
-  copy: 'Resolve Double Tap',
+  copy: 'Resolve card copy',
   start: 'Start of turn',
   discard: 'Order discards',
   enemy: 'Enemies act',
@@ -341,6 +341,11 @@ function describeSeat(player: Player): string {
   if (player.drawLocked) parts.push('cannot draw more cards this turn')
   if ((player.doubledAttacksThisTurn ?? 0) > 0) {
     parts.push(`Double Tap, next ${player.doubledAttacksThisTurn} Attack${player.doubledAttacksThisTurn === 1 ? '' : 's'} played twice`)
+  }
+  if ((player.doubledCardsThisTurn ?? 0) > 0) {
+    parts.push(`Echo Form, next ${player.doubledCardsThisTurn} Attack or Skill card${
+      player.doubledCardsThisTurn === 1 ? '' : 's'
+    } played twice`)
   }
   if (player.hpLossLimitThisRound !== undefined) {
     parts.push(`Apparition protection, ${Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0))} hit point loss remaining this round`)
@@ -545,7 +550,8 @@ export function CombatScreen({
     }
     const card = unknownCardAction.current
     const cardCommitted = card?.copy
-      ? state.pendingCardCopy?.card.uid !== card.cardUid
+      ? state.pendingCardCopy?.card.uid !== card.cardUid ||
+        (card.copiesBefore !== undefined && state.pendingCardCopy.sourceNames.length < card.copiesBefore)
       : current && !current.hand.some((held) => held.uid === card?.cardUid)
     if (card && ((authoritativeRefresh !== undefined && authoritativeRefresh > card.refreshAttempt) || cardCommitted)) {
       unknownCardAction.current = null
@@ -628,16 +634,15 @@ export function CombatScreen({
     const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
     if (cardNeedsChoicePreview(def, state, viewer)) {
       if (cardNeedsEnemy(def, viewer, false, copy.energySpent)) {
-        setPending((current) => current?.cardInHand === false && current.card.uid === copy.card.uid
-          ? current
-          : { ...pendingFor(copy.card, null, state, viewer, false, copy.energySpent), choice: null })
+        setPending({ ...pendingFor(copy.card, null, state, viewer, false, copy.energySpent), choice: null })
       } else requestCopyChoicePreview()
       return
     }
     const next = pendingFor(copy.card, null, state, viewer, false, copy.energySpent)
-    setPending((current) => current?.cardInHand === false && current.card.uid === copy.card.uid ? current : next)
+    setPending(next)
     stageOrCommit(next)
-  }, [state.phase, state.pendingCardCopy?.card.uid, viewerId, cardPreviewKey, usingCard])
+  }, [state.phase, state.pendingCardCopy?.card.uid, state.pendingCardCopy?.sourceNames.length,
+    viewerId, cardPreviewKey, usingCard])
 
   // Native modal semantics make every control behind a card choice inert and
   // keep keyboard focus inside it without a custom focus trap. Hidden reveals
@@ -1381,14 +1386,22 @@ export function CombatScreen({
       const finish = (outcome: ActionOutcome | void) => {
         if (outcome?.status === 'unknown') {
           const current = stateRef.current.players.find((player) => player.id === viewerId)
+          const currentCopy = stateRef.current.pendingCardCopy
+          const copiesBefore = next.cardInHand ? undefined : state.pendingCardCopy?.sourceNames.length
           const refreshAttempt = outcome.refreshAttempt ?? refreshRef.current
           const committed = next.cardInHand
             ? current && !current.hand.some((card) => card.uid === next.card.uid)
-            : stateRef.current.pendingCardCopy?.card.uid !== next.card.uid
+            : currentCopy?.card.uid !== next.card.uid ||
+              (copiesBefore !== undefined && currentCopy.sourceNames.length < copiesBefore)
           if (committed ||
             (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)) unlock()
           else if (refreshAttempt !== undefined) {
-            unknownCardAction.current = { refreshAttempt, cardUid: next.card.uid, copy: !next.cardInHand }
+            unknownCardAction.current = {
+              refreshAttempt,
+              cardUid: next.card.uid,
+              copy: !next.cardInHand,
+              copiesBefore,
+            }
           } else unlock()
           return
         }
@@ -1794,7 +1807,7 @@ export function CombatScreen({
       ? 'Choose an enemy — its whole row is hit, and the boss'
       : 'Choose an enemy — its whole row is hit'
     : pending?.cardInHand === false
-      ? `Choose an enemy for ${pendingDef?.name ?? 'the'} Double Tap copy`
+      ? `Choose an enemy for ${pendingDef?.name ?? 'the'} ${state.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
       : 'Choose an enemy'
   const enemyPrompt = normalEnemyPending
     ? normalEnemyPrompt
@@ -1872,7 +1885,9 @@ export function CombatScreen({
         <span className="combat__die" title="The round's shared die">
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
         </span>
-        <span className={`combat__phase combat__phase--${state.phase}`}>{PHASE_LABEL[state.phase]}</span>
+        <span className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
+          ? `Resolve ${state.pendingCardCopy?.sourceNames[0] ?? 'card copy'}`
+          : PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
           {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
             <>
@@ -2403,6 +2418,13 @@ export function CombatScreen({
                         <span className="seat__pending">
                           Double Tap · next {occupant.doubledAttacksThisTurn} Attack{
                             occupant.doubledAttacksThisTurn === 1 ? '' : 's'
+                          } played twice
+                        </span>
+                      ) : null}
+                      {(occupant.doubledCardsThisTurn ?? 0) > 0 ? (
+                        <span className="seat__pending">
+                          Echo Form · next {occupant.doubledCardsThisTurn} Attack or Skill card{
+                            occupant.doubledCardsThisTurn === 1 ? '' : 's'
                           } played twice
                         </span>
                       ) : null}

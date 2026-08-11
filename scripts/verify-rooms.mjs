@@ -4381,6 +4381,61 @@ check('online Double Tap locks the room until its owner separately targets the c
   assertEqual(resolved.players.find((player) => player.id === a.playerId).doubledAttacksThisTurn, 0)
 })
 
+check('an Echo Form Skill copy stays authoritative, public, and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defend = { uid: 'room-echo-defend', defId: 'defend_defect', upgraded: false }
+  Object.assign(actor, {
+    character: 'defect', hand: [defend], energy: 3, block: 0, doubledCardsThisTurn: 1,
+  })
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: defend.uid, playerId: actor.id, preflight: true,
+  })
+  const waiting = snapshotFor(room, b.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertDeepEqual(waiting.pendingCardCopy.sourceNames, ['Echo Form'])
+  assertEqual(waiting.players.find((player) => player.id === actor.id).doubledCardsThisTurn, 0)
+
+  let bypassed = null
+  try {
+    apply(room, b.token, { kind: 'playCardCopy', cardUid: defend.uid, playerId: actor.id, preflight: true })
+  } catch (error) {
+    bypassed = error
+  }
+  assertEqual(bypassed?.name, 'RoomError', 'another seat resolved the Echo Form copy')
+
+  const rejoined = joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, rejoined.token).run.combat.pendingCardCopy.sourceNames, ['Echo Form'])
+  apply(room, rejoined.token, {
+    kind: 'playCardCopy', cardUid: defend.uid, playerId: actor.id, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.block, 2)
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(resolved.discard.filter((card) => card.uid === defend.uid).length, 1)
+})
+
+check('disconnecting during Echo Form Havoc settles its child and queued copy', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-echo-havoc', defId: 'havoc', upgraded: false }
+  const secret = { uid: 'room-echo-havoc-secret', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [havoc], draw: [secret], discard: [], exhaust: [], energy: 1, doubledCardsThisTurn: 1,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  assertEqual(room.run.combat.startTurnProgress?.forcedCard?.cardUid, secret.uid)
+  markDisconnected(room, a.token)
+  const released = snapshotFor(room, b.token).run.combat
+  const settled = released.players.find((player) => player.id === a.playerId)
+  assertEqual(released.phase, 'player')
+  assertEqual(released.startTurnProgress, undefined)
+  assertEqual(released.pendingCardCopy, undefined)
+  assertEqual(settled.exhaust.filter((card) => card.uid === secret.uid).length, 1)
+  assertEqual(settled.discard.filter((card) => card.uid === havoc.uid).length, 1)
+})
+
 check('disconnecting the Double Tap owner releases the shared room lock', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

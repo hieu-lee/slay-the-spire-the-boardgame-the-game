@@ -323,6 +323,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return effect.uses === 1
         ? 'prevent the next HP loss, then Exhaust this Power'
         : `prevent the next ${effect.uses} HP losses, then Exhaust this Power`
+    case 'doubleNextAttackOrSkill':
+      return 'your next Attack or Skill this turn is played twice, with separate choices and modifiers'
     case 'drawAndPlayFree':
       return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':

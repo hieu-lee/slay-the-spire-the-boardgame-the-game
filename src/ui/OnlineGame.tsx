@@ -242,7 +242,9 @@ export function OnlineGame({ onLocal }: Props) {
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {foreignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
-          foreignDoubleTap ? 'a Double Tap copy' : 'a revealed card'
+          foreignDoubleTap
+            ? `a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
+            : 'a revealed card'
         }…</p>
         : null}
       {foreignCardChoice && cardChoiceSeat && !cardChoiceSeat.connected ? (

@@ -239,36 +239,43 @@ export function markDisconnected(room, seatToken) {
 
 function settleForcedCards(room) {
   let combat = room.run?.combat
-  while (combat?.phase === 'copy' && combat.pendingCardCopy) {
-    const ownerId = combat.pendingCardCopy.playerId
-    const owner = room.seats.find((seat) => seat.playerId === ownerId)
-    if (owner?.connected !== false) break
-    const next = abandonCardCopy(combat, ownerId)
-    if (next === combat) break
-    room.run = { ...room.run, combat: next }
-    combat = next
-    if (room.cardPreviews?.[ownerId]) {
-      room.cardPreviews = { ...room.cardPreviews }
-      delete room.cardPreviews[ownerId]
+  for (;;) {
+    let settled = false
+    while (combat?.phase === 'copy' && combat.pendingCardCopy) {
+      const ownerId = combat.pendingCardCopy.playerId
+      const owner = room.seats.find((seat) => seat.playerId === ownerId)
+      if (owner?.connected !== false) break
+      const next = abandonCardCopy(combat, ownerId)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+      if (room.cardPreviews?.[ownerId]) {
+        room.cardPreviews = { ...room.cardPreviews }
+        delete room.cardPreviews[ownerId]
+      }
     }
-  }
-  while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
-    const ownerId = combat.startTurnProgress.forcedCard.playerId
-    const owner = room.seats.find((seat) => seat.playerId === ownerId)
-    if (owner?.connected !== false) break
-    if (room.cardPreviews?.[ownerId]) {
-      if (!resolveAbandonedPreviews(room)) break
-      combat = room.run?.combat
-      continue
+    while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
+      const ownerId = combat.startTurnProgress.forcedCard.playerId
+      const owner = room.seats.find((seat) => seat.playerId === ownerId)
+      if (owner?.connected !== false) break
+      if (room.cardPreviews?.[ownerId]) {
+        if (!resolveAbandonedPreviews(room)) break
+        combat = room.run?.combat
+        settled = true
+        continue
+      }
+      const next = abandonForcedCard(combat, ownerId)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+      if (room.cardPreviews?.[ownerId]) {
+        room.cardPreviews = { ...room.cardPreviews }
+        delete room.cardPreviews[ownerId]
+      }
     }
-    const next = abandonForcedCard(combat, ownerId)
-    if (next === combat) break
-    room.run = { ...room.run, combat: next }
-    combat = next
-    if (room.cardPreviews?.[ownerId]) {
-      room.cardPreviews = { ...room.cardPreviews }
-      delete room.cardPreviews[ownerId]
-    }
+    if (!settled) return
   }
 }
 
@@ -311,6 +318,7 @@ export function apply(room, seatToken, action) {
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
   const pendingCopy = room.run.combat?.pendingCardCopy
+  const pendingCopyName = pendingCopy?.sourceNames?.[0] ?? 'Double Tap'
   const copyForSeat = pendingCopy?.playerId === seat.playerId
   const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
     forcedCard?.playerId === seat.playerId &&
@@ -343,11 +351,11 @@ export function apply(room, seatToken, action) {
   )) fail('Finish the forced card before taking another action')
   if (pendingCopy && !(copyForSeat &&
     (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy'))) {
-    fail(copyForSeat ? 'Finish the Double Tap copy' : 'Wait for the Double Tap copy')
+    fail(copyForSeat ? `Finish the ${pendingCopyName} copy` : `Wait for the ${pendingCopyName} copy`)
   }
 
   if (action?.kind === 'previewCardCopy') {
-    if (!copyForSeat) fail('No Double Tap copy is waiting for you')
+    if (!copyForSeat) fail(`No ${pendingCopyName} copy is waiting for you`)
     const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
     const needsEnemy = cardNeedsEnemy(def, player, false, pendingCopy.energySpent)
     const enemyUid = needsEnemy ? action.enemyUid : null
@@ -420,7 +428,7 @@ export function apply(room, seatToken, action) {
     }
   }
   if (action?.kind === 'playCardCopy') {
-    if (!copyForSeat || action.cardUid !== pendingCopy.card.uid) fail('No matching Double Tap copy is waiting')
+    if (!copyForSeat || action.cardUid !== pendingCopy.card.uid) fail(`No matching ${pendingCopyName} copy is waiting`)
     const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
     if (cardNeedsChoicePreview(def, room.run.combat, player)) {
       if (!locked || locked.copy !== true || locked.cardUid !== action.cardUid) {
@@ -889,13 +897,14 @@ function dispatch(run, seat, action) {
     case 'playCardCopy': {
       if (!run.combat) fail('No combat in progress')
       const copied = action.kind === 'playCardCopy'
+      const pendingCopyName = run.combat.pendingCardCopy?.sourceNames?.[0] ?? 'Double Tap'
       // A seat may only play cards from its OWN hand. Without this check any
       // client could spend another player's energy and empty their hand.
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
       const card = copied && run.combat.pendingCardCopy?.playerId === seat.playerId
         ? run.combat.pendingCardCopy.card
         : player?.hand.find((held) => held.uid === action.cardUid)
-      if (!card) fail(copied ? 'No Double Tap copy is waiting for you' : 'That card is not in your hand')
+      if (!card) fail(copied ? `No ${pendingCopyName} copy is waiting for you` : 'That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const cardsOutsidePlay = player.hand.length - Number(!copied)
       const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
@@ -1218,6 +1227,7 @@ function redactCombat(combat, viewerId) {
       forcedExhaust: combat.pendingCardCopy.forcedExhaust,
       forcedChoices: structuredClone(combat.pendingCardCopy.forcedChoices),
       deferredHavocs: structuredClone(combat.pendingCardCopy.deferredHavocs),
+      sourceNames: structuredClone(combat.pendingCardCopy.sourceNames),
     } : undefined,
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
@@ -1258,6 +1268,7 @@ function redactPlayer(player, viewerId) {
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
+    doubledCardsThisTurn: player.doubledCardsThisTurn ?? 0,
     retainCardsThisTurn: player.retainCardsThisTurn ?? 0,
     cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,

@@ -53,6 +53,7 @@ export type VisibleCombat = {
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: { card: CardInstance; exhaust: boolean }[]
+    sourceNames: ('Double Tap' | 'Echo Form')[]
   }
   log: string[]
 }

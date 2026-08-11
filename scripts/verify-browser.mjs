@@ -2104,6 +2104,66 @@ await shot('06zphgic5-buffer-exhausted')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(run.combat, {
+    phase: 'player', turn: 2, startTurnProgress: undefined, pendingCardCopy: undefined,
+  })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-echo-strike', defId: 'strike_defect', upgraded: false }],
+    discard: [], draw: [], exhaust: [],
+    powers: [{ uid: 'ui-echo-form', defId: 'echo_form', upgraded: true }],
+    energy: 3, block: 0, doubledCardsThisTurn: 1, doubledAttacksThisTurn: 0,
+    cardsPlayedThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = [
+    { ...source, uid: 'echo-first', defId: 'cultist', row: 0, hp: 6, maxHp: 6,
+      block: 0, vulnerable: 0, dead: false, isBoss: false },
+    { ...source, uid: 'echo-second', defId: 'red_louse', row: 1, hp: 6, maxHp: 6,
+      block: 0, vulnerable: 0, dead: false, isBoss: false },
+  ]
+  run.combat.log = []
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const echoPower = page.getByRole('button', { name: /^Echo Form\+:/ })
+const echoPowerLabel = await echoPower.getAttribute('aria-label')
+const queuedEchoText = await page.locator('.seat__pending').filter({ hasText: 'Echo Form' }).textContent()
+const queuedEchoSeat = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('Echo Form+ visibly arms the first Attack or Skill', () => {
+  assert(echoPowerLabel.includes('next Attack or Skill') && echoPowerLabel.includes('played twice'), echoPowerLabel)
+  assert(queuedEchoText.includes('next 1 Attack or Skill card played twice'), queuedEchoText)
+  assert(queuedEchoSeat.includes('Echo Form, next 1 Attack or Skill card played twice'), queuedEchoSeat)
+})
+await echoPower.click()
+await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await shot('06zphgic6-echo-form-armed')
+await echoPower.click()
+await page.waitForFunction(() => !document.querySelector('.power__zoom'))
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByText('Choose an enemy').waitFor()
+await page.getByRole('button', { name: /^Cultist,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
+await page.getByText('Choose an enemy for Strike Echo Form copy').waitFor()
+await page.locator('.prompt').evaluate((prompt) => Promise.all(
+  prompt.getAnimations().map((animation) => animation.finished),
+))
+await shot('06zphgic7-echo-form-copy-target')
+await page.getByRole('button', { name: /^Red Louse,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const echoed = await readState()
+check('Echo Form visibly resolves its independently targeted copy once', () => {
+  assertDeepEqual(echoed.enemies.map((enemy) => enemy.hp), [5, 5])
+  assertEqual(echoed.players[0].cardsPlayedThisTurn, 2)
+  assertEqual(echoed.players[0].attacksPlayedThisTurn, 2)
+  assertEqual(echoed.players[0].doubledCardsThisTurn, 0)
+  assertEqual(echoed.players[0].discard.filter((card) => card.uid === 'ui-echo-strike').length, 1)
+})
+await shot('06zphgic8-echo-form-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
