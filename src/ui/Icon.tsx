@@ -5,11 +5,12 @@
 //
 // Names and helpers live in ./icons.ts so verify scripts can import them; Node's
 // type stripping cannot parse JSX.
-import { ICON_LABELS, dieIcon, iconPath } from './icons.ts'
-import type { IconName } from './icons.ts'
+import { ICON_LABELS, dieIcon, iconPath, statusIconPath } from './icons.ts'
+import type { IconName, StatusIconName } from './icons.ts'
 
 export { dieIcon }
 export type { IconName }
+export type { StatusIconName }
 
 const LABELS = ICON_LABELS
 
@@ -34,6 +35,20 @@ export function Icon({ name, size = 20, decorative = true }: IconProps) {
       height={size}
       alt={decorative ? '' : LABELS[name]}
       aria-hidden={decorative ? 'true' : undefined}
+      draggable={false}
+    />
+  )
+}
+
+export function StatusIcon({ name, size = 22 }: { name: StatusIconName; size?: number }) {
+  return (
+    <img
+      className="icon icon--status"
+      src={statusIconPath(name)}
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
       draggable={false}
     />
   )

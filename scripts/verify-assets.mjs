@@ -8,6 +8,8 @@
 // is still a real problem and fails.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { inflateSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
@@ -27,11 +29,72 @@ const listing = (dir, extension) =>
 
 const cardRoot = join(publicRoot, 'assets/cards')
 const iconRoot = join(publicRoot, 'assets/icons')
+const statusIconRoot = join(publicRoot, 'assets/status-icons')
+const powerIconRoot = join(publicRoot, 'assets/power-icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 
 const cardFiles = listing(cardRoot, '.webp')
 const iconFiles = listing(iconRoot, '.png')
+const statusIconFiles = listing(statusIconRoot, '.png')
+const powerIconFiles = listing(powerIconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
+
+function pngAlphaBounds(png, file) {
+  let offset = 8
+  const compressed = []
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset)
+    const type = png.subarray(offset + 4, offset + 8).toString()
+    if (type === 'IDAT') compressed.push(png.subarray(offset + 8, offset + 8 + length))
+    offset += length + 12
+    if (type === 'IEND') break
+  }
+  const width = png.readUInt32BE(16)
+  const height = png.readUInt32BE(20)
+  assertEqual(png[24], 8, `${file} bit depth`)
+  assertEqual(png[25], 6, `${file} color type`)
+  assertEqual(png[28], 0, `${file} must not be interlaced`)
+  const stride = width * 4
+  const pixels = inflateSync(Buffer.concat(compressed))
+  assertEqual(pixels.length, height * (stride + 1), `${file} decoded byte count`)
+  let previous = Buffer.alloc(stride)
+  let cursor = 0
+  let left = width
+  let top = height
+  let right = 0
+  let bottom = 0
+  const paeth = (a, b, c) => {
+    const p = a + b - c
+    const pa = Math.abs(p - a)
+    const pb = Math.abs(p - b)
+    const pc = Math.abs(p - c)
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+  }
+  for (let y = 0; y < height; y += 1) {
+    const filter = pixels[cursor]
+    const row = Buffer.from(pixels.subarray(cursor + 1, cursor + stride + 1))
+    cursor += stride + 1
+    for (let x = 0; x < stride; x += 1) {
+      const a = x >= 4 ? row[x - 4] : 0
+      const b = previous[x]
+      const c = x >= 4 ? previous[x - 4] : 0
+      if (filter === 1) row[x] = (row[x] + a) & 0xff
+      else if (filter === 2) row[x] = (row[x] + b) & 0xff
+      else if (filter === 3) row[x] = (row[x] + Math.floor((a + b) / 2)) & 0xff
+      else if (filter === 4) row[x] = (row[x] + paeth(a, b, c)) & 0xff
+      else assertEqual(filter, 0, `${file} PNG filter`)
+    }
+    for (let x = 0; x < width; x += 1) {
+      if (row[x * 4 + 3] === 0) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x + 1)
+      bottom = Math.max(bottom, y + 1)
+    }
+    previous = row
+  }
+  return { left, top, right, bottom }
+}
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -40,6 +103,11 @@ const REQUIRED_ICONS = [
   'attack', 'block', 'strength', 'vulnerable', 'weak', 'poison', 'daze', 'burn',
   'shiv', 'miracle', 'energy', 'potion', 'gold', 'relic', 'elite', 'monster',
   'boss', 'aoe', 'die1', 'die2', 'die3', 'die4', 'die5', 'die6',
+]
+
+const REQUIRED_STATUS_ICONS = [
+  'attack', 'aoe', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb',
+  'poison', 'power', 'shiv', 'strength', 'vulnerable', 'weak',
 ]
 
 const REQUIRED_COMBAT_ART = [
@@ -180,6 +248,32 @@ check('every icon the UI can render exists on disk', () => {
   if (iconFiles.length === 0) return // not synced
   const missing = REQUIRED_ICONS.filter((name) => !iconFiles.includes(`${name}.png`))
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
+})
+
+check('generated status and Power icon inventories are complete, transparent, and high-resolution', () => {
+  const powerIds = Object.values(CARDS).filter((def) => def.type === 'power').map((def) => def.id).sort()
+  const expectedStatus = REQUIRED_STATUS_ICONS.map((name) => `${name}.png`).sort()
+  const expectedPowers = powerIds.map((id) => `${id}.png`)
+  assertEqual(statusIconFiles.sort().join(','), expectedStatus.join(','), 'status icon inventory')
+  assertEqual(powerIconFiles.sort().join(','), expectedPowers.join(','), 'one distinct icon per Power')
+  const powerHashes = powerIconFiles.map((file) =>
+    createHash('sha256').update(readFileSync(join(powerIconRoot, file))).digest('hex'))
+  assertEqual(new Set(powerHashes).size, powerIconFiles.length, 'Power icons must not reuse artwork')
+  for (const [root, files] of [[statusIconRoot, statusIconFiles], [powerIconRoot, powerIconFiles]]) {
+    for (const file of files) {
+      const png = readFileSync(join(root, file))
+      assert(png.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
+      assertEqual(png.readUInt32BE(16), 256, `${file} width`)
+      assertEqual(png.readUInt32BE(20), 256, `${file} height`)
+      assertEqual(png[25], 6, `${file} must be RGBA, not an opaque RGB image`)
+      const bounds = pngAlphaBounds(png, file)
+      assertEqual(
+        [bounds.left, bounds.top, bounds.right, bounds.bottom].join(','),
+        '16,16,240,240',
+        `${file} visible artwork bounds`,
+      )
+    }
+  }
 })
 
 check('every committed battlefield asset exists, decodes, and cutouts stay transparent', () => {

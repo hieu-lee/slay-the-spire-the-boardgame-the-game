@@ -163,7 +163,7 @@ button:disabled {
 .online-entry__actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: 0.55rem;
   margin-top: 1.4rem;
 }
@@ -711,6 +711,12 @@ button:disabled {
   display: flex;
   gap: 0.3rem;
   flex-wrap: wrap;
+}
+
+.orbs {
+  display: flex;
+  justify-content: center;
+  gap: 0.18rem;
 }
 
 .token {
@@ -2093,9 +2099,8 @@ button:disabled {
 
 /* A Power sits in front of the player for the whole combat and changes how the
    turn plays out; it has to be visible or it cannot be planned around. */
-/* Powers in play: the little face-up cards in front of a player (p.12).
-   Rendered as their own art rather than a name, so they read as board state
-   and not as a row of tags next to the stance badge. */
+/* Every Power has a distinct generated pictogram. The full face-up card is
+   still one hover/focus/click away, but a miniature scan is not readable. */
 .powers {
   display: flex;
   flex-wrap: wrap;
@@ -2109,9 +2114,6 @@ button:disabled {
   position: relative;
   padding: 0;
   cursor: pointer;
-  /* A wide, short window rather than a whole mini-card: at this size the full
-     card is just illegible text, and the illustration is the part that reads
-     as board state. Hover shows the real card. */
   width: 34px;
   height: 22px;
   border-radius: 3px;
@@ -2121,45 +2123,24 @@ button:disabled {
   background: #1a1520;
 }
 
-.power__art {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* Sits ON TOP of the name fallback, which is only meant to be seen when the
-     scan is missing. Without this the name paints over the art it replaces. */
-  position: relative;
-  z-index: 1;
-  /* Centres the crop on the illustration oval, below the title banner and
-     above the rules box. Measured against the scans: at 34x22 the visible band
-     runs roughly 12%-58% of card height, and the oval ends around 56%. */
-  object-position: center 29%;
+.power > .icon {
   display: block;
-}
-
-/* Only reachable when the scan is missing, in which case the art is hidden. */
-.power__fallback {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1px;
-  font-size: 0.5rem;
-  line-height: 1.05;
-  text-align: center;
-  color: #e8d7a8;
+  width: 22px;
+  height: 22px;
 }
 
 .power__counter {
   position: absolute;
-  right: 1px;
-  bottom: 1px;
+  right: 0;
+  bottom: 0;
   z-index: 2;
-  padding: 0 2px;
-  border-radius: 2px;
-  background: rgb(10 8 7 / 0.88);
+  padding: 0;
+  background: none;
   color: #f5d47b;
-  font-size: 0.48rem;
-  line-height: 1.15;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000, 0 0 2px #000;
 }
 
 /* Hover, focus or click enlarges the real card, which already carries its own
@@ -2984,7 +2965,7 @@ button:disabled {
 
 .row__seat {
   position: absolute;
-  bottom: 0.75rem;
+  bottom: 1.1rem;
   left: calc(1.5rem + var(--stage-row) * var(--stage-gap));
   width: var(--stage-actor-width);
   height: 18.5rem;
@@ -3000,7 +2981,7 @@ button:disabled {
 .board .board__bosses .enemy {
   position: absolute;
   right: calc(1.5rem + var(--stage-index) * var(--stage-gap));
-  bottom: 0.75rem;
+  bottom: 1.1rem;
   width: var(--stage-actor-width);
   height: 14rem;
 }
@@ -3043,26 +3024,60 @@ button:disabled {
   left: 0;
 }
 
-.row__seat .seat > .tokens {
+.seat__status-strip {
   position: absolute;
-  z-index: 6;
-  right: 0;
-  bottom: 3.35rem;
-  left: 0;
-  justify-content: center;
+  z-index: 8;
+  right: -0.25rem;
+  bottom: -1.05rem;
+  left: -0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 0;
+  min-width: 0;
+  overflow: auto hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
 }
 
-.row__seat > .powers {
-  position: absolute;
-  z-index: 6;
-  top: 0.2rem;
-  right: 0;
-  left: 0;
-  justify-content: center;
-  margin: 0;
-  height: 1.55rem;
+.seat__status-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.seat__status-strip > .tokens,
+.seat__status-strip > .powers {
   flex-wrap: nowrap;
-  overflow: auto hidden;
+  flex: 0 0 auto;
+  gap: 0;
+  margin: 0;
+  height: 1.375rem;
+  line-height: 0;
+}
+
+.seat__status-strip > .powers > li {
+  height: 1.375rem;
+}
+
+.seat__status-strip .power {
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 0;
+  border-radius: 25%;
+  overflow: visible;
+  background: none;
+  box-shadow: none;
+  filter: drop-shadow(0 1px 1px #000);
+  pointer-events: auto;
+}
+
+.seat__status-strip .power::after {
+  display: none;
+}
+
+.seat__status-strip .power:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px #e8c877;
 }
 
 .seat__meta {
@@ -3096,11 +3111,59 @@ button:disabled {
   align-self: center;
 }
 
+.row__seat .seat > .orbs {
+  position: absolute;
+  z-index: 7;
+  top: 3.7rem;
+  right: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 .board .enemy .tokens {
   position: absolute;
   right: 0;
-  bottom: 1.45rem;
+  bottom: -1.05rem;
   left: 0;
+}
+
+.seat__status-strip > .tokens,
+.board .enemy .tokens {
+  gap: 0;
+  flex-wrap: nowrap;
+}
+
+.seat__status-strip .token,
+.board .enemy .token {
+  position: relative;
+  box-sizing: border-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.45rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px #000);
+  pointer-events: auto;
+}
+
+.seat__status-strip .token__count,
+.board .enemy .token__count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.62rem;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000, 0 0 2px #000;
+}
+
+.seat__status-strip .token--orb {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 @media (max-width: 720px) {
@@ -3119,8 +3182,8 @@ button:disabled {
   }
 
   .row__seat {
-    left: calc(0.5rem + var(--stage-row) * 3.25rem);
-    width: 3rem;
+    left: calc(0.5rem + var(--stage-row) * var(--stage-gap));
+    width: var(--stage-actor-width);
     height: 14rem;
   }
 
@@ -3129,14 +3192,14 @@ button:disabled {
   }
 
   .row__potion-target {
-    left: calc(34% + var(--stage-row) * 4.5rem);
-    width: 4rem;
+    left: calc(34% + var(--stage-row) * var(--stage-gap));
+    width: var(--stage-actor-width);
   }
 
   .board .enemy,
   .board .board__bosses .enemy {
-    right: calc(0.5rem + var(--stage-index) * 3.25rem);
-    width: 3rem;
+    right: calc(0.5rem + var(--stage-index) * var(--stage-gap));
+    width: var(--stage-actor-width);
   }
 
   .seat__name {

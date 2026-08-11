@@ -649,9 +649,9 @@ check('the local board can spend a Miracle for Energy', () => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs[0] === 'lightning')
 const orbView = await page.evaluate(() => ({
-  slots: document.querySelectorAll('.seat--viewer .token--orb').length,
-  beads: document.querySelectorAll('.seat--viewer .token--orb:not(.token--orb-empty)').length,
-  classes: [...document.querySelectorAll('.seat--viewer .token--orb')].map((b) => b.className),
+  slots: document.querySelectorAll('.row--viewer .orbs .token--orb').length,
+  beads: document.querySelectorAll('.row--viewer .orbs .token--orb:not(.token--orb-empty)').length,
+  classes: [...document.querySelectorAll('.row--viewer .orbs .token--orb')].map((b) => b.className),
   label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
 }))
 check('channelled orbs are visible on the seat', () => {
@@ -1260,8 +1260,9 @@ const unequalStatusBaselines = await page.locator('.seat').evaluateAll((seats) =
   bar: seat.querySelector('.bar')?.getBoundingClientRect().bottom,
 })))
 const statusBounds = await page.evaluate(() => {
-  const board = document.querySelector('.board')?.getBoundingClientRect()
-  const metadata = [...document.querySelectorAll('.seat .tokens, .row__seat > .powers')]
+  const boardElement = document.querySelector('.board')
+  const board = boardElement?.getBoundingClientRect()
+  const metadata = [...document.querySelectorAll('.seat__status-strip, .board .enemy .tokens')]
     .map((element) => element.getBoundingClientRect())
   return board && metadata.every((box) => box.top >= board.top - 1 && box.bottom <= board.bottom + 1)
 })
@@ -1512,7 +1513,7 @@ const bombCounter = await bombPower.locator('.power__counter').textContent()
 check('The Bomb+ exposes its public cube countdown visually and accessibly', () => {
   assert(bombLabel.includes('at 3 cubes deal 12 damage to every enemy, then Exhaust this Power'), bombLabel)
   assert(bombLabel.includes('2 of 3 cubes'), bombLabel)
-  assertEqual(bombCounter, '◆2/3')
+  assertEqual(bombCounter, '2/3')
 })
 await bombPower.scrollIntoViewIfNeeded()
 await bombPower.click()
@@ -2257,15 +2258,19 @@ const narrowWhirlwindPicker = await page.evaluate(() => {
   const last = spenders.at(-1)?.getBoundingClientRect()
   const players = [...document.querySelectorAll('.seat')].map((seat) => seat.getBoundingClientRect())
   const enemies = [...document.querySelectorAll('.enemy')].map((enemy) => enemy.getBoundingClientRect())
-  const board = document.querySelector('.board')?.getBoundingClientRect()
+  const boardElement = document.querySelector('.board')
+  const board = boardElement?.getBoundingClientRect()
   const actionBar = document.querySelector('.combat__bar')?.getBoundingClientRect()
   const combatLog = document.querySelector('.combat__log')?.getBoundingClientRect()
   const combatLogStyle = document.querySelector('.combat__log') &&
     getComputedStyle(document.querySelector('.combat__log'))
   const actorOverlap = players.some((player) => enemies.some((enemy) =>
     player.left < enemy.right && player.right > enemy.left && player.top < enemy.bottom && player.bottom > enemy.top))
-  const actorClipped = board && [...players, ...enemies].some((actor) =>
-    actor.left < board.left - 1 || actor.right > board.right + 1)
+  const actorOutsideStage = board && [...players, ...enemies].some((actor) => {
+    const left = actor.left - board.left + boardElement.scrollLeft
+    const right = actor.right - board.left + boardElement.scrollLeft
+    return left < -1 || right > boardElement.scrollWidth + 1
+  })
   const enemyTextContained = [...document.querySelectorAll('.enemy__head, .enemy__ability')].every((label) => {
     const box = label.getBoundingClientRect()
     const owner = label.closest('.enemy')?.getBoundingClientRect()
@@ -2276,7 +2281,7 @@ const narrowWhirlwindPicker = await page.evaluate(() => {
     promptRight: prompt?.right ?? Infinity,
     lastRight: last?.right ?? Infinity,
     actorOverlap,
-    actorClipped,
+    actorOutsideStage,
     enemyTextContained,
     logBelowActions: Boolean(actionBar && combatLog && combatLog.top >= actionBar.bottom - 1),
     logHiddenByPrompt: combatLogStyle?.visibility === 'hidden' && combatLogStyle.pointerEvents === 'none',
@@ -2287,7 +2292,7 @@ check('the full six-Energy Whirlwind picker wraps inside a narrow viewport', () 
   assert(narrowWhirlwindPicker.promptRight <= 390, `prompt extends to ${narrowWhirlwindPicker.promptRight}px`)
   assert(narrowWhirlwindPicker.lastRight <= 390, `Spend 6 extends to ${narrowWhirlwindPicker.lastRight}px`)
   assert(!narrowWhirlwindPicker.actorOverlap, 'a mobile enemy slot overlaps a player slot')
-  assert(!narrowWhirlwindPicker.actorClipped, 'a mobile actor slot is clipped at the battlefield edge')
+  assert(!narrowWhirlwindPicker.actorOutsideStage, 'a mobile actor slot is clipped at the stage edge')
   assert(narrowWhirlwindPicker.enemyTextContained, 'mobile enemy text spills outside its actor slot')
   assert(narrowWhirlwindPicker.logBelowActions, 'the mobile combat log overlaps the wrapped action bar')
   assert(narrowWhirlwindPicker.logHiddenByPrompt, 'the combat log remains visible over a mobile prompt')
@@ -3269,6 +3274,7 @@ await page.getByRole('button', { name: /^Fusion\+,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 3)
 const heatsinks = await readState()
 const heatsinksLabel = await page.locator('.powers .power').first().getAttribute('aria-label')
+const heatsinksGlyph = await page.locator('.powers .power').first().locator('.icon').getAttribute('src')
 check('Heatsinks+ ignores itself then draws 3 when Fusion+ is played', () => {
   assertEqual(heatsinks.players[0].powers.length, 2)
   assertEqual(heatsinks.players[0].hand.length, 3)
@@ -3277,6 +3283,7 @@ check('Heatsinks+ ignores itself then draws 3 when Fusion+ is played', () => {
     heatsinksLabel?.includes('whenever you play a power card'),
     `Heatsinks announces the wrong trigger: ${heatsinksLabel}`,
   )
+  assert(heatsinksGlyph?.endsWith('/assets/power-icons/heatsinks.png'), heatsinksGlyph)
 })
 await shot('07d-heatsinks-power-draw')
 
@@ -3300,14 +3307,16 @@ await page.evaluate(() => {
 await page.getByRole('button', { name: /^Capacitor,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.length === 5)
 const capacitorView = await page.evaluate(() => ({
-  slots: document.querySelectorAll('.seat--viewer .token--orb').length,
+  slots: document.querySelectorAll('.row--viewer .orbs .token--orb').length,
   label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
   power: document.querySelector('.powers .power')?.getAttribute('aria-label') ?? '',
+  powerGlyph: document.querySelector('.powers .power .icon')?.getAttribute('src') ?? '',
 }))
 check('Capacitor exposes all gained Orb slots visually and accessibly', () => {
   assertEqual(capacitorView.slots, 5)
   assert(capacitorView.label.includes('0 of 5 Orb slots occupied'), capacitorView.label)
   assert(capacitorView.power.includes('gain 2 Orb slots'), capacitorView.power)
+  assert(capacitorView.powerGlyph.endsWith('/assets/power-icons/capacitor.png'), capacitorView.powerGlyph)
 })
 await shot('07e-capacitor-orb-slots')
 
@@ -3913,7 +3922,7 @@ check('Infinite Blades announces its upgraded recurring Shiv effect', () => {
 })
 const infinitePower = page.locator('.power[aria-label^="Infinite Blades"]')
 await infinitePower.click()
-await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await page.waitForSelector('.power__zoom')
 await shot('07w-silent-infinite-blades-ready')
 await infinitePower.click()
 await page.getByRole('button', { name: 'Start turn 2' }).click()
@@ -3984,7 +3993,7 @@ check('Noxious Fumes announces its recurring single-enemy Poison', () => {
   assert(noxiousLabel.includes('1 Poison to one enemy') && noxiousLabel.includes('start of each turn'), noxiousLabel)
 })
 await noxiousPower.click()
-await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await page.waitForSelector('.power__zoom')
 await shot('07z-silent-noxious-fumes-ready')
 await noxiousPower.click()
 await page.getByRole('button', { name: 'Start turn 2' }).click()
@@ -4069,7 +4078,7 @@ check('Storm+ announces its recurring two-Lightning effect', () => {
   assert(stormLabel.includes('channel 2 lightning Orbs') && stormLabel.includes('start of each turn'), stormLabel)
 })
 await stormPower.click()
-await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await page.waitForSelector('.power__zoom')
 await shot('07zc-defect-storm-ready')
 await stormPower.click()
 await page.getByRole('button', { name: 'Start turn 2' }).click()
@@ -5212,18 +5221,29 @@ await page.evaluate(() => {
       strength: 2,
       vulnerable: 1,
       weak: 1,
-      powers: [
-        { uid: `ui-dense-power-a-${index}`, defId: 'barricade', upgraded: false },
-        { uid: `ui-dense-power-b-${index}`, defId: 'inflame', upgraded: false },
-      ],
+      powers: ['barricade', 'inflame', 'demon_form', 'metallicize', 'corruption']
+        .map((defId, powerIndex) => ({
+          uid: `ui-dense-power-${index}-${powerIndex}`,
+          defId,
+          upgraded: false,
+        })),
     })
   }
+  Object.assign(run.combat.enemies[0], {
+    block: 3,
+    strength: 1,
+    vulnerable: 1,
+    weak: 1,
+    poison: 1,
+  })
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelectorAll('.row__seat .power').length === 8)
+await page.waitForFunction(() => document.querySelectorAll('.row__seat .power').length === 20)
+await page.evaluate(() => { document.querySelector('.board').scrollLeft = 0 })
 const denseFourGeometry = await page.locator('.row__seat').evaluateAll((seats) => seats.map((seat) => {
   const portrait = seat.querySelector('.seat__portrait')?.getBoundingClientRect()
   const name = seat.querySelector('.seat__name')?.getBoundingClientRect()
+  const statuses = seat.querySelector('.seat__status-strip')?.getBoundingClientRect()
   const bar = seat.querySelector('.seat .bar')?.getBoundingClientRect()
   return {
     left: seat.getBoundingClientRect().left,
@@ -5231,29 +5251,150 @@ const denseFourGeometry = await page.locator('.row__seat').evaluateAll((seats) =
     portraitBottom: portrait?.bottom,
     nameTop: name?.top,
     nameBottom: name?.bottom,
+    statusTop: statuses?.top,
+    statusBottom: statuses?.bottom,
+    statusLeft: statuses?.left,
+    statusRight: statuses?.right,
     barTop: bar?.top,
+    barBottom: bar?.bottom,
   }
 }))
-const denseEnemyPortraits = await page.locator('.enemy__portrait:has(> img)').evaluateAll(
+const denseEnemyGeometry = await page.locator('.enemy__portrait:has(> img)').evaluateAll(
   (portraits) => portraits.map((portrait) => {
     const box = portrait.getBoundingClientRect()
-    return { width: box.width, height: box.height }
+    const enemy = portrait.closest('.enemy')
+    const name = enemy.querySelector('.enemy__head')?.getBoundingClientRect()
+    const statuses = enemy.querySelector('.tokens')?.getBoundingClientRect()
+    const bar = enemy.querySelector('.bar')?.getBoundingClientRect()
+    return {
+      width: box.width,
+      height: box.height,
+      nameBottom: name?.bottom,
+      statusTop: statuses?.top,
+      statusBottom: statuses?.bottom,
+      barTop: bar?.top,
+      barBottom: bar?.bottom,
+    }
   }),
 )
+const denseStatusIconWidths = await page.locator(
+  '.seat__status-strip .token .icon, .seat__status-strip .power .icon, .enemy .tokens .icon',
+).evaluateAll((icons) => icons.map((icon) => icon.getBoundingClientRect().width))
+const denseCountGeometry = await page.locator(
+  '.seat__status-strip .token__count, .enemy .tokens .token__count',
+).evaluateAll((counts) => counts.map((count) => {
+  const box = count.getBoundingClientRect()
+  const item = count.parentElement.getBoundingClientRect()
+  return { left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+    itemLeft: item.left, itemRight: item.right, itemTop: item.top, itemBottom: item.bottom }
+}))
+const denseBoardGeometry = await page.locator('.board').evaluate((board) => {
+  const box = board.getBoundingClientRect()
+  return { top: box.top, bottom: box.bottom }
+})
+const denseStatusReachability = await page.locator('.row__seat .seat__status-strip').evaluateAll((strips) =>
+  strips.map((strip) => {
+    const items = [...strip.querySelectorAll('.token, .power')]
+    strip.scrollLeft = 0
+    const stripStart = strip.getBoundingClientRect()
+    const first = items[0]?.getBoundingClientRect()
+    strip.scrollLeft = strip.scrollWidth
+    const stripEnd = strip.getBoundingClientRect()
+    const last = items.at(-1)?.getBoundingClientRect()
+    return {
+      overflows: strip.scrollWidth > strip.clientWidth + 1,
+      firstVisible: Boolean(first && first.left >= stripStart.left - 1),
+      lastVisible: Boolean(last && last.right <= stripEnd.right + 1),
+    }
+  }))
 check('dense four-player actors share the floor without clipping their names or HP', () => {
   for (const [index, box] of denseFourGeometry.entries()) {
     assert(box.portraitBottom <= box.nameTop + 1,
       `player ${index + 1} name clips the character: ${JSON.stringify(box)}`)
     assert(box.nameBottom <= box.barTop + 1,
       `player ${index + 1} HP clips the name: ${JSON.stringify(box)}`)
+    assert(box.barBottom <= box.statusTop + 1,
+      `player ${index + 1} statuses clip the HP bar: ${JSON.stringify(box)}`)
     const next = denseFourGeometry[index + 1]
-    if (next) assert(box.right <= next.left + 1,
-      `players ${index + 1} and ${index + 2} overlap: ${box.right} > ${next.left}`)
+    if (next) {
+      assert(box.right <= next.left + 1,
+        `players ${index + 1} and ${index + 2} overlap: ${box.right} > ${next.left}`)
+      assert(box.statusRight <= next.statusLeft + 1,
+        `their status lanes overlap: ${box.statusRight} > ${next.statusLeft}`)
+    }
+    assert(box.statusTop >= denseBoardGeometry.top - 1 && box.statusBottom <= denseBoardGeometry.bottom + 1,
+      `player ${index + 1} statuses leave the board: ${JSON.stringify(box)}`)
   }
-  assert(denseEnemyPortraits.every((portrait) => portrait.height >= portrait.width / 1.5),
-    `full-party enemy portraits were crushed into shallow strips: ${JSON.stringify(denseEnemyPortraits)}`)
+  assert(denseEnemyGeometry.every((enemy) => enemy.height >= enemy.width / 1.5),
+    `full-party enemy portraits were crushed into shallow strips: ${JSON.stringify(denseEnemyGeometry)}`)
+  assert(denseEnemyGeometry.every((enemy) => enemy.statusTop === undefined ||
+    (enemy.statusTop >= denseBoardGeometry.top - 1 && enemy.statusBottom <= denseBoardGeometry.bottom + 1)),
+  `enemy statuses leave the board: ${JSON.stringify(denseEnemyGeometry)}`)
+  const enemyWithStatuses = denseEnemyGeometry.find((enemy) => enemy.statusTop !== undefined)
+  assert(enemyWithStatuses, 'the dense enemy status fixture is missing')
+  assert(denseStatusIconWidths.length > 0, 'the dense status fixture has no icons')
+  assert(denseStatusIconWidths.every((width) => width >= 21),
+    `status icons must remain readable, saw widths: ${denseStatusIconWidths.join(', ')}`)
+  assert(denseCountGeometry.every((box) =>
+    box.left >= box.itemLeft - 1 && box.right <= box.itemRight + 1 &&
+    box.top >= box.itemTop - 1 && box.bottom <= box.itemBottom + 1),
+  `status counts escaped their reserved boxes: ${JSON.stringify(denseCountGeometry)}`)
+  assert(enemyWithStatuses.nameBottom <= enemyWithStatuses.barTop + 1,
+    `enemy HP clips the name: ${JSON.stringify(enemyWithStatuses)}`)
+  assert(enemyWithStatuses.barBottom <= enemyWithStatuses.statusTop + 1,
+    `enemy statuses clip the HP bar: ${JSON.stringify(enemyWithStatuses)}`)
+  assert(denseStatusReachability.every((lane) => lane.overflows && lane.firstVisible && lane.lastVisible),
+    `overflowing status lanes must reach both ends: ${JSON.stringify(denseStatusReachability)}`)
+})
+const densePower = page.locator('.seat__status-strip .power').first()
+await densePower.focus()
+const densePowerFocus = await densePower.evaluate((power) => {
+  const style = getComputedStyle(power)
+  return { outline: style.outlineStyle, shadow: style.boxShadow }
+})
+check('keyboard focus remains visible inside the clipped status lane', () => {
+  assertEqual(densePowerFocus.outline, 'none')
+  assert(densePowerFocus.shadow.includes('inset'), `missing inset focus ring: ${densePowerFocus.shadow}`)
+})
+await page.locator('.board').focus()
+await page.locator('.row__seat .seat__status-strip').evaluateAll((strips) => {
+  for (const strip of strips) strip.scrollLeft = 0
 })
 await shot('06b-dense-four-player')
+
+await page.setViewportSize({ width: 390, height: 844 })
+await page.waitForTimeout(100)
+const denseMobileStatuses = await page.locator('.row__seat .seat__status-strip').evaluateAll((strips) =>
+  strips.map((strip) => {
+    const box = strip.getBoundingClientRect()
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+  }))
+const denseMobileBoard = await page.locator('.board').evaluate((board) => {
+  const box = board.getBoundingClientRect()
+  const viewer = document.querySelector('.seat--viewer')?.getBoundingClientRect()
+  return {
+    top: box.top,
+    right: box.right,
+    bottom: box.bottom,
+    left: box.left,
+    viewer: viewer && { top: viewer.top, right: viewer.right, bottom: viewer.bottom, left: viewer.left },
+  }
+})
+check('dense mobile status lanes stay separate, full-size, and inside the board', () => {
+  for (const [index, box] of denseMobileStatuses.entries()) {
+    const next = denseMobileStatuses[index + 1]
+    if (next) assert(box.right <= next.left + 1,
+      `mobile status lanes ${index + 1} and ${index + 2} overlap: ${box.right} > ${next.left}`)
+    assert(box.top >= denseMobileBoard.top - 1 && box.bottom <= denseMobileBoard.bottom + 1,
+      `mobile status lane ${index + 1} leaves the board: ${JSON.stringify(box)}`)
+  }
+  const viewer = denseMobileBoard.viewer
+  assert(viewer && viewer.left < denseMobileBoard.right && viewer.right > denseMobileBoard.left &&
+    viewer.top < denseMobileBoard.bottom && viewer.bottom > denseMobileBoard.top,
+  `mobile recentering hid the controlled player: ${JSON.stringify(denseMobileBoard)}`)
+})
+await shot('06c-dense-four-player-mobile')
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), denseFourRestore)
 await page.waitForFunction(() => [...document.querySelectorAll('.enemy__name')]
   .some((name) => name.textContent === 'Red Louse'))
@@ -5602,7 +5743,7 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].weak === 2)
 const seatTokens = await page.evaluate(() =>
-  [...document.querySelectorAll('.seat .token')].map((el) => el.className),
+  [...document.querySelectorAll('.seat__status-strip .token')].map((el) => el.className),
 )
 // aria-label replaces the button's contents wholesale, so anything left out of
 // it is unreachable no matter how it is marked up — which is how the tokens'
@@ -5641,37 +5782,40 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 2)
 
-// Powers render as their own card art, so the assertion is that the images
-// actually LOADED — a broken scan would leave the seat blank while a check on
-// markup alone still passed. `complete` also goes true on FAILURE, so waiting
-// on it settles the race without hiding a genuinely broken path.
+// A miniature card scan is unreadable at status size. Powers use the same
+// semantic rulebook symbols as the rest of the HUD; the full card remains on
+// hover/focus/click for exact rules.
 await page.waitForFunction(() => {
-  const art = [...document.querySelectorAll('.row__seat .power .power__art')]
-  return art.length === 2 && art.every((img) => img.complete)
+  const icons = [...document.querySelectorAll('.row__seat .power .icon')]
+  return icons.length === 2 && icons.every((img) => img.complete)
 })
-const powerArt = await page.evaluate(() =>
+const powerIcons = await page.evaluate(() =>
   [...document.querySelectorAll('.row__seat .power')].map((button) => {
-    const img = button.querySelector('.power__art')
+    const img = button.querySelector('.icon')
     return {
-      alt: button.getAttribute('aria-label') ?? '',
+      label: button.getAttribute('aria-label') ?? '',
+      src: img?.getAttribute('src') ?? '',
       loaded: img.complete && img.naturalWidth > 0,
       width: img.getBoundingClientRect().width,
       isButton: button.tagName === 'BUTTON',
       focusable: button.tabIndex >= 0,
+      hasCardArt: button.querySelector('.power__art') !== null,
     }
   }),
 )
-check('Powers in play are shown on the seat as card art', () => {
-  assertEqual(powerArt.length, 2, 'both Powers should be on the seat')
-  for (const art of powerArt) {
-    assert(art.loaded, `the Power's card scan failed to load: ${art.alt}`)
-    assert(art.width > 8, `the Power thumbnail collapsed to ${art.width}px`)
+check('Powers use large semantic effect symbols, never miniature card art', () => {
+  assertEqual(powerIcons.length, 2, 'both Powers should be on the seat')
+  assert(powerIcons[0].src.endsWith('/assets/power-icons/demon_form.png'), powerIcons[0].src)
+  assert(powerIcons[1].src.endsWith('/assets/power-icons/metallicize.png'), powerIcons[1].src)
+  assert(powerIcons[0].src !== powerIcons[1].src, 'distinct Powers must have distinct pictograms')
+  for (const icon of powerIcons) {
+    assert(icon.loaded, `the Power icon failed to load: ${icon.label}`)
+    assert(icon.width >= 21, `the Power icon collapsed to ${icon.width}px`)
+    assert(icon.isButton && icon.focusable, `${icon.label} is not keyboard reachable`)
+    assert(!icon.hasCardArt, `${icon.label} still contains a miniature card scan`)
   }
 })
 
-// The name fallback exists only for a missing scan. It is absolutely
-// positioned over the tile, so if it ever paints ABOVE the art the thumbnail
-// silently turns back into a text chip — which is exactly what it replaced.
 const topmostOverPower = await page.evaluate(() => {
   const tile = document.querySelector('.row__seat .power')
   if (!tile) return 'no tile'
@@ -5679,10 +5823,10 @@ const topmostOverPower = await page.evaluate(() => {
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
   return hit?.className ?? 'nothing'
 })
-check('the card art paints over the name fallback, not under it', () => {
+check('the semantic symbol paints visibly in the Power tile', () => {
   assert(
-    String(topmostOverPower).includes('power__art'),
-    `expected the art on top of the tile, found: ${topmostOverPower}`,
+    String(topmostOverPower).includes('icon'),
+    `expected the effect symbol on top of the tile, found: ${topmostOverPower}`,
   )
 })
 
@@ -5857,85 +6001,14 @@ const tileWhileHovered = await page.evaluate(() => {
   const box = tile.getBoundingClientRect()
   return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.className
 })
-check('the tile keeps showing its own art while the card is enlarged', () => {
+check('the tile keeps showing its effect symbol while the card is enlarged', () => {
   assert(
-    String(tileWhileHovered).includes('power__art'),
+    String(tileWhileHovered).includes('icon'),
     `the tile went blank while hovered: ${tileWhileHovered}`,
   )
 })
 await shot('14b-power-hover')
 await page.mouse.move(0, 0)
-
-// The tile crop is the whole reason a Power reads as board state rather than a
-// text chip: it must land on the ILLUSTRATION, not on the card's rules box.
-// Moving it onto the rules box is invisible to every other assertion here.
-const cropSample = await page.evaluate(() => {
-  const img = document.querySelector('.row__seat .power .power__art')
-  const tile = img.getBoundingClientRect()
-  const canvas = document.createElement('canvas')
-  canvas.width = img.naturalWidth
-  canvas.height = img.naturalHeight
-  const context = canvas.getContext('2d')
-  context.drawImage(img, 0, 0)
-
-  // Reproduce object-fit: cover + object-position to find the visible band.
-  const fit = getComputedStyle(img).objectFit
-  const scale = Math.max(tile.width / img.naturalWidth, tile.height / img.naturalHeight)
-  const drawnHeight = img.naturalHeight * scale
-  const overflow = Math.max(0, drawnHeight - tile.height)
-  const position = parseFloat(getComputedStyle(img).objectPosition.split(' ')[1]) / 100
-  const topPx = (overflow * position) / scale
-  const bandHeight = tile.height / scale
-
-  const spread = (y0, y1) => {
-    const data = context.getImageData(0, Math.max(0, y0), canvas.width, Math.max(1, y1 - y0)).data
-    let sum = 0
-    let sumSq = 0
-    let n = 0
-    for (let i = 0; i < data.length; i += 4) {
-      const value = (data[i] + data[i + 1] + data[i + 2]) / 3
-      sum += value
-      sumSq += value * value
-      n++
-    }
-    const mean = sum / n
-    return Math.sqrt(sumSq / n - mean * mean)
-  }
-
-  return {
-    band: spread(Math.round(topPx), Math.round(topPx + bandHeight)),
-    // The rules box: the flat panel across the bottom of every card.
-    rulesBox: spread(Math.round(canvas.height * 0.68), Math.round(canvas.height * 0.92)),
-    // Where the visible band sits as a fraction of card height. Geometry is
-    // exact where the contrast heuristic is only a signal — rules text is
-    // high-contrast too, so a crop sitting on the text still looked "busy".
-    bandTop: topPx / img.naturalHeight,
-    bandBottom: (topPx + bandHeight) / img.naturalHeight,
-    fit,
-  }
-})
-check('the Power tile crop sits on the illustration', () => {
-  // The band is recomputed here from natural dimensions, which cannot see the
-  // actual object-fit — so that is asserted directly, or switching to `fill`
-  // would leave this maths describing a crop the browser is not applying.
-  assertEqual(cropSample.fit, 'cover', 'the tile crops its art rather than squashing it')
-  // The illustration oval runs roughly 12%-58% of card height on these scans.
-  // The gate is tight enough to exclude the default 50% centring, which would
-  // otherwise drift down onto the rules panel.
-  const centre = (cropSample.bandTop + cropSample.bandBottom) / 2
-  assert(
-    centre > 0.12 && centre < 0.42,
-    `the visible band is centred at ${(centre * 100).toFixed(0)}% of card height, off the artwork`,
-  )
-})
-
-check('the Power tile does not show the flat rules panel', () => {
-  assert(
-    cropSample.band > cropSample.rulesBox * 1.3,
-    `the crop looks flat like the rules box (band spread ${cropSample.band.toFixed(1)} vs ` +
-      `rules box ${cropSample.rulesBox.toFixed(1)}) — it should land on the illustration`,
-  )
-})
 
 // The whole pinned-zoom lifecycle. Every one of these behaviours has a comment
 // naming the bug it fixes, and none of them was checked: the suite hovered and
@@ -5995,11 +6068,53 @@ const crossRow = await page.evaluate(async () => {
   await settle()
   return { rows: rows.length, skipped: false, pinned, afterOtherRowHover, stillMine }
 })
+
+// Removing a pinned Power must release the module-level owner. Otherwise that
+// invisible owner suppresses every other player's hover preview until combat
+// ends, even though no pinned card remains on screen.
+const removedPinRestore = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const restore = run.combat.players.map((player) => player.powers)
+  for (const player of run.combat.players) player.powers = []
+  run.combat.players[0].powers = [{ uid: 'pin-remove-a', defId: 'demon_form', upgraded: false }]
+  run.combat.players[1].powers = [{ uid: 'pin-remove-b', defId: 'metallicize', upgraded: false }]
+  debug.setRun(run)
+  return restore
+})
+await page.waitForFunction(() => document.querySelectorAll('.row__seat .power').length >= 2)
+const firstPin = page.locator('.power[aria-label^="Demon Form"]')
+const secondPin = page.locator('.power[aria-label^="Metallicize"]')
+await firstPin.click()
+await page.waitForSelector('.power__zoom')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].powers = []
+  debug.setRun(run)
+})
+await firstPin.waitFor({ state: 'detached' })
+await secondPin.hover()
+await page.waitForTimeout(50)
+const hoverAfterPinnedRemoval = await page.locator('.power__zoom').count()
+await page.mouse.move(0, 0)
+await page.waitForFunction(() => !document.querySelector('.power__zoom'))
+await page.evaluate((powers) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const [index, cards] of powers.entries()) run.combat.players[index].powers = cards
+  debug.setRun(run)
+}, removedPinRestore)
+
 check('a pin survives a hover in another row', () => {
   if (crossRow.skipped) return // needs two seats carrying Powers
   assertEqual(crossRow.pinned, 1, 'the card is pinned')
   assertEqual(crossRow.afterOtherRowHover, 1, 'and another row hovering does not destroy it')
   assert(crossRow.stillMine, 'the pin stays with the row that made it')
+})
+
+check('removing a pinned Power releases hover previews for every other row', () => {
+  assertEqual(hoverAfterPinnedRemoval, 1)
 })
 
 check('a pinned Power stays pinned, and every dismissal works', () => {
@@ -6011,17 +6126,16 @@ check('a pinned Power stays pinned, and every dismissal works', () => {
 })
 
 check('a Power can be reached without a mouse', () => {
-  // Hover-only left touch and keyboard users with unidentifiable 34x22 blobs.
-  for (const art of powerArt) {
-    assert(art.isButton, 'a Power tile should be a button')
-    assert(art.focusable, 'and reachable by keyboard')
+  for (const icon of powerIcons) {
+    assert(icon.isButton, 'a Power tile should be a button')
+    assert(icon.focusable, 'and reachable by keyboard')
   }
 })
 
 check('a Power tells a screen reader what it does, not just its name', () => {
-  const alts = powerArt.map((art) => art.alt)
-  const demon = alts.find((alt) => alt.startsWith('Demon Form'))
-  assert(demon, `expected a Demon Form label, saw: ${alts.join(' | ')}`)
+  const labels = powerIcons.map((icon) => icon.label)
+  const demon = labels.find((label) => label.startsWith('Demon Form'))
+  assert(demon, `expected a Demon Form label, saw: ${labels.join(' | ')}`)
   assert(demon.includes('Strength'), `the label should say what it grants: ${demon}`)
   assert(demon.includes('start of each turn'), `and when it grants it: ${demon}`)
 })
@@ -6053,16 +6167,17 @@ const powerMetaRestore = await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.querySelectorAll('.seat--viewer .seat__meta > *').length === 5)
 const playerMetaGeometry = await page.evaluate(() => {
-  const powers = document.querySelector('.row__seat > .powers')?.getBoundingClientRect()
+  const statuses = document.querySelector('.row--viewer .seat__status-strip')?.getBoundingClientRect()
+  const bar = document.querySelector('.seat--viewer .bar')?.getBoundingClientRect()
   const meta = document.querySelector('.seat--viewer .seat__meta')?.getBoundingClientRect()
   const portrait = document.querySelector('.seat--viewer .seat__portrait')?.getBoundingClientRect()
   return {
-    powersBeforeMeta: Boolean(powers && meta && powers.bottom <= meta.top + 1),
+    hpBeforeStatuses: Boolean(statuses && bar && bar.bottom <= statuses.top + 1),
     metaBeforePortrait: Boolean(meta && portrait && meta.bottom <= portrait.top + 1),
   }
 })
-check('Powers and temporary player metadata keep separate lanes above the portrait', () => {
-  assert(playerMetaGeometry.powersBeforeMeta, 'Power icons overlap temporary player metadata')
+check('Power icons join the compact status lane without covering the actor or HP', () => {
+  assert(playerMetaGeometry.hpBeforeStatuses, 'Power icons overlap the player HP bar')
   assert(playerMetaGeometry.metaBeforePortrait, 'temporary player metadata overlaps the character portrait')
 })
 const seatLabel = await page.evaluate(

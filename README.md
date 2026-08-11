@@ -20,8 +20,9 @@ For 2–4 player authoritative online co-op, voice chat, and Cloudflare Tunnel s
 
 ## Assets
 
-The repository includes 90 extracted enemy portraits, four generated board backgrounds, and
-generated combat art. Card scans and icons fetched by `pnpm sync:assets` stay gitignored;
+The repository includes 90 extracted enemy portraits, four generated board backgrounds,
+generated combat art, and generated high-resolution, visually normalized status/Power pictograms. Card scans and
+rulebook icons fetched by `pnpm sync:assets` stay gitignored;
 enemy portrait refreshes update the tracked bundle and should be reviewed before committing.
 
 | Group | Source | Needs |
@@ -31,6 +32,7 @@ enemy portrait refreshes update the tracked bundle and should be reviewed before
 | Enemy portraits | enemy card scans in the same PDF | same as icons, plus `cwebp` |
 | Boss battle backgrounds | original OpenAI Imagegen illustrations | four committed WebP files |
 | Combat stage and cutouts | original OpenAI Imagegen illustrations | committed WebP files |
+| Combat status and Power pictograms | original OpenAI Imagegen illustrations | committed transparent PNG files |
 
 ```bash
 brew install ffmpeg webp          # cwebp ships in the webp formula

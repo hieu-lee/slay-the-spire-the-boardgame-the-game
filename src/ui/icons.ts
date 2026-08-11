@@ -27,6 +27,22 @@ export type IconName =
   | 'die5'
   | 'die6'
 
+export type StatusIconName =
+  | 'attack'
+  | 'aoe'
+  | 'block'
+  | 'burn'
+  | 'draw'
+  | 'energy'
+  | 'miracle'
+  | 'orb'
+  | 'poison'
+  | 'power'
+  | 'shiv'
+  | 'strength'
+  | 'vulnerable'
+  | 'weak'
+
 export const ICON_LABELS: Record<IconName, string> = {
   attack: 'Attack',
   block: 'Block',
@@ -61,3 +77,4 @@ export function dieIcon(value: number): IconName {
 }
 
 export const iconPath = (name: IconName): string => `/assets/icons/${name}.png`
+export const statusIconPath = (name: StatusIconName): string => `/assets/status-icons/${name}.png`
