@@ -1957,6 +1957,83 @@ await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
   const ally = run.combat.players[1]
+  if (!ally) throw new Error('the Reinforced Body playtest needs a teammate')
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-reinforced-body', defId: 'reinforced_body', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 0, block: 0, cardBlockBonus: 0,
+  })
+  Object.assign(ally, { block: 0, dead: false })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const reinforcedBodyCard = page.getByRole('button', { name: /^Reinforced Body, cost X,/ })
+const reinforcedBodyLabel = await reinforcedBodyCard.getAttribute('aria-label')
+const reinforcedBodyDisabled = await reinforcedBodyCard.isDisabled()
+check('base Reinforced Body explains and enforces that X cannot be zero', () => {
+  assert(reinforcedBodyLabel.includes('must spend at least 1 Energy'), reinforcedBodyLabel)
+  assert(reinforcedBodyDisabled, 'Reinforced Body should be disabled at zero Energy')
+})
+await shot('06zphm-reinforced-body-disabled')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].energy = 3
+  debug.setRun(run)
+})
+await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Reinforced Body,"]')?.disabled)
+await reinforcedBodyCard.click()
+await page.getByText('Choose Energy for Reinforced Body').waitFor()
+const reinforcedBodySpenders = await page.locator('.prompt button').allTextContents()
+check('base Reinforced Body offers only legal positive X choices', () => {
+  assertDeepEqual(reinforcedBodySpenders.filter((text) => text.startsWith('Spend ')), ['Spend 1', 'Spend 2', 'Spend 3'])
+})
+await shot('06zphn-reinforced-body-energy')
+await page.getByRole('button', { name: 'Spend 2' }).click()
+const reinforcedBodyAlly = page.locator('.seat--targetable:not(.seat--viewer)').first()
+await reinforcedBodyAlly.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[1].block === 3)
+const reinforced = await readState()
+check('base Reinforced Body spends X and assigns its X+1 Block to one teammate', () => {
+  assertEqual(reinforced.players[0].energy, 1)
+  assertEqual(reinforced.players[0].block, 0)
+  assertEqual(reinforced.players[1].block, 3)
+})
+await shot('06zpho-reinforced-body-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
+  if (!ally) throw new Error('the Reinforced Body+ playtest needs a teammate')
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-reinforced-body-plus', defId: 'reinforced_body', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 0, block: 0, cardBlockBonus: 1,
+  })
+  Object.assign(ally, { block: 0, dead: false })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const reinforcedBodyPlus = page.getByRole('button', { name: /^Reinforced Body\+, cost X,/ })
+await reinforcedBodyPlus.click()
+await page.getByRole('button', { name: 'Spend 0' }).click()
+await page.locator('.seat--targetable.seat--viewer').click()
+await shot('06zphp-reinforced-body-plus-second-target')
+await page.locator('.seat--targetable:not(.seat--viewer)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const reinforcedPlus = await readState()
+check('Reinforced Body+ allows X zero and assigns both printed Block icons independently', () => {
+  assertEqual(reinforcedPlus.players[0].block, 1)
+  assertEqual(reinforcedPlus.players[1].block, 1)
+  assertEqual(reinforcedPlus.players[0].energy, 0)
+})
+await shot('06zphq-reinforced-body-plus-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {

@@ -158,7 +158,7 @@ type EffectKind =
   | { kind: 'loseOwnHp'; amount: number }
   | ({ kind: 'block'; amount: Amount } & Redirectable)
   /** Separate printed Block icons, each independently assigned to any living player. */
-  | { kind: 'blockChoices'; amount: number; targets: number }
+  | { kind: 'blockChoices'; amount: Amount; targets: number }
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
@@ -254,6 +254,8 @@ export type CardDef = {
   rarity: Rarity
   /** `'X'` spends any amount of energy; the effects read the amount spent. */
   cost: number | 'X'
+  /** Minimum legal Energy choice for an X-cost face. Defaults to zero. */
+  minimumX?: number
   /** Reduce this card's Energy cost for each Power its owner has in play. */
   powerCostReduction?: number
   /** Replace the printed cost after this player has lost HP in this combat. */
@@ -1712,6 +1714,15 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 0, per: 'energySpent' } }],
     upgrade: {
       effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 1, per: 'energySpent' } }],
+    },
+  }),
+  reinforced_body: card({
+    id: 'reinforced_body', name: 'Reinforced Body', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 'X',
+    minimumX: 1,
+    effects: [{ kind: 'blockChoices', amount: { base: 1, per: 'energySpent' }, targets: 1 }],
+    upgrade: {
+      minimumX: 0,
+      effects: [{ kind: 'blockChoices', amount: { base: 0, per: 'energySpent' }, targets: 2 }],
     },
   }),
   blizzard: card({

@@ -323,7 +323,7 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
-  /** Energy chosen for an X-cost card. Zero is legal. */
+  /** Energy chosen for an X-cost card. Must meet `CardDef.minimumX`. */
   energySpent?: number
   /** One enemy per independently targeted printed token. Duplicates are legal. */
   enemyUids?: string[]
@@ -1387,7 +1387,7 @@ function applyEffect(
       const [drawn] = drawInto(state, actor, 1)
       if (!drawn) return
       const drawnDef = faceOf(cardDef(drawn.defId), drawn.upgraded)
-      if (!cardIsPlayable(drawnDef, state, actor)) {
+      if (!cardIsPlayable(drawnDef, state, actor) || (drawnDef.minimumX ?? 0) > 0) {
         if (effect.exhaustNonPower && drawnDef.type !== 'power') {
           actor.hand = actor.hand.filter((card) => card.uid !== drawn.uid)
           exhaustCards(state, actor, [drawn], context)
@@ -2050,8 +2050,9 @@ export function playCard(
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   const printedCost = forcedPlay ? 0 : playCost(def, player)
+  if (def.cost === 'X' && printedCost !== 'X' && (def.minimumX ?? 0) > 0) return state
   const xCost = printedCost === 'X'
-  if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < 0 ||
+  if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < (def.minimumX ?? 0) ||
     context.energySpent! > player.energy)) return state
   if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
   const cost = xCost ? context.energySpent! : printedCost

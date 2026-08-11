@@ -111,7 +111,7 @@ function effectText(effect: Effect): string {
       effect.amount.per === 'block' && effect.amount.scale === undefined && effect.amount.bonus === undefined
       ? `double your Block, maximum Block 20${condition}`
       : `gain ${amountText(effect.amount)} Block${condition}`
-    case 'blockChoices': return `assign ${effect.targets} separate ${effect.amount} Block icons to any players${condition}`
+    case 'blockChoices': return `assign ${effect.targets} separate ${amountText(effect.amount)} Block icons to any players${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
@@ -238,6 +238,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.costAfterHpLoss !== undefined
       ? `costs ${def.costAfterHpLoss} after you lose hit points this combat`
       : '',
+    def.minimumX ? `must spend at least ${def.minimumX} Energy` : '',
     def.corruptSkills ? 'your Skills cost 0 and Exhaust when played' : '',
     def.retainBlock ? 'at start of turn, keep your leftover Block from last turn, maximum Block 20' : '',
     def.playCondition ? `can only be played if ${conditionText(def.playCondition)}` : '',

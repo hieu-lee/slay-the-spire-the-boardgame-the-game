@@ -386,7 +386,10 @@ function canAfford(
   if (!cardIsPlayable(def, state, player, drawCount)) return false
   const cost = playCost(def, player)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
-  return cost === 'X' || cost <= player.energy + (spendMiracle ? 1 : 0)
+  if (def.cost === 'X' && cost !== 'X' && (def.minimumX ?? 0) > 0) return false
+  return cost === 'X'
+    ? player.energy >= (def.minimumX ?? 0)
+    : cost <= player.energy + (spendMiracle ? 1 : 0)
 }
 
 /**
@@ -2125,12 +2128,15 @@ export function CombatScreen({
             </button>
           ) : null}
           {pendingDef?.cost === 'X' && pending?.energySpent === null
-            ? Array.from({ length: viewer.energy + 1 }, (_, energy) => (
-              <button type="button" className="prompt__mode" key={energy}
-                onClick={() => stageOrCommit({ ...pending, energySpent: energy })}>
-                Spend {energy}
-              </button>
-            ))
+            ? Array.from({ length: viewer.energy - (pendingDef.minimumX ?? 0) + 1 }, (_, at) => {
+              const energy = at + (pendingDef.minimumX ?? 0)
+              return (
+                <button type="button" className="prompt__mode" key={energy}
+                  onClick={() => stageOrCommit({ ...pending, energySpent: energy })}>
+                  Spend {energy}
+                </button>
+              )
+            })
             : null}
           {(pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny') && !pending.choiceConfirmed ? (
             <button type="button" className="prompt__mode"

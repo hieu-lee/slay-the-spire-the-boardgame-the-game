@@ -2235,6 +2235,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
+    { id: 'reinforced_body', block: [2, 0], energySpent: [1, 0], energy: [E - 1, E] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -4389,6 +4390,65 @@ check('Thunder Strike deals one separate hit per Lightning Orb and needs no targ
   const harmless = playCard(empty, 'p1', thunder.uid, { enemyUid: null, playerId: null })
   assertEqual(harmless.enemies[0].hp, 10)
   assertEqual(harmless.players[0].energy, 0)
+})
+
+check('Reinforced Body enforces its base X minimum and assigns upgraded Block icons separately', () => {
+  const base = instance('reinforced_body')
+  const baseState = combat([
+    makePlayer({ character: 'defect', hand: [base], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  assertEqual(playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 0,
+  }), baseState, 'Reinforced Body cannot use X = 0')
+  const blocked = playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 2,
+  })
+  assertEqual(blocked.players[0].block, 0)
+  assertEqual(blocked.players[1].block, 3)
+  assertEqual(blocked.players[0].energy, 1)
+
+  const discounted = combat([makePlayer({
+    character: 'defect', hand: [instance('reinforced_body')], energy: 3, freeCardsThisTurn: 1,
+  })], [makeEnemy()])
+  assertEqual(playCard(discounted, 'p1', discounted.players[0].hand[0].uid, {
+    enemyUid: null, playerId: null, playerIds: ['p1'], energySpent: 0,
+  }), discounted, 'a free-card discount cannot bypass the printed X minimum')
+
+  const upgraded = instance('reinforced_body', true)
+  const upgradedState = combat([
+    makePlayer({ character: 'defect', hand: [upgraded], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  upgradedState.players[0].cardBlockBonus = 1
+  const zero = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p1', 'p2'], energySpent: 0,
+  })
+  assertEqual(zero.players[0].block, 1, 'Footwork modifies the first printed X Block icon at X = 0')
+  assertEqual(zero.players[1].block, 1, 'the second printed icon has its own target and Footwork bonus')
+  assertEqual(zero.players[0].energy, 3)
+
+  const havoc = instance('havoc', true)
+  const havocBody = instance('reinforced_body')
+  const havocState = playCard(combat([makePlayer({
+    character: 'defect', hand: [havoc], draw: [havocBody], energy: 3,
+  })], [makeEnemy()]), 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(havocState.startTurnProgress, undefined,
+    'Havoc must not pause on a base Reinforced Body that cannot spend X = 0')
+  assert(havocState.players[0].exhaust.some((card) => card.uid === havocBody.uid))
+
+  const mayhemBody = instance('reinforced_body')
+  const mayhemState = combat([makePlayer({
+    character: 'defect', powers: [instance('mayhem')],
+    draw: [...Array.from({ length: 5 }, () => instance('defend_defect')), mayhemBody],
+  })], [makeEnemy()])
+  Object.assign(mayhemState, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(mayhemState)
+  const [ability] = startTurnAbilities(prepared)
+  const resolved = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+  assertEqual(resolved.phase, 'player',
+    'Mayhem must not pause on a base Reinforced Body that cannot spend X = 0')
+  assert(resolved.players[0].discard.some((card) => card.uid === mayhemBody.uid))
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {
