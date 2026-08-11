@@ -1216,6 +1216,18 @@ function applyEffect(
       note(`${actor.name} returns ${face.name} to hand`)
       return
     }
+    case 'recoverAllDiscardCosts': {
+      const recovered = actor.discard.filter((card) => {
+        const face = faceOf(cardDef(card.defId), card.upgraded)
+        return !face.unplayable && cardCost(face, actor.powers, actor.lostHpThisCombat) === effect.cost
+      })
+      if (recovered.length === 0) return
+      const uids = new Set(recovered.map((card) => card.uid))
+      actor.discard = actor.discard.filter((card) => !uids.has(card.uid))
+      actor.hand = [...actor.hand, ...recovered]
+      note(`${actor.name} returns ${recovered.length} ${effect.cost}-cost cards to hand`)
+      return
+    }
     case 'evoke': {
       for (let i = 0; i < effect.times; i++) {
         if (actor.orbs.every((orb) => orb == null)) {

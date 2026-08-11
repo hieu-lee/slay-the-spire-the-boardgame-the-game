@@ -2233,6 +2233,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'consume', powers: [1, 1] },
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'core_surge', enemyHp: [17, 16] },
+    { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -4349,6 +4350,23 @@ check('Core Surge redirects its base cleanse, upgrades to the whole party, and R
   const held = instance('core_surge')
   const retained = endPlayerTurn(combat([makePlayer({ hand: [held] })], [makeEnemy()]), { p1: [] })
   assertDeepEqual(retained.players[0].hand.map((card) => card.uid), [held.uid])
+})
+
+check('All for One returns every playable 0-cost discard card in pile order', () => {
+  for (const upgraded of [false, true]) {
+    const all = instance('all_for_one', upgraded)
+    const deflect = instance('deflect')
+    const zapPlus = instance('zap', true)
+    const daze = instance('daze')
+    const zap = instance('zap')
+    const state = combat([makePlayer({
+      character: 'defect', hand: [all], discard: [deflect, daze, zapPlus, zap], energy: 2,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    const recovered = playCard(state, 'p1', all.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(recovered.enemies[0].hp, upgraded ? 7 : 8)
+    assertDeepEqual(recovered.players[0].hand.map((card) => card.uid), [deflect.uid, zapPlus.uid])
+    assertDeepEqual(recovered.players[0].discard.map((card) => card.uid), [daze.uid, zap.uid, all.uid])
+  }
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {

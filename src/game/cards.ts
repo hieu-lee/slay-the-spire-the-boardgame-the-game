@@ -221,6 +221,7 @@ type EffectKind =
   | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
+  | { kind: 'recoverAllDiscardCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
   /** Remove every Weak and Vulnerable token from the player. */
   | ({ kind: 'clearDebuffs' } & Redirectable)
@@ -1986,6 +1987,11 @@ export const CARDS: Record<string, CardDef> = {
       supportTarget: 'allPlayers',
       effects: [{ kind: 'clearDebuffs', toChosen: true }, { kind: 'hit', amount: 4 }],
     },
+  }),
+  all_for_one: card({
+    id: 'all_for_one', name: 'All for One', owner: 'defect', type: 'attack', rarity: 'rare', cost: 2,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverAllDiscardCosts', cost: 0 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverAllDiscardCosts', cost: 0 }] },
   }),
   double_energy: card({
     id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

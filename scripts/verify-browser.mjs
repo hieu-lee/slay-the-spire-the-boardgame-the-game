@@ -1893,6 +1893,41 @@ await shot('06zphh-core-surge-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect', weak: 0,
+    hand: [{ uid: 'ui-all-for-one', defId: 'all_for_one', upgraded: true }],
+    discard: [
+      { uid: 'ui-all-deflect', defId: 'deflect', upgraded: false },
+      { uid: 'ui-all-daze', defId: 'daze', upgraded: false },
+      { uid: 'ui-all-zap-plus', defId: 'zap', upgraded: true },
+      { uid: 'ui-all-zap', defId: 'zap', upgraded: false },
+    ],
+    draw: [], exhaust: [], powers: [], energy: 2,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const allForOneCard = page.getByRole('button', { name: /^All for One\+, cost 2,/ })
+const allForOneLabel = await allForOneCard.getAttribute('aria-label')
+await shot('06zphi-all-for-one-ready')
+await allForOneCard.click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 2)
+const allForOne = await readState()
+check('All for One+ returns every playable current 0-cost discard card', () => {
+  assert(allForOneLabel.includes('return all 0-cost cards from your discard pile to hand'), allForOneLabel)
+  assertEqual(allForOne.enemies[0].hp, 7)
+  assertDeepEqual(allForOne.players[0].hand.map((card) => card.uid), ['ui-all-deflect', 'ui-all-zap-plus'])
+  assertDeepEqual(allForOne.players[0].discard.map((card) => card.uid),
+    ['ui-all-daze', 'ui-all-zap', 'ui-all-for-one'])
+})
+await shot('06zphj-all-for-one-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })

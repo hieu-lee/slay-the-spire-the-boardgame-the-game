@@ -153,6 +153,7 @@ function effectText(effect: Effect): string {
       : `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`
     case 'addDaze': return `put ${effect.amount} Daze on your ${effect.pile} pile${condition}`
     case 'recoverDiscardTopCosts': return `return a ${effect.cost}-cost discard top to hand${condition}`
+    case 'recoverAllDiscardCosts': return `return all ${effect.cost}-cost cards from your discard pile to hand${condition}`
     case 'heal': return `heal ${effect.amount}${condition}`
     case 'clearDebuffs': return `remove all Weak and Vulnerable${condition}`
     case 'clearTargetBlock': return `remove all Block from the target${condition}`
