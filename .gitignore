@@ -27,8 +27,9 @@ src/**/*.d.ts
 /*.webp
 artifacts/
 
-# All artwork is the publisher's. It is fetched into the working tree by the
-# sync-* scripts and deliberately NOT redistributed here. See ATTRIBUTION.md.
+# Sync scripts keep local card scans, icons, and refreshed source art out of
+# version control. Some enemy/background WebPs predate this rule and remain
+# tracked; original combat art lives in public/assets/combat/. See ATTRIBUTION.md.
 public/assets/cards/
 public/assets/cards-hd/
 public/assets/icons/

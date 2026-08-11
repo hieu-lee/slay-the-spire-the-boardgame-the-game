@@ -204,10 +204,10 @@ export function enemyLabel(enemies: readonly Enemy[], enemy: Enemy): string {
   const sameRow = sameName.filter((other) => other.row === enemy.row)
   // The row is the natural way to tell two of a creature apart, but a row card
   // routinely puts both of them in the SAME row -- and then both print
-  // "Cultist (row 0)" and the log reads as striking a corpse. Fall back to a
+  // "Cultist (row 1)" and the log reads as striking a corpse. Fall back to a
   // position within the row, which is the only thing left that separates them.
-  if (sameRow.length <= 1) return `${name} (row ${enemy.row})`
-  return `${name} (row ${enemy.row}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
+  if (sameRow.length <= 1) return `${name} (row ${enemy.row + 1})`
+  return `${name} (row ${enemy.row + 1}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
 }
 
 /** Deals `damage` to an enemy, spending Block and firing Curl Up immediately. */

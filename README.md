@@ -1,7 +1,7 @@
 # Slay the Spire — The Board Game
 
 An unofficial digital implementation of Contention Games' *Slay the Spire: The Board Game*.
-See [ATTRIBUTION.md](ATTRIBUTION.md) — this is a fan project and ships no artwork.
+See [ATTRIBUTION.md](ATTRIBUTION.md) for the provenance of the limited bundled artwork.
 
 ## Quick start
 
@@ -20,14 +20,17 @@ For 2–4 player authoritative online co-op, voice chat, and Cloudflare Tunnel s
 
 ## Assets
 
-No artwork is committed. `pnpm sync:assets` fetches it into `public/assets/`, which is
-gitignored:
+The repository includes 90 extracted enemy portraits, four generated board backgrounds, and
+generated combat art. Card scans and icons fetched by `pnpm sync:assets` stay gitignored;
+enemy portrait refreshes update the tracked bundle and should be reviewed before committing.
 
 | Group | Source | Needs |
 | --- | --- | --- |
 | Card, relic and potion scans | a third-party card browser | network, `ffmpeg`, `cwebp` |
 | Keyword and token icons | the official rulebook PDF | `docs/reference/STS_KS_Rulebook.pdf`, PyMuPDF, Pillow |
 | Enemy portraits | enemy card scans in the same PDF | same as icons, plus `cwebp` |
+| Boss battle backgrounds | original OpenAI Imagegen illustrations | four committed WebP files |
+| Combat stage and cutouts | original OpenAI Imagegen illustrations | committed WebP files |
 
 ```bash
 brew install ffmpeg webp          # cwebp ships in the webp formula
@@ -40,7 +43,8 @@ curl -L https://contentiongames.com/_images/STS_KS_Rulebook.pdf \
 On Debian or Ubuntu: `apt install ffmpeg webp`. Each sync script checks for what it
 needs and tells you what is missing rather than failing halfway through.
 
-The app runs without any of it — cards and enemies simply render without pictures.
+The app runs without synced card scans and icons; cards simply render without pictures.
+Bundled enemy portraits and combat art are required and checked in every clone.
 
 ## Layout
 

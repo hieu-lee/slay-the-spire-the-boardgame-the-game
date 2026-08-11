@@ -155,6 +155,9 @@ assert(attackIndex >= 0, 'expected at least one Strike in the opening hand')
 await page.locator('.hand .card').nth(attackIndex).click()
 await page.locator('.enemy').first().click()
 const afterPlay = await readState()
+const enemyHitVfx = page.locator('.enemy--struck .hit-vfx, .enemy--struck-alt .hit-vfx')
+await enemyHitVfx.waitFor()
+const hitVfxVisible = await enemyHitVfx.count()
 
 check('clicking a card then an enemy actually plays it', () => {
   assertEqual(afterPlay.players[0].hand.length, 4, 'the card leaves hand')
@@ -164,6 +167,7 @@ check('clicking a card then an enemy actually plays it', () => {
     totalEnemyHp(afterPlay) < totalEnemyHp(beforePlay),
     `an enemy should have taken damage: ${totalEnemyHp(beforePlay)} -> ${totalEnemyHp(afterPlay)}`,
   )
+  assertEqual(hitVfxVisible, 1, 'the damaged enemy should show one attached impact effect')
 })
 await shot('03-after-card-played')
 
@@ -185,11 +189,39 @@ const enemyArtStatus = await page.evaluate(() =>
     ok: img.complete && img.naturalWidth > 0,
   })),
 )
-const enemyArtDir = join(repoRoot, 'public/assets/enemies')
-const enemyArtSynced = existsSync(enemyArtDir) && readdirSync(enemyArtDir).length > 0
+const combatArtStatus = await page.evaluate(() => ({
+  characters: [...document.querySelectorAll('.seat__portrait > img')].map((img) => ({
+    src: img.getAttribute('src'),
+    ok: img.complete && img.naturalWidth > 0,
+  })),
+  background: getComputedStyle(document.querySelector('.combat')).backgroundImage,
+  handBackground: getComputedStyle(document.querySelector('.hand-area')).backgroundImage,
+  grounded: [...document.querySelectorAll('.seat__portrait, .enemy__portrait:has(> img)')]
+    .every((portrait) => getComputedStyle(portrait, '::after').content !== 'none'),
+  fallbackPortraits: [...document.querySelectorAll('.enemy__art--portrait')].every((portrait) => {
+    const style = getComputedStyle(portrait)
+    return style.objectFit === 'contain' && style.maskImage === 'none'
+  }),
+  logInteractive: document.querySelector('.combat__log')?.tabIndex === 0 &&
+    getComputedStyle(document.querySelector('.combat__log')).pointerEvents === 'auto',
+}))
+
+check('the painterly combat stage and public character sprites load', () => {
+  assert(combatArtStatus.background.includes('/assets/combat/stage-act-1.webp'),
+    `unexpected combat background: ${combatArtStatus.background}`)
+  assert(!combatArtStatus.handBackground.includes('/assets/combat/stage-act-1.webp'),
+    'the hand should tint the shared stage rather than restart its own copy')
+  assert(combatArtStatus.grounded, 'every character and cutout enemy should have a ground shadow')
+  assert(combatArtStatus.fallbackPortraits, 'legacy enemy art should use the non-cropped grounded fallback')
+  assert(combatArtStatus.logInteractive, 'the scrollable combat log should accept pointer and keyboard input')
+  assertEqual(combatArtStatus.characters.length, booted.players.length,
+    'every visible player seat should have one character sprite')
+  const broken = combatArtStatus.characters.filter((entry) => !entry.ok)
+  assert(broken.length === 0, `broken character art: ${broken.map((entry) => entry.src).join(', ')}`)
+})
+
 check('every enemy portrait on screen actually loaded', () => {
   assert(enemyArtStatus.length > 0, 'expected enemies to be rendered')
-  if (!enemyArtSynced) return // artwork is not committed; nothing to load
   const broken = enemyArtStatus.filter((entry) => !entry.ok)
   assert(broken.length === 0, `broken enemy art: ${broken.map((b) => b.src).join(', ')}`)
 })
@@ -1128,6 +1160,14 @@ await page.getByRole('button', { name: /^Good Instincts\+,/ }).click()
 await page.getByText('Choose who gets it').waitFor()
 const instinctsAlly = page.locator('.seat--targetable').filter({ hasText: 'Silent' })
 assertEqual(await instinctsAlly.count(), 1, 'Good Instincts+ did not expose the living ally as a Block target')
+const instinctsTargetCue = await instinctsAlly.evaluate((seat) => {
+  const style = getComputedStyle(seat)
+  return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) }
+})
+check('ally targets keep a visible cue without their pulse animation', () => {
+  assertEqual(instinctsTargetCue.style, 'solid')
+  assert(instinctsTargetCue.width >= 2, `ally target outline is ${instinctsTargetCue.width}px`)
+})
 await instinctsAlly.scrollIntoViewIfNeeded()
 await shot('06u-good-instincts-ally-choice')
 await instinctsAlly.click()
@@ -1199,18 +1239,39 @@ await page.evaluate(() => {
     energy: 0,
     weak: 1,
     vulnerable: 1,
+    block: 3,
+    strength: 0,
   })
   Object.assign(run.combat.players[1], {
     dead: false,
     hp: Math.max(1, run.combat.players[1].hp),
     weak: 2,
     vulnerable: 2,
+    block: 0,
+    strength: 0,
   })
   debug.setRun(run)
 })
 const panaceaCard = page.getByRole('button', { name: /^Panacea\+,/ })
 await panaceaCard.waitFor()
 const panaceaLabel = await panaceaCard.getAttribute('aria-label')
+const unequalStatusBaselines = await page.locator('.seat').evaluateAll((seats) => seats.map((seat) => ({
+  portrait: seat.querySelector('.seat__portrait')?.getBoundingClientRect().bottom,
+  bar: seat.querySelector('.bar')?.getBoundingClientRect().bottom,
+})))
+const statusBounds = await page.evaluate(() => {
+  const board = document.querySelector('.board')?.getBoundingClientRect()
+  const metadata = [...document.querySelectorAll('.seat .tokens, .row__seat > .powers')]
+    .map((element) => element.getBoundingClientRect())
+  return board && metadata.every((box) => box.top >= board.top - 1 && box.bottom <= board.bottom + 1)
+})
+check('unequal status counts do not lift a character off the shared floor', () => {
+  assert(new Set(unequalStatusBaselines.map((seat) => Math.round(seat.portrait))).size === 1,
+    `portrait baselines drifted with status count: ${JSON.stringify(unequalStatusBaselines)}`)
+  assert(new Set(unequalStatusBaselines.map((seat) => Math.round(seat.bar))).size === 1,
+    `HP baselines drifted with status count: ${JSON.stringify(unequalStatusBaselines)}`)
+  assert(statusBounds, 'player tokens or Powers were clipped outside the battlefield')
+})
 await panaceaCard.scrollIntoViewIfNeeded()
 await shot('06y-panacea-party-debuffs')
 await panaceaCard.click()
@@ -2194,12 +2255,42 @@ const narrowWhirlwindPicker = await page.evaluate(() => {
   const spenders = [...document.querySelectorAll('.prompt button')]
     .filter((button) => button.textContent?.startsWith('Spend '))
   const last = spenders.at(-1)?.getBoundingClientRect()
-  return { count: spenders.length, promptRight: prompt?.right ?? Infinity, lastRight: last?.right ?? Infinity }
+  const players = [...document.querySelectorAll('.seat')].map((seat) => seat.getBoundingClientRect())
+  const enemies = [...document.querySelectorAll('.enemy')].map((enemy) => enemy.getBoundingClientRect())
+  const board = document.querySelector('.board')?.getBoundingClientRect()
+  const actionBar = document.querySelector('.combat__bar')?.getBoundingClientRect()
+  const combatLog = document.querySelector('.combat__log')?.getBoundingClientRect()
+  const combatLogStyle = document.querySelector('.combat__log') &&
+    getComputedStyle(document.querySelector('.combat__log'))
+  const actorOverlap = players.some((player) => enemies.some((enemy) =>
+    player.left < enemy.right && player.right > enemy.left && player.top < enemy.bottom && player.bottom > enemy.top))
+  const actorClipped = board && [...players, ...enemies].some((actor) =>
+    actor.left < board.left - 1 || actor.right > board.right + 1)
+  const enemyTextContained = [...document.querySelectorAll('.enemy__head, .enemy__ability')].every((label) => {
+    const box = label.getBoundingClientRect()
+    const owner = label.closest('.enemy')?.getBoundingClientRect()
+    return owner && box.left >= owner.left - 1 && box.right <= owner.right + 1
+  })
+  return {
+    count: spenders.length,
+    promptRight: prompt?.right ?? Infinity,
+    lastRight: last?.right ?? Infinity,
+    actorOverlap,
+    actorClipped,
+    enemyTextContained,
+    logBelowActions: Boolean(actionBar && combatLog && combatLog.top >= actionBar.bottom - 1),
+    logHiddenByPrompt: combatLogStyle?.visibility === 'hidden' && combatLogStyle.pointerEvents === 'none',
+  }
 })
 check('the full six-Energy Whirlwind picker wraps inside a narrow viewport', () => {
   assertEqual(narrowWhirlwindPicker.count, 7)
   assert(narrowWhirlwindPicker.promptRight <= 390, `prompt extends to ${narrowWhirlwindPicker.promptRight}px`)
   assert(narrowWhirlwindPicker.lastRight <= 390, `Spend 6 extends to ${narrowWhirlwindPicker.lastRight}px`)
+  assert(!narrowWhirlwindPicker.actorOverlap, 'a mobile enemy slot overlaps a player slot')
+  assert(!narrowWhirlwindPicker.actorClipped, 'a mobile actor slot is clipped at the battlefield edge')
+  assert(narrowWhirlwindPicker.enemyTextContained, 'mobile enemy text spills outside its actor slot')
+  assert(narrowWhirlwindPicker.logBelowActions, 'the mobile combat log overlaps the wrapped action bar')
+  assert(narrowWhirlwindPicker.logHiddenByPrompt, 'the combat log remains visible over a mobile prompt')
 })
 await shot('06zpsa-whirlwind-energy-mobile')
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -4063,9 +4154,10 @@ check('Storm removes an earlier lethal target from the next Orb choice', () => {
   assertEqual(stormLethalResolved.enemies.find((enemy) => enemy.defId === 'cultist').poison, 1)
 })
 await shot('07zg-defect-storm-lethal-target-filter')
-await page.evaluate(() => {
+const stormFinalFixture = await readRun()
+await page.evaluate((fixture) => {
   const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
+  const run = structuredClone(fixture)
   const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', log: [] })
   Object.assign(actor, {
@@ -4085,7 +4177,7 @@ await page.evaluate(() => {
     })
   }
   debug.setRun(run)
-})
+}, stormFinalFixture)
 await page.getByRole('button', { name: 'Start turn 4' }).click()
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
@@ -4101,11 +4193,11 @@ check('Storm+ skips its second channel after the first Evoke wins combat', () =>
   assert(finalStormState.enemies.find((enemy) => enemy.defId === 'jaw_worm').dead)
 })
 await shot('07zh-defect-storm-final-target-fallback')
-await page.evaluate(() => {
+await page.evaluate((fixture) => {
   const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
+  const run = structuredClone(fixture)
   const actor = run.combat.players[0]
-  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 4, log: [] })
   Object.assign(actor, {
     hand: [], shivs: 5, orbs: ['lightning', 'lightning', 'lightning'],
     powers: [
@@ -4125,7 +4217,7 @@ await page.evaluate(() => {
     })
   }
   debug.setRun(run)
-})
+}, stormFinalFixture)
 await page.getByRole('button', { name: 'Start turn 5' }).click()
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
@@ -4144,11 +4236,11 @@ check('a lethal Storm skips later overflow Shiv choices', () => {
   assertEqual(skippedPostLethalStormShiv, 0)
 })
 await shot('07zi-defect-storm-skips-later-shiv')
-await page.evaluate(() => {
+await page.evaluate((fixture) => {
   const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
+  const run = structuredClone(fixture)
   const actor = run.combat.players[0]
-  Object.assign(run.combat, { phase: 'roundEnd', log: [] })
+  Object.assign(run.combat, { phase: 'roundEnd', turn: 5, log: [] })
   Object.assign(actor, {
     hand: [], shivs: 5, orbs: ['lightning', 'lightning', 'lightning'],
     powers: [
@@ -4168,7 +4260,7 @@ await page.evaluate(() => {
     })
   }
   debug.setRun(run)
-})
+}, stormFinalFixture)
 await page.getByRole('button', { name: 'Start turn 6' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const postShivStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
@@ -4563,6 +4655,7 @@ const foldProbe = []
 for (const size of [
   { width: 360, height: 720 },
   { width: 900, height: 620 },
+  { width: 1440, height: 650 },
   { width: 1440, height: 900 },
 ]) {
   await page.setViewportSize(size)
@@ -4574,6 +4667,8 @@ for (const size of [
       const b = board.getBoundingClientRect()
       const r = bar.getBoundingClientRect()
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      const actorWidths = [...document.querySelectorAll('.seat, .enemy')]
+        .map((actor) => actor.getBoundingClientRect().width)
       return {
         label,
         missing: false,
@@ -4583,10 +4678,49 @@ for (const size of [
         // can actually see the number.
         onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
         onTop: !!hit?.closest('.bar'),
+        minActorWidth: Math.min(...actorWidths),
       }
     }, `${size.width}x${size.height}`),
   )
 }
+const horizontalScrollRestore = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  run.combat.enemies = Array.from({ length: 8 }, (_, index) => ({
+    ...template,
+    uid: `keyboard-scroll-${index}`,
+    row: index % 4,
+    isBoss: false,
+    hp: 5,
+    maxHp: 5,
+    block: 0,
+    dead: false,
+  }))
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.enemy').length === 8)
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+const horizontalScrollStart = await page.locator('.board').evaluate((board) => {
+  board.scrollLeft = board.scrollWidth / 2
+  board.focus()
+  return board.scrollLeft
+})
+await page.keyboard.press('ArrowLeft')
+await page.waitForTimeout(250)
+const horizontalScrollAfterKey = await page.locator('.board').evaluate((board) => board.scrollLeft)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.log = [...run.combat.log, 'Keyboard scroll probe']
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().log.at(-1) === 'Keyboard scroll probe')
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+const horizontalScrollAfterLog = await page.locator('.board').evaluate((board) => board.scrollLeft)
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), horizontalScrollRestore)
 await page.setViewportSize({ width: 1440, height: 900 })
 check("an enemy's hit points are on screen without scrolling, at every size", () => {
   for (const probe of foldProbe) {
@@ -4594,6 +4728,10 @@ check("an enemy's hit points are on screen without scrolling, at every size", ()
     assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
     assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
     assert(probe.onTop, `${probe.label}: the bar is covered by something else`)
+    if (!probe.label.startsWith('360x')) {
+      assert(probe.minActorWidth >= 100,
+        `${probe.label}: short desktop viewport collapsed actors to ${probe.minActorWidth}px`)
+    }
   }
 })
 
@@ -4689,6 +4827,12 @@ check("a four-player board still shows the viewer's own enemy", () => {
     assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
     assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
   }
+})
+check('horizontal keyboard scrolling is not recentered by later combat-log entries', () => {
+  assert(horizontalScrollAfterKey < horizontalScrollStart,
+    `ArrowLeft did not move the board: ${horizontalScrollStart} -> ${horizontalScrollAfterKey}`)
+  assert(Math.abs(horizontalScrollAfterLog - horizontalScrollAfterKey) < 2,
+    `the log recentered horizontal scroll: ${horizontalScrollAfterKey} -> ${horizontalScrollAfterLog}`)
 })
 
 check("an enemy's hit points stay on screen during the round-end pause", () => {
@@ -4989,9 +5133,131 @@ check('a four player game lays out one row per player', () => {
 })
 
 const rowCount = await page.locator('.row').count()
+const strayClearLabels = await page.locator('.row__enemies > .muted').count()
+const enemyRowAssociations = await page.locator('.enemy:not(.enemy--boss)').evaluateAll((enemies) => {
+  const players = window.__STS_DEBUG__.getState().players
+  return enemies.map((enemy) => {
+    const row = Number(enemy.dataset.row)
+    const player = players.find((candidate) => candidate.row === row)
+    const badge = enemy.querySelector('.enemy__row')
+    return {
+      expected: player?.name ?? '',
+      title: badge?.getAttribute('title') ?? '',
+      label: enemy.getAttribute('aria-label') ?? '',
+      longVisible: badge ? getComputedStyle(badge.querySelector('.enemy__row-long')).display !== 'none' : false,
+    }
+  })
+})
 check('every player row is rendered on screen', () => {
   assertEqual(rowCount, 4, 'the board should show four rows')
 })
+check('empty shared-stage rows do not paint stray lane labels', () => {
+  assertEqual(strayClearLabels, 0)
+})
+check('shared-stage enemies visibly and accessibly identify their player row', () => {
+  assert(enemyRowAssociations.length > 0, 'expected non-boss enemy row badges')
+  for (const association of enemyRowAssociations) {
+    assert(association.expected, 'enemy row has no player')
+    assert(association.title.includes(association.expected), `row badge omits ${association.expected}`)
+    assert(association.label.includes(`facing ${association.expected}`),
+      `enemy label omits its player: ${association.label}`)
+    assert(association.longVisible, `desktop row badge hides ${association.expected}`)
+  }
+})
+
+const duplicateEnemyRestore = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  const row = run.combat.players[0].row
+  run.combat.enemies = [
+    { ...template, uid: 'row-label-duplicate-1', row, isBoss: false },
+    { ...template, uid: 'row-label-duplicate-2', row, isBoss: false },
+  ]
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.enemy').length === 2)
+const duplicateEnemyLabels = await page.locator('.enemy').evaluateAll((enemies) =>
+  enemies.map((enemy) => ({
+    label: enemy.getAttribute('aria-label') ?? '',
+    badge: enemy.querySelector('.enemy__row')?.getAttribute('title') ?? '',
+  })),
+)
+const duplicateSeatLabel = await page.locator('.seat--viewer').getAttribute('aria-label') ?? ''
+const duplicateEnemyPlayer = (await readState()).players[0]
+check('duplicate enemy labels announce one unambiguous row owner', () => {
+  const row = duplicateEnemyPlayer.row + 1
+  for (const { label, badge } of duplicateEnemyLabels) {
+    assert(label.includes(`facing ${duplicateEnemyPlayer.name}`), `duplicate label omits owner: ${label}`)
+    assertEqual(label.match(/row \d+/g)?.length ?? 0, 1,
+      `duplicate label announces contradictory row numbers: ${label}`)
+    assert(label.includes(`row ${row}`), `duplicate label uses the wrong row number: ${label}`)
+    assert(badge.startsWith(`Row ${row} ·`), `badge and label disagree: ${badge} / ${label}`)
+  }
+  assert(duplicateSeatLabel.includes(`row ${row}`),
+    `player seat and enemy row disagree: ${duplicateSeatLabel}`)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), duplicateEnemyRestore)
+await page.waitForFunction((count) => document.querySelectorAll('.enemy').length === count,
+  duplicateEnemyRestore.combat.enemies.length)
+
+const denseFourRestore = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const [index, player] of run.combat.players.entries()) {
+    Object.assign(player, {
+      block: 3,
+      strength: 2,
+      vulnerable: 1,
+      weak: 1,
+      powers: [
+        { uid: `ui-dense-power-a-${index}`, defId: 'barricade', upgraded: false },
+        { uid: `ui-dense-power-b-${index}`, defId: 'inflame', upgraded: false },
+      ],
+    })
+  }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.row__seat .power').length === 8)
+const denseFourGeometry = await page.locator('.row__seat').evaluateAll((seats) => seats.map((seat) => {
+  const portrait = seat.querySelector('.seat__portrait')?.getBoundingClientRect()
+  const name = seat.querySelector('.seat__name')?.getBoundingClientRect()
+  const bar = seat.querySelector('.seat .bar')?.getBoundingClientRect()
+  return {
+    left: seat.getBoundingClientRect().left,
+    right: seat.getBoundingClientRect().right,
+    portraitBottom: portrait?.bottom,
+    nameTop: name?.top,
+    nameBottom: name?.bottom,
+    barTop: bar?.top,
+  }
+}))
+const denseEnemyPortraits = await page.locator('.enemy__portrait:has(> img)').evaluateAll(
+  (portraits) => portraits.map((portrait) => {
+    const box = portrait.getBoundingClientRect()
+    return { width: box.width, height: box.height }
+  }),
+)
+check('dense four-player actors share the floor without clipping their names or HP', () => {
+  for (const [index, box] of denseFourGeometry.entries()) {
+    assert(box.portraitBottom <= box.nameTop + 1,
+      `player ${index + 1} name clips the character: ${JSON.stringify(box)}`)
+    assert(box.nameBottom <= box.barTop + 1,
+      `player ${index + 1} HP clips the name: ${JSON.stringify(box)}`)
+    const next = denseFourGeometry[index + 1]
+    if (next) assert(box.right <= next.left + 1,
+      `players ${index + 1} and ${index + 2} overlap: ${box.right} > ${next.left}`)
+  }
+  assert(denseEnemyPortraits.every((portrait) => portrait.height >= portrait.width / 1.5),
+    `full-party enemy portraits were crushed into shallow strips: ${JSON.stringify(denseEnemyPortraits)}`)
+})
+await shot('06b-dense-four-player')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), denseFourRestore)
+await page.waitForFunction(() => [...document.querySelectorAll('.enemy__name')]
+  .some((name) => name.textContent === 'Red Louse'))
+
 const enemyAbilities = await page.locator('.enemy').evaluateAll((enemies) => enemies.map((enemy) => ({
   text: enemy.querySelector('.enemy__ability')?.textContent ?? '',
   label: enemy.getAttribute('aria-label') ?? '',
@@ -5091,6 +5357,29 @@ check('three enemies in one player row remain readable at every supported width'
     assert(probe.onScreen, `${probe.size}: an enemy health bar is off screen`)
   }
 })
+
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = [{ uid: 'ui-mobile-ability-probe', defId: 'strike_ironclad', upgraded: false }]
+  run.combat.players[0].energy = 3
+  debug.setRun(run)
+})
+await page.locator('.hand .card[aria-label^="Strike,"]').click()
+const mobileAbility = page.locator('.row--viewer .enemy__ability').first()
+await mobileAbility.click()
+const mobileAbilityProbe = await mobileAbility.evaluate((ability) => ({
+  width: ability.getBoundingClientRect().width,
+  text: ability.textContent ?? '',
+}))
+const mobileTargetsStillOpen = await page.locator('.enemy--targeted').count()
+check('a mobile ability badge opens its rules without committing the staged attack', () => {
+  assert(mobileTargetsStillOpen > 0, 'the target choice closed when inspecting the ability')
+  assert(mobileAbilityProbe.width > 40, `the ability badge did not expand: ${mobileAbilityProbe.width}px`)
+  assert(mobileAbilityProbe.text.includes('Curl Up'), `unexpected ability text: ${mobileAbilityProbe.text}`)
+})
+await page.keyboard.press('Escape')
 
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
@@ -5739,6 +6028,43 @@ check('a Power tells a screen reader what it does, not just its name', () => {
 
 // aria-label replaces an element's contents wholesale, so anything missing
 // from it is invisible to a screen reader however it is marked up.
+const powerMetaRestore = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  const restore = {
+    drawLocked: player.drawLocked,
+    strengthLossAtEndOfTurn: player.strengthLossAtEndOfTurn,
+    doubledAttacksThisTurn: player.doubledAttacksThisTurn,
+    hpLossLimitThisRound: player.hpLossLimitThisRound,
+    hpLostThisRound: player.hpLostThisRound,
+    potions: player.potions,
+  }
+  Object.assign(player, {
+    drawLocked: true,
+    strengthLossAtEndOfTurn: 2,
+    doubledAttacksThisTurn: 1,
+    hpLossLimitThisRound: 3,
+    hpLostThisRound: 0,
+    potions: ['fire_potion'],
+  })
+  debug.setRun(run)
+  return restore
+})
+await page.waitForFunction(() => document.querySelectorAll('.seat--viewer .seat__meta > *').length === 5)
+const playerMetaGeometry = await page.evaluate(() => {
+  const powers = document.querySelector('.row__seat > .powers')?.getBoundingClientRect()
+  const meta = document.querySelector('.seat--viewer .seat__meta')?.getBoundingClientRect()
+  const portrait = document.querySelector('.seat--viewer .seat__portrait')?.getBoundingClientRect()
+  return {
+    powersBeforeMeta: Boolean(powers && meta && powers.bottom <= meta.top + 1),
+    metaBeforePortrait: Boolean(meta && portrait && meta.bottom <= portrait.top + 1),
+  }
+})
+check('Powers and temporary player metadata keep separate lanes above the portrait', () => {
+  assert(playerMetaGeometry.powersBeforeMeta, 'Power icons overlap temporary player metadata')
+  assert(playerMetaGeometry.metaBeforePortrait, 'temporary player metadata overlaps the character portrait')
+})
 const seatLabel = await page.evaluate(
   () => document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
 )
@@ -5759,6 +6085,12 @@ check('the seat button contains no other interactive element', () => {
   assertEqual(nested, 0, 'nested interactive elements break the seat button')
 })
 await shot('14-powers-in-play')
+await page.evaluate((restore) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], restore)
+  debug.setRun(run)
+}, powerMetaRestore)
 
 // Steam Barrier reads the top discard card, and p.13 lets each player choose
 // the order. Exercise the actual end-turn control rather than injecting the
@@ -6043,7 +6375,7 @@ check('Try again preserves every Ascension setup modifier', () => {
   assert(ascensionRetry.players[0].deck.some((card) => card.defId === 'ascenders_bane'))
 })
 
-await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'combust-ui'))
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'combust-ui'))
 await page.locator('.room--reachable').first().click()
 await page.locator('.combat').waitFor()
 await page.evaluate(() => {
@@ -6056,6 +6388,7 @@ await page.evaluate(() => {
     hand: [],
     powers: [{ uid: 'ui-combust', defId: 'combust', upgraded: true }],
   })
+  run.combat.players[1].row = 1
   run.combat.phase = 'player'
   run.combat.turn = 1
   run.combat.powerTriggersUsedThisTurn = []
@@ -6070,6 +6403,30 @@ await page.evaluate(() => {
 await page.getByRole('button', { name: 'Use Combust+' }).click()
 await page.getByText('Choose a row for Combust+').waitFor()
 await page.getByRole('button', { name: /^Cultist,/ }).scrollIntoViewIfNeeded()
+const rowTargetGeometry = await page.getByRole('button', { name: /^Target row/ }).evaluateAll((buttons) =>
+  buttons.map((button) => {
+    const box = button.getBoundingClientRect()
+    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+  }),
+)
+const partyRailGeometry = await page.locator('.party-rail').evaluate((rail) => {
+  const entries = [...rail.querySelectorAll('.party-rail__player')].map((entry) => entry.getBoundingClientRect())
+  return {
+    left: Math.min(...entries.map((box) => box.left)),
+    right: Math.max(...entries.map((box) => box.right)),
+    top: Math.min(...entries.map((box) => box.top)),
+    bottom: Math.max(...entries.map((box) => box.bottom)),
+  }
+})
+check('every row-target control has its own clickable position', () => {
+  assertEqual(rowTargetGeometry.length, 2, 'both combat rows should be targetable')
+  assert(rowTargetGeometry[0].right <= rowTargetGeometry[1].left + 1,
+    `row-target controls overlap: ${JSON.stringify(rowTargetGeometry)}`)
+  assert(rowTargetGeometry.every((target) => target.left >= partyRailGeometry.right ||
+    target.top >= partyRailGeometry.bottom || target.right <= partyRailGeometry.left ||
+    target.bottom <= partyRailGeometry.top),
+  `row-target controls overlap the party rail: ${JSON.stringify({ rowTargetGeometry, partyRailGeometry })}`)
+})
 await shot('16a-combust-row-target')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -6094,11 +6451,11 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: 'Use Combust+' }).click()
-await page.getByRole('button', { name: 'Target row 1' }).click()
+await page.getByRole('button', { name: 'Target row 2' }).click()
 const combustResolved = await readState()
 const combustLocked = await page.getByRole('button', { name: 'Combust+ used' }).isDisabled()
-check('Combust+ visibly targets a row, includes the boss, and locks after use', () => {
-  assertDeepEqual(combustResolved.enemies.map((enemy) => enemy.hp), [8, 8, 10, 8])
+check('Combust+ targets a non-viewer row, includes the boss, and locks after use', () => {
+  assertDeepEqual(combustResolved.enemies.map((enemy) => enemy.hp), [10, 10, 8, 8])
   assert(combustLocked)
   assert(combustResolved.powerTriggersUsedThisTurn.includes(
     `${combustResolved.players[0].id}/power:ui-combust`,
@@ -6271,7 +6628,7 @@ await copiedHeadbuttChoice.getByRole('button', { name: 'Put selected card on top
 await page.getByRole('button', { name: /^Red Louse,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 
-+// Boss cards use generated transparent portraits over generated act-specific
+// Boss cards use tracked rulebook-extracted portraits over generated act-specific
 // backdrops. Exercise three mechanically distinct cards in the real UI so a
 // missing asset, unreadable ability, or runaway boss layout fails visibly.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
@@ -6307,10 +6664,14 @@ const bossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => ca
   background: getComputedStyle(card).backgroundImage,
   image: card.querySelector('img')?.getAttribute('src'),
   loaded: (card.querySelector('img')?.naturalWidth ?? 0) > 0,
+  objectFit: getComputedStyle(card.querySelector('img')).objectFit,
+  maskImage: getComputedStyle(card.querySelector('img')).maskImage,
   box: card.getBoundingClientRect().toJSON(),
 })))
 check('boss portraits, backdrops, mechanics, and accessible labels render together', () => {
-  assert(bossVisuals.every((boss) => boss.loaded), 'a generated boss portrait did not load')
+  assert(bossVisuals.every((boss) => boss.loaded), 'a tracked boss portrait did not load')
+  assert(bossVisuals.every((boss) => boss.objectFit === 'contain' && boss.maskImage === 'none'),
+    'a boss portrait is cropped or masked')
   assert(bossVisuals.every((boss) => boss.background.includes('/assets/backgrounds/boss-act-')),
     'a boss is missing its act backdrop')
   assert(bossVisuals.some((boss) => boss.label.includes('Sharp Hide')))
