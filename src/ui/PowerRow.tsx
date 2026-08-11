@@ -264,17 +264,19 @@ const WHEN: Record<string, string> = {
 /**
  * A printed number, or a description of the one the board works out.
  *
- * `hit` and `block` amounts are no longer plain numbers, and a template literal
+ * `hit`, `block`, and `damage` amounts are no longer plain numbers, and a template literal
  * accepts an object without complaint — so the compiler stopped being able to
- * catch this and the row would have read "[object Object] Block". No Power
- * carries a computed amount today; this is here so that the first one to do so
- * reads as something rather than as a bug.
+ * catch this and the row would have read "[object Object] Block". Keep every
+ * computed Power amount readable rather than serializing its object shape.
  */
 function amountLabel(amount: Amount): string {
   if (typeof amount === 'number') return String(amount)
   const parts = [String(amount.base)]
   if (amount.per) parts.push(`per ${amount.per}`)
-  if (amount.bonus) parts.push(`+${amount.bonus.plus} conditional`)
+  if (amount.bonus) {
+    const when = amount.bonus.when.kind === 'inStance' ? ` if you are in ${amount.bonus.when.stance}` : ' conditional'
+    parts.push(`+${amount.bonus.plus}${when}`)
+  }
   if (amount.targetTokens) parts.push(`per target ${amount.targetTokens.join(' and ')}`)
   return parts.join(' ')
 }
@@ -288,7 +290,7 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'draw':
       return `draw ${effect.amount}`
     case 'damage':
-      return `${effect.amount} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
+      return `${amountLabel(effect.amount)} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':
       return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':

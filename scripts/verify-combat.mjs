@@ -2125,6 +2125,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'claw_claw_pack', enemyHp: [19, 18] },
     { id: 'simmering_fury', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'like_water', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'battle_hymn', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5754,6 +5755,27 @@ check('Like Water grants end-of-turn Block only while in Calm', () => {
     ], [makeEnemy()]))
     assertEqual(calm.players[0].block, upgraded ? 2 : 1)
   }
+})
+
+check('Battle Hymn deals its stance bonus once per turn without damage modifiers', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('battle_hymn', upgraded)
+    const state = combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'wrath', strength: 4, weak: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20, vulnerable: 2 })])
+    const used = activatePower(state, 'p1', power.uid, { enemyUid: 'e1' })
+    assertEqual(used.enemies[0].hp, upgraded ? 16 : 18,
+      'Battle Hymn uses only its printed Wrath bonus')
+    assertEqual(used.players[0].weak, 2, 'plain Power damage does not spend Weak')
+    assertEqual(activatePower(used, 'p1', power.uid, { enemyUid: 'e1' }), used,
+      'Battle Hymn cannot activate twice in one turn')
+  }
+
+  const neutralPower = instance('battle_hymn')
+  const neutral = activatePower(combat([
+    makePlayer({ character: 'watcher', powers: [neutralPower], stance: 'neutral' }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', neutralPower.uid, { enemyUid: 'e1' })
+  assertEqual(neutral.enemies[0].hp, 19)
 })
 
 check('Choke adds every Weak and Poison token on its target to one hit', () => {

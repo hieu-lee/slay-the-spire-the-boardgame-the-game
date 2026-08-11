@@ -104,7 +104,7 @@ function effectText(effect: Effect): string {
   const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
   switch (effect.kind) {
     case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
-    case 'damage': return `deal ${effect.amount} damage${condition}`
+    case 'damage': return `deal ${amountText(effect.amount)} damage${condition}`
     case 'damagePerAttackIntent': return `deal ${effect.amount} damage to each enemy attacking you per Attack icon in its intent${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
     case 'loseOwnHp': return `lose ${effect.amount} hit points${condition}`

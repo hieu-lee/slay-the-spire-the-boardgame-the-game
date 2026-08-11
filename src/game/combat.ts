@@ -915,7 +915,7 @@ function applyEffect(
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        damageEnemyLogged(state, target, effect.amount, who)
+        damageEnemyLogged(state, target, amountOf(effect.amount, state, actor, target, context), who)
         if (combatIsOver(state)) return
       }
       return

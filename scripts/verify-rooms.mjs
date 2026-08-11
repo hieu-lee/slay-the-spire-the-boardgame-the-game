@@ -4588,6 +4588,33 @@ check('online seats can activate only their own once-per-turn Combust', () => {
   assertEqual(repeated?.name, 'RoomError', 'Combust activated twice in one turn')
 })
 
+check('Battle Hymn activation and its once-per-turn lock are authoritative across reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const power = { uid: 'room-battle-hymn', defId: 'battle_hymn', upgraded: true }
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(actor, { character: 'watcher', stance: 'wrath', powers: [power] })
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, vulnerable: 2 })
+
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, {
+    kind: 'activatePower', powerUid: power.uid, enemyUid: target.uid, preflight: true,
+  })
+  const teammate = snapshotFor(room, b.token).run.combat
+  assertEqual(teammate.enemies.find((enemy) => enemy.uid === target.uid).hp, 16)
+  assert(teammate.powerTriggersUsedThisTurn.includes(`${a.playerId}/power:${power.uid}`))
+  let repeated = null
+  try {
+    apply(room, rejoined.token, {
+      kind: 'activatePower', powerUid: power.uid, enemyUid: target.uid, preflight: true,
+    })
+  } catch (error) {
+    repeated = error
+  }
+  assertEqual(repeated?.name, 'RoomError')
+})
+
 check('online Evolve resolves chained Status draws without revealing the new hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

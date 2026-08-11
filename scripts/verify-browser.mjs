@@ -4256,6 +4256,42 @@ check('Like Water resolves Calm Block through the real controls', () => {
   assertEqual(likeWaterState.players[0].block, 2)
 })
 await shot('07s-like-water-calm-block')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, powerTriggersUsedThisTurn: [] })
+  Object.assign(actor, {
+    hand: [{ uid: 'ui-battle-hymn', defId: 'battle_hymn', upgraded: true }],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 1, stance: 'wrath',
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: index === 1 ? 20 : enemy.hp, maxHp: index === 1 ? 20 : enemy.maxHp,
+    block: 0, vulnerable: 0, dead: false,
+  }))
+  debug.setRun(run)
+})
+const battleHymnCard = page.getByRole('button', { name: /^Battle Hymn\+,/ })
+await battleHymnCard.waitFor()
+const battleHymnArtWidth = await battleHymnCard.locator('img').evaluate((img) => img.naturalWidth)
+assert(battleHymnArtWidth >= 700, `expected upscaled Battle Hymn art, got ${battleHymnArtWidth}px`)
+await battleHymnCard.click()
+const battleHymnPowerLabel = await page.getByRole('button', { name: /^Battle Hymn\+?:/ }).getAttribute('aria-label')
+check('Battle Hymn+ exposes its Wrath bonus and activation accessibly', () => {
+  assert(battleHymnPowerLabel.includes('2 +2 if you are in wrath damage'), battleHymnPowerLabel)
+  assert(battleHymnPowerLabel.includes('activate once per turn'), battleHymnPowerLabel)
+})
+await page.getByRole('button', { name: 'Use Battle Hymn+' }).click()
+await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 16))
+const battleHymnState = await readState()
+check('Battle Hymn resolves its Wrath bonus once through the real controls', () => {
+  assert(battleHymnState.enemies.some((enemy) => enemy.hp === 16))
+  assertEqual(battleHymnState.players[0].weak, likeWaterState.players[0].weak)
+})
+assert(await page.getByRole('button', { name: 'Battle Hymn+ used' }).isDisabled())
+await shot('07t-battle-hymn-wrath-hit')
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')

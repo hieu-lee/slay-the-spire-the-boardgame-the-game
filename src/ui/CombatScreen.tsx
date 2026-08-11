@@ -44,7 +44,10 @@ import {
   startPlayerTurnWithChoices,
   validEndTurnOrder,
 } from '../game/combat.ts'
-import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, StartTurnAbility, StartTurnChoice } from '../game/combat.ts'
+import type {
+  CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, PowerContext,
+  StartTurnAbility, StartTurnChoice,
+} from '../game/combat.ts'
 import { potionDef } from '../game/relics.ts'
 import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
@@ -1262,9 +1265,9 @@ export function CombatScreen({
     onChange?.(result)
   }
 
-  function usePower(powerUid: string, enemyRow: number) {
+  function usePower(powerUid: string, context: PowerContext) {
     if (powerActionPending.current) return
-    const result = activatePower(state, viewer!.id, powerUid, { enemyRow })
+    const result = activatePower(state, viewer!.id, powerUid, context)
     if (result === state) return
     powerActionPending.current = true
     setUsingPower(true)
@@ -1291,7 +1294,7 @@ export function CombatScreen({
         setPendingPowerUid(powerUid)
       }
     }
-    Promise.resolve(onAction({ kind: 'activatePower', powerUid, enemyRow, preflight: true })).then((outcome) => {
+    Promise.resolve(onAction({ kind: 'activatePower', powerUid, ...context, preflight: true })).then((outcome) => {
       if (outcome?.status === 'unknown') {
         waitForRefresh(outcome.refreshAttempt)
         return
@@ -1765,6 +1768,10 @@ export function CombatScreen({
       }
       return
     }
+    if (pendingPowerUid && pendingPowerDef && pendingPowerDef.target !== 'row') {
+      usePower(pendingPowerUid, { enemyUid: enemy.uid })
+      return
+    }
     if (spendingShiv) {
       if (onAction) {
         setSpendingShiv(false)
@@ -1905,7 +1912,7 @@ export function CombatScreen({
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
   const prompt = triggerPrompt ?? forcedPrompt ?? startTurnPrompt ?? (pendingPowerDef
-    ? `Choose a row for ${pendingPowerDef.name}`
+    ? `Choose ${pendingPowerDef.target === 'row' ? 'a row' : 'an enemy'} for ${pendingPowerDef.name}`
     : pendingPotionDef
     ? pendingPotionDef.target === 'row'
       ? `Choose a row for ${pendingPotionDef.name}`
@@ -2405,7 +2412,7 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                     (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                 ))) && !enemy.dead}
@@ -2437,7 +2444,7 @@ export function CombatScreen({
                 <button
                   type="button"
                   className="row__potion-target"
-                  onClick={() => usePower(pendingPowerUid!, row)}
+                  onClick={() => usePower(pendingPowerUid!, { enemyRow: row })}
                 >
                   Target row {row + 1}
                 </button>
@@ -2571,7 +2578,7 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
+                      targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                           (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                       ))) && !enemy.dead}

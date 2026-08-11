@@ -150,7 +150,7 @@ type EffectKind =
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
   | { kind: 'hit'; amount: Amount; times?: Amount }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
-  | { kind: 'damage'; amount: number }
+  | { kind: 'damage'; amount: Amount }
   /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
   | { kind: 'damagePerAttackIntent'; amount: number }
   /** Ignores Block entirely. */
@@ -1478,6 +1478,14 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'endOfTurn' },
     effects: [{ kind: 'block', amount: 1, when: { kind: 'inStance', stance: 'calm' } }],
     upgrade: { effects: [{ kind: 'block', amount: 2, when: { kind: 'inStance', stance: 'calm' } }] },
+  }),
+  battle_hymn: card({
+    id: 'battle_hymn', name: 'Battle Hymn', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    activeAbility: true, oncePerTurn: true,
+    effects: [{ kind: 'damage', amount: { base: 1, bonus: { plus: 1, when: { kind: 'inStance', stance: 'wrath' } } } }],
+    upgrade: {
+      effects: [{ kind: 'damage', amount: { base: 2, bonus: { plus: 2, when: { kind: 'inStance', stance: 'wrath' } } } }],
+    },
   }),
 
   crescendo: card({
