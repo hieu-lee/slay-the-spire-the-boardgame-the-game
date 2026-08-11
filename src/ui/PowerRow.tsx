@@ -145,7 +145,11 @@ export function PowerRow({ powers }: PowerRowProps) {
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
           const countdown = def.effects.find((effect) => effect.kind === 'countdownDamage')
-          const described = `${describePower(def)}${countdown ? `, ${card.counter ?? 0} of ${countdown.cubes} cubes` : ''}`
+          const buffer = def.effects.find((effect) => effect.kind === 'preventHpLoss')
+          const counterLimit = countdown?.cubes ?? (buffer?.kind === 'preventHpLoss' && buffer.uses > 1
+            ? buffer.uses
+            : undefined)
+          const described = `${describePower(def)}${counterLimit ? `, ${card.counter ?? 0} of ${counterLimit} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
@@ -190,8 +194,8 @@ export function PowerRow({ powers }: PowerRowProps) {
                 <span className="power__fallback" aria-hidden="true">
                   {def.name}
                 </span>
-                {countdown ? (
-                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{countdown.cubes}</span>
+                {counterLimit ? (
+                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{counterLimit}</span>
                 ) : null}
               </button>
             </li>
@@ -315,6 +319,10 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage':
       return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'preventHpLoss':
+      return effect.uses === 1
+        ? 'prevent the next HP loss, then Exhaust this Power'
+        : `prevent the next ${effect.uses} HP losses, then Exhaust this Power`
     case 'drawAndPlayFree':
       return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':

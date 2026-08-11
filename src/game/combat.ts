@@ -289,11 +289,30 @@ function damageEnemyLogged(
   }
 }
 
-function losePlayerHp(player: Player, amount: number): number {
+function preventPlayerHpLoss(state: CombatState, player: Player, amount: number): boolean {
+  if (amount <= 0) return false
+  const held = player.powers.find((power) =>
+    faceOf(cardDef(power.defId), power.upgraded).effects.some((effect) => effect.kind === 'preventHpLoss'))
+  if (!held) return false
+  const effect = faceOf(cardDef(held.defId), held.upgraded).effects
+    .find((candidate) => candidate.kind === 'preventHpLoss')!
+  held.counter = (held.counter ?? 0) + 1
+  state.log = [...state.log, `${player.name}'s Buffer prevents ${amount} HP loss`]
+  if (held.counter < effect.uses) return true
+  player.powers = player.powers.filter((power) => power.uid !== held.uid)
+  held.counter = undefined
+  exhaustCards(state, player, [held])
+  state.log = [...state.log, `${player.name} exhausts Buffer`]
+  return true
+}
+
+function losePlayerHp(state: CombatState, player: Player, amount: number): number {
   const remaining = player.hpLossLimitThisRound === undefined
     ? amount
     : Math.min(amount, Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0)))
-  const outcome = applyHpLoss(player.hp, remaining)
+  const losable = Math.min(player.hp, Math.max(0, remaining))
+  if (preventPlayerHpLoss(state, player, losable)) return 0
+  const outcome = applyHpLoss(player.hp, losable)
   if (outcome.hpLost > 0) {
     player.lostHpThisCombat = true
     player.hpLostThisRound = (player.hpLostThisRound ?? 0) + outcome.hpLost
@@ -303,10 +322,11 @@ function losePlayerHp(player: Player, amount: number): number {
   return outcome.hpLost
 }
 
-function damagePlayer(player: Player, damage: number): void {
+function damagePlayer(state: CombatState, player: Player, damage: number): boolean {
   const outcome = applyDamage(player.block, player.hp, damage)
   player.block = outcome.block
-  losePlayerHp(player, outcome.hpLost)
+  losePlayerHp(state, player, outcome.hpLost)
+  return outcome.fullyBlocked
 }
 
 /** The Energy actually charged for a card on this player's current board. */
@@ -823,8 +843,8 @@ function applyEffect(
       return
     }
     case 'loseOwnHp': {
-      const lost = losePlayerHp(actor, effect.amount)
-      note(`${actor.name} loses ${lost} HP`)
+      const lost = losePlayerHp(state, actor, effect.amount)
+      if (lost > 0) note(`${actor.name} loses ${lost} HP`)
       return
     }
     case 'block': {
@@ -982,6 +1002,9 @@ function applyEffect(
       note(`${actor.name} cannot lose more than ${effect.amount} HP this round`)
       return
     }
+    case 'preventHpLoss':
+      // Buffer reacts in the shared HP-loss boundary, not when the Power is played.
+      return
     case 'upgradeStarterCards': {
       actor.starterStrikeDamageBonus = (actor.starterStrikeDamageBonus ?? 0) + effect.amount
       actor.starterDefendBlockBonus = (actor.starterDefendBlockBonus ?? 0) + effect.amount
@@ -1950,7 +1973,7 @@ function resolveEnraged(state: CombatState, actor: Player): void {
     if (enemy.dead || ability?.kind !== 'enraged' || state.turn < ability.fromTurn) continue
     const hpBefore = actor.hp
     const blockBefore = actor.block
-    damagePlayer(actor, ability.damage)
+    const fullyBlocked = damagePlayer(state, actor, ability.damage)
     const name = enemyLabel(state.enemies, enemy)
     const lost = hpBefore - actor.hp
     const blocked = blockBefore - actor.block
@@ -1958,7 +1981,9 @@ function resolveEnraged(state: CombatState, actor: Player): void {
       ...state.log,
       lost > 0
         ? `${name}'s Enraged hit ${actor.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-        : `${actor.name} blocked ${name}'s Enraged (${blocked} spent)`,
+        : fullyBlocked
+          ? `${actor.name} blocked ${name}'s Enraged (${blocked} spent)`
+          : `${name}'s Enraged did no damage to ${actor.name}${blocked > 0 ? ` (${blocked} blocked)` : ''}`,
     ]
     if (actor.dead) {
       state.log = [...state.log, `${actor.name} has fallen`]
@@ -2961,15 +2986,17 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
     if (effect.kind === 'damage') {
       const hp = player.hp
       const block = player.block
-      damagePlayer(player, effect.amount)
+      const fullyBlocked = damagePlayer(state, player, effect.amount)
       const lost = hp - player.hp
       const blocked = block - player.block
       state.log = [...state.log, lost > 0
         ? `${def.name} damages ${player.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-        : `${player.name} blocks ${def.name}${blocked > 0 ? ` (${blocked} spent)` : ''}`]
+        : fullyBlocked
+          ? `${player.name} blocks ${def.name} (${blocked} spent)`
+          : `${def.name} did no damage to ${player.name}${blocked > 0 ? ` (${blocked} blocked)` : ''}`]
     } else if (effect.kind === 'loseHp') {
-      const lost = losePlayerHp(player, effect.amount)
-      state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
+      const lost = losePlayerHp(state, player, effect.amount)
+      if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
     } else if (effect.kind === 'gainWeak') {
       const before = player.weak
       player.weak = gainWeak(player.weak, effect.amount)
@@ -3058,10 +3085,12 @@ export function beginEndPlayerTurn(
         }
       } else if (localId === 'wrath') {
         const hp = player.hp
-        damagePlayer(player, 1)
+        const fullyBlocked = damagePlayer(next, player, 1)
         next.log = [...next.log, hp > player.hp
           ? `${player.name} takes 1 from Wrath`
-          : `${player.name} blocks the bite of Wrath`]
+          : fullyBlocked
+            ? `${player.name} blocks the bite of Wrath`
+            : `${player.name}'s Wrath did no damage`]
         if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
       } else if (localId.startsWith('card:')) {
         resolveHandEndTurn(next, player, localId.slice(5))
@@ -3211,9 +3240,14 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
         const vulnerableAtStart = target.vulnerable
         const hpBefore = target.hp
         const blockBefore = target.block
+        let fullyBlocked = true
         for (let i = 0; i < (action.times ?? 1); i++) {
           if (target.dead) break
-          damagePlayer(target, hitDamage(action.amount, mods, { vulnerable: vulnerableAtStart }))
+          fullyBlocked = damagePlayer(
+            state,
+            target,
+            hitDamage(action.amount, mods, { vulnerable: vulnerableAtStart }),
+          ) && fullyBlocked
         }
         if (vulnerableAtStart > 0) {
           target.vulnerable = vulnerableAtStart - 1
@@ -3230,9 +3264,9 @@ function applyEnemyAction(state: CombatState, enemy: Enemy, action: EnemyAction)
           ...state.log,
           lost > 0
             ? `${name} hit ${target.name} for ${lost}${blocked > 0 ? ` (${blocked} blocked)` : ''}`
-            : blocked > 0
+            : fullyBlocked && blocked > 0
               ? `${target.name} blocked ${name} completely (${blocked} spent)`
-              : `${name} did no damage to ${target.name}`,
+              : `${name} did no damage to ${target.name}${blocked > 0 ? ` (${blocked} blocked)` : ''}`,
         ]
         if (target.dead) {
           state.log = [...state.log, `${target.name} has fallen`]

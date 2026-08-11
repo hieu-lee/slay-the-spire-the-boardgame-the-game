@@ -2653,6 +2653,44 @@ check('Equilibrium Retain choices are authoritative, private, and reconnect-safe
   assertEqual(resolved.retainCardsThisTurn, 0)
 })
 
+check('Buffer+ prevention cubes stay authoritative and public until it Exhausts', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const buffer = { uid: 'room-buffer', defId: 'buffer', upgraded: true }
+  const rupture = { uid: 'room-buffer-rupture', defId: 'rupture', upgraded: true }
+  const offering = { uid: 'room-buffer-offering', defId: 'offering', upgraded: false }
+  Object.assign(actor, { hand: [buffer, rupture, offering], draw: [], energy: 2, hp: 7 })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: buffer.uid, preflight: true })
+  let stolen = null
+  try {
+    apply(room, b.token, { kind: 'playCard', cardUid: rupture.uid, preflight: true })
+  } catch (error) {
+    stolen = error
+  }
+  assertEqual(stolen?.name, 'RoomError', 'another seat spent Buffer+ protection')
+
+  apply(room, a.token, { kind: 'playCard', cardUid: rupture.uid, preflight: true })
+  for (const token of [a.token, b.token]) {
+    const seen = snapshotFor(room, token).run.combat.players.find((player) => player.id === actor.id)
+    assertEqual(seen.hp, 7)
+    assertEqual(seen.powers.find((power) => power.uid === buffer.uid).counter, 1)
+  }
+
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const resumed = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === actor.id)
+  assertEqual(resumed.powers.find((power) => power.uid === buffer.uid).counter, 1,
+    'reconnect lost Buffer+\'s first prevention cube')
+
+  apply(room, rejoined.token, { kind: 'playCard', cardUid: offering.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.hp, 7)
+  assert(!resolved.powers.some((power) => power.uid === buffer.uid))
+  assert(resolved.exhaust.some((card) => card.uid === buffer.uid))
+})
+
 check('Collector Claw cubes stay authoritative and public to the party', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

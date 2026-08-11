@@ -183,6 +183,8 @@ type EffectKind =
   | { kind: 'retainAtEndOfTurn'; amount: number }
   /** Total HP lost this round cannot exceed this amount. */
   | { kind: 'limitRoundHpLoss'; amount: number }
+  /** Buffer prevents this many otherwise-real HP-loss instances before Exhausting. */
+  | { kind: 'preventHpLoss'; uses: number }
   /** Permanently improve this combat's starter Strikes and Defends. */
   | { kind: 'upgradeStarterCards'; amount: number }
   /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
@@ -305,6 +307,8 @@ export type CardDef = {
   oncePerTurn?: boolean
   /** This Power is activated by its owner during the Player Turn. */
   activeAbility?: boolean
+  /** This Power is consulted directly by a shared gameplay boundary while in play. */
+  persistent?: boolean
   /** A Power whose printed effects happen once when played, as Inflame does. */
   resolvesOnPlay?: boolean
   /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
@@ -1761,6 +1765,12 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'endOfTurn' },
     effects: [{ kind: 'triggerOrbEndTurn', amount: 1 }],
     upgrade: { effects: [{ kind: 'triggerOrbEndTurn', amount: 2 }] },
+  }),
+  buffer: card({
+    id: 'buffer', name: 'Buffer', owner: 'defect', type: 'power', rarity: 'rare', cost: 2,
+    persistent: true,
+    effects: [{ kind: 'preventHpLoss', uses: 1 }],
+    upgrade: { effects: [{ kind: 'preventHpLoss', uses: 2 }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

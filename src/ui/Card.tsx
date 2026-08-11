@@ -131,6 +131,9 @@ function effectText(effect: Effect): string {
     case 'doubleNextAttack': return 'your next Attack this turn is played twice, with separate targets and modifiers'
     case 'retainAtEndOfTurn': return `may retain ${effect.amount} card${effect.amount === 1 ? '' : 's'} this turn`
     case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
+    case 'preventHpLoss': return effect.uses === 1
+      ? 'prevent the next time you would lose hit points, then exhaust this Power'
+      : `prevent the next ${effect.uses} times you would lose hit points, then exhaust this Power`
     case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'

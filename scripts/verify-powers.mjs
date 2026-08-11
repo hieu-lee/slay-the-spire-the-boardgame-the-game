@@ -440,7 +440,7 @@ check('a stance trigger narrows to that stance, or matches any', () => {
 check('every Power declares exactly one resolution model', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type !== 'power') continue
-    const persistent = def.corruptSkills === true || def.retainBlock === true
+    const persistent = def.persistent === true || def.corruptSkills === true || def.retainBlock === true
     assert(
       [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
         .filter(Boolean).length === 1,
@@ -455,7 +455,7 @@ check('no non-Power card carries a trigger', () => {
     assert(
       def.trigger === undefined && def.resolvesOnPlay !== true &&
         def.activeAbility !== true &&
-        def.corruptSkills !== true && def.retainBlock !== true,
+        def.persistent !== true && def.corruptSkills !== true && def.retainBlock !== true,
       `${def.id} is a ${def.type} with Power-only resolution metadata`,
     )
   }

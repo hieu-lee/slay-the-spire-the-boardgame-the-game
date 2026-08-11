@@ -2068,6 +2068,44 @@ await page.evaluate((baseline) => {
   const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
+    name: 'Defect', character: 'defect', hp: 8, maxHp: 10,
+    hand: [
+      { uid: 'ui-buffer', defId: 'buffer', upgraded: true },
+      { uid: 'ui-buffer-rupture', defId: 'rupture', upgraded: true },
+      { uid: 'ui-buffer-offering', defId: 'offering', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, block: 0, strength: 0,
+  })
+  run.combat.players = [actor]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const bufferCard = page.getByRole('button', { name: /^Buffer\+, cost 2,/ })
+const bufferLabel = await bufferCard.getAttribute('aria-label')
+await shot('06zphgic3-buffer-ready')
+await bufferCard.click()
+await page.getByRole('button', { name: /^Rupture\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers[0]?.counter === 1)
+const bufferedPower = page.getByRole('button', { name: /^Buffer\+:/ })
+const bufferedPowerLabel = await bufferedPower.getAttribute('aria-label')
+await shot('06zphgic4-buffer-one-cube')
+await page.getByRole('button', { name: /^Offering,/ }).click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].powers
+  .some((power) => power.defId === 'buffer'))
+const buffered = await readState()
+check('Buffer+ visibly prevents two HP-loss instances, tracks cubes, then Exhausts', () => {
+  assert(bufferLabel.includes('prevent the next 2 times you would lose hit points'), bufferLabel)
+  assert(bufferedPowerLabel.includes('1 of 2 cubes'), bufferedPowerLabel)
+  assertEqual(buffered.players[0].hp, 8)
+  assert(buffered.players[0].exhaust.some((card) => card.uid === 'ui-buffer'),
+    'Buffer+ did not Exhaust after its second prevention')
+})
+await shot('06zphgic5-buffer-exhausted')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
     name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-claw-pack-1', defId: 'claw_claw_pack', upgraded: false },

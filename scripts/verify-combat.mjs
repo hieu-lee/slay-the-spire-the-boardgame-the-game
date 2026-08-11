@@ -2238,6 +2238,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'recycle', energy: [E - 1, E] },
     { id: 'equilibrium', block: [3, 4], energy: [E - 2, E - 2] },
     { id: 'loop', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'buffer', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -4420,6 +4421,127 @@ check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', ()
       ? chooseEndTurnTarget(ability.id, '99:not-an-enemy')
       : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
     assertEqual(beginEndPlayerTurn(played, forged), played, 'a forged Loop Orb choice is atomic')
+  }
+})
+
+check('Buffer prevents real HP loss, ignores blocked damage, and Buffer+ lasts twice', () => {
+  const base = instance('buffer')
+  const blocked = playCard(combat([makePlayer({
+    character: 'defect', hand: [base], energy: 2, block: 1,
+  })], [makeEnemy()]), 'p1', base.uid, { enemyUid: null, playerId: null })
+  const afterBlockedHit = enemyTurn(endPlayerTurn(blocked))
+  assertEqual(afterBlockedHit.players[0].hp, 10)
+  assertEqual(afterBlockedHit.players[0].powers[0].uid, base.uid,
+    'damage fully absorbed by Block must not spend Buffer')
+
+  const exposed = structuredClone(blocked)
+  exposed.players[0].block = 0
+  const afterHpLoss = enemyTurn(endPlayerTurn(exposed))
+  assertEqual(afterHpLoss.players[0].hp, 10)
+  assertEqual(afterHpLoss.players[0].powers.length, 0)
+  assertDeepEqual(afterHpLoss.players[0].exhaust.map((card) => card.uid), [base.uid])
+
+  const upgraded = instance('buffer', true)
+  const rupture = instance('rupture', true)
+  const offering = instance('offering')
+  let twice = playCard(combat([makePlayer({
+    character: 'defect', hand: [upgraded, rupture, offering], energy: 2,
+  })], [makeEnemy()]), 'p1', upgraded.uid, { enemyUid: null, playerId: null })
+  twice = playCard(twice, 'p1', rupture.uid, { enemyUid: null, playerId: null })
+  assertEqual(twice.players[0].hp, 10)
+  assertEqual(twice.players[0].lostHpThisCombat, false,
+    'prevented HP loss must not activate cards that require actual HP loss')
+  assertEqual(twice.players[0].hpLostThisRound, 0)
+  assertEqual(twice.players[0].powers[0].counter, 1)
+  twice = playCard(twice, 'p1', offering.uid, { enemyUid: null, playerId: null })
+  assertEqual(twice.players[0].hp, 10)
+  assertEqual(twice.players[0].powers.length, 0)
+  assert(twice.players[0].exhaust.some((card) => card.uid === upgraded.uid),
+    'Buffer+ must Exhaust after its second prevention')
+
+  ENEMIES.buffer_multi_hit_fixture = {
+    id: 'buffer_multi_hit_fixture', name: 'Multi-hit fixture', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+  }
+  try {
+    for (const isUpgraded of [false, true]) {
+      const buffer = instance('buffer', isUpgraded)
+      const played = playCard(combat([makePlayer({
+        character: 'defect', hand: [buffer], energy: 2,
+      })], [makeEnemy({ defId: 'buffer_multi_hit_fixture' })]), 'p1', buffer.uid, {
+        enemyUid: null, playerId: null,
+      })
+      const attacked = enemyTurn(endPlayerTurn(played))
+      assertEqual(attacked.players[0].hp, isUpgraded ? 10 : 9,
+        'each unblocked hit must consume one Buffer prevention')
+      assertEqual(attacked.players[0].powers.length, 0)
+      assert(attacked.players[0].exhaust.some((card) => card.uid === buffer.uid),
+        'the multi-hit prevention did not Exhaust Buffer at its threshold')
+    }
+
+    ENEMIES.buffer_multi_hit_fixture.pattern = {
+      kind: 'single', actions: [{ kind: 'attack', amount: 2 }],
+    }
+    const partialBuffer = instance('buffer')
+    const partial = playCard(combat([makePlayer({
+      character: 'defect', hand: [partialBuffer], energy: 2, block: 1,
+    })], [makeEnemy({ defId: 'buffer_multi_hit_fixture' })]), 'p1', partialBuffer.uid, {
+      enemyUid: null, playerId: null,
+    })
+    const afterPartial = enemyTurn(endPlayerTurn(partial))
+    assertEqual(afterPartial.players[0].hp, 10)
+    assert(afterPartial.log.includes('Multi-hit fixture did no damage to Ironclad (1 blocked)'),
+      `partial Block was misreported: ${afterPartial.log.join(' | ')}`)
+    assert(!afterPartial.log.some((line) => line.includes('blocked Multi-hit fixture completely')),
+      'Buffer prevention was credited entirely to Block')
+  } finally {
+    delete ENEMIES.buffer_multi_hit_fixture
+  }
+
+  const cappedBuffer = instance('buffer')
+  const apparition = instance('apparition')
+  const capped = playCard(playCard(combat([makePlayer({
+    character: 'defect', hand: [cappedBuffer, apparition], energy: 3,
+  })], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', cappedBuffer.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', apparition.uid, { enemyUid: null, playerId: null })
+  const cappedHit = enemyTurn(endPlayerTurn(capped))
+  assertEqual(cappedHit.players[0].hp, 10)
+  assert(cappedHit.log.includes("Ironclad's Buffer prevents 1 HP loss"),
+    'the round HP-loss cap must reduce the loss before Buffer prevents it')
+
+  const logBuffer = instance('buffer')
+  const seeingRed = instance('seeing_red')
+  const enraged = playCard(playCard({
+    ...combat([makePlayer({ character: 'defect', hand: [logBuffer, seeingRed], energy: 3 })], [
+      makeEnemy({ defId: 'gremlin_nob' }),
+    ]),
+    turn: 2,
+  }, 'p1', logBuffer.uid, { enemyUid: null, playerId: null }), 'p1', seeingRed.uid, {
+    enemyUid: null, playerId: null,
+  })
+  assert(enraged.log.includes("Gremlin Nob's Enraged did no damage to Ironclad"),
+    `Enraged did not report Buffer prevention as no damage: ${enraged.log.join(' | ')}`)
+  assert(!enraged.log.some((line) => line.includes('blocked Gremlin Nob') && line.includes('(0 spent)')),
+    'Buffer prevention must not be reported as Block')
+
+  CARDS.buffer_large_loss_fixture = {
+    id: 'buffer_large_loss_fixture', name: 'Large Loss Fixture', owner: 'defect',
+    type: 'skill', rarity: 'common', cost: 0, effects: [{ kind: 'loseOwnHp', amount: 10 }],
+  }
+  try {
+    const smallHpBuffer = instance('buffer')
+    const largeLoss = instance('buffer_large_loss_fixture')
+    const protectedAtOne = playCard(playCard(combat([makePlayer({
+      character: 'defect', hp: 1, hand: [smallHpBuffer, largeLoss], energy: 2,
+    })], [makeEnemy()]), 'p1', smallHpBuffer.uid, {
+      enemyUid: null, playerId: null,
+    }), 'p1', largeLoss.uid, { enemyUid: null, playerId: null })
+    assertEqual(protectedAtOne.players[0].hp, 1)
+    assert(protectedAtOne.log.includes("Ironclad's Buffer prevents 1 HP loss"),
+      `Buffer overstated preventable HP loss: ${protectedAtOne.log.join(' | ')}`)
+  } finally {
+    delete CARDS.buffer_large_loss_fixture
   }
 })
 
