@@ -282,7 +282,7 @@ function amountLabel(amount: Amount): string {
 function describeEffect(effect: CardDef['effects'][number]): string {
   switch (effect.kind) {
     case 'block':
-      return `${amountLabel(effect.amount)} Block`
+      return `${amountLabel(effect.amount)} Block${effect.when?.kind === 'inStance' ? ` if you are in ${effect.when.stance}` : ''}`
     case 'gainStrength':
       return `${effect.amount} Strength`
     case 'draw':

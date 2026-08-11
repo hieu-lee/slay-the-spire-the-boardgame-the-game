@@ -1525,6 +1525,20 @@ check('Simmering Fury stays public across reconnect and resolves Wrath hits auth
     'Flying Sleeves deals two four-damage hits in upgraded Simmering Fury Wrath')
 })
 
+check('Like Water resolves Calm Block through the shared end-turn authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const power = { uid: 'room-like-water', defId: 'like_water', upgraded: true }
+  Object.assign(actor, { hand: [], powers: [power], stance: 'calm', block: 0 })
+  Object.assign(other, { hand: [], powers: [] })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 2)
+  assertEqual(snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId).powers[0].defId, 'like_water')
+})
+
 check('Silent independent targets and once-per-turn Poison reactions survive room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

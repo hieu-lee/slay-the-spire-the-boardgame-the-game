@@ -1473,6 +1473,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainWrathAttackDamageBonus', amount: 1 }],
     upgrade: { effects: [{ kind: 'gainWrathAttackDamageBonus', amount: 2 }] },
   }),
+  like_water: card({
+    id: 'like_water', name: 'Like Water', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'block', amount: 1, when: { kind: 'inStance', stance: 'calm' } }],
+    upgrade: { effects: [{ kind: 'block', amount: 2, when: { kind: 'inStance', stance: 'calm' } }] },
+  }),
 
   crescendo: card({
     id: 'crescendo',

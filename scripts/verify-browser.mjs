@@ -4227,6 +4227,35 @@ check('Simmering Fury resolves both Wrath hits through the real controls', () =>
 })
 await page.locator('.enemy').filter({ hasText: /22\/30/ }).first().waitFor()
 await shot('07r-simmering-fury-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    hand: [{ uid: 'ui-like-water', defId: 'like_water', upgraded: true }],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 1, stance: 'calm', block: 0,
+  })
+  for (const player of run.combat.players.slice(1)) Object.assign(player, { hand: [], powers: [] })
+  debug.setRun(run)
+})
+const likeWaterCard = page.getByRole('button', { name: /^Like Water\+,/ })
+await likeWaterCard.waitFor()
+const likeWaterArtWidth = await likeWaterCard.locator('img').evaluate((img) => img.naturalWidth)
+assert(likeWaterArtWidth >= 700, `expected upscaled Like Water art, got ${likeWaterArtWidth}px`)
+await likeWaterCard.click()
+const likeWaterPowerLabel = await page.getByRole('button', { name: /^Like Water\+?:/ }).getAttribute('aria-label')
+check('Like Water+ exposes its Calm end-of-turn Block accessibly', () => {
+  assert(likeWaterPowerLabel.includes('2 Block'), likeWaterPowerLabel)
+  assert(likeWaterPowerLabel.includes('if you are in calm'), likeWaterPowerLabel)
+  assert(likeWaterPowerLabel.includes('at the end of each turn'), likeWaterPowerLabel)
+})
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 2)
+const likeWaterState = await readState()
+check('Like Water resolves Calm Block through the real controls', () => {
+  assertEqual(likeWaterState.players[0].block, 2)
+})
+await shot('07s-like-water-calm-block')
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')

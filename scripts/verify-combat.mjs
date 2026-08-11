@@ -2124,6 +2124,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'claw', enemyHp: [19, 19] },
     { id: 'claw_claw_pack', enemyHp: [19, 18] },
     { id: 'simmering_fury', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'like_water', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5737,6 +5738,21 @@ check('Simmering Fury adds damage to every Attack hit only while in Wrath', () =
     state = playCard(state, 'p1', sleeves.uid, { enemyUid: 'e1', playerId: null })
     assertEqual(state.enemies[0].hp, upgraded ? 21 : 23,
       'Wrath and Simmering Fury apply to both Flying Sleeves hits')
+  }
+})
+
+check('Like Water grants end-of-turn Block only while in Calm', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('like_water', upgraded)
+    const neutral = beginEndPlayerTurn(combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'neutral', block: 0 }),
+    ], [makeEnemy()]))
+    assertEqual(neutral.players[0].block, 0)
+
+    const calm = beginEndPlayerTurn(combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'calm', block: 0 }),
+    ], [makeEnemy()]))
+    assertEqual(calm.players[0].block, upgraded ? 2 : 1)
   }
 })
 
