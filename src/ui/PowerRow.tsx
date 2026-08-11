@@ -228,6 +228,8 @@ export function describePower(def: CardDef): string {
     ? `whenever you play a ${def.trigger.cardType} card`
     : def.trigger?.kind === 'onDraw' && (def.trigger.cardType || def.trigger.cardTypes)
       ? `whenever you draw a ${def.trigger.cardType ?? def.trigger.cardTypes!.join(' or ')} card`
+    : def.trigger?.kind === 'onEnterStance' && def.trigger.stance
+      ? `whenever you enter ${def.trigger.stance}`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
   const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
   const where = effectOwnsScope ? '' : def.target === 'allEnemies'

@@ -1493,6 +1493,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'block', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 2 }] },
   }),
+  rushdown: card({
+    id: 'rushdown', name: 'Rushdown', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onEnterStance', stance: 'wrath' },
+    oncePerTurn: true,
+    effects: [{ kind: 'draw', amount: 2 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }] },
+  }),
 
   crescendo: card({
     id: 'crescendo',

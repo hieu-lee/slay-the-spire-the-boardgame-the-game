@@ -4634,6 +4634,32 @@ check('Mental Fortress stance triggers resolve authoritatively and remain public
   assertEqual(teammate.powers[0].defId, 'mental_fortress')
 })
 
+check('Rushdown draw is private, reconnect-safe, and limited to the first Wrath each turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const power = { uid: 'room-rushdown', defId: 'rushdown', upgraded: true }
+  const firstWrath = { uid: 'room-rushdown-first', defId: 'crescendo', upgraded: false }
+  const calm = { uid: 'room-rushdown-calm', defId: 'tranquility', upgraded: false }
+  const secondWrath = { uid: 'room-rushdown-second', defId: 'crescendo', upgraded: false }
+  const secrets = Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-rushdown-secret-${index}`, defId: 'strike_watcher', upgraded: false,
+  }))
+  Object.assign(actor, {
+    character: 'watcher', stance: 'neutral', powers: [power],
+    hand: [firstWrath, calm, secondWrath], draw: secrets, energy: 1,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: firstWrath.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).draw.length, 2)
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).hand, null)
+  assert(!secrets.some((card) => allStrings(teammate).includes(card.uid)), 'Rushdown leaked drawn cards')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, { kind: 'playCard', cardUid: calm.uid, preflight: true })
+  apply(room, rejoined.token, { kind: 'playCard', cardUid: secondWrath.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).draw.length, 2)
+})
+
 check('online Evolve resolves chained Status draws without revealing the new hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

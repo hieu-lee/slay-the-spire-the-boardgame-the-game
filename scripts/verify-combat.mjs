@@ -2127,6 +2127,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'like_water', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'battle_hymn', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'mental_fortress', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'rushdown', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5794,6 +5795,25 @@ check('Mental Fortress grants Block only when the Watcher switches Stances', () 
     assertEqual(state.players[0].block, upgraded ? 2 : 1, 're-entering the same Stance is not a switch')
     state = playCard(state, 'p1', calm.uid, { enemyUid: null, playerId: null })
     assertEqual(state.players[0].block, upgraded ? 4 : 2)
+  }
+})
+
+check('Rushdown draws only the first time the Watcher enters Wrath each turn', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('rushdown', upgraded)
+    const firstWrath = instance('crescendo')
+    const calm = instance('tranquility')
+    const secondWrath = instance('crescendo')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [power], hand: [firstWrath, calm, secondWrath],
+      draw: Array.from({ length: 8 }, () => instance('strike_watcher')), stance: 'neutral',
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', firstWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].draw.length, upgraded ? 5 : 6)
+    state = playCard(state, 'p1', calm.uid, { enemyUid: null, playerId: null })
+    state = playCard(state, 'p1', secondWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].draw.length, upgraded ? 5 : 6,
+      're-entering Wrath in the same turn cannot trigger Rushdown twice')
   }
 })
 

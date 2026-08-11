@@ -4328,6 +4328,48 @@ check('Mental Fortress resolves both stance switches through the real controls',
   assertEqual(mentalFortressState.players[0].block, 4)
 })
 await shot('07u-mental-fortress-stance-block')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'player', turn: 1, powerTriggersUsedThisTurn: [], pendingTriggers: [] })
+  Object.assign(run.combat.players[0], {
+    name: 'Watcher', character: 'watcher',
+    hand: [
+      { uid: 'ui-rushdown', defId: 'rushdown', upgraded: true },
+      { uid: 'ui-rushdown-first', defId: 'crescendo', upgraded: false },
+      { uid: 'ui-rushdown-calm', defId: 'tranquility', upgraded: false },
+      { uid: 'ui-rushdown-second', defId: 'crescendo', upgraded: false },
+    ],
+    draw: Array.from({ length: 4 }, (_, index) => ({
+      uid: `ui-rushdown-draw-${index}`, defId: 'strike_watcher', upgraded: false,
+    })),
+    discard: [], exhaust: [], powers: [], energy: 2, stance: 'neutral', block: 0,
+  })
+  debug.setRun(run)
+})
+const rushdownCard = page.getByRole('button', { name: /^Rushdown\+,/ })
+await rushdownCard.waitFor()
+const rushdownArtWidth = await rushdownCard.locator('img').evaluate((img) => img.naturalWidth)
+assert(rushdownArtWidth >= 700, `expected upscaled Rushdown art, got ${rushdownArtWidth}px`)
+await rushdownCard.click()
+const rushdownPowerLabel = await page.getByRole('button', { name: /^Rushdown\+?:/ }).getAttribute('aria-label')
+check('Rushdown+ exposes its once-per-turn Wrath draw accessibly', () => {
+  assert(rushdownPowerLabel.includes('draw 3'), rushdownPowerLabel)
+  assert(rushdownPowerLabel.includes('whenever you enter wrath'), rushdownPowerLabel)
+  assert(rushdownPowerLabel.includes('once per turn'), rushdownPowerLabel)
+})
+await page.getByRole('button', { name: /^Crescendo,/ }).first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw.length === 1)
+await page.getByRole('button', { name: /^Tranquility,/ }).click()
+await page.getByRole('button', { name: /^Crescendo,/ }).first().click()
+const rushdownState = await readState()
+check('Rushdown triggers only the first Wrath through the real controls', () => {
+  assertEqual(rushdownState.players[0].stance, 'wrath')
+  assertEqual(rushdownState.players[0].draw.length, 1)
+  assertEqual(rushdownState.players[0].hand.length, 3)
+})
+await shot('07v-rushdown-first-wrath-draw')
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')
