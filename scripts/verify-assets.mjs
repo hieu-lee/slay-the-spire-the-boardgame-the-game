@@ -2,15 +2,16 @@
 // every image path must be a safe, normalised browser path. A missing asset is
 // otherwise invisible until it renders as a broken box in a real game.
 //
-// Artwork is not committed (see ATTRIBUTION.md), so a fresh clone legitimately
-// has none. Each group skips when it is entirely absent, but a PARTIAL sync is
-// a real problem and fails.
+// Card scans, icons, and refreshed source art are not committed (see
+// ATTRIBUTION.md), so those synced groups may be absent in a fresh clone.
+// Bundled enemy, background, and combat art is always checked; a partial sync
+// is still a real problem and fails.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import { cardImagePath, enemyImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
@@ -40,6 +41,23 @@ const REQUIRED_ICONS = [
   'shiv', 'miracle', 'energy', 'potion', 'gold', 'relic', 'elite', 'monster',
   'boss', 'aoe', 'die1', 'die2', 'die3', 'die4', 'die5', 'die6',
 ]
+
+const REQUIRED_COMBAT_ART = [
+  'stage-act-1.webp',
+  'characters/ironclad.webp',
+  'characters/silent.webp',
+  'characters/defect.webp',
+  'characters/watcher.webp',
+  'enemies/cultist.webp',
+  'enemies/acid_slime.webp',
+  'enemies/jaw_worm.webp',
+  'enemies/red_louse.webp',
+  'enemies/green_louse.webp',
+  'enemies/gremlin_nob.webp',
+  'enemies/lagavulin.webp',
+]
+
+const REQUIRED_BACKGROUNDS = [1, 2, 3, 4].map((act) => `boss-act-${act}.webp`)
 
 suite('assets')
 
@@ -164,6 +182,23 @@ check('every icon the UI can render exists on disk', () => {
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
 })
 
+check('every committed battlefield asset exists, decodes, and cutouts stay transparent', () => {
+  const combatFiles = REQUIRED_COMBAT_ART.map((path) => join(publicRoot, 'assets/combat', path))
+  const backgroundFiles = REQUIRED_BACKGROUNDS.map((path) =>
+    join(publicRoot, 'assets/backgrounds', path))
+  const files = [...combatFiles, ...backgroundFiles]
+  const missing = files.filter((file) => !existsSync(file))
+  assert(missing.length === 0, `missing battlefield art: ${missing.join(', ')}`)
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not decode committed battlefield art')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'webpinfo should inspect every battlefield asset')
+  const opaque = inspected.slice(1, combatFiles.length)
+    .filter((block) => !/\n  Alpha: 1\n/.test(block))
+    .map((block) => block.slice(0, block.indexOf('\n')))
+  assert(opaque.length === 0, `combat cutouts lost transparency: ${opaque.join(', ')}`)
+})
+
 // The table in sync-enemy-art.mjs drifted from ENEMIES once already, which is
 // how the Blue Slaver shipped as a black box: the sync ran clean because it
 // never knew the enemy existed. This runs even on a clone with no artwork.
@@ -174,16 +209,34 @@ check('the enemy art table covers every enemy', () => {
   assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
 })
 
-// EnemyCard renders /assets/enemies/<artId ?? defId>.webp. A missing file is served by
+check('the complete bundled enemy portrait inventory exists and decodes', () => {
+  const tracked = spawnSync('git', ['ls-files', 'public/assets/enemies/*.webp'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+  assert(tracked.status === 0, tracked.stderr || 'could not read the bundled enemy inventory')
+  const expected = tracked.stdout.trim().split('\n').filter(Boolean)
+    .map((file) => file.split('/').pop()).sort()
+  assertEqual(expected.length, 90, 'bundled enemy portrait inventory')
+  const missing = expected.filter((file) => !enemyFiles.includes(file))
+  const stray = enemyFiles.filter((file) => !expected.includes(file))
+  assert(missing.length === 0, `missing bundled enemy portraits: ${missing.join(', ')}`)
+  assert(stray.length === 0, `unexpected bundled enemy portraits: ${stray.join(', ')}`)
+  const result = spawnSync('webpinfo', ['-summary', ...expected.map((file) => join(enemyRoot, file))], {
+    encoding: 'utf8',
+  })
+  assert(result.status === 0, result.stderr || 'could not decode bundled enemy portraits')
+})
+
+// EnemyCard renders enemyImagePath(def). A missing file is served by
 // Vite's SPA fallback as 200 + HTML, so it renders as a black box rather than
 // a broken image — nothing in the running app complains about it.
 check('every enemy the game can spawn has a portrait', () => {
-  if (enemyFiles.length === 0) return // not synced
   const missing = Object.values(ENEMIES).filter((def) =>
-    !enemyFiles.includes(`${def.artId ?? def.id}.webp`)).map((def) => def.id)
+    !existsSync(join(publicRoot, enemyImagePath(def).replace(/^\//, '')))).map((def) => def.id)
   assert(
     missing.length === 0,
-    `enemies with no portrait — re-run \`pnpm sync:enemy-art\`: ${missing.join(', ')}`,
+    `enemies with no portrait: ${missing.join(', ')}`,
   )
 })
 

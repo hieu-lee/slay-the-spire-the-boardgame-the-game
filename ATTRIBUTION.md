@@ -17,11 +17,9 @@ compositions, enemy statistics and rules text expressed as data. Facts about a g
 not themselves copyrightable, and they are recorded here so the engine can be verified
 against the published rules.
 
-## What this repository does NOT contain
+## Artwork
 
-**No artwork is committed.** `public/assets/cards/` is gitignored.
-
-Everything under `public/assets/` is gitignored and fetched on demand:
+Card scans, icons, and refreshed source art remain gitignored and are fetched on demand:
 
 ```bash
 pnpm sync:assets     # cards, icons and enemy portraits
@@ -32,10 +30,18 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Card, relic and potion scans | a third-party card browser at `https://rustywolf.github.io/sts/` |
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
+| Board backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 
-They are stored only on the machine that runs the scripts. Redistributing the publisher's
-artwork in this repository would be a different act from referencing it locally, so the
-repository does not do it.
+The repository tracks 90 portraits extracted from the enemy cards. The sync scripts keep card
+scans and icons out of version control; enemy portrait refreshes overwrite the tracked bundle
+and should be reviewed before committing.
+
+`public/assets/backgrounds/` contains four original act-specific backdrops, and
+`public/assets/combat/` contains the generated combat stage and transparent actor cutouts.
+These are original AI-generated fan illustrations made with OpenAI Imagegen for this
+implementation. The character silhouettes were visually grounded in the locally synced
+board-game starter-card scans; the combat stage extends the Act I background palette. No
+generated asset contains a card scan, logo, or readable text.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.
 

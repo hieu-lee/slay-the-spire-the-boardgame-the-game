@@ -5843,7 +5843,7 @@ check('a multi-hit that kills partway still reports one clean attack', () => {
 
 check('two of the same enemy in ONE row can still be told apart', () => {
   // The row is the natural discriminator, but a row-targeting card puts both
-  // copies in the same row -- and then "Cultist (row 0)" names them both. The
+  // copies in the same row -- and then "Cultist (row 1)" names them both. The
   // log then reads as striking a corpse: kill one and the next line reports a
   // hit on what looks like the same creature.
   const spray = instance('dagger_spray')
