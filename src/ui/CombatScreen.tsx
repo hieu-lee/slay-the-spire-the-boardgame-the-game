@@ -12,6 +12,7 @@ import {
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   cardPlayConditionMet,
+  chosenEvokeOrbs,
   chooseEndTurnTarget,
   defaultEndTurnOrder,
   endTurnAbilities,
@@ -21,6 +22,9 @@ import {
   enemyTurn,
   enemyLabel,
   effectIsActive,
+  lightningRowFromTarget,
+  lightningRowTarget,
+  lightningTargetsRows,
   nextEvokeChoice,
   overflowShivCount,
   playCard,
@@ -737,8 +741,13 @@ export function CombatScreen({
       const switchTargetAlive = current.switchPlayerId === null || livingPlayers.has(current.switchPlayerId)
       const switchPlayerId = switchTargetAlive ? current.switchPlayerId : null
       const switchChoiceDone = !needsSwitch || (current.switchChoiceDone && switchTargetAlive)
-      const invalidEvokeTarget = current.evokeEnemyUids.some((target) =>
-        typeof target === 'string' && !alive.has(target))
+      const invalidEvokeTarget = current.evokeEnemyUids.some((target) => {
+        if (typeof target !== 'string') return false
+        const row = lightningRowFromTarget(target)
+        return row === null
+          ? !alive.has(target)
+          : !lightningTargetsRows(viewer, def.id) || !rowsOf(state).includes(row)
+      })
       const evokeSlots = invalidEvokeTarget ? [] : current.evokeSlots
       const evokeEnemyUids = invalidEvokeTarget ? [] : current.evokeEnemyUids
       if (overflowChanged && !needsEnemy && !current.needsAlly && !needsSwitch && !current.choice &&
@@ -1000,6 +1009,10 @@ export function CombatScreen({
   const pendingStartShiv = pendingStartChoice?.kind === 'shiv' ? pendingStartChoice : undefined
   const pendingStartEvokeTarget = pendingStartChoice?.kind === 'evokeTarget' ? pendingStartChoice : undefined
   const pendingStartEvoke = pendingStartChoice?.kind === 'evoke' ? pendingStartChoice.ability : undefined
+  const pendingStartEvokeRows = pendingStartEvokeTarget?.ability.evokeTargets?.flatMap((target) => {
+    const row = lightningRowFromTarget(target.uid)
+    return row === null ? [] : [{ row, uid: target.uid }]
+  }) ?? []
   const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length &&
     !pendingStartEnemy && !pendingStartShiv && !pendingStartEvokeTarget && !pendingStartEvoke
   const isStartTurnEnemyTarget = (enemyUid: string) =>
@@ -1313,6 +1326,10 @@ export function CombatScreen({
     ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.energySpent ?? 0)
     : null
   const pendingEvokeTarget = pending?.evokeEnemyUids.findIndex((target) => target === undefined) ?? -1
+  const pendingEvokeUsesRows = Boolean(pending && pendingEvokeTarget >= 0 &&
+    chosenEvokeOrbs(pendingDef!, viewer, pending.evokeSlots,
+      pending.mode ?? undefined, pending.energySpent ?? 0)[pendingEvokeTarget] === 'lightning' &&
+    lightningTargetsRows(viewer, pending.card.defId))
   const evokeChoicesDone = pendingEvokeChoice === null && pendingEvokeTarget < 0
   const enemyChoicesDone = pending ? (
     evokeChoicesDone &&
@@ -1686,6 +1703,7 @@ export function CombatScreen({
       return
     }
     if (pendingStartEvokeTarget) {
+      if (pendingStartEvokeRows.length > 0) return
       chooseStartTurnEvokeEnemy(enemy.uid)
       return
     }
@@ -1718,6 +1736,7 @@ export function CombatScreen({
       return
     }
     if (pending && pendingEvokeTarget >= 0 && choiceSatisfied) {
+      if (pendingEvokeUsesRows) return
       const targets = [...pending.evokeEnemyUids]
       targets[pendingEvokeTarget] = enemy.uid
       stageOrCommit({ ...pending, evokeEnemyUids: targets })
@@ -1823,7 +1842,7 @@ export function CombatScreen({
     : pendingStartEnemy
       ? `${pendingStartEnemy.label} — choose an enemy`
     : pendingStartEvokeTarget
-      ? `${pendingStartEvokeTarget.ability.label} — choose a target for the Evoked Orb`
+      ? `${pendingStartEvokeTarget.ability.label} — choose a ${pendingStartEvokeRows.length > 0 ? 'row' : 'target'} for the Evoked Orb`
     : pendingStartEvoke?.evokeChoice
       ? `${pendingStartEvoke.label} — choose an Orb to Evoke`
     : null
@@ -1865,7 +1884,7 @@ export function CombatScreen({
           choiceNeeded === 1 ? '' : 's'
         } — ${pending.picked.length}/${choiceNeeded} chosen`
       : pendingEvokeTarget >= 0
-        ? 'Choose an enemy for this evoke'
+        ? `Choose ${pendingEvokeUsesRows ? 'a row' : 'an enemy'} for this evoke`
         : pendingEvokeChoice
           ? `Choose Orb to evoke ${pendingEvokeChoice.index + 1}`
         : pending?.needsEnemy && !enemyChoicesDone
@@ -2325,7 +2344,8 @@ export function CombatScreen({
                 struck={struck.has(enemy.uid)}
                 beat={beat}
                 targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
-                  ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
+                  ((pending?.needsEnemy === true && !enemyChoicesDone) ||
+                    (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows)) && choiceSatisfied
                 ))) && !enemy.dead}
                 onClick={onEnemyClick}
               />
@@ -2358,6 +2378,24 @@ export function CombatScreen({
                   onClick={() => usePower(pendingPowerUid!, row)}
                 >
                   Target row {row + 1}
+                </button>
+              ) : null}
+              {pendingEvokeUsesRows || pendingStartEvokeRows.some((target) => target.row === row) ? (
+                <button
+                  type="button"
+                  className="row__potion-target"
+                  onClick={() => {
+                    const startTarget = pendingStartEvokeRows.find((target) => target.row === row)
+                    if (startTarget) {
+                      chooseStartTurnEvokeEnemy(startTarget.uid)
+                      return
+                    }
+                    const targets = [...pending!.evokeEnemyUids]
+                    targets[pendingEvokeTarget] = lightningRowTarget(row)
+                    stageOrCommit({ ...pending!, evokeEnemyUids: targets })
+                  }}
+                >
+                  Evoke Lightning in row {row + 1}
                 </button>
               ) : null}
               <div className="row__seat">
@@ -2461,7 +2499,8 @@ export function CombatScreen({
                       struck={struck.has(enemy.uid)}
                       beat={beat}
                       targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || pendingPotionOverflow > 0) || spendingShiv || (
-                        ((pending?.needsEnemy === true && !enemyChoicesDone) || pendingEvokeTarget >= 0) && choiceSatisfied
+                        ((pending?.needsEnemy === true && !enemyChoicesDone) ||
+                          (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows)) && choiceSatisfied
                       ))) && !enemy.dead}
                       onClick={onEnemyClick}
                     />

@@ -170,6 +170,7 @@ function effectText(effect: Effect): string {
     case 'gainDarkOrbEvokeBonus': return `Dark Orb Evoke effects get +${effect.amount}${condition}`
     case 'gainOrbEndTurnBonus': return `Orb end-of-turn effects get +${effect.amount}${condition}`
     case 'gainLightningEndTurnBonus': return `Lightning Orb end-of-turn effects get +${effect.amount}${condition}`
+    case 'lightningTargetsRow': return `Lightning damages every enemy in a chosen row, plus the boss${condition}`
     case 'triggerOrbEndTurn': return `trigger 1 Orb's end-of-turn ability ${effect.amount === 1 ? 'once' : `${effect.amount} times`}${condition}`
     case 'gainShivDamageBonus': return `Shivs deal +${effect.amount} damage${condition}`
     case 'gainCardBlockBonus': return `each Block on your Attacks and Skills gets +${effect.amount}${condition}`

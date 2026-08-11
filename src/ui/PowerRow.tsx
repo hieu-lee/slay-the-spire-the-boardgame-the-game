@@ -307,6 +307,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `Orb end-of-turn effects get +${effect.amount}`
     case 'gainLightningEndTurnBonus':
       return `Lightning Orb end-of-turn effects get +${effect.amount}`
+    case 'lightningTargetsRow':
+      return 'Lightning damages every enemy in a chosen row, plus the boss'
     case 'triggerOrbEndTurn':
       return `trigger 1 Orb's end-of-turn ability ${effect.amount === 1 ? 'once' : `${effect.amount} times`}`
     case 'gainShivDamageBonus':

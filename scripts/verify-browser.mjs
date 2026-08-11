@@ -1897,6 +1897,64 @@ await shot('06zphgc-static-discharge-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  const ally = structuredClone(actor)
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    id: 'p1', name: 'Defect', character: 'defect', row: 0,
+    hand: [
+      { uid: 'ui-electrodynamics', defId: 'electrodynamics', upgraded: true },
+      { uid: 'ui-electrodynamics-dual', defId: 'dual_cast', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 3,
+    orbs: [null, null, null], orbEvokeBonus: 0,
+  })
+  Object.assign(ally, {
+    id: 'p2', name: 'Ally', character: 'silent', row: 1,
+    hand: [], discard: [], draw: [], exhaust: [], powers: [], orbs: [null, null, null],
+  })
+  run.combat.players = [actor, ally]
+  const template = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...structuredClone(template), uid: 'ui-electro-front', row: 0, isBoss: false },
+    { ...structuredClone(template), uid: 'ui-electro-back', row: 1, isBoss: false },
+    { ...structuredClone(template), uid: 'ui-electro-boss', row: 0, isBoss: true },
+  ]
+  for (const enemy of run.combat.enemies) Object.assign(enemy, {
+    hp: 20, maxHp: 20, block: 0, poison: 0, dead: false, abilityUsed: true,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const electrodynamicsCard = page.getByRole('button', { name: /^Electrodynamics\+, cost 2,/ })
+const electrodynamicsLabel = await electrodynamicsCard.getAttribute('aria-label')
+await electrodynamicsCard.click()
+const electrodynamicsPower = page.getByRole('button', { name: /^Electrodynamics\+:/ })
+await electrodynamicsPower.waitFor()
+await electrodynamicsPower.click()
+await page.waitForFunction(() => document.querySelector('.power__zoom')?.complete)
+await shot('06zphgcd-electrodynamics-power')
+await page.keyboard.press('Escape')
+await page.waitForFunction(() => !document.querySelector('.power__zoom'))
+await page.getByRole('button', { name: /^Dual Cast,/ }).click()
+await page.getByRole('button', { name: /lightning slot 1/i }).click()
+await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).waitFor()
+await shot('06zphgce-electrodynamics-row-choice')
+await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).click()
+await page.getByRole('button', { name: /lightning slot 2/i }).click()
+await page.getByRole('button', { name: 'Evoke Lightning in row 1' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 1)
+const electroResolved = await readState()
+check('Electrodynamics+ visibly channels three Orbs and makes each Lightning Evoke choose a row', () => {
+  assert(electrodynamicsLabel.includes('Lightning damages every enemy in a chosen row, plus the boss'), electrodynamicsLabel)
+  assert(electrodynamicsLabel.includes('channel 3 lightning orbs'), electrodynamicsLabel)
+  assertDeepEqual(electroResolved.enemies.map((enemy) => enemy.hp), [18, 18, 16])
+  assertDeepEqual(electroResolved.players[0].orbs, [null, null, 'lightning'])
+  assertEqual(electroResolved.players[0].energy, 0)
+})
+await shot('06zphgcf-electrodynamics-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',

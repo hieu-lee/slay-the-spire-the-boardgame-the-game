@@ -213,6 +213,8 @@ type EffectKind =
   | { kind: 'gainDarkOrbEvokeBonus'; amount: number }
   | { kind: 'gainOrbEndTurnBonus'; amount: number }
   | { kind: 'gainLightningEndTurnBonus'; amount: number }
+  /** Electrodynamics: every Lightning effect chooses and damages a whole row. */
+  | { kind: 'lightningTargetsRow' }
   /** Loop: choose one charged Orb and repeat its end-of-turn ability. */
   | { kind: 'triggerOrbEndTurn'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
@@ -1780,6 +1782,14 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'startOfTurn' },
     effects: [{ kind: 'doubleNextAttackOrSkill' }],
     upgrade: { ethereal: false },
+  }),
+  electrodynamics: card({
+    id: 'electrodynamics', name: 'Electrodynamics', owner: 'defect', type: 'power', rarity: 'rare', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'lightningTargetsRow' }, { kind: 'channel', orb: 'lightning', amount: 2 }],
+    upgrade: {
+      effects: [{ kind: 'lightningTargetsRow' }, { kind: 'channel', orb: 'lightning', amount: 3 }],
+    },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

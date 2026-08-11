@@ -19,7 +19,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -3411,6 +3411,45 @@ check('the whole play context reaches the engine, not just the target', () => {
     shivEnemyUids: [secondEnemy.uid],
   })
   assertEqual(room.run.combat.enemies[1].hp, 3, 'explicit skip keeps only the chosen card overflow attacks')
+})
+
+check('Electrodynamics row evokes stay server-authoritative and reconnect-visible', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const dual = { uid: 'room-electro-dual', defId: 'dual_cast', upgraded: false }
+  Object.assign(actor, {
+    character: 'defect', hand: [dual], energy: 1,
+    powers: [{ uid: 'room-electro-power', defId: 'electrodynamics', upgraded: false }],
+    orbs: ['lightning', 'lightning', null],
+  })
+  const [front, back] = room.run.combat.enemies
+  Object.assign(front, { row: 0, hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(back, { row: 1, hp: 20, maxHp: 20, block: 0, dead: false })
+
+  const forged = structuredClone(room)
+  let refused = null
+  try {
+    apply(forged, a.token, {
+      kind: 'playCard', cardUid: dual.uid, evokeSlots: [0, 1],
+      evokeEnemyUids: [front.uid, back.uid], preflight: true,
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'the server accepted single-enemy Electrodynamics targets')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: dual.uid, evokeSlots: [0, 1],
+    evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)], preflight: true,
+  })
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [18, 18])
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  const peer = snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assert(owner.powers.some((power) => power.defId === 'electrodynamics'))
+  assert(peer.powers.some((power) => power.defId === 'electrodynamics'))
 })
 
 check('an unknown token cannot act at all', () => {

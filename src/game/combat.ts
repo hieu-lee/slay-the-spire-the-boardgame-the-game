@@ -152,9 +152,72 @@ function findPlayer(state: CombatState, playerId: string): Player | undefined {
   return state.players.find((player) => player.id === playerId)
 }
 
+function combatRows(state: CombatState): number[] {
+  return [...new Set([
+    ...state.players.map((player) => player.row),
+    ...state.enemies.filter((enemy) => !enemy.isBoss).map((enemy) => enemy.row),
+  ])].sort((a, b) => a - b)
+}
+
 function rowExists(state: CombatState, row: unknown): row is number {
-  return Number.isInteger(row) && (state.players.some((player) => player.row === row) ||
-    state.enemies.some((enemy) => !enemy.isBoss && enemy.row === row))
+  return Number.isInteger(row) && combatRows(state).includes(row as number)
+}
+
+export const lightningRowTarget = (row: number): string => `row:${row}`
+
+export function lightningRowFromTarget(target: unknown): number | null {
+  if (typeof target !== 'string' || !target.startsWith('row:')) return null
+  const row = Number(target.slice(4))
+  return Number.isInteger(row) && lightningRowTarget(row) === target ? row : null
+}
+
+export function lightningTargetsRows(
+  actor: Pick<Player, 'powers'>,
+  sourceCardId?: string,
+): boolean {
+  return sourceCardId === 'electrodynamics' || actor.powers.some((power) =>
+    faceOf(cardDef(power.defId), power.upgraded).effects.some((effect) => effect.kind === 'lightningTargetsRow'))
+}
+
+function lightningTargetOptions(
+  state: CombatState,
+  actor: Pick<Player, 'powers'>,
+  sourceCardId?: string,
+): NonNullable<EndTurnAbility['targets']> {
+  if (!lightningTargetsRows(actor, sourceCardId)) {
+    return livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
+  }
+  const boss = livingEnemies(state).some((enemy) => enemy.isBoss)
+  return combatRows(state).map((row) => ({
+    uid: lightningRowTarget(row),
+    label: `Row ${row + 1}${boss ? ' + boss' : ''}`,
+  }))
+}
+
+function lightningDamageTargets(
+  state: CombatState,
+  actor: Pick<Player, 'powers'>,
+  target: string | null | undefined,
+  sourceCardId?: string,
+): Enemy[] | null {
+  if (lightningTargetsRows(actor, sourceCardId)) {
+    const row = lightningRowFromTarget(target)
+    return row !== null && rowExists(state, row) ? resolveEnemyTargets(state, 'row', null, row) : null
+  }
+  const enemy = livingEnemies(state).find((candidate) => candidate.uid === target)
+  return enemy ? [enemy] : null
+}
+
+function orbDamageTargets(
+  state: CombatState,
+  actor: Pick<Player, 'powers'>,
+  orb: Exclude<OrbType, 'frost'>,
+  target: string | null | undefined,
+  sourceCardId?: string,
+): Enemy[] | null {
+  if (orb === 'lightning') return lightningDamageTargets(state, actor, target, sourceCardId)
+  const enemy = livingEnemies(state).find((candidate) => candidate.uid === target)
+  return enemy ? [enemy] : null
 }
 
 /** Enemies a scope resolves to. A row always includes the boss (p.15). */
@@ -1351,6 +1414,9 @@ function applyEffect(
       note(`${actor.name}'s Lightning Orb end-of-turn effects get +${effect.amount}`)
       return
     }
+    case 'lightningTargetsRow':
+      // The face-up Power is read by every Lightning resolution boundary.
+      return
     case 'triggerOrbEndTurn':
       // Loop resolves here only through its chosen end-turn ability.
       return
@@ -1909,6 +1975,17 @@ export function nextEvokeChoice(
   return evokePlan(def, actor, slots, mode, energySpent).next
 }
 
+/** Orb types already chosen by a staged play, including slots filled earlier in that same card. */
+export function chosenEvokeOrbs(
+  def: CardDef,
+  actor: Pick<Player, 'orbs'> & CountablePlayer,
+  slots: readonly number[],
+  mode?: number,
+  energySpent = 0,
+): OrbType[] {
+  return evokePlan(def, actor, slots, mode, energySpent).chosen
+}
+
 function needsChosenEnemy(
   state: CombatState,
   def: CardDef,
@@ -2098,10 +2175,12 @@ function cardResolutionChoicesAreValid(
   if (context.evokeEnemyUids) {
     if (!context.evokeSlots || context.evokeEnemyUids.length !== plan.chosen.length) return false
     for (let index = 0; index < plan.chosen.length; index++) {
+      const orb = plan.chosen[index]!
       const target = context.evokeEnemyUids[index]
-      if (plan.chosen[index] === 'frost') {
+      if (orb === 'frost') {
         if (target !== null) return false
-      } else if (typeof target !== 'string' || !livingEnemies(state).some((enemy) => enemy.uid === target)) {
+      } else if (typeof target !== 'string' ||
+        !orbDamageTargets(state, player, orb, target, def.id)) {
         return false
       }
     }
@@ -2620,9 +2699,9 @@ function loopOrbTargets(state: CombatState, player: Player): EndTurnAbility['tar
   const targets = player.orbs.flatMap((orb, slot) => orb === 'frost'
     ? [{ uid: loopOrbTarget(slot), label: `Frost Orb ${slot + 1}` }]
     : orb === 'lightning'
-      ? livingEnemies(state).map((enemy) => ({
-        uid: loopOrbTarget(slot, enemy.uid),
-        label: `Lightning Orb ${slot + 1} → ${enemyLabel(state.enemies, enemy)}`,
+      ? lightningTargetOptions(state, player).map((target) => ({
+        uid: loopOrbTarget(slot, target.uid),
+        label: `Lightning Orb ${slot + 1} → ${target.label}`,
       }))
       : [])
   return targets.length > 0 ? targets : undefined
@@ -2741,16 +2820,21 @@ function startTurnAbilitiesFor(
       for (let index = 0; index < plan.chosen.length; index++) {
         const orb = plan.chosen[index]
         if (orb === 'frost') continue
-        const target = plannedEnemies.find((enemy) =>
-          !enemy.dead && enemy.uid === choice?.evokeEnemyUids?.[index])
-        if (!target) {
-          evokeTargets = targetOptions()
+        const damageTargets = orbDamageTargets(
+          simulationState, planningPlayer, orb!, choice?.evokeEnemyUids?.[index],
+        )
+        if (!damageTargets) {
+          evokeTargets = orb === 'lightning'
+            ? lightningTargetOptions(simulationState, planningPlayer)
+            : targetOptions()
           planningBlocked = true
           break
         }
-        damageEnemy(target, (orb === 'lightning' ? 2 :
-          3 + player.powers.length + (player.darkOrbEvokeBonus ?? 0)) +
-          (player.orbEvokeBonus ?? 0))
+        for (const target of damageTargets) {
+          damageEnemy(target, (orb === 'lightning' ? 2 :
+            3 + player.powers.length + (player.darkOrbEvokeBonus ?? 0)) +
+            (player.orbEvokeBonus ?? 0))
+        }
         if (targetOptions().length === 0) {
           evokeEndedCombat = true
           break
@@ -2827,6 +2911,14 @@ export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
         .shivEnemyUids[staleShiv.staleShivIndex!] = staleShiv.shivTargets[0].uid
       continue
     }
+    const pendingEvokeTarget = abilities.find((ability) =>
+      !ability.evokeChoice && ability.evokeTargets?.[0])
+    if (pendingEvokeTarget?.evokeTargets?.[0]) {
+      const choice = choices.find((candidate) => candidate.id === pendingEvokeTarget.id)!
+      choice.evokeEnemyUids![choice.evokeEnemyUids!.length - 1] = pendingEvokeTarget.evokeTargets[0].uid
+      lastEnemyUid = pendingEvokeTarget.evokeTargets[0].uid
+      continue
+    }
     const pending = abilities.find((ability) => ability.evokeChoice)
     if (!pending?.evokeChoice) return choices
     const choice = choices.find((candidate) => candidate.id === pending.id)!
@@ -2896,11 +2988,13 @@ function validStartTurnEvokeChoice(
       if (targets[index] !== null) return false
       continue
     }
-    const target = livingEnemies(simulation).find((enemy) => enemy.uid === targets[index])
-    if (!target) return false
-    damageEnemy(target, (orb === 'lightning' ? 2 :
-      3 + actor.powers.length + (actor.darkOrbEvokeBonus ?? 0)) +
-      (actor.orbEvokeBonus ?? 0))
+    const damageTargets = orbDamageTargets(simulation, actor, orb, targets[index])
+    if (!damageTargets) return false
+    for (const target of damageTargets) {
+      damageEnemy(target, (orb === 'lightning' ? 2 :
+        3 + actor.powers.length + (actor.darkOrbEvokeBonus ?? 0)) +
+        (actor.orbEvokeBonus ?? 0))
+    }
   }
   return !plan.next || livingEnemies(simulation).length === 0
 }
@@ -3019,7 +3113,7 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
       abilities.push({
         id: `orb:${slot}`,
         label: `Lightning Orb ${slot + 1}`,
-        targets: livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })),
+        targets: lightningTargetOptions(state, player),
       })
     } else if (orb === 'frost') abilities.push({ id: `orb:${slot}`, label: `Frost Orb ${slot + 1}` })
   })
@@ -3478,14 +3572,20 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
   actor.orbs[slot] = null
   context.evokeIndex = index + 1
 
-  const chosenTarget = context.evokeEnemyUids?.[index]
-  const target = context.evokeEnemyUids
-    ? livingEnemies(state).find((enemy) => enemy.uid === chosenTarget)
-    : resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
+  const fallbackEnemy = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
+  const chosenTarget = context.evokeEnemyUids?.[index] ??
+    (orb === 'lightning' && lightningTargetsRows(actor, context.sourceCardId) && fallbackEnemy
+      ? lightningRowTarget(fallbackEnemy.row)
+      : fallbackEnemy?.uid)
   if (orb === 'lightning') {
-    if (!target) {
+    const targets = lightningDamageTargets(state, actor, chosenTarget, context.sourceCardId)
+    if (!targets) {
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
+    } else {
+      for (const target of targets) {
+        damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
+      }
+    }
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
@@ -3495,6 +3595,7 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
   } else {
     // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
     // time and is not boosted by card effects (rulebook FAQ, p.18).
+    const target = livingEnemies(state).find((enemy) => enemy.uid === chosenTarget)
     if (!target) {
       if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
     } else damageEnemyLogged(
@@ -3511,14 +3612,16 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
 function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, targetUid?: string): boolean {
   const orb = actor.orbs[slot]
   if (orb === 'lightning') {
-    const target = livingEnemies(state).find((enemy) => enemy.uid === targetUid)
-    if (!target) return false
-    damageEnemyLogged(
-      state,
-      target,
-      1 + (actor.orbEndTurnBonus ?? 0) + (actor.lightningEndTurnBonus ?? 0),
-      `${actor.name}'s Lightning orb`,
-    )
+    const targets = lightningDamageTargets(state, actor, targetUid)
+    if (!targets) return false
+    for (const target of targets) {
+      damageEnemyLogged(
+        state,
+        target,
+        1 + (actor.orbEndTurnBonus ?? 0) + (actor.lightningEndTurnBonus ?? 0),
+        `${actor.name}'s Lightning orb`,
+      )
+    }
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1 + (actor.orbEndTurnBonus ?? 0))

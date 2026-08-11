@@ -3,6 +3,7 @@ import {
   activatePotion,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
+  chosenEvokeOrbs,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   createCombat,
@@ -11,6 +12,7 @@ import {
   endTurnAbilities,
   enemyTurn,
   livingEnemies,
+  lightningRowTarget,
   nextEvokeChoice,
   playCard,
   playCardCopy,
@@ -2180,6 +2182,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
+    { id: 'electrodynamics', powers: [1, 1], orbCount: [2, 3] },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
     { id: 'bludgeon', enemyHp: [13, 10] },
@@ -2366,6 +2369,7 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.exhaust) assertEqual(me.exhaust.length, spec.exhaust[at], `${label}: cards exhausted`)
       if (spec.stance) assertEqual(me.stance, spec.stance[at], `${label}: stance entered`)
       if (spec.orb) assertEqual(me.orbs[0], spec.orb[at], `${label}: orb channelled`)
+      if (spec.orbCount) assertEqual(me.orbs.filter(Boolean).length, spec.orbCount[at], `${label}: Orbs channelled`)
       if (spec.miracles) assertEqual(me.miracles, spec.miracles[at], `${label}: Miracles gained`)
       if (spec.shivs) assertEqual(me.shivs, spec.shivs[at], `${label}: Shivs gained`)
       if (spec.strength) assertEqual(me.strength, spec.strength[at], `${label}: Strength gained`)
@@ -4387,6 +4391,119 @@ check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
     enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
+})
+
+check('Electrodynamics channels its printed Orbs and sends every Lightning effect through a chosen row', () => {
+  const electro = instance('electrodynamics')
+  const enemies = () => [
+    makeEnemy({ uid: 'front-a', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'front-b', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'back', row: 1, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'boss', isBoss: true, hp: 20, maxHp: 20 }),
+  ]
+
+  for (const upgraded of [false, true]) {
+    const card = instance('electrodynamics', upgraded)
+    const played = playCard(combat([makePlayer({
+      character: 'defect', hand: [card], energy: 2,
+    })], enemies()), 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(played.players[0].powers.at(-1)?.uid, card.uid)
+    assertEqual(played.players[0].orbs.filter(Boolean).length, upgraded ? 3 : 2)
+  }
+
+  const endState = combat([
+    makePlayer({ character: 'defect', powers: [electro], orbs: ['lightning', null, null], row: 0 }),
+    makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
+  ], enemies())
+  const lightning = endTurnAbilities(endState).find((ability) => ability.id === 'p1/orb:0')
+  assertDeepEqual(lightning.targets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  const ended = beginEndPlayerTurn(endState, endTurnAbilities(endState).map((ability) =>
+    ability.id === lightning.id
+      ? chooseEndTurnTarget(ability.id, lightningRowTarget(1))
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id))
+  assertDeepEqual(ended.enemies.map((enemy) => enemy.hp), [20, 20, 19, 19])
+
+  const dual = instance('dual_cast')
+  const evokeState = combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1, powers: [instance('electrodynamics')],
+    orbs: ['lightning', 'lightning', null],
+  })], enemies())
+  const evoked = playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
+  })
+  assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 18, 18, 16])
+  assertEqual(playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1], evokeEnemyUids: ['front-a', 'back'],
+  }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
+
+  const plainDual = instance('dual_cast')
+  const plain = combat([makePlayer({
+    character: 'defect', hand: [plainDual], energy: 1, orbs: ['lightning', 'lightning', null],
+  })], enemies())
+  assertEqual(playCard(plain, 'p1', plainDual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
+  }), plain, 'a forged row target worked without Electrodynamics')
+
+  const full = instance('electrodynamics')
+  const fullState = combat([makePlayer({
+    character: 'defect', hand: [full], energy: 2, orbs: ['lightning', 'frost', 'dark'],
+  })], enemies())
+  const forced = playCard(fullState, 'p1', full.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    evokeEnemyUids: [lightningRowTarget(0), null],
+  })
+  assertDeepEqual(forced.players[0].orbs, ['lightning', 'lightning', 'dark'])
+  assertDeepEqual(forced.enemies.map((enemy) => enemy.hp), [18, 18, 20, 18],
+    'Electrodynamics did not modify the forced Lightning evoke during its own play')
+
+  const repeatedSlot = instance('electrodynamics')
+  const repeatedState = combat([makePlayer({
+    character: 'defect', hand: [repeatedSlot], energy: 2, orbs: ['frost', 'dark', 'dark'],
+  })], enemies())
+  assertDeepEqual(chosenEvokeOrbs(faceOf(CARDS.electrodynamics, false), repeatedState.players[0], [0, 0]),
+    ['frost', 'lightning'], 'the staged UI lost an Orb channelled earlier by the same card')
+  const repeated = playCard(repeatedState, 'p1', repeatedSlot.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 0],
+    evokeEnemyUids: [null, lightningRowTarget(1)],
+  })
+  assertDeepEqual(repeated.players[0].orbs, ['lightning', 'dark', 'dark'])
+  assertDeepEqual(repeated.enemies.map((enemy) => enemy.hp), [20, 20, 18, 18])
+})
+
+check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning evokes', () => {
+  const electro = instance('electrodynamics')
+  const storm = instance('storm')
+  const roundEnd = {
+    ...combat([makePlayer({
+      character: 'defect', powers: [electro, storm], orbs: ['lightning', 'frost', 'dark'], draw: [],
+    })], [
+      makeEnemy({ uid: 'row-a', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'row-b', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', isBoss: true, hp: 20, maxHp: 20 }),
+    ]),
+    phase: 'roundEnd', turn: 1,
+  }
+  const state = preparePlayerTurn(roundEnd)
+  const ability = startTurnAbilities(state)[0]
+  const chooseOrb = [{ id: ability.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: [] }]
+  const targeted = startTurnAbilities(state, undefined, chooseOrb)[0]
+  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  const resolved = resolveStartPlayerTurn(state, [{
+    ...chooseOrb[0], evokeEnemyUids: [lightningRowTarget(1)],
+  }])
+  assertEqual(resolved.phase, 'player')
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 18, 18])
+  assertDeepEqual(resolved.players[0].orbs, ['lightning', 'frost', 'dark'])
+
+  const automatic = defaultStartTurnChoices(state)
+  assertDeepEqual(automatic[0].evokeEnemyUids, [lightningRowTarget(0)])
+  const autoResolved = resolveStartPlayerTurn(state, automatic)
+  assertEqual(autoResolved.phase, 'player')
+  assertDeepEqual(autoResolved.enemies.map((enemy) => enemy.hp), [18, 20, 18])
+  assertEqual(startPlayerTurn(roundEnd).phase, 'player',
+    'the deterministic start path did not resolve an Electrodynamics row choice')
 })
 
 check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {
