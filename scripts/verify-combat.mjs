@@ -2232,6 +2232,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'capacitor', powers: [1, 1] },
     { id: 'consume', powers: [1, 1] },
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -4327,6 +4328,27 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
   const ethereal = beginEndPlayerTurn(combat([makePlayer({ hand: [base, upgraded] })], [makeEnemy()]))
   assertDeepEqual(ethereal.players[0].exhaust.map((card) => card.uid), [base.uid])
   assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {
+  for (const upgraded of [false, true]) {
+    const surge = instance('core_surge', upgraded)
+    const cured = playCard(combat([
+      makePlayer({ character: 'defect', hand: [surge], weak: upgraded ? 1 : 0, vulnerable: 1 }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', weak: 2, vulnerable: 2 }),
+    ], [makeEnemy({ hp: 10, maxHp: 10 })]), 'p1', surge.uid, {
+      enemyUid: 'e1', playerId: upgraded ? null : 'p2',
+    })
+    assertEqual(cured.players[0].weak, 0, 'the upgraded cleanse resolves before its Attack')
+    assertEqual(cured.players[0].vulnerable, upgraded ? 0 : 1)
+    assertEqual(cured.players[1].weak, 0)
+    assertEqual(cured.players[1].vulnerable, 0)
+    assertEqual(cured.enemies[0].hp, upgraded ? 6 : 7)
+  }
+
+  const held = instance('core_surge')
+  const retained = endPlayerTurn(combat([makePlayer({ hand: [held] })], [makeEnemy()]), { p1: [] })
+  assertDeepEqual(retained.players[0].hand.map((card) => card.uid), [held.uid])
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {

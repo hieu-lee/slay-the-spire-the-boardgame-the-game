@@ -1857,6 +1857,43 @@ await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
   const ally = run.combat.players[1]
+  if (!ally) throw new Error('the Core Surge playtest needs a teammate')
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect', weak: 0, vulnerable: 1,
+    hand: [{ uid: 'ui-core-surge', defId: 'core_surge', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1,
+  })
+  Object.assign(ally, { weak: 2, vulnerable: 2, dead: false, hp: Math.max(1, ally.hp) })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const coreSurgeCard = page.getByRole('button', { name: /^Core Surge, cost 1,/ })
+const coreSurgeLabel = await coreSurgeCard.getAttribute('aria-label')
+await coreSurgeCard.click()
+await page.locator('.enemy--targeted').click()
+const coreSurgeAlly = page.locator('.seat--targetable:not(.seat--viewer)').first()
+await coreSurgeAlly.waitFor()
+await shot('06zphg-core-surge-ally-choice')
+await coreSurgeAlly.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 7)
+const coreSurged = await readState()
+check('Core Surge Retains and cleanses the chosen teammate before attacking', () => {
+  assert(coreSurgeLabel.includes('support effect may target any player'), coreSurgeLabel)
+  assert(coreSurgeLabel.includes('retain'), coreSurgeLabel)
+  assertEqual(coreSurged.players[0].weak, 0)
+  assertEqual(coreSurged.players[0].vulnerable, 1)
+  assertEqual(coreSurged.players[1].weak, 0)
+  assertEqual(coreSurged.players[1].vulnerable, 0)
+  assertEqual(coreSurged.players[0].energy, 0)
+})
+await shot('06zphh-core-surge-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {

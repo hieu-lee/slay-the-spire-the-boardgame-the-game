@@ -1977,6 +1977,16 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainOrbEndTurnBonus', amount: 1 }],
     upgrade: { ethereal: false },
   }),
+  core_surge: card({
+    id: 'core_surge', name: 'Core Surge', owner: 'defect', type: 'attack', rarity: 'rare', cost: 1,
+    supportTarget: 'anyPlayer',
+    retain: true,
+    effects: [{ kind: 'clearDebuffs', toChosen: true }, { kind: 'hit', amount: 3 }],
+    upgrade: {
+      supportTarget: 'allPlayers',
+      effects: [{ kind: 'clearDebuffs', toChosen: true }, { kind: 'hit', amount: 4 }],
+    },
+  }),
   double_energy: card({
     id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
     exhaust: true,
