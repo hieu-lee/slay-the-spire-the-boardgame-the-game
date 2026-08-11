@@ -602,6 +602,8 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return actor.orbs.filter((orb) => orb !== null).length
     case 'frostOrbs':
       return actor.orbs.filter((orb) => orb === 'frost').length
+    case 'lightningOrbs':
+      return actor.orbs.filter((orb) => orb === 'lightning').length
     case 'orbTypes':
       return new Set(actor.orbs.filter((orb) => orb !== null)).size
     case 'block':

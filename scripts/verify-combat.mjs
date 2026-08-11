@@ -2234,6 +2234,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
+    { id: 'thunder_strike', enemyHp: [20, 20] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -4367,6 +4368,27 @@ check('All for One returns every playable 0-cost discard card in pile order', ()
     assertDeepEqual(recovered.players[0].hand.map((card) => card.uid), [deflect.uid, zapPlus.uid])
     assertDeepEqual(recovered.players[0].discard.map((card) => card.uid), [daze.uid, zap.uid, all.uid])
   }
+})
+
+check('Thunder Strike deals one separate hit per Lightning Orb and needs no target at zero', () => {
+  for (const upgraded of [false, true]) {
+    const thunder = instance('thunder_strike', upgraded)
+    const struck = playCard(combat([makePlayer({
+      character: 'defect', hand: [thunder], orbs: ['lightning', 'frost', 'lightning'], energy: 3,
+    })], [makeEnemy({ hp: 20, maxHp: 20, block: 1 })]), 'p1', thunder.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(struck.enemies[0].hp, upgraded ? 9 : 13)
+  }
+
+  const thunder = instance('thunder_strike')
+  const empty = combat([makePlayer({
+    character: 'defect', hand: [thunder], orbs: ['frost', 'dark', null], energy: 3,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assertEqual(cardNeedsEnemy(CARDS.thunder_strike, empty.players[0]), false)
+  const harmless = playCard(empty, 'p1', thunder.uid, { enemyUid: null, playerId: null })
+  assertEqual(harmless.enemies[0].hp, 10)
+  assertEqual(harmless.players[0].energy, 0)
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {

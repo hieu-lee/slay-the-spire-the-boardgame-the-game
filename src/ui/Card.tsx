@@ -32,6 +32,7 @@ type CardProps = {
 const COUNT_LABEL: Record<CountOf, string> = {
   orbs: 'charged orb',
   frostOrbs: 'Frost Orb',
+  lightningOrbs: 'Lightning Orb',
   orbTypes: 'different orb type',
   block: 'Block',
   strength: 'Strength',

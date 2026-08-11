@@ -84,6 +84,7 @@ export type Condition =
 export type CountOf =
   | 'orbs'
   | 'frostOrbs'
+  | 'lightningOrbs'
   | 'orbTypes'
   | 'block'
   | 'strength'
@@ -1992,6 +1993,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'all_for_one', name: 'All for One', owner: 'defect', type: 'attack', rarity: 'rare', cost: 2,
     effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverAllDiscardCosts', cost: 0 }],
     upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverAllDiscardCosts', cost: 0 }] },
+  }),
+  thunder_strike: card({
+    id: 'thunder_strike', name: 'Thunder Strike', owner: 'defect', type: 'attack', rarity: 'rare', cost: 3,
+    effects: [{ kind: 'hit', amount: 4, times: { base: 0, per: 'lightningOrbs' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 6, times: { base: 0, per: 'lightningOrbs' } }] },
   }),
   double_energy: card({
     id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

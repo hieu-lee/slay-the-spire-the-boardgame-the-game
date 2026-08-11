@@ -1928,6 +1928,34 @@ await shot('06zphj-all-for-one-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect', weak: 0,
+    hand: [{ uid: 'ui-thunder-strike', defId: 'thunder_strike', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 3,
+    orbs: ['lightning', 'lightning', 'lightning'],
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 1, dead: false, abilityUsed: true })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const thunderStrikeCard = page.getByRole('button', { name: /^Thunder Strike\+, cost 3,/ })
+const thunderStrikeLabel = await thunderStrikeCard.getAttribute('aria-label')
+await shot('06zphk-thunder-strike-ready')
+await thunderStrikeCard.click()
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 3)
+const thunderStruck = await readState()
+check('Thunder Strike+ visibly deals one 6-damage hit per Lightning Orb', () => {
+  assert(thunderStrikeLabel.includes('6 damage once per Lightning Orb'), thunderStrikeLabel)
+  assertEqual(thunderStruck.enemies[0].hp, 3)
+  assertEqual(thunderStruck.players[0].energy, 0)
+})
+await shot('06zphl-thunder-strike-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Power Through playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
