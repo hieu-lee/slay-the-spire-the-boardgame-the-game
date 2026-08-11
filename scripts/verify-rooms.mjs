@@ -2655,6 +2655,34 @@ check('Equilibrium Retain choices are authoritative, private, and reconnect-safe
   assertEqual(resolved.retainCardsThisTurn, 0)
 })
 
+check('Well-Laid Plans grants its private Retain choices only at End of Turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const plans = { uid: 'room-plans', defId: 'well_laid_plans', upgraded: true }
+  const regret = { uid: 'room-plans-regret', defId: 'regret', upgraded: false }
+  const first = { uid: 'room-plans-strike', defId: 'strike_silent', upgraded: false }
+  const second = { uid: 'room-plans-defend', defId: 'defend_silent', upgraded: false }
+  const tossed = { uid: 'room-plans-tossed', defId: 'neutralize', upgraded: false }
+  Object.assign(actor, { hand: [plans, regret, first, second, tossed], discard: [], energy: 1 })
+  Object.assign(other, { hand: [] })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: plans.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).retainCardsThisTurn, 0)
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.phase, 'discard')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).retainCardsThisTurn, 2)
+
+  apply(room, a.token, { kind: 'discardHand', discardOrder: [tossed.uid] })
+  apply(room, b.token, { kind: 'discardHand', discardOrder: [] })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [regret.uid, first.uid, second.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) =>
+    [regret.uid, first.uid, second.uid].includes(value)),
+    'Well-Laid Plans leaked the private retained cards to a teammate')
+})
+
 check('Buffer+ prevention cubes stay authoritative and public until it Exhausts', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

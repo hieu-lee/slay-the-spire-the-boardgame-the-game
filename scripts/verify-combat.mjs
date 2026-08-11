@@ -2275,6 +2275,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'accuracy', powers: [1, 1], energy: [E - 1, E] },
     { id: 'choke', enemyHp: [17, 16] },
     { id: 'footwork', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'well_laid_plans', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'infinite_blades', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'noxious_fumes', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'envenom', powers: [1, 1], energy: [E - 3, E - 2] },
@@ -5016,6 +5017,30 @@ check('Equilibrium grants Block and chooses Retained cards during the discard st
   const refused = endPlayerTurn(played, { p1: [] })
   assertEqual(refused.phase, 'discard')
   assertEqual(refused.players[0].hand.length, 2, 'base Equilibrium cannot Retain two cards')
+})
+
+check('Well-Laid Plans optionally Retains cards in addition to innate Retain', () => {
+  for (const upgraded of [false, true]) {
+    const plans = instance('well_laid_plans', upgraded)
+    const regret = instance('regret')
+    const first = instance('strike_silent')
+    const second = instance('defend_silent')
+    const tossed = instance('neutralize')
+    const played = playCard(combat([makePlayer({
+      character: 'silent', hand: [plans, regret, first, second, tossed], energy: 1,
+    })], [makeEnemy()]), 'p1', plans.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].retainCardsThisTurn, 0, 'the Power resolved before End of Turn')
+    const ability = endTurnAbilities(played).find((entry) => entry.label.includes('Well-Laid Plans'))
+    const prepared = beginEndPlayerTurn(played, [ability.id])
+    assertEqual(prepared.phase, 'discard')
+    assertEqual(prepared.players[0].retainCardsThisTurn, upgraded ? 2 : 1)
+
+    const discardOrder = upgraded ? [tossed.uid] : [second.uid, tossed.uid]
+    const ended = endPlayerTurn(prepared, { p1: discardOrder })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid),
+      upgraded ? [regret.uid, first.uid, second.uid] : [regret.uid, first.uid])
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true))
+  }
 })
 
 check('Collector Claws gain one shared combat cube before dealing scaled damage', () => {

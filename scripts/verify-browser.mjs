@@ -2219,6 +2219,46 @@ await page.evaluate((baseline) => {
   const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
+    name: 'Silent', character: 'silent',
+    hand: [
+      { uid: 'ui-plans', defId: 'well_laid_plans', upgraded: true },
+      { uid: 'ui-plans-regret', defId: 'regret', upgraded: false },
+      { uid: 'ui-plans-strike', defId: 'strike_silent', upgraded: false },
+      { uid: 'ui-plans-defend', defId: 'defend_silent', upgraded: false },
+      { uid: 'ui-plans-neutralize', defId: 'neutralize', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1, block: 0,
+    orbs: [null, null, null], retainCardsThisTurn: 0,
+  })
+  run.combat.players = [actor]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const plansCard = page.getByRole('button', { name: /^Well-Laid Plans\+, cost 1,/ })
+const plansLabel = await plansCard.getAttribute('aria-label')
+await shot('06zphgid-well-laid-plans-ready')
+await plansCard.click()
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await page.getByRole('button', { name: 'Retain Strike' }).click()
+await page.getByRole('button', { name: 'Retain Defend' }).click()
+await shot('06zphgie-well-laid-plans-choice')
+await page.getByRole('button', { name: /Confirm Silent/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+const planned = await readState()
+check('Well-Laid Plans+ visibly Retains two choices without spending Regret Retain', () => {
+  assert(plansLabel.includes('at the end of your turn') && plansLabel.includes('may retain 2 cards this turn'), plansLabel)
+  assertDeepEqual(planned.players[0].hand.map((card) => card.uid),
+    ['ui-plans-regret', 'ui-plans-strike', 'ui-plans-defend'])
+  assert(planned.players[0].hand.every((card) => card.retainedLastTurn === true))
+  assertDeepEqual(planned.players[0].discard.map((card) => card.uid), ['ui-plans-neutralize'])
+})
+await shot('06zphgif-well-laid-plans-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
     name: 'Defect', character: 'defect',
     hand: [{ uid: 'ui-loop', defId: 'loop', upgraded: true }],
     discard: [], draw: [], exhaust: [], powers: [], energy: 1, block: 0,

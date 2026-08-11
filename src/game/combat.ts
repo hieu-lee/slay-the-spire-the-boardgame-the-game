@@ -3507,7 +3507,7 @@ export function beginEndPlayerTurn(
   return continueEndPlayerTurn(clone(state), order, state)
 }
 
-/** Whether an ordered discard may omit the cards Equilibrium lets this player Retain. */
+/** Whether an ordered discard omits only cards this player may Retain. */
 export function discardOrderIsValid(player: Player, order: readonly string[]): boolean {
   const hand = new Set(player.hand.map((card) => card.uid))
   if (new Set(order).size !== order.length || order.some((uid) => !hand.has(uid))) return false

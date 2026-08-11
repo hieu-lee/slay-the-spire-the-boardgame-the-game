@@ -2256,6 +2256,12 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainCardBlockBonus', amount: 1 }],
     upgrade: { retain: true },
   }),
+  well_laid_plans: card({
+    id: 'well_laid_plans', name: 'Well-Laid Plans', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'endOfTurn' },
+    effects: [{ kind: 'retainAtEndOfTurn', amount: 1 }],
+    upgrade: { effects: [{ kind: 'retainAtEndOfTurn', amount: 2 }] },
+  }),
   infinite_blades: card({
     id: 'infinite_blades', name: 'Infinite Blades', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 1,
     trigger: { kind: 'startOfTurn' },
