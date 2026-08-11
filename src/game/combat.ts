@@ -401,6 +401,8 @@ export type PlayContext = {
   discardedByCard?: number
   /** Cards taken by this card's automatic Exhaust clause. */
   exhaustedByCard?: number
+  /** Cost of the card taken by the immediately preceding single-card Exhaust. */
+  exhaustedCardCost?: number | 'X'
   /** A variable discard named a duplicate or a card outside the current hand. */
   invalidDiscardChoice?: boolean
   /** A variable exhaust exceeded its limit, repeated a card, or named a card outside the hand. */
@@ -466,6 +468,7 @@ function resolutionContext(
     invalidRecoverChoice: false,
     discardedByCard: 0,
     exhaustedByCard: 0,
+    exhaustedCardCost: undefined,
     pendingDiscards: [],
     pendingPoisonTriggers: [],
     pendingEnemyTokenTriggers: [],
@@ -1147,9 +1150,22 @@ function applyEffect(
     case 'exhaustFromHand': {
       const chosen = allocate(actor, context.exhaustUids, effect.amount, context)
       const moved = actor.hand.filter((card) => chosen.includes(card.uid))
+      context.exhaustedCardCost = moved.length === 1
+        ? cardCost(faceOf(cardDef(moved[0]!.defId), moved[0]!.upgraded), actor.powers, actor.lostHpThisCombat)
+        : undefined
       actor.hand = actor.hand.filter((card) => !chosen.includes(card.uid))
       exhaustCards(state, actor, moved, context)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
+      return
+    }
+    case 'gainEnergyFromExhaust': {
+      const cost = context.exhaustedCardCost
+      if (cost === undefined) return
+      const before = actor.energy
+      actor.energy = cost === 'X'
+        ? Math.min(CAPS.energy, actor.energy * 2)
+        : Math.min(CAPS.energy, actor.energy + cost)
+      if (actor.energy > before) note(`${actor.name} gains ${actor.energy - before} Energy`)
       return
     }
     case 'exhaustAny': {

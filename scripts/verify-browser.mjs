@@ -1934,6 +1934,37 @@ await shot('06zphgf-amplify-resolved')
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
   const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [
+      { uid: 'ui-recycle', defId: 'recycle', upgraded: true },
+      { uid: 'ui-recycle-fuel', defId: 'reinforced_body', upgraded: false },
+    ],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const recycleCard = page.getByRole('button', { name: /^Recycle\+, cost 0,/ })
+const recycleLabel = await recycleCard.getAttribute('aria-label')
+await shot('06zphgg-recycle-ready')
+await recycleCard.click()
+await page.getByText(/Exhaust 1 card.*0\/1 chosen/).waitFor()
+await shot('06zphgh-recycle-choice')
+await page.getByRole('button', { name: /^Reinforced Body, cost X,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 4)
+const recycled = await readState()
+check('Recycle+ visibly Exhausts an X-cost card and doubles current Energy', () => {
+  assert(recycleLabel.includes('exhaust 1 card from hand'), recycleLabel)
+  assert(recycleLabel.includes('X doubles Energy'), recycleLabel)
+  assertEqual(recycled.players[0].energy, 4)
+  assertDeepEqual(recycled.players[0].exhaust.map((card) => card.uid), ['ui-recycle-fuel'])
+})
+await shot('06zphgi-recycle-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
   const ally = run.combat.players[1]
   if (!ally) throw new Error('the Core Surge playtest needs a teammate')
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })

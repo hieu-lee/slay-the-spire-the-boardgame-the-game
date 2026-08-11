@@ -2541,6 +2541,32 @@ check('Rampage+ authoritatively Exhausts first and counts the resulting public p
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), [old.uid, fuel.uid])
 })
 
+check('Recycle authoritatively gains Energy from its chosen Exhaust', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const recycle = { uid: 'room-recycle', defId: 'recycle', upgraded: true }
+  const fuel = { uid: 'room-recycle-fuel', defId: 'reinforced_body', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [recycle, fuel], discard: [], exhaust: [], energy: 2 })
+  const before = JSON.stringify(room.run)
+
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: recycle.uid, exhaustUids: [fuel.uid], preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Recycle')
+  assertEqual(JSON.stringify(room.run), before, 'a refused Recycle mutated room authority')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: recycle.uid, exhaustUids: [fuel.uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.energy, 4)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [fuel.uid])
+})
+
 check('Exhume moves one public Exhaust card into only its owner\'s private hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

@@ -2234,6 +2234,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'static_discharge', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'amplify', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'recycle', energy: [E - 1, E] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
@@ -4417,6 +4418,31 @@ check('Amplify boosts only Dark Orb Evoke damage', () => {
     if (orb === 'frost') assertEqual(evoked.players[0].block, 2)
     else assertEqual(evoked.enemies[0].hp, 16)
   }
+})
+
+check('Recycle gains the exhausted card cost and doubles Energy for X', () => {
+  assertEqual(faceOf(CARDS.recycle, false).cost, 1)
+  assertEqual(faceOf(CARDS.recycle, true).cost, 0)
+
+  const recycle = instance('recycle')
+  const streamline = instance('streamline')
+  const priced = playCard(combat([makePlayer({
+    character: 'defect', hand: [recycle, streamline], energy: 2,
+  })], [makeEnemy()]), 'p1', recycle.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [streamline.uid],
+  })
+  assertEqual(priced.players[0].energy, 3, 'Recycle pays 1, then gains Streamline\'s cost of 2')
+  assertDeepEqual(priced.players[0].exhaust.map((card) => card.uid), [streamline.uid])
+
+  const upgraded = instance('recycle', true)
+  const xCost = instance('reinforced_body')
+  const doubled = playCard(combat([makePlayer({
+    character: 'defect', hand: [upgraded, xCost], energy: 2,
+  })], [makeEnemy()]), 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [xCost.uid],
+  })
+  assertEqual(doubled.players[0].energy, 4, 'an exhausted X-cost card doubles current Energy')
+  assertDeepEqual(doubled.players[0].exhaust.map((card) => card.uid), [xCost.uid])
 })
 
 check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {

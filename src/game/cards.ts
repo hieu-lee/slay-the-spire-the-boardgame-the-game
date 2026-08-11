@@ -238,6 +238,8 @@ type EffectKind =
   | { kind: 'discardAny' }
   /** Exhaust cards the player chooses from hand, as True Grit does. */
   | { kind: 'exhaustFromHand'; amount: number }
+  /** Gain the cost of the card exhausted by the preceding clause; X doubles Energy. */
+  | { kind: 'gainEnergyFromExhaust' }
   /** Exhaust a chosen range of cards; absent `minimum` means zero is allowed. */
   | { kind: 'exhaustAny'; amount: number; minimum?: number }
   /** Exhaust every remaining card in hand, optionally keeping one printed type. */
@@ -2003,6 +2005,11 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainDarkOrbEvokeBonus', amount: 3 }],
     upgrade: { effects: [{ kind: 'gainDarkOrbEvokeBonus', amount: 5 }] },
+  }),
+  recycle: card({
+    id: 'recycle', name: 'Recycle', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'exhaustFromHand', amount: 1 }, { kind: 'gainEnergyFromExhaust' }],
+    upgrade: { cost: 0 },
   }),
   core_surge: card({
     id: 'core_surge', name: 'Core Surge', owner: 'defect', type: 'attack', rarity: 'rare', cost: 1,
