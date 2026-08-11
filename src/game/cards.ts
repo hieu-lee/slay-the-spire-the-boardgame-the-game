@@ -1487,6 +1487,12 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'damage', amount: { base: 2, bonus: { plus: 2, when: { kind: 'inStance', stance: 'wrath' } } } }],
     },
   }),
+  mental_fortress: card({
+    id: 'mental_fortress', name: 'Mental Fortress', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onEnterStance' },
+    effects: [{ kind: 'block', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 2 }] },
+  }),
 
   crescendo: card({
     id: 'crescendo',

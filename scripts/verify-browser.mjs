@@ -4292,6 +4292,42 @@ check('Battle Hymn resolves its Wrath bonus once through the real controls', () 
 })
 assert(await page.getByRole('button', { name: 'Battle Hymn+ used' }).isDisabled())
 await shot('07t-battle-hymn-wrath-hit')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat, { phase: 'player', turn: 1, powerTriggersUsedThisTurn: [], pendingTriggers: [] })
+  Object.assign(run.combat.players[0], {
+    name: 'Watcher', character: 'watcher',
+    hand: [
+      { uid: 'ui-mental-fortress', defId: 'mental_fortress', upgraded: true },
+      { uid: 'ui-mental-wrath', defId: 'crescendo', upgraded: false },
+      { uid: 'ui-mental-calm', defId: 'tranquility', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 2, stance: 'neutral', block: 0,
+  })
+  debug.setRun(run)
+})
+const mentalFortressCard = page.getByRole('button', { name: /^Mental Fortress\+,/ })
+await mentalFortressCard.waitFor()
+const mentalFortressArtWidth = await mentalFortressCard.locator('img').evaluate((img) => img.naturalWidth)
+assert(mentalFortressArtWidth >= 700, `expected upscaled Mental Fortress art, got ${mentalFortressArtWidth}px`)
+await mentalFortressCard.click()
+const mentalFortressPowerLabel = await page.getByRole('button', { name: /^Mental Fortress\+?:/ }).getAttribute('aria-label')
+check('Mental Fortress+ exposes its stance trigger accessibly', () => {
+  assert(mentalFortressPowerLabel.includes('2 Block'), mentalFortressPowerLabel)
+  assert(mentalFortressPowerLabel.includes('whenever you switch Stances'), mentalFortressPowerLabel)
+})
+await page.getByRole('button', { name: /^Crescendo,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 2)
+await page.getByRole('button', { name: /^Tranquility,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 4)
+const mentalFortressState = await readState()
+check('Mental Fortress resolves both stance switches through the real controls', () => {
+  assertEqual(mentalFortressState.players[0].stance, 'calm')
+  assertEqual(mentalFortressState.players[0].block, 4)
+})
+await shot('07u-mental-fortress-stance-block')
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')

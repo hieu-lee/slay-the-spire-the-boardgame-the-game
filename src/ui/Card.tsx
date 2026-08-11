@@ -214,7 +214,7 @@ function triggerText(trigger: Trigger): string {
       : 'whenever you draw a card'
     case 'onEnterStance': return trigger.stance
       ? `whenever you enter ${trigger.stance}`
-      : 'whenever you enter a stance'
+      : 'whenever you switch Stances'
     case 'onScry': return 'whenever you scry'
     case 'onGainBlock': return 'whenever you gain Block'
     case 'onApplyPoison': return 'when you put Poison on an enemy'

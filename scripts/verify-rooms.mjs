@@ -4615,6 +4615,25 @@ check('Battle Hymn activation and its once-per-turn lock are authoritative acros
   assertEqual(repeated?.name, 'RoomError')
 })
 
+check('Mental Fortress stance triggers resolve authoritatively and remain public', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const power = { uid: 'room-mental-fortress', defId: 'mental_fortress', upgraded: true }
+  const wrath = { uid: 'room-mental-wrath', defId: 'crescendo', upgraded: false }
+  const calm = { uid: 'room-mental-calm', defId: 'tranquility', upgraded: false }
+  Object.assign(actor, {
+    character: 'watcher', stance: 'neutral', block: 0, powers: [power], hand: [wrath, calm], energy: 1,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: wrath.uid, preflight: true })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, { kind: 'playCard', cardUid: calm.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(teammate.stance, 'calm')
+  assertEqual(teammate.block, 4)
+  assertEqual(teammate.powers[0].defId, 'mental_fortress')
+})
+
 check('online Evolve resolves chained Status draws without revealing the new hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

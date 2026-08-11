@@ -2126,6 +2126,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'simmering_fury', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'like_water', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'battle_hymn', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'mental_fortress', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5776,6 +5777,24 @@ check('Battle Hymn deals its stance bonus once per turn without damage modifiers
     makePlayer({ character: 'watcher', powers: [neutralPower], stance: 'neutral' }),
   ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', neutralPower.uid, { enemyUid: 'e1' })
   assertEqual(neutral.enemies[0].hp, 19)
+})
+
+check('Mental Fortress grants Block only when the Watcher switches Stances', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('mental_fortress', upgraded)
+    const firstWrath = instance('crescendo')
+    const sameWrath = instance('crescendo')
+    const calm = instance('tranquility')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [power], hand: [firstWrath, sameWrath, calm], stance: 'neutral', block: 0,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', firstWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 2 : 1)
+    state = playCard(state, 'p1', sameWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 2 : 1, 're-entering the same Stance is not a switch')
+    state = playCard(state, 'p1', calm.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 4 : 2)
+  }
 })
 
 check('Choke adds every Weak and Poison token on its target to one hit', () => {

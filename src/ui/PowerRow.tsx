@@ -253,7 +253,7 @@ const WHEN: Record<string, string> = {
   onDiscard: 'whenever a card effect makes you discard one or more cards',
   onExhaust: 'whenever you exhaust a card',
   onDraw: 'whenever you draw a card',
-  onEnterStance: 'whenever you enter a stance',
+  onEnterStance: 'whenever you switch Stances',
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
