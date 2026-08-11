@@ -1350,7 +1350,7 @@ await panachePower.waitFor()
 const panachePowerLabel = await panachePower.getAttribute('aria-label')
 check('Panache+ exposes its empty-hand row effect accessibly', () => {
   assert(panacheLabel.includes('deal 5 damage if your hand is empty'), panacheLabel)
-  assert(panacheLabel.includes('hits a whole row and any boss'), panacheLabel)
+  assert(panacheLabel.includes('affects a whole row and any boss'), panacheLabel)
   assert(panachePowerLabel.includes('5 damage'), panachePowerLabel)
   assert(panachePowerLabel.includes('if your hand is empty'), panachePowerLabel)
   assert(panachePowerLabel.includes('to one enemy row and any boss'), panachePowerLabel)
@@ -2801,7 +2801,7 @@ await page.getByText('Choose Energy for Whirlwind+').waitFor()
 const whirlwindTargetsBeforeEnergy = await page.locator('.enemy--targeted').count()
 check('Whirlwind+ asks how much Energy to spend before exposing row targets', () => {
   assert(whirlwindLabel.includes('once plus once per Energy spent on this card'), whirlwindLabel)
-  assert(whirlwindLabel.includes('hits a whole row and any boss'), whirlwindLabel)
+  assert(whirlwindLabel.includes('affects a whole row and any boss'), whirlwindLabel)
   assertEqual(whirlwindTargetsBeforeEnergy, 0)
 })
 await page.setViewportSize({ width: 390, height: 844 })
@@ -5389,11 +5389,11 @@ check('a card that takes a whole row says so', () => {
     'and the burst must actually be painted, not merely present in the markup',
   )
   assert(
-    /hits a whole row and any boss/.test(aoeAffordance.names[0]),
+    /affects a whole row and any boss/.test(aoeAffordance.names[0]),
     `the card's accessible name should carry the reach: "${aoeAffordance.names[0]}"`,
   )
   assert(
-    !/hits a whole row/.test(aoeAffordance.names[1]),
+    !/affects a whole row/.test(aoeAffordance.names[1]),
     `and a single-target card should not claim it: "${aoeAffordance.names[1]}"`,
   )
   assert(
@@ -5680,7 +5680,7 @@ check('scanned card labels include conditional numbers and support targets', () 
   const heavyPlus = injectedLabels.find((label) => label.startsWith('Heavy Blade+')) ?? ''
   assert(backstab.includes('2 if the target is at full hit points'), `Backstab bonus is missing: ${backstab}`)
   assert(predator.includes('support effect may target any player'), `Predator support target is missing: ${predator}`)
-  assert(sweeping.includes('hits every enemy'), `Sweeping Beam target is missing: ${sweeping}`)
+  assert(sweeping.includes('affects every enemy'), `Sweeping Beam target is missing: ${sweeping}`)
   assert(feelNoPain.includes('whenever you exhaust a card'), `Power trigger is missing: ${feelNoPain}`)
   assert(heavy.includes('3 per Strength'), `Heavy Blade multiplier is wrong: ${heavy}`)
   assert(heavyPlus.includes('5 per Strength'), `Heavy Blade+ multiplier is wrong: ${heavyPlus}`)
@@ -6585,6 +6585,64 @@ check('Evolve chains once for each drawn Status through the real controls', () =
   assertEqual(evolveResolved.players[0].energy, 2)
 })
 await shot('16d-evolve-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-fire', defId: 'fire_breathing', upgraded: true },
+      { uid: 'ui-fire-trance', defId: 'battle_trance', upgraded: false },
+    ],
+    draw: [
+      { uid: 'ui-fire-daze', defId: 'daze', upgraded: false },
+      { uid: 'ui-fire-curse', defId: 'clumsy', upgraded: false },
+      { uid: 'ui-fire-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 3, drawLocked: false,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingTriggers = []
+  run.combat.enemies = [
+    { ...source, uid: 'fire-left', defId: 'cultist', row: 0, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: false },
+    { ...source, uid: 'fire-right', defId: 'cultist', row: 1, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: false },
+    { ...source, uid: 'fire-boss', defId: 'cultist', row: 2, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: true },
+  ]
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+const fireLabel = await page.getByRole('button', { name: /^Fire Breathing\+,/ }).getAttribute('aria-label')
+check('Fire Breathing+ renders its sharp scan and announces Status-or-Curse row damage', () => {
+  assert(fireLabel.includes('whenever you draw a status or curse card'))
+  assert(fireLabel.includes('affects a whole row and any boss'))
+  assert(fireLabel.includes('deal 3 damage'))
+})
+await page.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
+const firePowerLabel = await page.locator('.power[aria-label^="Fire Breathing"]').getAttribute('aria-label')
+await page.getByRole('button', { name: /^Battle Trance,/ }).click()
+await page.getByText("Ironclad's Fire Breathing+ — choose a row").waitFor()
+const fireRows = await page.getByRole('button', { name: /^Resolve .*Fire Breathing\+ in row/ }).count()
+check('Fire Breathing pauses on a visible row picker for each qualifying draw', () => {
+  assert(firePowerLabel.includes('whenever you draw a status or curse card'))
+  assertEqual(fireRows, 2)
+})
+await shot('16e-fire-breathing-choice')
+await page.getByRole('button', { name: /Fire Breathing\+ in row 2$/ }).click()
+await page.getByRole('button', { name: /Fire Breathing\+ in row 1$/ }).click()
+const fireResolved = await readState()
+check('Fire Breathing+ resolves both direct-damage rows and includes the boss each time', () => {
+  assertDeepEqual(fireResolved.enemies.map((enemy) => enemy.hp), [7, 7, 4])
+  assertEqual(fireResolved.pendingTriggers.length, 0)
+  assert(fireResolved.players[0].drawLocked, 'Battle Trance text should finish before the trigger picker')
+})
+await shot('16f-fire-breathing-resolved')
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

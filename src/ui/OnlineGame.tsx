@@ -211,6 +211,9 @@ export function OnlineGame({ onLocal }: Props) {
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const foreignDoubleTap = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
+  const triggerOwner = snapshot.seats.find((seat) =>
+    seat.playerId === run.combat?.pendingTriggers[0]?.playerId)
+  const foreignTrigger = triggerOwner !== undefined && triggerOwner.playerId !== snapshot.you.playerId
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const combat = run.combat ? {
@@ -253,10 +256,13 @@ export function OnlineGame({ onLocal }: Props) {
           <button type="button" onClick={() => room.act({ kind: 'endTurn' })}>Resolve card and end turn</button>
         </p>
       ) : null}
+      {foreignTrigger ? <p className="online-banner" role="status">
+        Waiting for {triggerOwner.name} to resolve a triggered ability…
+      </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || undefined}
-        aria-disabled={room.connection !== 'connected' || foreignCardChoice || undefined}>
+      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || undefined}
+        aria-disabled={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || undefined}>
       {run.phase === 'combat' && combat ? (
         <CombatScreen
           state={combat}

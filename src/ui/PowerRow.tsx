@@ -226,8 +226,8 @@ export function describePower(def: CardDef): string {
   if (def.retainBlock) return `${def.name}: keep leftover Block at the start of your turn, maximum 20`
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
     ? `whenever you play a ${def.trigger.cardType} card`
-    : def.trigger?.kind === 'onDraw' && def.trigger.cardType
-      ? `whenever you draw a ${def.trigger.cardType} card`
+    : def.trigger?.kind === 'onDraw' && (def.trigger.cardType || def.trigger.cardTypes)
+      ? `whenever you draw a ${def.trigger.cardType ?? def.trigger.cardTypes!.join(' or ')} card`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
   const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
   const where = effectOwnsScope ? '' : def.target === 'allEnemies'

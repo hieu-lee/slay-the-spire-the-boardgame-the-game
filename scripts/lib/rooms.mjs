@@ -40,6 +40,7 @@ import {
   faceOf,
   leaveRoom,
   overflowShivCount,
+  pendingTriggerAbility,
   playCard,
   playCardCopy,
   playCost,
@@ -51,6 +52,7 @@ import {
   resolveCardRewards,
   resolveCombat,
   resolveEnemyTargets,
+  resolvePendingTrigger,
   resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
@@ -241,6 +243,16 @@ function settleForcedCards(room) {
   let combat = room.run?.combat
   for (;;) {
     let settled = false
+    while (combat?.pendingTriggers?.length > 0) {
+      const pending = pendingTriggerAbility(combat)
+      const owner = room.seats.find((seat) => seat.playerId === pending?.playerId)
+      if (!pending || owner?.connected !== false) break
+      const next = resolvePendingTrigger(combat, pending.playerId, pending.id, pending.rows?.[0]?.row)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
     while (combat?.phase === 'copy' && combat.pendingCardCopy) {
       const ownerId = combat.pendingCardCopy.playerId
       const owner = room.seats.find((seat) => seat.playerId === ownerId)
@@ -344,6 +356,24 @@ export function apply(room, seatToken, action) {
     // ponytail: this global lock avoids alternate shared-RNG reveals; narrow it
     // to RNG-mutating actions only if simultaneous-play latency becomes a problem.
     fail('Wait for the revealed card to finish')
+  }
+  const pendingTrigger = room.run.combat?.pendingTriggers?.[0]
+  if (pendingTrigger) {
+    if (action?.kind !== 'resolveTrigger') fail('Finish the triggered ability first')
+    if (pendingTrigger.playerId !== seat.playerId) fail('Wait for the triggered ability owner')
+    if (!Number.isInteger(action.triggerId)) fail('Triggered ability id must be a whole number')
+    const combat = room.run.combat
+    const next = resolvePendingTrigger(
+      combat,
+      seat.playerId,
+      action.triggerId,
+      Number.isInteger(action.enemyRow) ? action.enemyRow : undefined,
+    )
+    if (next === combat) fail('That triggered ability target is no longer legal')
+    room.run = { ...room.run, combat: next }
+    settleForcedCards(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (forcedCard && !(
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
@@ -541,6 +571,7 @@ function settleEndTurn(room) {
   const needsChoice = abilities.length > 1 || abilities.some((ability) => (ability.targets?.length ?? 0) > 1)
   if (!needsChoice) {
     room.run = { ...room.run, combat: beginEndPlayerTurn(combat, order) }
+    settleForcedCards(room)
     room.endTurnReady = undefined
   } else {
     room.endTurnAbilities = abilities
@@ -608,6 +639,7 @@ function resolveEndTurn(room, seat, action, seatToken) {
   const next = beginEndPlayerTurn(combat, order)
   if (next === combat) fail('End-turn order is stale')
   room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
   room.endTurnReady = undefined
   room.endTurnAbilities = undefined
   room.endTurnOrder = undefined
@@ -1222,6 +1254,8 @@ function redactCombat(combat, viewerId) {
     die: combat.die,
     phase: combat.phase,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
+    pendingTriggers: structuredClone(combat.pendingTriggers ?? []),
+    nextTriggerId: combat.nextTriggerId ?? 0,
     startTurnProgress: progress ? {
       choices: structuredClone(progress.choices),
       forcedCard: progress.forcedCard ? {

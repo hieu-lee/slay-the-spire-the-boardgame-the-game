@@ -669,6 +669,13 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 1 }],
     upgrade: { cost: 0 },
   }),
+  fire_breathing: card({
+    id: 'fire_breathing', name: 'Fire Breathing', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onDraw', cardTypes: ['status', 'curse'] },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 2 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 3 }] },
+  }),
   inflame: card({
     id: 'inflame', name: 'Inflame', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 2,
     resolvesOnPlay: true,

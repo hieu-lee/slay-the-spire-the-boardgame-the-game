@@ -22,6 +22,7 @@ import {
   previewCardChoice,
   previewCardCopyChoice,
   resolveEnemyTargets,
+  resolvePendingTrigger,
   resolveStartPlayerTurn,
   spendMiracle,
   spendShiv,
@@ -2226,6 +2227,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'havoc', hand: [1, 1] },
     { id: 'combust', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'evolve', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'fire_breathing', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'double_tap', energy: [E - 1, E] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'headbutt', enemyHp: [18, 17] },
@@ -6511,6 +6513,170 @@ check('Combust can choose an empty player row, but pauses for a forced card', ()
   }
   assertEqual(activatePower(forced, 'p1', power.uid, { enemyRow: 0 }), forced,
     'Combust bypassed the unresolved forced card')
+})
+
+check('Fire Breathing waits for card text, then damages a chosen row once per bad draw', () => {
+  for (const upgraded of [false, true]) {
+    const battleTrance = instance('battle_trance')
+    const state = combat(
+      [makePlayer({
+        hand: [battleTrance],
+        draw: [instance('daze'), instance('clumsy'), instance('strike_ironclad')],
+        powers: [instance('fire_breathing', upgraded)],
+      })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 10 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 10 }),
+        makeEnemy({ uid: 'boss', isBoss: true, hp: 10 }),
+      ],
+    )
+    const drawn = playCard(state, 'p1', battleTrance.uid, { enemyUid: null, playerId: null })
+    assert(drawn.players[0].drawLocked, 'Battle Trance must finish before its draw reactions')
+    assertDeepEqual(drawn.enemies.map((enemy) => enemy.hp), [10, 10, 10])
+    assertEqual(drawn.pendingTriggers.length, 2, 'Daze and Curse each trigger; Strike does not')
+    const strike = drawn.players[0].hand.find((card) => card.defId === 'strike_ironclad')
+    assertEqual(playCard(drawn, 'p1', strike.uid, { enemyUid: 'left', playerId: null }), drawn,
+      'no card can jump ahead of a pending trigger')
+
+    const damage = upgraded ? 3 : 2
+    const left = resolvePendingTrigger(drawn, 'p1', drawn.pendingTriggers[0].id, 0)
+    assertDeepEqual(left.enemies.map((enemy) => enemy.hp), [10 - damage, 10, 10 - damage])
+    assertEqual(left.pendingTriggers.length, 1)
+    const right = resolvePendingTrigger(left, 'p1', left.pendingTriggers[0].id, 1)
+    assertDeepEqual(right.enemies.map((enemy) => enemy.hp),
+      [10 - damage, 10 - damage, 10 - damage * 2])
+    assertEqual(right.pendingTriggers.length, 0)
+  }
+})
+
+check('Fire Breathing waits for Havoc and its forced Curse to finish', () => {
+  const havoc = instance('havoc')
+  const curse = instance('writhe')
+  const state = combat(
+    [makePlayer({ hand: [havoc], draw: [curse], powers: [instance('fire_breathing')] })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  const forced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(forced.enemies[0].hp, 2, 'Fire Breathing interrupted Havoc before its forced card')
+  assertEqual(forced.pendingTriggers.length, 0)
+  assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, curse.uid)
+  assertEqual(forced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+
+  const finished = playCard(forced, 'p1', curse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.enemies[0].hp, 0)
+})
+
+check('Fire Breathing survives an Echo Form copy of Havoc', () => {
+  const havoc = instance('havoc')
+  const firstCurse = instance('writhe')
+  const secondCurse = instance('writhe')
+  const state = combat(
+    [makePlayer({
+      hand: [havoc],
+      draw: [firstCurse, secondCurse],
+      powers: [instance('fire_breathing')],
+    })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  state.players[0].doubledCardsThisTurn = 1
+  const firstForced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  const copying = playCard(firstForced, 'p1', firstCurse.uid, { enemyUid: null, playerId: null })
+  assertEqual(copying.phase, 'copy')
+  assertEqual(copying.enemies[0].hp, 8)
+
+  const secondForced = playCardCopy(copying, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(secondForced.enemies[0].hp, 8, 'Fire Breathing interrupted copied Havoc')
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.cardUid, secondCurse.uid)
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+  const finished = playCard(secondForced, 'p1', secondCurse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.enemies[0].hp, 6)
+  assertEqual(finished.phase, 'player')
+})
+
+check('Fire Breathing waits for Mayhem\'s forced Curse to finish', () => {
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const curse = instance('writhe')
+  const state = combat(
+    [makePlayer({ powers: [instance('fire_breathing'), instance('mayhem')], draw: [...opening, curse] })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const forced = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  assertEqual(forced.enemies[0].hp, 2, 'Fire Breathing interrupted Mayhem before its forced card')
+  assertEqual(forced.pendingTriggers.length, 0)
+  assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, curse.uid)
+  assertEqual(forced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+
+  const finished = playCard(forced, 'p1', curse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.enemies[0].hp, 0)
+})
+
+check('Fire Breathing pauses the remaining end-turn order after Dark Embrace draws a Curse', () => {
+  const daze = instance('daze')
+  const state = combat(
+    [makePlayer({
+      hand: [daze],
+      draw: [instance('writhe')],
+      powers: [instance('dark_embrace'), instance('fire_breathing')],
+      orbs: ['lightning', null, null],
+    })],
+    [
+      makeEnemy({ uid: 'left', row: 0, hp: 2, maxHp: 2 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
+    ],
+  )
+  const paused = beginEndPlayerTurn(state, [`p1/card:${daze.uid}`, 'p1/orb:0@left'])
+  assertEqual(paused.phase, 'player')
+  assertEqual(paused.pendingTriggers.length, 1)
+  assertDeepEqual(paused.endTurnProgress?.order, ['p1/orb:0@left'])
+  assertEqual(paused.enemies[1].hp, 10, 'Lightning resolved before the mandatory row choice')
+
+  const finished = resolvePendingTrigger(paused, 'p1', paused.pendingTriggers[0].id, 0)
+  assertEqual(finished.enemies[0].dead, true)
+  assertEqual(finished.enemies[1].hp, 9, 'Lightning did not retarget after Fire killed its chosen enemy')
+  assertEqual(finished.phase, 'discard')
+  assertEqual(finished.endTurnProgress, undefined)
+})
+
+check('Fire Breathing pauses the automatic opening draw before Start-of-Turn abilities', () => {
+  const state = combat(
+    [makePlayer({
+      draw: [instance('daze'), ...Array.from({ length: 4 }, () => instance('strike_ironclad'))],
+      powers: [instance('fire_breathing'), instance('demon_form')],
+    })],
+    [makeEnemy({ uid: 'left', row: 0, hp: 10 }), makeEnemy({ uid: 'right', row: 1, hp: 10 })],
+  )
+  const rngBeforeDraw = structuredClone(state.rng)
+  const prepared = preparePlayerTurn(state)
+  assertEqual(prepared.phase, 'start')
+  assertEqual(prepared.pendingTriggers.length, 1)
+  assertDeepEqual(prepared.rng, rngBeforeDraw, 'the die rolled before the Draw-step row choice')
+  assert(!prepared.log.some((line) => line.includes('(die ')), 'the future die was logged before the row choice')
+  assertEqual(resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared)), prepared,
+    'Start-of-Turn abilities cannot bypass the pending draw reaction')
+  const burned = resolvePendingTrigger(prepared, 'p1', prepared.pendingTriggers[0].id, 1)
+  assertDeepEqual(burned.enemies.map((enemy) => enemy.hp), [10, 8])
+  assert(burned.log.some((line) => line.includes('(die ')), 'the shared die was not rolled after the Draw step')
+  assertEqual(burned.phase, 'start', 'the ordinary Start-of-Turn order still follows')
+  const started = resolveStartPlayerTurn(burned, defaultStartTurnChoices(burned))
+  assertEqual(started.players[0].strength, 1)
+  assertEqual(started.phase, 'player')
+
+  const lethal = combat(
+    [makePlayer({
+      draw: [instance('daze'), ...Array.from({ length: 4 }, () => instance('strike_ironclad'))],
+      powers: [instance('fire_breathing')],
+    })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  const lethalRng = structuredClone(lethal.rng)
+  const won = preparePlayerTurn(lethal)
+  assertEqual(won.phase, 'won')
+  assertDeepEqual(won.rng, lethalRng, 'an immediate Draw-step victory still consumed the die roll')
+  assert(won.log.includes('Turn 1 begins') && !won.log.some((line) => line.includes('(die ')))
 })
 
 check('Double Tap plays the next Attack twice with separate targets and modifiers', () => {

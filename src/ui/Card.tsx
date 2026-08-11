@@ -208,8 +208,8 @@ function triggerText(trigger: Trigger): string {
       : 'after you play a card'
     case 'onDiscard': return 'whenever a card effect makes you discard one or more cards'
     case 'onExhaust': return 'whenever you exhaust a card'
-    case 'onDraw': return trigger.cardType
-      ? `whenever you draw a ${trigger.cardType} card`
+    case 'onDraw': return trigger.cardType || trigger.cardTypes
+      ? `whenever you draw a ${trigger.cardType ?? trigger.cardTypes!.join(' or ')} card`
       : 'whenever you draw a card'
     case 'onEnterStance': return trigger.stance
       ? `whenever you enter ${trigger.stance}`
@@ -246,8 +246,8 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
     // safe from it, which is the opposite of the rule.
-    def.target === 'row' ? 'hits a whole row and any boss' : '',
-    def.target === 'allEnemies' ? 'hits every enemy' : '',
+    def.target === 'row' ? 'affects a whole row and any boss' : '',
+    def.target === 'allEnemies' ? 'affects every enemy' : '',
     def.supportTarget === 'anyPlayer' ? 'support effect may target any player' : '',
     def.supportTarget === 'allPlayers' ? 'support effect applies to all players' : '',
     def.powerCostReduction
@@ -340,7 +340,7 @@ export function Card({
       </span>
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
-        // `accessibleName` already says "hits a whole row" — announced here as
+        // `accessibleName` already says "affects a whole row" — announced here as
         // well, every such card would read its reach out twice.
         <span className="card__aoe" aria-hidden="true">
           <Icon name="aoe" size={18} />

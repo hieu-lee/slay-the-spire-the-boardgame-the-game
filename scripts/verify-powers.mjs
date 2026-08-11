@@ -11,6 +11,7 @@ import {
   enemyTurn,
   playCard,
   preparePlayerTurn,
+  previewCardChoice,
   resolveStartPlayerTurn,
   startPlayerTurn,
   startTurnAbilities,
@@ -267,6 +268,25 @@ check('Evolve draws once for every Status drawn, including chained Status cards'
   ), 'p1', ordinaryShrug.uid, { enemyUid: null, playerId: 'p1' })
   assertDeepEqual(ordinary.players[0].hand.map((card) => card.defId), ['strike_ironclad'],
     'drawing a non-Status card must not fire Evolve')
+})
+
+check('draw reactions wait until the card finishes and stay out of its private choice preview', () => {
+  const dagger = instance('dagger_throw')
+  const held = instance('bash')
+  const daze = instance('daze')
+  const chained = instance('strike_ironclad')
+  const state = combat(
+    [player({ hand: [dagger, held], draw: [daze, chained], powers: [instance('evolve')] })],
+    [enemy()],
+  )
+  const preview = previewCardChoice(state, 'p1', dagger.uid)
+  assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, daze.uid],
+    'Evolve drew into the Dagger Throw discard choice before the card finished')
+  const next = playCard(state, 'p1', dagger.uid, {
+    enemyUid: 'e1', playerId: null, discardUids: [held.uid],
+  })
+  assertDeepEqual(next.players[0].hand.map((card) => card.uid), [daze.uid, chained.uid])
+  assert(next.players[0].discard.some((card) => card.uid === held.uid))
 })
 
 // Defend+ blocks an ALLY. The ally is the one who gained Block, so the ally's

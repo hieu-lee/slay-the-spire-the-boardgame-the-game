@@ -731,6 +731,8 @@ check('Loop Orb choices are public, authoritative, and reject forged targets onl
   Object.assign(actor, { hand: [loop], energy: 1, orbs: ['lightning', 'frost', 'dark'] })
   other.hand = []
   const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  Object.assign(firstEnemy, { defId: 'cultist', block: 0 })
+  Object.assign(secondEnemy, { defId: 'cultist', block: 0 })
   const firstHp = firstEnemy.hp
   const secondHp = secondEnemy.hp
 
@@ -3506,8 +3508,8 @@ check('Multi-Cast keeps one Orb choice and every repeated target server-authorit
     character: 'defect', hand: [card], energy: 2, orbs: ['dark', 'frost', 'lightning'],
   })
   const [first, second] = room.run.combat.enemies
-  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false })
-  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(first, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, dead: false })
 
   let refused = null
   try {
@@ -3539,8 +3541,8 @@ check('an Echo Form Multi-Cast copy cannot forge its original Energy payment', (
     character: 'defect', hand: [], energy: 0, orbs: ['dark', 'frost', 'lightning'],
   })
   const [first, second] = room.run.combat.enemies
-  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false })
-  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(first, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, dead: false })
   room.run.combat.phase = 'copy'
   room.run.combat.pendingCardCopy = {
     playerId: actor.id, card, energySpent: 2, resumePhase: 'player', forcedExhaust: false,
@@ -4540,6 +4542,89 @@ check('online Evolve resolves chained Status draws without revealing the new han
   assertEqual(theirs.handCount, 3)
   assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-evolve-daze')),
     'Evolve leaked the owner hand through the teammate snapshot')
+})
+
+check('online Fire Breathing keeps bad draws private and its row choices owner-authoritative', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const draw = { uid: 'room-fire-trance', defId: 'battle_trance', upgraded: false }
+  Object.assign(actor, {
+    hand: [draw],
+    draw: [
+      { uid: 'room-fire-daze', defId: 'daze', upgraded: false },
+      { uid: 'room-fire-curse', defId: 'clumsy', upgraded: false },
+      { uid: 'room-fire-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [],
+    powers: [{ uid: 'room-fire-power', defId: 'fire_breathing', upgraded: false }],
+    energy: 3,
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { defId: 'cultist', row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', row: 1, hp: 10, maxHp: 10, block: 0, dead: false })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: draw.uid, preflight: true })
+  room.run.combat.endTurnProgress = { order: [`${a.playerId}/card:room-fire-private-card`] }
+  const peer = snapshotFor(room, b.token)
+  delete room.run.combat.endTurnProgress
+  assertEqual(peer.run.combat.pendingTriggers.length, 2)
+  assertEqual(peer.run.combat.players.find((player) => player.id === a.playerId).hand, null)
+  assert(!allStrings(peer).some((value) => value.startsWith('room-fire-daze') || value.startsWith('room-fire-curse')),
+    'the pending trigger disclosed which private cards caused it')
+  assert(!allStrings(peer).includes('room-fire-private-card') && !allKeys(peer).includes('endTurnProgress'),
+    'the paused end-turn order disclosed a private hand-card id')
+
+  let denied = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveTrigger', triggerId: room.run.combat.pendingTriggers[0].id, enemyRow: 1, preflight: true,
+    })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'a teammate chose the owner-only trigger target')
+  const firstTriggerId = room.run.combat.pendingTriggers[0].id
+  apply(room, a.token, { kind: 'resolveTrigger', triggerId: firstTriggerId, enemyRow: 1, preflight: true })
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [10, 8])
+  assertEqual(room.run.combat.pendingTriggers.length, 1)
+
+  let stale = null
+  try {
+    apply(room, a.token, { kind: 'resolveTrigger', triggerId: firstTriggerId, enemyRow: 0, preflight: true })
+  } catch (error) {
+    stale = error
+  }
+  assertEqual(stale?.name, 'RoomError', 'a retry consumed the next identical trigger')
+
+  markDisconnected(room, a.token)
+  assertEqual(room.run.combat.pendingTriggers.length, 0, 'a disconnected owner deadlocked the room')
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [8, 8],
+    'disconnect fallback should resolve into the first legal row')
+})
+
+check('end-turn Fire Breathing cannot deadlock on an already-disconnected owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  markDisconnected(room, a.token)
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const teammate = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(actor, {
+    hand: [{ uid: 'room-fire-end-daze', defId: 'daze', upgraded: false }],
+    draw: [{ uid: 'room-fire-end-curse', defId: 'writhe', upgraded: false }],
+    discard: [], exhaust: [],
+    powers: [
+      { uid: 'room-fire-end-embrace', defId: 'dark_embrace', upgraded: false },
+      { uid: 'room-fire-end-power', defId: 'fire_breathing', upgraded: false },
+    ],
+  })
+  Object.assign(teammate, { hand: [], powers: [], stance: 'neutral', orbs: [null, null, null] })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { defId: 'cultist', row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', row: 1, hp: 10, maxHp: 10, block: 0, dead: false })
+
+  apply(room, b.token, { kind: 'endTurn' })
+  assertEqual(room.run.combat.pendingTriggers.length, 0)
+  assertEqual(room.run.combat.phase, 'discard')
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [8, 10])
 })
 
 check('online Double Tap locks the room until its owner separately targets the copy', () => {

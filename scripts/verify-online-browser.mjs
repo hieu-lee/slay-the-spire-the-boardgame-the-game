@@ -647,6 +647,96 @@ try {
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
     hand: [
+      { uid: 'online-fire-power', defId: 'fire_breathing', upgraded: true },
+      { uid: 'online-fire-trance', defId: 'battle_trance', upgraded: false },
+    ],
+    draw: [
+      { uid: 'online-fire-daze', defId: 'daze', upgraded: false },
+      { uid: 'online-fire-curse', defId: 'clumsy', upgraded: false },
+      { uid: 'online-fire-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [],
+    powers: [{ uid: 'online-fire-combust', defId: 'combust', upgraded: true }],
+    energy: 3, drawLocked: false,
+  })
+  Object.assign(boLive, { miracles: 1, energy: 2 })
+  const fireTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  liveRoom.run.combat.pendingTriggers = []
+  liveRoom.run.combat.powerTriggersUsedThisTurn = []
+  liveRoom.run.combat.enemies = [
+    { ...fireTemplate, uid: 'online-fire-left', defId: 'cultist', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...fireTemplate, uid: 'online-fire-right', defId: 'cultist', row: 1, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+  ]
+  const publishFireFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishFireFixture.ok, 'could not publish the online Fire Breathing fixture')
+  await a.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
+  await a.getByRole('button', { name: 'Use Combust+' }).click()
+  await a.getByText('Choose a row for Combust+').waitFor()
+  const fireOwnerCredentials = await credentials(a)
+  const competingFireDraw = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': fireOwnerCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'playCard', cardUid: 'online-fire-trance', preflight: true,
+    } }),
+  })
+  assert(competingFireDraw.ok, 'could not publish the same-seat Fire Breathing draw')
+  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor()
+  const staleFireTargets = await a.getByRole('button', { name: /^Target row/ }).count()
+  check('a mandatory online trigger clears stale staged targeting', () => {
+    assertEqual(staleFireTargets, 0)
+  })
+  await b.getByText('Waiting for Ann to resolve a triggered ability…').waitFor()
+  const foreignFireRows = await b.getByRole('button', { name: /^Resolve .*Fire Breathing/ }).count()
+  const boCredentials = await credentials(b)
+  const firstOnlineFireTriggerId = liveRoom.run.combat.pendingTriggers[0].id
+  const forgedFire = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': boCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'resolveTrigger', triggerId: firstOnlineFireTriggerId,
+      enemyRow: 1, preflight: true,
+    } }),
+  })
+  let submittedFire
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedFire = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /Fire Breathing\+ in row 2$/ }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 1; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('online Fire Breathing keeps row choices private to its owner and server-authoritative', () => {
+    assertEqual(foreignFireRows, 0)
+    assertEqual(forgedFire.status, 409)
+    assertEqual(submittedFire.kind, 'resolveTrigger')
+    assertEqual(submittedFire.triggerId, firstOnlineFireTriggerId)
+    assertEqual(submittedFire.enemyRow, 1)
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
+  })
+  await a.getByRole('button', { name: /Fire Breathing\+ in row 1$/ }).click()
+  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
+  check('online Fire Breathing resolves every qualifying draw before play resumes', () => {
+    assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [7, 7])
+    assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').drawLocked)
+  })
+  await a.screenshot({ path: join(outDir, '02b-fire-breathing-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [
       { uid: 'online-double-tap', defId: 'double_tap', upgraded: true },
       { uid: 'online-double-strike', defId: 'strike_ironclad', upgraded: false },
     ],
@@ -830,7 +920,8 @@ try {
       { uid: 'online-copy-preview-first', defId: 'neutralize', upgraded: false },
       { uid: 'online-copy-preview-second', defId: 'survivor', upgraded: false },
     ],
-    discard: [], exhaust: [], energy: 3, doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+    discard: [], exhaust: [], energy: 3, drawLocked: false,
+    doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
   })
   Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
   for (const enemy of liveRoom.run.combat.enemies) {
