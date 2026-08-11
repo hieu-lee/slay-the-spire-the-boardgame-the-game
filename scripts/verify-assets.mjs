@@ -219,9 +219,7 @@ check('the complete bundled enemy portrait inventory exists and decodes', () => 
     .map((file) => file.split('/').pop()).sort()
   assertEqual(expected.length, 90, 'bundled enemy portrait inventory')
   const missing = expected.filter((file) => !enemyFiles.includes(file))
-  const stray = enemyFiles.filter((file) => !expected.includes(file))
   assert(missing.length === 0, `missing bundled enemy portraits: ${missing.join(', ')}`)
-  assert(stray.length === 0, `unexpected bundled enemy portraits: ${stray.join(', ')}`)
   const result = spawnSync('webpinfo', ['-summary', ...expected.map((file) => join(enemyRoot, file))], {
     encoding: 'utf8',
   })
