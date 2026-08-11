@@ -254,8 +254,9 @@ export const RELICS: Record<string, RelicDef> = {
     id: 'akabeko',
     name: 'Akabeko',
     cost: 5,
-    effects: [],
-    text: 'Once per combat: gain 3 Strength for one Attack.',
+    trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'gainStrength', amount: 1 }],
+    text: 'Start of combat: gain 1 Strength.',
   },
   bag_of_marbles: {
     id: 'bag_of_marbles',

@@ -15,13 +15,8 @@
 //   - Effects can now read the board: a clause can carry a condition, and an
 //     amount can carry a bonus or a count. Fourteen questions are transcribed
 //     (`Condition` in cards.ts), plus Orb, Orb-type, Block, Strength, hand and attack counts.
-//     Per-Miracle counts are not there yet, nor is X-cost.
-//     `CardDef.cost` accepts `'X'`, and no card uses it — which is just as
-//     well, because the readers disagree about what it means: `playCard`
-//     charges the player's whole energy pool, the hand always shows the card
-//     as affordable, the cost badge prints "X", and a `discardTopCosts` check
-//     matches it against no number at all. Spending X needs the player to
-//     choose an amount and nothing collects one.
+//     Per-Miracle counts are not there yet. X-cost cards collect and validate
+//     the Energy amount as part of the same atomic play action.
 //   - Ethereal and every Curse's in-combat text are live. Empty Cage enforces
 //     Parasite's removal penalty and Ascender's Bane's removal protection;
 //     general Merchant removal is not implemented yet.
@@ -39,9 +34,9 @@
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included and Golden Tickets are absent. Bosses and Enchiridion surface
 //     the live rare reward stacks.
-//   - 151 of 259 unique character cards are live.
-//     13 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 108 have not been transcribed at
+//   - 184 of 259 unique character cards are live.
+//     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
+//     The other 75 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 105 enemy definitions cover Acts I-IV, including physical intent
@@ -108,11 +103,15 @@ export { CARDS, STARTER_DECKS, cardCost, cardDef, faceOf } from './cards.ts'
 export type { Amount, CardDef, CardMode, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {
+  abandonCardCopy,
+  abandonForcedCard,
+  activatePower,
   activatePotion,
   beginEndPlayerTurn,
   cardEnemyChoiceCount,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardIsPlayable,
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   cardPlayConditionMet,
@@ -122,14 +121,20 @@ export {
   endTurnChoiceId,
   endTurnChoiceTarget,
   createCombat,
+  effectiveCardCost,
   endPlayerTurn,
   livingEnemies,
   nextEvokeChoice,
   enemyLabel,
   overflowShivCount,
+  powerAbilityKey,
+  powerAbilityUsed,
   playCard,
+  playCardCopy,
+  playCost,
   preparePlayerTurn,
   previewCardChoice,
+  previewCardCopyChoice,
   resolveStartPlayerTurn,
   resolveEnemyTargets,
   spendMiracle,
@@ -141,7 +146,7 @@ export {
   defaultStartTurnChoices,
   validEndTurnOrder,
 } from './combat.ts'
-export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext, StartTurnAbility, StartTurnChoice } from './combat.ts'
+export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext, PowerContext, StartTurnAbility, StartTurnChoice } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 

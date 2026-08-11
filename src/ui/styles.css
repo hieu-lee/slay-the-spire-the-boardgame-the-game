@@ -1002,6 +1002,7 @@ button:disabled {
 
 .prompt {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
@@ -2146,6 +2147,19 @@ button:disabled {
   line-height: 1.05;
   text-align: center;
   color: #e8d7a8;
+}
+
+.power__counter {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  z-index: 2;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: rgb(10 8 7 / 0.88);
+  color: #f5d47b;
+  font-size: 0.48rem;
+  line-height: 1.15;
 }
 
 /* Hover, focus or click enlarges the real card, which already carries its own

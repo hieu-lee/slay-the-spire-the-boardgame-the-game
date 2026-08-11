@@ -144,7 +144,8 @@ export function PowerRow({ powers }: PowerRowProps) {
       <ul className="powers" aria-label="Powers in play">
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
-          const described = describePower(def)
+          const countdown = def.effects.find((effect) => effect.kind === 'countdownDamage')
+          const described = `${describePower(def)}${countdown ? `, ${card.counter ?? 0} of ${countdown.cubes} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
@@ -189,6 +190,9 @@ export function PowerRow({ powers }: PowerRowProps) {
                 <span className="power__fallback" aria-hidden="true">
                   {def.name}
                 </span>
+                {countdown ? (
+                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{countdown.cubes}</span>
+                ) : null}
               </button>
             </li>
           )
@@ -214,15 +218,22 @@ export function PowerRow({ powers }: PowerRowProps) {
 
 /** "Metallicize: 1 Block at the end of each turn" — name, effect, and when. */
 export function describePower(def: CardDef): string {
+  if (def.corruptSkills) return `${def.name}: your Skills cost 0 and Exhaust when played`
+  if (def.retainBlock) return `${def.name}: keep leftover Block at the start of your turn, maximum 20`
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
     ? `whenever you play a ${def.trigger.cardType} card`
+    : def.trigger?.kind === 'onDraw' && def.trigger.cardType
+      ? `whenever you draw a ${def.trigger.cardType} card`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
-  const where = def.target === 'allEnemies'
+  const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
+  const where = effectOwnsScope ? '' : def.target === 'allEnemies'
     ? ' to every enemy'
+    : def.target === 'row' ? ' to one enemy row and any boss'
     : def.target === 'enemy' ? ' to one enemy' : ''
   const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
   if (!effects) return def.name
   const what = `${effects}${where}`
+  if (def.activeAbility) return `${def.name}: ${what}, activate once per turn`
   return when
     ? `${def.name}: ${what} ${when}${def.oncePerTurn ? ', once per turn' : ''}`
     : `${def.name}: ${what}`
@@ -242,6 +253,7 @@ const WHEN: Record<string, string> = {
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
+  onPutEnemyToken: 'whenever you put a token on an enemy',
   onShuffle: 'whenever you shuffle',
 }
 
@@ -272,23 +284,33 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'draw':
       return `draw ${effect.amount}`
     case 'damage':
-      return `${effect.amount} damage`
+      return `${effect.amount} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':
       return `${amountLabel(effect.amount)} damage`
     case 'gainEnergy':
       return `${effect.amount} Energy`
+    case 'channel':
+      return `channel ${effect.amount} ${effect.orb} Orb${effect.amount === 1 ? '' : 's'}`
     case 'gainShiv':
       return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':
       return `Orb Evoke effects get +${effect.amount}`
+    case 'gainOrbEndTurnBonus':
+      return `Orb end-of-turn effects get +${effect.amount}`
     case 'gainShivDamageBonus':
       return `Shivs deal +${effect.amount} damage`
     case 'gainCardBlockBonus':
       return `Attack and Skill Block gets +${effect.amount}`
     case 'gainHitPoison':
       return `hits apply ${effect.amount} Poison`
+    case 'upgradeStarterCards':
+      return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'countdownDamage':
+      return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'drawAndPlayFree':
+      return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':

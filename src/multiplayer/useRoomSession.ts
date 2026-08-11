@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, EndTurnAbility, StartTurnAbility } from '../game/combat.ts'
+import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, RewardDecision, RunPhase } from '../game/run.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
@@ -39,6 +39,24 @@ export type VisibleCombat = {
   pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
   potionSupplyCount: number
   powerTriggersUsedThisTurn: string[]
+  startTurnProgress?: {
+    choices: StartTurnChoice[]
+    forcedCard?: {
+      playerId: string
+      cardUid: string | null
+      sourceCardId: string
+      exhaustNonPower: boolean
+    }
+  }
+  pendingCardCopy?: {
+    playerId: string
+    card: CardInstance
+    energySpent: number
+    resumePhase: 'start' | 'player'
+    forcedExhaust: boolean
+    forcedChoices: StartTurnChoice[] | null
+    deferredHavocs: { card: CardInstance; exhaust: boolean; virtual?: boolean }[]
+  }
   log: string[]
 }
 
@@ -74,7 +92,8 @@ export type RoomSnapshot = {
   discardOrder?: string[]
   cardPreview?: {
     cardUid: string
-    kind: 'discard' | 'scry'
+    copy?: boolean
+    kind: 'discard' | 'scry' | 'topdeck'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null

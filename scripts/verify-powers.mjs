@@ -238,6 +238,37 @@ check('a draw that draws nothing fires nothing', () => {
   assertEqual(next.players[0].block, 0, 'an empty deck draws nothing, so nothing triggers')
 })
 
+check('Evolve draws once for every Status drawn, including chained Status cards', () => {
+  const shrug = instance('shrug_it_off')
+  const statuses = Array.from({ length: 10 }, () => instance('daze'))
+  const state = combat(
+    [player({
+      hand: [shrug],
+      draw: [...statuses, instance('strike_ironclad')],
+      powers: [instance('evolve')],
+    })],
+    [enemy()],
+  )
+  const evolved = playCard(state, 'p1', shrug.uid, { enemyUid: null, playerId: 'p1' })
+  assertDeepEqual(evolved.players[0].hand.map((card) => card.defId),
+    [...Array(10).fill('daze'), 'strike_ironclad'])
+  assertEqual(evolved.log.filter((line) => line === "Ironclad's Evolve: Ironclad draws 1").length, 10,
+    'each nested Evolve draw has its own source and count')
+  assert(evolved.log.includes('Ironclad draws 1'), 'Shrug It Off logged the nested Evolve cards as its own draw')
+
+  const ordinaryShrug = instance('shrug_it_off')
+  const ordinary = playCard(combat(
+    [player({
+      hand: [ordinaryShrug],
+      draw: [instance('strike_ironclad'), instance('daze')],
+      powers: [instance('evolve')],
+    })],
+    [enemy()],
+  ), 'p1', ordinaryShrug.uid, { enemyUid: null, playerId: 'p1' })
+  assertDeepEqual(ordinary.players[0].hand.map((card) => card.defId), ['strike_ironclad'],
+    'drawing a non-Status card must not fire Evolve')
+})
+
 // Defend+ blocks an ALLY. The ally is the one who gained Block, so the ally's
 // Power is the one that should react.
 check('a Block Power fires for whoever received the Block', () => {
@@ -390,6 +421,14 @@ check('a card-type trigger narrows to that type, or matches any', () => {
   assert(!triggerMatches(skillsOnly, { kind: 'onPlayCard', cardType: 'attack' }), 'not an attack')
 })
 
+check('a draw trigger can narrow to the drawn card type', () => {
+  const anyCard = { kind: 'onDraw' }
+  const statusesOnly = { kind: 'onDraw', cardType: 'status' }
+  assert(triggerMatches(anyCard, { kind: 'onDraw', cardType: 'attack' }))
+  assert(triggerMatches(statusesOnly, { kind: 'onDraw', cardType: 'status' }))
+  assert(!triggerMatches(statusesOnly, { kind: 'onDraw', cardType: 'curse' }))
+})
+
 check('a stance trigger narrows to that stance, or matches any', () => {
   const anyStance = { kind: 'onEnterStance' }
   const wrathOnly = { kind: 'onEnterStance', stance: 'wrath' }
@@ -398,12 +437,14 @@ check('a stance trigger narrows to that stance, or matches any', () => {
   assert(!triggerMatches(wrathOnly, { kind: 'onEnterStance', stance: 'calm' }))
 })
 
-check('every Power declares exactly one way its effects resolve', () => {
+check('every Power declares exactly one resolution model', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type !== 'power') continue
+    const persistent = def.corruptSkills === true || def.retainBlock === true
     assert(
-      (def.trigger !== undefined) !== (def.resolvesOnPlay === true),
-      `${def.id} must either trigger later or resolve once when played`,
+      [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
+        .filter(Boolean).length === 1,
+      `${def.id} must trigger later, activate during the turn, resolve when played, or be persistent`,
     )
   }
 })
@@ -412,7 +453,9 @@ check('no non-Power card carries a trigger', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type === 'power') continue
     assert(
-      def.trigger === undefined && def.resolvesOnPlay !== true,
+      def.trigger === undefined && def.resolvesOnPlay !== true &&
+        def.activeAbility !== true &&
+        def.corruptSkills !== true && def.retainBlock !== true,
       `${def.id} is a ${def.type} with Power-only resolution metadata`,
     )
   }

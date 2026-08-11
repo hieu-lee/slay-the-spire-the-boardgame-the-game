@@ -1,7 +1,7 @@
 // Card definitions are data, not code. A card's printed text is a sequence of
 // icons — Bash is literally "2⚔ 💔" — so an effect list is a transcription of
 // the card rather than an interpretation of it. One resolver reads them all.
-import type { CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
+import type { CardInstance, CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
 import type { Trigger } from './triggers.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
@@ -64,12 +64,17 @@ export type Condition =
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
   | { kind: 'firstTurnOfCombat' }
+  /** FTL: this card is the first actual card played this turn. Shivs are Attacks, not cards. */
+  | { kind: 'firstCardPlayedThisTurn' }
   | { kind: 'hasNoAttacksInHand' }
+  | { kind: 'allCardsInHandAreAttacks' }
   | { kind: 'goldAtLeast'; amount: number }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
   /** Grand Finale: the face-down draw pile is empty. */
   | { kind: 'drawPileEmpty' }
+  /** Panache checks this when its ordered end-of-turn ability resolves. */
+  | { kind: 'handEmpty' }
   /** Escape Plan: the immediately preceding draw effect drew a Skill. */
   | { kind: 'drewSkill' }
   /** Outmaneuver: this exact card was kept by Retain last turn. */
@@ -78,12 +83,19 @@ export type Condition =
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
 export type CountOf =
   | 'orbs'
+  | 'frostOrbs'
+  | 'lightningOrbs'
   | 'orbTypes'
   | 'block'
   | 'strength'
   | 'cardsInHand'
+  | 'cardsInExhaust'
+  | 'energySpent'
+  | 'strikesInHand'
   | 'skillsInHand'
+  | 'attacksInHand'
   | 'attacksPlayedThisTurn'
+  | 'attackingEnemies'
 
 /**
  * A number the board works out as the card resolves, rather than one printed
@@ -138,6 +150,8 @@ type EffectKind =
   | { kind: 'hit'; amount: Amount; times?: Amount }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
   | { kind: 'damage'; amount: number }
+  /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
+  | { kind: 'damagePerAttackIntent'; amount: number }
   /** Ignores Block entirely. */
   | { kind: 'loseHp'; amount: number }
   /** The caster loses HP, ignoring Block, as a printed card effect. */
@@ -148,6 +162,7 @@ type EffectKind =
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: number }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
+  | { kind: 'doubleStrength' }
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: number }
@@ -159,6 +174,16 @@ type EffectKind =
   | { kind: 'cycleHand' }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
+  /** The next card played this turn costs 0 Energy. */
+  | { kind: 'discountNextCard' }
+  /** The next Attack played this turn resolves as two separately targeted cards. */
+  | { kind: 'doubleNextAttack' }
+  /** Total HP lost this round cannot exceed this amount. */
+  | { kind: 'limitRoundHpLoss'; amount: number }
+  /** Permanently improve this combat's starter Strikes and Defends. */
+  | { kind: 'upgradeStarterCards'; amount: number }
+  /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
+  | { kind: 'countdownDamage'; cubes: number; damage: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -178,22 +203,33 @@ type EffectKind =
   | { kind: 'useAllShivs'; bonus: number }
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
-  | { kind: 'channel'; orb: OrbType; amount: number }
+  | { kind: 'channel'; orb: OrbType; amount: Amount }
   | { kind: 'evoke'; times: number }
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
   | { kind: 'removeAllOrbs' }
   | { kind: 'gainOrbSlots'; amount: number }
   | { kind: 'gainOrbEvokeBonus'; amount: number }
+  | { kind: 'gainOrbEndTurnBonus'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
   | { kind: 'doubleEnergy'; max: number }
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
+  | { kind: 'gainStrengthIfTargetDead'; amount: number }
   | { kind: 'scry'; amount: number }
+  /** Put chosen cards from hand on top of the draw pile, in chosen order. */
+  | { kind: 'topdeck'; amount: number }
+  /** Put one chosen card from the face-up discard pile on the draw top or into hand. */
+  | { kind: 'recoverDiscard'; amount: 1; toHand?: boolean }
+  /** Put one chosen card from the face-up Exhaust pile into hand. */
+  | { kind: 'recoverExhaust'; amount: 1 }
+  /** Draw a card and immediately play it for 0 Energy. */
+  | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
   | { kind: 'recoverDiscardTopCosts'; cost: number }
+  | { kind: 'recoverAllDiscardCosts'; cost: number }
   | ({ kind: 'heal'; amount: number } & Redirectable)
   /** Remove every Weak and Vulnerable token from the player. */
   | ({ kind: 'clearDebuffs' } & Redirectable)
@@ -262,8 +298,14 @@ export type CardDef = {
   trigger?: Trigger
   /** This Power may resolve at most once between Start of Turn resets. */
   oncePerTurn?: boolean
+  /** This Power is activated by its owner during the Player Turn. */
+  activeAbility?: boolean
   /** A Power whose printed effects happen once when played, as Inflame does. */
   resolvesOnPlay?: boolean
+  /** While this Power is in play, its owner's Skills cost 0 and Exhaust when played. */
+  corruptSkills?: boolean
+  /** While this Power is in play, its owner keeps leftover Block at Start of Turn. */
+  retainBlock?: boolean
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -274,10 +316,15 @@ export function faceOf(def: CardDef, upgraded: boolean): CardDef {
   return { ...def, ...def.upgrade, name: `${def.name}+` }
 }
 
-export function cardCost(def: CardDef, powersInPlay: number, lostHpThisCombat = false): number | 'X' {
+export function cardCost(
+  def: CardDef,
+  powers: readonly CardInstance[],
+  lostHpThisCombat = false,
+): number | 'X' {
+  if (def.type === 'skill' && powers.some((held) => cardDef(held.defId).corruptSkills)) return 0
   if (def.cost === 'X') return 'X'
   const cost = lostHpThisCombat ? (def.costAfterHpLoss ?? def.cost) : def.cost
-  return Math.max(0, cost - (def.powerCostReduction ?? 0) * powersInPlay)
+  return Math.max(0, cost - (def.powerCostReduction ?? 0) * powers.length)
 }
 
 const card = (def: CardDef): CardDef => def
@@ -497,6 +544,12 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'exhaustHand', except: 'attack' }, { kind: 'gainBlockPerExhaust', amount: 2 }],
     },
   }),
+  entrench: card({
+    id: 'entrench', name: 'Entrench', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'block' } }],
+    exhaust: true,
+    upgrade: { exhaust: false },
+  }),
   sentinel: card({
     id: 'sentinel', name: 'Sentinel', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
     supportTarget: 'anyPlayer',
@@ -509,6 +562,35 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 1 }],
     exhaust: true,
     upgrade: { effects: [{ kind: 'exhaustHand' }, { kind: 'hitPerExhaust', amount: 2 }] },
+  }),
+  limit_break: card({
+    id: 'limit_break', name: 'Limit Break', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'doubleStrength' }],
+    exhaust: true,
+    upgrade: { exhaust: false },
+  }),
+  double_tap: card({
+    id: 'double_tap', name: 'Double Tap', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'doubleNextAttack' }],
+    upgrade: { cost: 0 },
+  }),
+  feed: card({
+    id: 'feed', name: 'Feed', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'hit', amount: 3 }, { kind: 'gainStrengthIfTargetDead', amount: 1 }],
+    exhaust: true,
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'gainStrengthIfTargetDead', amount: 2 }] },
+  }),
+  corruption: card({
+    id: 'corruption', name: 'Corruption', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 3,
+    effects: [],
+    corruptSkills: true,
+    upgrade: { cost: 2 },
+  }),
+  barricade: card({
+    id: 'barricade', name: 'Barricade', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 2,
+    effects: [],
+    retainBlock: true,
+    upgrade: { cost: 1 },
   }),
   // Powers: the `effects` fire on the TRIGGER, not when the card is played.
   // Transcribed from the scans; note that Metallicize+ and Feel No Pain+ change
@@ -557,6 +639,18 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 1 }],
     upgrade: { cost: 1 },
   }),
+  combust: card({
+    id: 'combust', name: 'Combust', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 1,
+    target: 'row', activeAbility: true, oncePerTurn: true,
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
+  evolve: card({
+    id: 'evolve', name: 'Evolve', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onDraw', cardType: 'status' },
+    effects: [{ kind: 'draw', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
   inflame: card({
     id: 'inflame', name: 'Inflame', owner: 'ironclad', type: 'power', rarity: 'uncommon', cost: 2,
     resolvesOnPlay: true,
@@ -580,6 +674,17 @@ export const CARDS: Record<string, CardDef> = {
     id: 'battle_trance', name: 'Battle Trance', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 0,
     effects: [{ kind: 'draw', amount: 3 }, { kind: 'preventDraw' }],
     upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'preventDraw' }] },
+  }),
+  rupture: card({
+    id: 'rupture', name: 'Rupture', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'loseOwnHp', amount: 1 }],
+    upgrade: { cost: 0 },
+  }),
+  whirlwind: card({
+    id: 'whirlwind', name: 'Whirlwind', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 'X',
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1, times: { base: 0, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'energySpent' } }] },
   }),
 
   bash: card({
@@ -695,6 +800,56 @@ export const CARDS: Record<string, CardDef> = {
       exhaust: false,
       effects: [{ kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }],
     },
+  }),
+  warcry: card({
+    id: 'warcry', name: 'Warcry', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 0,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
+    exhaust: true,
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
+  havoc: card({
+    id: 'havoc', name: 'Havoc', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 1,
+    effects: [{ kind: 'drawAndPlayFree', exhaustNonPower: true }],
+    upgrade: { cost: 0 },
+  }),
+  perfected_strike: card({
+    id: 'perfected_strike', name: 'Perfected Strike', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 3, per: 'strikesInHand', scale: 2 } }] },
+  }),
+  headbutt: card({
+    id: 'headbutt', name: 'Headbutt', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverDiscard', amount: 1 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverDiscard', amount: 1 }] },
+  }),
+  power_through: card({
+    id: 'power_through', name: 'Power Through', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'addDaze', amount: 1, pile: 'draw' }],
+    upgrade: {
+      effects: [{ kind: 'block', amount: 4, toChosen: true }, { kind: 'addDaze', amount: 1, pile: 'draw' }],
+    },
+  }),
+  flame_barrier: card({
+    id: 'flame_barrier', name: 'Flame Barrier', owner: 'ironclad', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'block', amount: 3 }, { kind: 'damagePerAttackIntent', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 4 }, { kind: 'damagePerAttackIntent', amount: 1 }] },
+  }),
+  rampage: card({
+    id: 'rampage', name: 'Rampage', owner: 'ironclad', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } }],
+    upgrade: {
+      effects: [
+        { kind: 'exhaustFromHand', amount: 1 },
+        { kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } },
+      ],
+    },
+  }),
+  exhume: card({
+    id: 'exhume', name: 'Exhume', owner: 'ironclad', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'recoverExhaust', amount: 1 }],
+    exhaust: true,
+    upgrade: { cost: 0 },
   }),
   iron_wave: card({
     id: 'iron_wave', name: 'Iron Wave', owner: 'ironclad', type: 'attack', rarity: 'common', cost: 1,
@@ -869,6 +1024,11 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'draw', amount: 3 }, { kind: 'discard', amount: 1 }],
     upgrade: { effects: [{ kind: 'draw', amount: 4 }, { kind: 'discard', amount: 1 }] },
   }),
+  skewer: card({
+    id: 'skewer', name: 'Skewer', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 'X',
+    effects: [{ kind: 'hit', amount: 1, times: { base: 1, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'energySpent' } }] },
+  }),
 
   ball_lightning: card({
     id: 'ball_lightning',
@@ -1036,6 +1196,51 @@ export const CARDS: Record<string, CardDef> = {
     cost: 1,
     effects: [{ kind: 'hit', amount: { base: 0, per: 'block' } }],
     upgrade: { cost: 0 },
+  }),
+  clash: card({
+    id: 'clash',
+    name: 'Clash',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 0,
+    playCondition: { kind: 'allCardsInHandAreAttacks' },
+    effects: [{ kind: 'hit', amount: 3 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
+  }),
+  spot_weakness: card({
+    id: 'spot_weakness',
+    name: 'Spot Weakness',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    supportTarget: 'anyPlayer',
+    effects: [{ kind: 'gainStrength', amount: 1, toChosen: true, when: { kind: 'dieShows', faces: [1, 2, 3] } }],
+    upgrade: {
+      effects: [{ kind: 'gainStrength', amount: 1, toChosen: true, when: { kind: 'dieShows', faces: [1, 2, 3, 4] } }],
+    },
+  }),
+  rage: card({
+    id: 'rage',
+    name: 'Rage',
+    owner: 'ironclad',
+    type: 'skill',
+    rarity: 'uncommon',
+    cost: 1,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'attacksInHand' } }],
+    upgrade: { cost: 0 },
+  }),
+  blood_for_blood: card({
+    id: 'blood_for_blood',
+    name: 'Blood for Blood',
+    owner: 'ironclad',
+    type: 'attack',
+    rarity: 'uncommon',
+    cost: 3,
+    costAfterHpLoss: 1,
+    effects: [{ kind: 'hit', amount: 4 }],
+    upgrade: { costAfterHpLoss: 0 },
   }),
   heavy_blade: card({
     id: 'heavy_blade',
@@ -1489,6 +1694,44 @@ export const CARDS: Record<string, CardDef> = {
       effects: [{ kind: 'hit', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }],
     },
   }),
+  ftl: card({
+    id: 'ftl', name: 'FTL', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 0,
+    effects: [
+      { kind: 'hit', amount: 1 },
+      { kind: 'draw', amount: 1, when: { kind: 'firstCardPlayedThisTurn' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'draw', amount: 1, when: { kind: 'firstCardPlayedThisTurn' } },
+      ],
+    },
+  }),
+  force_field: card({
+    id: 'force_field', name: 'Force Field', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 3,
+    powerCostReduction: 1,
+    effects: [{ kind: 'block', amount: 3 }],
+    upgrade: { effects: [{ kind: 'block', amount: 4 }] },
+  }),
+  tempest: card({
+    id: 'tempest', name: 'Tempest', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 'X',
+    exhaust: true,
+    effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 0, per: 'energySpent' } }],
+    upgrade: {
+      effects: [{ kind: 'channel', orb: 'lightning', amount: { base: 1, per: 'energySpent' } }],
+    },
+  }),
+  blizzard: card({
+    id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'frostOrbs' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3, times: { base: 0, per: 'frostOrbs' } }] },
+  }),
+  hologram: card({
+    id: 'hologram', name: 'Hologram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: 1 }, { kind: 'recoverDiscard', amount: 1, toHand: true }],
+    upgrade: { exhaust: false },
+  }),
   doom_and_gloom: card({
     id: 'doom_and_gloom', name: 'Doom and Gloom', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 2,
     target: 'row',
@@ -1504,6 +1747,12 @@ export const CARDS: Record<string, CardDef> = {
     id: 'darkness', name: 'Darkness', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'channel', orb: 'dark', amount: 1 }],
     upgrade: { cost: 0 },
+  }),
+  storm: card({
+    id: 'storm', name: 'Storm', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'channel', orb: 'lightning', amount: 1 }],
+    upgrade: { effects: [{ kind: 'channel', orb: 'lightning', amount: 2 }] },
   }),
   machine_learning: card({
     id: 'machine_learning', name: 'Machine Learning', owner: 'defect', type: 'power', rarity: 'uncommon', cost: 1,
@@ -1621,6 +1870,64 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'exhaustAny', amount: 3 }],
     upgrade: { effects: [{ kind: 'exhaustAny', amount: 5 }] },
   }),
+  apparition: card({
+    id: 'apparition', name: 'Apparition', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 1,
+    ethereal: true,
+    exhaust: true,
+    effects: [{ kind: 'limitRoundHpLoss', amount: 1 }],
+    upgrade: { ethereal: false },
+  }),
+  dark_shackles: card({
+    id: 'dark_shackles', name: 'Dark Shackles', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'block', amount: { base: 0, per: 'attackingEnemies', scale: 3 } }] },
+  }),
+  madness: card({
+    id: 'madness', name: 'Madness', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'discountNextCard' }],
+    upgrade: { retain: true },
+  }),
+  panache: card({
+    id: 'panache', name: 'Panache', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'endOfTurn' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 3, when: { kind: 'handEmpty' } }],
+    upgrade: { effects: [{ kind: 'damage', amount: 5, when: { kind: 'handEmpty' } }] },
+  }),
+  apotheosis: card({
+    id: 'apotheosis', name: 'Apotheosis', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'upgradeStarterCards', amount: 1 }],
+    upgrade: { cost: 1 },
+  }),
+  the_bomb: card({
+    id: 'the_bomb', name: 'The Bomb', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'endOfTurn' },
+    target: 'allEnemies',
+    effects: [{ kind: 'countdownDamage', cubes: 3, damage: 10 }],
+    upgrade: { effects: [{ kind: 'countdownDamage', cubes: 3, damage: 12 }] },
+  }),
+  sadistic_nature: card({
+    id: 'sadistic_nature', name: 'Sadistic Nature', owner: 'colorless', type: 'power', rarity: 'uncommon', cost: 0,
+    trigger: { kind: 'onPutEnemyToken' },
+    target: 'enemy',
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
+  thinking_ahead: card({
+    id: 'thinking_ahead', name: 'Thinking Ahead', owner: 'colorless', type: 'skill', rarity: 'uncommon', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'topdeck', amount: 1 }],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'topdeck', amount: 1 }] },
+  }),
+  mayhem: card({
+    id: 'mayhem', name: 'Mayhem', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'drawAndPlayFree' }],
+    upgrade: { cost: 1 },
+  }),
   reprogram: card({
     id: 'reprogram', name: 'Reprogram', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,
     effects: [{ kind: 'gainStrength', amount: 1 }, { kind: 'removeAllOrbs' }],
@@ -1671,6 +1978,33 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainOrbEvokeBonus', amount: 1 }],
     upgrade: { cost: 1 },
+  }),
+  defragment: card({
+    id: 'defragment', name: 'Defragment', owner: 'defect', type: 'power', rarity: 'rare', cost: 3,
+    ethereal: true,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainOrbEndTurnBonus', amount: 1 }],
+    upgrade: { ethereal: false },
+  }),
+  core_surge: card({
+    id: 'core_surge', name: 'Core Surge', owner: 'defect', type: 'attack', rarity: 'rare', cost: 1,
+    supportTarget: 'anyPlayer',
+    retain: true,
+    effects: [{ kind: 'clearDebuffs', toChosen: true }, { kind: 'hit', amount: 3 }],
+    upgrade: {
+      supportTarget: 'allPlayers',
+      effects: [{ kind: 'clearDebuffs', toChosen: true }, { kind: 'hit', amount: 4 }],
+    },
+  }),
+  all_for_one: card({
+    id: 'all_for_one', name: 'All for One', owner: 'defect', type: 'attack', rarity: 'rare', cost: 2,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'recoverAllDiscardCosts', cost: 0 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'recoverAllDiscardCosts', cost: 0 }] },
+  }),
+  thunder_strike: card({
+    id: 'thunder_strike', name: 'Thunder Strike', owner: 'defect', type: 'attack', rarity: 'rare', cost: 3,
+    effects: [{ kind: 'hit', amount: 4, times: { base: 0, per: 'lightningOrbs' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 6, times: { base: 0, per: 'lightningOrbs' } }] },
   }),
   double_energy: card({
     id: 'double_energy', name: 'Double Energy', owner: 'defect', type: 'skill', rarity: 'uncommon', cost: 1,

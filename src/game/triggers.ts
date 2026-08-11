@@ -25,12 +25,14 @@ export type Trigger =
   /** Once when one card effect makes this player discard one or more cards. */
   | { kind: 'onDiscard' }
   | { kind: 'onExhaust' }
-  | { kind: 'onDraw' }
+  | { kind: 'onDraw'; cardType?: CardType }
   | { kind: 'onEnterStance'; stance?: Stance }
   | { kind: 'onScry' }
   | { kind: 'onGainBlock' }
   /** Fires when this player actually adds one or more Poison cubes to an enemy. */
   | { kind: 'onApplyPoison' }
+  /** Fires once per Weak, Vulnerable, or Poison token this player actually puts on an enemy. */
+  | { kind: 'onPutEnemyToken' }
   | { kind: 'onShuffle' }
 
 /** What actually happened, so a trigger can decide whether it applies. */
@@ -43,6 +45,8 @@ export type TriggerEvent = {
   cardOwner?: string
   /** The stance just entered, for `onEnterStance`. */
   stance?: Stance
+  /** Enemy that received a token, for `onPutEnemyToken`. */
+  enemyUid?: string
 }
 
 /** Whether a trigger fires for an event. */
@@ -54,6 +58,9 @@ export function triggerMatches(trigger: Trigger, event: TriggerEvent): boolean {
   }
   if (trigger.kind === 'onPlayCard') {
     // No cardType on the trigger means "any card".
+    return trigger.cardType === undefined || trigger.cardType === event.cardType
+  }
+  if (trigger.kind === 'onDraw') {
     return trigger.cardType === undefined || trigger.cardType === event.cardType
   }
   if (trigger.kind === 'onEnterStance') {

@@ -16,6 +16,9 @@
 import { randomBytes } from 'node:crypto'
 import {
   CAPS,
+  abandonCardCopy,
+  abandonForcedCard,
+  activatePower,
   activatePotion,
   advanceAct,
   cardCost,
@@ -32,6 +35,7 @@ import {
   endTurnAbilities,
   endTurnChoiceId,
   endTurnChoiceTarget,
+  effectiveCardCost,
   createRun,
   currentRoom,
   endPlayerTurn,
@@ -41,7 +45,9 @@ import {
   leaveRoom,
   overflowShivCount,
   playCard,
+  playCardCopy,
   previewCardChoice,
+  previewCardCopyChoice,
   potionDef,
   revealCardReward,
   revealItemReward,
@@ -239,6 +245,7 @@ export function markDisconnected(room, seatToken) {
   settleEndTurn(room)
   settleDiscard(room)
   settleBetweenCombat(room)
+  settleForcedCards(room)
   return snapshotFor(room, seatToken)
 }
 
@@ -254,6 +261,41 @@ function settleBetweenCombat(room) {
   room.run = startPendingBoss(run)
   room.betweenCombatReady = undefined
   return null
+}
+
+function settleForcedCards(room) {
+  let combat = room.run?.combat
+  while (combat?.phase === 'copy' && combat.pendingCardCopy) {
+    const ownerId = combat.pendingCardCopy.playerId
+    const owner = room.seats.find((seat) => seat.playerId === ownerId)
+    if (owner?.connected !== false) break
+    const next = abandonCardCopy(combat, ownerId)
+    if (next === combat) break
+    room.run = { ...room.run, combat: next }
+    combat = next
+    if (room.cardPreviews?.[ownerId]) {
+      room.cardPreviews = { ...room.cardPreviews }
+      delete room.cardPreviews[ownerId]
+    }
+  }
+  while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
+    const ownerId = combat.startTurnProgress.forcedCard.playerId
+    const owner = room.seats.find((seat) => seat.playerId === ownerId)
+    if (owner?.connected !== false) break
+    if (room.cardPreviews?.[ownerId]) {
+      if (!resolveAbandonedPreviews(room)) break
+      combat = room.run?.combat
+      continue
+    }
+    const next = abandonForcedCard(combat, ownerId)
+    if (next === combat) break
+    room.run = { ...room.run, combat: next }
+    combat = next
+    if (room.cardPreviews?.[ownerId]) {
+      room.cardPreviews = { ...room.cardPreviews }
+      delete room.cardPreviews[ownerId]
+    }
+  }
 }
 
 /**
@@ -293,13 +335,24 @@ export function apply(room, seatToken, action) {
 
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
-  if (staged && (!player?.hand.some((card) => card.uid === staged.cardUid) || room.run.combat?.phase !== 'player')) {
+  const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
+  const pendingCopy = room.run.combat?.pendingCardCopy
+  const copyForSeat = pendingCopy?.playerId === seat.playerId
+  const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
+    forcedCard?.playerId === seat.playerId &&
+    typeof forcedCard.cardUid === 'string'
+  const stagedCopyStillWaiting = staged?.copy === true && copyForSeat && pendingCopy.card.uid === staged.cardUid
+  const stagedCardStillWaiting = player?.hand.some((card) => card.uid === staged?.cardUid) &&
+    (room.run.combat?.phase === 'player' || (forcedForSeat && forcedCard.cardUid === staged?.cardUid))
+  if (staged && !stagedCopyStillWaiting && !stagedCardStillWaiting) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
   }
   const locked = room.cardPreviews?.[seat.playerId]
   if (locked && !(
-    (action?.kind === 'previewCard' || action?.kind === 'playCard') && action.cardUid === locked.cardUid
+    ((locked.copy === true && (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy')) ||
+      (locked.copy !== true && (action?.kind === 'previewCard' || action?.kind === 'playCard'))) &&
+      action.cardUid === locked.cardUid
   )) fail('Finish the revealed card before taking another action')
   const foreignLocks = Object.keys(room.cardPreviews ?? {}).filter((playerId) => playerId !== seat.playerId)
   if (foreignLocks.length > 0 && !(
@@ -310,18 +363,47 @@ export function apply(room, seatToken, action) {
     // to RNG-mutating actions only if simultaneous-play latency becomes a problem.
     fail('Wait for the revealed card to finish')
   }
+  if (forcedCard && !(
+    forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
+    action.cardUid === forcedCard.cardUid
+  )) fail('Finish the forced card before taking another action')
+  if (pendingCopy && !(copyForSeat &&
+    (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy'))) {
+    fail(copyForSeat ? 'Finish the Double Tap copy' : 'Wait for the Double Tap copy')
+  }
+
+  if (action?.kind === 'previewCardCopy') {
+    if (!copyForSeat) fail('No Double Tap copy is waiting for you')
+    const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
+    const needsEnemy = cardNeedsEnemy(def, player, false, pendingCopy.energySpent)
+    const enemyUid = needsEnemy ? action.enemyUid : null
+    if (needsEnemy && (typeof enemyUid !== 'string' ||
+      resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
+      fail('Choose a living enemy before revealing this copy')
+    }
+    if (locked && (locked.copy !== true || enemyUid !== locked.enemyUid)) {
+      fail('The revealed copy target is already committed')
+    }
+    const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
+    if (!preview) fail('That copy cannot reveal a choice now')
+    room.cardPreviews = {
+      ...room.cardPreviews,
+      [seat.playerId]: {
+        cardUid: pendingCopy.card.uid, copy: true, spendMiracle: false, enemyUid, ...preview,
+      },
+    }
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
 
   if (action?.kind === 'previewCard') {
     if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
     const held = player?.hand.find((card) => card.uid === action.cardUid)
     const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
     const spendMiracle = action.spendMiracle === true
-    const printedCost = def && player ? cardCost(def, player.powers.length, player.lostHpThisCombat) : null
-    const cost = player?.nextCardCost ?? (player?.freeCardUids?.includes(action.cardUid)
-      ? 0
-      : printedCost === 'X' ? player?.energy : printedCost)
+    const cost = held && player && room.run.combat ? effectiveCardCost(room.run.combat, player, held) : null
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
-      def.cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
+      cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
     const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
     const enemyUid = needsEnemy ? action.enemyUid : null
@@ -363,6 +445,21 @@ export function apply(room, seatToken, action) {
       }
     }
   }
+  if (action?.kind === 'playCardCopy') {
+    if (!copyForSeat || action.cardUid !== pendingCopy.card.uid) fail('No matching Double Tap copy is waiting')
+    const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
+    if (cardNeedsChoicePreview(def, room.run.combat, player)) {
+      if (!locked || locked.copy !== true || locked.cardUid !== action.cardUid) {
+        fail('Reveal this copy before resolving its choice')
+      }
+      if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final copy target does not match its reveal')
+      const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
+      if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
+        preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
+        fail('The revealed copy cards changed; reveal them again')
+      }
+    }
+  }
 
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
@@ -381,8 +478,10 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
   if (room.run.combat?.phase === 'start' && !(
-    action?.kind === 'usePotion' && action.potionId === 'gamblers_brew' &&
-    player?.potions.includes('gamblers_brew')
+    (action?.kind === 'usePotion' && action.potionId === 'gamblers_brew' &&
+      player?.potions.includes('gamblers_brew')) ||
+    (forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
+      action.cardUid === forcedCard.cardUid)
   )) fail('Finish the Start-of-Turn abilities')
 
   const before = room.run
@@ -390,15 +489,22 @@ export function apply(room, seatToken, action) {
   if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
 
   room.run = next
-  if (action?.kind === 'playCard' && locked?.cardUid === action.cardUid) {
+  settleForcedCards(room)
+  const current = room.run
+  if ((action?.kind === 'playCard' || action?.kind === 'playCardCopy') && locked?.cardUid === action.cardUid) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
   }
   if (room.cardPreviews) {
-    const combat = next.combat
+    const combat = current.combat
     room.cardPreviews = Object.fromEntries(Object.entries(room.cardPreviews).filter(([playerId, preview]) =>
-      combat?.phase === 'player' && combat.players
-        .find((candidate) => candidate.id === playerId)?.hand.some((card) => card.uid === preview.cardUid)))
+      preview.copy === true
+        ? combat?.phase === 'copy' && combat.pendingCardCopy?.playerId === playerId &&
+          combat.pendingCardCopy.card.uid === preview.cardUid
+        : (combat?.phase === 'player' || (combat?.phase === 'start' &&
+          combat.startTurnProgress?.forcedCard?.playerId === playerId &&
+          combat.startTurnProgress.forcedCard.cardUid === preview.cardUid)) && combat.players
+          .find((candidate) => candidate.id === playerId)?.hand.some((card) => card.uid === preview.cardUid)))
   }
   // Any accepted combat action can change a hand, including an ally's. Orders
   // collected before that action are stale, so everyone confirms again.
@@ -414,7 +520,7 @@ export function apply(room, seatToken, action) {
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
-  if (next.map.position !== before.map.position || next.phase !== before.phase) {
+  if (current.map.position !== before.map.position || current.phase !== before.phase) {
     room.campfireChoices = undefined
     room.rewardChoices = undefined
   }
@@ -504,6 +610,7 @@ function resolveAbandonedPreviews(room) {
         enemyUid: preview.enemyUid,
         discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
         scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
+        topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         spendMiracle: preview.spendMiracle,
         preflight: true,
       })
@@ -527,6 +634,8 @@ function resolveAbandonedForced(room) {
     player.freeCardUids = (player.freeCardUids ?? []).filter((uid) => !forced.has(uid))
     player.copyOriginalUids = (player.copyOriginalUids ?? []).filter((uid) => !forced.has(uid))
     player.copyOriginalPaidUids = (player.copyOriginalPaidUids ?? []).filter((uid) => !forced.has(uid))
+    player.copyOriginalEnergySpent = Object.fromEntries(Object.entries(player.copyOriginalEnergySpent ?? {})
+      .filter(([uid]) => !forced.has(uid)))
     combat.log = [...combat.log, `${player.name}'s ${abandoned.length} immediate card${abandoned.length === 1 ? '' : 's'} discarded after disconnect`]
   }
   room.run = { ...room.run, combat }
@@ -584,17 +693,24 @@ function resolveStartTurn(room, seat, action, seatToken) {
     (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
     (choice.playerId !== undefined && typeof choice.playerId !== 'string') ||
     choice.shivEnemyUids.length > CAPS.shivs ||
-    choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string'))) {
-    fail('Start-of-Turn choices must contain every ability and valid Shiv targets')
+    choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string') ||
+    (choice.evokeSlots !== undefined && (!Array.isArray(choice.evokeSlots) ||
+      choice.evokeSlots.length > UID_LIMIT)) ||
+    (choice.evokeEnemyUids !== undefined && (!Array.isArray(choice.evokeEnemyUids) ||
+      choice.evokeEnemyUids.length > UID_LIMIT)))) {
+    fail('Start-of-Turn choices must contain every ability and valid targets')
   }
   const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
     id: choice.id,
     enemyUid: choice.enemyUid,
     playerId: choice.playerId,
     shivEnemyUids: [...choice.shivEnemyUids],
+    evokeSlots: slotList(choice.evokeSlots),
+    evokeEnemyUids: targetList(choice.evokeEnemyUids),
   })))
-  if (next === combat) fail('The Start-of-Turn order or Shiv targets are stale')
+  if (next === combat) fail('The Start-of-Turn order or targets are stale')
   room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -858,21 +974,26 @@ function overflowChoices(combat, effects, action, mandatory = 0) {
 
 function dispatch(run, seat, action) {
   switch (action?.kind) {
-    case 'playCard': {
+    case 'playCard':
+    case 'playCardCopy': {
       if (!run.combat) fail('No combat in progress')
+      const copied = action.kind === 'playCardCopy'
       // A seat may only play cards from its OWN hand. Without this check any
       // client could spend another player's energy and empty their hand.
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
-      const card = player?.hand.find((held) => held.uid === action.cardUid)
-      if (!card) fail('That card is not in your hand')
+      const card = copied && run.combat.pendingCardCopy?.playerId === seat.playerId
+        ? run.combat.pendingCardCopy.card
+        : player?.hand.find((held) => held.uid === action.cardUid)
+      if (!card) fail(copied ? 'No Double Tap copy is waiting for you' : 'That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
+      const cardsOutsidePlay = player.hand.length - Number(!copied)
       const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
       const variableExhaust = def.effects.find((effect) => effect.kind === 'exhaustAny')
       const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
       if (action.discardUids !== undefined && (
         !Array.isArray(action.discardUids) ||
         (variableDiscard
-          ? action.discardUids.length > player.hand.length - 1 || action.discardUids.some((uid) => typeof uid !== 'string')
+          ? action.discardUids.length > cardsOutsidePlay || action.discardUids.some((uid) => typeof uid !== 'string')
           : discardUids.length !== action.discardUids.length)
       )) fail('Discard choices must be a valid list of card ids')
       const exhaustUids = uidList(action.exhaustUids) ?? []
@@ -882,7 +1003,7 @@ function dispatch(run, seat, action) {
       )) fail('Exhaust choices must be a valid list of card ids')
       if (variableExhaust && exhaustUids.length < Math.min(
         variableExhaust.minimum ?? 0,
-        Math.max(0, player.hand.length - 1),
+        Math.max(0, cardsOutsidePlay),
       )) fail('Choose the minimum number of cards to Exhaust')
       const shivEffects = def.type === 'power' && def.trigger && def.resolvesOnPlay !== true ? [] : def.effects
       const mandatoryShivs = cardShivChoiceCount(def, player, action.mode)
@@ -901,10 +1022,26 @@ function dispatch(run, seat, action) {
       if (action.scryDiscardUids !== undefined && (
         !Array.isArray(action.scryDiscardUids) || scryDiscardUids.length !== action.scryDiscardUids.length
       )) fail('Scry choices must be a list of card ids')
+      const topdeckUids = uidList(action.topdeckUids)
+      if (action.topdeckUids !== undefined && (
+        !Array.isArray(action.topdeckUids) || topdeckUids.length !== action.topdeckUids.length
+      )) fail('Topdeck choices must be a list of card ids')
+      const recoverDiscardUid = action.recoverDiscardUid
+      if (recoverDiscardUid !== undefined && typeof recoverDiscardUid !== 'string') {
+        fail('Discard recovery must be a card id')
+      }
+      const recoverExhaustUid = action.recoverExhaustUid
+      if (recoverExhaustUid !== undefined && typeof recoverExhaustUid !== 'string') {
+        fail('Exhaust recovery must be a card id')
+      }
+      if (action.energySpent !== undefined && !Number.isInteger(action.energySpent)) {
+        fail('X Energy must be a whole number')
+      }
       const context = {
         enemyUid: action.enemyUid ?? null,
         enemyUids,
         playerId: action.playerId ?? seat.playerId,
+        energySpent: action.energySpent,
         playerIds,
         switchWithPlayerId: action.switchWithPlayerId ?? null,
         mode: action.mode,
@@ -919,21 +1056,41 @@ function dispatch(run, seat, action) {
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
         scryDiscardUids,
+        topdeckUids,
+        recoverDiscardUid,
+        recoverExhaustUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
-      const combat = playCard(run.combat, seat.playerId, action.cardUid, context)
+      const combat = copied
+        ? playCardCopy(run.combat, seat.playerId, context)
+        : playCard(run.combat, seat.playerId, action.cardUid, context)
       if (combat === run.combat && overflow > 0 && shivEnemyUids.length > mandatoryShivs) {
-        const withoutOverflowTargets = playCard(run.combat, seat.playerId, action.cardUid, {
-          ...context,
-          shivEnemyUids: shivEnemyUids.slice(0, mandatoryShivs),
-        })
+        const withoutOverflowTargets = copied
+          ? playCardCopy(run.combat, seat.playerId, {
+            ...context, shivEnemyUids: shivEnemyUids.slice(0, mandatoryShivs),
+          })
+          : playCard(run.combat, seat.playerId, action.cardUid, {
+            ...context, shivEnemyUids: shivEnemyUids.slice(0, mandatoryShivs),
+          })
         if (withoutOverflowTargets !== run.combat) {
           fail('An earlier overflow Shiv defeated a later target; choose targets again')
         }
       }
       if (combat === run.combat && action.preflight === true) {
         fail('That card play is no longer legal; choose again')
+      }
+      return combat === run.combat ? run : { ...run, combat }
+    }
+
+    case 'activatePower': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = activatePower(run.combat, seat.playerId, action.powerUid, {
+        enemyUid: action.enemyUid ?? null,
+        enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
+      })
+      if (combat === run.combat && action.preflight === true) {
+        fail('That Power ability is no longer legal; choose again')
       }
       return combat === run.combat ? run : { ...run, combat }
     }
@@ -1109,9 +1266,9 @@ export function snapshotFor(room, seatToken) {
     cardPreview: viewerId !== null && room.cardPreviews?.[viewerId]
       ? structuredClone(room.cardPreviews[viewerId])
       : undefined,
-    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0],
-    forcedCardPlayerId: room.run?.combat?.players.find((player) =>
-      (player.forcedCardUids?.length ?? 0) > 0)?.id,
+    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ?? room.run?.combat?.pendingCardCopy?.playerId,
+    forcedCardPlayerId: room.run?.combat?.startTurnProgress?.forcedCard?.playerId ??
+      room.run?.combat?.players.find((player) => (player.forcedCardUids?.length ?? 0) > 0)?.id,
     seats: room.seats.map(seatPublic),
     run: room.run ? redactRun(room.run, viewerId) : null,
   }
@@ -1160,12 +1317,31 @@ function redactRun(run, viewerId) {
 }
 
 function redactCombat(combat, viewerId) {
+  const progress = combat.startTurnProgress
   return {
     turn: combat.turn,
     die: combat.die,
     phase: combat.phase,
     startTurnStage: combat.startTurnStage,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
+    startTurnProgress: progress ? {
+      choices: structuredClone(progress.choices),
+      forcedCard: progress.forcedCard ? {
+        playerId: progress.forcedCard.playerId,
+        cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
+        sourceCardId: progress.forcedCard.sourceCardId ?? 'mayhem',
+        exhaustNonPower: progress.forcedCard.exhaustNonPower === true,
+      } : undefined,
+    } : undefined,
+    pendingCardCopy: combat.pendingCardCopy ? {
+      playerId: combat.pendingCardCopy.playerId,
+      card: structuredClone(combat.pendingCardCopy.card),
+      energySpent: combat.pendingCardCopy.energySpent,
+      resumePhase: combat.pendingCardCopy.resumePhase,
+      forcedExhaust: combat.pendingCardCopy.forcedExhaust,
+      forcedChoices: structuredClone(combat.pendingCardCopy.forcedChoices),
+      deferredHavocs: structuredClone(combat.pendingCardCopy.deferredHavocs),
+    } : undefined,
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
@@ -1205,12 +1381,17 @@ function redactPlayer(player, viewerId) {
     damageDealtZeroThisTurn: player.damageDealtZeroThisTurn === true,
     facingEnemyUid: player.facingEnemyUid ?? null,
     lostHpThisCombat: player.lostHpThisCombat === true,
-    attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
+    hpLostThisRound: player.hpLostThisRound ?? 0,
+    hpLossLimitThisRound: player.hpLossLimitThisRound,
+    freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
+    doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
     cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
+    attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,
     nextCardCost: player.nextCardCost ?? null,
     cardCopyQueue: player.cardCopyQueue ?? [],
     copyOriginalUids: mine ? player.copyOriginalUids ?? [] : [],
     copyOriginalPaidUids: mine ? player.copyOriginalPaidUids ?? [] : [],
+    copyOriginalEnergySpent: mine ? player.copyOriginalEnergySpent ?? {} : {},
     freeCardUids: mine ? player.freeCardUids ?? [] : [],
     forcedCardUids: mine ? player.forcedCardUids ?? [] : [],
     hpLossLimitThisTurn: player.hpLossLimitThisTurn ?? null,
@@ -1219,10 +1400,14 @@ function redactPlayer(player, viewerId) {
     shivDamageBonus: player.shivDamageBonus ?? 0,
     cardBlockBonus: player.cardBlockBonus ?? 0,
     hitPoison: player.hitPoison ?? 0,
+    starterStrikeDamageBonus: player.starterStrikeDamageBonus ?? 0,
+    starterDefendBlockBonus: player.starterDefendBlockBonus ?? 0,
     miracles: player.miracles,
     holyWaterCubes: player.holyWaterCubes ?? 0,
     stance: player.stance,
     orbs: player.orbs,
+    orbEvokeBonus: player.orbEvokeBonus ?? 0,
+    orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,

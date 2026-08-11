@@ -19,7 +19,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CARDS, ROOM_LABEL, bossRelicCardChoice, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, ROOM_LABEL, bossRelicCardChoice, cardNeedsEnemy, enteringRoom, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
@@ -857,6 +857,52 @@ check('Time Warp preserves a copied-card original through reconnect', () => {
   assertDeepEqual(room.run.combat.players.find((candidate) => candidate.id === a.playerId).forcedCardUids, [])
 })
 
+check('Time Warp settles a room-authoritative Mayhem card at the limit', () => {
+  const { room, a } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const target = room.run.combat.enemies[0]
+  for (const enemy of room.run.combat.enemies) enemy.dead = enemy !== target
+  Object.assign(target, { defId: 'time_eater', hp: 60, maxHp: 60, actionIndex: 2, isBoss: true, dead: false })
+  const forced = { uid: 'time-warp-mayhem', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(player, { hand: [forced], cardsPlayedThisTurn: 3 })
+  Object.assign(room.run.combat, {
+    phase: 'start',
+    startTurnProgress: {
+      choices: [],
+      forcedCard: {
+        playerId: a.playerId, cardUid: forced.uid, sourceCardId: 'mayhem', exhaustNonPower: false,
+      },
+    },
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: forced.uid, enemyUid: target.uid })
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assert(room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+    .discard.some((card) => card.uid === forced.uid), 'Time Warp stranded the Mayhem card')
+})
+
+check('a copied X value remains private and survives reconnect for the physical original', () => {
+  const { room, a, b } = twoSeatRoom()
+  const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
+  const target = room.run.combat.enemies[0]
+  const skewer = { uid: 'reconnect-copy-skewer', defId: 'skewer', upgraded: false }
+  Object.assign(player, { hand: [skewer], energy: 3, potions: ['attack_potion'] })
+  Object.assign(target, { hp: 20, maxHp: 20, block: 0, dead: false })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'attack_potion' })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: skewer.uid, enemyUid: target.uid, energySpent: 2,
+  })
+  assertEqual(snapshotFor(room, a.token).run.combat.players
+    .find((candidate) => candidate.id === a.playerId).copyOriginalEnergySpent[skewer.uid], 2)
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.players
+    .find((candidate) => candidate.id === a.playerId).copyOriginalEnergySpent, {})
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  apply(room, a.token, { kind: 'playCard', cardUid: skewer.uid, enemyUid: target.uid })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 14,
+    'reconnect lost the X committed by the virtual copy')
+  assertEqual(room.run.combat.players.find((candidate) => candidate.id === a.playerId).energy, 1)
+})
+
 check('an online seat can use its between-combat potion without seeing the item deck', () => {
   const { room, a, b } = twoSeatRoom()
   room.run = {
@@ -1462,6 +1508,214 @@ check('Panacea+ clears every living player in the shared snapshot', () => {
   assertEqual(currentActor.exhaust.some((card) => card.uid === panacea.uid), true)
 })
 
+check('Apparition protection is authoritative and visible without exposing hands', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const apparition = { uid: 'room-apparition', defId: 'apparition', upgraded: false }
+  Object.assign(actor, { hand: [apparition], hp: 10, maxHp: 10, energy: 1 })
+  apply(room, a.token, { kind: 'playCard', cardUid: apparition.uid, preflight: true })
+  const protectedActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(protectedActor.hpLossLimitThisRound, 1)
+  assertEqual(protectedActor.exhaust.some((card) => card.uid === apparition.uid), true)
+  const teammate = snapshotFor(room, b.token)
+  const seen = teammate.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(seen.hpLossLimitThisRound, 1)
+  assertEqual(seen.hand, null)
+})
+
+check('Dark Shackles uses server-owned enemy intents', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const shackles = { uid: 'room-dark-shackles', defId: 'dark_shackles', upgraded: true }
+  Object.assign(actor, { hand: [shackles], energy: 0, block: 0, row: 0 })
+  room.run.combat.die = 1
+  room.run.combat.enemies = [
+    { ...room.run.combat.enemies[0], uid: 'room-attacker', row: 0, defId: 'cultist', dead: false },
+    { ...room.run.combat.enemies[0], uid: 'room-bystander', row: 1, defId: 'cultist', dead: false },
+  ]
+  const result = apply(room, a.token, { kind: 'playCard', cardUid: shackles.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 3)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).block, 3)
+})
+
+check('Madness discount survives reconnect and cannot be spent as a Miracle payment', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const madness = { uid: 'room-madness', defId: 'madness', upgraded: true }
+  const greedy = { uid: 'room-madness-target', defId: 'hand_of_greed', upgraded: false }
+  Object.assign(actor, { hand: [madness, greedy], energy: CAPS.energy, miracles: 1 })
+  apply(room, a.token, { kind: 'playCard', cardUid: madness.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 1)
+  assert(!allStrings(teammate).includes(greedy.uid), 'Madness leaked the discounted card to a teammate')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  let miracleError = null
+  try {
+    apply(room, rejoined.token, {
+      kind: 'playCard', cardUid: greedy.uid, enemyUid: room.run.combat.enemies[0].uid,
+      spendMiracle: true, preflight: true,
+    })
+  } catch (error) {
+    miracleError = error
+  }
+  assertEqual(miracleError?.name, 'RoomError')
+  const result = apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: greedy.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  const current = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(current.energy, CAPS.energy)
+  assertEqual(current.freeCardsThisTurn, 0)
+  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 0)
+})
+
+check('Apotheosis bonuses survive reconnect while the remaining hand stays private', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const apotheosis = { uid: 'room-apotheosis', defId: 'apotheosis', upgraded: true }
+  const strike = { uid: 'room-apotheosis-strike', defId: 'strike_ironclad', upgraded: false }
+  const defend = { uid: 'room-apotheosis-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [apotheosis, strike, defend], energy: 3, block: 0 })
+  apply(room, a.token, { kind: 'playCard', cardUid: apotheosis.uid, preflight: true })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(owner.starterStrikeDamageBonus, 1)
+  assertEqual(owner.starterDefendBlockBonus, 1)
+  const teammate = snapshotFor(room, b.token)
+  assert(!allStrings(teammate).includes(strike.uid) && !allStrings(teammate).includes(defend.uid),
+    'Apotheosis leaked the owner\'s improved hand')
+  const enemyHp = room.run.combat.enemies[0].hp
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: defend.uid, playerId: a.playerId, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies[0].hp, enemyHp - 2)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 2)
+})
+
+check('Panache row choice is coordinator-owned and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  actor.hand = []
+  other.hand = []
+  actor.powers = [{ uid: 'room-panache', defId: 'panache', upgraded: true }]
+  room.run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    row: index, hp: 20, maxHp: 20, block: 0, dead: false,
+  }))
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const snapshot = snapshotFor(room, rejoined.token)
+  const ability = snapshot.endTurnAbilities.find((entry) => entry.label.includes('Panache'))
+  assertEqual(ability.targets.length, room.run.combat.enemies.length)
+  const target = room.run.combat.enemies[1]
+  const firstHp = room.run.combat.enemies[0].hp
+  apply(room, rejoined.token, {
+    kind: 'resolveEndTurn', abilityOrder: [`${ability.id}@${target.uid}`],
+  })
+  assertEqual(room.run.combat.enemies[0].hp, firstHp)
+  assertEqual(room.run.combat.enemies[1].hp, 15)
+})
+
+check('an authoritative Panache plan keeps its row after Poison kills the chosen anchor', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  actor.hand = []
+  other.hand = []
+  actor.powers = [{ uid: 'room-panache-anchor', defId: 'panache', upgraded: false }]
+  const [anchor, survivor] = room.run.combat.enemies
+  Object.assign(anchor, { row: 0, hp: 1, maxHp: 1, poison: 1, dead: false })
+  Object.assign(survivor, { row: 1, hp: 20, maxHp: 20, poison: 0, dead: false })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const abilities = snapshotFor(room, a.token).endTurnAbilities
+  const poison = abilities.find((entry) => entry.label.includes('Poison'))
+  const panache = abilities.find((entry) => entry.label.includes('Panache'))
+  apply(room, a.token, {
+    kind: 'resolveEndTurn', abilityOrder: [poison.id, `${panache.id}@${anchor.uid}`],
+  })
+  assertEqual(room.run.combat.enemies[0].dead, true)
+  assertEqual(room.run.combat.enemies[1].hp, 20,
+    'Panache should fizzle after its valid chosen row becomes empty')
+})
+
+check('a crafted row-card action cannot use a dead enemy as its anchor', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const entrance = { uid: 'room-dead-row-target', defId: 'dramatic_entrance', upgraded: false }
+  actor.hand = [entrance]
+  actor.energy = 0
+  const [dead, living] = room.run.combat.enemies
+  Object.assign(dead, { row: 0, hp: 0, dead: true })
+  Object.assign(living, { row: 0, hp: 20, maxHp: 20, dead: false })
+  let rejected = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: entrance.uid, enemyUid: dead.uid, preflight: true,
+    })
+  } catch (error) {
+    rejected = error
+  }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.run.combat.enemies[1].hp, 20)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand[0].uid, entrance.uid)
+})
+
+check('The Bomb counter is public across reconnect and its third cube Exhausts authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  const bomb = { uid: 'room-bomb', defId: 'the_bomb', upgraded: true, counter: 2 }
+  actor.hand = []
+  other.hand = []
+  actor.powers = [bomb]
+  for (const enemy of room.run.combat.enemies) Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false })
+  const before = snapshotFor(room, b.token)
+  const publicBomb = before.run.combat.players.find((player) => player.id === a.playerId).powers[0]
+  assertEqual(publicBomb.counter, 2)
+  assertEqual(before.run.combat.players.find((player) => player.id === a.playerId).hand, null)
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  assertDeepEqual(room.run.combat.enemies.map((enemy) => enemy.hp), Array(room.run.combat.enemies.length).fill(8))
+  const current = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(current.powers.length, 0)
+  assertEqual(current.exhaust.some((card) => card.uid === bomb.uid), true)
+})
+
+check('Sadistic Nature uses authoritative per-token gains and survives reconnect without leaking hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const sadistic = { uid: 'room-sadistic', defId: 'sadistic_nature', upgraded: true }
+  const catalyst = { uid: 'room-sadistic-catalyst', defId: 'catalyst', upgraded: true }
+  Object.assign(actor, { hand: [sadistic, catalyst], energy: 1 })
+  const [untouched, target] = room.run.combat.enemies
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { defId: 'cultist', hp: 30, maxHp: 30, poison: 0, block: 0, dead: false })
+  }
+  target.poison = 5
+  apply(room, a.token, { kind: 'playCard', cardUid: sadistic.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  assert(allStrings(teammate).includes(sadistic.uid), 'the face-up Sadistic Nature Power stayed hidden')
+  assert(!allStrings(teammate).includes(catalyst.uid), 'Sadistic Nature leaked the owner\'s Catalyst')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: catalyst.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies[0].hp, 30)
+  assertEqual(room.run.combat.enemies[1].poison, 15)
+  assertEqual(room.run.combat.enemies[1].hp, 10,
+    '10 added Poison cubes should trigger Sadistic Nature+ 10 times')
+})
+
 check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -1565,14 +1819,15 @@ check('Calculated Gamble publishes Reflex, Tactician, and After Image atomically
     'Calculated Gamble leaked its private draws to the teammate')
 })
 
-check('Silent combat ledgers are public while retained-card history stays private', () => {
+check('combat ledgers are public while retained-card history stays private', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)
   const outmaneuver = {
     uid: 'room-retained-outmaneuver', defId: 'outmaneuver', upgraded: false, retainedLastTurn: true,
   }
   Object.assign(actor, {
-    hand: [outmaneuver], energy: 1, lostHpThisCombat: true, attacksPlayedThisTurn: 2,
+    hand: [outmaneuver], energy: 1, lostHpThisCombat: true,
+    cardsPlayedThisTurn: 3, attacksPlayedThisTurn: 2,
   })
 
   const owner = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === b.playerId)
@@ -1581,11 +1836,14 @@ check('Silent combat ledgers are public while retained-card history stays privat
   assertEqual(teammate.hand, null, 'a teammate still cannot inspect the retained card')
   assert(!allStrings(snapshotFor(room, a.token)).includes(outmaneuver.uid), 'the retained card uid leaked')
   assertEqual(teammate.lostHpThisCombat, true)
+  assertEqual(teammate.cardsPlayedThisTurn, 3)
   assertEqual(teammate.attacksPlayedThisTurn, 2)
 
   apply(room, b.token, { kind: 'playCard', cardUid: outmaneuver.uid, enemyUid: null, preflight: true })
   const discarded = snapshotFor(room, a.token).run.combat.players
     .find((player) => player.id === b.playerId).discard.at(-1)
+  assertEqual(snapshotFor(room, a.token).run.combat.players
+    .find((player) => player.id === b.playerId).cardsPlayedThisTurn, 4)
   assertEqual(discarded.uid, outmaneuver.uid, 'the played card becomes public in the discard pile')
   assert(!Object.hasOwn(discarded, 'retainedLastTurn'), 'public discard kept private hand history')
 })
@@ -1821,6 +2079,202 @@ check('Fiend Fire resolves its whole-hand multi-attack through room authority', 
   assertDeepEqual(resolved.hand, [])
   assertDeepEqual(resolved.exhaust.map((card) => card.uid), [strike.uid, defend.uid, fiend.uid])
   assertEqual(resolved.energy, 0)
+})
+
+check('Corruption discounts and Exhausts only its owner\'s Skills at room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defend = { uid: 'room-corruption-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [defend], energy: 0, block: 0, discard: [], exhaust: [],
+    powers: [{ uid: 'room-corruption', defId: 'corruption', upgraded: false }],
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: defend.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 1)
+  assertEqual(resolved.energy, 0)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [defend.uid])
+
+  const allyDefend = { uid: 'room-corruption-ally-defend', defId: 'defend_silent', upgraded: false }
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(ally, { hand: [allyDefend], energy: 1, block: 0, discard: [], exhaust: [] })
+  apply(room, b.token, { kind: 'playCard', cardUid: allyDefend.uid, preflight: true })
+  const allyResolved = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(allyResolved.energy, 0)
+  assertDeepEqual(allyResolved.discard.map((card) => card.uid), [allyDefend.uid])
+  assertDeepEqual(allyResolved.exhaust, [])
+})
+
+check('Barricade preserves only its owner\'s Block through room-authoritative Start of Turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(actor, { block: 7, powers: [{ uid: 'room-barricade', defId: 'barricade', upgraded: false }] })
+  Object.assign(ally, { block: 6, powers: [] })
+  apply(room, a.token, { kind: 'startTurn' })
+  const started = snapshotFor(room, a.token).run.combat
+  assertEqual(started.phase, 'player', 'Barricade must not create a no-op ordered ability')
+  assertDeepEqual(started.players.map((player) => player.block), [7, 0])
+})
+
+check('Entrench doubles Block and removes Exhaust on upgrade through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const base = { uid: 'room-entrench', defId: 'entrench', upgraded: false }
+  const upgraded = { uid: 'room-entrench-plus', defId: 'entrench', upgraded: true }
+  Object.assign(actor, { hand: [base, upgraded], energy: 2, block: 6, discard: [], exhaust: [] })
+  apply(room, a.token, { kind: 'playCard', cardUid: base.uid, preflight: true })
+  apply(room, a.token, { kind: 'playCard', cardUid: upgraded.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 20)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [base.uid])
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Clash enforces its hand restriction through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const clash = { uid: 'room-clash', defId: 'clash', upgraded: true }
+  const defend = { uid: 'room-clash-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [clash, defend], energy: 0, discard: [] })
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
+  const hp = target.hp
+  let refused = false
+  try {
+    apply(room, a.token, { kind: 'playCard', cardUid: clash.uid, enemyUid: target.uid, preflight: true })
+  } catch {
+    refused = true
+  }
+  assert(refused, 'room authority accepted Clash while a Skill remained in hand')
+  assertEqual(target.hp, hp)
+  assertDeepEqual(actor.hand.map((card) => card.uid), [clash.uid, defend.uid])
+
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const currentTarget = room.run.combat.enemies.find((enemy) => enemy.uid === target.uid)
+  currentActor.hand = [clash, { uid: 'room-clash-strike', defId: 'strike_ironclad', upgraded: false }]
+  apply(room, a.token, { kind: 'playCard', cardUid: clash.uid, enemyUid: currentTarget.uid, preflight: true })
+  const resolved = room.run.combat
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, hp - 4)
+  assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [clash.uid])
+})
+
+check('Spot Weakness applies its upgraded die face to an ally through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const spot = { uid: 'room-spot-weakness', defId: 'spot_weakness', upgraded: true }
+  Object.assign(room.run.combat, { die: 4 })
+  Object.assign(actor, { hand: [spot], energy: 1, discard: [] })
+  ally.strength = 0
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: spot.uid, playerId: b.playerId, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertEqual(resolved.players.find((player) => player.id === b.playerId).strength, 1)
+  assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [spot.uid])
+})
+
+check('Rage counts only its owner\'s Attacks through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const rage = { uid: 'room-rage', defId: 'rage', upgraded: true }
+  Object.assign(actor, {
+    hand: [
+      rage,
+      { uid: 'room-rage-a', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'room-rage-b', defId: 'clash', upgraded: false },
+      { uid: 'room-rage-skill', defId: 'defend_ironclad', upgraded: false },
+    ],
+    energy: 0, block: 0,
+  })
+  ally.hand = [{ uid: 'room-rage-ally-attack', defId: 'strike_silent', upgraded: false }]
+  apply(room, a.token, { kind: 'playCard', cardUid: rage.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 2)
+  assertEqual(resolved.energy, 0)
+})
+
+check('Whirlwind keeps X Energy and row damage authoritative online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const anchor = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const whirlwind = { uid: 'room-whirlwind', defId: 'whirlwind', upgraded: true }
+  Object.assign(actor, { hand: [whirlwind], energy: 3, discard: [] })
+  Object.assign(anchor, { row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  room.run.combat.enemies.push(
+    { ...anchor, uid: 'room-whirlwind-same', hp: 10 },
+    { ...anchor, uid: 'room-whirlwind-other', row: 1, hp: 10 },
+    { ...anchor, uid: 'room-whirlwind-boss', row: 1, isBoss: true, hp: 10 },
+  )
+  const before = JSON.stringify(room.run)
+  for (const energySpent of [undefined, '2', -1, 4]) {
+    let refused = false
+    try {
+      apply(room, a.token, {
+        kind: 'playCard', cardUid: whirlwind.uid, enemyUid: anchor.uid,
+        energySpent, preflight: true,
+      })
+    } catch {
+      refused = true
+    }
+    assert(refused, `room accepted forged X Energy ${String(energySpent)}`)
+    assertEqual(JSON.stringify(room.run), before, 'a refused X play partially changed the run')
+  }
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: whirlwind.uid, enemyUid: anchor.uid,
+    energySpent: 2, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertDeepEqual([
+    anchor.uid, 'room-whirlwind-same', 'room-whirlwind-other', 'room-whirlwind-boss',
+  ].map((uid) => resolved.enemies.find((enemy) => enemy.uid === uid).hp), [7, 7, 10, 7])
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 1)
+})
+
+check('Blood for Blood uses the owner\'s combat-wide HP-loss discount through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const blood = { uid: 'room-blood-for-blood', defId: 'blood_for_blood', upgraded: true }
+  Object.assign(actor, { hand: [blood], energy: 0, lostHpThisCombat: true })
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: blood.uid, enemyUid: target.uid, preflight: true,
+  })
+  const resolved = room.run.combat
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, 6)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 0)
+})
+
+check('Limit Break doubles only its owner\'s Strength through room authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const limit = { uid: 'room-limit-break', defId: 'limit_break', upgraded: true }
+  Object.assign(actor, { hand: [limit], energy: 1, strength: 5, discard: [], exhaust: [] })
+  ally.strength = 2
+  apply(room, a.token, { kind: 'playCard', cardUid: limit.uid, preflight: true })
+  const resolved = room.run.combat.players
+  assertEqual(resolved.find((player) => player.id === a.playerId).strength, 8)
+  assertEqual(resolved.find((player) => player.id === b.playerId).strength, 2)
+  assertDeepEqual(resolved.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [limit.uid])
+})
+
+check('Feed grants kill Strength through room authority', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const feed = { uid: 'room-feed', defId: 'feed', upgraded: true }
+  room.run.combat.enemies.push({ ...target, uid: 'room-feed-spare', row: target.row + 1, hp: 10, maxHp: 10 })
+  Object.assign(actor, { hand: [feed], energy: 1, strength: 7, discard: [], exhaust: [] })
+  Object.assign(target, { hp: 3, maxHp: 3, block: 0, dead: false })
+  apply(room, a.token, { kind: 'playCard', cardUid: feed.uid, enemyUid: target.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.strength, 8)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [feed.uid])
 })
 
 check('Storm of Steel overflow resolves through room authority', () => {
@@ -2082,6 +2536,66 @@ check('Facing is recomputed after start effects and survives coordinator reconne
   assertEqual(room.run.combat.players.find((candidate) => candidate.id === b.playerId).facingEnemyUid, 'spear')
 })
 
+check('Storm preserves full-slot Orb and target choices across coordinator reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const bo = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, { draw: Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-storm-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
+  })) })
+  Object.assign(bo, {
+    character: 'defect',
+    powers: [{ uid: 'room-storm', defId: 'storm', upgraded: true }],
+    orbs: ['frost', 'lightning', 'dark'],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-storm-bo-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token)
+  const [ability] = pending.startTurnAbilities
+  assertEqual(ability.evokeChoice.options.length, 3)
+  let malformed = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurn',
+      choices: [{
+        id: ability.id, shivEnemyUids: [], evokeSlots: ['length'], evokeEnemyUids: [null],
+      }],
+    })
+  } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError', 'a crafted Orb slot escaped room validation')
+  assertEqual(room.run.combat.phase, 'start')
+
+  markDisconnected(room, a.token)
+  const transferred = snapshotFor(room, b.token)
+  assertEqual(transferred.startTurnCoordinatorId, b.playerId)
+  assertEqual(transferred.startTurnAbilities[0].evokeChoice.options.length, 3)
+  const target = room.run.combat.enemies[1]
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [{
+      id: ability.id,
+      shivEnemyUids: [],
+      evokeSlots: [2, 0],
+      evokeEnemyUids: [target.uid, null],
+    }],
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  const resolvedBo = room.run.combat.players.find((player) => player.id === b.playerId)
+  const resolvedTarget = room.run.combat.enemies.find((enemy) => enemy.uid === target.uid)
+  assertDeepEqual(resolvedBo.orbs, ['lightning', 'lightning', 'lightning'])
+  assertEqual(resolvedBo.block, 1)
+  assertEqual(resolvedTarget.hp, 16)
+})
+
 check('face-down reward stacks are counted, never listed', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) {
@@ -2096,6 +2610,590 @@ check('face-down reward stacks are counted, never listed', () => {
   for (const player of snapshot.run.combat.players) {
     assertEqual(player.cardRewardCount, 1, 'but the size is public')
   }
+})
+
+check('Mayhem keeps its forced card private, owner-authoritative, and settles disconnects', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const bo = room.run.combat.players.find((player) => player.id === b.playerId)
+  const opening = Array.from({ length: 5 }, (_, index) => ({
+    uid: `mayhem-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  const secret = { uid: 'mayhem-private-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, {
+    powers: [{ uid: 'room-mayhem', defId: 'mayhem', upgraded: false }],
+    draw: [...opening, secret], hand: [], discard: [], energy: 0,
+  })
+  Object.assign(bo, {
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `mayhem-bo-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const owner = snapshotFor(room, a.token)
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(owner.run.combat.phase, 'start')
+  assertEqual(owner.run.combat.startTurnProgress.forcedCard.cardUid, secret.uid)
+  assertEqual(teammate.run.combat.startTurnProgress.forcedCard.cardUid, null)
+  assert(!allStrings(teammate).includes(secret.uid), 'Mayhem leaked the drawn card to a teammate')
+  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).hand, null)
+
+  let stolen = null
+  try {
+    apply(room, b.token, { kind: 'playCard', cardUid: secret.uid, enemyUid: target.uid })
+  } catch (error) {
+    stolen = error
+  }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Mayhem\'s private card')
+
+  const disconnectRoom = structuredClone(room)
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: secret.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).energy, 3,
+    'Mayhem charged the forced card\'s printed Energy')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 9)
+
+  markDisconnected(disconnectRoom, a.token)
+  assertEqual(disconnectRoom.run.combat.phase, 'player')
+  assertEqual(disconnectRoom.run.combat.startTurnProgress, undefined)
+  assertEqual(disconnectRoom.run.combat.players.find((player) => player.id === a.playerId).discard.at(-1).uid, secret.uid)
+  assert(allStrings(snapshotFor(disconnectRoom, b.token)).includes(secret.uid),
+    'Mayhem\'s abandoned card did not become public in discard')
+  joinRoom(disconnectRoom, { token: a.token })
+  assertEqual(snapshotFor(disconnectRoom, a.token).run.combat.startTurnProgress, undefined,
+    'reconnect restored a settled Mayhem card')
+})
+
+check('Havoc keeps its immediate draw private and blocks every other room action', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-havoc', defId: 'havoc', upgraded: false }
+  const held = { uid: 'room-havoc-held', defId: 'defend_ironclad', upgraded: false }
+  const secret = { uid: 'room-havoc-secret', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(ann, { hand: [havoc, held], draw: [secret], discard: [], exhaust: [], energy: 1 })
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  const owner = snapshotFor(room, a.token)
+  const teammate = snapshotFor(room, b.token)
+  assertEqual(owner.run.combat.startTurnProgress.forcedCard.cardUid, secret.uid)
+  assertEqual(owner.run.combat.startTurnProgress.forcedCard.sourceCardId, 'havoc')
+  assertEqual(teammate.run.combat.startTurnProgress.forcedCard.cardUid, null)
+  assert(!allStrings(teammate).includes(secret.uid), 'Havoc leaked its draw to a teammate')
+
+  for (const [token, action] of [
+    [a.token, { kind: 'playCard', cardUid: held.uid, preflight: true }],
+    [b.token, { kind: 'endTurn' }],
+  ]) {
+    let refused = null
+    try { apply(room, token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'another action bypassed Havoc\'s immediate play')
+  }
+
+  const disconnectRoom = structuredClone(room)
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: secret.uid, enemyUid: target.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.enemies[0].hp, 9)
+  assertEqual(resolved.energy, 0, 'Havoc charged more than its own printed cost')
+  assertEqual(resolved.exhaust.at(-1).uid, secret.uid)
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+
+  markDisconnected(disconnectRoom, a.token)
+  const abandoned = disconnectRoom.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(disconnectRoom.run.combat.startTurnProgress, undefined)
+  assertEqual(abandoned.exhaust.at(-1).uid, secret.uid, 'disconnect discarded Havoc\'s forced card')
+  assert(allStrings(snapshotFor(disconnectRoom, b.token)).includes(secret.uid),
+    'the settled card did not become public in Exhaust')
+})
+
+check('disconnect finalizes a copied Havoc child and its outer Havoc once', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const teammate = room.run.combat.players.find((player) => player.id === b.playerId)
+  const havoc = { uid: 'room-copy-child-havoc', defId: 'havoc', upgraded: true }
+  const strike = { uid: 'room-copy-child-strike', defId: 'strike_ironclad', upgraded: false }
+  const teammateStrike = { uid: 'room-copy-child-teammate', defId: 'strike_silent', upgraded: false }
+  Object.assign(actor, {
+    hand: [havoc], draw: [strike], discard: [], exhaust: [], energy: 3, potions: ['attack_potion'],
+  })
+  Object.assign(teammate, { hand: [teammateStrike], energy: 3 })
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'attack_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, { kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId)
+    .discard.filter((card) => card.uid === havoc.uid).length, 0,
+    'the copied child finalized Havoc before its physical original')
+  markDisconnected(room, a.token)
+  const settled = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(settled.discard.filter((card) => card.uid === havoc.uid).length, 1,
+    'disconnect finalized the outer Havoc more than once')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertDeepEqual(settled.forcedCardUids, [], 'disconnect left a stale forced-card lock')
+  assertDeepEqual(settled.freeCardUids, [], 'disconnect left a stale free-card marker')
+  apply(room, b.token, { kind: 'playCard', cardUid: teammateStrike.uid, enemyUid: target.uid })
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.combat.startTurnProgress, undefined)
+})
+
+check('a staged Havoc child can consume another queued copy online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-nested-copy-havoc', defId: 'havoc', upgraded: true }
+  const defend = { uid: 'room-nested-copy-defend', defId: 'defend_ironclad', upgraded: false }
+  const strike = { uid: 'room-nested-copy-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [havoc], draw: [defend, strike], discard: [], exhaust: [], energy: 3,
+    potions: ['skill_potion', 'skill_potion'],
+  })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'skill_potion' })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'skill_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, { kind: 'playCard', cardUid: defend.uid, preflight: true })
+  const staged = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(staged.forcedCardUids, [havoc.uid, defend.uid])
+  assertEqual(room.run.combat.startTurnProgress?.forcedCard?.cardUid, defend.uid)
+  markDisconnected(room, a.token)
+  const settled = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(settled.forcedCardUids, [havoc.uid])
+  assertDeepEqual(settled.freeCardUids, [havoc.uid])
+  joinRoom(room, { token: a.token })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).forcedCardUids, [])
+})
+
+check('a virtual Havoc child settles its impossible physical original online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-impossible-copy-havoc', defId: 'havoc', upgraded: true }
+  const dual = { uid: 'room-impossible-copy-dual', defId: 'dual_cast', upgraded: false }
+  Object.assign(actor, {
+    character: 'defect', hand: [havoc], draw: [dual], discard: [], exhaust: [], energy: 3,
+    orbs: ['lightning', null, null], potions: ['skill_potion', 'skill_potion'],
+  })
+  const target = room.run.combat.enemies[0]
+  apply(room, a.token, { kind: 'usePotion', potionId: 'skill_potion' })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'skill_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: dual.uid, enemyUid: target.uid,
+    evokeSlots: [0], evokeEnemyUids: [target.uid], preflight: true,
+  })
+  const settled = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assert(settled.exhaust.some((card) => card.uid === dual.uid))
+  assertDeepEqual(settled.forcedCardUids, [havoc.uid])
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).forcedCardUids, [])
+})
+
+check('a corrupted copied Havoc keeps Exhaust reactions through reconnect', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-corrupt-copy-havoc', defId: 'havoc', upgraded: true }
+  const strike = { uid: 'room-corrupt-copy-strike', defId: 'strike_ironclad', upgraded: false }
+  const draw1 = { uid: 'room-corrupt-copy-draw-1', defId: 'defend_ironclad', upgraded: false }
+  const draw2 = { uid: 'room-corrupt-copy-draw-2', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [havoc], draw: [strike, draw1, draw2], discard: [], exhaust: [], energy: 3,
+    powers: [
+      { uid: 'room-corruption-copy', defId: 'corruption', upgraded: false },
+      { uid: 'room-embrace-copy', defId: 'dark_embrace', upgraded: false },
+      { uid: 'room-pain-copy', defId: 'feel_no_pain', upgraded: false },
+    ],
+    potions: ['skill_potion'],
+  })
+  apply(room, a.token, { kind: 'usePotion', potionId: 'skill_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  let resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [havoc.uid, draw1.uid, draw2.uid])
+  assertEqual(resolved.block, 2)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [strike.uid])
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.block, 2)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [havoc.uid, draw1.uid, draw2.uid])
+  assertDeepEqual(resolved.forcedCardUids, [havoc.uid])
+  assert(!resolved.exhaust.some((card) => card.uid.startsWith('copy:')))
+})
+
+check('a lethal copied Havoc child can advance from combat victory online', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-lethal-copy-havoc', defId: 'havoc', upgraded: true }
+  const strike = { uid: 'room-lethal-copy-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [havoc], draw: [strike], discard: [], exhaust: [], energy: 3, potions: ['attack_potion'],
+  })
+  const target = room.run.combat.enemies[0]
+  room.run.combat.enemies = [{ ...target, hp: 1, maxHp: 1, block: 0, dead: false }]
+  apply(room, a.token, { kind: 'usePotion', potionId: 'attack_potion' })
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'won')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertDeepEqual(room.run.combat.players.find((player) => player.id === a.playerId).forcedCardUids, [])
+  const resolved = apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(resolved.changed, true, 'stale forced metadata blocked combat rewards')
+})
+
+check('Havoc resolves its child before Enraged and cannot strand online defeat', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const havoc = { uid: 'room-havoc-lethal', defId: 'havoc', upgraded: true }
+  const strike = { uid: 'room-havoc-lethal-strike', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 2, startTurnProgress: undefined })
+  Object.assign(actor, { hand: [havoc], draw: [strike], hp: 1, energy: 0 })
+  room.run.combat.enemies = [{
+    ...room.run.combat.enemies[0], defId: 'gremlin_nob', hp: 1, maxHp: 1,
+    block: 0, dead: false, abilityUsed: false,
+  }]
+
+  apply(room, a.token, { kind: 'playCard', cardUid: havoc.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hp, 1,
+    'Enraged fired before the immediate card online')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: room.run.combat.enemies[0].uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'won')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  const resolved = apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(resolved.changed, true, 'a stale forced marker blocked online combat resolution')
+})
+
+check('a disconnected Mayhem owner resolves a previewed Thinking Ahead fallback', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const opening = Array.from({ length: 5 }, (_, index) => ({
+    uid: `mayhem-thinking-opening-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  const thinking = { uid: 'mayhem-thinking', defId: 'thinking_ahead', upgraded: false }
+  const hidden = Array.from({ length: 2 }, (_, index) => ({
+    uid: `mayhem-thinking-hidden-${index}`, defId: 'strike_ironclad', upgraded: false,
+  }))
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(actor, {
+    powers: [{ uid: 'mayhem-thinking-power', defId: 'mayhem', upgraded: false }],
+    draw: [...opening, thinking, ...hidden], hand: [], discard: [], exhaust: [], energy: 0,
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: thinking.uid }).snapshot.cardPreview
+  const fallback = revealed.cards[0].uid
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+
+  markDisconnected(room, a.token)
+  const settled = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertEqual(settled.draw[0].uid, fallback, 'disconnect skipped Thinking Ahead\'s deterministic topdeck')
+  assertEqual(settled.exhaust.at(-1).uid, thinking.uid, 'the committed forced play was discarded instead')
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
+})
+
+check('Mayhem settles when its owner was already disconnected before Start of Turn', () => {
+  for (const ordered of [false, true]) {
+    const { room, a, b } = twoSeatRoom()
+    const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+    const bo = room.run.combat.players.find((player) => player.id === b.playerId)
+    const opening = Array.from({ length: 5 }, (_, index) => ({
+      uid: `offline-opening-${ordered}-${index}`, defId: 'defend_ironclad', upgraded: false,
+    }))
+    const secret = { uid: `offline-mayhem-${ordered}`, defId: 'strike_ironclad', upgraded: false }
+    Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+    Object.assign(ann, {
+      powers: [
+        { uid: `offline-power-${ordered}`, defId: 'mayhem', upgraded: false },
+        ...(ordered ? [{ uid: 'offline-demon-form', defId: 'demon_form', upgraded: false }] : []),
+      ],
+      draw: [...opening, secret], hand: [], discard: [], energy: 0,
+    })
+    Object.assign(bo, {
+      draw: Array.from({ length: 5 }, (_, index) => ({
+        uid: `offline-bo-${ordered}-${index}`, defId: 'defend_silent', upgraded: false,
+      })),
+    })
+    markDisconnected(room, a.token)
+    apply(room, b.token, { kind: 'startTurn' })
+    if (ordered) {
+      const abilities = snapshotFor(room, b.token).startTurnAbilities
+      apply(room, b.token, {
+        kind: 'resolveStartTurn',
+        choices: abilities.map((ability) => ({ id: ability.id, shivEnemyUids: [] })),
+      })
+    }
+    assertEqual(room.run.combat.phase, 'player')
+    assertEqual(room.run.combat.startTurnProgress, undefined)
+    assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).discard.at(-1)?.uid, secret.uid,
+      `the ${ordered ? 'ordered' : 'automatic'} Start-of-Turn path stranded Mayhem`)
+  }
+})
+
+check('Thinking Ahead previews and validates its topdeck choice privately', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const thinking = { uid: 'room-thinking', defId: 'thinking_ahead', upgraded: true }
+  const held = { uid: 'thinking-held', defId: 'strike_ironclad', upgraded: false }
+  const hidden = Array.from({ length: 3 }, (_, index) => ({
+    uid: `thinking-private-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  Object.assign(ann, { hand: [thinking, held], draw: hidden, discard: [], exhaust: [], energy: 0 })
+  const before = JSON.stringify(room.run)
+  const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: thinking.uid })
+  assertEqual(revealed.snapshot.cardPreview.kind, 'topdeck')
+  assertDeepEqual(revealed.snapshot.cardPreview.cards.map((card) => card.uid), [held.uid, ...hidden.map((card) => card.uid)])
+  assertEqual(JSON.stringify(room.run), before, 'Thinking Ahead preview advanced authoritative state')
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+  const disconnectRoom = structuredClone(room)
+
+  let malformed = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: thinking.uid, topdeckUids: 'not-a-list', preflight: true,
+    })
+  } catch (error) {
+    malformed = error
+  }
+  assertEqual(malformed?.name, 'RoomError')
+  assertEqual(JSON.stringify(room.run), before, 'a malformed topdeck choice mutated the run')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: thinking.uid, topdeckUids: [hidden[2].uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.draw[0].uid, hidden[2].uid)
+  assertEqual(resolved.exhaust.at(-1).uid, thinking.uid)
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
+
+  markDisconnected(disconnectRoom, a.token)
+  apply(disconnectRoom, b.token, { kind: 'endTurn' })
+  const abandoned = disconnectRoom.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(abandoned.draw[0].uid, held.uid,
+    'a disconnected Thinking Ahead owner did not use the deterministic first-card fallback')
+  assertEqual(abandoned.exhaust.at(-1).uid, thinking.uid)
+  assertEqual(snapshotFor(disconnectRoom, a.token).cardPreview, undefined)
+  joinRoom(disconnectRoom, { token: a.token })
+  assertEqual(snapshotFor(disconnectRoom, a.token).cardPreview, undefined,
+    'reconnect restored a settled Thinking Ahead preview')
+})
+
+check('Warcry uses the same private authoritative topdeck choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const warcry = { uid: 'room-warcry', defId: 'warcry', upgraded: true }
+  const held = { uid: 'room-warcry-held', defId: 'strike_ironclad', upgraded: false }
+  const hidden = Array.from({ length: 3 }, (_, index) => ({
+    uid: `room-warcry-hidden-${index}`, defId: 'defend_ironclad', upgraded: false,
+  }))
+  Object.assign(actor, { hand: [warcry, held], draw: hidden, discard: [], exhaust: [], energy: 0 })
+  const before = JSON.stringify(room.run)
+  const revealed = apply(room, a.token, { kind: 'previewCard', cardUid: warcry.uid }).snapshot.cardPreview
+  assertEqual(revealed.kind, 'topdeck')
+  assertDeepEqual(revealed.cards.map((card) => card.uid), [held.uid, ...hidden.map((card) => card.uid)])
+  assertEqual(JSON.stringify(room.run), before, 'Warcry preview advanced authoritative state')
+  for (const card of hidden) {
+    assert(!allStrings(snapshotFor(room, b.token)).includes(card.uid), `${card.uid} leaked to a teammate`)
+  }
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: warcry.uid, topdeckUids: [hidden[2].uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resolved.draw[0].uid, hidden[2].uid)
+  assertEqual(resolved.hand.length, 3)
+  assertEqual(resolved.exhaust.at(-1).uid, warcry.uid)
+  assertEqual(snapshotFor(room, a.token).cardPreview, undefined)
+})
+
+check('Headbutt returns one public discard card to the hidden draw top authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const headbutt = { uid: 'room-headbutt', defId: 'headbutt', upgraded: true }
+  const lower = { uid: 'room-headbutt-lower', defId: 'defend_ironclad', upgraded: false }
+  const chosen = { uid: 'room-headbutt-chosen', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [headbutt], discard: [lower, chosen], draw: [], energy: 1 })
+  const enemy = room.run.combat.enemies[0]
+  Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: false, abilityUsed: true })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, preflight: true },
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, recoverDiscardUid: 7, preflight: true },
+    { kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid, recoverDiscardUid: headbutt.uid, preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'a malformed Headbutt choice was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Headbutt mutated authority')
+  }
+
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid,
+      recoverDiscardUid: chosen.uid, preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Headbutt')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: headbutt.uid, enemyUid: enemy.uid,
+    recoverDiscardUid: chosen.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(room.run.combat.enemies[0].hp, 7)
+  assertEqual(resolved.draw[0].uid, chosen.uid)
+  assertDeepEqual(resolved.discard.map((card) => card.uid), [lower.uid, headbutt.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).includes(chosen.uid),
+    'the recovered card stayed visible after returning face-down')
+})
+
+check('Power Through gives an ally Block while its Daze stays private to the caster', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const powerThrough = { uid: 'room-power-through', defId: 'power_through', upgraded: true }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [powerThrough], draw: [], discard: [], energy: 1, block: 0 })
+  ally.block = 0
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: powerThrough.uid, playerId: ally.id, preflight: true,
+  })
+  const resolvedActor = room.run.combat.players.find((player) => player.id === actor.id)
+  const resolvedAlly = room.run.combat.players.find((player) => player.id === ally.id)
+  assertEqual(resolvedActor.block, 0)
+  assertEqual(resolvedAlly.block, 4)
+  assertEqual(resolvedActor.draw[0].defId, 'daze')
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(owner.drawCount, 1)
+  assert(!allStrings(snapshotFor(room, b.token)).includes(resolvedActor.draw[0].uid),
+    'Power Through leaked the caster\'s Daze identity to a teammate')
+})
+
+check('Flame Barrier resolves current intents from its online owner\'s row', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const barrier = { uid: 'room-flame-barrier', defId: 'flame_barrier', upgraded: true }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1, die: 1 })
+  Object.assign(actor, { hand: [barrier], energy: 2, block: 0, row: 0 })
+  const template = room.run.combat.enemies[0]
+  room.run.combat.enemies = [
+    { ...template, uid: 'room-flame-same', defId: 'cultist', row: 0, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'room-flame-other', defId: 'cultist', row: 1, isBoss: false,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+    { ...template, uid: 'room-flame-boss', defId: 'cultist', row: 1, isBoss: true,
+      hp: 5, maxHp: 5, block: 0, dead: false, actionIndex: 0 },
+  ]
+
+  apply(room, a.token, { kind: 'playCard', cardUid: barrier.uid, preflight: true })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.block, 4)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-same').hp, 4)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-other').hp, 5)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-flame-boss').hp, 4)
+})
+
+check('Rampage+ authoritatively Exhausts first and counts the resulting public pile', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const rampage = { uid: 'room-rampage', defId: 'rampage', upgraded: true }
+  const fuel = { uid: 'room-rampage-fuel', defId: 'strike_ironclad', upgraded: false }
+  const old = { uid: 'room-rampage-old', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [rampage, fuel], exhaust: [old], energy: 1 })
+  const enemy = room.run.combat.enemies[0]
+  Object.assign(enemy, { hp: 2, maxHp: 2, block: 0, dead: false, abilityUsed: true })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid, preflight: true },
+    { kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+      exhaustUids: ['not-in-hand'], preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'an unpaid Rampage+ Exhaust was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Rampage+ mutated room authority')
+  }
+
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+      exhaustUids: [fuel.uid], preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Rampage+')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: rampage.uid, enemyUid: enemy.uid,
+    exhaustUids: [fuel.uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(room.run.combat.enemies[0].hp, 0)
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [old.uid, fuel.uid])
+})
+
+check('Exhume moves one public Exhaust card into only its owner\'s private hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const exhume = { uid: 'room-exhume', defId: 'exhume', upgraded: true }
+  const lower = { uid: 'room-exhume-lower', defId: 'defend_ironclad', upgraded: false }
+  const chosen = { uid: 'room-exhume-chosen', defId: 'bash', upgraded: false }
+  Object.assign(room.run.combat, { phase: 'player', turn: 1 })
+  Object.assign(actor, { hand: [exhume], exhaust: [lower, chosen], energy: 0 })
+  const before = JSON.stringify(room.run)
+
+  for (const action of [
+    { kind: 'playCard', cardUid: exhume.uid, preflight: true },
+    { kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: 7, preflight: true },
+    { kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: exhume.uid, preflight: true },
+  ]) {
+    let refused = null
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError', 'a malformed Exhume choice was accepted')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Exhume mutated room authority')
+  }
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: exhume.uid, recoverExhaustUid: lower.uid, preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [lower.uid])
+  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [chosen.uid, exhume.uid])
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(owner.hand.map((card) => card.uid), [lower.uid])
+  assert(!allStrings(snapshotFor(room, b.token)).includes(lower.uid),
+    'Exhume left its recovered card visible to a teammate')
 })
 
 check('post-reveal card choices stay private, survive reconnects, and lock the table', () => {
@@ -2277,6 +3375,15 @@ check('post-reveal card choices stay private, survive reconnects, and lock the t
     scryDiscardUids: [], spendMiracle: true, preflight: true,
   })
   assertEqual(mine().miracles, 0)
+  assertEqual(mine().energy, 6)
+
+  const sneckoSkewer = { uid: 'private-snecko-skewer', defId: 'skewer', upgraded: false }
+  Object.assign(mine(), { hand: [sneckoSkewer], energy: 6, miracles: 1, nextCardCost: 1 })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: sneckoSkewer.uid, enemyUid: luckyTarget.uid,
+    spendMiracle: true, preflight: true,
+  })
+  assertEqual(mine().miracles, 0, 'room authority rejected Miracle on a numeric Snecko-priced X card')
   assertEqual(mine().energy, 6)
 
   const dagger = { uid: 'private-dagger-throw', defId: 'dagger_throw', upgraded: false }
@@ -2559,12 +3666,22 @@ check('the rng state never reaches a client', () => {
 })
 
 check('pile sizes are still visible — they are public at a real table', () => {
-  const { room, a } = twoSeatRoom()
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.orbEvokeBonus = 2
+  actor.orbEndTurnBonus = 3
   const snapshot = snapshotFor(room, a.token)
   for (const player of snapshot.run.combat.players) {
     assert(typeof player.drawCount === 'number', 'draw pile size is missing')
     assert(typeof player.handCount === 'number', 'hand size is missing')
   }
+  const ownerView = snapshot.run.combat.players.find((player) => player.id === a.playerId)
+  const peerView = snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertEqual(ownerView.orbEvokeBonus, 2, 'owner reconnect lost the face-up Orb Evoke bonus')
+  assertEqual(ownerView.orbEndTurnBonus, 3, 'owner reconnect lost the face-up Orb end-turn bonus')
+  assertEqual(peerView.orbEvokeBonus, 2, 'teammate could not see the face-up Orb Evoke bonus')
+  assertEqual(peerView.orbEndTurnBonus, 3, 'teammate could not see the face-up Orb end-turn bonus')
   const other = snapshot.run.combat.players.find((player) => player.id !== a.playerId)
   assert(other.handCount > 0, "another player's hand size should be visible")
 })
@@ -3989,6 +5106,170 @@ check('a fixed-size card-effect uid list is capped above every supported printed
   assertDeepEqual(uidList(['a', 'b']), ['a', 'b'], 'a real play passes through whole')
   assertEqual(uidList('not-an-array'), undefined, 'a non-array is still nothing')
   assertDeepEqual(uidList([1, 'a', null]), ['a'], 'non-strings are still dropped')
+})
+
+check('online seats can activate only their own once-per-turn Combust', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const power = { uid: 'room-combust', defId: 'combust', upgraded: true }
+  actor.powers = [power]
+  room.run.combat.powerTriggersUsedThisTurn = []
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const rowHp = room.run.combat.enemies
+    .filter((enemy) => enemy.isBoss || enemy.row === target.row)
+    .map((enemy) => [enemy.uid, enemy.hp])
+
+  let denied = null
+  try {
+    apply(room, b.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'another seat activated the Ironclad power')
+  assertDeepEqual(room.run.combat.enemies
+    .filter((enemy) => enemy.isBoss || enemy.row === target.row)
+    .map((enemy) => [enemy.uid, enemy.hp]), rowHp, 'the refused action changed combat')
+
+  const forcedOwner = room.run.combat.players.find((player) => player.id === b.playerId)
+  forcedOwner.forcedCardUids = [forcedOwner.hand[0].uid]
+  forcedOwner.freeCardUids = [forcedOwner.hand[0].uid]
+  let blocked = null
+  try {
+    apply(room, a.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  } catch (error) {
+    blocked = error
+  }
+  assertEqual(blocked?.name, 'RoomError', 'room authority activated Combust during a Playing Copies original')
+  forcedOwner.forcedCardUids = []
+  forcedOwner.freeCardUids = []
+
+  apply(room, a.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  const seen = snapshotFor(room, b.token).run.combat
+  for (const [uid, hp] of rowHp) assertEqual(seen.enemies.find((enemy) => enemy.uid === uid).hp, hp - 2)
+  assert(seen.powerTriggersUsedThisTurn.includes(`${a.playerId}/power:${power.uid}`))
+
+  let repeated = null
+  try {
+    apply(room, a.token, { kind: 'activatePower', powerUid: power.uid, enemyRow: target.row, preflight: true })
+  } catch (error) {
+    repeated = error
+  }
+  assertEqual(repeated?.name, 'RoomError', 'Combust activated twice in one turn')
+})
+
+check('online Evolve resolves chained Status draws without revealing the new hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [{ uid: 'room-evolve-shrug', defId: 'shrug_it_off', upgraded: false }]
+  actor.draw = [
+    { uid: 'room-evolve-daze-a', defId: 'daze', upgraded: false },
+    { uid: 'room-evolve-daze-b', defId: 'daze', upgraded: false },
+    { uid: 'room-evolve-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.powers = [{ uid: 'room-evolve', defId: 'evolve', upgraded: false }]
+  actor.discard = []
+  actor.energy = 3
+
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-evolve-shrug', preflight: true })
+  const mine = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
+  const theirs = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(mine.hand.map((card) => card.defId), ['daze', 'daze', 'strike_ironclad'])
+  assertEqual(theirs.hand, null)
+  assertEqual(theirs.handCount, 3)
+  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-evolve-daze')),
+    'Evolve leaked the owner hand through the teammate snapshot')
+})
+
+check('online Double Tap locks the room until its owner separately targets the copy', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [
+    { uid: 'room-double-tap', defId: 'double_tap', upgraded: true },
+    { uid: 'room-double-strike', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.energy = 3
+  const [first, second] = room.run.combat.enemies.filter((enemy) => !enemy.dead).slice(0, 2)
+  first.vulnerable = 1
+
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-double-tap', preflight: true })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-double-strike', enemyUid: first.uid, preflight: true,
+  })
+  const waiting = snapshotFor(room, b.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertEqual(waiting.pendingCardCopy.playerId, a.playerId)
+  assertEqual(waiting.pendingCardCopy.card.defId, 'strike_ironclad')
+  assertEqual(waiting.enemies.find((enemy) => enemy.uid === first.uid).vulnerable, 0)
+
+  let bypassed = null
+  try {
+    apply(room, b.token, { kind: 'spendShiv', enemyUid: second.uid })
+  } catch (error) {
+    bypassed = error
+  }
+  assertEqual(bypassed?.name, 'RoomError', 'another seat acted before the copy finished')
+
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: 'room-double-strike', enemyUid: second.uid, preflight: true,
+  })
+  const resolved = snapshotFor(room, b.token).run.combat
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.pendingCardCopy, undefined)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).attacksPlayedThisTurn, 2)
+  assertEqual(resolved.players.find((player) => player.id === a.playerId).doubledAttacksThisTurn, 0)
+})
+
+check('disconnecting the Double Tap owner releases the shared room lock', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [{ uid: 'room-abandoned-copy', defId: 'strike_ironclad', upgraded: false }]
+  actor.doubledAttacksThisTurn = 1
+  actor.energy = 3
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-abandoned-copy', enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'copy')
+  markDisconnected(room, a.token)
+  const released = snapshotFor(room, b.token).run.combat
+  assertEqual(released.phase, 'player')
+  assertEqual(released.pendingCardCopy, undefined)
+  assert(released.log.some((line) => line.includes('Double Tap copy was skipped after disconnecting')))
+})
+
+check('a Double Tap copy reveals its post-draw choice only to its owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.hand = [
+    { uid: 'room-copy-preview-tap', defId: 'double_tap', upgraded: true },
+    { uid: 'room-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },
+  ]
+  actor.draw = [
+    { uid: 'room-copy-preview-first', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'room-copy-preview-secret', defId: 'strike_ironclad', upgraded: false },
+  ]
+  actor.energy = 3
+  const [first, second] = room.run.combat.enemies.filter((enemy) => !enemy.dead).slice(0, 2)
+  apply(room, a.token, { kind: 'playCard', cardUid: 'room-copy-preview-tap', preflight: true })
+  apply(room, a.token, {
+    kind: 'previewCard', cardUid: 'room-copy-preview-dagger', enemyUid: first.uid,
+  })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: 'room-copy-preview-dagger', enemyUid: first.uid,
+    discardUids: ['room-copy-preview-first'], preflight: true,
+  })
+  const previewed = apply(room, a.token, {
+    kind: 'previewCardCopy', cardUid: 'room-copy-preview-dagger', enemyUid: second.uid,
+  }).snapshot
+  assertEqual(previewed.cardPreview.copy, true)
+  assertDeepEqual(previewed.cardPreview.cards.map((card) => card.uid), ['room-copy-preview-secret'])
+  assert(!allStrings(snapshotFor(room, b.token)).includes('room-copy-preview-secret'),
+    'the copied card preview leaked to a teammate')
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: 'room-copy-preview-dagger', enemyUid: second.uid,
+    discardUids: ['room-copy-preview-secret'], preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
 })
 
 report('co-op rooms')

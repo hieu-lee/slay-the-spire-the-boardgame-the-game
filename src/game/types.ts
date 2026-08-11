@@ -38,6 +38,8 @@ export type CardInstance = {
   endTurnProtected?: boolean
   /** This exact card was kept by Retain at the end of the previous Player Turn. */
   retainedLastTurn?: boolean
+  /** Cubes accumulated on a Power such as The Bomb. */
+  counter?: number
 }
 
 export type RelicInstance = {
@@ -77,6 +79,14 @@ export type Player = {
   drawLocked: boolean
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
+  /** HP already lost this round, including damage and direct HP loss. */
+  hpLostThisRound?: number
+  /** Apparition caps the total HP this player can lose during this round. */
+  hpLossLimitThisRound?: number
+  /** Madness makes this many subsequently played cards cost 0 this turn. */
+  freeCardsThisTurn?: number
+  /** Double Tap makes this many subsequent Attack cards play twice this turn. */
+  doubledAttacksThisTurn?: number
   attacksPlayedThisTurn: number
   /** Includes statuses, but not Shivs; used by Snecko and Time Eater. */
   cardsPlayedThisTurn?: number
@@ -91,6 +101,8 @@ export type Player = {
   copyOriginalUids?: string[]
   /** Paid copied Attacks whose forced original must not gain Wrist Blade. */
   copyOriginalPaidUids?: string[]
+  /** X chosen for a Playing Copies original after its virtual copy resolves. */
+  copyOriginalEnergySpent?: Record<string, number>
   freeCardUids?: string[]
   forcedCardUids?: string[]
   hpLossLimitThisTurn?: number | null
@@ -101,6 +113,9 @@ export type Player = {
   shivDamageBonus: number
   cardBlockBonus: number
   hitPoison: number
+  /** Apotheosis bonuses for the four printed starter Strike/Defend cards. */
+  starterStrikeDamageBonus?: number
+  starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
   /** Holy Water's two once-per-combat Energy cubes. */
@@ -110,6 +125,8 @@ export type Player = {
   orbs: (OrbType | null)[]
   /** Added to each Orb's printed Evoke effect for this combat. */
   orbEvokeBonus?: number
+  /** Added to each Orb's printed end-of-turn effect for this combat. */
+  orbEndTurnBonus?: number
 
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */
