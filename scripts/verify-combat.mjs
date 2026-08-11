@@ -2123,6 +2123,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'skim', hand: [3, 4] },
     { id: 'claw', enemyHp: [19, 19] },
     { id: 'claw_claw_pack', enemyHp: [19, 18] },
+    { id: 'simmering_fury', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5716,6 +5717,27 @@ check('Accuracy changes Shiv hits without changing ordinary Attacks', () => {
   assertEqual(state.enemies[0].hp, 18, 'Accuracy makes the Shiv deal 2')
   state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(state.enemies[0].hp, 17, 'Accuracy does not modify a card hit')
+})
+
+check('Simmering Fury adds damage to every Attack hit only while in Wrath', () => {
+  for (const upgraded of [false, true]) {
+    const fury = instance('simmering_fury', upgraded)
+    const strike = instance('strike_watcher')
+    const crescendo = instance('crescendo')
+    const sleeves = instance('flying_sleeves')
+    let state = combat(
+      [makePlayer({ character: 'watcher', hand: [fury, strike, crescendo, sleeves], energy: 5 })],
+      [makeEnemy({ hp: 30, maxHp: 30 })],
+    )
+    state = playCard(state, 'p1', fury.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].wrathAttackDamageBonus, upgraded ? 2 : 1)
+    state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, 29, 'the Power does nothing outside Wrath')
+    state = playCard(state, 'p1', crescendo.uid, { enemyUid: null, playerId: null })
+    state = playCard(state, 'p1', sleeves.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, upgraded ? 21 : 23,
+      'Wrath and Simmering Fury apply to both Flying Sleeves hits')
+  }
 })
 
 check('Choke adds every Weak and Poison token on its target to one hit', () => {

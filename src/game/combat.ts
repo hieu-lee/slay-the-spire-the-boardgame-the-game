@@ -1469,6 +1469,11 @@ function applyEffect(
     case 'triggerOrbEndTurn':
       // Loop resolves here only through its chosen end-turn ability.
       return
+    case 'gainWrathAttackDamageBonus': {
+      actor.wrathAttackDamageBonus = (actor.wrathAttackDamageBonus ?? 0) + effect.amount
+      note(`${actor.name}'s Attacks deal +${effect.amount} damage while in Wrath`)
+      return
+    }
     case 'gainShivDamageBonus': {
       actor.shivDamageBonus += effect.amount
       note(`${actor.name}'s Shivs deal +${effect.amount} damage`)
@@ -4238,6 +4243,7 @@ export function createCombat(
       retainCardsThisTurn: 0,
       cardsPlayedThisTurn: 0,
       attacksPlayedThisTurn: 0,
+      wrathAttackDamageBonus: 0,
       shivDamageBonus: 0,
       cardBlockBonus: 0,
       hitPoison: 0,

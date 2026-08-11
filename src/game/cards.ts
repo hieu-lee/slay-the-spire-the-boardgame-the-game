@@ -220,6 +220,7 @@ type EffectKind =
   | { kind: 'lightningTargetsRow' }
   /** Loop: choose one charged Orb and repeat its end-of-turn ability. */
   | { kind: 'triggerOrbEndTurn'; amount: number }
+  | { kind: 'gainWrathAttackDamageBonus'; amount: number }
   | { kind: 'gainShivDamageBonus'; amount: number }
   | { kind: 'gainCardBlockBonus'; amount: number }
   | { kind: 'gainHitPoison'; amount: number }
@@ -1464,6 +1465,13 @@ export const CARDS: Record<string, CardDef> = {
       { kind: 'gainClawCube', amount: 1 },
       { kind: 'hit', amount: { base: 1, per: 'clawCubesGainedThisCombat' } },
     ] },
+  }),
+
+  simmering_fury: card({
+    id: 'simmering_fury', name: 'Simmering Fury', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 2,
+    resolvesOnPlay: true,
+    effects: [{ kind: 'gainWrathAttackDamageBonus', amount: 1 }],
+    upgrade: { effects: [{ kind: 'gainWrathAttackDamageBonus', amount: 2 }] },
   }),
 
   crescendo: card({

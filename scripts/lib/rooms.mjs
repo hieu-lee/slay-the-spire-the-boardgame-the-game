@@ -1327,6 +1327,7 @@ function redactPlayer(player, viewerId) {
     starterDefendBlockBonus: player.starterDefendBlockBonus ?? 0,
     miracles: player.miracles,
     stance: player.stance,
+    wrathAttackDamageBonus: player.wrathAttackDamageBonus ?? 0,
     orbs: player.orbs,
     orbEvokeBonus: player.orbEvokeBonus ?? 0,
     darkOrbEvokeBonus: player.darkOrbEvokeBonus ?? 0,

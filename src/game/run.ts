@@ -184,6 +184,7 @@ export function createPlayer(
     starterDefendBlockBonus: 0,
     miracles: 0,
     stance: 'neutral',
+    wrathAttackDamageBonus: 0,
     orbs: [null, null, null],
     orbEvokeBonus: 0,
     darkOrbEvokeBonus: 0,

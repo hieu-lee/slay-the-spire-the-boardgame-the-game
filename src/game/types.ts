@@ -106,6 +106,8 @@ export type Player = {
   /** Watcher. */
   miracles: number
   stance: Stance
+  /** Added to each Attack hit while in Wrath, reset between combats. */
+  wrathAttackDamageBonus: number
   /** Defect. `null` marks an empty slot; slot order carries no meaning. */
   orbs: (OrbType | null)[]
   /** Added to each Orb's printed Evoke effect for this combat. */

@@ -12,7 +12,7 @@ import {
 import { CAPS } from '../src/game/types.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
-const plain = { strength: 0, weak: 0, wrath: false }
+const plain = { strength: 0, weak: 0, wrath: false, wrathAttackDamageBonus: 0 }
 const mods = (over) => ({ ...plain, ...over })
 const soft = { vulnerable: 0 }
 
@@ -33,6 +33,12 @@ check('Wrath is worth exactly one Strength', () => {
   assertEqual(hitDamage(2, mods({ wrath: true }), soft), 3)
   assertEqual(hitDamage(2, mods({ strength: 1 }), soft), hitDamage(2, mods({ wrath: true }), soft))
   assertEqual(hitDamage(2, mods({ strength: 2, wrath: true }), soft), 5)
+})
+
+check('Simmering Fury adds to every hit only while in Wrath and before Vulnerable', () => {
+  assertEqual(hitDamage(2, mods({ wrathAttackDamageBonus: 2 }), soft), 2)
+  assertEqual(hitDamage(2, mods({ wrath: true, wrathAttackDamageBonus: 2 }), soft), 5)
+  assertEqual(hitDamage(2, mods({ wrath: true, wrathAttackDamageBonus: 2 }), { vulnerable: 1 }), 10)
 })
 
 check('Weak removes 1 from each hit', () => {

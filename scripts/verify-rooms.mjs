@@ -1500,6 +1500,31 @@ check('Silent Power modifiers resolve and publish through the room authority', (
   assertEqual(seenTarget.poison, 4, 'the Shiv and Choke+ hits each apply Poison')
 })
 
+check('Simmering Fury stays public across reconnect and resolves Wrath hits authoritatively', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const enemy = room.run.combat.enemies.find((target) => !target.dead)
+  const fury = { uid: 'room-simmering-fury', defId: 'simmering_fury', upgraded: true }
+  const crescendo = { uid: 'room-simmering-crescendo', defId: 'crescendo', upgraded: false }
+  const sleeves = { uid: 'room-simmering-sleeves', defId: 'flying_sleeves', upgraded: false }
+  Object.assign(actor, {
+    character: 'watcher', hand: [fury, crescendo, sleeves], energy: 3, stance: 'neutral', powers: [],
+  })
+  Object.assign(enemy, { hp: 30, maxHp: 30, block: 0, weak: 0, vulnerable: 0, dead: false })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: fury.uid, preflight: true })
+  assertEqual(snapshotFor(room, b.token).run.combat.players
+    .find((player) => player.id === a.playerId).wrathAttackDamageBonus, 2)
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  apply(room, rejoined.token, { kind: 'playCard', cardUid: crescendo.uid, preflight: true })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: sleeves.uid, enemyUid: enemy.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((target) => target.uid === enemy.uid).hp, 22,
+    'Flying Sleeves deals two four-damage hits in upgraded Simmering Fury Wrath')
+})
+
 check('Silent independent targets and once-per-turn Poison reactions survive room authority', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)

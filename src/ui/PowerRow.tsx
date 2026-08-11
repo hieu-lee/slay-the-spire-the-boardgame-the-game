@@ -311,6 +311,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return 'Lightning damages every enemy in a chosen row, plus the boss'
     case 'triggerOrbEndTurn':
       return `trigger 1 Orb's end-of-turn ability ${effect.amount === 1 ? 'once' : `${effect.amount} times`}`
+    case 'gainWrathAttackDamageBonus':
+      return `Attacks deal +${effect.amount} damage while in Wrath`
     case 'gainShivDamageBonus':
       return `Shivs deal +${effect.amount} damage`
     case 'gainCardBlockBonus':

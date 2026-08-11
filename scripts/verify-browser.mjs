@@ -4181,6 +4181,56 @@ await page.waitForFunction(() => {
     document.querySelectorAll('.power').length === 0
 })
 
+const runBeforeSimmeringFury = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    character: 'watcher',
+    hand: [
+      { uid: 'ui-simmering-fury', defId: 'simmering_fury', upgraded: true },
+      { uid: 'ui-simmering-crescendo', defId: 'crescendo', upgraded: false },
+      { uid: 'ui-simmering-sleeves', defId: 'flying_sleeves', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 3, stance: 'neutral',
+    wrathAttackDamageBonus: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, hp: index === 1 ? 30 : enemy.hp, maxHp: index === 1 ? 30 : enemy.maxHp,
+    block: 0, weak: 0, vulnerable: 0, dead: false,
+  }))
+  run.combat.log = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.hand .card img')]
+  .every((img) => img.complete && img.naturalWidth > 0))
+await page.locator('.enemy').filter({ hasText: /30\/30/ }).first().waitFor()
+const simmeringCard = await page.getByRole('button', { name: /^Simmering Fury\+,/ }).evaluate((card) => ({
+  label: card.getAttribute('aria-label') ?? '',
+  artWidth: card.querySelector('img')?.naturalWidth ?? 0,
+}))
+check('Simmering Fury+ renders sharp art and complete spoken rules', () => {
+  assert(simmeringCard.artWidth >= 700, `expected upscaled art, got ${simmeringCard.artWidth}px`)
+  assert(simmeringCard.label.includes('Attacks deal +2 damage while in Wrath'), simmeringCard.label)
+})
+await shot('07q-simmering-fury-ready')
+await page.getByRole('button', { name: /^Simmering Fury\+,/ }).click()
+await page.getByRole('button', { name: /^Crescendo,/ }).click()
+await page.getByRole('button', { name: /^Flying Sleeves,/ }).click()
+await page.locator('.enemy').filter({ hasText: /30\/30/ }).first().click()
+const simmeringState = await readState()
+check('Simmering Fury resolves both Wrath hits through the real controls', () => {
+  const actor = simmeringState.players[0]
+  assertEqual(actor.wrathAttackDamageBonus, 2)
+  assertEqual(actor.stance, 'wrath')
+  assertEqual(simmeringState.enemies.find((enemy) => enemy.maxHp === 30)?.hp, 22)
+})
+await page.locator('.enemy').filter({ hasText: /22\/30/ }).first().waitFor()
+await shot('07r-simmering-fury-resolved')
+await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
+  window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')
+
 const runBeforeSilentChoices = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
