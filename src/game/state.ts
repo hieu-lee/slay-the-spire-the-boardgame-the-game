@@ -35,9 +35,9 @@
 //     the pick into the deck.
 //     The physical reward decks are still incomplete: only transcribed cards
 //     are included, Golden Tickets are absent, and rare rewards never surface.
-//   - 204 of 259 unique character cards are live.
+//   - 207 of 259 unique character cards are live.
 //     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 55 have not been transcribed at
+//     The other 52 have not been transcribed at
 //     all: their names and printed costs are known from
 //     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
 //     effects. 11 enemies of roughly 60; no events, no shops.
@@ -47,9 +47,9 @@
 //     merchant, boss or Act IV content.
 //   - Orbs can be individually chosen and targeted for card evokes, forced
 //     full-slot channels and end-of-turn resolution.
-//   - On-play, on-Poison, on-Exhaust, on-draw, on-shuffle and card-effect discard
-//     abilities wait until the played card has finished its printed text, as p.12
-//     requires. Other nested triggers — such as on-Scry, on-Block and stance changes —
+//   - On-play, on-Poison, on-Exhaust, on-draw, on-shuffle, on-Scry, stance-change
+//     and card-effect discard abilities wait until the played card has finished its
+//     printed text, as p.12 requires. Other nested triggers — such as on-Block —
 //     still fire during resolution. Defer those before transcribing a card whose
 //     outcome depends on their timing.
 //   - Miracles can be gained and spent for Energy, and Blade Dance and Cloak

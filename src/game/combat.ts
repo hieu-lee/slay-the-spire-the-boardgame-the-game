@@ -667,6 +667,8 @@ function holds(
       return condition.faces.includes(state.die)
     case 'inStance':
       return actor.stance === condition.stance
+    case 'notInStance':
+      return actor.stance !== condition.stance
     case 'discardedThisTurn':
       return state.discardedThisTurn.includes(actor.id)
     case 'stanceChangedThisTurn':
@@ -729,7 +731,7 @@ export function cardIsPlayable(
   return !def.unplayable && cardPlayConditionMet(def, state, actor, drawCount)
 }
 
-type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' |
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'stance' |
   'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat'> & {
   hand: readonly CardInstance[] | null
 }
@@ -1258,7 +1260,9 @@ function applyEffect(
       }
       actor.stance = effect.stance
       if (!state.stanceChangedThisTurn.includes(actor.id)) state.stanceChangedThisTurn.push(actor.id)
-      fireTriggers(state, { kind: 'onEnterStance', stance: effect.stance }, actor)
+      const event = { kind: 'onEnterStance' as const, stance: effect.stance }
+      if (context.pendingTriggers) context.pendingTriggers.push(...queuedTriggers(state, event, actor))
+      else fireTriggers(state, event, actor)
       return
     }
     case 'heal': {
@@ -1537,7 +1541,9 @@ function applyEffect(
       actor.draw = piles.draw
       discardByCardEffect(state, actor, tossed, context)
       // An empty draw pile means no cards were looked at, so nothing scried.
-      if (looked > 0) fireTriggers(state, { kind: 'onScry' }, actor)
+      if (looked > 0) context.pendingTriggers?.push(
+        ...queuedTriggers(state, { kind: 'onScry' }, actor),
+      )
       return
     }
     case 'topdeck': {
@@ -1909,6 +1915,8 @@ function reachesEnemy(
   energySpent?: number,
 ): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
+  if (actor && effect.when?.kind === 'inStance' && actor.stance !== effect.when.stance) return false
+  if (actor && effect.when?.kind === 'notInStance' && actor.stance === effect.when.stance) return false
   if (effect.kind === 'hitPerExhaust') return !actor || actor.hand === null || actor.hand.length > 1
   if (effect.kind === 'evoke') {
     if (!actor) return true

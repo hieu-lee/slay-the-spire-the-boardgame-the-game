@@ -54,6 +54,7 @@ function conditionText(condition: Condition): string {
     case 'discardTopCosts': return `your discard top costs ${condition.cost}`
     case 'dieShows': return `the die shows ${condition.faces.join(' or ')}`
     case 'inStance': return `you are in ${condition.stance}`
+    case 'notInStance': return `you are not in ${condition.stance}`
     case 'discardedThisTurn': return 'you discarded this turn'
     case 'stanceChangedThisTurn': return 'you changed stance this turn'
     case 'targetFullHp': return 'the target is at full hit points'

@@ -79,6 +79,13 @@ async function shot(label) {
 const readRun = () => page.evaluate(() => window.__STS_DEBUG__.getRun())
 const readState = () => page.evaluate(() => window.__STS_DEBUG__.getState())
 
+async function artWidth(card) {
+  const image = card.locator('img.card__art')
+  await image.waitFor()
+  await page.waitForFunction((img) => img.complete && img.naturalWidth > 0, await image.elementHandle())
+  return image.evaluate((img) => img.naturalWidth)
+}
+
 async function confirmDiscard(player) {
   await page.getByLabel('Seat').selectOption(player.id)
   const name = player.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -4240,7 +4247,7 @@ await page.evaluate(() => {
 })
 const likeWaterCard = page.getByRole('button', { name: /^Like Water\+,/ })
 await likeWaterCard.waitFor()
-const likeWaterArtWidth = await likeWaterCard.locator('img').evaluate((img) => img.naturalWidth)
+const likeWaterArtWidth = await artWidth(likeWaterCard)
 assert(likeWaterArtWidth >= 700, `expected upscaled Like Water art, got ${likeWaterArtWidth}px`)
 await likeWaterCard.click()
 const likeWaterPowerLabel = await page.getByRole('button', { name: /^Like Water\+?:/ }).getAttribute('aria-label')
@@ -4274,7 +4281,7 @@ await page.evaluate(() => {
 })
 const battleHymnCard = page.getByRole('button', { name: /^Battle Hymn\+,/ })
 await battleHymnCard.waitFor()
-const battleHymnArtWidth = await battleHymnCard.locator('img').evaluate((img) => img.naturalWidth)
+const battleHymnArtWidth = await artWidth(battleHymnCard)
 assert(battleHymnArtWidth >= 700, `expected upscaled Battle Hymn art, got ${battleHymnArtWidth}px`)
 await battleHymnCard.click()
 const battleHymnPowerLabel = await page.getByRole('button', { name: /^Battle Hymn\+?:/ }).getAttribute('aria-label')
@@ -4310,7 +4317,7 @@ await page.evaluate(() => {
 })
 const mentalFortressCard = page.getByRole('button', { name: /^Mental Fortress\+,/ })
 await mentalFortressCard.waitFor()
-const mentalFortressArtWidth = await mentalFortressCard.locator('img').evaluate((img) => img.naturalWidth)
+const mentalFortressArtWidth = await artWidth(mentalFortressCard)
 assert(mentalFortressArtWidth >= 700, `expected upscaled Mental Fortress art, got ${mentalFortressArtWidth}px`)
 await mentalFortressCard.click()
 const mentalFortressPowerLabel = await page.getByRole('button', { name: /^Mental Fortress\+?:/ }).getAttribute('aria-label')
@@ -4350,7 +4357,7 @@ await page.evaluate(() => {
 })
 const rushdownCard = page.getByRole('button', { name: /^Rushdown\+,/ })
 await rushdownCard.waitFor()
-const rushdownArtWidth = await rushdownCard.locator('img').evaluate((img) => img.naturalWidth)
+const rushdownArtWidth = await artWidth(rushdownCard)
 assert(rushdownArtWidth >= 700, `expected upscaled Rushdown art, got ${rushdownArtWidth}px`)
 await rushdownCard.click()
 const rushdownPowerLabel = await page.getByRole('button', { name: /^Rushdown\+?:/ }).getAttribute('aria-label')
@@ -4370,6 +4377,88 @@ check('Rushdown triggers only the first Wrath through the real controls', () => 
   assertEqual(rushdownState.players[0].hand.length, 3)
 })
 await shot('07v-rushdown-first-wrath-draw')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const first = run.combat.enemies[0]
+  const second = run.combat.enemies[1] ?? { ...first, uid: 'ui-watcher-batch-enemy-2' }
+  Object.assign(run.combat, { phase: 'player', turn: 1, powerTriggersUsedThisTurn: [], pendingTriggers: [] })
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', stance: 'neutral', block: 0, energy: 6,
+    hand: [
+      { uid: 'ui-nirvana', defId: 'nirvana', upgraded: true },
+      { uid: 'ui-nirvana-scry', defId: 'third_eye', upgraded: false },
+      { uid: 'ui-indignation-enter', defId: 'indignation', upgraded: true },
+      { uid: 'ui-indignation-row', defId: 'indignation', upgraded: true },
+      { uid: 'ui-inner-peace-enter', defId: 'inner_peace', upgraded: true },
+      { uid: 'ui-inner-peace-draw', defId: 'inner_peace', upgraded: true },
+    ],
+    draw: Array.from({ length: 8 }, (_, index) => ({
+      uid: `ui-watcher-batch-draw-${index}`, defId: index % 2 ? 'strike_watcher' : 'defend_watcher', upgraded: false,
+    })),
+    discard: [], exhaust: [], powers: [],
+  })
+  run.combat.enemies = [first, second]
+  Object.assign(first, { row: 0, hp: 10, maxHp: 10, block: 0, vulnerable: 0, dead: false, isBoss: false })
+  Object.assign(second, { row: 1, hp: 11, maxHp: 11, block: 0, vulnerable: 0, dead: false, isBoss: false })
+  debug.setRun(run)
+})
+const nirvanaCard = page.getByRole('button', { name: /^Nirvana\+,/ })
+const indignation = page.getByRole('button', { name: /^Indignation\+,/ })
+const innerPeace = page.getByRole('button', { name: /^Inner Peace\+,/ })
+await nirvanaCard.waitFor()
+const watcherBatchArt = await Promise.all([
+  artWidth(nirvanaCard), artWidth(indignation.first()), artWidth(innerPeace.first()),
+])
+assert(watcherBatchArt.every((width) => width >= 700),
+  `expected upscaled Watcher batch art, got ${watcherBatchArt.join(', ')}px`)
+await shot('07w-watcher-stance-scry-batch')
+await nirvanaCard.click()
+const nirvanaLabel = await page.getByRole('button', { name: /^Nirvana\+?:/ }).getAttribute('aria-label')
+check('Nirvana+ exposes its Scry trigger accessibly', () => {
+  assert(nirvanaLabel.includes('2 Block'), nirvanaLabel)
+  assert(nirvanaLabel.includes('whenever you scry'), nirvanaLabel)
+})
+await page.getByRole('button', { name: /^Third Eye,/ }).click()
+const nirvanaScry = page.getByRole('dialog', { name: 'Scry 3' })
+await nirvanaScry.waitFor()
+await nirvanaScry.getByRole('button', { name: /^Defend,/ }).first().click()
+await nirvanaScry.getByRole('button', { name: 'Discard 1 and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].block === 4)
+
+const indignationLabel = await indignation.first().getAttribute('aria-label')
+check('Indignation+ exposes both conditional branches and row scope', () => {
+  assert(indignationLabel.includes('affects a whole row and any boss'), indignationLabel)
+  assert(indignationLabel.includes('apply 1 Vulnerable if you are in wrath'), indignationLabel)
+  assert(indignationLabel.includes('enter wrath if you are not in wrath'), indignationLabel)
+})
+await indignation.first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].stance === 'wrath')
+assertEqual(await page.locator('.enemy--targeted').count(), 0,
+  'Indignation asked for an enemy when its printed branch only enters Wrath')
+await indignation.first().click()
+await page.locator('.enemy--targeted[aria-label*="10 of 10 hit points"]').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].vulnerable === 1)
+
+const innerPeaceLabel = await innerPeace.first().getAttribute('aria-label')
+check('Inner Peace+ exposes both stance branches accessibly', () => {
+  assert(innerPeaceLabel.includes('draw 4 cards if you are in calm'), innerPeaceLabel)
+  assert(innerPeaceLabel.includes('enter calm if you are not in calm'), innerPeaceLabel)
+})
+await innerPeace.first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].stance === 'calm')
+await innerPeace.first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 4)
+const watcherBatch = await readState()
+check('Nirvana, Indignation, and Inner Peace resolve through the real controls', () => {
+  assertEqual(watcherBatch.players[0].block, 4)
+  assertEqual(watcherBatch.players[0].stance, 'calm')
+  assertEqual(watcherBatch.players[0].energy, 0)
+  assertDeepEqual(watcherBatch.enemies.map((enemy) => enemy.vulnerable), [1, 0])
+  assertEqual(watcherBatch.players[0].draw.length, 3)
+})
 await page.evaluate((saved) => window.__STS_DEBUG__.setRun(saved), runBeforeSimmeringFury)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].wrathAttackDamageBonus === 0 &&
   window.__STS_DEBUG__.getState().players[0].stance !== 'wrath')

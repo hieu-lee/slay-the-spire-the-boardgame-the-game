@@ -60,6 +60,8 @@ export type Condition =
   | { kind: 'dieShows'; faces: number[] }
   /** Halt: the Watcher is currently in the named stance. */
   | { kind: 'inStance'; stance: Stance }
+  /** Inner Peace: the Watcher is not currently in the named stance. */
+  | { kind: 'notInStance'; stance: Stance }
   | { kind: 'discardedThisTurn' }
   | { kind: 'stanceChangedThisTurn' }
   | { kind: 'targetFullHp' }
@@ -1499,6 +1501,33 @@ export const CARDS: Record<string, CardDef> = {
     oncePerTurn: true,
     effects: [{ kind: 'draw', amount: 2 }],
     upgrade: { effects: [{ kind: 'draw', amount: 3 }] },
+  }),
+  nirvana: card({
+    id: 'nirvana', name: 'Nirvana', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 1,
+    trigger: { kind: 'onScry' },
+    effects: [{ kind: 'block', amount: 1 }],
+    upgrade: { effects: [{ kind: 'block', amount: 2 }] },
+  }),
+  indignation: card({
+    id: 'indignation', name: 'Indignation', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [
+      { kind: 'applyVulnerable', amount: 1, when: { kind: 'inStance', stance: 'wrath' } },
+      { kind: 'enterStance', stance: 'wrath', when: { kind: 'notInStance', stance: 'wrath' } },
+    ],
+    upgrade: { target: 'row' },
+  }),
+  inner_peace: card({
+    id: 'inner_peace', name: 'Inner Peace', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [
+      { kind: 'draw', amount: 3, when: { kind: 'inStance', stance: 'calm' } },
+      { kind: 'enterStance', stance: 'calm', when: { kind: 'notInStance', stance: 'calm' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'draw', amount: 4, when: { kind: 'inStance', stance: 'calm' } },
+        { kind: 'enterStance', stance: 'calm', when: { kind: 'notInStance', stance: 'calm' } },
+      ],
+    },
   }),
 
   crescendo: card({

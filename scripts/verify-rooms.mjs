@@ -4660,6 +4660,72 @@ check('Rushdown draw is private, reconnect-safe, and limited to the first Wrath 
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).draw.length, 2)
 })
 
+check('Nirvana resolves a private Scry authoritatively after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const thirdEye = { uid: 'room-nirvana-scry', defId: 'third_eye', upgraded: false }
+  const secrets = Array.from({ length: 4 }, (_, index) => ({
+    uid: `room-nirvana-secret-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  Object.assign(actor, {
+    character: 'watcher', hand: [thirdEye], draw: secrets, discard: [], energy: 1, block: 0,
+    powers: [{ uid: 'room-nirvana', defId: 'nirvana', upgraded: true }],
+  })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const preview = apply(room, rejoined.token, { kind: 'previewCard', cardUid: thirdEye.uid }).snapshot.cardPreview
+  assertDeepEqual(preview.cards.map((card) => card.uid), secrets.slice(0, 3).map((card) => card.uid))
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: thirdEye.uid, scryDiscardUids: [secrets[1].uid], preflight: true,
+  })
+  assertEqual(room.run.combat.players.find((player) => player.id === actor.id).block, 4)
+  const teammate = snapshotFor(room, b.token)
+  assert(allStrings(teammate).includes(secrets[1].uid), 'the face-up Scry discard stayed hidden')
+  assert(![secrets[0], ...secrets.slice(2)].some((card) => allStrings(teammate).includes(card.uid)),
+    'Nirvana Scry leaked cards kept in the draw pile')
+})
+
+check('Indignation chooses no target outside Wrath and upgrades to a row', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const enter = { uid: 'room-indignation-enter', defId: 'indignation', upgraded: true }
+  const expose = { uid: 'room-indignation-row', defId: 'indignation', upgraded: true }
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { row: 0, vulnerable: 0, dead: false, isBoss: false })
+  Object.assign(second, { row: 1, vulnerable: 0, dead: false, isBoss: false })
+  Object.assign(actor, {
+    character: 'watcher', stance: 'neutral', hand: [enter, expose], energy: 2,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: enter.uid, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === actor.id).stance, 'wrath')
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.vulnerable), [0, 0])
+  apply(room, a.token, { kind: 'playCard', cardUid: expose.uid, enemyUid: first.uid, preflight: true })
+  const publicCombat = snapshotFor(room, b.token).run.combat
+  assertDeepEqual(publicCombat.enemies.slice(0, 2).map((enemy) => enemy.vulnerable), [1, 0])
+})
+
+check('Inner Peace keeps its Calm draw private across reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-inner-peace', defId: 'inner_peace', upgraded: true }
+  const secrets = Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-inner-peace-secret-${index}`, defId: 'strike_watcher', upgraded: false,
+  }))
+  Object.assign(actor, {
+    character: 'watcher', stance: 'calm', hand: [card], draw: secrets, discard: [], energy: 1,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: card.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  const hiddenActor = teammate.run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(hiddenActor.hand, null)
+  assertEqual(hiddenActor.handCount, 4)
+  assert(!secrets.some((secret) => allStrings(teammate).includes(secret.uid)), 'Inner Peace leaked drawn cards')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(owner.hand.map((held) => held.uid), secrets.slice(0, 4).map((held) => held.uid))
+})
+
 check('online Evolve resolves chained Status draws without revealing the new hand', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

@@ -2128,6 +2128,9 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'battle_hymn', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'mental_fortress', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'rushdown', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'nirvana', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'indignation', stance: ['wrath', 'wrath'], initialStance: 'neutral', energy: [E - 1, E - 1] },
+    { id: 'inner_peace', stance: ['calm', 'calm'], initialStance: 'neutral', energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -5814,6 +5817,99 @@ check('Rushdown draws only the first time the Watcher enters Wrath each turn', (
     state = playCard(state, 'p1', secondWrath.uid, { enemyUid: null, playerId: null })
     assertEqual(state.players[0].draw.length, upgraded ? 5 : 6,
       're-entering Wrath in the same turn cannot trigger Rushdown twice')
+  }
+
+  const indignation = instance('indignation')
+  const cleanedUp = playCard(combat([makePlayer({
+    character: 'watcher', powers: [instance('rushdown')], hand: [indignation],
+    draw: [], discard: [], stance: 'neutral',
+  })], [makeEnemy()]), 'p1', indignation.uid, { enemyUid: null, playerId: null })
+  assertDeepEqual(cleanedUp.players[0].hand.map((card) => card.uid), [indignation.uid],
+    'Rushdown must resolve after Indignation is discarded, so it can reshuffle and draw that card')
+})
+
+check('Nirvana grants Block whenever a non-empty Scry resolves', () => {
+  for (const upgraded of [false, true]) {
+    const scryCard = instance('third_eye')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [scryCard],
+      draw: [instance('strike_watcher'), instance('defend_watcher')], block: 0,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', scryCard.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [],
+    })
+    assertEqual(state.players[0].block, upgraded ? 4 : 3,
+      'Third Eye Block and Nirvana Block both resolve')
+
+    const emptyScry = instance('third_eye')
+    const empty = playCard(combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [emptyScry], draw: [], block: 0,
+    })], [makeEnemy()]), 'p1', emptyScry.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [],
+    })
+    assertEqual(empty.players[0].block, 2, 'looking at no cards is not a Scry trigger')
+
+    const cut = instance('cut_through_fate')
+    const top = instance('strike_watcher')
+    const bottom = instance('defend_watcher')
+    const ordered = playCard(combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [cut],
+      draw: [top, bottom], block: 0,
+    })], [makeEnemy()]), 'p1', cut.uid, {
+      enemyUid: 'e1', playerId: null, scryDiscardUids: [top.uid, bottom.uid],
+    })
+    const shuffleLog = ordered.log.findIndex((line) => line.includes('shuffles their discard pile'))
+    const nirvanaLog = ordered.log.findIndex((line) => line.includes('Nirvana') && line.includes('gains'))
+    assert(shuffleLog >= 0 && nirvanaLog > shuffleLog,
+      'Nirvana must wait until Cut Through Fate finishes its post-Scry draw')
+  }
+})
+
+check('Indignation enters Wrath or applies Vulnerable at its printed scope', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('indignation', upgraded)
+    const neutral = combat([makePlayer({ character: 'watcher', hand: [card], stance: 'neutral' })], [makeEnemy()])
+    assertEqual(cardNeedsEnemy(faceOf(cardDef('indignation'), upgraded), neutral.players[0]), false,
+      'Indignation needs no enemy while it will enter Wrath')
+    const entered = playCard(neutral, 'p1', card.uid, { enemyUid: null, playerId: null })
+    assertEqual(entered.players[0].stance, 'wrath')
+    assertEqual(entered.enemies[0].vulnerable, 0)
+
+    const wrathCard = instance('indignation', upgraded)
+    const wrath = combat(
+      [makePlayer({ character: 'watcher', hand: [wrathCard], stance: 'wrath' })],
+      [
+        makeEnemy({ uid: 'a', row: 0 }),
+        makeEnemy({ uid: 'b', row: 0 }),
+        makeEnemy({ uid: 'c', row: 1 }),
+      ],
+    )
+    assert(cardNeedsEnemy(faceOf(cardDef('indignation'), upgraded), wrath.players[0]))
+    const applied = playCard(wrath, 'p1', wrathCard.uid, { enemyUid: 'a', playerId: null })
+    assertDeepEqual(applied.enemies.map((enemy) => enemy.vulnerable), upgraded ? [1, 1, 0] : [1, 0, 0])
+    assertEqual(applied.players[0].stance, 'wrath')
+  }
+})
+
+check('Inner Peace draws in Calm and otherwise enters Calm', () => {
+  for (const upgraded of [false, true]) {
+    const calmCard = instance('inner_peace', upgraded)
+    const calmDeck = Array.from({ length: 6 }, () => instance('strike_watcher'))
+    const calmed = playCard(combat([makePlayer({
+      character: 'watcher', hand: [calmCard], draw: calmDeck, stance: 'calm', energy: 1,
+    })], [makeEnemy()]), 'p1', calmCard.uid, { enemyUid: null, playerId: null })
+    assertEqual(calmed.players[0].hand.length, upgraded ? 4 : 3)
+    assertEqual(calmed.players[0].draw.length, upgraded ? 2 : 3)
+    assertEqual(calmed.players[0].stance, 'calm')
+
+    const neutralCard = instance('inner_peace', upgraded)
+    const neutralDeck = Array.from({ length: 6 }, () => instance('strike_watcher'))
+    const entered = playCard(combat([makePlayer({
+      character: 'watcher', hand: [neutralCard], draw: neutralDeck, stance: 'neutral', energy: 1,
+    })], [makeEnemy()]), 'p1', neutralCard.uid, { enemyUid: null, playerId: null })
+    assertEqual(entered.players[0].hand.length, 0)
+    assertEqual(entered.players[0].draw.length, 6)
+    assertEqual(entered.players[0].stance, 'calm')
   }
 })
 

@@ -406,7 +406,7 @@ check('no live card draws before exhausting from hand', () => {
 check('no condition reads a target that its reader was never handed', () => {
   const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp'])
   const BOARD_READING = new Set([
-    'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'discardedThisTurn', 'stanceChangedThisTurn',
+    'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'notInStance', 'discardedThisTurn', 'stanceChangedThisTurn',
     'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
     'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
     'handEmpty', 'drewSkill', 'retainedLastTurn',
