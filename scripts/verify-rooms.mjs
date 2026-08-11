@@ -3247,7 +3247,7 @@ check('a dropped seat is actually marked disconnected', () => {
 })
 
 check('the whole play context reaches the engine, not just the target', () => {
-  // Scry and per-evoke Orb/enemy picks are real choices the rules grant (p.24,
+  // Scry and per-evoke enemy picks are real choices the rules grant (p.24,
   // p.16). Dropped in dispatch, a Scry silently bins nothing and an orb evoke
   // always falls back to the first filled slot.
   const { room, a, b } = twoSeatRoom()
@@ -3296,14 +3296,14 @@ check('the whole play context reaches the engine, not just the target', () => {
     kind: 'playCard',
     cardUid: evokeCard.uid,
     enemyUid: null,
-    evokeSlots: [2, 0],
+    evokeSlots: [2],
     evokeEnemyUids: [darkTarget.uid, lightningTarget.uid],
   })
-  assertDeepEqual(mine().orbs, [null, 'frost', null], 'each chosen Orb slot reached the engine')
+  assertDeepEqual(mine().orbs, ['lightning', 'frost', null], 'the chosen Orb slot reached the engine')
   assertDeepEqual(
     room.run.combat.enemies.slice(0, 2).map((target) => target.hp),
-    [18, 17],
-    'each damaging evoke reached its own enemy',
+    [17, 17],
+    'each repeated Evoke reached its own enemy',
   )
 
   const recursion = { uid: 'fx-recursion', defId: 'recursion', upgraded: false }
@@ -3430,7 +3430,7 @@ check('Electrodynamics row evokes stay server-authoritative and reconnect-visibl
   let refused = null
   try {
     apply(forged, a.token, {
-      kind: 'playCard', cardUid: dual.uid, evokeSlots: [0, 1],
+      kind: 'playCard', cardUid: dual.uid, evokeSlots: [0],
       evokeEnemyUids: [front.uid, back.uid], preflight: true,
     })
   } catch (error) {
@@ -3439,7 +3439,7 @@ check('Electrodynamics row evokes stay server-authoritative and reconnect-visibl
   assertEqual(refused?.name, 'RoomError', 'the server accepted single-enemy Electrodynamics targets')
 
   apply(room, a.token, {
-    kind: 'playCard', cardUid: dual.uid, evokeSlots: [0, 1],
+    kind: 'playCard', cardUid: dual.uid, evokeSlots: [0],
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)], preflight: true,
   })
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [18, 18])
@@ -3496,6 +3496,76 @@ check('Fission choices stay server-authoritative and its draws remain private af
   assertEqual(peer.handCount, 3)
   assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-fission-draw-')),
     'Fission leaked its draws to a teammate')
+})
+
+check('Multi-Cast keeps one Orb choice and every repeated target server-authoritative', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-multi-cast', defId: 'multi_cast', upgraded: true }
+  Object.assign(actor, {
+    character: 'defect', hand: [card], energy: 2, orbs: ['dark', 'frost', 'lightning'],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false })
+
+  let refused = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCard', cardUid: card.uid, energySpent: 2, evokeSlots: [0],
+      evokeEnemyUids: [first.uid, second.uid], preflight: true,
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'the server accepted a missing Multi-Cast+ target')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: card.uid, energySpent: 2, evokeSlots: [0],
+    evokeEnemyUids: [first.uid, second.uid, second.uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(resolved.orbs, [null, 'frost', 'lightning'])
+  assertEqual(resolved.energy, 0)
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [17, 14])
+  assert(resolved.discard.some((held) => held.uid === card.uid))
+})
+
+check('an Echo Form Multi-Cast copy cannot forge its original Energy payment', () => {
+  const { room, a } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const card = { uid: 'room-copy-multi-cast', defId: 'multi_cast', upgraded: true }
+  Object.assign(actor, {
+    character: 'defect', hand: [], energy: 0, orbs: ['dark', 'frost', 'lightning'],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(second, { hp: 20, maxHp: 20, block: 0, dead: false })
+  room.run.combat.phase = 'copy'
+  room.run.combat.pendingCardCopy = {
+    playerId: actor.id, card, energySpent: 2, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Echo Form'],
+  }
+
+  let refused = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCardCopy', cardUid: card.uid, energySpent: 0,
+      evokeSlots: [], evokeEnemyUids: [], preflight: true,
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'a forged zero-Energy copy skipped its Evoke choices')
+
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: card.uid, energySpent: 0, evokeSlots: [0],
+    evokeEnemyUids: [first.uid, second.uid, second.uid], preflight: true,
+  })
+  const resolved = room.run.combat.players.find((player) => player.id === actor.id)
+  assertDeepEqual(resolved.orbs, [null, 'frost', 'lightning'])
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [17, 14])
+  assertEqual(room.run.combat.phase, 'player')
 })
 
 check('an unknown token cannot act at all', () => {

@@ -204,7 +204,8 @@ type EffectKind =
   | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: Amount }
-  | { kind: 'evoke'; times: number }
+  /** Remove one chosen Orb and apply that Orb's Evoke effect this many times. */
+  | { kind: 'evoke'; times: Amount }
   | { kind: 'channelDieOrb' }
   | { kind: 'recurseOrb' }
   /** Fission: clear every charged Orb, optionally Evoking each, then gain one Energy and draw per Orb. */
@@ -1798,6 +1799,11 @@ export const CARDS: Record<string, CardDef> = {
     exhaust: true,
     effects: [{ kind: 'fission', evoke: false }],
     upgrade: { effects: [{ kind: 'fission', evoke: true }] },
+  }),
+  multi_cast: card({
+    id: 'multi_cast', name: 'Multi-Cast', owner: 'defect', type: 'skill', rarity: 'rare', cost: 'X',
+    effects: [{ kind: 'evoke', times: { base: 0, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'evoke', times: { base: 1, per: 'energySpent' } }] },
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,

@@ -192,7 +192,7 @@ Buffer exist only as card names, not as tracked keywords.
 | **Shivs** (Silent) | Max 5. Spend any time you could play a card to deal 1 damage. Each shiv is a **separate attack**, separately modified by Strength/Weak/Vulnerable. Not cards. If you have no shiv tokens left and gain one, you may deal its damage immediately instead. |
 | **Miracles** (Watcher) | Max 5. Spend any time for 1 energy. **May exceed the 6-energy cap if spent immediately on a card.** |
 | **Stances** (Watcher) | Neutral, Calm, Wrath only — **no Divinity**. Start each combat in Neutral. Entering a stance you are already in is ignored. **Calm:** leaving it grants 2 energy. **Wrath:** +1 damage on all hits; **ending your turn in Wrath costs you 1 damage** (blockable). |
-| **Orbs** (Defect) | **No focus, no rotation, no slot order.** Channel places a cube in **any open** slot; if all are full, **evoke any orb of your choice** first. Evoke removes **any** orb you pick. Out of cubes → the channel is ignored. Lightning: 1 damage at end of turn, 2 on evoke. Frost: 1 block at end of turn, 1 on evoke. Dark: nothing at end of turn, **3 damage + 1 per power you have in play** on evoke. |
+| **Orbs** (Defect) | **No focus, no rotation, no slot order.** Channel places a cube in **any open** slot; if all are full, **evoke any orb of your choice** first. Evoke removes **any** orb you pick. “Evoke an Orb” multiple times removes that one Orb once and applies its Evoke effect repeatedly; Lightning and Dark may choose a different target each time. Out of cubes → the channel is ignored. Lightning: 1 damage at end of turn, 2 on evoke. Frost: 1 block at end of turn, 1 on evoke. Dark: nothing at end of turn, **3 damage + 1 per power you have in play** on evoke. |
 
 ## 5. Cards
 

@@ -649,14 +649,13 @@ await page.getByText('Choose an enemy for this evoke').waitFor()
 await page.waitForTimeout(250)
 await shot('06b-orb-evoke-target')
 await page.locator('.enemy--targeted').nth(1).click()
-await page.getByRole('button', { name: /lightning slot 1/i }).click()
 await page.locator('.enemy--targeted').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
 const chosenEvokes = await readState()
-check('the local UI collects a separate Orb and enemy for every evoke', () => {
-  assertDeepEqual(chosenEvokes.players[0].orbs, [null, 'frost', null])
+check('the local UI removes one Orb and collects a target for each repeated Evoke', () => {
+  assertDeepEqual(chosenEvokes.players[0].orbs, ['lightning', 'frost', null])
   const hp = chosenEvokes.enemies.map((enemy) => enemy.hp).sort((a, b) => a - b)
-  assertDeepEqual(hp.slice(0, 2), [17, 18])
+  assertDeepEqual(hp.slice(0, 2), [17, 17])
   assert(hp.slice(2).every((value) => value === 20), 'only the two chosen enemies should take damage')
   assertEqual(chosenEvokes.players[0].energy, 2)
 })
@@ -1939,15 +1938,14 @@ await page.getByRole('button', { name: /lightning slot 1/i }).click()
 await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).waitFor()
 await shot('06zphgce-electrodynamics-row-choice')
 await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).click()
-await page.getByRole('button', { name: /lightning slot 2/i }).click()
 await page.getByRole('button', { name: 'Evoke Lightning in row 1' }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 1)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 2)
 const electroResolved = await readState()
 check('Electrodynamics+ visibly channels three Orbs and makes each Lightning Evoke choose a row', () => {
   assert(electrodynamicsLabel.includes('Lightning damages every enemy in a chosen row, plus the boss'), electrodynamicsLabel)
   assert(electrodynamicsLabel.includes('channel 3 lightning orbs'), electrodynamicsLabel)
   assertDeepEqual(electroResolved.enemies.map((enemy) => enemy.hp), [18, 18, 16])
-  assertDeepEqual(electroResolved.players[0].orbs, [null, null, 'lightning'])
+  assertDeepEqual(electroResolved.players[0].orbs, [null, 'lightning', 'lightning'])
   assertEqual(electroResolved.players[0].energy, 0)
 })
 await shot('06zphgcf-electrodynamics-resolved')
@@ -2002,6 +2000,76 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-multi-cast', defId: 'multi_cast', upgraded: true }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2,
+    orbs: ['dark', 'frost', 'lightning'], orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 2)
+  for (const [index, enemy] of run.combat.enemies.entries()) Object.assign(enemy, {
+    hp: index === 0 ? 3 : 20, maxHp: index === 0 ? 3 : 20,
+    block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const multiCastCard = page.getByRole('button', { name: /^Multi-Cast\+, cost X,/ })
+const multiCastLabel = await multiCastCard.getAttribute('aria-label')
+await multiCastCard.click()
+await page.getByText('Choose Energy for Multi-Cast+').waitFor()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.getByRole('button', { name: /dark slot 1/i }).waitFor()
+await shot('06zphgci-multi-cast-choice')
+await page.getByRole('button', { name: /dark slot 1/i }).click()
+await page.getByRole('button', { name: /3 of 3 hit points/ }).click()
+const targetsAfterLethalEvoke = await page.locator('.enemy--targeted').count()
+await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 0)
+const multiCast = await readState()
+check('Multi-Cast+ visibly removes one Orb and applies its Evoke effect X+1 times', () => {
+  assert(multiCastLabel.includes('evoke one Orb X+1 times'), multiCastLabel)
+  assertDeepEqual(multiCast.players[0].orbs, [null, 'frost', 'lightning'])
+  assertEqual(multiCast.players[0].energy, 0)
+  assertEqual(targetsAfterLethalEvoke, 1, 'the first Evoke left its defeated target selectable')
+  assertDeepEqual(multiCast.enemies.map((enemy) => enemy.hp), [0, 14])
+  assert(multiCast.players[0].discard.some((card) => card.defId === 'multi_cast'))
+})
+await shot('06zphgcj-multi-cast-resolved')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
+    hand: [{ uid: 'ui-multi-cast-lethal', defId: 'multi_cast', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2,
+    orbs: ['dark', null, null], orbEvokeBonus: 0, darkOrbEvokeBonus: 0,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = [{
+    ...run.combat.enemies[0], uid: 'multi-cast-final-enemy', hp: 3, maxHp: 3,
+    block: 0, poison: 0, dead: false, abilityUsed: true, isBoss: false,
+  }]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+await page.getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.getByRole('button', { name: /dark slot 1/i }).click()
+await page.getByRole('button', { name: /3 of 3 hit points/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'won')
+const lethalMultiCastPrompt = await page.locator('.prompt').count()
+check('a lethal repeated Evoke submits without asking for dead-enemy targets', () => {
+  assertEqual(lethalMultiCastPrompt, 0)
+})
+await shot('06zphgck-multi-cast-lethal')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: 1, startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Defect', character: 'defect',
     hand: [
       { uid: 'ui-amplify', defId: 'amplify', upgraded: true },
       { uid: 'ui-amplify-dual-cast', defId: 'dual_cast', upgraded: false },
@@ -2024,12 +2092,13 @@ await shot('06zphge-amplify-power')
 await page.getByRole('button', { name: /^Dual Cast,/ }).click()
 await page.getByRole('button', { name: /dark slot 1/i }).click()
 await page.locator('.enemy--targeted').click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 11)
+await page.locator('.enemy--targeted').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].hp === 2)
 const amplified = await readState()
 check('Amplify+ visibly boosts Dark Evoke damage without changing its Power-count bonus', () => {
   assert(amplifyLabel.includes('Dark Orb Evoke effects get +5'), amplifyLabel)
   assertEqual(amplified.players[0].darkOrbEvokeBonus, 5)
-  assertEqual(amplified.enemies[0].hp, 11)
+  assertEqual(amplified.enemies[0].hp, 2)
   assertDeepEqual(amplified.players[0].orbs, [null, null, null])
   assertEqual(amplified.players[0].energy, 0)
 })
@@ -5188,9 +5257,7 @@ check('a card whose cost the hand cannot pay is still playable', () => {
   assert(lastCard.block > 0, `and it resolved, giving Block (got ${lastCard.block})`)
 })
 
-// An evoke with nothing to evoke is refused by the engine, and a refusal is
-// reference-equality — so the card must not be clickable in the first place,
-// or the click lands and appears to do nothing at all.
+// Orb cards may be played for no effect when there is nothing to Evoke.
 const emptyEvoke = await page.evaluate(async () => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -5211,9 +5278,9 @@ const emptyEvoke = await page.evaluate(async () => {
   const chaosLabel = document.querySelector('.hand .card')?.getAttribute('aria-label') ?? ''
   return { dualDisabled, recursionDisabled, chaosLabel }
 })
-check('a card that cannot resolve is not offered', () => {
-  assert(emptyEvoke.dualDisabled, 'Dual Cast with no orbs charged should be greyed out')
-  assert(emptyEvoke.recursionDisabled, 'Recursion with no orbs charged should be greyed out')
+check('no-effect Orb cards remain playable and Chaos announces its die mapping', () => {
+  assert(!emptyEvoke.dualDisabled, 'Dual Cast with no Orbs should remain playable')
+  assert(!emptyEvoke.recursionDisabled, 'Recursion with no Orbs should remain playable')
   assert(emptyEvoke.chaosLabel.includes('Lightning on die 1 or 2') &&
     emptyEvoke.chaosLabel.includes('Frost on 3 or 4') && emptyEvoke.chaosLabel.includes('Dark on 5 or 6'),
   'Chaos should announce its full die mapping')

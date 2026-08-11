@@ -728,6 +728,57 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    character: 'defect',
+    hand: [{ uid: 'online-copy-multi-cast', defId: 'multi_cast', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, block: 0,
+    orbs: ['frost', 'frost', null], doubledCardsThisTurn: 1,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  const publishMultiCastCopy = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishMultiCastCopy.ok, 'could not publish the copied Multi-Cast fixture')
+  await a.getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
+  await a.getByText('Choose Energy for Multi-Cast').waitFor()
+  await a.getByRole('button', { name: 'Spend 2' }).click()
+  await a.getByRole('button', { name: /frost slot 1/i }).click()
+  await a.getByText('Choose Orb to evoke 1').waitFor()
+  let multiCastCopyRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = route.request().postDataJSON()
+    body.action.evokeSlots = []
+    body.action.evokeEnemyUids = []
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    multiCastCopyRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  for (let attempt = 0; attempt < 50 && multiCastCopyRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(multiCastCopyRefusalStatus, 409, 'the forged Multi-Cast copy did not reach refusal')
+  await a.getByText('Choose Orb to evoke 1').waitFor()
+  const multiCastCopyConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(multiCastCopyConflict >= 0, 'the refused Multi-Cast copy did not surface as an HTTP conflict')
+  failures.splice(multiCastCopyConflict, 1)
+  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.phase !== 'player'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('a refused X-cost Multi-Cast copy restores its authoritative Orb picker', () => {
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.block, 4)
+    assertDeepEqual(ann.orbs, [null, null, null])
+    assertEqual(liveRoom.run.combat.pendingCardCopy, undefined)
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [
       { uid: 'online-copy-preview-tap', defId: 'double_tap', upgraded: true },
       { uid: 'online-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },

@@ -115,6 +115,10 @@ export type StartTurnAbility = {
   evokeChoice?: EvokeChoice
   /** Living enemies after staged Evokes, for the next Lightning/Dark target. */
   evokeTargets?: { uid: string; label: string }[]
+  /** Orb type for every staged Evoke application; repeated Evokes repeat the type. */
+  evokeOrbs?: OrbType[]
+  /** Repeated Evokes remove one Orb but collect one target per application. */
+  evokeTargetIndex?: number
 }
 
 export type StartTurnChoice = {
@@ -482,6 +486,8 @@ export type PlayContext = {
   invalidShivTarget?: boolean
   /** Internal cursor while a card resolves its ordered evokes. */
   evokeIndex?: number
+  /** Internal target cursor; one removed Orb can apply its Evoke effect repeatedly. */
+  evokeTargetIndex?: number
   /** A queued evoke named an enemy killed by an earlier effect. */
   invalidEvokeTarget?: boolean
   /** A Scry named a card outside the cards it actually revealed. */
@@ -559,6 +565,7 @@ function resolutionContext(
     shivTargetIndex: 0,
     invalidShivTarget: false,
     evokeIndex: 0,
+    evokeTargetIndex: 0,
     invalidEvokeTarget: false,
     invalidScryChoice: false,
     invalidDiscardChoice: false,
@@ -688,9 +695,7 @@ export function cardIsPlayable(
   actor: Player,
   drawCount = actor.draw.length,
 ): boolean {
-  if (def.unplayable || !cardPlayConditionMet(def, state, actor, drawCount)) return false
-  return !(def.effects.some((effect) => effect.kind === 'evoke' || effect.kind === 'recurseOrb') &&
-    actor.orbs.every((orb) => !orb))
+  return !def.unplayable && cardPlayConditionMet(def, state, actor, drawCount)
 }
 
 type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' |
@@ -1362,16 +1367,9 @@ function applyEffect(
       return
     }
     case 'evoke': {
-      for (let i = 0; i < effect.times; i++) {
-        if (actor.orbs.every((orb) => orb == null)) {
-          // Dual Cast evokes twice; with one orb charged the second found
-          // nothing, and said nothing.
-          note(`${actor.name} has no orb left to evoke`)
-          break
-        }
-        evokeOrb(state, actor, context)
-        if (combatIsOver(state)) return
-      }
+      const times = amountOf(effect.times, state, actor, undefined, context)
+      if (times > 0 && actor.orbs.every((orb) => orb == null)) note(`${actor.name} has no orb to evoke`)
+      if (times > 0) evokeOrb(state, actor, context, times)
       return
     }
     case 'recurseOrb': {
@@ -1845,6 +1843,16 @@ function reachesEnemy(
 ): boolean {
   if (!ENEMY_EFFECTS.includes(effect.kind)) return false
   if (effect.kind === 'hitPerExhaust') return !actor || actor.hand === null || actor.hand.length > 1
+  if (effect.kind === 'evoke') {
+    if (!actor) return true
+    const times = typeof effect.times === 'number' ? effect.times : effect.times.base +
+      (effect.times.per ? countOf(effect.times.per, actor, undefined,
+        effect.times.per === 'energySpent' && energySpent === undefined ? 1 : energySpent) : 0)
+    return times > 0 && actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
+  }
+  if (effect.kind === 'recurseOrb') {
+    return !actor || actor.orbs.some((orb) => orb === 'lightning' || orb === 'dark')
+  }
   if (effect.kind !== 'hit' || effect.times === undefined || !actor) return true
   const times = effect.times
   if (typeof times === 'number') return times > 0
@@ -1917,7 +1925,7 @@ function effectEvokePlan(
   let next: EvokeChoice | null = null
   let invalid = false
 
-  const evoke = () => {
+  const evoke = (times = 1) => {
     const options = orbs.flatMap((orb, slot) => orb ? [{ slot, orb }] : [])
     if (options.length === 0) return true
     const slot = slots[index]
@@ -1930,7 +1938,7 @@ function effectEvokePlan(
       invalid = true
       return false
     }
-    chosen.push(picked.orb)
+    chosen.push(...Array<OrbType>(times).fill(picked.orb))
     orbs[slot] = null
     index += 1
     return true
@@ -1967,9 +1975,9 @@ function effectEvokePlan(
         if (open >= 0 && orb) orbs[open] = orb
         continue
       }
-      for (let count = 0; count < effect.times; count++) {
-        if (!evoke()) return { chosen, index, next, invalid, orbs }
-      }
+      const times = typeof effect.times === 'number' ? effect.times : effect.times.base +
+        (effect.times.per ? countOf(effect.times.per, actor, undefined, energySpent) : 0)
+      if (times > 0 && !evoke(times)) return { chosen, index, next, invalid, orbs }
     }
   }
   return { chosen, index, next, invalid, orbs }
@@ -2006,6 +2014,43 @@ export function chosenEvokeOrbs(
   energySpent = 0,
 ): OrbType[] {
   return evokePlan(def, actor, slots, mode, energySpent).chosen
+}
+
+/** Next legal target after applying every already-staged Evoke in sequence. */
+export function evokeTargetProgress(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  slots: readonly number[],
+  targets: readonly (string | null | undefined)[],
+  mode?: number,
+  energySpent = 0,
+): { index: number; options: { uid: string; label: string }[]; complete: boolean; endedCombat: boolean } {
+  const chosen = evokePlan(def, actor, slots, mode, energySpent).chosen
+  const simulation = clone(state)
+  const simulationActor = findPlayer(simulation, actor.id)
+  if (!simulationActor) return { index: 0, options: [], complete: false, endedCombat: false }
+  for (let index = 0; index < chosen.length; index++) {
+    if (combatIsOver(simulation)) return { index, options: [], complete: true, endedCombat: true }
+    const orb = chosen[index]!
+    const target = targets[index]
+    if (orb === 'frost') {
+      if (target !== null) return { index, options: [], complete: false, endedCombat: false }
+      continue
+    }
+    const options = orb === 'lightning'
+      ? lightningTargetOptions(simulation, simulationActor, def.id)
+      : livingEnemies(simulation).map((enemy) => ({
+        uid: enemy.uid, label: enemyLabel(simulation.enemies, enemy),
+      }))
+    if (typeof target !== 'string' || !options.some((option) => option.uid === target)) {
+      return { index, options, complete: false, endedCombat: false }
+    }
+    if (!applyOrbEvokeEffect(simulation, simulationActor, orb, target, def.id)) {
+      return { index, options, complete: false, endedCombat: false }
+    }
+  }
+  return { index: chosen.length, options: [], complete: true, endedCombat: false }
 }
 
 function needsChosenEnemy(
@@ -2191,21 +2236,15 @@ function cardResolutionChoicesAreValid(
       (required === 0 && chosen !== undefined)) return false
   }
 
-  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode, context.energySpent ?? 0)
+  const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode, energySpent)
   if (plan.invalid || plan.next || plan.index !== (context.evokeSlots?.length ?? 0)) return false
   if (plan.chosen.length > 0 && (!context.evokeSlots || !context.evokeEnemyUids)) return false
   if (context.evokeEnemyUids) {
-    if (!context.evokeSlots || context.evokeEnemyUids.length !== plan.chosen.length) return false
-    for (let index = 0; index < plan.chosen.length; index++) {
-      const orb = plan.chosen[index]!
-      const target = context.evokeEnemyUids[index]
-      if (orb === 'frost') {
-        if (target !== null) return false
-      } else if (typeof target !== 'string' ||
-        !orbDamageTargets(state, player, orb, target, def.id)) {
-        return false
-      }
-    }
+    if (!context.evokeSlots || context.evokeEnemyUids.length > plan.chosen.length) return false
+    const targetPlan = evokeTargetProgress(
+      def, state, player, context.evokeSlots, context.evokeEnemyUids, context.mode, energySpent,
+    )
+    if (!targetPlan.complete || targetPlan.index !== context.evokeEnemyUids.length) return false
   }
   return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids, energySpent) &&
     !hasInvalidChosenPlayer(state, def, context.playerId) &&
@@ -2835,10 +2874,13 @@ function startTurnAbilitiesFor(
     }
     let evokeChoice: EvokeChoice | undefined
     let evokeTargets: StartTurnAbility['evokeTargets']
+    let evokeOrbs: OrbType[] = []
+    let evokeTargetIndex: number | undefined
     let evokePlanComplete = false
     let evokeEndedCombat = false
     if (!planningBlocked) {
       const plan = effectEvokePlan(entry.source.effects, planningPlayer, choice?.evokeSlots ?? [])
+      evokeOrbs = plan.chosen
       for (let index = 0; index < plan.chosen.length; index++) {
         const orb = plan.chosen[index]
         if (orb === 'frost') continue
@@ -2846,6 +2888,7 @@ function startTurnAbilitiesFor(
           simulationState, planningPlayer, orb!, choice?.evokeEnemyUids?.[index],
         )
         if (!damageTargets) {
+          evokeTargetIndex = index
           evokeTargets = orb === 'lightning'
             ? lightningTargetOptions(simulationState, planningPlayer)
             : targetOptions()
@@ -2897,7 +2940,7 @@ function startTurnAbilitiesFor(
       ...entry.ability, targets, enemyTargetStale,
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
-      evokeChoice, evokeTargets,
+      evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex,
     }
   })
 }
@@ -2934,11 +2977,19 @@ export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
       continue
     }
     const pendingEvokeTarget = abilities.find((ability) =>
-      !ability.evokeChoice && ability.evokeTargets?.[0])
+      ability.evokeTargetIndex !== undefined && ability.evokeTargets?.[0])
     if (pendingEvokeTarget?.evokeTargets?.[0]) {
       const choice = choices.find((candidate) => candidate.id === pendingEvokeTarget.id)!
-      choice.evokeEnemyUids![choice.evokeEnemyUids!.length - 1] = pendingEvokeTarget.evokeTargets[0].uid
+      choice.evokeEnemyUids![pendingEvokeTarget.evokeTargetIndex!] = pendingEvokeTarget.evokeTargets[0].uid
       lastEnemyUid = pendingEvokeTarget.evokeTargets[0].uid
+      continue
+    }
+    const missingFrost = abilities.find((ability) => ability.evokeOrbs?.some((orb, index) =>
+      orb === 'frost' && index >= (choices.find((choice) => choice.id === ability.id)?.evokeEnemyUids?.length ?? 0)))
+    if (missingFrost?.evokeOrbs) {
+      const choice = choices.find((candidate) => candidate.id === missingFrost.id)!
+      choice.evokeEnemyUids!.push(...missingFrost.evokeOrbs
+        .slice(choice.evokeEnemyUids!.length).map(() => null))
       continue
     }
     const pending = abilities.find((ability) => ability.evokeChoice)
@@ -2999,12 +3050,14 @@ function validStartTurnEvokeChoice(
   const slots = choice.evokeSlots ?? []
   const targets = choice.evokeEnemyUids ?? []
   const plan = effectEvokePlan(source.effects, player, slots)
-  if (plan.invalid || plan.index !== slots.length || plan.chosen.length !== targets.length) {
+  if (plan.invalid || plan.index !== slots.length || targets.length > plan.chosen.length) {
     return false
   }
   const simulation = clone(state)
   const actor = findPlayer(simulation, player.id)!
   for (let index = 0; index < plan.chosen.length; index++) {
+    if (combatIsOver(simulation)) return targets.length === index
+    if (index >= targets.length) return false
     const orb = plan.chosen[index]!
     if (orb === 'frost') {
       if (targets[index] !== null) return false
@@ -3018,7 +3071,7 @@ function validStartTurnEvokeChoice(
         (actor.orbEvokeBonus ?? 0))
     }
   }
-  return !plan.next || livingEnemies(simulation).length === 0
+  return targets.length === plan.chosen.length && (!plan.next || livingEnemies(simulation).length === 0)
 }
 
 function continueStartTurn(
@@ -3568,6 +3621,40 @@ function channelOrb(
   return true
 }
 
+function applyOrbEvokeEffect(
+  state: CombatState,
+  actor: Player,
+  orb: OrbType,
+  chosenTarget: string | null | undefined,
+  sourceCardId?: string,
+): boolean {
+  if (orb === 'lightning') {
+    const targets = lightningDamageTargets(state, actor, chosenTarget, sourceCardId)
+    if (!targets) return false
+    for (const target of targets) {
+      damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
+    }
+  } else if (orb === 'frost') {
+    const before = actor.block
+    grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
+    if (actor.block > before) {
+      state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
+    }
+  } else {
+    const target = livingEnemies(state).find((enemy) => enemy.uid === chosenTarget)
+    if (!target) return false
+    // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
+    // time and is not boosted by card effects (rulebook FAQ, p.18).
+    damageEnemyLogged(
+      state,
+      target,
+      3 + actor.powers.length + (actor.orbEvokeBonus ?? 0) + (actor.darkOrbEvokeBonus ?? 0),
+      `${actor.name}'s Dark orb`,
+    )
+  }
+  return true
+}
+
 /**
  * Evokes one orb and applies its effect.
  *
@@ -3575,7 +3662,7 @@ function channelOrb(
  * rotation (p.16) — and the atomic context carries one slot and, where needed,
  * one enemy for each evoke.
  */
-function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbType | null {
+function evokeOrb(state: CombatState, actor: Player, context: PlayContext, times = 1): OrbType | null {
   // The slot has to be a real array INDEX, not any property key. These values
   // arrive as JSON from a client, and `orbs['length']` was truthy — it evoked
   // a non-existent Dark orb for free damage and then assigned null to
@@ -3594,38 +3681,16 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext): OrbT
   actor.orbs[slot] = null
   context.evokeIndex = index + 1
 
-  const fallbackEnemy = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
-  const chosenTarget = context.evokeEnemyUids?.[index] ??
-    (orb === 'lightning' && lightningTargetsRows(actor, context.sourceCardId) && fallbackEnemy
-      ? lightningRowTarget(fallbackEnemy.row)
-      : fallbackEnemy?.uid)
-  if (orb === 'lightning') {
-    const targets = lightningDamageTargets(state, actor, chosenTarget, context.sourceCardId)
-    if (!targets) {
-      if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else {
-      for (const target of targets) {
-        damageEnemyLogged(state, target, 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
-      }
-    }
-  } else if (orb === 'frost') {
-    const before = actor.block
-    grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
-    if (actor.block > before) {
-      state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
-    }
-  } else {
-    // Dark: 3 damage plus 1 for each Power in play. That bonus is fixed at evoke
-    // time and is not boosted by card effects (rulebook FAQ, p.18).
-    const target = livingEnemies(state).find((enemy) => enemy.uid === chosenTarget)
-    if (!target) {
-      if (livingEnemies(state).length > 0) context.invalidEvokeTarget = true
-    } else damageEnemyLogged(
-      state,
-      target,
-      3 + actor.powers.length + (actor.orbEvokeBonus ?? 0) + (actor.darkOrbEvokeBonus ?? 0),
-      `${actor.name}'s Dark orb`,
-    )
+  for (let repeat = 0; repeat < times && !combatIsOver(state); repeat++) {
+    const targetIndex = context.evokeTargetIndex ?? 0
+    context.evokeTargetIndex = targetIndex + 1
+    const fallbackEnemy = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0] ?? livingEnemies(state)[0]
+    const chosenTarget = context.evokeEnemyUids?.[targetIndex] ??
+      (orb === 'lightning' && lightningTargetsRows(actor, context.sourceCardId) && fallbackEnemy
+        ? lightningRowTarget(fallbackEnemy.row)
+        : fallbackEnemy?.uid)
+    if (!applyOrbEvokeEffect(state, actor, orb, chosenTarget, context.sourceCardId) &&
+      livingEnemies(state).length > 0) context.invalidEvokeTarget = true
   }
   return orb
 }

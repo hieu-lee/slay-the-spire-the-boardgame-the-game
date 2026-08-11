@@ -71,13 +71,13 @@ check('Dual Cast evokes twice', () => {
     [enemy({ hp: 20 })],
   )
   const next = playCard(state, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(next.enemies[0].hp, 16, 'two Lightning evokes deal 2 damage each')
-  assertDeepEqual(next.players[0].orbs, [null, null, null], 'both orbs are spent')
+  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'only the chosen Orb is spent')
 })
 
-check('each evoke chooses its own Orb and enemy', () => {
+check('each repeated evoke of the chosen Orb can choose its own enemy', () => {
   const dual = instance('dual_cast')
   const state = combat(
     [player({ hand: [dual], orbs: ['lightning', 'frost', 'dark'] })],
@@ -86,11 +86,11 @@ check('each evoke chooses its own Orb and enemy', () => {
   const next = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [2, 0],
+    evokeSlots: [2],
     evokeEnemyUids: ['e2', 'e1'],
   })
-  assertDeepEqual(next.players[0].orbs, [null, 'frost', null], 'the chosen Dark and Lightning are spent')
-  assertDeepEqual(next.enemies.map((target) => target.hp), [18, 17], 'each damage Orb uses its own enemy')
+  assertDeepEqual(next.players[0].orbs, ['lightning', 'frost', null], 'only the chosen Dark is spent')
+  assertDeepEqual(next.enemies.map((target) => target.hp), [17, 17], 'each Dark evoke uses its own enemy')
 })
 
 check('a forced full-board channel uses the chosen Orb slot', () => {
@@ -180,7 +180,7 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
   }
   for (const context of [
     {},
-    { evokeSlots: [0, 1] },
+    { evokeSlots: [0] },
     { evokeEnemyUids: ['e1', 'e2'] },
   ]) {
     const { dual, state } = make()
@@ -189,9 +189,9 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
     }) === state, `accepted incomplete plan ${JSON.stringify(context)}`)
   }
   for (const context of [
-    { evokeSlots: [0, 0], evokeEnemyUids: ['e1', 'e2'] },
-    { evokeSlots: [0, 1], evokeEnemyUids: ['e1'] },
-    { evokeSlots: [0, 1], evokeEnemyUids: [null, 'e2'] },
+    { evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e2'] },
+    { evokeSlots: [0], evokeEnemyUids: ['e1'] },
+    { evokeSlots: [0], evokeEnemyUids: [null, 'e2'] },
   ]) {
     const { dual, state } = make()
     assert(playCard(state, 'p1', dual.uid, {
@@ -203,7 +203,7 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
   const stale = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [0, 1],
+    evokeSlots: [0],
     evokeEnemyUids: ['e1', 'e1'],
   })
   assert(stale === state, 'a later evoke silently retargeted after the first defeated its enemy')
@@ -216,15 +216,18 @@ check('a winning evoke ends combat before a later damaging evoke resolves', () =
     [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
     [enemy({ uid: 'e1', hp: 2, maxHp: 2 })],
   )
+  assert(playCard(state, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'forged'],
+  }) === state, 'a surplus post-lethal target was accepted')
   const next = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [0, 1],
-    evokeEnemyUids: ['e1', 'e1'],
+    evokeSlots: [0],
+    evokeEnemyUids: ['e1'],
   })
   assert(next !== state, 'the winning play was rolled back when no target remained')
   assertEqual(next.phase, 'won')
-  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'the later Orb resolved after combat ended')
+  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'only the chosen Orb is removed')
 })
 
 // p.16: Lightning evokes for 2, Frost for 1 Block, Dark for 3 plus one per Power.
@@ -232,15 +235,15 @@ check('each orb type evokes for its printed effect', () => {
   const dual = instance('dual_cast')
   const frost = playCard(
     combat([player({ hand: [dual], orbs: ['frost', null, null] })], [enemy()]),
-    'p1', dual.uid, { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null] },
+    'p1', dual.uid, { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null, null] },
   )
-  assertEqual(frost.players[0].block, 1, 'Frost evokes for 1 Block')
+  assertEqual(frost.players[0].block, 2, 'Dual Cast applies Frost Evoke twice')
 
   const darkState = combat([player({ hand: [dual], orbs: ['dark', null, null] })], [enemy({ hp: 20 })])
   const dark = playCard(darkState, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
-  assertEqual(dark.enemies[0].hp, 17, 'Dark evokes for 3 with no Powers in play')
+  assertEqual(dark.enemies[0].hp, 14, 'Dual Cast applies Dark Evoke twice')
 })
 
 check('a Dark orb evokes for 3 plus one per Power in play', () => {
@@ -257,16 +260,17 @@ check('a Dark orb evokes for 3 plus one per Power in play', () => {
     [enemy({ hp: 20 })],
   )
   const next = playCard(state, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
-  assertEqual(next.enemies[0].hp, 15, '3 base plus 1 for each of the two Powers')
+  assertEqual(next.enemies[0].hp, 10, 'each Evoke is 3 base plus 1 for each of the two Powers')
 })
 
-check('evoking an empty board does nothing rather than throwing', () => {
+check('an evoke card can be played on an empty board and simply does nothing', () => {
   const dual = instance('dual_cast')
   const next = playCard(combat([player({ hand: [dual] })], [enemy()]), 'p1', dual.uid, {
     enemyUid: 'e1', playerId: 'p1',
   })
+  assertEqual(next.players[0].hand.length, 0)
   assertEqual(next.enemies[0].hp, 20, 'no orbs, no damage')
   assertDeepEqual(next.players[0].orbs, [null, null, null])
 })

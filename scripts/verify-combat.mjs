@@ -11,6 +11,7 @@ import {
   endPlayerTurn,
   endTurnAbilities,
   enemyTurn,
+  evokeTargetProgress,
   livingEnemies,
   lightningRowTarget,
   nextEvokeChoice,
@@ -1565,16 +1566,16 @@ check('a bogus uid does not stand in for a real one when paying a cost', () => {
   )
 })
 
-check('an evoke with no orbs is refused rather than wasted', () => {
+check('an evoke card with no Orbs can still be played for no effect', () => {
   const card = instance('dual_cast')
   const state = combat(
     [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: [null, null, null] })],
     [makeEnemy()],
   )
-  assert(
-    playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: 'p1' }) === state,
-    'it would otherwise spend the Energy, discard the card and do nothing',
-  )
+  const played = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+  assert(played !== state)
+  assertEqual(played.players[0].energy, 2)
+  assertEqual(played.players[0].discard.at(-1)?.uid, card.uid)
 })
 
 // An attack that cannot land should not send the player hunting for a target.
@@ -1617,9 +1618,9 @@ check('an evoke card hits the exact target carried with its Orb choice', () => {
     enemyUid: null,
     playerId: 'p1',
     evokeSlots: [0],
-    evokeEnemyUids: ['e2'],
+    evokeEnemyUids: ['e2', 'e2'],
   })
-  assertEqual(next.enemies[1].hp, 18, 'the chosen enemy took the orb')
+  assertEqual(next.enemies[1].hp, 16, 'the chosen enemy took both Evoke effects')
   assertEqual(next.enemies[0].hp, 20, 'and the other did not')
 })
 
@@ -2184,6 +2185,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'machine_learning', powers: [1, 1] },
     { id: 'electrodynamics', powers: [1, 1], orbCount: [2, 3] },
     { id: 'fission', exhaust: [1, 1] },
+    { id: 'multi_cast', energySpent: [0, 0], energy: [E, E] },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
     { id: 'bludgeon', enemyHp: [13, 10] },
@@ -3082,6 +3084,9 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
   assertDeepEqual(finalChoices[0].evokeSlots, [0],
     'Storm+ still asked for a second Orb after the first Evoke won combat')
   assertDeepEqual(finalChoices[0].evokeEnemyUids, ['e1'])
+  assertEqual(resolveStartPlayerTurn(finalPrepared, [{
+    ...finalChoices[0], evokeEnemyUids: ['e1', 'forged'],
+  }]), finalPrepared, 'Start-of-Turn accepted a surplus post-lethal Evoke target')
   const finalResolved = resolveStartPlayerTurn(finalPrepared, finalChoices)
   assertEqual(finalResolved.phase, 'won')
   assert(finalResolved.enemies[0].dead)
@@ -3358,14 +3363,18 @@ check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order
   }
 })
 
-check('a lethal first evoke ends combat before Dual Cast removes the next Orb', () => {
+check('a lethal first repeated Evoke ends combat after removing only the chosen Orb', () => {
   const dualCast = instance('dual_cast')
   const state = combat([
     makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', 'frost', null], block: 0 }),
   ], [makeEnemy({ hp: 2, maxHp: 2 })])
+  assertEqual(playCard(state, 'p1', dualCast.uid, {
+    enemyUid: 'e1', playerId: null,
+    evokeSlots: [0], evokeEnemyUids: ['e1', 'forged'],
+  }), state, 'surplus targets after a lethal Evoke were accepted')
   const won = playCard(state, 'p1', dualCast.uid, {
     enemyUid: 'e1', playerId: null,
-    evokeSlots: [0, 1], evokeEnemyUids: ['e1', null],
+    evokeSlots: [0], evokeEnemyUids: ['e1'],
   })
   assertEqual(won.phase, 'won')
   assertDeepEqual(won.players[0].orbs, [null, 'frost', null])
@@ -3376,7 +3385,7 @@ check('a lethal first evoke ends combat before Dual Cast removes the next Orb', 
     makePlayer({ name: 'Defect', character: 'defect', hand: [rainbow], orbs: ['lightning', 'frost', 'dark'] }),
   ], [makeEnemy({ hp: 2, maxHp: 2 })]), 'p1', rainbow.uid, {
     enemyUid: null, playerId: null,
-    evokeSlots: [0, 1, 2], evokeEnemyUids: ['e1', null, 'e1'],
+    evokeSlots: [0, 1, 2], evokeEnemyUids: ['e1'],
   })
   assertEqual(forced.phase, 'won')
   assertDeepEqual(forced.players[0].orbs, [null, 'frost', 'dark'])
@@ -4158,8 +4167,10 @@ check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Ener
   const noOrbPrepared = preparePlayerTurn(noOrbState)
   const [noOrbAbility] = startTurnAbilities(noOrbPrepared)
   const noOrbResolved = resolveStartPlayerTurn(noOrbPrepared, [{ id: noOrbAbility.id, shivEnemyUids: [] }])
-  assertEqual(noOrbResolved.phase, 'player', 'an impossible Evoke cannot strand Mayhem')
-  assertEqual(noOrbResolved.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
+  assertEqual(noOrbResolved.phase, 'start', 'Mayhem must still play a no-effect Evoke card')
+  const noOrbPlayed = playCard(noOrbResolved, 'p1', emptyDualCast.uid, { enemyUid: null, playerId: null })
+  assertEqual(noOrbPlayed.phase, 'player')
+  assertEqual(noOrbPlayed.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
 
   const madness = instance('madness')
   const forcedStrike = instance('strike_ironclad')
@@ -4320,8 +4331,8 @@ check('Consume, Double Energy, Streamline, and Meteor Strike use their printed b
       }),
     ], [makeEnemy({ hp: 20, maxHp: 20 })])
     const context = orb === 'frost'
-      ? { enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: [null, null] }
-      : { enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'] }
+      ? { enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'] }
     const evoked = playCard(state, 'p1', dual.uid, context)
     if (orb === 'frost') assertEqual(evoked.players[0].block, expected)
     else assertEqual(evoked.enemies[0].hp, expected)
@@ -4351,7 +4362,7 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
     character: 'defect', hand: [dual], energy: 1,
     orbs: ['lightning', 'lightning', null], orbEndTurnBonus: 2,
   })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Defragment must not increase Evoke damage')
 
@@ -4389,7 +4400,7 @@ check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
   })], [makeEnemy({ hp: 20, maxHp: 20 })])
   evokeState.players[0].lightningEndTurnBonus = 2
   const evoked = playCard(evokeState, 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
 })
@@ -4430,12 +4441,12 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     orbs: ['lightning', 'lightning', null],
   })], enemies())
   const evoked = playCard(evokeState, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0],
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
   })
   assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 18, 18, 16])
   assertEqual(playCard(evokeState, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1], evokeEnemyUids: ['front-a', 'back'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['front-a', 'back'],
   }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
 
   const plainDual = instance('dual_cast')
@@ -4443,7 +4454,7 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     character: 'defect', hand: [plainDual], energy: 1, orbs: ['lightning', 'lightning', null],
   })], enemies())
   assertEqual(playCard(plain, 'p1', plainDual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0],
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
   }), plain, 'a forged row target worked without Electrodynamics')
 
@@ -4507,6 +4518,66 @@ check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning 
     'the deterministic start path did not resolve an Electrodynamics row choice')
 })
 
+check('Start-of-Turn repeated Evokes remove one Orb and retarget each application', () => {
+  CARDS.fixture_repeated_start_evoke = {
+    id: 'fixture_repeated_start_evoke', name: 'Repeated Evoke Fixture', owner: 'defect',
+    type: 'power', rarity: 'rare', cost: 0, trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'evoke', times: 2 }],
+  }
+  try {
+    const roundEnd = {
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['dark', 'frost', null], draw: [],
+      })], [
+        makeEnemy({ uid: 'first', hp: 4, maxHp: 4 }),
+        makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+      ]),
+      phase: 'roundEnd', turn: 1,
+    }
+    const prepared = preparePlayerTurn(roundEnd)
+    const choices = defaultStartTurnChoices(prepared)
+    assertDeepEqual(choices[0].evokeSlots, [0])
+    assertDeepEqual(choices[0].evokeEnemyUids, ['first', 'second'])
+    const resolved = resolveStartPlayerTurn(prepared, choices)
+    assertEqual(resolved.phase, 'player')
+    assertDeepEqual(resolved.players[0].orbs, [null, 'frost', null])
+    assert(resolved.enemies[0].dead)
+    assertEqual(resolved.enemies[1].hp, 16)
+
+    const lethalPrepared = preparePlayerTurn({
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['dark', null, null], draw: [],
+      })], [makeEnemy({ uid: 'only', hp: 4, maxHp: 4 })]),
+      phase: 'roundEnd', turn: 1,
+    })
+    const lethalChoices = defaultStartTurnChoices(lethalPrepared)
+    assertDeepEqual(lethalChoices[0].evokeSlots, [0])
+    assertDeepEqual(lethalChoices[0].evokeEnemyUids, ['only'])
+    const lethalResolved = resolveStartPlayerTurn(lethalPrepared, lethalChoices)
+    assertEqual(lethalResolved.phase, 'won')
+    assertDeepEqual(lethalResolved.players[0].orbs, [null, null, null])
+
+    const frostPrepared = preparePlayerTurn({
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['frost', null, null], draw: [],
+      })], [makeEnemy()]),
+      phase: 'roundEnd', turn: 1,
+    })
+    const frostChoices = defaultStartTurnChoices(frostPrepared)
+    assertDeepEqual(frostChoices[0].evokeSlots, [0])
+    assertDeepEqual(frostChoices[0].evokeEnemyUids, [null, null])
+    const frostResolved = resolveStartPlayerTurn(frostPrepared, frostChoices)
+    assertEqual(frostResolved.phase, 'player')
+    assertEqual(frostResolved.players[0].block, 2)
+    assertDeepEqual(frostResolved.players[0].orbs, [null, null, null])
+  } finally {
+    delete CARDS.fixture_repeated_start_evoke
+  }
+})
+
 check('Fission removes or Evokes every chosen Orb, then pays once per Orb', () => {
   const draw = [instance('strike_defect'), instance('defend_defect'), instance('zap')]
   const base = instance('fission')
@@ -4544,6 +4615,104 @@ check('Fission removes or Evokes every chosen Orb, then pays once per Orb', () =
   assertEqual(evoked.players[0].block, 1)
   assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 17])
   assert(evoked.players[0].exhaust.some((card) => card.uid === upgraded.uid))
+})
+
+check('Multi-Cast removes one Orb and repeats only that Orb X or X+1 times', () => {
+  const idle = instance('multi_cast')
+  const idleState = combat([makePlayer({
+    character: 'defect', hand: [idle], energy: 3, orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertEqual(cardNeedsEnemy(CARDS.multi_cast, idleState.players[0], true, 0), false)
+  const spentZero = playCard(idleState, 'p1', idle.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertDeepEqual(spentZero.players[0].orbs, ['dark', null, null])
+  assertEqual(spentZero.players[0].energy, 3)
+  assertEqual(spentZero.enemies[0].hp, 20)
+
+  const base = instance('multi_cast')
+  const state = combat([makePlayer({
+    character: 'defect', hand: [base], energy: 4, orbs: ['dark', 'frost', null],
+  })], [
+    makeEnemy({ uid: 'first', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertEqual(cardNeedsEnemy(CARDS.multi_cast, state.players[0], true, 3), true)
+  assertDeepEqual(chosenEvokeOrbs(CARDS.multi_cast, state.players[0], [0], undefined, 3),
+    ['dark', 'dark', 'dark'])
+  const repeated = playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, energySpent: 3, evokeSlots: [0],
+    evokeEnemyUids: ['first', 'second', 'second'],
+  })
+  assertDeepEqual(repeated.players[0].orbs, [null, 'frost', null])
+  assertEqual(repeated.players[0].energy, 1)
+  assertDeepEqual(repeated.enemies.map((enemy) => enemy.hp), [17, 14])
+
+  const upgraded = instance('multi_cast', true)
+  const upgradedState = combat([makePlayer({
+    character: 'defect', hand: [upgraded], energy: 0, orbs: ['frost', null, null],
+  })], [makeEnemy()])
+  assert(nextEvokeChoice(faceOf(CARDS.multi_cast, true), upgradedState.players[0], [], undefined, 0))
+  const plusOne = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [0], evokeEnemyUids: [null],
+  })
+  assertDeepEqual(plusOne.players[0].orbs, [null, null, null])
+  assertEqual(plusOne.players[0].block, 1)
+
+  const lethal = instance('multi_cast')
+  const lethalState = combat([makePlayer({
+    character: 'defect', hand: [lethal], energy: 2, orbs: ['dark', null, null],
+  })], [
+    makeEnemy({ uid: 'doomed', hp: 3, maxHp: 3 }),
+    makeEnemy({ uid: 'survivor', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertDeepEqual(evokeTargetProgress(
+    CARDS.multi_cast, lethalState, lethalState.players[0], [0], ['doomed'], undefined, 2,
+  ).options.map((target) => target.uid), ['survivor'])
+  assertEqual(playCard(lethalState, 'p1', lethal.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0],
+    evokeEnemyUids: ['doomed', 'doomed'],
+  }), lethalState, 'a later Evoke targeted an enemy defeated by the first')
+  const retargeted = playCard(lethalState, 'p1', lethal.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0],
+    evokeEnemyUids: ['doomed', 'survivor'],
+  })
+  assertDeepEqual(retargeted.enemies.map((enemy) => enemy.hp), [0, 17])
+
+  const finale = instance('multi_cast')
+  const finaleState = combat([makePlayer({
+    character: 'defect', hand: [finale], energy: 2, orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 3, maxHp: 3 })])
+  const won = playCard(finaleState, 'p1', finale.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
+  assertEqual(won.phase, 'won', 'lethal repeated Evokes demanded targets after combat ended')
+})
+
+check('a copied Multi-Cast validates choices against its original Energy payment', () => {
+  const card = instance('multi_cast', true)
+  const state = combat([makePlayer({
+    character: 'defect', energy: 0, orbs: ['dark', 'frost', null],
+  })], [
+    makeEnemy({ uid: 'first', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card, energySpent: 2, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Echo Form'],
+  }
+
+  assertEqual(playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [], evokeEnemyUids: [],
+  }), state, 'a forged zero-Energy context bypassed the authoritative three Evokes')
+  const copied = playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [0],
+    evokeEnemyUids: ['first', 'second', 'second'],
+  })
+  assertDeepEqual(copied.players[0].orbs, [null, 'frost', null])
+  assertDeepEqual(copied.enemies.map((enemy) => enemy.hp), [17, 14])
+  assertEqual(copied.phase, 'player')
 })
 
 check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {
@@ -4713,15 +4882,15 @@ check('Amplify boosts only Dark Orb Evoke damage', () => {
   let state = combat([makePlayer({
     character: 'defect', hand: [amplify, consume, dual], energy: 4,
     orbs: ['dark', null, null],
-  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
   state = playCard(state, 'p1', amplify.uid, { enemyUid: null, playerId: null })
   state = playCard(state, 'p1', consume.uid, { enemyUid: null, playerId: null })
   assertEqual(state.players[0].darkOrbEvokeBonus, 5)
   assertEqual(state.players[0].orbEvokeBonus, 1)
   const dark = playCard(state, 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
-  assertEqual(dark.enemies[0].hp, 9,
+  assertEqual(dark.enemies[0].hp, 8,
     'Dark combines its printed damage, both Powers, Consume, and Amplify+')
 
   for (const orb of ['lightning', 'frost']) {
@@ -4731,8 +4900,8 @@ check('Amplify boosts only Dark Orb Evoke damage', () => {
     })], [makeEnemy({ hp: 20, maxHp: 20 })])
     unaffectedState.players[0].darkOrbEvokeBonus = 5
     const context = orb === 'frost'
-      ? { enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: [null, null] }
-      : { enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'] }
+      ? { enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'] }
     const evoked = playCard(unaffectedState, 'p1', card.uid, context)
     if (orb === 'frost') assertEqual(evoked.players[0].block, 2)
     else assertEqual(evoked.enemies[0].hp, 16)
