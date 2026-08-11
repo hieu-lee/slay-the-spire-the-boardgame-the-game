@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { Amount, CardDef } from '../game/cards.ts'
+import type { Amount, CardDef, Effect } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
+import type { StatusIconName } from './Icon.tsx'
+import { statusIconPath } from './icons.ts'
 
 type PowerRowProps = { powers: CardInstance[] }
 
@@ -16,13 +18,11 @@ const ZOOM_HEIGHT = ZOOM_WIDTH * (4 / 3)
 const MARGIN = 8
 
 /**
- * Powers in play, as the miniature face-up cards they physically are.
+ * Powers in play, as compact effect icons beside the other combat statuses.
  *
- * p.12: a Power is "placed face up in front of you". Everything else on the
- * board is a symbol or a piece of art, so a Power rendered as its own name in a
- * text pill was the one status that read like a web page rather than a table.
- * The scan carries its own rules text, so enlarging it beats printing a second
- * copy of that text in prose beside it.
+ * The digital game's played Powers become borderless effect pictograms near
+ * HP, rather than unreadable miniature cards. Hover, focus, or click still
+ * enlarges the full board-game card when the player needs its exact rules.
  */
 /**
  * Only one enlarged card exists at a time, across every seat on the board.
@@ -73,7 +73,10 @@ export function PowerRow({ powers }: PowerRowProps) {
 
   // A pinned card must not outlive the Power that opened it.
   useEffect(() => {
-    if (zoom && !powers.some((card) => card.uid === zoom.uid)) setZoom(null)
+    if (zoom && !powers.some((card) => card.uid === zoom.uid)) {
+      releaseZoom(close.current)
+      setZoom(null)
+    }
   }, [powers, zoom])
 
   // While a card is pinned, Escape has to work from anywhere and the card must
@@ -176,22 +179,9 @@ export function PowerRow({ powers }: PowerRowProps) {
                   }
                 }}
               >
-                <img
-                  className="power__art"
-                  src={cardImagePath(def, card.upgraded)}
-                  alt=""
-                  loading="lazy"
-                  onError={(event) => {
-                    // Missing scan: fall back to the name rather than a broken
-                    // image, the same way Card does.
-                    event.currentTarget.style.display = 'none'
-                  }}
-                />
-                <span className="power__fallback" aria-hidden="true">
-                  {def.name}
-                </span>
+                <PowerGlyph def={def} />
                 {countdown ? (
-                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{countdown.cubes}</span>
+                  <span className="power__counter" aria-hidden="true">{card.counter ?? 0}/{countdown.cubes}</span>
                 ) : null}
               </button>
             </li>
@@ -213,6 +203,59 @@ export function PowerRow({ powers }: PowerRowProps) {
           )
         : null}
     </>
+  )
+}
+
+type PowerGlyphName = StatusIconName
+
+const EFFECT_GLYPHS: Partial<Record<Effect['kind'], PowerGlyphName>> = {
+  block: 'block',
+  gainCardBlockBonus: 'block',
+  gainStrength: 'strength',
+  poison: 'poison',
+  gainHitPoison: 'poison',
+  gainShiv: 'shiv',
+  gainShivDamageBonus: 'shiv',
+  gainEnergy: 'energy',
+  draw: 'draw',
+  drawAndPlayFree: 'draw',
+  channel: 'orb',
+  gainOrbSlots: 'orb',
+  gainOrbEvokeBonus: 'orb',
+  gainOrbEndTurnBonus: 'orb',
+  damage: 'attack',
+  countdownDamage: 'aoe',
+  applyWeak: 'weak',
+  applyVulnerable: 'vulnerable',
+}
+
+/** Pick the printed symbol that best describes what this persistent effect does. */
+export function powerGlyph(def: CardDef): PowerGlyphName {
+  if (def.corruptSkills) return 'burn'
+  if (def.retainBlock) return 'block'
+  for (const effect of def.effects) {
+    const glyph = EFFECT_GLYPHS[effect.kind]
+    if (glyph) return glyph
+  }
+  return 'power'
+}
+
+function PowerGlyph({ def }: { def: CardDef }) {
+  const fallback = powerGlyph(def)
+  return (
+    <img
+      className="icon icon--status"
+      src={`/assets/power-icons/${def.id}.png`}
+      width="22"
+      height="22"
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      onError={(event) => {
+        event.currentTarget.onerror = null
+        event.currentTarget.src = statusIconPath(fallback)
+      }}
+    />
   )
 }
 

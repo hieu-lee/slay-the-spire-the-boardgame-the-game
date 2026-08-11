@@ -48,7 +48,7 @@ import { Card } from './Card.tsx'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
-import { TokenRow } from './TokenRow.tsx'
+import { OrbRow, TokenRow } from './TokenRow.tsx'
 import { healthBand, strikeClass } from './board-signals.ts'
 
 type CombatScreenProps = {
@@ -329,7 +329,11 @@ function revealViewerRow(board: HTMLElement | null, row: HTMLElement | null) {
   if (actors.length > 0) {
     const left = Math.min(...actors.map((actor) => actor.getBoundingClientRect().left))
     const right = Math.max(...actors.map((actor) => actor.getBoundingClientRect().right))
-    board.scrollLeft += left - boardBox.left - (board.clientWidth - (right - left)) / 2
+    const viewer = row.querySelector<HTMLElement>('.seat--viewer')?.getBoundingClientRect()
+    const target = right - left <= board.clientWidth || !viewer
+      ? { left, width: right - left }
+      : { left: viewer.left, width: viewer.width }
+    board.scrollLeft += target.left - boardBox.left - (board.clientWidth - target.width) / 2
   }
 }
 
@@ -869,7 +873,7 @@ export function CombatScreen({
   }, [state.log.length])
   const bosses = state.enemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = state.enemies.filter((enemy) => !enemy.isBoss)
-  const stageGap = state.players.length >= 3 ? 8 : 10
+  const stageGap = state.players.length >= 3 ? 8.5 : 10
 
   // With a full party the board can outgrow the viewport. Rather than shrink
   // everything, keep the row the player actually controls on screen.
@@ -2428,9 +2432,9 @@ export function CombatScreen({
         aria-label="Combat board"
         style={{
           '--stage-width': `${Math.max(48, (state.players.length + state.enemies.length) * stageGap + 4)}rem`,
-          '--stage-mobile-width': `${Math.max(22, (state.players.length + state.enemies.length) * 3.25 + 1.5)}rem`,
+          '--stage-mobile-width': `${Math.max(22, (state.players.length + state.enemies.length) * stageGap + 1.5)}rem`,
           '--stage-gap': `${stageGap}rem`,
-          '--stage-actor-width': `${state.players.length >= 3 ? 7.5 : 9}rem`,
+          '--stage-actor-width': `${state.players.length >= 3 ? 8 : 9}rem`,
         } as React.CSSProperties}
       >
         <aside className="party-rail" aria-hidden="true">
@@ -2540,17 +2544,6 @@ export function CombatScreen({
                           {occupant.hp}/{occupant.maxHp}
                         </span>
                       </span>
-                      <TokenRow
-                        orbs={occupant.character === 'defect'
-                          ? occupant.orbs
-                          : occupant.orbs.filter((orb) => orb !== null)}
-                        block={occupant.block}
-                        strength={occupant.strength}
-                        vulnerable={occupant.vulnerable}
-                        weak={occupant.weak}
-                        shivs={occupant.shivs}
-                        miracles={occupant.miracles}
-                      />
                       <span className="seat__meta">
                         {occupant.strengthLossAtEndOfTurn > 0 ? (
                           <span className="seat__pending">
@@ -2581,8 +2574,23 @@ export function CombatScreen({
                           <span className={`stance stance--${occupant.stance}`}>{occupant.stance}</span>
                         ) : null}
                       </span>
+                      <OrbRow
+                        orbs={occupant.character === 'defect'
+                          ? occupant.orbs
+                          : occupant.orbs.filter((orb) => orb !== null)}
+                      />
                     </button>
-                    <PowerRow powers={occupant.powers} />
+                    <div className="seat__status-strip">
+                      <TokenRow
+                        block={occupant.block}
+                        strength={occupant.strength}
+                        vulnerable={occupant.vulnerable}
+                        weak={occupant.weak}
+                        shivs={occupant.shivs}
+                        miracles={occupant.miracles}
+                      />
+                      <PowerRow powers={occupant.powers} />
+                    </div>
                   </>
                 ) : (
                   <span className="seat seat--empty">empty row</span>
