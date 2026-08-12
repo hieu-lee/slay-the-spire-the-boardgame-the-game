@@ -348,16 +348,29 @@ function enemyTokensApplied(
   }
 }
 
-function triggerEnemyDeathAbility(state: CombatState, enemy: Enemy): void {
+function triggerEnemyDeath(state: CombatState, enemy: Enemy): void {
   const ability = enemyDef(enemy.defId).ability
-  if (ability?.kind !== 'sporeCloud') return
   const name = enemyLabel(state.enemies, enemy)
-  for (const target of playersInRowOf(state, enemy)) {
-    const before = target.vulnerable
-    target.vulnerable = gainVulnerable(target.vulnerable, ability.vulnerable)
-    if (target.vulnerable > before) {
-      state.log = [...state.log, `${name}'s Spore Cloud left ${target.name} vulnerable`]
+  if (ability?.kind === 'sporeCloud') {
+    for (const target of playersInRowOf(state, enemy)) {
+      const before = target.vulnerable
+      target.vulnerable = gainVulnerable(target.vulnerable, ability.vulnerable)
+      if (target.vulnerable > before) {
+        state.log = [...state.log, `${name}'s Spore Cloud left ${target.name} vulnerable`]
+      }
     }
+  }
+  const attachment = enemy.corpseExplosion
+  enemy.corpseExplosion = undefined
+  if (attachment) {
+    const owner = findPlayer(state, attachment.playerId)
+    state.log = [...state.log, `Corpse Explosion detonates for ${attachment.damage} in ${name}'s row`]
+    for (const target of state.enemies.filter((candidate) =>
+      !candidate.dead && (enemy.isBoss || candidate.row === enemy.row || candidate.isBoss))) {
+      if (target.dead) continue
+      damageEnemyLogged(state, target, attachment.damage, 'Corpse Explosion')
+    }
+    if (owner) discardByCardEffect(state, owner, [attachment.card])
   }
 }
 
@@ -396,7 +409,7 @@ function damageEnemyLogged(
   }
   if (wasAlive && enemy.dead) {
     state.log = [...state.log, `${name} is dead`]
-    triggerEnemyDeathAbility(state, enemy)
+    triggerEnemyDeath(state, enemy)
   } else if (result.curled) {
     state.log = [...state.log, `${name}'s Curl Up gained Block`]
   }
@@ -567,6 +580,14 @@ export type PlayContext = {
   sourceCardType?: CardType
   /** Definition id of the card currently resolving, for Apotheosis. */
   sourceCardId?: string
+  /** Instance id of the physical card currently resolving. */
+  sourceCardUid?: string
+  /** Face of the physical card currently resolving. */
+  sourceCardUpgraded?: boolean
+  /** Virtual play-twice copies cannot attach a physical card. */
+  sourceIsCopy?: boolean
+  /** This resolution attached its source card instead of discarding it. */
+  sourceAttached?: boolean
   /** Power instance currently resolving its trigger, for counters and self-Exhaust. */
   sourcePowerUid?: string
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
@@ -603,6 +624,7 @@ function resolutionContext(
   def: CardDef,
   held: CardInstance,
   energySpent: number,
+  sourceIsCopy = false,
 ): PlayContext {
   return {
     ...context,
@@ -638,6 +660,10 @@ function resolutionContext(
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
     sourceCardId: def.id,
+    sourceCardUid: held.uid,
+    sourceCardUpgraded: held.upgraded,
+    sourceIsCopy,
+    sourceAttached: false,
     energySpent,
     sourceAttackCounted: false,
   }
@@ -923,7 +949,7 @@ function applyEffect(
         }
         if (wasAlive && target.dead) {
           state.log = [...state.log, `${name} is dead`]
-          triggerEnemyDeathAbility(state, target)
+          triggerEnemyDeath(state, target)
         } else if (curled) {
           state.log = [...state.log, `${name}'s Curl Up gained Block`]
         }
@@ -972,7 +998,7 @@ function applyEffect(
           // Every other kill in the game announces itself; this one used to
           // write `dead` inline and skip the line.
           if (wasAlive) state.log = [...state.log, `${name} is dead`]
-          if (wasAlive) triggerEnemyDeathAbility(state, target)
+          if (wasAlive) triggerEnemyDeath(state, target)
         }
         if (combatIsOver(state)) return
       }
@@ -1084,6 +1110,25 @@ function applyEffect(
           enemyTokensApplied(state, actor, target, gained, context)
         }
       }
+      return
+    }
+    case 'attachCorpseExplosion': {
+      if (context.sourceIsCopy) return
+      const target = resolveEnemyTargets(state, 'enemy', context.enemyUid)[0]
+      // FAQ: playing Corpse Explosion twice adds Poison twice, but its death
+      // effect happens only once. The later physical card discards normally.
+      if (!target || target.corpseExplosion || !context.sourceCardUid) return
+      target.corpseExplosion = {
+        card: {
+          uid: context.sourceCardUid,
+          defId: context.sourceCardId!,
+          upgraded: context.sourceCardUpgraded === true,
+        },
+        playerId: actor.id,
+        damage: effect.damage,
+      }
+      context.sourceAttached = true
+      note(`${actor.name} attaches Corpse Explosion to ${enemyLabel(state.enemies, target)}`)
       return
     }
     case 'draw': {
@@ -2386,6 +2431,7 @@ function cleanupPlayedCard(
   forcedExhaust = false,
 ): void {
   const played = forgetRetain(held)
+  if (context.sourceAttached) return
   if (def.exhaust || forcedExhaust ||
     (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
     exhaustCards(state, actor, [played], context)
@@ -2495,7 +2541,7 @@ export function playCard(
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
   // would be a mutation from a function that is otherwise pure.
-  const ctx = resolutionContext(context, def, held, xCost ? cost : 0)
+  const ctx = resolutionContext(context, def, held, xCost ? cost : 0, doubled)
   if (resolvesOnPlay) {
     for (const effect of effects) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
@@ -3613,7 +3659,7 @@ function continueEndPlayerTurn(
         if (enemy.hp === 0) {
           enemy.dead = true
           next.log = [...next.log, `${name} is dead`]
-          triggerEnemyDeathAbility(next, enemy)
+          triggerEnemyDeath(next, enemy)
         }
       }
     } else {

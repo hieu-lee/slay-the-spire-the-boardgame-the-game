@@ -646,6 +646,23 @@ button:disabled {
   text-decoration: line-through;
 }
 
+.enemy__attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0.5rem;
+  color: #db8cff;
+  font-size: 0.65rem;
+}
+
+.enemy__attachment img {
+  width: 2rem;
+  aspect-ratio: 744 / 1039;
+  object-fit: cover;
+  border-radius: 0.15rem;
+  box-shadow: 0 0 0.6rem rgb(185 80 255 / 45%);
+}
+
 /* ---------- bars and tokens ---------- */
 
 .bar {

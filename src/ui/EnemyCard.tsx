@@ -1,4 +1,6 @@
+import { cardDef } from '../game/cards.ts'
 import { abilityText, actionsFor, enemyDef } from '../game/enemies.ts'
+import { cardImagePath } from '../game/assets.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
 import { Icon, IconValue } from './Icon.tsx'
@@ -101,6 +103,10 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilit
   // something a screen reader conveys.
   parts.push(said ? `intends ${said}` : 'no intent')
   if (ability) parts.push(ability)
+  if (enemy.corpseExplosion) {
+    const attachment = enemy.corpseExplosion
+    parts.push(`Corpse Explosion attached, ${attachment.damage} row damage when defeated`)
+  }
 
   const tokens: [string, number][] = [
     ['Block', enemy.block],
@@ -175,6 +181,13 @@ export function EnemyCard({
           title={ability ?? undefined}
         >
           {spentAbility ? 'Curl Up · spent' : abilityText(def.ability, true)}
+        </span>
+      ) : null}
+
+      {enemy.corpseExplosion ? (
+        <span className="enemy__attachment" title={`Corpse Explosion · ${enemy.corpseExplosion.damage} row damage on death`}>
+          <img src={cardImagePath(cardDef(enemy.corpseExplosion.card.defId), enemy.corpseExplosion.card.upgraded)} alt="" />
+          <span>Corpse Explosion · {enemy.corpseExplosion.damage}</span>
         </span>
       ) : null}
 

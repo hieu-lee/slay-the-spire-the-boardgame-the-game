@@ -7250,6 +7250,63 @@ check('Bullet Time+ pays only its own Energy while the discounted card resolves 
   assertDeepEqual(bulletResolved.players[0].draw.map((card) => card.uid), ['ui-bullet-future'])
 })
 
+await page.setViewportSize({ width: 1440, height: 1200 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-corpse-explosion', defId: 'corpse_explosion', upgraded: true },
+      { uid: 'ui-corpse-strike', defId: 'strike_silent', upgraded: true },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 3, block: 0, drawLocked: false,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  run.combat.enemies = [
+    { ...source, uid: 'corpse-target', defId: 'cultist', row: 0, hp: 2, maxHp: 2,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
+      dead: false, isBoss: false, corpseExplosion: undefined },
+    { ...source, uid: 'corpse-row', defId: 'red_louse', row: 0, hp: 12, maxHp: 12,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
+      dead: false, isBoss: false, corpseExplosion: undefined },
+    { ...source, uid: 'corpse-other', defId: 'jaw_worm', row: 1, hp: 12, maxHp: 12,
+      block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
+      dead: false, isBoss: false, corpseExplosion: undefined },
+  ]
+  run.combat.log = []
+  debug.setRun(run)
+})
+const corpseExplosionCard = page.getByRole('button', { name: /^Corpse Explosion\+, cost 2,/ })
+const corpseExplosionLabel = await corpseExplosionCard.getAttribute('aria-label')
+assert(await artWidth(corpseExplosionCard) >= 700)
+check('Corpse Explosion+ uses sharp art and announces its attached row detonation', () => {
+  assert(corpseExplosionLabel.includes('3 Poison'))
+  assert(corpseExplosionLabel.includes('10 damage to its row'))
+})
+await corpseExplosionCard.click()
+await page.locator('.enemy--targeted[aria-label^="Cultist"]').click()
+const attachedEnemy = page.locator('.enemy[aria-label*="Corpse Explosion attached"]')
+await attachedEnemy.waitFor()
+const attachmentWidth = await attachedEnemy.locator('.enemy__attachment img').evaluate((img) => img.naturalWidth)
+check('Corpse Explosion remains visibly attached as a face-up high-resolution card', () => {
+  assert(attachmentWidth >= 700)
+})
+await shot('16l-silent-corpse-explosion-attached')
+await page.getByRole('button', { name: /^Strike\+,/ }).click()
+await page.locator('.enemy--targeted[aria-label^="Cultist"]').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].dead)
+const corpseResolved = await readState()
+check('Corpse Explosion detonation is visible, row-scoped, and discards the attachment', () => {
+  assertDeepEqual(corpseResolved.enemies.map((enemy) => enemy.hp), [0, 2, 12])
+  assertEqual(corpseResolved.players[0].discard.filter((card) => card.uid === 'ui-corpse-explosion').length, 1)
+  assertEqual(corpseResolved.enemies[0].corpseExplosion, undefined)
+})
+await shot('16m-silent-corpse-explosion-detonated')
+await page.setViewportSize({ width: 1440, height: 900 })
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

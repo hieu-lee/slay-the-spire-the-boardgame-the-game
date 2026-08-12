@@ -124,6 +124,7 @@ function effectText(effect: Effect): string {
     case 'poison': return `apply ${amountText(effect.amount)} Poison${condition}`
     case 'poisonChoices': return `assign ${effect.targets} separate ${effect.amount} Poison tokens to enemies${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
+    case 'attachCorpseExplosion': return `attach this card to the target; when it dies, deal ${effect.damage} damage to its row and discard this card${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'

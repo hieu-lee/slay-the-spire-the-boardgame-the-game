@@ -1399,6 +1399,38 @@ check('Catalyst+ publishes multiplied Poison and Exhaust atomically', () => {
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).exhaust.length, 1)
 })
 
+check('Corpse Explosion attachment survives reconnect and detonates publicly', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const source = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  const corpseExplosion = { uid: 'room-corpse-explosion', defId: 'corpse_explosion', upgraded: false }
+  const strike = { uid: 'room-corpse-strike', defId: 'strike_silent', upgraded: true }
+  Object.assign(actor, { hand: [corpseExplosion, strike], energy: 3, discard: [] })
+  room.run.combat.enemies = [
+    { ...source, uid: 'room-corpse-target', row: 0, hp: 2, maxHp: 2, block: 0, dead: false },
+    { ...source, uid: 'room-corpse-row', row: 0, hp: 12, maxHp: 12, block: 0, dead: false },
+  ]
+
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: corpseExplosion.uid, enemyUid: 'room-corpse-target', preflight: true,
+  })
+  const teammate = snapshotFor(room, a.token)
+  assertEqual(teammate.run.combat.enemies[0].corpseExplosion.card.uid, corpseExplosion.uid)
+  assert(!teammate.run.combat.players.find((player) => player.id === b.playerId).discard
+    .some((card) => card.uid === corpseExplosion.uid), 'the attached card entered discard early')
+
+  markDisconnected(room, b.token)
+  const rejoined = joinRoom(room, { token: b.token })
+  assertEqual(snapshotFor(room, rejoined.token).run.combat.enemies[0].corpseExplosion.damage, 6)
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: 'room-corpse-target', preflight: true,
+  })
+  const resolved = snapshotFor(room, a.token).run.combat
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [0, 6])
+  assertEqual(resolved.players.find((player) => player.id === b.playerId).discard
+    .filter((card) => card.uid === corpseExplosion.uid).length, 1)
+})
+
 check('Setup+ publishes Energy only to its chosen ally and Exhausts atomically', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

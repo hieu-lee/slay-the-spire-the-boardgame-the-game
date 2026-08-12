@@ -172,6 +172,8 @@ type EffectKind =
   /** Separate Poison cubes, each independently assigned to a living enemy. */
   | { kind: 'poisonChoices'; amount: number; targets: number }
   | { kind: 'multiplyPoison'; factor: number }
+  /** Attach this physical card; when the enemy dies, damage its row and discard the card. */
+  | { kind: 'attachCorpseExplosion'; damage: number }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | { kind: 'drawToHandSize'; size: number }
   | { kind: 'cycleHand' }
@@ -2279,6 +2281,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'bullet_time', name: 'Bullet Time', owner: 'silent', type: 'skill', rarity: 'rare', cost: 3,
     effects: [{ kind: 'preventDraw' }, { kind: 'discountHand' }],
     upgrade: { cost: 2 },
+  }),
+  corpse_explosion: card({
+    id: 'corpse_explosion', name: 'Corpse Explosion', owner: 'silent', type: 'skill', rarity: 'rare', cost: 2,
+    effects: [{ kind: 'poison', amount: 2 }, { kind: 'attachCorpseExplosion', damage: 6 }],
+    upgrade: { effects: [{ kind: 'poison', amount: 3 }, { kind: 'attachCorpseExplosion', damage: 10 }] },
   }),
   blur: card({
     id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,

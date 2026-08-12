@@ -2368,6 +2368,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'malaise', energySpent: [1, 1], energy: [E - 1, E - 1], weak: [1, 2], poison: [1, 2], exhaust: [1, 1] },
     { id: 'burst', energy: [E - 1, E] },
     { id: 'bullet_time', energy: [E - 3, E - 2] },
+    { id: 'corpse_explosion', poison: [2, 3], energy: [E - 2, E - 2] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -7222,6 +7223,88 @@ check('Burst plays the next Skill twice, waits behind another copy effect, and c
   assertEqual(stacked.phase, 'player')
   assertEqual(stacked.players[0].doubledSkillsThisTurn, 2,
     'playing a second Burst should queue another later Skill, not copy Burst')
+})
+
+check('Corpse Explosion stays attached, detonates its row once, and then discards', () => {
+  const card = instance('corpse_explosion', true)
+  const finisher = instance('strike_silent', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card, finisher], energy: 3,
+    powers: [instance('after_image')], block: 0,
+  })], [
+    makeEnemy({ uid: 'attached', row: 1, hp: 2, maxHp: 2 }),
+    makeEnemy({ uid: 'same-row', row: 1, hp: 12, maxHp: 12 }),
+    makeEnemy({ uid: 'other-row', row: 0, hp: 12, maxHp: 12 }),
+    makeEnemy({ uid: 'boss', row: 0, hp: 12, maxHp: 12, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'attached', playerId: null })
+  assertEqual(state.enemies[0].poison, 3)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, card.uid)
+  assertEqual(state.enemies[0].corpseExplosion?.card.upgraded, true)
+  assertDeepEqual(state.players[0].discard, [], 'the attached card entered discard early')
+  state = playCard(state, 'p1', finisher.uid, { enemyUid: 'attached', playerId: null })
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 2, 12, 2])
+  assertEqual(state.players[0].block, 1, 'discarding the attachment did not fire After Image')
+  assert(state.discardedThisTurn.includes('p1'), 'discarding the attachment was not recorded')
+  assertEqual(state.players[0].discard.filter((held) => held.uid === card.uid).length, 1)
+  assertEqual(state.enemies[0].corpseExplosion, undefined)
+})
+
+check('Burst copies Corpse Explosion Poison but the physical on-death attachment happens once', () => {
+  const card = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card], energy: 2,
+  })], [makeEnemy({ uid: 'target', hp: 8, maxHp: 8 })])
+  state.players[0].doubledSkillsThisTurn = 1
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 2)
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.enemies[0].corpseExplosion, undefined, 'the virtual copy attached a physical card')
+  state = playCardCopy(state, 'p1', { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 4)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, card.uid)
+})
+
+check('Poison death also detonates and discards Corpse Explosion', () => {
+  const card = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card], energy: 2,
+  })], [
+    makeEnemy({ uid: 'target', row: 0, hp: 2, maxHp: 2 }),
+    makeEnemy({ uid: 'same-row', row: 0, hp: 10, maxHp: 10 }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'target', playerId: null })
+  state = beginEndPlayerTurn(state)
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 4])
+  assertEqual(state.players[0].discard.filter((held) => held.uid === card.uid).length, 1)
+})
+
+check('a second physical Corpse Explosion adds Poison but cannot stack the death effect', () => {
+  const first = instance('corpse_explosion')
+  const second = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [first, second], energy: 4,
+  })], [makeEnemy({ uid: 'target', hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'target', playerId: null })
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 4)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, first.uid)
+  assertDeepEqual(state.players[0].discard.map((held) => held.uid), [second.uid])
+})
+
+check('Corpse Explosion on a boss damages summons in every row', () => {
+  const card = instance('corpse_explosion')
+  const finisher = instance('strike_silent', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card, finisher], energy: 3,
+  })], [
+    makeEnemy({ uid: 'boss', row: 0, hp: 2, maxHp: 2, isBoss: true }),
+    makeEnemy({ uid: 'row-zero', row: 0, hp: 10, maxHp: 10 }),
+    makeEnemy({ uid: 'row-one', row: 1, hp: 10, maxHp: 10 }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'boss', playerId: null })
+  state = playCard(state, 'p1', finisher.uid, { enemyUid: 'boss', playerId: null })
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 4, 4])
 })
 
 check('Double Tap plays the next Attack twice with separate targets and modifiers', () => {

@@ -149,6 +149,9 @@ export type Enemy = {
   weak: number
   poison: number
 
+  /** Face-up Corpse Explosion card attached until this enemy dies. */
+  corpseExplosion?: { card: CardInstance; playerId: string; damage: number }
+
   /** Reward printed by the encounter card that spawned this enemy. */
   goldReward: number
   cardReward: 'normal' | 'upgraded' | null
