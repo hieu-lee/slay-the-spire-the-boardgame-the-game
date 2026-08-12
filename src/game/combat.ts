@@ -115,16 +115,22 @@ export type CombatState = {
     /** Parent-card triggers waiting for this nested copy to finish. */
     deferredTriggers?: PendingTrigger[]
     /** The sole play-twice effect applied to this card. */
-    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst' | 'Doppelganger')[]
+    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
     /** Doppelganger queues only a virtual card, with no physical original to clean up. */
     virtualOnly?: boolean
+    /** Additional physical Weaves discarded by the same Scry, in reveal order. */
+    queuedWeaves?: CardInstance[]
+    /** Next-card modifiers consumed only if this queued card is allowed to play. */
+    queuedCopySources?: CopySource[]
+    consumeFreeCard?: boolean
+    consumeFreeAttack?: boolean
   }
   /** Distilled Chaos cards are private until their owner plays each for free. */
   pendingDistilled?: { playerId: string; cards: CardInstance[] }
   /** Golden Eye's private top-three reveal, persisted across reconnects. */
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] }
   /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
-  playedCardsThisTurn: { card: CardInstance; copied: boolean }[]
+  playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
   log: string[]
 }
 
@@ -136,10 +142,12 @@ export type PendingTrigger = {
   enemyUid?: string
 }
 
-type CopySource = 'Double Tap' | 'Echo Form' | 'Burst'
+type CopySource = 'Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience'
 type DeferredHavoc = {
   card: CardInstance
   exhaust: boolean
+  /** Printed clauses after a Scry that paused to play Weave. */
+  remainingEffects?: Effect[]
   /** A Doppelganger Havoc is virtual and never enters a pile. */
   virtualOnly?: boolean
   /** A copied Havoc waits until its immediate child finishes. */
@@ -222,7 +230,14 @@ export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTu
 const clone = <T,>(value: T): T => structuredClone(value)
 
 function forgetRetain(card: CardInstance): CardInstance {
-  const { retainedLastTurn: _retained, freeThisTurn: _free, ...rest } = card
+  const {
+    retainedLastTurn: _retained,
+    retainThisTurn: _retain,
+    freeThisTurn: _free,
+    costReductionThisTurn: _reduction,
+    scryDamageBonus: _scryBonus,
+    ...rest
+  } = card
   return rest
 }
 
@@ -649,15 +664,32 @@ function damagePlayer(state: CombatState, player: Player, damage: number): boole
   return outcome.fullyBlocked
 }
 
+function timeWarpLimit(state: CombatState): number {
+  const eater = state.enemies.find((enemy) => !enemy.dead &&
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'timeWarp'))
+  const warp = eater && enemyAbilities(enemyDef(eater.defId, eater.ascension))
+    .find((ability) => ability.kind === 'timeWarp')
+  return warp?.kind === 'timeWarp'
+    ? warp.limits[eater!.actionIndex] ?? Number.POSITIVE_INFINITY
+    : Number.POSITIVE_INFINITY
+}
+
+export function reachedTimeWarpLimit(state: CombatState, player: Player): boolean {
+  return (player.cardsPlayedThisTurn ?? 0) >= timeWarpLimit(state)
+}
+
 /** The Energy actually charged for a card on this player's current board. */
 export function playCost(
   def: CardDef,
-  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost'>,
-  card?: Pick<CardInstance, 'freeThisTurn'>,
+  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'freeAttacksThisTurn'>,
+  card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn'>,
 ): number | 'X' {
-  return card?.freeThisTurn === true || (player.freeCardsThisTurn ?? 0) > 0
-    ? 0
-    : player.nextCardCost ?? cardCost(def, player.powers, player.lostHpThisCombat)
+  if (player.nextCardCost !== null && player.nextCardCost !== undefined) return player.nextCardCost
+  if (card?.freeThisTurn === true || (player.freeCardsThisTurn ?? 0) > 0 ||
+    (def.type === 'attack' && (player.freeAttacksThisTurn ?? 0) > 0)
+  ) return 0
+  const cost = cardCost(def, player.powers, player.lostHpThisCombat)
+  return cost === 'X' ? cost : Math.max(0, cost - (card?.costReductionThisTurn ?? 0))
 }
 
 /**
@@ -690,6 +722,8 @@ export type PlayContext = {
   topdeckUids?: string[]
   /** Card chosen to move from discard to the top of the draw pile. */
   recoverDiscardUid?: string
+  /** Cards chosen to move from discard, in selection order. */
+  recoverDiscardUids?: string[]
   recoverExhaustUid?: string
   /** Cards chosen from a privately revealed draw pile by Seek. */
   searchDrawUids?: string[]
@@ -782,16 +816,36 @@ export type PlayContext = {
   sourceCardUid?: string
   /** Face of the physical card currently resolving. */
   sourceCardUpgraded?: boolean
+  /** Weave's bonus while it is being played after a Scry discard. */
+  sourceScryDamageBonus?: number
   /** Virtual play-twice copies cannot attach a physical card. */
   sourceIsCopy?: boolean
   /** The eligible card selected by a physical Doppelganger resolution. */
   doppelgangerCopy?: CardInstance
+  /** Effect that queued `doppelgangerCopy`; the shared copy pipeline serves both cards. */
+  queuedCopySource?: 'Doppelganger' | 'Foreign Influence' | 'Weave' | 'Omniscience'
+  /** Whether the queued copy has no physical card to clean up. */
+  queuedCopyVirtualOnly?: boolean
+  /** Omniscience resolves its queued physical card twice. */
+  queuedCopyTwice?: boolean
+  /** Omniscience Exhausts the queued physical card after both plays. */
+  queuedCopyForcedExhaust?: boolean
+  /** Every pending resolution label for a card that has not started resolving yet. */
+  queuedCopySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
+  queuedCopySources?: CopySource[]
+  consumeQueuedFreeCard?: boolean
+  consumeQueuedFreeAttack?: boolean
+  queuedWeaves?: CardInstance[]
+  /** Cubes printed onto a Power as it enters play. */
+  sourceCounter?: number
   /** This resolution attached its source card instead of discarding it. */
   sourceAttached?: boolean
   /** Power instance currently resolving its trigger, for counters and self-Exhaust. */
   sourcePowerUid?: string
   /** The source Attack was recorded early so its later Shiv attacks follow it. */
   sourceAttackCounted?: boolean
+  /** HP removed by the immediately preceding hit effect. */
+  lastHitDamage?: number
 }
 
 export type CardChoicePreview = {
@@ -837,6 +891,7 @@ function resolutionContext(
     enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
     playerIds: context.playerIds ? [...context.playerIds] : undefined,
     topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
+    recoverDiscardUids: context.recoverDiscardUids ? [...context.recoverDiscardUids] : undefined,
     searchDrawUids: context.searchDrawUids ? [...context.searchDrawUids] : undefined,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
     evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
@@ -871,11 +926,19 @@ function resolutionContext(
     sourceCardId: def.id,
     sourceCardUid: held.uid,
     sourceCardUpgraded: held.upgraded,
+    sourceScryDamageBonus: held.scryDamageBonus,
     sourceIsCopy,
     doppelgangerCopy: undefined,
+    queuedCopySource: undefined,
+    queuedCopyVirtualOnly: undefined,
+    queuedCopyTwice: undefined,
+    queuedCopyForcedExhaust: undefined,
+    queuedCopySourceNames: undefined,
+    sourceCounter: undefined,
     sourceAttached: false,
     energySpent,
     sourceAttackCounted: false,
+    lastHitDamage: 0,
   }
 }
 
@@ -943,6 +1006,8 @@ function holds(
       return actor.hand.every((card) => cardDef(card.defId).type !== 'attack')
     case 'allCardsInHandAreAttacks':
       return actor.hand.every((card) => cardDef(card.defId).type === 'attack')
+    case 'onlyAttackInHand':
+      return actor.hand.filter((card) => cardDef(card.defId).type === 'attack').length === 1
     case 'goldAtLeast':
       return actor.gold >= condition.amount
     case 'orbsAtLeast':
@@ -957,6 +1022,18 @@ function holds(
   }
 }
 
+function conditionIsActive(
+  condition: Condition,
+  state: CombatState,
+  actor: Player,
+  context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn'>,
+  target?: Enemy,
+): boolean {
+  if (condition.kind === 'drewSkill') return context?.drewSkill === true
+  if (condition.kind === 'retainedLastTurn') return context?.sourceRetainedLastTurn === true
+  return holds(condition, state, actor, target)
+}
+
 /** Whether a conditional printed clause applies to the current board. */
 export function effectIsActive(
   effect: Effect,
@@ -964,9 +1041,7 @@ export function effectIsActive(
   actor: Player,
   context?: Pick<PlayContext, 'drewSkill' | 'sourceRetainedLastTurn'>,
 ): boolean {
-  if (effect.when?.kind === 'drewSkill') return context?.drewSkill === true
-  if (effect.when?.kind === 'retainedLastTurn') return context?.sourceRetainedLastTurn === true
-  return !effect.when || holds(effect.when, state, actor)
+  return !effect.when || conditionIsActive(effect.when, state, actor, context)
 }
 
 /** Whether the card's printed play restriction currently allows it. */
@@ -975,9 +1050,14 @@ export function cardPlayConditionMet(
   state: CombatState,
   actor: Player,
   drawCount = actor.draw.length,
+  sourceInHand = true,
 ): boolean {
   // Online snapshots hide draw identities but publish their count.
   if (def.playCondition?.kind === 'drawPileEmpty') return drawCount === 0
+  if (def.playCondition?.kind === 'onlyAttackInHand') {
+    const attacks = actor.hand.filter((card) => cardDef(card.defId).type === 'attack').length
+    return attacks === (sourceInHand ? 1 : 0)
+  }
   return !def.playCondition || holds(def.playCondition, state, actor)
 }
 
@@ -987,11 +1067,13 @@ export function cardIsPlayable(
   state: CombatState,
   actor: Player,
   drawCount = actor.draw.length,
+  sourceInHand = true,
 ): boolean {
-  return !def.unplayable && cardPlayConditionMet(def, state, actor, drawCount)
+  return actor.cardPlayLocked !== true && !def.unplayable &&
+    cardPlayConditionMet(def, state, actor, drawCount, sourceInHand)
 }
 
-type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'stance' |
+type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'miracles' | 'stance' |
   'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat'> & {
   hand: readonly CardInstance[] | null
 }
@@ -1011,8 +1093,12 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       return actor.block
     case 'strength':
       return actor.strength
+    case 'miracles':
+      return actor.miracles
     case 'cardsInHand':
       return actor.hand?.length ?? 0
+    case 'retainCardsInHand':
+      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).retain).length ?? 0
     case 'cardsInExhaust':
       return actor.exhaust.length
     case 'energySpent':
@@ -1045,12 +1131,67 @@ function amountOf(
 ): number {
   if (typeof amount === 'number') return amount
   let total = amount.base
-  if (amount.bonus && holds(amount.bonus.when, state, actor, target)) total += amount.bonus.plus
+  if (amount.bonus && conditionIsActive(amount.bonus.when, state, actor, context, target)) {
+    total += amount.bonus.plus
+  }
   if (amount.per) total += countOf(amount.per, actor, state, context?.energySpent) * (amount.scale ?? 1)
   if (target && amount.targetTokens) {
     for (const token of amount.targetTokens) total += target[token]
   }
   return total
+}
+
+function latestAllyAttack(state: CombatState, playerId: string) {
+  return [...(state.playedCardsThisTurn ?? [])].reverse().find((played) =>
+    played.playerId !== playerId && !played.copied &&
+    faceOf(cardDef(played.card.defId), played.card.upgraded).type === 'attack')
+}
+
+function latestPlayableAllyAttack(
+  state: CombatState,
+  actor: Player,
+  sourceCardUid?: string,
+  drawCount = actor.draw.length,
+) {
+  const latest = latestAllyAttack(state, actor.id)
+  if (!latest) return undefined
+  const def = faceOf(cardDef(latest.card.defId), latest.card.upgraded)
+  const checkingActor = sourceCardUid
+    ? { ...actor, hand: actor.hand.filter((card) => card.uid !== sourceCardUid) }
+    : actor
+  return (def.minimumX ?? 0) === 0 && cardIsPlayable(
+    def, state, checkingActor, drawCount, false,
+  )
+    ? latest
+    : undefined
+}
+
+function omniscienceEligibleCards(state: CombatState, actor: Player): CardInstance[] {
+  return actor.draw.filter((card) => {
+    const def = faceOf(cardDef(card.defId), card.upgraded)
+    return (def.type === 'attack' || def.type === 'skill') &&
+      (def.minimumX ?? 0) === 0 && cardIsPlayable(def, state, actor, actor.draw.length - 1, false)
+  })
+}
+
+function copySourcesFor(def: CardDef, actor: Player): CopySource[] {
+  return def.id === 'burst' ? []
+    : (def.type === 'attack' || def.type === 'skill') && (actor.doubledCardsThisTurn ?? 0) > 0
+      ? ['Echo Form']
+      : def.type === 'attack' && (actor.tripledAttacksThisTurn ?? 0) > 0
+        ? ['Blasphemy', 'Blasphemy']
+        : def.type === 'attack' && (actor.doubledAttacksThisTurn ?? 0) > 0
+          ? ['Double Tap']
+          : def.type === 'skill' && (actor.doubledSkillsThisTurn ?? 0) > 0
+            ? ['Burst']
+            : []
+}
+
+function consumeCopySource(actor: Player, sources: readonly CopySource[]): void {
+  if (sources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
+  else if (sources.includes('Blasphemy')) actor.tripledAttacksThisTurn = actor.tripledAttacksThisTurn! - 1
+  else if (sources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
+  else if (sources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
 }
 
 /**
@@ -1068,6 +1209,8 @@ function applyEffect(
   source?: string,
   /** Keep the attacker's Weak until a parent multi-target clause finishes. */
   deferWeakSpend = false,
+  /** Keep each target's Vulnerable until a parent multi-target clause finishes. */
+  deferVulnerableSpend = false,
 ): void {
   const mods = attackerModsOfPlayer(actor)
   /** Who the log should credit: the ongoing effect if there is one, else the player. */
@@ -1131,6 +1274,7 @@ function applyEffect(
         const wristBlade = actor.relics.some((relic) => relic.defId === 'wrist_blade') &&
           (source === 'Shiv' || (sourceFace && cardCost(sourceFace, actor.powers, actor.lostHpThisCombat) === 0)) ? 1 : 0
         const each = actor.damageDealtZeroThisTurn ? 0 : amountOf(effect.amount, state, actor, target, context) + wristBlade +
+          (context.sourceScryDamageBonus ?? 0) +
           (context.sourceCardId?.startsWith('strike_') ? (actor.starterStrikeDamageBonus ?? 0) : 0)
         let blocked = 0
         let curled = false
@@ -1159,11 +1303,12 @@ function applyEffect(
             if (gained > 0) poisonEvents += 1
           }
         }
-        if (vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
+        if (!deferVulnerableSpend && vulnerableAtStart > 0) target.vulnerable = vulnerableAtStart - 1
         // One line for the whole attack, not one per swing: a five-hit card
         // would otherwise bury the round in near-identical lines.
         const name = enemyLabel(state.enemies, target)
         const lost = hpBefore - target.hp
+        context.lastHitDamage = lost
         state.log = [
           ...state.log,
           lost > 0
@@ -1200,12 +1345,21 @@ function applyEffect(
     }
     case 'hitChoices': {
       const weakAtStart = actor.weak
+      const vulnerableAtStart = new Map<string, number>()
       for (const enemyUid of context.enemyUids ?? []) {
+        const target = state.enemies.find((enemy) => enemy.uid === enemyUid && !enemy.dead)
+        if (!target) continue
+        if (!vulnerableAtStart.has(enemyUid)) vulnerableAtStart.set(enemyUid, target.vulnerable)
         applyEffect(state, actor, { kind: 'hit', amount: effect.amount }, 'enemy', 'self', {
           ...context,
           enemyUid,
-        }, source, true)
-        if (combatIsOver(state)) return
+        }, source, true, true)
+        if (combatIsOver(state)) break
+      }
+      for (const [enemyUid, vulnerable] of vulnerableAtStart) {
+        if (vulnerable <= 0) continue
+        const target = state.enemies.find((enemy) => enemy.uid === enemyUid)
+        if (target) target.vulnerable = vulnerable - 1
       }
       if (weakAtStart > 0 && actor.weak === weakAtStart && (context.enemyUids?.length ?? 0) > 0) {
         actor.weak -= 1
@@ -1270,7 +1424,7 @@ function applyEffect(
       const base = amountOf(effect.amount, state, actor, undefined, context)
       const bonusIcon = typeof effect.amount !== 'number'
         && effect.amount.bonus
-        && holds(effect.amount.bonus.when, state, actor)
+        && conditionIsActive(effect.amount.bonus.when, state, actor, context)
       const icons = 1 + Number(Boolean(bonusIcon))
       const amount = base + (printedCard ? icons * actor.cardBlockBonus : 0) +
         (context.sourceCardId?.startsWith('defend_') ? (actor.starterDefendBlockBonus ?? 0) : 0)
@@ -1325,11 +1479,12 @@ function applyEffect(
       return
     }
     case 'gainTemporaryStrength': {
+      const amount = amountOf(effect.amount, state, actor, undefined, context)
       const before = actor.strength
-      actor.strength = gainStrength(actor.strength, effect.amount)
+      actor.strength = gainStrength(actor.strength, amount)
       const gained = actor.strength - before
       actor.strengthLossAtEndOfTurn = (actor.strengthLossAtEndOfTurn ?? 0) +
-        (effect.loseGainedOnly ? gained : effect.amount)
+        (effect.loseGainedOnly ? gained : amount)
       if (gained > 0) note(`${actor.name} gains ${gained} Strength`)
       return
     }
@@ -1400,13 +1555,24 @@ function applyEffect(
         note(`${actor.name}'s Doppelganger cannot copy Burst`)
         return
       }
-      if (!cardIsPlayable(copiedDef, state, actor) ||
+      if (!cardIsPlayable(copiedDef, state, actor, actor.draw.length, false) ||
         context.energySpent! < (copiedDef.minimumX ?? 0)) {
         note(`${actor.name}'s Doppelganger cannot play ${copiedDef.name}`)
         return
       }
       context.doppelgangerCopy = { ...latest.card, uid: `${context.sourceCardUid}:copy` }
+      context.queuedCopySource = 'Doppelganger'
       note(`${actor.name}'s Doppelganger copies ${copiedDef.name}`)
+      return
+    }
+    case 'copyLastAllyAttack': {
+      if (context.sourceIsCopy) return
+      const latest = latestPlayableAllyAttack(state, actor)
+      if (!latest || !context.sourceCardUid) return
+      const copiedDef = faceOf(cardDef(latest.card.defId), latest.card.upgraded)
+      context.doppelgangerCopy = { ...latest.card, uid: `${context.sourceCardUid}:copy` }
+      context.queuedCopySource = 'Foreign Influence'
+      note(`${actor.name}'s Foreign Influence copies ${copiedDef.name}`)
       return
     }
     case 'draw': {
@@ -1455,9 +1621,20 @@ function applyEffect(
       return applyEffect(state, actor, { kind: 'draw', amount: moved.length },
         scope, supportScope, context, source)
     }
+    case 'discardNonRetain': {
+      const moved = actor.hand.filter((card) =>
+        !card.retainThisTurn && !faceOf(cardDef(card.defId), card.upgraded).retain)
+      discardByCardEffect(state, actor, moved, context)
+      return
+    }
     case 'preventDraw': {
       actor.drawLocked = true
       note(`${actor.name} cannot draw more cards this turn`)
+      return
+    }
+    case 'preventCardPlay': {
+      actor.cardPlayLocked = true
+      note(`${actor.name} cannot play additional cards this turn`)
       return
     }
     case 'discountNextCard': {
@@ -1465,14 +1642,31 @@ function applyEffect(
       note(`${actor.name}'s next card costs 0 this turn`)
       return
     }
+    case 'discountNextAttack': {
+      actor.freeAttacksThisTurn = (actor.freeAttacksThisTurn ?? 0) + 1
+      note(`${actor.name}'s next Attack costs 0 this turn`)
+      return
+    }
     case 'discountHand': {
       actor.hand = actor.hand.map((card) => ({ ...card, freeThisTurn: true }))
       note(`${actor.name}'s cards in hand cost 0 this turn`)
       return
     }
+    case 'discountRetainedCards': {
+      actor.hand = actor.hand.map((card) => card.retainedLastTurn
+        ? { ...card, costReductionThisTurn: (card.costReductionThisTurn ?? 0) + effect.amount }
+        : card)
+      note(`${actor.name}'s Retained cards cost ${effect.amount} less this turn`)
+      return
+    }
     case 'doubleNextAttack': {
       actor.doubledAttacksThisTurn = (actor.doubledAttacksThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack will be played twice`)
+      return
+    }
+    case 'tripleNextAttack': {
+      actor.tripledAttacksThisTurn = (actor.tripledAttacksThisTurn ?? 0) + 1
+      note(`${actor.name}'s next Attack will be played three times`)
       return
     }
     case 'doubleNextAttackOrSkill': {
@@ -1502,6 +1696,13 @@ function applyEffect(
       actor.starterStrikeDamageBonus = (actor.starterStrikeDamageBonus ?? 0) + effect.amount
       actor.starterDefendBlockBonus = (actor.starterDefendBlockBonus ?? 0) + effect.amount
       note(`${actor.name}'s starter Strikes and Defends get +${effect.amount}`)
+      return
+    }
+    case 'empowerStarterStrikes': {
+      const cubes = amountOf(effect.amount, state, actor, undefined, context)
+      actor.starterStrikeDamageBonus = (actor.starterStrikeDamageBonus ?? 0) + cubes
+      context.sourceCounter = cubes
+      note(`${actor.name} puts ${cubes} cubes on Conjure Blade; starter Strikes deal +${cubes} damage`)
       return
     }
     case 'countdownDamage': {
@@ -1623,8 +1824,9 @@ function applyEffect(
     case 'gainMiracle': {
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const available = Math.max(0, CAPS.miracles - state.players.reduce((sum, player) => sum + player.miracles, 0))
+        const amount = amountOf(effect.amount, state, actor, undefined, context)
         const before = target.miracles
-        target.miracles += Math.min(available, effect.amount)
+        target.miracles += Math.min(available, amount)
         if (target.miracles > before) note(`${target.name} gains ${target.miracles - before} Miracle`)
       }
       return
@@ -1736,6 +1938,13 @@ function applyEffect(
       context.exhaustedByCard = moved.length
       exhaustCards(state, actor, moved, context)
       if (moved.length > 0) note(`${actor.name} exhausts ${moved.length}`)
+      return
+    }
+    case 'exhaustDrawPile': {
+      const moved = [...actor.draw]
+      actor.draw = []
+      exhaustCards(state, actor, moved, context)
+      if (moved.length > 0) note(`${actor.name} exhausts their draw pile (${moved.length})`)
       return
     }
     case 'gainBlockPerExhaust':
@@ -1909,6 +2118,23 @@ function applyEffect(
       if (actor.strength > before) note(`${actor.name} gains ${actor.strength - before} Strength`)
       return
     }
+    case 'execute': {
+      for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
+        if (target.hp > effect.hpAtMost) continue
+        const name = enemyLabel(state.enemies, target)
+        target.hp = 0
+        target.dead = true
+        state.log = [...state.log, `${who} sets ${name}'s hit points to 0`, `${name} is dead`]
+        triggerEnemyDeath(state, target)
+        if (combatIsOver(state)) return
+      }
+      return
+    }
+    case 'gainBlockFromLastHit': {
+      applyEffect(state, actor, { kind: 'block', amount: context.lastHitDamage ?? 0 },
+        scope, supportScope, context, source)
+      return
+    }
     case 'scry': {
       // Scry shows the top X and lets the player bin any of them; the rest go
       // back on top IN THE SAME ORDER (p.24).
@@ -1924,7 +2150,44 @@ function applyEffect(
       const piles = scry({ draw: actor.draw, hand: actor.hand, discard: actor.discard },
         effect.amount, chosen)
       actor.draw = piles.draw
-      discardByCardEffect(state, actor, tossed, context)
+      const wovenCards = tossed.filter((card) => faceOf(cardDef(card.defId), card.upgraded).scryPlayBonus !== undefined)
+      const woven = wovenCards[0]
+      discardByCardEffect(state, actor, tossed.filter((card) => !wovenCards.some((weave) => weave.uid === card.uid)), context)
+      if (woven) {
+        const weave = faceOf(cardDef(woven.defId), woven.upgraded)
+        const queued = { ...forgetRetain(woven), scryDamageBonus: weave.scryPlayBonus }
+        const copySources = copySourcesFor(weave, actor)
+        const sourceNames = copySources.length > 0
+          ? [...copySources, copySources.at(-1)!]
+          : ['Weave' as const]
+        if (context.sourceCardUid) {
+          context.doppelgangerCopy = queued
+          context.queuedCopySource = 'Weave'
+          context.queuedCopyVirtualOnly = false
+          context.queuedCopySourceNames = sourceNames
+          context.queuedWeaves = wovenCards.slice(1).map(forgetRetain)
+          context.queuedCopySources = copySources
+          context.consumeQueuedFreeCard = (actor.freeCardsThisTurn ?? 0) > 0
+          context.consumeQueuedFreeAttack = (actor.freeAttacksThisTurn ?? 0) > 0
+        } else {
+          state.pendingCardCopy = {
+            playerId: actor.id,
+            card: queued,
+            energySpent: 0,
+            resumePhase: state.phase === 'start' ? 'start' : 'player',
+            forcedExhaust: false,
+            forcedChoices: null,
+            deferredHavocs: [],
+            sourceNames,
+            queuedWeaves: wovenCards.slice(1).map(forgetRetain),
+            queuedCopySources: copySources,
+            consumeFreeCard: (actor.freeCardsThisTurn ?? 0) > 0,
+            consumeFreeAttack: (actor.freeAttacksThisTurn ?? 0) > 0,
+          }
+          state.phase = 'copy'
+        }
+        note(`${actor.name} plays ${weave.name} instead of discarding it`)
+      }
       // An empty draw pile means no cards were looked at, so nothing scried.
       if (looked > 0) context.pendingTriggers?.push(
         ...queuedTriggers(state, { kind: 'onScry' }, actor),
@@ -1949,18 +2212,24 @@ function applyEffect(
     }
     case 'recoverDiscard': {
       const required = Math.min(effect.amount, actor.discard.length)
-      const chosen = context.recoverDiscardUid
-      if ((required === 1 && (!chosen || !actor.discard.some((card) => card.uid === chosen))) ||
-        (required === 0 && chosen !== undefined)) {
+      const requested = context.recoverDiscardUids ??
+        (context.recoverDiscardUid === undefined ? [] : [context.recoverDiscardUid])
+      if ((context.recoverDiscardUids !== undefined && context.recoverDiscardUid !== undefined) ||
+        requested.length !== required || new Set(requested).size !== requested.length ||
+        requested.some((uid) => !actor.discard.some((card) => card.uid === uid))) {
         context.invalidRecoverChoice = true
         return
       }
-      if (!chosen) return
-      const moved = actor.discard.find((card) => card.uid === chosen)!
-      actor.discard = actor.discard.filter((card) => card.uid !== chosen)
-      if (effect.toHand) actor.hand = [...actor.hand, forgetRetain(moved)]
-      else actor.draw = addToDrawTop(actor, [forgetRetain(moved)]).draw
-      note(`${actor.name} returns ${faceOf(cardDef(moved.defId), moved.upgraded).name} to their ${effect.toHand ? 'hand' : 'draw pile'}`)
+      if (requested.length === 0) return
+      const selected = new Set(requested)
+      const moved = requested.map((uid) => actor.discard.find((card) => card.uid === uid)!)
+      actor.discard = actor.discard.filter((card) => !selected.has(card.uid))
+      const cleaned = moved.map((card) => effect.retain
+        ? { ...forgetRetain(card), retainThisTurn: true }
+        : forgetRetain(card))
+      if (effect.toHand) actor.hand = [...actor.hand, ...cleaned]
+      else actor.draw = addToDrawTop(actor, cleaned).draw
+      note(`${actor.name} returns ${moved.length} card${moved.length === 1 ? '' : 's'} to their ${effect.toHand ? 'hand' : 'draw pile'}`)
       return
     }
     case 'recoverExhaust': {
@@ -1994,6 +2263,30 @@ function applyEffect(
       actor.hand = [...actor.hand, ...chosen.map(forgetRetain)]
       if (chosen.length > 0) note(`${actor.name} searches ${chosen.length} card${chosen.length === 1 ? '' : 's'} into their hand`)
       context.pendingTriggers?.push(...queuedTriggers(state, { kind: 'onShuffle' }, actor))
+      return
+    }
+    case 'searchDrawAndPlayTwice': {
+      const eligible = omniscienceEligibleCards(state, actor)
+      const requested = context.searchDrawUids ?? []
+      if (requested.length !== Math.min(1, eligible.length) ||
+        requested.some((uid) => !eligible.some((card) => card.uid === uid))) {
+        context.invalidSearchChoice = true
+        return
+      }
+      const chosen = eligible.find((card) => card.uid === requested[0])
+      actor.draw = shuffle(state.rng, actor.draw.filter((card) => card.uid !== chosen?.uid))
+      context.pendingTriggers?.push(...queuedTriggers(state, { kind: 'onShuffle' }, actor))
+      if (!chosen) return
+      const chosenDef = faceOf(cardDef(chosen.defId), chosen.upgraded)
+      context.doppelgangerCopy = forgetRetain(chosen)
+      context.queuedCopySource = 'Omniscience'
+      context.queuedCopyVirtualOnly = false
+      context.queuedCopyTwice = true
+      context.queuedCopyForcedExhaust = true
+      context.queuedCopySources = []
+      context.consumeQueuedFreeCard = (actor.freeCardsThisTurn ?? 0) > 0
+      context.consumeQueuedFreeAttack = chosenDef.type === 'attack' && (actor.freeAttacksThisTurn ?? 0) > 0
+      note(`${actor.name} will play ${chosenDef.name} twice for 0 Energy`)
       return
     }
     case 'drawAndPlayFree': {
@@ -2260,7 +2553,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
   let drew = false
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
-    if (effect.kind === 'searchDraw') return true
+    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') return true
     if (effect.kind === 'draw') drew = true
     if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck'))) return true
   }
@@ -2286,7 +2579,7 @@ export function previewCardChoice(
   const def = faceOf(cardDef(held.defId), held.upgraded)
   const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player, held)
   const cost = printedCost === 'X' ? player.energy : printedCost
-  if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
+  if (reachedTimeWarpLimit(state, player) || !cardIsPlayable(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
 
   const preview = clone(state)
@@ -2295,8 +2588,10 @@ export function previewCardChoice(
   let drew = false
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
-    if (effect.kind === 'searchDraw') {
-      return { kind: 'search', cards: actor.draw }
+    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
+      return { kind: 'search', cards: effect.kind === 'searchDraw'
+        ? actor.draw
+        : omniscienceEligibleCards(preview, actor) }
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor), [])
       drew = true
@@ -2320,7 +2615,7 @@ export function previewCardChoice(
  */
 const ENEMY_EFFECTS = [
   'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
-  'evoke', 'recurseOrb', 'clearTargetBlock', 'hitPerExhaust',
+  'evoke', 'recurseOrb', 'clearTargetBlock', 'hitPerExhaust', 'execute',
 ]
 
 /**
@@ -2400,6 +2695,20 @@ export function cardEnemyChoiceCount(def: CardDef, mode?: number): number {
 export function cardPlayerChoiceCount(def: CardDef, mode?: number): number {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
   return effects.reduce((sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
+}
+
+export function cardModeIsAvailable(
+  def: CardDef,
+  state: CombatState,
+  player: Player,
+  mode: number,
+  drawCount = player.draw.length,
+  sourceCardUid?: string,
+): boolean {
+  const effects = def.modes?.[mode]?.effects
+  return effects !== undefined &&
+    (!effects.some((effect) => effect.kind === 'copyLastAllyAttack') ||
+      Boolean(latestPlayableAllyAttack(state, player, sourceCardUid, drawCount)))
 }
 
 /** Mandatory targets for a card that spends every Shiv the actor currently holds. */
@@ -2660,16 +2969,30 @@ function finishDeferredHavocs(
   state: CombatState,
   actor: Player,
   deferred: readonly DeferredHavoc[],
-): void {
+): PendingTrigger[] {
   const remaining = [...deferred]
+  const pendingTriggers: PendingTrigger[] = []
   while (remaining.length > 0) {
-    const { card, exhaust, virtualOnly, copySourceNames, copyResumePhase } = remaining.pop()!
-    if (combatIsOver(state)) return
+    const { card, exhaust, remainingEffects, virtualOnly, copySourceNames, copyResumePhase } = remaining.pop()!
+    if (combatIsOver(state)) return pendingTriggers
+    const def = faceOf(cardDef(card.defId), card.upgraded)
+    if (remainingEffects?.length) {
+      const context = resolutionContext(
+        { enemyUid: null, playerId: actor.id }, def, card, 0,
+        virtualOnly === true || Boolean(copySourceNames?.length),
+      )
+      for (const effect of remainingEffects) {
+        applyEffect(state, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', context)
+        if (combatIsOver(state)) return pendingTriggers
+      }
+      pendingTriggers.push(...(context.pendingTriggers ?? []))
+    }
     if (copySourceNames?.length) {
-      fireTriggers(state, { kind: 'onPlayCard', cardType: 'skill' }, actor, card.uid)
-      if (combatIsOver(state)) return
-      resolveEnraged(state, actor)
-      if (combatIsOver(state)) return
+      if (def.type === 'attack') actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+      fireTriggers(state, { kind: 'onPlayCard', cardType: def.type }, actor, card.uid)
+      if (combatIsOver(state)) return pendingTriggers
+      if (def.type === 'skill') resolveEnraged(state, actor)
+      if (combatIsOver(state)) return pendingTriggers
       state.pendingCardCopy = {
         playerId: actor.id,
         card: { ...card },
@@ -2682,18 +3005,28 @@ function finishDeferredHavocs(
       }
       state.phase = 'copy'
       state.log = [...state.log,
-        `${actor.name}'s ${copySourceNames[0]} copy finished; ${cardDef(card.defId).name} remains to resolve`]
-      return
+        `${actor.name}'s ${copySourceNames[0]} copy finished; ${def.name} remains to resolve`]
+      return pendingTriggers
     }
     if (!virtualOnly) {
       if (exhaust) exhaustCards(state, actor, [card])
       else actor.discard = [...actor.discard, card]
     }
-    if (combatIsOver(state)) return
-    fireTriggers(state, { kind: 'onPlayCard', cardType: 'skill' }, actor, card.uid)
-    if (combatIsOver(state)) return
-    resolveEnraged(state, actor)
+    if (combatIsOver(state)) return pendingTriggers
+    if (def.type === 'attack') actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+    fireTriggers(state, { kind: 'onPlayCard', cardType: def.type }, actor, card.uid)
+    if (combatIsOver(state)) return pendingTriggers
+    if (def.type === 'skill') resolveEnraged(state, actor)
   }
+  return pendingTriggers
+}
+
+function settleForbiddenPendingCopy(state: CombatState, actor: Player): CombatState {
+  const settled = settle(state)
+  if (!settled.pendingCardCopy) return settled
+  return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+    ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+    : settled
 }
 
 function cardResolutionChoicesAreValid(
@@ -2703,7 +3036,12 @@ function cardResolutionChoicesAreValid(
   effects: readonly Effect[],
   context: PlayContext,
   energySpent: number,
+  sourceCardUid?: string,
 ): boolean {
+  if (effects.some((effect) => effect.kind === 'copyLastAllyAttack') &&
+    !latestPlayableAllyAttack(state, player, sourceCardUid)) {
+    return false
+  }
   const mandatoryShivs = cardShivChoiceCount(def, player, context.mode)
   const discarded = context.discardUids?.length ?? 0
   const gainedShivs = effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
@@ -2732,9 +3070,11 @@ function cardResolutionChoicesAreValid(
   const recover = effects.find((effect) => effect.kind === 'recoverDiscard')
   if (recover) {
     const required = Math.min(recover.amount, player.discard.length)
-    const chosen = context.recoverDiscardUid
-    if ((required === 1 && (!chosen || !player.discard.some((card) => card.uid === chosen))) ||
-      (required === 0 && chosen !== undefined)) return false
+    const chosen = context.recoverDiscardUids ??
+      (context.recoverDiscardUid === undefined ? [] : [context.recoverDiscardUid])
+    if ((context.recoverDiscardUids !== undefined && context.recoverDiscardUid !== undefined) ||
+      chosen.length !== required || new Set(chosen).size !== chosen.length ||
+      chosen.some((uid) => !player.discard.some((card) => card.uid === uid))) return false
   }
   const exhume = effects.find((effect) => effect.kind === 'recoverExhaust')
   if (exhume) {
@@ -2743,12 +3083,15 @@ function cardResolutionChoicesAreValid(
     if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
       (required === 0 && chosen !== undefined)) return false
   }
-  const search = effects.find((effect) => effect.kind === 'searchDraw')
+  const search = effects.find((effect) => effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
   if (search) {
     const chosen = context.searchDrawUids ?? []
-    const required = Math.min(search.amount, player.draw.length)
+    const eligible = search.kind === 'searchDraw' ? player.draw : omniscienceEligibleCards(state, sourceCardUid
+      ? { ...player, hand: player.hand.filter((card) => card.uid !== sourceCardUid) }
+      : player)
+    const required = Math.min(search.kind === 'searchDraw' ? search.amount : 1, eligible.length)
     if (chosen.length !== required || new Set(chosen).size !== chosen.length ||
-      chosen.some((uid) => !player.draw.some((card) => card.uid === uid))) return false
+      chosen.some((uid) => !eligible.some((card) => card.uid === uid))) return false
   }
 
   const plan = evokePlan(def, player, context.evokeSlots ?? [], context.mode, energySpent)
@@ -2774,7 +3117,9 @@ function cleanupPlayedCard(
   context: PlayContext,
   forcedExhaust = false,
 ): void {
-  const played = forgetRetain(held)
+  const played = context.sourceCounter === undefined
+    ? forgetRetain(held)
+    : { ...forgetRetain(held), counter: context.sourceCounter }
   if (context.sourceAttached) return
   if (def.exhaust || forcedExhaust ||
     (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
@@ -2864,27 +3209,25 @@ export function playCard(
   if (!held) return state
 
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const timeEater = state.enemies.find((enemy) => !enemy.dead &&
-    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'timeWarp'))
-  const timeWarp = timeEater && enemyAbilities(enemyDef(timeEater.defId, timeEater.ascension))
-    .find((ability) => ability.kind === 'timeWarp')
-  if (timeWarp?.kind === 'timeWarp' &&
-    (player.cardsPlayedThisTurn ?? 0) >= (timeWarp.limits[timeEater!.actionIndex] ?? Number.POSITIVE_INFINITY)) {
+  if (player.cardPlayLocked) return forcedPlay ? abandonForcedCard(state, playerId) : state
+  if (reachedTimeWarpLimit(state, player)) {
     return forcedPlay ? abandonForcedCard(state, playerId) : state
   }
   if (!cardIsPlayable(def, state, player)) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
+    if (!cardModeIsAvailable(def, state, player, context.mode!, player.draw.length, held.uid)) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
-  const printedCost = forcedPlay ? 0 : player.nextCardCost ?? playCost(def, player, held)
-  if (def.cost === 'X' && printedCost !== 'X' && (def.minimumX ?? 0) > 0) return state
+  const printedCost = forcedPlay ? 0 : playCost(def, player, held)
+  if (def.cost === 'X' && printedCost !== 'X' && printedCost < (def.minimumX ?? 0)) return state
   const xCost = printedCost === 'X'
   if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < (def.minimumX ?? 0) ||
     context.energySpent! > player.energy)) return state
   if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
   const cost = xCost ? context.energySpent! : printedCost
+  const effectEnergy = def.cost === 'X' ? cost : 0
   const miracleOnCard = context.spendMiracle === true
   if (forcedPlay && miracleOnCard) return state
   if (miracleOnCard && (
@@ -2894,7 +3237,7 @@ export function playCard(
   // Choices are checked together at the trust boundary. The same validator is
   // reused when the physical card resolves after its separately targeted copy.
   if (resolvesOnPlay && !cardResolutionChoicesAreValid(
-    state, player, def, effects, context, xCost ? cost : 0,
+    state, player, def, effects, context, effectEnergy, held.uid,
   )) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
@@ -2911,15 +3254,9 @@ export function playCard(
   // next valid card (rulebook p.24). Burst itself explicitly cannot be copied.
   // The first resolution below is the virtual copy; the physical original
   // stays outside every pile and resolves through `playCardCopy` afterwards.
-  const copySources: CopySource[] = def.id === 'burst' ? []
-    : (def.type === 'attack' || def.type === 'skill') && (actor.doubledCardsThisTurn ?? 0) > 0
-      ? ['Echo Form']
-      : def.type === 'attack' && (actor.doubledAttacksThisTurn ?? 0) > 0
-        ? ['Double Tap']
-        : def.type === 'skill' && (actor.doubledSkillsThisTurn ?? 0) > 0
-          ? ['Burst']
-          : []
+  const copySources = copySourcesFor(def, actor)
   const doubled = copySources.length > 0
+  consumeCopySource(actor, copySources)
 
   // The card leaves hand before resolving and belongs to no pile until cleanup,
   // which is what stops a card that draws from drawing itself (p.12).
@@ -2929,6 +3266,9 @@ export function playCard(
   actor.energy -= cost
   actor.nextCardCost = null
   if ((actor.freeCardsThisTurn ?? 0) > 0) actor.freeCardsThisTurn = actor.freeCardsThisTurn! - 1
+  if (def.type === 'attack' && (actor.freeAttacksThisTurn ?? 0) > 0) {
+    actor.freeAttacksThisTurn = actor.freeAttacksThisTurn! - 1
+  }
   if (miracleOnCard) {
     actor.miracles -= 1
     actor.energy += 1
@@ -2939,7 +3279,7 @@ export function playCard(
   if (def.type === 'attack' || def.type === 'skill') {
     next.playedCardsThisTurn = [
       ...(next.playedCardsThisTurn ?? []),
-      { card: forgetRetain(held), copied: doubled },
+      { playerId: actor.id, card: forgetRetain(held), copied: doubled },
     ]
   }
 
@@ -2959,9 +3299,10 @@ export function playCard(
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
   // would be a mutation from a function that is otherwise pure.
-  const ctx = resolutionContext(context, def, held, xCost ? cost : 0, doubled)
+  const ctx = resolutionContext(context, def, held, effectEnergy, doubled)
+  let remainingEffects: Effect[] | undefined
   if (resolvesOnPlay) {
-    for (const effect of effects) {
+    for (const [index, effect] of effects.entries()) {
       applyEffect(next, actor, effect, scope, supportScope, ctx)
       if (invalidPlayChoice(ctx)) return state
       // Combat endings are immediate (p.13), including halfway through a
@@ -2969,6 +3310,10 @@ export function playCard(
       if (cardResolutionIsOver(next, ctx)) {
         if (akabeko) actor.strength = Math.max(0, actor.strength - 1)
         return finishForcedCardPlay(settle(next), forcedChoices)
+      }
+      if (ctx.doppelgangerCopy) {
+        remainingEffects = effects.slice(index + 1)
+        break
       }
     }
   }
@@ -2979,9 +3324,6 @@ export function playCard(
   // A Havoc drawn by another Havoc extends the same small stack.
   if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
     const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
-    if (copySources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
-    if (copySources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
-    if (copySources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...(forced?.deferredHavocs ?? []),
       { card: forgetRetain(held), exhaust: def.exhaust === true ||
@@ -3010,15 +3352,20 @@ export function playCard(
 
   resolvePendingEnemyReactions(next, actor, ctx)
   if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+  for (const pending of ctx.pendingDiscards ?? []) {
+    const owner = findPlayer(next, pending.playerId)
+    if (owner) resolveDiscardReactions(next, owner, pending.cards)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+  }
 
   if (ctx.doppelgangerCopy) {
     const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
     next.pendingCardCopy = {
       playerId: actor.id,
       card: ctx.doppelgangerCopy,
-      energySpent: xCost ? cost : 0,
+      energySpent: effectEnergy,
       resumePhase: state.phase === 'start' ? 'start' : 'player',
-      forcedExhaust: false,
+      forcedExhaust: ctx.queuedCopyForcedExhaust === true,
       forcedChoices,
       deferredHavocs: [
         ...(forced?.deferredHavocs ?? []),
@@ -3026,23 +3373,31 @@ export function playCard(
           card: forgetRetain(held),
           exhaust: def.exhaust === true ||
             (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt,
+          remainingEffects,
+          ...(doubled ? {
+            copySourceNames: copySources,
+            copyResumePhase: state.phase === 'start' ? 'start' as const : 'player' as const,
+          } : {}),
         },
       ],
       deferredTriggers: [
         ...(forced?.pendingTriggers ?? []),
         ...(ctx.pendingTriggers ?? []),
       ],
-      sourceNames: ['Doppelganger'],
-      virtualOnly: true,
+      sourceNames: ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
+        ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
+        : [ctx.queuedCopySource ?? 'Doppelganger']),
+      virtualOnly: ctx.queuedCopyVirtualOnly ?? true,
+      queuedWeaves: ctx.queuedWeaves,
+      queuedCopySources: ctx.queuedCopySources,
+      consumeFreeCard: ctx.consumeQueuedFreeCard,
+      consumeFreeAttack: ctx.consumeQueuedFreeAttack,
     }
     next.phase = 'copy'
-    return settle(next)
-  }
-
-  for (const pending of ctx.pendingDiscards ?? []) {
-    const owner = findPlayer(next, pending.playerId)
-    if (owner) resolveDiscardReactions(next, owner, pending.cards)
-    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+    const settled = settle(next)
+    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+      : settled
   }
 
   if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
@@ -3082,13 +3437,10 @@ export function playCard(
   if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
 
   if (doubled) {
-    if (copySources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
-    if (copySources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
-    if (copySources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
     next.pendingCardCopy = {
       playerId: actor.id,
       card: { ...held },
-      energySpent: xCost ? cost : 0,
+      energySpent: effectEnergy,
       resumePhase: state.phase === 'start' ? 'start' : 'player',
       forcedExhaust: forcedPlay && forced.exhaustNonPower && def.type !== 'power',
       forcedChoices,
@@ -3098,13 +3450,18 @@ export function playCard(
     next.phase = 'copy'
     next.log = [...next.log, `${actor.name}'s ${copySources[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
-    return settle(next)
+    const settled = settle(next)
+    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+      : settled
   }
 
-  finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
-  ctx.pendingTriggers = [...(forced?.pendingTriggers ?? []), ...(ctx.pendingTriggers ?? [])]
+  const resumedTriggers = finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
+  ctx.pendingTriggers = [
+    ...(forced?.pendingTriggers ?? []), ...(ctx.pendingTriggers ?? []), ...resumedTriggers,
+  ]
   releasePendingTriggers(next, ctx)
-  return finishForcedCardPlay(settle(next), forcedChoices)
+  return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), forcedChoices)
 }
 
 /** Resolves the physical original after its separately targeted virtual copy. */
@@ -3118,14 +3475,20 @@ export function playCardCopy(
   if (state.phase !== 'copy' || !pending || pending.playerId !== playerId) return state
   const player = findPlayer(state, playerId)
   if (!player || player.dead) return state
+  if (player.cardPlayLocked) return skipCardCopy(state, playerId, 'was skipped by Conclude')
+  if (reachedTimeWarpLimit(state, player)) return skipCardCopy(state, playerId, 'was skipped by Time Warp')
   const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
   const sourceName = pending.sourceNames[0]
   if ((sourceName === 'Double Tap' && def.type !== 'attack') ||
+    (sourceName === 'Blasphemy' && def.type !== 'attack') ||
+    (sourceName === 'Omniscience' && def.type !== 'attack' && def.type !== 'skill') ||
+    (sourceName === 'Weave' && def.id !== 'weave') ||
     (sourceName === 'Echo Form' && def.type !== 'attack' && def.type !== 'skill') ||
     (sourceName === 'Burst' && def.type !== 'skill') ||
     (sourceName === 'Doppelganger' && def.type !== 'attack' && def.type !== 'skill')) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
+    if (!cardModeIsAvailable(def, state, player, context.mode!)) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   if (!cardResolutionChoicesAreValid(state, player, def, effects, context, pending.energySpent)) return state
@@ -3133,25 +3496,40 @@ export function playCardCopy(
   const next = clone(state)
   const copy = next.pendingCardCopy!
   const actor = findPlayer(next, playerId)!
+  if ((copy.queuedCopySources?.length ?? 0) > 0) {
+    consumeCopySource(actor, copy.queuedCopySources!)
+    copy.queuedCopySources = []
+  }
+  if (copy.consumeFreeCard) actor.freeCardsThisTurn = Math.max(0, (actor.freeCardsThisTurn ?? 0) - 1)
+  if (copy.consumeFreeAttack) actor.freeAttacksThisTurn = Math.max(0, (actor.freeAttacksThisTurn ?? 0) - 1)
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
   if (def.type === 'attack' || def.type === 'skill') {
     next.playedCardsThisTurn = [
       ...(next.playedCardsThisTurn ?? []),
       {
+        playerId: actor.id,
         card: forgetRetain(copy.card),
         copied: copy.virtualOnly === true || copy.sourceNames.length > 1,
       },
     ]
   }
-  const ctx = resolutionContext(context, def, copy.card, copy.energySpent, copy.virtualOnly === true)
+  const ctx = resolutionContext(
+    context, def, copy.card, copy.energySpent,
+    copy.virtualOnly === true || copy.sourceNames.length > 1,
+  )
   next.log = [...next.log, `${actor.name} played ${def.name}`]
 
-  for (const effect of effects) {
+  let remainingEffects: Effect[] | undefined
+  for (const [index, effect] of effects.entries()) {
     applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', ctx)
     if (invalidPlayChoice(ctx)) return state
     if (cardResolutionIsOver(next, ctx)) {
       delete next.pendingCardCopy
       return finishForcedCardPlay(settle(next), copy.forcedChoices)
+    }
+    if (ctx.doppelgangerCopy) {
+      remainingEffects = effects.slice(index + 1)
+      break
     }
   }
   // The forced child is part of a copied Havoc. Suspend this copy until that
@@ -3159,7 +3537,11 @@ export function playCardCopy(
   if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...copy.deferredHavocs,
-      { card: { ...copy.card }, exhaust: copy.forcedExhaust, virtualOnly: copy.virtualOnly },
+      { card: { ...copy.card }, exhaust: copy.forcedExhaust, virtualOnly: copy.virtualOnly,
+        ...(copy.sourceNames.length > 1 ? {
+          copySourceNames: copy.sourceNames.slice(1) as CopySource[],
+          copyResumePhase: copy.resumePhase,
+        } : {}) },
     ]
     next.startTurnProgress.forcedCard.pendingTriggers = [...(ctx.pendingTriggers ?? [])]
     if (copy.deferredTriggers?.length) {
@@ -3196,18 +3578,33 @@ export function playCardCopy(
       card: ctx.doppelgangerCopy,
       energySpent: copy.energySpent,
       resumePhase: copy.resumePhase,
-      forcedExhaust: false,
+      forcedExhaust: ctx.queuedCopyForcedExhaust === true,
       forcedChoices: copy.forcedChoices,
       deferredHavocs: [
         ...copy.deferredHavocs,
-        { card: forgetRetain(copy.card), exhaust: def.exhaust === true || copy.forcedExhaust || corrupt },
+        { card: forgetRetain(copy.card), exhaust: def.exhaust === true || copy.forcedExhaust || corrupt,
+          virtualOnly: copy.virtualOnly,
+          remainingEffects,
+          ...(copy.sourceNames.length > 1 ? {
+            copySourceNames: copy.sourceNames.slice(1) as CopySource[],
+            copyResumePhase: copy.resumePhase,
+          } : {}) },
       ],
       deferredTriggers: [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])],
-      sourceNames: ['Doppelganger'],
-      virtualOnly: true,
+      sourceNames: ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
+        ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
+        : [ctx.queuedCopySource ?? 'Doppelganger']),
+      virtualOnly: ctx.queuedCopyVirtualOnly ?? true,
+      queuedWeaves: ctx.queuedWeaves,
+      queuedCopySources: ctx.queuedCopySources,
+      consumeFreeCard: ctx.consumeQueuedFreeCard,
+      consumeFreeAttack: ctx.consumeQueuedFreeAttack,
     }
     next.phase = 'copy'
-    return settle(next)
+    const settled = settle(next)
+    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+      : settled
   }
   if (finalCopy && !copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
   for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
@@ -3248,18 +3645,51 @@ export function playCardCopy(
     copy.sourceNames = copy.sourceNames.slice(1)
     next.log = [...next.log, `${actor.name}'s ${copy.sourceNames[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
-    return settle(next)
+    const settled = settle(next)
+    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+      : settled
+  }
+  if (copy.queuedWeaves?.length) {
+    const woven = copy.queuedWeaves[0]!
+    const queuedWeaves = copy.queuedWeaves.slice(1)
+    const weave = faceOf(cardDef(woven.defId), woven.upgraded)
+    const queuedCopySources = copySourcesFor(weave, actor)
+    const sourceNames = queuedCopySources.length > 0
+      ? [...queuedCopySources, queuedCopySources.at(-1)!]
+      : ['Weave' as const]
+    next.pendingCardCopy = {
+      playerId: actor.id,
+      card: { ...woven, scryDamageBonus: weave.scryPlayBonus },
+      energySpent: 0,
+      resumePhase: copy.resumePhase,
+      forcedExhaust: false,
+      forcedChoices: copy.forcedChoices,
+      deferredHavocs: copy.deferredHavocs,
+      deferredTriggers: [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])],
+      sourceNames,
+      queuedWeaves,
+      queuedCopySources,
+      consumeFreeCard: (actor.freeCardsThisTurn ?? 0) > 0,
+      consumeFreeAttack: (actor.freeAttacksThisTurn ?? 0) > 0,
+    }
+    next.phase = 'copy'
+    const settled = settle(next)
+    return actor.cardPlayLocked || reachedTimeWarpLimit(settled, actor)
+      ? skipCardCopy(settled, actor.id, actor.cardPlayLocked ? 'was skipped by Conclude' : 'was skipped by Time Warp')
+      : settled
   }
   delete next.pendingCardCopy
   next.phase = copy.resumePhase
-  finishDeferredHavocs(next, actor, copy.deferredHavocs)
-  ctx.pendingTriggers = [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])]
+  const resumedTriggers = finishDeferredHavocs(next, actor, copy.deferredHavocs)
+  ctx.pendingTriggers = [
+    ...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? []), ...resumedTriggers,
+  ]
   releasePendingTriggers(next, ctx)
-  return finishForcedCardPlay(settle(next), copy.forcedChoices)
+  return finishCardCopy(settleForbiddenPendingCopy(next, actor), copy.forcedChoices)
 }
 
-/** Releases a disconnected owner without letting the rest of the party deadlock. */
-export function abandonCardCopy(state: CombatState, playerId: string): CombatState {
+function skipCardCopy(state: CombatState, playerId: string, reason: string): CombatState {
   const pending = state.pendingCardCopy
   if (state.phase !== 'copy' || !pending || pending.playerId !== playerId) return state
   const next = clone(state)
@@ -3271,27 +3701,34 @@ export function abandonCardCopy(state: CombatState, playerId: string): CombatSta
   const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
   const ctx = resolutionContext({ enemyUid: null, playerId }, def, copy.card, copy.energySpent)
   if (!copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  for (const woven of copy.queuedWeaves ?? []) actor.discard.push(forgetRetain(woven))
   for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pendingExhaust.playerId)
     if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
   }
   next.log = [...next.log, copy.virtualOnly
-    ? `${actor.name}'s Doppelganger copy of ${def.name} was skipped after disconnecting`
-    : `${actor.name}'s original ${def.name} was skipped after disconnecting`]
-  finishDeferredHavocs(next, actor, copy.deferredHavocs)
+    ? `${actor.name}'s ${copy.sourceNames[0]} copy of ${def.name} ${reason}`
+    : `${actor.name}'s original ${def.name} ${reason}`]
+  const resumedTriggers = finishDeferredHavocs(next, actor, copy.deferredHavocs)
   releasePendingTriggers(next, {
     enemyUid: null,
     playerId: actor.id,
-    pendingTriggers: copy.deferredTriggers,
+    pendingTriggers: [...(copy.deferredTriggers ?? []), ...resumedTriggers],
   })
-  return finishForcedCardPlay(settle(next), copy.forcedChoices)
+  return finishCardCopy(settleForbiddenPendingCopy(next, actor), copy.forcedChoices)
+}
+
+/** Releases a disconnected owner without letting the rest of the party deadlock. */
+export function abandonCardCopy(state: CombatState, playerId: string): CombatState {
+  return skipCardCopy(state, playerId, 'was skipped after disconnecting')
 }
 
 /** Privately previews the original card's post-copy draw or Scry choice. */
 export function previewCardCopyChoice(state: CombatState, playerId: string): CardChoicePreview | null {
   const pending = state.pendingCardCopy
   const player = findPlayer(state, playerId)
-  if (state.phase !== 'copy' || !pending || pending.playerId !== playerId || !player || player.dead) return null
+  if (state.phase !== 'copy' || !pending || pending.playerId !== playerId || !player || player.dead ||
+    player.cardPlayLocked || reachedTimeWarpLimit(state, player)) return null
   const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
   if (!cardNeedsChoicePreview(def, state, player)) return null
 
@@ -3300,8 +3737,10 @@ export function previewCardCopyChoice(state: CombatState, playerId: string): Car
   let drew = false
   for (const effect of def.effects) {
     if (!effectIsActive(effect, preview, actor)) continue
-    if (effect.kind === 'searchDraw') {
-      return { kind: 'search', cards: actor.draw }
+    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
+      return { kind: 'search', cards: effect.kind === 'searchDraw'
+        ? actor.draw
+        : omniscienceEligibleCards(preview, actor) }
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor, undefined, {
         enemyUid: null, playerId, energySpent: pending.energySpent,
@@ -3501,7 +3940,10 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.hpLostThisRound = 0
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
+    player.freeAttacksThisTurn = 0
+    player.cardPlayLocked = false
     player.doubledAttacksThisTurn = 0
+    player.tripledAttacksThisTurn = 0
     player.doubledCardsThisTurn = 0
     player.doubledSkillsThisTurn = 0
     player.retainCardsThisTurn = 0
@@ -3510,7 +3952,11 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.damageDealtZeroThisTurn = false
     player.attacksPlayedThisTurn = 0
     for (const pile of ['hand', 'draw', 'discard', 'exhaust', 'powers'] as const) {
-      player[pile] = player[pile].map(({ freeThisTurn: _free, ...card }) => card)
+      player[pile] = player[pile].map(({
+        freeThisTurn: _free,
+        costReductionThisTurn: _reduction,
+        ...card
+      }) => card)
     }
   }
   const beforeDraw = next.players.flatMap((player) => player.dead ? [] :
@@ -3580,6 +4026,7 @@ export function orderStartTurnScries(state: CombatState, order: readonly string[
 
 function continueBeforeDraw(state: CombatState): CombatState {
   const progress = state.startTurnProgress?.beforeDraw
+  if (state.pendingCardCopy) return state
   if (!progress || progress.sources.length > 0 || state.pendingTriggers.length > 0) return settle(state)
   state.startTurnProgress = undefined
   return finishPreparedStartTurnWithChoices(continueStartTurnDraw(state, progress.drewFrom))
@@ -4118,6 +4565,16 @@ function finishForcedCardPlay(
   return continueStartTurn(state, choices)
 }
 
+function finishCardCopy(
+  state: CombatState,
+  choices: readonly StartTurnChoice[] | null,
+): CombatState {
+  const resumed = finishForcedCardPlay(state, choices)
+  return resumed.phase === 'start' && resumed.startTurnProgress?.beforeDraw
+    ? continueBeforeDraw(resumed)
+    : resumed
+}
+
 /** Settles a disconnected owner's private forced card and resumes queued abilities. */
 export function abandonForcedCard(state: CombatState, playerId: string): CombatState {
   const forced = state.startTurnProgress?.forcedCard
@@ -4136,13 +4593,13 @@ export function abandonForcedCard(state: CombatState, playerId: string): CombatS
     discardByCardEffect(next, actor, [card])
   }
   next.log = [...next.log, `${actor.name}'s ${cardDef(forced.sourceCardId ?? 'mayhem').name} card was settled after disconnecting`]
-  finishDeferredHavocs(next, actor, forced.deferredHavocs ?? [])
+  const resumedTriggers = finishDeferredHavocs(next, actor, forced.deferredHavocs ?? [])
   releasePendingTriggers(next, {
     enemyUid: null,
     playerId: actor.id,
-    pendingTriggers: forced.pendingTriggers,
+    pendingTriggers: [...(forced.pendingTriggers ?? []), ...resumedTriggers],
   })
-  return finishForcedCardPlay(settle(next), choices)
+  return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), choices)
 }
 
 export function startTurnDiscardPreview(state: CombatState): StartTurnDiscardPreview | undefined {
@@ -4502,7 +4959,8 @@ export function discardOrderIsValid(player: Player, order: readonly string[]): b
   if (new Set(order).size !== order.length || order.some((uid) => !hand.has(uid))) return false
   const ordered = new Set(order)
   const optionallyRetained = player.hand.filter((card) =>
-    !ordered.has(card.uid) && !card.endTurnProtected && !faceOf(cardDef(card.defId), card.upgraded).retain)
+    !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
+      !faceOf(cardDef(card.defId), card.upgraded).retain)
   return optionallyRetained.length <= (player.retainCardsThisTurn ?? 0)
 }
 
@@ -4533,18 +4991,19 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
         ...player.hand.filter((card) => !ordered.has(card.uid))]
       : player.hand
     const chosenRetain = new Set(player.hand
-      .filter((card) => !ordered.has(card.uid) && !card.endTurnProtected &&
+      .filter((card) => !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
         !faceOf(cardDef(card.defId), card.upgraded).retain)
       .map((card) => card.uid))
     const keep = hand
-      .filter((held) => chosenRetain.has(held.uid) || held.endTurnProtected ||
+      .filter((held) => chosenRetain.has(held.uid) || held.endTurnProtected || held.retainThisTurn ||
         faceOf(cardDef(held.defId), held.upgraded).retain)
       .map((held) => held.uid)
     const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
     player.hand = piles.hand.map((held) => {
       const clean = forgetRetain({ ...held, endTurnProtected: undefined })
-      return chosenRetain.has(held.uid) || faceOf(cardDef(held.defId), held.upgraded).retain
+      return chosenRetain.has(held.uid) || held.retainThisTurn ||
+        faceOf(cardDef(held.defId), held.upgraded).retain
         ? { ...clean, retainedLastTurn: true }
         : clean
     })
@@ -5509,7 +5968,10 @@ export function createCombat(
       hpLostThisRound: 0,
       hpLossLimitThisRound: undefined,
       freeCardsThisTurn: 0,
+      freeAttacksThisTurn: 0,
+      cardPlayLocked: false,
       doubledAttacksThisTurn: 0,
+      tripledAttacksThisTurn: 0,
       doubledCardsThisTurn: 0,
       doubledSkillsThisTurn: 0,
       retainCardsThisTurn: 0,
@@ -5824,7 +6286,7 @@ export function chooseDistilledCard(state: CombatState, playerId: string, cardUi
   const remaining = next.pendingDistilled!.cards.filter((card) => card.uid !== cardUid)
   const def = faceOf(cardDef(queued.defId), queued.upgraded)
   next.pendingDistilled = remaining.length ? { playerId, cards: remaining } : undefined
-  if (!cardIsPlayable(def, next, actor) || (def.minimumX ?? 0) > 0) {
+  if (reachedTimeWarpLimit(next, actor) || !cardIsPlayable(def, next, actor) || (def.minimumX ?? 0) > 0) {
     discardByCardEffect(next, actor, [actor.hand.find((card) => card.uid === cardUid)!])
     next.log = [...next.log, `${actor.name} cannot play ${def.name}; it is discarded`]
     return settle(next)

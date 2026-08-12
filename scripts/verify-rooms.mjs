@@ -1448,6 +1448,209 @@ check('Madness discount survives reconnect and cannot be spent as a Miracle paym
   assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).freeCardsThisTurn, 0)
 })
 
+check('Swivel and Conclude turn locks survive reconnect without exposing the remaining hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const swivel = { uid: 'room-swivel', defId: 'swivel', upgraded: false }
+  const conclude = { uid: 'room-conclude', defId: 'conclude', upgraded: false }
+  const hidden = { uid: 'room-hidden-after-conclude', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, { hand: [swivel, conclude, hidden], energy: 3 })
+  apply(room, a.token, { kind: 'playCard', cardUid: swivel.uid, preflight: true })
+  const enemy = room.run.combat.enemies.find((candidate) => !candidate.dead)
+  apply(room, a.token, { kind: 'playCard', cardUid: conclude.uid, enemyUid: enemy.uid, preflight: true })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(owner.freeAttacksThisTurn, 0, 'Conclude did not consume Swivel as the next Attack')
+  assertEqual(owner.cardPlayLocked, true, 'Conclude lock disappeared during reconnect')
+  const teammate = snapshotFor(room, b.token)
+  const seen = teammate.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(seen.cardPlayLocked, true, 'the co-op table cannot see the Conclude lock')
+  assert(!allStrings(teammate).includes(hidden.uid), 'the public lock leaked a private remaining card')
+})
+
+check('Conjure Blade and Foreign Influence stay authoritative and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const watcher = room.run.combat.players.find((player) => player.id === a.playerId)
+  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
+  const conjure = { uid: 'room-conjure', defId: 'conjure_blade', upgraded: true }
+  const foreign = { uid: 'room-foreign', defId: 'foreign_influence', upgraded: false }
+  const hidden = { uid: 'room-generated-hidden', defId: 'deus_ex_machina', upgraded: false }
+  const allyAttack = { uid: 'room-ally-bash', defId: 'bash', upgraded: false }
+  Object.assign(watcher, {
+    character: 'watcher', hand: [conjure, foreign, hidden], energy: 5,
+    starterStrikeDamageBonus: 0,
+  })
+  Object.assign(ally, { hand: [allyAttack], energy: 2 })
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: conjure.uid, energySpent: 2, preflight: true,
+  })
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const restored = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertEqual(restored.starterStrikeDamageBonus, 4)
+  assertEqual(restored.powers.find((power) => power.uid === conjure.uid).counter, 4,
+    'Conjure Blade cubes disappeared during reconnect')
+  const publicAfterConjure = snapshotFor(room, b.token)
+  assert(!allStrings(publicAfterConjure).includes(hidden.uid), 'Conjure Blade leaked the remaining private hand')
+
+  const enemy = room.run.combat.enemies.find((candidate) => !candidate.dead)
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: allyAttack.uid, enemyUid: enemy.uid, preflight: true,
+  })
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: foreign.uid, mode: 1,
+    copiedCardUid: hidden.uid, preflight: true,
+  })
+  const waiting = snapshotFor(room, b.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertDeepEqual(waiting.pendingCardCopy.sourceNames, ['Foreign Influence'])
+  assertEqual(waiting.pendingCardCopy.card.uid, `${foreign.uid}:copy`)
+  assertEqual(waiting.pendingCardCopy.card.defId, allyAttack.defId,
+    'the server trusted a client-supplied hidden card instead of deriving the public last Attack')
+
+  const disconnected = structuredClone(room)
+  markDisconnected(disconnected, rejoined.token)
+  assertEqual(disconnected.run.combat.phase, 'player')
+  assertEqual(disconnected.run.combat.pendingCardCopy, undefined,
+    'a disconnected Foreign Influence owner deadlocked the shared turn')
+
+  apply(room, rejoined.token, {
+    kind: 'playCardCopy', cardUid: waiting.pendingCardCopy.card.uid,
+    enemyUid: room.run.combat.enemies.find((candidate) => !candidate.dead).uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+})
+
+check('Meditate recovery is authoritative, reconnect-safe, and private', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const meditate = { uid: 'room-meditate', defId: 'meditate', upgraded: true }
+  const first = { uid: 'room-meditate-first', defId: 'perseverance', upgraded: false }
+  const second = { uid: 'room-meditate-second', defId: 'windmill_strike', upgraded: false }
+  Object.assign(actor, {
+    character: 'watcher', stance: 'wrath', hand: [meditate], discard: [first, second], energy: 1,
+  })
+  const before = JSON.stringify(room.run)
+
+  for (const recoverDiscardUids of ['not-a-list', [first.uid, first.uid], [first.uid]]) {
+    let refused = null
+    try {
+      apply(room, a.token, {
+        kind: 'playCard', cardUid: meditate.uid, recoverDiscardUids, preflight: true,
+      })
+    } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Meditate choice mutated room authority')
+  }
+  let stolen = null
+  try {
+    apply(room, b.token, {
+      kind: 'playCard', cardUid: meditate.uid,
+      recoverDiscardUids: [first.uid, second.uid], preflight: true,
+    })
+  } catch (error) { stolen = error }
+  assertEqual(stolen?.name, 'RoomError', 'another seat played Meditate')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: meditate.uid,
+    recoverDiscardUids: [first.uid, second.uid], preflight: true,
+  })
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(owner.stance, 'calm')
+  assertEqual(owner.cardPlayLocked, true)
+  assertDeepEqual(owner.hand.map((card) => card.uid), [first.uid, second.uid])
+  assert(owner.hand.every((card) => card.retainThisTurn === true && !card.retainedLastTurn))
+
+  const teammate = snapshotFor(room, b.token)
+  assert(!allStrings(teammate).some((value) => value === first.uid || value === second.uid),
+    'Meditate leaked recovered hand identities to a teammate')
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const reconnected = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertDeepEqual(reconnected.hand.map((card) => card.uid), [first.uid, second.uid])
+  assert(reconnected.hand.every((card) => card.retainThisTurn === true),
+    'reconnect lost Meditate retention state')
+})
+
+check('a disconnected Meditate+ preview deterministically settles both recoveries without leaking them', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const meditate = { uid: 'room-abandoned-meditate', defId: 'meditate', upgraded: true }
+  const recovered = [
+    { uid: 'room-abandoned-meditate-first', defId: 'perseverance', upgraded: false },
+    { uid: 'room-abandoned-meditate-second', defId: 'windmill_strike', upgraded: false },
+  ]
+  const leftBehind = { uid: 'room-abandoned-meditate-third', defId: 'defend_watcher', upgraded: false }
+  Object.assign(actor, {
+    character: 'watcher', stance: 'wrath', hand: [meditate], discard: [...recovered, leftBehind], energy: 1,
+  })
+  room.cardPreviews = {
+    [a.playerId]: {
+      cardUid: meditate.uid,
+      kind: 'recover',
+      cards: [...actor.discard],
+      spendMiracle: false,
+      enemyUid: null,
+    },
+  }
+
+  markDisconnected(room, a.token)
+  apply(room, b.token, { kind: 'endTurn' })
+
+  assertEqual(room.cardPreviews?.[a.playerId], undefined)
+  const settled = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(settled.hand.map((card) => card.uid), recovered.map((card) => card.uid))
+  assert(settled.hand.every((card) => card.retainThisTurn === true))
+  assert(settled.discard.some((card) => card.uid === leftBehind.uid))
+  const teammate = snapshotFor(room, b.token)
+  assert(!allStrings(teammate).some((value) => recovered.some((card) => card.uid === value)),
+    'the disconnected recovery leaked hidden hand identities')
+
+  const rejoined = joinRoom(room, { token: a.token })
+  const owner = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertDeepEqual(owner.hand.map((card) => card.uid), recovered.map((card) => card.uid))
+})
+
+check('Establishment discounts survive reconnect without exposing the retained hand', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const retained = {
+    uid: 'room-establishment-retained', defId: 'bludgeon', upgraded: false, retainedLastTurn: true,
+  }
+  const ordinary = { uid: 'room-establishment-ordinary', defId: 'defend_watcher', upgraded: false }
+  Object.assign(room.run.combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [],
+  })
+  Object.assign(actor, {
+    character: 'watcher', hand: [retained, ordinary], draw: [], discard: [], energy: 0,
+    powers: [{ uid: 'room-establishment', defId: 'establishment', upgraded: true }],
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const owner = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === a.playerId)
+  const retainedOwnerCard = owner.hand.find((card) => card.uid === retained.uid)
+  assertEqual(retainedOwnerCard.costReductionThisTurn, 2)
+  assertEqual(owner.hand.find((card) => card.uid === ordinary.uid).costReductionThisTurn, undefined)
+  const teammate = snapshotFor(room, b.token)
+  assert(!allStrings(teammate).some((value) => value === retained.uid || value === ordinary.uid),
+    'Establishment leaked the retained hand to a teammate')
+
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const restored = snapshotFor(room, rejoined.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(restored.hand.find((card) => card.uid === retained.uid).costReductionThisTurn, 2)
+  const energy = room.run.combat.players.find((player) => player.id === a.playerId).energy
+  apply(room, rejoined.token, {
+    kind: 'playCard', cardUid: retained.uid,
+    enemyUid: room.run.combat.enemies.find((enemy) => !enemy.dead).uid, preflight: true,
+  })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).energy, energy - 1)
+})
+
 check('Apotheosis bonuses survive reconnect while the remaining hand stays private', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -5442,6 +5645,7 @@ check('online Doppelganger uses public co-op history and survives reconnect', ()
   apply(room, a.token, {
     kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
   })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 9)
   apply(room, b.token, {
     kind: 'playCard', cardUid: doppelganger.uid, energySpent: 1, preflight: true,
   })
@@ -5811,6 +6015,207 @@ check('room authority rejects die Relics while private start progress is pending
   let refused = false
   try { apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 }) } catch { refused = true }
   assert(refused, 'a die Relic changed the roll during private start progress')
+})
+
+check('Blasphemy is authoritative and reconnect-safe without leaking the private draw pile', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const blasphemy = { uid: 'room-blasphemy', defId: 'blasphemy', upgraded: false }
+  const strike = { uid: 'room-blasphemy-strike', defId: 'strike_watcher', upgraded: false }
+  const secrets = [
+    { uid: 'room-blasphemy-secret-1', defId: 'defend_watcher', upgraded: false },
+    { uid: 'room-blasphemy-secret-2', defId: 'vigilance', upgraded: false },
+  ]
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(actor, {
+    character: 'watcher', hand: [blasphemy, strike], draw: secrets, discard: [], exhaust: [],
+    energy: 3, tripledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  Object.assign(target, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, vulnerable: 0, dead: false })
+
+  assert(!secrets.some((card) => allStrings(snapshotFor(room, b.token)).includes(card.uid)),
+    'Blasphemy setup leaked the private draw pile')
+  apply(room, a.token, { kind: 'playCard', cardUid: blasphemy.uid, preflight: true })
+  const revealed = snapshotFor(room, b.token).run.combat
+  assertEqual(revealed.players.find((player) => player.id === actor.id).tripledAttacksThisTurn, 1)
+  assert(secrets.every((card) => allStrings(revealed).includes(card.uid)),
+    'cards exhausted face-up by Blasphemy stayed hidden')
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.pendingCardCopy.sourceNames,
+    ['Blasphemy', 'Blasphemy'])
+
+  const abandoned = structuredClone(room)
+  markDisconnected(abandoned, a.token)
+  assertEqual(abandoned.run.combat.phase, 'player', 'disconnect did not resume the shared Player Turn')
+  assertEqual(abandoned.run.combat.pendingCardCopy, undefined, 'disconnect left Blasphemy copies pending')
+  assertEqual(abandoned.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 19,
+    'disconnect resolved an unchosen Blasphemy copy')
+  const rejoined = joinRoom(abandoned, { token: a.token })
+  const resumed = snapshotFor(abandoned, rejoined.token)
+  assertEqual(resumed.run.combat.phase, 'player')
+  assertEqual(resumed.run.combat.pendingCardCopy, undefined)
+
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 18)
+  assertDeepEqual(snapshotFor(room, a.token).run.combat.pendingCardCopy.sourceNames,
+    ['Blasphemy'])
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 17)
+  const resolved = snapshotFor(room, b.token).run.combat
+  const publicActor = resolved.players.find((player) => player.id === actor.id)
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, 17)
+  assertEqual(publicActor.tripledAttacksThisTurn, 0)
+  assertEqual(publicActor.attacksPlayedThisTurn, 3)
+  assertEqual(publicActor.discard.filter((card) => card.uid === strike.uid).length, 1)
+})
+
+check('Omniscience search stays private and disconnect safely abandons its unresolved plays', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const omniscience = { uid: 'room-omniscience', defId: 'omniscience', upgraded: false }
+  const strike = { uid: 'room-omniscience-strike', defId: 'strike_watcher', upgraded: false }
+  const secretPower = { uid: 'room-omniscience-power', defId: 'deva_form', upgraded: false }
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  Object.assign(actor, {
+    character: 'watcher', hand: [omniscience], draw: [strike, secretPower], energy: 3,
+    discard: [], exhaust: [],
+  })
+  Object.assign(target, { defId: 'cultist', hp: 20, maxHp: 20, block: 0, dead: false })
+
+  const preview = apply(room, a.token, {
+    kind: 'previewCard', cardUid: omniscience.uid,
+  }).snapshot.cardPreview
+  assertDeepEqual(preview.cards.map((card) => card.uid), [strike.uid], 'Powers are not eligible')
+  assert(!allStrings(snapshotFor(room, b.token)).includes(secretPower.uid), 'the private draw pile leaked')
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: omniscience.uid, searchDrawUids: [strike.uid], preflight: true,
+  })
+  assertDeepEqual(room.run.combat.pendingCardCopy.sourceNames, ['Omniscience', 'Omniscience'])
+  assert(allStrings(snapshotFor(room, b.token)).includes(strike.uid), 'the selected face-up card stayed hidden')
+
+  const abandoned = structuredClone(room)
+  markDisconnected(abandoned, a.token)
+  assertEqual(abandoned.run.combat.phase, 'player', 'disconnect did not resume the shared Player Turn')
+  assertEqual(abandoned.run.combat.pendingCardCopy, undefined, 'disconnect left Omniscience copies pending')
+  assertEqual(abandoned.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 20,
+    'disconnect resolved an unchosen Omniscience play')
+  const abandonedActor = abandoned.run.combat.players.find((player) => player.id === a.playerId)
+  assert(abandonedActor.exhaust.some((card) => card.uid === strike.uid))
+  assert(abandonedActor.exhaust.some((card) => card.uid === omniscience.uid))
+  const rejoined = joinRoom(abandoned, { token: a.token })
+  const resumed = snapshotFor(abandoned, rejoined.token)
+  assertEqual(resumed.run.combat.phase, 'player')
+  assertEqual(resumed.run.combat.pendingCardCopy, undefined)
+
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertDeepEqual(room.run.combat.pendingCardCopy.sourceNames, ['Omniscience'])
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 18)
+  assert(actor !== room.run.combat.players.find((player) => player.id === a.playerId),
+    'room combat should remain immutable across actions')
+  const resolvedActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  assert(resolvedActor.exhaust.some((card) => card.uid === strike.uid))
+  assert(resolvedActor.exhaust.some((card) => card.uid === omniscience.uid))
+})
+
+check('Vault replaces only its owner hand and preserves it through reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const vault = { uid: 'room-vault', defId: 'vault', upgraded: false }
+  const retained = { uid: 'room-vault-retained', defId: 'protect', upgraded: false }
+  const discarded = { uid: 'room-vault-discarded', defId: 'strike_watcher', upgraded: false }
+  const secrets = Array.from({ length: 6 }, (_, index) => ({
+    uid: `room-vault-secret-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  Object.assign(actor, {
+    character: 'watcher', hand: [vault, retained, discarded], draw: secrets,
+    discard: [], exhaust: [], energy: 3,
+  })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: vault.uid, preflight: true })
+  const authoritative = room.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(authoritative.energy, 3)
+  assertDeepEqual(authoritative.hand.map((card) => card.uid), [retained.uid, ...secrets.slice(0, 5).map((card) => card.uid)])
+  assertDeepEqual(authoritative.discard.map((card) => card.uid), [discarded.uid])
+  assert(authoritative.exhaust.some((card) => card.uid === vault.uid))
+  const teammate = snapshotFor(room, b.token)
+  assert(![retained, ...secrets].some((card) => allStrings(teammate).includes(card.uid)),
+    'Vault leaked the replacement hand to a teammate')
+
+  markDisconnected(room, a.token)
+  const rejoined = joinRoom(room, { token: a.token })
+  const restored = snapshotFor(room, rejoined.token).run.combat.players
+    .find((player) => player.id === a.playerId)
+  assertDeepEqual(restored.hand.map((card) => card.uid), authoritative.hand.map((card) => card.uid))
+  assert(![retained, ...secrets].some((card) => allStrings(snapshotFor(room, b.token)).includes(card.uid)),
+    'Vault leaked the replacement hand after reconnect')
+})
+
+check('a Foresight Weave interrupt stays private and cannot deadlock after disconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const teammate = room.run.combat.players.find((player) => player.id === b.playerId)
+  const weave = { uid: 'room-foresight-weave', defId: 'weave', upgraded: false }
+  const secrets = Array.from({ length: 5 }, (_, index) => ({
+    uid: `room-foresight-weave-secret-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  Object.assign(room.run.combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [], pendingCardCopy: undefined,
+  })
+  Object.assign(actor, {
+    character: 'watcher', hand: [], draw: [weave, ...secrets], discard: [],
+    powers: [{ uid: 'room-foresight-weave-power', defId: 'foresight', upgraded: false }],
+  })
+  Object.assign(teammate, { hand: [], draw: [], discard: [], powers: [] })
+
+  apply(room, b.token, { kind: 'startTurn' })
+  const preview = snapshotFor(room, a.token).startTurnScry
+  assertDeepEqual(preview.cards.map((card) => card.uid), [weave.uid, ...secrets.slice(0, 2).map((card) => card.uid)])
+  assertEqual(snapshotFor(room, b.token).startTurnScry.cards, null)
+  assert(![weave, ...secrets].some((card) => allStrings(snapshotFor(room, b.token)).includes(card.uid)),
+    'Foresight leaked its private reveal before the choice')
+  apply(room, a.token, {
+    kind: 'resolveStartTurnScry', sourceId: preview.id, discardUids: [weave.uid],
+  })
+  assertEqual(room.run.combat.phase, 'copy')
+  assertDeepEqual(room.run.combat.pendingCardCopy.sourceNames, ['Weave'])
+  const waiting = snapshotFor(room, b.token)
+  assert(allStrings(waiting).includes(weave.uid), 'Scry-played Weave did not become public')
+  assert(!secrets.some((card) => allStrings(waiting).includes(card.uid)),
+    'Scry-played Weave leaked cards kept in the private draw pile')
+
+  const abandoned = structuredClone(room)
+  markDisconnected(abandoned, a.token)
+  assertEqual(abandoned.run.combat.phase, 'player', 'disconnect did not resume the shared Draw step')
+  assertEqual(abandoned.run.combat.pendingCardCopy, undefined, 'disconnect left Weave pending')
+  assertEqual(abandoned.run.combat.startTurnProgress, undefined, 'disconnect left Start-of-Turn state pending')
+  const rejoined = joinRoom(abandoned, { token: a.token })
+  const resumed = snapshotFor(abandoned, rejoined.token)
+  const resumedActor = resumed.run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(resumed.run.combat.phase, 'player')
+  assertEqual(resumedActor.hand.length, 5)
+  assert(resumedActor.discard.some((card) => card.uid === weave.uid))
+  assert(!secrets.some((card) => allStrings(snapshotFor(abandoned, b.token)).includes(card.uid)),
+    'the resumed Draw step leaked its owner hand')
+
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  apply(room, a.token, {
+    kind: 'playCardCopy', cardUid: weave.uid, enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.startTurnProgress, undefined)
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand.length, 5)
 })
 
 report('co-op rooms')

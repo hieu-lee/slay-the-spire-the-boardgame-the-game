@@ -5,12 +5,13 @@
 // asserts every engine module is reachable from here, which is what catches a
 // module that was written but never wired up.
 //
-// Known integration boundary: Event and Merchant/Courier room presentation is
-// implemented separately. Combat, 105 enemies of roughly 60 physical cards,
-// Ascension encounter rules, relics, potions and Golden Tickets are live here.
-// 220 of 259 unique character cards are live.
-// 22 of 22 colorless cards are live; the other 39 have not been transcribed.
+// Combat and 105 enemies of roughly 60 physical cards are live.
+// 251 of 259 unique character cards are live as ordinary definitions; the
+// other eight are implemented Golden Ticket rewards. 22 of 22 colorless cards are live. Relics, potions, and their
+// Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign
+// presentation are composed from the separate noncombat implementation.
 // No scan-read cards are held back in `DEFERRED_CARDS`.
+// The other 8 have not been transcribed as ordinary card definitions.
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 

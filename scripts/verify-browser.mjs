@@ -1490,6 +1490,553 @@ await wraithPower.click()
 await shot('06zla-wraith-form-one-cube')
 await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.getByLabel('Seat').selectOption(colorlessBatch1Restore.combat.players[0].id)
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', energy: 6, miracles: 0, cardPlayLocked: false,
+    hand: [
+      { uid: 'ui-wish', defId: 'wish', upgraded: true },
+      { uid: 'ui-conclude', defId: 'conclude', upgraded: true },
+      { uid: 'ui-judgment', defId: 'judgment', upgraded: true },
+      { uid: 'ui-ragnarok', defId: 'ragnarok', upgraded: true },
+      { uid: 'ui-scrawl', defId: 'scrawl', upgraded: true },
+      { uid: 'ui-signature', defId: 'signature_move', upgraded: true },
+      { uid: 'ui-spirit-shield', defId: 'spirit_shield', upgraded: true },
+      { uid: 'ui-swivel', defId: 'swivel', upgraded: true },
+      { uid: 'ui-wallop', defId: 'wallop', upgraded: true },
+    ],
+    discard: [], exhaust: [], powers: [],
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, uid: `ui-watcher-batch-one-enemy-${index}`, row: 0,
+    hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const watcherBatchOneNames = [
+  'Wish', 'Conclude', 'Judgment', 'Ragnarok', 'Scrawl',
+  'Signature Move', 'Spirit Shield', 'Swivel', 'Wallop',
+]
+const watcherBatchOneLabels = await Promise.all(watcherBatchOneNames.map(async (name) =>
+  page.getByRole('button', { name: new RegExp(`^${name}\\+,`) }).getAttribute('aria-label')))
+check('all nine Watcher batch-one faces render their upgraded physical rules accessibly', () => {
+  assert(watcherBatchOneLabels.every(Boolean), watcherBatchOneLabels.join('\n'))
+  const labels = watcherBatchOneLabels.map((label) => label.toLowerCase())
+  assert(labels[0].includes('gain 5 miracles'), watcherBatchOneLabels[0])
+  assert(labels[1].includes('cannot play additional cards this turn'), watcherBatchOneLabels[1])
+  assert(labels[2].includes('8 or fewer'), watcherBatchOneLabels[2])
+  assert(labels[3].includes('6 separately targeted hits for 1 damage each'), watcherBatchOneLabels[3])
+  assert(labels[4].includes('draw 5 cards'), watcherBatchOneLabels[4])
+  assert(labels[5].includes('only attack in your hand'), watcherBatchOneLabels[5])
+  assert(labels[6].includes('per other card in hand'), watcherBatchOneLabels[6])
+  assert(labels[7].includes('next attack this turn costs 0'), watcherBatchOneLabels[7])
+  assert(labels[8].includes("preceding hit's unblocked damage"), watcherBatchOneLabels[8])
+})
+const unclippedCard = page.getByRole('button', { name: /^Scrawl\+,/ })
+const inspectCardTop = (card) => card.evaluate((node) => {
+  const box = node.getBoundingClientRect()
+  const blockers = []
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    const parentBox = parent.getBoundingClientRect()
+    if (overflow !== 'visible' && box.top < parentBox.top) {
+      blockers.push(`${parent.className || parent.tagName}: ${overflow} at ${parentBox.top}`)
+    }
+  }
+  return {
+    blockers,
+    handOverflowY: getComputedStyle(node.closest('.hand')).overflowY,
+    top: box.top,
+  }
+})
+const restingCardTop = await inspectCardTop(unclippedCard)
+await unclippedCard.hover()
+await page.waitForTimeout(250)
+const hoveredCardTop = await inspectCardTop(unclippedCard)
+await shot('06zld-watcher-batch-one')
+check('hand cards and their hover lift are not clipped at the top edge', () => {
+  assertEqual(restingCardTop.handOverflowY, 'visible')
+  assertDeepEqual(restingCardTop.blockers, [], `resting card top is clipped at ${restingCardTop.top}`)
+  assertDeepEqual(hoveredCardTop.blockers, [], `hovered card top is clipped at ${hoveredCardTop.top}`)
+  assert(hoveredCardTop.top < restingCardTop.top, 'hover did not lift the card')
+})
+await page.setViewportSize({ width: 1200, height: 650 })
+await page.mouse.move(0, 0)
+await page.waitForTimeout(250)
+const shortViewportCard = page.getByRole('button', { name: /^Scrawl\+,/ })
+const shortRestingCardTop = await inspectCardTop(shortViewportCard)
+await shortViewportCard.hover()
+await page.waitForTimeout(250)
+const shortHoveredCardTop = await inspectCardTop(shortViewportCard)
+check('short desktop viewports preserve the unclipped hover lift', () => {
+  assertDeepEqual(shortRestingCardTop.blockers, [], `resting card top is clipped at ${shortRestingCardTop.top}`)
+  assertDeepEqual(shortHoveredCardTop.blockers, [], `hovered card top is clipped at ${shortHoveredCardTop.top}`)
+  assert(
+    shortHoveredCardTop.top < shortRestingCardTop.top,
+    `short viewport hover did not lift the card (${shortRestingCardTop.top} -> ${shortHoveredCardTop.top})`,
+  )
+})
+await page.setViewportSize({ width: 390, height: 844 })
+await page.mouse.move(0, 0)
+const mobileCard = page.getByRole('button', { name: /^Scrawl\+,/ })
+await mobileCard.hover()
+await mobileCard.evaluate((card) => card.classList.add('card--selected'))
+await page.waitForTimeout(250)
+const mobileCardTransform = await mobileCard.evaluate((card) => getComputedStyle(card).transform)
+await mobileCard.evaluate((card) => card.classList.remove('card--selected'))
+check('touch-width cards stay flat while hovered or selected', () => {
+  assertEqual(mobileCardTransform, 'none')
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+const outerCard = page.locator('.hand .card').first()
+const handScroller = page.locator('.hand-scroll')
+await outerCard.focus()
+await page.keyboard.press('Shift+Tab')
+await handScroller.evaluate((scroller) => { scroller.scrollTop = 0 })
+await page.keyboard.press('Tab')
+await page.waitForTimeout(250)
+const focusedOuterCardTop = await inspectCardTop(outerCard)
+const focusedOuterScrollTop = await handScroller.evaluate((scroller) => scroller.scrollTop)
+check('keyboard focus does not scroll or clip an outer fanned card', () => {
+  assertEqual(focusedOuterScrollTop, 0)
+  assertDeepEqual(focusedOuterCardTop.blockers, [], `focused outer card is clipped at ${focusedOuterCardTop.top}`)
+})
+const watcherBatchOneRun = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = Array.from({ length: 20 }, (_, index) => ({
+    uid: `ui-large-hand-${index}`, defId: 'defend_watcher', upgraded: false,
+  }))
+  debug.setRun(run)
+})
+const largeHandScroller = page.locator('.hand-scroll')
+const largeHandBefore = await largeHandScroller.evaluate((scroller) => ({
+  scrollLeft: scroller.scrollLeft,
+  pointerEvents: getComputedStyle(scroller).pointerEvents,
+  handPointerEvents: getComputedStyle(scroller.querySelector('.hand')).pointerEvents,
+}))
+await page.locator('.hand .card').nth(10).hover()
+await page.mouse.wheel(1200, 0)
+await page.waitForTimeout(100)
+const largeHandScroll = await largeHandScroller.evaluate((scroller) => ({
+    clientWidth: scroller.clientWidth,
+    scrollWidth: scroller.scrollWidth,
+    scrollLeft: scroller.scrollLeft,
+  }))
+const largeHandDocumentScroll = await page.evaluate(() => ({
+  scrollX: window.scrollX,
+  scrollWidth: document.documentElement.scrollWidth,
+  clientWidth: document.documentElement.clientWidth,
+}))
+check('an unusually large desktop hand remains horizontally reachable', () => {
+  assertEqual(largeHandBefore.pointerEvents, 'none')
+  assertEqual(largeHandBefore.handPointerEvents, 'none')
+  assert(largeHandScroll.scrollWidth > largeHandScroll.clientWidth, 'large hand does not expose horizontal overflow')
+  assert(largeHandScroll.scrollLeft > largeHandBefore.scrollLeft, 'a user wheel cannot scroll toward the final cards')
+  assertEqual(largeHandDocumentScroll.scrollX, 0, 'hand scrolling moved the whole document')
+  assert(largeHandDocumentScroll.scrollWidth <= largeHandDocumentScroll.clientWidth,
+    `document overflows horizontally (${largeHandDocumentScroll.scrollWidth} > ${largeHandDocumentScroll.clientWidth})`)
+})
+await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
+await page.evaluate(() => window.scrollTo(0, 0))
+await page.evaluate((baseline) => window.__STS_DEBUG__.setRun(baseline), watcherBatchOneRun)
+await page.getByRole('button', { name: /^Wish\+,/ }).click()
+await page.getByRole('button', { name: 'Gain 5 Miracles', exact: true }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].miracles === 5)
+await page.getByRole('button', { name: /^Conclude\+,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].cardPlayLocked === true)
+const watcherBatchOneState = await readState()
+const lockedWatcherCard = page.getByRole('button', { name: /^Swivel\+,/ })
+const lockedWatcherCardDisabled = await lockedWatcherCard.isDisabled()
+const concludeLockBadge = page.getByText('No additional cards this turn', { exact: true })
+const concludeLockInspect = await concludeLockBadge.evaluate((badge) => ({
+  clipped: badge.scrollWidth > badge.clientWidth + 1 || badge.scrollHeight > badge.clientHeight + 1,
+  width: badge.getBoundingClientRect().width,
+}))
+check('Wish choice and Conclude lock resolve through the generated combat controls', () => {
+  assertEqual(watcherBatchOneState.players[0].miracles, 5)
+  assertEqual(watcherBatchOneState.players[0].cardPlayLocked, true)
+  assert(lockedWatcherCardDisabled, 'Conclude left another card enabled')
+  assert(concludeLockInspect.width > 0, 'Conclude lock status is not visible')
+  assert(!concludeLockInspect.clipped, 'Conclude lock status is clipped')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+    playedCardsThisTurn: [],
+  })
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', energy: 6, miracles: 2, strength: 0, cardPlayLocked: false,
+    hand: [
+      { uid: 'ui-conjure', defId: 'conjure_blade', upgraded: true },
+      { uid: 'ui-deus', defId: 'deus_ex_machina', upgraded: true },
+      { uid: 'ui-foreign', defId: 'foreign_influence', upgraded: true },
+      { uid: 'ui-omega', defId: 'omega', upgraded: true },
+      { uid: 'ui-reach', defId: 'reach_heaven', upgraded: true },
+      { uid: 'ui-study', defId: 'study', upgraded: true },
+    ],
+    discard: [], exhaust: [], powers: [], starterStrikeDamageBonus: 0,
+  })
+  run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
+    ...enemy, uid: `ui-generated-enemy-${index}`, hp: 20, maxHp: 20,
+    block: 0, vulnerable: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const generatedWatcherNames = [
+  'Conjure Blade', 'Deus Ex Machina', 'Foreign Influence', 'Omega', 'Reach Heaven', 'Study',
+]
+const generatedWatcherLabels = await Promise.all(generatedWatcherNames.map((name) =>
+  page.getByRole('button', { name: new RegExp(`^${name}\\+,`) }).getAttribute('aria-label')))
+check('all six generated-choice Watcher faces expose their upgraded physical rules', () => {
+  assert(generatedWatcherLabels[0].includes('starter Strikes deal +1 damage per cube'), generatedWatcherLabels[0])
+  assert(generatedWatcherLabels[1].includes('gain 3 Miracles'), generatedWatcherLabels[1])
+  assert(generatedWatcherLabels[2].includes("last Attack another player played"), generatedWatcherLabels[2])
+  assert(generatedWatcherLabels[3].includes('deal 6 damage'), generatedWatcherLabels[3])
+  assert(generatedWatcherLabels[4].includes('2 per Miracle held'), generatedWatcherLabels[4])
+  assert(generatedWatcherLabels[5].includes('draw 2 cards if you are in calm'), generatedWatcherLabels[5])
+})
+const generatedWatcherRestore = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const ally = structuredClone(actor)
+  Object.assign(ally, {
+    id: 'ui-generated-ally', name: 'Ironclad', character: 'ironclad', row: 1,
+    hand: [], draw: [], discard: [], exhaust: [], powers: [], dead: false,
+  })
+  run.combat.players.push(ally)
+  run.combat.playedCardsThisTurn = [{
+    playerId: ally.id,
+    card: { uid: 'ui-generated-ally-strike', defId: 'strike_ironclad', upgraded: false },
+    copied: false,
+  }]
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Foreign Influence\+,/ }).click()
+await page.getByRole('button', { name: "Copy another player's last Attack", exact: true }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
+const foreignInfluenceModeState = await readState()
+check('Foreign Influence copy mode commits without an unrelated enemy-target prompt', () => {
+  assertEqual(foreignInfluenceModeState.pendingCardCopy?.sourceNames[0], 'Foreign Influence')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), generatedWatcherRestore)
+await page.getByRole('button', { name: /^Conjure Blade\+,/ }).click()
+await page.getByRole('button', { name: 'Spend 2', exact: true }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers
+  .some((power) => power.defId === 'conjure_blade' && power.counter === 4))
+const generatedWatcherState = await readState()
+const conjurePowerLabel = await page.getByRole('button', { name: /^Conjure Blade\+:/ }).getAttribute('aria-label')
+check('Conjure Blade cubes resolve through generated controls', () => {
+  assertEqual(generatedWatcherState.players[0].starterStrikeDamageBonus, 4)
+  assertEqual(generatedWatcherState.players[0].powers.find((power) => power.defId === 'conjure_blade').counter, 4)
+  assertEqual(generatedWatcherState.pendingCardCopy, undefined)
+  assert(conjurePowerLabel.includes('put X+2 cubes here'), conjurePowerLabel)
+})
+await shot('06zle-watcher-generated-choice-batch')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const ids = ['deva_form', 'omniscience', 'vault', 'talk_to_the_hand', 'tantrum', 'weave']
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', hand: ids.flatMap((defId) => [false, true].map((upgraded) => ({
+      uid: `ui-final-${defId}-${upgraded ? 'upgraded' : 'base'}`, defId, upgraded,
+    }))),
+    draw: [], discard: [], exhaust: [], powers: [], energy: 20, miracles: 2,
+  })
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, uid: 'ui-final-enemy', hp: 30, maxHp: 30, block: 0, vulnerable: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, generatedWatcherRestore)
+const finalWatcherLabels = Object.fromEntries(await Promise.all([
+  ['deva', /^Deva Form, cost 2,/], ['devaUp', /^Deva Form\+, cost 2,/],
+  ['omni', /^Omniscience, cost 3,/], ['omniUp', /^Omniscience\+, cost 2,/],
+  ['vault', /^Vault, cost 3,/], ['vaultUp', /^Vault\+, cost 2,/],
+  ['talk', /^Talk to the Hand, cost 1,/], ['talkUp', /^Talk to the Hand\+, cost 1,/],
+  ['tantrum', /^Tantrum, cost 1,/], ['tantrumUp', /^Tantrum\+, cost 1,/],
+  ['weave', /^Weave, cost 0,/], ['weaveUp', /^Weave\+, cost 0,/],
+].map(async ([key, name]) => [key, await page.getByRole('button', { name }).getAttribute('aria-label')])))
+check('all final-six Watcher faces render both physical sides accessibly', () => {
+  assert(finalWatcherLabels.deva.includes('gain 1 Miracle'), finalWatcherLabels.deva)
+  assert(finalWatcherLabels.devaUp.includes('gain 2 Miracles'), finalWatcherLabels.devaUp)
+  assert(finalWatcherLabels.omni.includes('play it twice for 0 Energy'), finalWatcherLabels.omni)
+  assert(finalWatcherLabels.omniUp.startsWith('Omniscience+, cost 2'), finalWatcherLabels.omniUp)
+  assert(finalWatcherLabels.vault.includes('discard every card without Retain'), finalWatcherLabels.vault)
+  assert(finalWatcherLabels.vaultUp.startsWith('Vault+, cost 2'), finalWatcherLabels.vaultUp)
+  assert(finalWatcherLabels.talk.includes('deal 2 damage'), finalWatcherLabels.talk)
+  assert(finalWatcherLabels.talkUp.includes('deal 3 damage'), finalWatcherLabels.talkUp)
+  assert(finalWatcherLabels.tantrum.includes('deal 2 damage'), finalWatcherLabels.tantrum)
+  assert(finalWatcherLabels.tantrumUp.includes('2 separately targeted hits for 1 damage each'), finalWatcherLabels.tantrumUp)
+  assert(finalWatcherLabels.weave.includes('with +5 damage'), finalWatcherLabels.weave)
+  assert(finalWatcherLabels.weaveUp.includes('with +6 damage'), finalWatcherLabels.weaveUp)
+})
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', stance: 'neutral', energy: 6, miracles: 2, block: 0,
+    hand: [
+      { uid: 'ui-final-deva', defId: 'deva_form', upgraded: true },
+      { uid: 'ui-final-talk', defId: 'talk_to_the_hand', upgraded: true },
+      { uid: 'ui-final-tantrum', defId: 'tantrum', upgraded: true },
+      { uid: 'ui-final-vault', defId: 'vault', upgraded: true },
+      { uid: 'ui-final-retain', defId: 'protect', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `ui-final-draw-${index}`, defId: 'defend_watcher', upgraded: false,
+    })),
+    discard: [], exhaust: [], powers: [], cardPlayLocked: false,
+  })
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, uid: 'ui-final-play-enemy', hp: 30, maxHp: 30, block: 0, vulnerable: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, generatedWatcherRestore)
+await page.getByRole('button', { name: /^Deva Form\+,/ }).click()
+await page.getByRole('button', { name: /^Talk to the Hand\+,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.getByRole('button', { name: /^Tantrum\+,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.locator('.enemy--targeted').first().click()
+await page.getByRole('button', { name: /^Vault\+,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand.length === 6)
+const finalWatcherDirectState = await readState()
+check('Deva Form, Talk to the Hand, Tantrum, and Vault resolve through combat controls', () => {
+  const actor = finalWatcherDirectState.players[0]
+  assert(actor.powers.some((card) => card.uid === 'ui-final-deva'))
+  assertEqual(actor.block, 2)
+  assertEqual(actor.stance, 'wrath')
+  assert(actor.hand.some((card) => card.uid === 'ui-final-retain'))
+  assert(actor.hand.some((card) => card.uid === 'ui-final-tantrum'))
+  assertEqual(actor.hand.length, 6)
+  assertEqual(actor.energy, 3)
+  assertEqual(finalWatcherDirectState.enemies[0].hp, 25)
+  assert(actor.exhaust.some((card) => card.uid === 'ui-final-vault'))
+})
+await shot('06zlf-watcher-final-six-direct')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher',
+    hand: [{ uid: 'ui-final-empty-omni', defId: 'omniscience', upgraded: true }],
+    draw: [{ uid: 'ui-final-empty-omni-power', defId: 'deva_form', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 2,
+  })
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  run.combat.players = [actor]
+  window.__STS_DEBUG__.setRun(run)
+}, generatedWatcherRestore)
+await page.getByRole('button', { name: /^Omniscience\+,/ }).click()
+const emptyOmniscienceSearch = page.getByRole('dialog', { name: 'Choose 0 from your draw pile' })
+await emptyOmniscienceSearch.waitFor()
+const emptyOmniscienceAction = await emptyOmniscienceSearch
+  .getByRole('button', { name: 'Shuffle and continue' }).textContent()
+check('an empty Omniscience search offers an accurate shuffle action', () => {
+  assertEqual(emptyOmniscienceAction, 'Shuffle and continue')
+})
+await emptyOmniscienceSearch.getByRole('button', { name: 'Shuffle and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher',
+    hand: [{ uid: 'ui-final-omni', defId: 'omniscience', upgraded: true }],
+    draw: [
+      { uid: 'ui-final-omni-strike', defId: 'strike_watcher', upgraded: false },
+      { uid: 'ui-final-omni-power', defId: 'deva_form', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 2,
+  })
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, uid: 'ui-final-omni-enemy', hp: 20, maxHp: 20, block: 0, vulnerable: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, generatedWatcherRestore)
+await page.getByRole('button', { name: /^Omniscience\+,/ }).click()
+const omniscienceSearch = page.getByRole('dialog', { name: 'Choose 1 from your draw pile' })
+await omniscienceSearch.waitFor()
+const omnisciencePowerChoice = await omniscienceSearch.getByRole('button', { name: /^Deva Form,/ }).count()
+await omniscienceSearch.getByRole('button', { name: /^Strike,/ }).click()
+await omniscienceSearch.getByRole('button', { name: 'Play selected card twice and shuffle' }).click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getState()
+  return combat.phase === 'copy' && combat.pendingCardCopy?.sourceNames.length === 2
+})
+const intermediateOmnisciencePrompt = await page.getByText(
+  'Choose an enemy for Strike copy (Omniscience)', { exact: true },
+).textContent()
+const intermediateOmnisciencePhase = await page.locator('.combat__phase').textContent()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getState()
+  return combat.phase === 'copy' && combat.pendingCardCopy?.sourceNames.length === 1
+})
+const originalOmnisciencePrompt = await page.getByText(
+  'Choose an enemy for original Strike after Omniscience copy', { exact: true },
+).textContent()
+const originalOmnisciencePhase = await page.locator('.combat__phase').textContent()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const omniscienceUiState = await readState()
+check('Omniscience uses its private search and both generated target prompts', () => {
+  assertEqual(omnisciencePowerChoice, 0)
+  assertEqual(intermediateOmnisciencePrompt, 'Choose an enemy for Strike copy (Omniscience)')
+  assertEqual(intermediateOmnisciencePhase, 'Resolve Strike copy (Omniscience)')
+  assertEqual(originalOmnisciencePrompt, 'Choose an enemy for original Strike after Omniscience copy')
+  assertEqual(originalOmnisciencePhase, 'Resolve original Strike after Omniscience copy')
+  assertEqual(omniscienceUiState.enemies[0].hp, 18)
+  assert(omniscienceUiState.players[0].exhaust.some((card) => card.uid === 'ui-final-omni'))
+  assert(omniscienceUiState.players[0].exhaust.some((card) => card.uid === 'ui-final-omni-strike'))
+})
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher',
+    hand: [{ uid: 'ui-final-third-eye', defId: 'third_eye', upgraded: true }],
+    draw: [
+      { uid: 'ui-final-weave', defId: 'weave', upgraded: true },
+      ...Array.from({ length: 4 }, (_, index) => ({
+        uid: `ui-final-scry-${index}`, defId: 'defend_watcher', upgraded: false,
+      })),
+    ],
+    discard: [], exhaust: [], powers: [], energy: 1, block: 0,
+  })
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, uid: 'ui-final-weave-enemy', hp: 20, maxHp: 20, block: 0, vulnerable: 0, dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, generatedWatcherRestore)
+await page.getByRole('button', { name: /^Third Eye\+,/ }).click()
+const weaveScry = page.getByRole('dialog', { name: 'Scry 5' })
+await weaveScry.waitFor()
+await weaveScry.getByRole('button', { name: /^Weave\+,/ }).click()
+await weaveScry.getByRole('button', { name: 'Discard 1 and continue' }).click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getState()
+  return combat.phase === 'copy' && combat.pendingCardCopy?.sourceNames[0] === 'Weave' &&
+    combat.pendingCardCopy.card.scryDamageBonus === 6
+})
+const weavePrompt = await page.getByText('Choose an enemy for Scry-played Weave+', { exact: true }).textContent()
+const weavePhase = await page.locator('.combat__phase').textContent()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const weaveUiState = await readState()
+check('Scry-played Weave uses the real private Scry dialog and generated target prompt', () => {
+  assertEqual(weavePrompt, 'Choose an enemy for Scry-played Weave+')
+  assertEqual(weavePhase, 'Resolve Scry-played Weave+')
+  assertEqual(weaveUiState.enemies[0].hp, 12)
+  assertEqual(weaveUiState.players[0].block, 3)
+  assert(weaveUiState.players[0].discard.some((card) => card.uid === 'ui-final-weave'))
+})
+await shot('06zlg-watcher-final-six-generated')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  Object.assign(run.combat, {
+    phase: 'player', pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  Object.assign(run.combat.players[0], {
+    name: 'Watcher', character: 'watcher', stance: 'wrath', energy: 6, cardPlayLocked: false,
+    hand: [
+      { uid: 'ui-establishment', defId: 'establishment', upgraded: true },
+      { uid: 'ui-meditate', defId: 'meditate', upgraded: true },
+      { uid: 'ui-perseverance', defId: 'perseverance', upgraded: true },
+      { uid: 'ui-sands', defId: 'sands_of_time', upgraded: true },
+      { uid: 'ui-windmill', defId: 'windmill_strike', upgraded: true },
+    ],
+    discard: [
+      { uid: 'ui-meditate-recover-one', defId: 'protect', upgraded: false },
+      { uid: 'ui-meditate-recover-two', defId: 'flying_sleeves', upgraded: false },
+    ],
+    exhaust: [], powers: [],
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const retainBatchNames = ['Establishment', 'Meditate', 'Perseverance', 'Sands of Time', 'Windmill Strike']
+const retainBatchLabels = await Promise.all(retainBatchNames.map((name) =>
+  page.getByRole('button', { name: new RegExp(`^${name}\\+,`) }).getAttribute('aria-label')))
+check('all five Watcher Retain lifecycle faces expose their upgraded rules accessibly', () => {
+  assert(retainBatchLabels[0].includes('Retained last turn cost 2 less'), retainBatchLabels[0])
+  assert(retainBatchLabels[1].includes('put 2 cards from your discard pile into your hand and Retain them'),
+    retainBatchLabels[1])
+  assert(retainBatchLabels[1].includes('cannot play additional cards this turn'), retainBatchLabels[1])
+  assert(retainBatchLabels[2].includes('2 plus 2 if this card was Retained last turn Block'), retainBatchLabels[2])
+  assert(retainBatchLabels[3].includes('3 per other card with Retain in hand'), retainBatchLabels[3])
+  assert(retainBatchLabels[4].includes('2 plus 5 if this card was Retained last turn damage'), retainBatchLabels[4])
+})
+await page.getByRole('button', { name: /^Meditate\+,/ }).click()
+const meditateChoice = page.getByRole('dialog', { name: 'Choose 2 cards from your discard pile' })
+await meditateChoice.waitFor()
+await meditateChoice.getByRole('button', { name: /^Protect,/ }).click()
+await meditateChoice.getByRole('button', { name: /^Flying Sleeves,/ }).click()
+await meditateChoice.getByRole('button', { name: 'Return selected cards to hand' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].cardPlayLocked === true)
+const meditateUiState = await readState()
+check('Meditate+ selects two discards and surfaces its turn lock through the controls', () => {
+  const actor = meditateUiState.players[0]
+  assertEqual(actor.stance, 'calm')
+  assertDeepEqual(actor.hand.map((card) => card.uid).sort(),
+    ['ui-establishment', 'ui-meditate-recover-one', 'ui-meditate-recover-two',
+      'ui-perseverance', 'ui-sands', 'ui-windmill'].sort())
+  assert(actor.hand.filter((card) => card.retainThisTurn).length === 2)
+})
+await page.getByText('No additional cards this turn', { exact: true }).waitFor()
+await shot('06zle-watcher-retain-lifecycle')
+await page.getByRole('button', { name: 'End turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
+await confirmAllDiscards()
+await page.waitForFunction(() => {
+  const recovered = window.__STS_DEBUG__.getState().players[0].hand
+    .filter((card) => card.uid.startsWith('ui-meditate-recover-'))
+  return recovered.length === 2 && recovered.every((card) => card.retainedLastTurn && !card.retainThisTurn)
+})
+const meditateEndedState = await readState()
+check('Meditate-retained cards bypass the discard UI and become last-turn Retains', () => {
+  const recovered = meditateEndedState.players[0].hand.filter((card) => card.uid.startsWith('ui-meditate-recover-'))
+  assertEqual(recovered.length, 2)
+  assert(recovered.every((card) => card.retainedLastTurn && !card.retainThisTurn))
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+await page.getByLabel('Seat').selectOption(colorlessBatch1Restore.combat.players[0].id)
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
@@ -1865,7 +2412,7 @@ const headbuttCard = page.getByRole('button', { name: /^Headbutt\+, cost 1,/ })
 await headbuttCard.waitFor()
 const headbuttLabel = await headbuttCard.getAttribute('aria-label')
 await headbuttCard.click()
-const headbuttDialog = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+const headbuttDialog = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await headbuttDialog.waitFor()
 const headbuttPrompt = await page.getByText('Headbutt+ — choose a card from your discard pile').textContent()
 const headbuttCancelCount = await headbuttDialog.getByRole('button', { name: 'Cancel' }).count()
@@ -1953,7 +2500,7 @@ await page.evaluate((baseline) => {
 const hologramCard = page.getByRole('button', { name: /^Hologram, cost 1,/ })
 const hologramLabel = await hologramCard.getAttribute('aria-label')
 await hologramCard.click()
-const hologramDialog = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+const hologramDialog = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await hologramDialog.getByRole('button', { name: /^Strike,/ }).click()
 await shot('06zpha-hologram-discard-choice')
 await hologramDialog.getByRole('button', { name: 'Return selected card to hand' }).click()
@@ -3166,7 +3713,7 @@ await tempestCard.click()
 await page.getByRole('button', { name: 'Spend 2' }).click()
 const defectPowerCards = await readState()
 check('Force Field discounts and Tempest+ resolves X through the real controls', () => {
-  assert(tempestLabel.includes('channel 1 plus 1 per Energy spent on this card lightning orbs'), tempestLabel)
+  assert(tempestLabel.includes('channel X+1 lightning orbs'), tempestLabel)
   assertEqual(defectPowerCards.players[0].block, 4)
   assertEqual(defectPowerCards.players[0].energy, 1)
   assertEqual(defectPowerCards.players[0].orbs.length, 3)
@@ -6189,7 +6736,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const longAbilityInspect = await page.locator('.enemy').filter({ hasText: 'Fungi Beast' })
-  .locator('.enemy__ability').evaluate((ability) => ({
+  .locator('.enemy__ability').filter({ hasText: 'Spore Cloud' }).first().evaluate((ability) => ({
   text: ability.textContent ?? '',
   clipped: ability.scrollHeight > ability.clientHeight + 1 || ability.scrollWidth > ability.clientWidth + 1,
 }))
@@ -7559,8 +8106,8 @@ const malaiseLabel = await malaiseCard.getAttribute('aria-label')
 check('A Thousand Cuts+ and Malaise+ announce their physical shuffle and X rules', () => {
   assert(thousandCutsLabel.includes('whenever you shuffle your draw pile'))
   assert(thousandCutsLabel.includes('deal 7 damage') && thousandCutsLabel.includes('whole row and any boss'))
-  assert(malaiseLabel.includes('apply 1 plus 1 per Energy spent on this card Weak'))
-  assert(malaiseLabel.includes('apply 1 plus 1 per Energy spent on this card Poison'))
+  assert(malaiseLabel.includes('apply X+1 Weak'))
+  assert(malaiseLabel.includes('apply X+1 Poison'))
 })
 await thousandCutsCard.click()
 const thousandCutsPowerLabel = await page.locator('.power[aria-label^="A Thousand Cuts+"]').getAttribute('aria-label')
@@ -7836,11 +8383,11 @@ await page.evaluate(() => {
 })
 await page.getByRole('button', { name: /^Double Tap\+,/ }).click()
 await page.getByRole('button', { name: /^Headbutt,/ }).click()
-const firstHeadbuttChoice = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+const firstHeadbuttChoice = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await firstHeadbuttChoice.getByRole('button', { name: /^Defend,/ }).click()
 await firstHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
 await page.getByRole('button', { name: /^Cultist,/ }).click()
-const copiedHeadbuttChoice = page.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+const copiedHeadbuttChoice = page.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
 await copiedHeadbuttChoice.waitFor()
 await page.keyboard.press('Escape')
 const copiedHeadbuttCancel = await copiedHeadbuttChoice.getByRole('button', { name: 'Cancel' }).count()
@@ -7853,6 +8400,112 @@ await copiedHeadbuttChoice.getByRole('button', { name: /^Double Tap\+,/ }).click
 await copiedHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
 await page.getByRole('button', { name: /^Red Louse,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    name: 'Watcher', character: 'watcher', miracles: 2,
+    hand: [
+      { uid: 'ui-devotion', defId: 'devotion', upgraded: true },
+      { uid: 'ui-blasphemy', defId: 'blasphemy', upgraded: true },
+      { uid: 'ui-brilliance', defId: 'brilliance', upgraded: true },
+    ],
+    draw: [
+      { uid: 'ui-blasphemy-secret-1', defId: 'defend_watcher', upgraded: false },
+      { uid: 'ui-blasphemy-secret-2', defId: 'vigilance', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 6, strength: 0,
+    tripledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  run.combat.players = [actor]
+  Object.assign(run.combat, { phase: 'player', pendingCardCopy: undefined, startTurnProgress: undefined })
+  run.combat.enemies = run.combat.enemies.slice(0, 1).map((enemy) => ({
+    ...enemy, hp: 30, maxHp: 30, block: 0, vulnerable: 0, weak: 0, dead: false, abilityUsed: true,
+  }))
+  debug.setRun(run)
+})
+const devotionCard = page.getByRole('button', { name: /^Devotion\+, cost 1,/ })
+const blasphemyCard = page.getByRole('button', { name: /^Blasphemy\+, cost 2,/ })
+const brillianceCard = page.getByRole('button', { name: /^Brilliance\+, cost 1,/ })
+const [devotionLabel, blasphemyLabel, brillianceLabel] = await Promise.all([
+  devotionCard.getAttribute('aria-label'),
+  blasphemyCard.getAttribute('aria-label'),
+  brillianceCard.getAttribute('aria-label'),
+])
+await devotionCard.click()
+const devotionPowerLabel = await page.getByRole('button', {
+  name: /^Devotion\+?:/,
+}).getAttribute('aria-label')
+await blasphemyCard.click()
+await brillianceCard.click()
+for (let copiesLeft = 2; copiesLeft >= 0; copiesLeft--) {
+  await page.locator('.enemy--targeted').first().click()
+  if (copiesLeft > 0) {
+    await page.waitForFunction((remaining) =>
+      window.__STS_DEBUG__.getState().pendingCardCopy?.sourceNames.length === remaining,
+    copiesLeft)
+  }
+}
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const mantraBatch = await readState()
+check('Watcher mantra cards expose physical text and Blasphemy plays Brilliance exactly three times', () => {
+  assert(devotionLabel.includes('at 4 cubes exhaust this Power'), devotionLabel)
+  assert(devotionPowerLabel.includes('gain 1 Miracle'), devotionPowerLabel)
+  assert(devotionPowerLabel.includes('draw 1 card'), devotionPowerLabel)
+  assert(devotionPowerLabel.includes('at the start of each turn'), devotionPowerLabel)
+  assert(devotionPowerLabel.includes('0 of 4 cubes'), devotionPowerLabel)
+  assert(blasphemyLabel.includes('next Attack this turn is played three times'), blasphemyLabel)
+  assert(blasphemyLabel.includes('exhaust your draw pile'), blasphemyLabel)
+  assert(brillianceLabel.includes('3 damage per Miracle held'), brillianceLabel)
+  assertEqual(mantraBatch.enemies[0].hp, 12)
+  assertEqual(mantraBatch.players[0].tripledAttacksThisTurn, 0)
+  assertEqual(mantraBatch.players[0].attacksPlayedThisTurn, 3)
+  assertEqual(mantraBatch.players[0].draw.length, 0)
+  assertEqual(mantraBatch.players[0].exhaust.length, 3)
+  assert(mantraBatch.players[0].exhaust.some((card) => card.defId === 'blasphemy'))
+  assertEqual(mantraBatch.players[0].discard.filter((card) => card.defId === 'brilliance').length, 1)
+})
+await shot('06zz-watcher-mantra-batch')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-worship', defId: 'worship', upgraded: true },
+      { uid: 'ui-wreath', defId: 'wreath_of_flame', upgraded: true },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 4, miracles: 0,
+    strength: 0, strengthLossAtEndOfTurn: 0, tripledAttacksThisTurn: 0,
+  })
+  Object.assign(run.combat, { phase: 'player', pendingCardCopy: undefined, startTurnProgress: undefined })
+  debug.setRun(run)
+})
+const worshipCard = page.getByRole('button', { name: /^Worship\+, cost X,/ })
+const wreathCard = page.getByRole('button', { name: /^Wreath of Flame\+, cost X,/ })
+const [worshipLabel, wreathLabel] = await Promise.all([
+  worshipCard.getAttribute('aria-label'), wreathCard.getAttribute('aria-label'),
+])
+await worshipCard.click()
+await page.getByText('Choose Energy for Worship+').waitFor()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await wreathCard.click()
+await page.getByText('Choose Energy for Wreath of Flame+').waitFor()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+const xMantra = await readState()
+check('upgraded Worship and Wreath of Flame visibly use X and follow their printed Exhaust text', () => {
+  assert(worshipLabel.includes('gain X+1 Miracles'), worshipLabel)
+  assert(wreathLabel.includes('gain X Strength, lose X Strength at end of turn'), wreathLabel)
+  assertEqual(xMantra.players[0].miracles, 3)
+  assertEqual(xMantra.players[0].strength, 2)
+  assertEqual(xMantra.players[0].strengthLossAtEndOfTurn, 2)
+  assertDeepEqual(xMantra.players[0].discard.map((card) => card.defId), ['wreath_of_flame'])
+  assertDeepEqual(xMantra.players[0].exhaust.map((card) => card.defId), ['worship'])
+})
+await shot('06zza-watcher-x-mantra-batch')
+
 
 // Manual Relics are game actions, not catalog text. Exercise the private,
 // reconnect-shaped Golden Eye interaction at a phone viewport so the card

@@ -62,14 +62,21 @@ export type VisibleCombat = {
     resumePhase: 'start' | 'player'
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
-    deferredHavocs: { card: CardInstance; exhaust: boolean }[]
+    deferredHavocs: {
+      card: CardInstance
+      exhaust: boolean
+      virtualOnly?: boolean
+      copySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience')[]
+      copyResumePhase?: 'start' | 'player'
+    }[]
     deferredTriggers?: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
-    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst' | 'Doppelganger')[]
+    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
     virtualOnly?: boolean
+    queuedWeaves?: CardInstance[]
   }
   pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
-  playedCardsThisTurn: { card: CardInstance; copied: boolean }[]
+  playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
   pendingSummons: {
     sourceUid: string
     row: number

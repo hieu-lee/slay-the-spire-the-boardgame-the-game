@@ -4,7 +4,7 @@
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { tierOf, cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { healthBand, strikeClass } from '../src/ui/board-signals.ts'
+import { healthBand, pendingUiSurvivesContext, strikeClass } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -96,6 +96,13 @@ check('the flinch alternates so a repeated hit re-animates', () => {
     strikeClass('enemy', 1).startsWith('enemy--'),
     'the base name follows the element it is applied to',
   )
+})
+
+check('pending card UI survives only its owner copy transition', () => {
+  assertEqual(pendingUiSurvivesContext('copy', 'p1', 'p1'), true)
+  assertEqual(pendingUiSurvivesContext('copy', 'p1', 'p2'), false)
+  assertEqual(pendingUiSurvivesContext('copy', undefined, 'p1'), false)
+  assertEqual(pendingUiSurvivesContext('player', 'p1', 'p1'), false)
 })
 
 report('ui helpers')

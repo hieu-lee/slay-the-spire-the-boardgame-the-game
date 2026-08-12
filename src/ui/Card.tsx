@@ -36,7 +36,9 @@ const COUNT_LABEL: Record<CountOf, string> = {
   orbTypes: 'different orb type',
   block: 'Block',
   strength: 'Strength',
+  miracles: 'Miracle held',
   cardsInHand: 'other card in hand',
+  retainCardsInHand: 'other card with Retain in hand',
   cardsInExhaust: 'card in your Exhaust pile',
   energySpent: 'Energy spent on this card',
   strikesInHand: 'other card in hand containing Strike',
@@ -62,6 +64,7 @@ function conditionText(condition: Condition): string {
     case 'firstCardPlayedThisTurn': return 'this is the first card you played this turn'
     case 'hasNoAttacksInHand': return 'you have no Attacks in hand'
     case 'allCardsInHandAreAttacks': return 'every card in your hand is an Attack'
+    case 'onlyAttackInHand': return 'this is the only Attack in your hand'
     case 'goldAtLeast': return `you have ${condition.amount} or more gold`
     case 'orbsAtLeast': return `you have ${condition.amount} or more Orbs`
     case 'drawPileEmpty': return 'your draw pile is empty'
@@ -73,6 +76,11 @@ function conditionText(condition: Condition): string {
 
 function amountText(amount: Amount, hit = false): string {
   if (typeof amount === 'number') return String(amount)
+  if (amount.per === 'energySpent' && !amount.bonus && !amount.targetTokens) {
+    const scale = amount.scale ?? 1
+    const variable = scale === 1 ? 'X' : `${scale}X`
+    return amount.base ? `${variable}+${amount.base}` : variable
+  }
   const parts: string[] = []
   if (amount.base || (!amount.bonus && !amount.per)) parts.push(String(amount.base))
   if (amount.bonus) parts.push(`${amount.bonus.plus} if ${conditionText(amount.bonus.when)}`)
@@ -104,10 +112,15 @@ function timesText(times: Amount): string {
 function effectText(effect: Effect): string {
   const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
   switch (effect.kind) {
-    case 'hit': return `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
-    case 'hitChoices': return `deal ${amountText(effect.amount, true)} damage to ${effect.targets === 1
-      ? 'one enemy'
-      : `${effect.targets}${effect.distinct ? ' distinct' : ''} enemies`}${condition}`
+    case 'hit': return typeof effect.amount !== 'number' && effect.amount.per === 'miracles' &&
+      effect.amount.base === 0 && !effect.amount.bonus && !effect.amount.targetTokens
+      ? `deal ${effect.amount.scale ?? 1} damage per ${COUNT_LABEL.miracles}${condition}`
+      : `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
+    case 'hitChoices': return effect.targets === 1
+      ? `deal ${amountText(effect.amount, true)} damage to one enemy${condition}`
+      : effect.distinct
+        ? `deal ${amountText(effect.amount, true)} damage to ${effect.targets} distinct enemies${condition}`
+        : `deal ${effect.targets} separately targeted hits for ${amountText(effect.amount, true)} damage each${condition}`
     case 'damage': return `deal ${amountText(effect.amount)} damage${condition}`
     case 'damagePerAttackIntent': return `deal ${effect.amount} damage to each enemy attacking you per Attack icon in its intent${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
@@ -122,21 +135,27 @@ function effectText(effect: Effect): string {
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
     case 'doubleStrength': return `double your Strength, maximum Strength 8${condition}`
     case 'gainTemporaryStrength': return effect.loseGainedOnly
-      ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
-      : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
+      ? `gain ${amountText(effect.amount)} Strength, lose that Strength at end of turn${condition}`
+      : `gain ${amountText(effect.amount)} Strength, lose ${amountText(effect.amount)} Strength at end of turn${condition}`
     case 'poison': return `apply ${amountText(effect.amount)} Poison${condition}`
     case 'poisonChoices': return `assign ${effect.targets} separate ${effect.amount} Poison tokens to enemies${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'attachCorpseExplosion': return `attach this card to the target; when it dies, deal ${effect.damage} damage to its row and discard this card${condition}`
     case 'copyLastPlayed': return 'play a copy of the last Attack or Skill played by any player this turn with cost equal to X'
+    case 'copyLastAllyAttack': return "play a copy of the last Attack another player played this turn"
     case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
     case 'drawThenDiscard': return `draw ${effect.amount} card then discard 1 card`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'
+    case 'discardNonRetain': return 'discard every card without Retain'
     case 'preventDraw': return 'cannot draw more cards this turn'
+    case 'preventCardPlay': return 'cannot play additional cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'discountNextAttack': return 'your next Attack this turn costs 0'
     case 'discountHand': return 'cards currently in your hand cost 0 this turn'
+    case 'discountRetainedCards': return `cards Retained last turn cost ${effect.amount} less this turn`
     case 'doubleNextAttack': return 'your next Attack this turn is played twice, with separate targets and modifiers'
+    case 'tripleNextAttack': return 'your next Attack this turn is played three times, with separate targets and modifiers'
     case 'doubleNextAttackOrSkill': return 'your next Attack or Skill this turn is played twice, with separate choices and modifiers'
     case 'doubleNextSkill': return 'your next Skill this turn is played twice, with separate choices and modifiers; Burst cannot be copied or played twice'
     case 'retainAtEndOfTurn': return `may retain ${effect.amount} card${effect.amount === 1 ? '' : 's'} this turn`
@@ -145,6 +164,7 @@ function effectText(effect: Effect): string {
       ? 'prevent the next time you would lose hit points, then exhaust this Power'
       : `prevent the next ${effect.uses} times you would lose hit points, then exhaust this Power`
     case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'empowerStarterStrikes': return `put ${amountText(effect.amount)} cubes on this Power; starter Strikes deal +1 damage per cube`
     case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
     case 'countdownExhaust': return `place a cube; at ${effect.cubes} cubes exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'
@@ -153,7 +173,7 @@ function effectText(effect: Effect): string {
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainShivPerDiscard': return `gain 1 Shiv per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
     case 'useAllShivs': return `use all Shivs now; each deals +${effect.bonus} damage as a separate attack${condition}`
-    case 'gainMiracle': return `gain ${effect.amount} Miracles${condition}`
+    case 'gainMiracle': return `gain ${amountText(effect.amount)} ${effect.amount === 1 ? 'Miracle' : 'Miracles'}${condition}`
     case 'enterStance': return `enter ${effect.stance}${condition}`
     case 'channel': return `channel ${amountText(effect.amount)} ${effect.orb} ${effect.amount === 1 ? 'orb' : 'orbs'}${condition}`
     case 'evoke': return `evoke one Orb ${typeof effect.times !== 'number' && effect.times.per === 'energySpent'
@@ -166,11 +186,16 @@ function effectText(effect: Effect): string {
       : `remove every Orb; gain 1 Energy and draw 1 card for each${condition}`
     case 'scry': return `scry ${effect.amount}${condition}`
     case 'topdeck': return `put ${effect.amount} card from your hand on top of your draw pile${condition}`
-    case 'recoverDiscard': return effect.toHand
-      ? 'put a card from your discard pile into your hand'
-      : 'put a card from your discard pile on top of your draw pile'
+    case 'recoverDiscard': {
+      const cards = effect.amount === 1 ? 'a card' : `${effect.amount} cards`
+      const destination = effect.toHand ? 'into your hand' : 'on top of your draw pile'
+      return `put ${cards} from your discard pile ${destination}${effect.retain
+        ? ` and Retain ${effect.amount === 1 ? 'it' : 'them'}`
+        : ''}`
+    }
     case 'recoverExhaust': return 'put a card from your Exhaust pile into your hand'
     case 'searchDraw': return `search your draw pile for ${effect.amount} card${effect.amount === 1 ? '' : 's'}, put ${effect.amount === 1 ? 'it' : 'them'} in your hand, then shuffle`
+    case 'searchDrawAndPlayTwice': return 'search your draw pile for an Attack or Skill, play it twice for 0 Energy, then exhaust it'
     case 'drawAndPlayFree': return effect.exhaustNonPower
       ? `draw 1 card, then immediately play it for 0 Energy; exhaust it unless it is a Power${condition}`
       : `draw 1 card, then immediately play it for 0 Energy; if it cannot be played, discard it${condition}`
@@ -196,12 +221,15 @@ function effectText(effect: Effect): string {
     case 'doubleEnergy': return `double your Energy, up to ${effect.max}${condition}`
     case 'gainEnergyIfTargetDead': return `gain ${effect.amount} energy if the target dies${condition}`
     case 'gainStrengthIfTargetDead': return `gain ${effect.amount} Strength if the target dies${condition}`
+    case 'execute': return `set the target's hit points to 0 if it has ${effect.hpAtMost} or fewer${condition}`
+    case 'gainBlockFromLastHit': return `gain Block equal to the preceding hit's unblocked damage${condition}`
     case 'discard': return `discard ${effect.amount} cards${condition}`
     case 'discardAny': return `discard any number of cards${condition}`
     case 'exhaustFromHand': return `exhaust ${effect.amount} card${effect.amount === 1 ? '' : 's'} from hand${condition}`
     case 'gainEnergyFromExhaust': return `gain Energy equal to its cost; X doubles Energy${condition}`
     case 'exhaustAny': return `exhaust ${effect.minimum ? `${effect.minimum}-${effect.amount}` : `up to ${effect.amount}`} cards from hand${condition}`
     case 'exhaustHand': return `exhaust all${effect.except ? ` non-${effect.except.charAt(0).toUpperCase()}${effect.except.slice(1)}` : ''} cards in hand${condition}`
+    case 'exhaustDrawPile': return `exhaust your draw pile${condition}`
     case 'gainBlockPerExhaust': return `gain ${effect.amount} Block per card exhausted${condition}`
     case 'hitPerExhaust': return `deal ${effect.amount} as a separate hit per card exhausted${condition}`
   }
@@ -285,6 +313,9 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     def.discardReaction?.exhaust ? 'exhausts after its discard effect' : '',
     ...(def.exhaustReaction?.effects ?? []).map((effect) =>
       `when this card is exhausted, ${effectText(effect)}`),
+    def.scryPlayBonus !== undefined
+      ? `when discarded by Scry, play this card instead with +${def.scryPlayBonus} damage`
+      : '',
     def.toDrawTop ? 'returns to the top of your draw pile when played' : '',
     def.retain ? 'retain' : '',
     def.exhaust ? 'exhausts when played' : '',

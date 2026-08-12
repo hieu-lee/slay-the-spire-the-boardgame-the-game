@@ -771,12 +771,43 @@ try {
     body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
   })
   assert(publishDoubleTapFixture.ok, 'could not publish the online Double Tap fixture')
-  await a.getByRole('button', { name: /^Double Tap\+,/ }).click()
-  await a.getByRole('button', { name: /^Strike,/ }).click()
+  await a.locator('.hand').getByRole('button', { name: /^Double Tap\+,/ }).click()
+  await a.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
   await a.getByText('Choose an enemy for Strike copy (Double Tap)').waitFor()
   await a.getByRole('button', { name: /^Cultist,/ }).click()
   await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor()
-  await b.getByRole('status').filter({ hasText: 'Ann is resolving the original card after a Double Tap copy' }).waitFor()
+  await b.getByRole('status').filter({
+    hasText: 'Ann is resolving the original Strike after a Double Tap copy',
+  }).waitFor()
+  const pendingCopyLabels = await b.evaluate(async () => {
+    const { pendingCardCopyLabel } = await import('/src/ui/OnlineGame.tsx')
+    const pending = (sourceNames, card, virtualOnly = false) => ({
+      playerId: 'p1', card, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+      forcedChoices: null, deferredHavocs: [], sourceNames, virtualOnly,
+    })
+    return [
+      pendingCardCopyLabel(pending(
+        ['Foreign Influence'], { uid: 'foreign', defId: 'bash', upgraded: false }, true,
+      )),
+      pendingCardCopyLabel(pending(
+        ['Omniscience', 'Omniscience'], { uid: 'omni', defId: 'strike_watcher', upgraded: false },
+      )),
+      pendingCardCopyLabel(pending(
+        ['Blasphemy', 'Blasphemy'], { uid: 'blasphemy', defId: 'strike_watcher', upgraded: false },
+      )),
+      pendingCardCopyLabel(pending(
+        ['Weave'], { uid: 'weave', defId: 'weave', upgraded: false, scryDamageBonus: 5 },
+      )),
+    ]
+  })
+  check('online teammate copy labels identify each Watcher source and resolution stage', () => {
+    assertDeepEqual(pendingCopyLabels, [
+      'a Bash copy (Foreign Influence)',
+      'a Strike copy (Omniscience)',
+      'a Strike copy (Blasphemy)',
+      'Scry-played Weave',
+    ])
+  })
   const teammateLockedForCopy = await b.locator('.online-mutations').evaluate((table) => table.inert)
   await a.screenshot({ path: join(outDir, '02b-double-tap-copy-target.png'), fullPage: true })
   let failedCopyRefreshes = 0
@@ -1006,7 +1037,7 @@ try {
   })
   assert(publishHeadbuttFixture.ok, 'could not publish the online Headbutt fixture')
   await a.getByRole('button', { name: /^Headbutt\+,/ }).click()
-  const onlineHeadbutt = a.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+  const onlineHeadbutt = a.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
   await onlineHeadbutt.waitFor()
   await onlineHeadbutt.getByRole('button', { name: /^Bash,/ }).click()
   await onlineHeadbutt.getByRole('button', { name: 'Put selected card on top' }).click()
@@ -1055,12 +1086,77 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    character: 'watcher', stance: 'wrath',
+    hand: [{ uid: 'online-meditate', defId: 'meditate', upgraded: true }],
+    discard: [
+      { uid: 'online-meditate-old-first', defId: 'perseverance', upgraded: false },
+      { uid: 'online-meditate-old-second', defId: 'windmill_strike', upgraded: false },
+    ],
+    draw: [], exhaust: [], powers: [], energy: 1, cardPlayLocked: false,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const publishMeditateFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishMeditateFixture.ok, 'could not publish the online Meditate fixture')
+  await a.getByRole('button', { name: /^Meditate\+,/ }).click()
+  const onlineMeditate = a.getByRole('dialog', { name: 'Choose 2 cards from your discard pile' })
+  await onlineMeditate.waitFor()
+  await onlineMeditate.getByRole('button', { name: /^Perseverance,/ }).click()
+  await onlineMeditate.getByRole('button', { name: /^Windmill Strike,/ }).click()
+  const currentAnn = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  currentAnn.discard = [
+    { uid: 'online-meditate-new-first', defId: 'defend_watcher', upgraded: false },
+    { uid: 'online-meditate-new-second', defId: 'strike_watcher', upgraded: false },
+    { uid: 'online-meditate-left-behind', defId: 'empty_body', upgraded: false },
+  ]
+  liveRoom.version += 1
+  let meditateRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    meditateRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await onlineMeditate.getByRole('button', { name: 'Return selected cards to hand' }).click()
+  for (let attempt = 0; attempt < 50 && meditateRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(meditateRefusalStatus, 409, 'the stale Meditate did not reach the room refusal path')
+  await onlineMeditate.waitFor()
+  await onlineMeditate.getByText(/^0\/2 selected from discard/).waitFor()
+  const staleMeditateChoice = await onlineMeditate.getByRole('button', { name: /^Perseverance,/ }).count()
+  await onlineMeditate.getByRole('button', { name: /^Defend,/ }).click()
+  await onlineMeditate.getByRole('button', { name: /^Strike,/ }).click()
+  await onlineMeditate.getByRole('button', { name: 'Return selected cards to hand' }).click()
+  await onlineMeditate.waitFor({ state: 'hidden' })
+  const expectedMeditateConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedMeditateConflict >= 0, 'the refused Meditate did not surface as an HTTP conflict')
+  failures.splice(expectedMeditateConflict, 1)
+  const teammateAfterMeditate = await snapshot(b)
+  check('a refused Meditate+ restores both mandatory recoveries and keeps the new hand private', () => {
+    assertEqual(staleMeditateChoice, 0)
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.hand.map((card) => card.uid),
+      ['online-meditate-new-first', 'online-meditate-new-second'])
+    assert(ann.hand.every((card) => card.retainThisTurn === true))
+    assert(ann.discard.some((card) => card.uid === 'online-meditate-left-behind'))
+    const teammateJson = JSON.stringify(teammateAfterMeditate)
+    assert(!teammateJson.includes('online-meditate-new-first') &&
+      !teammateJson.includes('online-meditate-new-second'),
+    'Meditate leaked recovered hand identities to a teammate')
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [{ uid: 'online-exhume', defId: 'exhume', upgraded: true }],
     exhaust: [
       { uid: 'online-exhume-defend', defId: 'defend_ironclad', upgraded: false },
       { uid: 'online-exhume-bash', defId: 'bash', upgraded: false },
     ],
-    energy: 0,
+    energy: 0, cardPlayLocked: false,
   })
   boLive.miracles = 1
   const publishExhumeFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
@@ -2704,7 +2800,18 @@ try {
     assert(mobilePotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
   })
   await a.screenshot({ path: join(outDir, '08b-mobile-potion-replacement.png'), fullPage: true })
+  let skippedPotionStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    skippedPotionStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
   await a.locator('.reward-screen__potion').getByRole('button', { name: 'Skip' }).click()
+  for (let attempt = 0; attempt < 50 && skippedPotionStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(skippedPotionStatus, 200, 'the revealed Potion skip was refused')
+  await a.locator('.reward-screen__potion').waitFor({ state: 'hidden' })
 
   const annCards = liveRoom.run.players.find((player) => player.id === annRun.id)
   annCards.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']

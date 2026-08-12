@@ -743,10 +743,14 @@ function resolveAbandonedPreviews(room) {
   for (const [playerId, preview] of Object.entries(room.cardPreviews ?? {})) {
     const seat = room.seats.find((candidate) => candidate.playerId === playerId)
     if (!seat || seat.connected) continue
-    const held = room.run?.combat?.players.find((player) => player.id === playerId)?.hand
-      .find((card) => card.uid === preview.cardUid)
-    const searchAmount = held ? faceOf(cardDef(held.defId), held.upgraded).effects
-      .find((effect) => effect.kind === 'searchDraw')?.amount ?? 0 : 0
+    const player = room.run?.combat?.players.find((candidate) => candidate.id === playerId)
+    const held = player?.hand.find((card) => card.uid === preview.cardUid)
+    const effects = held ? faceOf(cardDef(held.defId), held.upgraded).effects : []
+    const searchEffect = effects.find((effect) =>
+      effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
+    const recoverEffect = effects.find((effect) => effect.kind === 'recoverDiscard')
+    const searchAmount = searchEffect?.kind === 'searchDraw' ? searchEffect.amount
+      : searchEffect?.kind === 'searchDrawAndPlayTwice' ? 1 : 0
     try {
       apply(room, seat.token, {
         kind: 'playCard',
@@ -757,6 +761,9 @@ function resolveAbandonedPreviews(room) {
         topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         searchDrawUids: preview.kind === 'search'
           ? preview.cards.slice(0, searchAmount).map((card) => card.uid)
+          : undefined,
+        recoverDiscardUids: recoverEffect
+          ? player.discard.slice(0, recoverEffect.amount).map((card) => card.uid)
           : undefined,
         spendMiracle: preview.spendMiracle,
         preflight: true,
@@ -1218,6 +1225,13 @@ function dispatch(run, seat, action) {
       if (recoverDiscardUid !== undefined && typeof recoverDiscardUid !== 'string') {
         fail('Discard recovery must be a card id')
       }
+      const recoverDiscardUids = uidList(action.recoverDiscardUids)
+      if (action.recoverDiscardUids !== undefined && (
+        !Array.isArray(action.recoverDiscardUids) || recoverDiscardUids.length !== action.recoverDiscardUids.length
+      )) fail('Discard recovery must be a list of card ids')
+      if (recoverDiscardUid !== undefined && action.recoverDiscardUids !== undefined) {
+        fail('Discard recovery must use one choice format')
+      }
       const recoverExhaustUid = action.recoverExhaustUid
       if (recoverExhaustUid !== undefined && typeof recoverExhaustUid !== 'string') {
         fail('Exhaust recovery must be a card id')
@@ -1247,6 +1261,7 @@ function dispatch(run, seat, action) {
         topdeckUids,
         searchDrawUids,
         recoverDiscardUid,
+        recoverDiscardUids,
         recoverExhaustUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
@@ -1638,6 +1653,9 @@ function redactCombat(combat, viewerId) {
       deferredTriggers: structuredClone(combat.pendingCardCopy.deferredTriggers ?? []),
       sourceNames: structuredClone(combat.pendingCardCopy.sourceNames),
       virtualOnly: combat.pendingCardCopy.virtualOnly === true,
+      queuedWeaves: combat.pendingCardCopy.playerId === viewerId
+        ? structuredClone(combat.pendingCardCopy.queuedWeaves ?? [])
+        : [],
     } : undefined,
     pendingDistilled: combat.pendingDistilled ? {
       playerId: combat.pendingDistilled.playerId,
@@ -1695,7 +1713,10 @@ function redactPlayer(player, viewerId) {
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     nextCardCost: player.nextCardCost ?? null,
+    freeAttacksThisTurn: player.freeAttacksThisTurn ?? 0,
+    cardPlayLocked: player.cardPlayLocked === true,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
+    tripledAttacksThisTurn: player.tripledAttacksThisTurn ?? 0,
     doubledCardsThisTurn: player.doubledCardsThisTurn ?? 0,
     doubledSkillsThisTurn: player.doubledSkillsThisTurn ?? 0,
     retainCardsThisTurn: player.retainCardsThisTurn ?? 0,

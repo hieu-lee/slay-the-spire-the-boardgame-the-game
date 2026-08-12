@@ -8,6 +8,7 @@ import {
   chosenEvokeOrbs,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardModeIsAvailable,
   createCombat,
   defaultStartTurnChoices,
   endPlayerTurn,
@@ -2379,6 +2380,31 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'tools_of_the_trade', powers: [1, 1], energy: [E - 1, E] },
     { id: 'carve_reality', enemyHp: [17, 16], energy: [E - 2, E - 2] },
     { id: 'sash_whip', enemyHp: [18, 18], energy: [E - 1, E - 1] },
+    { id: 'conclude', enemyHp: [18, 17], energy: [E - 1, E - 1] },
+    { id: 'judgment', exhaust: [0, 0], energy: [E - 1, E - 1] },
+    { id: 'ragnarok', enemyHp: [15, 14], energy: [E - 3, E - 3] },
+    { id: 'scrawl', hand: [5, 5], exhaust: [1, 1], energy: [E - 1, E] },
+    { id: 'signature_move', enemyHp: [14, 12], energy: [E - 2, E - 2] },
+    { id: 'spirit_shield', block: [0, 0], exhaust: [1, 0], energy: [E - 2, E - 2] },
+    { id: 'swivel', block: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'wallop', enemyHp: [18, 17], block: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'wish', strength: [1, 2], exhaust: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'conjure_blade', powers: [1, 1], energySpent: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'deus_ex_machina', miracles: [2, 3], exhaust: [1, 1], energy: [E, E] },
+    { id: 'foreign_influence', enemyHp: [17, 16], energy: [E - 2, E - 2] },
+    { id: 'omega', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'reach_heaven', player: { miracles: 2 }, enemyHp: [16, 14], energy: [E - 1, E - 1] },
+    { id: 'study', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'blasphemy', exhaust: [7, 7], energy: [E - 2, E - 2] },
+    { id: 'brilliance', player: { miracles: 2 }, enemyHp: [16, 14], energy: [E - 1, E - 1] },
+    { id: 'devotion', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'worship', energySpent: [2, 2], miracles: [3, 3], exhaust: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'wreath_of_flame', energySpent: [2, 2], strength: [2, 2], exhaust: [1, 0], energy: [E - 2, E - 2] },
+    { id: 'establishment', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'meditate', stance: ['calm', 'calm'], energy: [E - 1, E - 1] },
+    { id: 'perseverance', block: [1, 2], energy: [E - 1, E - 1] },
+    { id: 'sands_of_time', enemyHp: [17, 17], energy: [E - 2, E - 2] },
+    { id: 'windmill_strike', enemyHp: [18, 18], energy: [E - 2, E - 2] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -2419,10 +2445,14 @@ check('every newly transcribed card does what its face prints', () => {
     'shame', 'writhe', 'ascenders_bane',
   ])
   const covered = new Set(CASES.map((spec) => spec.id))
+  const dedicated = new Set([
+    'deva_form', 'omniscience', 'vault', 'talk_to_the_hand', 'tantrum', 'weave',
+    'conjure_blade', 'deus_ex_machina', 'foreign_influence', 'omega', 'reach_heaven', 'study',
+  ])
   // Checks earlier in THIS process register `fixture_*` cards into the table;
   // they are scaffolding, not printed cards.
   const uncovered = Object.keys(CARDS).filter(
-    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id),
+    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id) && !dedicated.has(id),
   )
   assertEqual(
     uncovered.length,
@@ -2518,6 +2548,417 @@ check('every newly transcribed card does what its face prints', () => {
       assertEqual(me.energy, spec.energy ? spec.energy[at] : E - cost, `${label}: energy left`)
     }
   }
+})
+
+check('Watcher Batch 1 resolves physical targeting, restrictions, and modal effects', () => {
+  for (const upgraded of [false, true]) {
+    const conclude = instance('conclude', upgraded)
+    const spare = instance('defend_watcher')
+    const concluded = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [conclude, spare], energy: 3 })],
+      [makeEnemy({ uid: 'left', row: 0, hp: 10 }), makeEnemy({ uid: 'right', row: 0, hp: 10 }),
+        makeEnemy({ uid: 'other', row: 1, hp: 10 })],
+    ), 'p1', conclude.uid, { enemyUid: 'left', playerId: null })
+    assertDeepEqual(concluded.enemies.map((enemy) => enemy.hp),
+      upgraded ? [7, 7, 10] : [8, 8, 10], 'Conclude hits one row')
+    assert(concluded.players[0].cardPlayLocked, 'Conclude locks further card play')
+    assertEqual(playCard(concluded, 'p1', spare.uid), concluded, 'Conclude lock is authoritative')
+
+    const copiedConclude = combat([makePlayer({ character: 'watcher' })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    copiedConclude.phase = 'copy'
+    copiedConclude.pendingCardCopy = {
+      playerId: 'p1', card: conclude, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+      forcedChoices: null, deferredHavocs: [], sourceNames: ['Double Tap'],
+    }
+    copiedConclude.players[0].cardPlayLocked = true
+    const skipped = playCardCopy(copiedConclude, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(skipped.phase, 'player')
+    assertEqual(skipped.pendingCardCopy, undefined)
+
+    const judgment = instance('judgment', upgraded)
+    const threshold = upgraded ? 8 : 7
+    const executed = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [judgment] })],
+      [makeEnemy({ hp: threshold, maxHp: 20 })],
+    ), 'p1', judgment.uid, { enemyUid: 'e1', playerId: null })
+    assert(executed.enemies[0].dead, 'Judgment executes at its threshold')
+    const safe = instance('judgment', upgraded)
+    const refused = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [safe] })],
+      [makeEnemy({ hp: threshold + 1, maxHp: 20 })],
+    ), 'p1', safe.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(refused.enemies[0].hp, threshold + 1, 'Judgment does not damage above threshold')
+
+    const ragnarok = instance('ragnarok', upgraded)
+    const hits = upgraded ? 6 : 5
+    const ragnaroked = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [ragnarok], energy: 3 })],
+      [makeEnemy({ uid: 'a', hp: 10 }), makeEnemy({ uid: 'b', hp: 10 })],
+    ), 'p1', ragnarok.uid, {
+      enemyUid: null, playerId: null,
+      enemyUids: Array.from({ length: hits }, (_, index) => index % 2 ? 'b' : 'a'),
+    })
+    assertEqual(ragnaroked.enemies[0].hp + ragnaroked.enemies[1].hp, 20 - hits,
+      'Ragnarok assigns every independent hit')
+
+    const signature = instance('signature_move', upgraded)
+    const rivalAttack = instance('strike_watcher')
+    const blocked = combat([makePlayer({ character: 'watcher', hand: [signature, rivalAttack], energy: 3 })],
+      [makeEnemy({ hp: 20 })])
+    assertEqual(playCard(blocked, 'p1', signature.uid, { enemyUid: 'e1', playerId: null }), blocked,
+      'Signature Move refuses a second Attack in hand')
+
+    const shield = instance('spirit_shield', upgraded)
+    const filler = [instance('defend_watcher'), instance('strike_watcher'), instance('vigilance')]
+    const shielded = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [shield, ...filler], energy: 3 })], [makeEnemy()],
+    ), 'p1', shield.uid)
+    assertEqual(shielded.players[0].block, 3, 'Spirit Shield counts the other cards after leaving hand')
+    assertEqual(shielded.players[0].exhaust.length, upgraded ? 0 : 1, 'Spirit Shield upgrade removes Exhaust')
+
+    const wallop = instance('wallop', upgraded)
+    const walloped = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [wallop], energy: 3, strength: 1 })],
+      [makeEnemy({ hp: 20, block: 2 })],
+    ), 'p1', wallop.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(walloped.players[0].block, upgraded ? 2 : 1,
+      'Wallop gains only unblocked, modified hit damage')
+  }
+
+  const swivel = instance('swivel', true)
+  const costly = instance('bludgeon')
+  const ally = makePlayer({ id: 'p2', name: 'Ironclad', row: 1 })
+  let state = playCard(combat([
+    makePlayer({ character: 'watcher', hand: [swivel, costly], energy: 2 }), ally,
+  ], [makeEnemy({ hp: 20 })]), 'p1', swivel.uid, { enemyUid: null, playerId: 'p2' })
+  assertEqual(state.players[1].block, 3, 'Swivel+ may give Block to an ally')
+  assertEqual(playCost(faceOf(cardDef('bludgeon'), false), state.players[0], costly), 0,
+    'Swivel discounts the next Attack')
+  state = playCard(state, 'p1', costly.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].energy, 0, 'the discounted Attack costs no Energy')
+  assertEqual(state.players[0].freeAttacksThisTurn, 0, 'the Attack consumes Swivel')
+
+  const repeatedRagnarok = instance('ragnarok')
+  const repeated = playCard(combat(
+    [makePlayer({ character: 'watcher', hand: [repeatedRagnarok], energy: 3 })],
+    [makeEnemy({ uid: 'same', hp: 30, maxHp: 30, vulnerable: 2 })],
+  ), 'p1', repeatedRagnarok.uid, {
+    enemyUid: null, playerId: null, enemyUids: Array(5).fill('same'),
+  })
+  assertEqual(repeated.enemies[0].hp, 20, 'Vulnerable doubles every Ragnarok sword on one target')
+  assertEqual(repeated.enemies[0].vulnerable, 1, 'Ragnarok spends one Vulnerable per affected target')
+
+  const splitRagnarok = instance('ragnarok')
+  const split = playCard(combat(
+    [makePlayer({ character: 'watcher', hand: [splitRagnarok], energy: 3 })],
+    [
+      makeEnemy({ uid: 'split-a', hp: 30, maxHp: 30, vulnerable: 2 }),
+      makeEnemy({ uid: 'split-b', hp: 30, maxHp: 30, vulnerable: 2 }),
+    ],
+  ), 'p1', splitRagnarok.uid, {
+    enemyUid: null, playerId: null,
+    enemyUids: ['split-a', 'split-b', 'split-a', 'split-b', 'split-a'],
+  })
+  assertDeepEqual(split.enemies.map((enemy) => enemy.hp), [24, 26],
+    'split Ragnarok swords keep Vulnerable for every hit')
+  assertDeepEqual(split.enemies.map((enemy) => enemy.vulnerable), [1, 1],
+    'split Ragnarok spends one Vulnerable on each affected target')
+
+  for (const upgraded of [false, true]) {
+    for (const [mode, field, expected] of upgraded
+      ? [[0, 'strength', 2], [1, 'block', 15], [2, 'miracles', 5]]
+      : [[0, 'strength', 1], [1, 'block', 10], [2, 'miracles', 4]]) {
+      const wish = instance('wish', upgraded)
+      const wished = playCard(combat([
+        makePlayer({ character: 'watcher', hand: [wish], energy: 3 }),
+      ], [makeEnemy()]), 'p1', wish.uid, { enemyUid: null, playerId: null, mode })
+      assertEqual(wished.players[0][field], expected, `Wish${upgraded ? '+' : ''} mode ${mode} resolves`)
+    }
+  }
+})
+
+check('Watcher generated-choice batch resolves physical effects and server-derived copies', () => {
+  for (const upgraded of [false, true]) {
+    const conjure = instance('conjure_blade', upgraded)
+    const strike = instance('strike_watcher')
+    let forged = playCard(combat([makePlayer({
+      character: 'watcher', hand: [conjure, strike], energy: 3,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', conjure.uid, {
+      enemyUid: null, playerId: null, energySpent: 2,
+    })
+    assertEqual(forged.players[0].powers[0].counter, upgraded ? 4 : 3,
+      'Conjure Blade stores its X-based cubes on the Power')
+    assertEqual(forged.players[0].starterStrikeDamageBonus, upgraded ? 4 : 3)
+    forged = playCard(forged, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(forged.enemies[0].hp, upgraded ? 15 : 16,
+      'Conjure Blade cubes improve starter Strikes')
+
+    const deus = instance('deus_ex_machina', upgraded)
+    const blessed = playCard(combat([makePlayer({
+      character: 'watcher', hand: [deus], miracles: 0,
+    })], [makeEnemy()]), 'p1', deus.uid)
+    assertEqual(blessed.players[0].miracles, upgraded ? 3 : 2)
+    assertEqual(blessed.players[0].exhaust[0].uid, deus.uid)
+
+    const reach = instance('reach_heaven', upgraded)
+    const reached = playCard(combat([makePlayer({
+      character: 'watcher', hand: [reach], miracles: 2,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', reach.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(reached.enemies[0].hp, upgraded ? 14 : 16,
+      'Reach Heaven adds the printed amount per held Miracle')
+
+    const omega = instance('omega', upgraded)
+    const omegaState = combat([makePlayer({
+      character: 'watcher', powers: [omega], row: 0,
+    })], [
+      makeEnemy({ uid: 'omega-front', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'omega-back', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'omega-boss', row: 0, hp: 20, maxHp: 20, isBoss: true }),
+    ])
+    const omegaAbility = endTurnAbilities(omegaState).find((ability) => ability.label.includes('Omega'))
+    assert(omegaAbility?.targets?.some((target) => target.uid === 'omega-back'))
+    const omegaResolved = beginEndPlayerTurn(omegaState, [
+      chooseEndTurnTarget(omegaAbility.id, 'omega-back'),
+    ])
+    assertDeepEqual(omegaResolved.enemies.map((enemy) => enemy.hp),
+      upgraded ? [20, 14, 14] : [20, 15, 15], 'Omega chooses one row and includes the boss')
+
+    const study = instance('study', upgraded)
+    const draw = Array.from({ length: 10 }, () => instance('defend_watcher'))
+    const calmRoundEnd = {
+      ...combat([makePlayer({ character: 'watcher', stance: 'calm', powers: [study], draw })], [makeEnemy()]),
+      phase: 'roundEnd', turn: 1,
+    }
+    const calmPrepared = preparePlayerTurn(calmRoundEnd)
+    const calmStarted = resolveStartPlayerTurn(calmPrepared, defaultStartTurnChoices(calmPrepared))
+    assertEqual(calmStarted.players[0].hand.length, 7, 'Study draws 2 before the normal draw while Calm')
+    const neutralPrepared = preparePlayerTurn({
+      ...calmRoundEnd,
+      players: [{ ...calmRoundEnd.players[0], stance: 'neutral', draw: [...draw], hand: [] }],
+    })
+    const neutralStarted = resolveStartPlayerTurn(neutralPrepared, defaultStartTurnChoices(neutralPrepared))
+    assertEqual(neutralStarted.players[0].hand.length, 5, 'Study does not draw outside Calm')
+  }
+
+  const allyAttack = instance('bash')
+  const foreign = instance('foreign_influence', true)
+  let influenced = combat([
+    makePlayer({ character: 'watcher', hand: [foreign], energy: 2, strength: 1 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', character: 'ironclad', hand: [allyAttack], energy: 2 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  influenced = playCard(influenced, 'p2', allyAttack.uid, { enemyUid: 'e1', playerId: null })
+  influenced = playCard(influenced, 'p1', foreign.uid, { enemyUid: null, playerId: null, mode: 1 })
+  assertEqual(influenced.phase, 'copy')
+  assertDeepEqual(influenced.pendingCardCopy.sourceNames, ['Foreign Influence'])
+  assertEqual(influenced.pendingCardCopy.card.defId, 'bash',
+    'Foreign Influence derives the last ally Attack from the authoritative play ledger')
+  influenced = playCardCopy(influenced, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(influenced.enemies[0].hp, 12,
+    'Foreign Influence copy uses the Watcher modifiers and a separately chosen target')
+
+  const unavailable = instance('foreign_influence')
+  const noAllyAttack = combat([makePlayer({
+    character: 'watcher', hand: [unavailable], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertEqual(playCard(noAllyAttack, 'p1', unavailable.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  }), noAllyAttack, 'Foreign Influence refuses copy mode without another player\'s Attack')
+  const direct = playCard(noAllyAttack, 'p1', unavailable.uid, {
+    enemyUid: 'e1', playerId: null, mode: 0,
+  })
+  assertEqual(direct.enemies[0].hp, 17)
+
+  const copiedUnavailable = structuredClone(noAllyAttack)
+  copiedUnavailable.players[0].hand = []
+  copiedUnavailable.phase = 'copy'
+  copiedUnavailable.pendingCardCopy = {
+    playerId: 'p1', card: unavailable, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  assertEqual(playCardCopy(copiedUnavailable, 'p1', {
+    enemyUid: null, playerId: null, mode: 1,
+  }), copiedUnavailable, 'a copied Foreign Influence accepted an unavailable ally-Attack mode')
+
+  const heldForeign = instance('foreign_influence')
+  const signature = instance('signature_move')
+  const sameDefHeld = combat([
+    makePlayer({ character: 'watcher', hand: [heldForeign, instance('strike_watcher')] }),
+    makePlayer({ id: 'p2', name: 'Silent', hand: [] }),
+  ], [makeEnemy()])
+  sameDefHeld.phase = 'copy'
+  sameDefHeld.playedCardsThisTurn = [{ playerId: 'p2', card: signature, copied: false }]
+  sameDefHeld.pendingCardCopy = {
+    playerId: 'p1', card: unavailable, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  assertEqual(playCardCopy(sameDefHeld, 'p1', {
+    enemyUid: null, playerId: null, mode: 1,
+  }), sameDefHeld, 'a copied Foreign Influence removed a different held copy from Signature Move legality')
+
+  const searchedSignature = instance('signature_move')
+  const omniscience = instance('omniscience')
+  const searchable = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [searchedSignature], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertDeepEqual(previewCardChoice(searchable, 'p1', omniscience.uid)?.cards.map((card) => card.uid),
+    [searchedSignature.uid], 'Omniscience treats its searched Signature Move as the Attack being played')
+  searchable.players[0].hand.push(instance('strike_watcher'))
+  assertDeepEqual(previewCardChoice(searchable, 'p1', omniscience.uid)?.cards, [],
+    'Omniscience refuses Signature Move when another Attack remains in hand')
+
+  const copiedSignature = instance('signature_move')
+  const doppelganger = instance('doppelganger')
+  const copied = combat([makePlayer({
+    character: 'watcher', hand: [doppelganger], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  copied.playedCardsThisTurn = [{ playerId: 'p2', card: copiedSignature, copied: false }]
+  const copiedAlone = playCard(copied, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+  })
+  assertEqual(copiedAlone.pendingCardCopy?.card.defId, 'signature_move',
+    'Doppelganger may copy Signature Move when no other Attack remains in hand')
+  copied.players[0].hand.push(instance('strike_watcher'))
+  const copiedBlocked = playCard(copied, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+  })
+  assertEqual(copiedBlocked.pendingCardCopy, undefined,
+    'Doppelganger refuses Signature Move when another Attack remains in hand')
+
+  const influencedSignature = instance('signature_move')
+  const influence = instance('foreign_influence')
+  const influenceState = combat([
+    makePlayer({ character: 'watcher', hand: [influence], energy: 2 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', character: 'ironclad' }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  influenceState.playedCardsThisTurn = [{ playerId: 'p2', card: influencedSignature, copied: false }]
+  const influenceAlone = playCard(influenceState, 'p1', influence.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  })
+  assertEqual(influenceAlone.pendingCardCopy?.card.defId, 'signature_move',
+    'Foreign Influence may copy Signature Move when no other Attack remains in hand')
+  influenceState.players[0].hand.push(instance('strike_watcher'))
+  const influenceBlocked = playCard(influenceState, 'p1', influence.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  })
+  assertEqual(influenceBlocked, influenceState,
+    'Foreign Influence atomically refuses an ally Attack that is not playable for its caster')
+
+  const redactedInfluence = instance('foreign_influence')
+  const redactedState = combat([
+    makePlayer({ character: 'watcher', hand: [redactedInfluence], draw: [] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  redactedState.playedCardsThisTurn = [{
+    playerId: 'p2', card: instance('grand_finale'), copied: false,
+  }]
+  assertEqual(cardModeIsAvailable(
+    faceOf(cardDef('foreign_influence'), false), redactedState, redactedState.players[0], 1, 1,
+  ), false, 'Foreign Influence uses the public draw count when its online draw pile is redacted')
+  assertEqual(cardModeIsAvailable(
+    faceOf(cardDef('foreign_influence'), false), redactedState, redactedState.players[0], 1, 0,
+  ), true, 'Foreign Influence enables a copied Grand Finale when the public draw count is zero')
+})
+
+check('Watcher Retain lifecycle applies Establishment and retained-card bonuses', () => {
+  for (const upgraded of [false, true]) {
+    const establishment = instance('establishment', upgraded)
+    const retained = { ...instance('bludgeon'), retainedLastTurn: true, costReductionThisTurn: 9 }
+    const ordinary = { ...instance('defend_watcher'), costReductionThisTurn: 9 }
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [retained, ordinary], powers: [establishment], energy: 0,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    state.phase = 'roundEnd'
+    state.turn = 1
+    const prepared = preparePlayerTurn(state)
+    const started = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+    assertEqual(playCost(faceOf(cardDef('bludgeon'), false), started.players[0], started.players[0].hand[0]),
+      upgraded ? 1 : 2, `Establishment${upgraded ? '+' : ''} discounts retained cards`)
+    assertEqual(started.players[0].hand[1].costReductionThisTurn, undefined,
+      'turn reset clears stale discounts from cards that were not Retained')
+    const played = playCard(started, 'p1', retained.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.players[0].energy, upgraded ? 2 : 1,
+      'the Establishment discount is charged by the authoritative play path')
+    assertEqual(played.players[0].discard.at(-1).costReductionThisTurn, undefined)
+  }
+
+  for (const upgraded of [false, true]) {
+    const perseverance = { ...instance('perseverance', upgraded), retainedLastTurn: true }
+    const blocked = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [perseverance], energy: 1 }),
+    ], [makeEnemy()]), 'p1', perseverance.uid)
+    assertEqual(blocked.players[0].block, upgraded ? 4 : 3)
+    const boostedState = combat([
+      makePlayer({ character: 'watcher', hand: [perseverance], energy: 1 }),
+    ], [makeEnemy()])
+    boostedState.players[0].cardBlockBonus = 1
+    const boosted = playCard(boostedState, 'p1', perseverance.uid)
+    assertEqual(boosted.players[0].block, upgraded ? 6 : 5,
+      'a retained Perseverance applies the Block bonus to both active Block icons')
+
+    const windmill = { ...instance('windmill_strike', upgraded), retainedLastTurn: true }
+    const struck = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [windmill], energy: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', windmill.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(struck.enemies[0].hp, upgraded ? 13 : 15)
+
+    const sands = instance('sands_of_time', upgraded)
+    const printedRetain = [instance('protect'), instance('perseverance')]
+    const retainedByEffect = { ...instance('defend_watcher'), retainedLastTurn: true }
+    const timed = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [sands, ...printedRetain, retainedByEffect], energy: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', sands.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(timed.enemies[0].hp, upgraded ? 11 : 13,
+      'Sands counts other printed Retain cards, not every card retained by an effect')
+  }
+})
+
+check('Meditate recovers exact discard choices for the upcoming Retain step', () => {
+  for (const upgraded of [false, true]) {
+    const meditate = instance('meditate', upgraded)
+    const first = instance('perseverance')
+    const second = instance('windmill_strike')
+    const leftover = instance('strike_watcher')
+    const state = combat([makePlayer({
+      character: 'watcher', stance: 'wrath', hand: [meditate], discard: [first, second, leftover], energy: 1,
+    })], [makeEnemy()])
+    const choices = upgraded ? [first.uid, second.uid] : [first.uid]
+    const played = playCard(state, 'p1', meditate.uid, {
+      enemyUid: null, playerId: null, recoverDiscardUids: choices,
+    })
+    assert(played !== state)
+    assertEqual(played.players[0].stance, 'calm')
+    assertEqual(played.players[0].cardPlayLocked, true)
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), choices)
+    assert(played.players[0].hand.every((card) => card.retainThisTurn === true && !card.retainedLastTurn),
+      'Meditate retains cards at the upcoming discard, without granting last-turn bonuses immediately')
+    assertEqual(playCard(played, 'p1', choices[0], { enemyUid: 'e1', playerId: null }), played,
+      'Meditate prevents additional card plays')
+
+    const ended = endPlayerTurn(played, { p1: [] })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid), choices)
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true && !card.retainThisTurn),
+      'Meditate-retained cards become retained-last-turn only after the discard step')
+  }
+
+  const meditate = instance('meditate', true)
+  const only = instance('protect')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [meditate], discard: [only], energy: 1,
+  })], [makeEnemy()])
+  assertEqual(playCard(state, 'p1', meditate.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUids: [only.uid, only.uid],
+  }), state, 'Meditate+ rejects duplicate recovery choices')
+  const recovered = playCard(state, 'p1', meditate.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUids: [only.uid],
+  })
+  assertDeepEqual(recovered.players[0].hand.map((card) => card.uid), [only.uid],
+    'Meditate+ recovers every available card when fewer than two exist')
 })
 
 check('Flex gains temporary Strength and only its base face Exhausts', () => {
@@ -3501,6 +3942,46 @@ check('FTL copies are separate cards, while Shivs do not consume its first-card 
   assertEqual(shivved.players[0].cardsPlayedThisTurn, 0, 'a Shiv is an Attack, not a card')
   const afterShiv = playCard(shivved, 'p1', afterShivFtl.uid, { enemyUid: 'e1', playerId: null })
   assertDeepEqual(afterShiv.players[0].hand.map((card) => card.uid), [afterShivDraw.uid])
+})
+
+check('Time Warp suppresses copies beyond its current card limit', () => {
+  const strike = instance('strike_ironclad')
+  const state = combat([makePlayer({ hand: [strike] })], [
+    makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 }),
+  ])
+  state.players[0].cardsPlayedThisTurn = 2
+  state.players[0].doubledAttacksThisTurn = 1
+  const next = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(next.phase, 'player')
+  assertEqual(next.players[0].cardsPlayedThisTurn, 3)
+  assertEqual(next.enemies[0].hp, 19)
+  assertEqual(next.pendingCardCopy, undefined)
+  assert(next.players[0].discard.some((card) => card.uid === strike.uid))
+})
+
+check('Time Warp settles deferred copies without exposing their private choices', () => {
+  const weave = instance('weave')
+  const cut = instance('cut_through_fate')
+  let state = combat([makePlayer({ character: 'watcher' })], [
+    makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 }),
+  ])
+  state.players[0].cardsPlayedThisTurn = 3
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card: weave, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, sourceNames: ['Weave'], virtualOnly: true,
+    deferredHavocs: [{
+      card: cut, exhaust: false, virtualOnly: true,
+      copySourceNames: ['Doppelganger'], copyResumePhase: 'player',
+    }],
+  }
+
+  assertEqual(previewCardCopyChoice(state, 'p1'), null)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+  assert(state.log.some((line) => line.includes('Weave was skipped by Time Warp')))
+  assert(state.log.some((line) => line.includes('Cut Through Fate was skipped by Time Warp')))
 })
 
 check('the card-play ledger resets each turn and ignores refused plays', () => {
@@ -8214,6 +8695,487 @@ check('Golden Eye persists a private Scry choice and validates the revealed card
   assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [cards[1].uid])
   assertEqual(resolved.players[0].relics[0].spent, true)
   assertEqual(resolved.pendingRelicScry, undefined)
+})
+
+check('Blasphemy exhausts the draw pile and plays the next Attack exactly three times', () => {
+  const blasphemy = instance('blasphemy')
+  const strike = instance('strike_watcher')
+  const draw = [instance('defend_watcher'), instance('vigilance')]
+  let state = combat([makePlayer({
+    name: 'Watcher', character: 'watcher', hand: [blasphemy, strike], draw, energy: 3,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', blasphemy.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].tripledAttacksThisTurn, 1)
+  assertDeepEqual(state.players[0].draw, [])
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [...draw.map((card) => card.uid), blasphemy.uid])
+
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy', 'Blasphemy'])
+  assertEqual(state.enemies[0].hp, 9)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy'])
+  assertEqual(state.enemies[0].hp, 8)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 7)
+  assertEqual(state.players[0].tripledAttacksThisTurn, 0)
+  assertEqual(state.players[0].attacksPlayedThisTurn, 3)
+  assertEqual(state.players[0].discard.filter((card) => card.uid === strike.uid).length, 1)
+
+  const upgraded = instance('blasphemy', true)
+  const retained = endPlayerTurn(combat([
+    makePlayer({ name: 'Watcher', character: 'watcher', hand: [upgraded] }),
+  ], [makeEnemy()]))
+  assertEqual(retained.players[0].hand.some((card) => card.uid === upgraded.uid), true)
+  assertEqual(retained.players[0].exhaust.some((card) => card.uid === upgraded.uid), false)
+})
+
+check('Brilliance, Worship, and Wreath of Flame resolve their printed Miracle and X values', () => {
+  for (const upgraded of [false, true]) {
+    const brilliance = instance('brilliance', upgraded)
+    const hit = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [brilliance], miracles: 2,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', brilliance.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(hit.enemies[0].hp, upgraded ? 14 : 16)
+
+    const worship = instance('worship', upgraded)
+    const worshiped = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [worship], energy: 2,
+    })], [makeEnemy()]), 'p1', worship.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+    assertEqual(worshiped.players[0].miracles, 3)
+    assertEqual(worshiped.players[0].energy, 0)
+    assertEqual(worshiped.players[0].exhaust.some((card) => card.uid === worship.uid), true)
+    assertEqual(worshiped.players[0].discard.some((card) => card.uid === worship.uid), false)
+
+    const wreath = instance('wreath_of_flame', upgraded)
+    const strengthened = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [wreath], energy: 2,
+    })], [makeEnemy()]), 'p1', wreath.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+    assertEqual(strengthened.players[0].strength, 2)
+    assertEqual(strengthened.players[0].strengthLossAtEndOfTurn, 2)
+    assertEqual(strengthened.players[0].exhaust.some((card) => card.uid === wreath.uid), !upgraded)
+    assertEqual(beginEndPlayerTurn(strengthened).players[0].strength, 0)
+  }
+
+  const freeWorship = instance('worship')
+  const zero = playCard(combat([makePlayer({ hand: [freeWorship], energy: 0 })], [makeEnemy()]),
+    'p1', freeWorship.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  assertEqual(zero.players[0].miracles, 1, 'Worship gains X+1 even when X is zero')
+})
+
+check('a fixed next-card cost still supplies X to the printed effects', () => {
+  const worship = instance('worship')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [worship], energy: 3, nextCardCost: 3,
+  })], [makeEnemy()])
+  const next = playCard(state, 'p1', worship.uid, { enemyUid: null, playerId: null })
+  assertEqual(next.players[0].energy, 0)
+  assertEqual(next.players[0].miracles, 4)
+
+  const body = instance('reinforced_body')
+  const primed = combat([makePlayer({ hand: [body], energy: 3, nextCardCost: 3 })], [makeEnemy()])
+  const blocked = playCard(primed, 'p1', body.uid, { enemyUid: null, playerId: null, playerIds: ['p1'] })
+  assertEqual(blocked.players[0].block, 4)
+  assertEqual(blocked.players[0].energy, 0)
+  const free = combat([makePlayer({ hand: [body], energy: 3, nextCardCost: 0 })], [makeEnemy()])
+  assertEqual(playCard(free, 'p1', body.uid, { enemyUid: null, playerId: null, playerIds: ['p1'] }), free)
+})
+
+check('Devotion pays out each Start of Turn and exhausts at its printed cube threshold', () => {
+  for (const upgraded of [false, true]) {
+    const devotion = instance('devotion', upgraded)
+    const threshold = upgraded ? 4 : 3
+    let state = combat([makePlayer({
+      name: 'Watcher', character: 'watcher', powers: [devotion],
+      draw: Array.from({ length: threshold * 6 }, () => instance('defend_watcher')),
+    })], [makeEnemy()])
+    state.turn = 1
+    for (let cube = 1; cube <= threshold; cube++) {
+      state.phase = 'roundEnd'
+      state = startPlayerTurn(state)
+      assertEqual(state.players[0].miracles, cube)
+      assertEqual(state.players[0].hand.length, cube * 6)
+      if (cube < threshold) assertEqual(state.players[0].powers[0].counter, cube)
+    }
+    assertEqual(state.players[0].powers.some((card) => card.uid === devotion.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === devotion.uid), true)
+  }
+})
+
+check('Deva Form gains its printed Miracles at Start of Turn', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('deva_form', upgraded)
+    let state = playCard(combat([makePlayer({
+      character: 'watcher', hand: [power], miracles: 0, energy: 2,
+    })], [makeEnemy()]), 'p1', power.uid)
+    assertEqual(state.players[0].energy, 0)
+    assert(state.players[0].powers.some((card) => card.uid === power.uid))
+    state.phase = 'roundEnd'
+    state = startPlayerTurn(state)
+    assertEqual(state.players[0].miracles, upgraded ? 2 : 1)
+  }
+})
+
+check('Vault keeps Retain cards, discards the rest, draws five, and restores 3 Energy', () => {
+  for (const upgraded of [false, true]) {
+    const vault = instance('vault', upgraded)
+    const retained = instance('protect')
+    const ordinary = instance('strike_watcher')
+    const draw = Array.from({ length: 5 }, () => instance('defend_watcher'))
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [vault, retained, ordinary], draw, energy: 3,
+    })], [makeEnemy()])
+    const next = playCard(state, 'p1', vault.uid, { enemyUid: null, playerId: null })
+    assertEqual(next.players[0].energy, upgraded ? 4 : 3)
+    assertEqual(next.players[0].hand.length, 6)
+    assert(next.players[0].hand.some((card) => card.uid === retained.uid))
+    assertDeepEqual(next.players[0].discard.map((card) => card.uid), [ordinary.uid])
+    assert(next.players[0].exhaust.some((card) => card.uid === vault.uid))
+  }
+})
+
+check('Talk to the Hand blocks per held Miracle after its hit', () => {
+  for (const upgraded of [false, true]) {
+    const talk = instance('talk_to_the_hand', upgraded)
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [talk], miracles: 3, energy: 1,
+    })], [makeEnemy()])
+    const next = playCard(state, 'p1', talk.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(next.enemies[0].hp, upgraded ? 3 : 4)
+    assertEqual(next.players[0].block, 3)
+    assertEqual(next.players[0].energy, 0)
+  }
+})
+
+check('Tantrum enters Wrath and returns its physical card to draw top', () => {
+  for (const upgraded of [false, true]) {
+    const tantrum = instance('tantrum', upgraded)
+    const enemies = upgraded
+      ? [makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }), makeEnemy({ uid: 'right', hp: 10, maxHp: 10 })]
+      : [makeEnemy({ hp: 10, maxHp: 10 })]
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [tantrum], energy: 1,
+    })], enemies)
+    const next = playCard(state, 'p1', tantrum.uid, upgraded ? {
+      enemyUid: null, enemyUids: ['left', 'right'], playerId: null,
+    } : { enemyUid: 'e1', playerId: null })
+    assertDeepEqual(next.enemies.map((enemy) => enemy.hp), upgraded ? [9, 9] : [8])
+    assertEqual(next.players[0].stance, 'wrath')
+    assertEqual(next.players[0].draw.at(-1)?.uid, tantrum.uid)
+    assertEqual(next.players[0].energy, 0)
+  }
+})
+
+check('Omniscience privately searches an Attack or Skill, plays it twice free, then Exhausts it', () => {
+  for (const upgraded of [false, true]) {
+    const omniscience = instance('omniscience', upgraded)
+    const strike = instance('strike_watcher')
+    const power = instance('deva_form')
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [omniscience], draw: [strike, power], energy: 3, freeAttacksThisTurn: 1,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    assertDeepEqual(previewCardChoice(state, 'p1', omniscience.uid)?.cards.map((card) => card.uid), [strike.uid])
+    assertEqual(playCard(state, 'p1', omniscience.uid, {
+      enemyUid: null, playerId: null, searchDrawUids: [power.uid],
+    }), state, 'Omniscience accepted a Power')
+    state = playCard(state, 'p1', omniscience.uid, {
+      enemyUid: null, playerId: null, searchDrawUids: [strike.uid],
+    })
+    assertEqual(state.players[0].energy, upgraded ? 1 : 0)
+    assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Omniscience', 'Omniscience'])
+    assertEqual(state.players[0].freeAttacksThisTurn, 0, 'Omniscience did not consume Swivel for its Attack')
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, 8)
+    assert(state.players[0].exhaust.some((card) => card.uid === strike.uid))
+    assert(state.players[0].exhaust.some((card) => card.uid === omniscience.uid))
+  }
+})
+
+check('Omniscience accepts the complete generated UI payload at the copy boundary', () => {
+  const omniscience = instance('omniscience', true)
+  const strike = instance('strike_watcher')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [strike, instance('deva_form')], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  const next = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, enemyUids: [], playerId: 'p1', playerIds: [], energySpent: 0,
+    mode: undefined, discardUids: undefined, exhaustUids: undefined, scryDiscardUids: undefined,
+    topdeckUids: undefined, recoverDiscardUids: undefined, recoverExhaustUid: undefined,
+    searchDrawUids: [strike.uid], spendMiracle: false, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    switchWithPlayerId: null,
+  })
+  assertEqual(next.phase, 'copy')
+  assertDeepEqual(next.pendingCardCopy?.sourceNames, ['Omniscience', 'Omniscience'])
+})
+
+check('Omniscience offers only cards playable for X=0 and still shuffles when none qualify', () => {
+  const omniscience = instance('omniscience')
+  const finale = instance('grand_finale')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [finale], energy: 3,
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  assertDeepEqual(previewCardChoice(state, 'p1', omniscience.uid)?.cards.map((card) => card.uid), [finale.uid])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [finale.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 10, 'Grand Finale was not evaluated against its post-search draw pile')
+
+  const emptyOmniscience = instance('omniscience')
+  const blockedFinale = instance('grand_finale')
+  const minimumX = instance('reinforced_body')
+  const power = instance('deva_form')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [emptyOmniscience], draw: [blockedFinale, minimumX, power], energy: 3,
+    powers: [instance('a_thousand_cuts')],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertDeepEqual(previewCardChoice(state, 'p1', emptyOmniscience.uid)?.cards, [],
+    'Omniscience exposed an unplayable or minimum-X card')
+  state = playCard(state, 'p1', emptyOmniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 15, 'an empty Omniscience search skipped its Shuffle trigger')
+
+  const clashOmniscience = instance('omniscience')
+  const clash = instance('clash')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [clashOmniscience], draw: [clash], energy: 3,
+  })], [makeEnemy()])
+  assertDeepEqual(previewCardChoice(state, 'p1', clashOmniscience.uid)?.cards.map((card) => card.uid),
+    [clash.uid], 'Omniscience preview did not evaluate Clash after removing itself from hand')
+  state = playCard(state, 'p1', clashOmniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [clash.uid],
+  })
+  assertEqual(state.pendingCardCopy?.card.uid, clash.uid,
+    'Omniscience rejected the Clash offered by its private preview')
+})
+
+check('Omniscience reserves physical-only effects for the final selected-card play', () => {
+  const omniscience = instance('omniscience')
+  const corpse = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [corpse], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [corpse.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].corpseExplosion, undefined,
+    'the virtual Omniscience play attached the physical card')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, corpse.uid)
+  assertEqual(state.players[0].exhaust.some((card) => card.uid === corpse.uid), false,
+    'the attached Corpse Explosion was also put in Exhaust')
+})
+
+check('Omniscience finishes both Havoc children before exhausting the selected card', () => {
+  const omniscience = instance('omniscience')
+  const havoc = instance('havoc')
+  const children = [instance('strike_watcher'), instance('strike_watcher')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [havoc, ...children], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [havoc.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  const firstChild = state.startTurnProgress?.forcedCard?.cardUid
+  state = playCard(state, 'p1', firstChild, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Omniscience'],
+    'the first Havoc child dropped Omniscience\'s second Havoc play')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  const secondChild = state.startTurnProgress?.forcedCard?.cardUid
+  state = playCard(state, 'p1', secondChild, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 18)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid).sort(),
+    [...children.map((card) => card.uid), havoc.uid, omniscience.uid].sort())
+})
+
+check('Blasphemy resolves Foreign Influence physical-only text once and finalizes it as an Attack', () => {
+  const influence = instance('foreign_influence')
+  const allyStrike = instance('strike_ironclad')
+  let state = combat([
+    makePlayer({ character: 'watcher', hand: [influence], energy: 2, tripledAttacksThisTurn: 1, hp: 10 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', hand: [] }),
+  ], [makeEnemy({ defId: 'gremlin_nob', hp: 20, maxHp: 20 })])
+  state.turn = 2
+  state.players[0].tripledAttacksThisTurn = 1
+  state.playedCardsThisTurn = [{ playerId: 'p2', card: allyStrike, copied: false }]
+  state = playCard(state, 'p1', influence.uid, { enemyUid: null, playerId: null, mode: 1 })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null, mode: 1 })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy'],
+    'a virtual Foreign Influence resolution queued its physical-only copy text')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null, mode: 1 })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Foreign Influence'])
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].hp, 10, 'Foreign Influence incorrectly triggered Enraged as a Skill')
+  assertEqual(state.players[0].attacksPlayedThisTurn, 4,
+    'Foreign Influence and its copied Attack were not counted with their real types')
+})
+
+check('Scry plays Weave with its printed damage bonus instead of discarding it', () => {
+  for (const upgraded of [false, true]) {
+    const thirdEye = instance('third_eye')
+    const weave = instance('weave', upgraded)
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [thirdEye], draw: [weave], energy: 1,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    state = playCard(state, 'p1', thirdEye.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [weave.uid],
+    })
+    assertEqual(state.phase, 'copy')
+    assertEqual(state.players[0].discard.some((card) => card.uid === weave.uid), false)
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, upgraded ? 2 : 4)
+    assert(state.players[0].discard.some((card) => card.uid === weave.uid))
+  }
+})
+
+check('card-based Scry finishes Weave before any later printed effects', () => {
+  const cut = instance('cut_through_fate')
+  const weave = instance('weave')
+  const laterDraw = instance('defend_watcher')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [cut], draw: [weave, laterDraw], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', cut.uid, {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [weave.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hand.length, 0, 'Cut Through Fate drew before Weave resolved')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), [laterDraw.uid],
+    'a nonlethal Weave did not resume Cut Through Fate\'s remaining Draw')
+
+  const lethalCut = instance('cut_through_fate')
+  const lethalWeave = instance('weave')
+  const skippedDraw = instance('defend_watcher')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [lethalCut], draw: [lethalWeave, skippedDraw], energy: 1,
+  })], [makeEnemy({ hp: 7, maxHp: 7 })])
+  state = playCard(state, 'p1', lethalCut.uid, {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [lethalWeave.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'won')
+  assertEqual(state.players[0].hand.length, 0, 'lethal Weave did not skip the parent card\'s later Draw')
+  assertDeepEqual(state.players[0].draw.map((card) => card.uid), [skippedDraw.uid])
+})
+
+check('a virtual copied Scry card stays virtual while Weave interrupts it', () => {
+  const cut = instance('cut_through_fate')
+  const weave = instance('weave')
+  const laterDraw = instance('defend_watcher')
+  let state = combat([makePlayer({
+    character: 'watcher', draw: [weave, laterDraw], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card: cut, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  state = playCardCopy(state, 'p1', {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [weave.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [weave.uid],
+    'resuming after Weave materialized the virtual copied Scry card')
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), [laterDraw.uid])
+})
+
+check('Scry preserves sibling discard reactions while Weave waits to play', () => {
+  const thirdEye = instance('third_eye')
+  const reflex = instance('reflex')
+  const weave = instance('weave')
+  const draws = [instance('defend_watcher'), instance('vigilance')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: [reflex, weave, ...draws], energy: 1,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: [reflex.uid, weave.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), draws.map((card) => card.uid),
+    'queuing Weave dropped Reflex\'s discard reaction')
+})
+
+check('Scry queues every discarded Weave in reveal order', () => {
+  const thirdEye = instance('third_eye')
+  const first = instance('weave')
+  const second = instance('weave', true)
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: [first, second], energy: 1,
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: [first.uid, second.uid],
+  })
+  assertEqual(state.pendingCardCopy?.card.uid, first.uid)
+  assertDeepEqual(state.pendingCardCopy?.queuedWeaves?.map((card) => card.uid), [second.uid])
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.pendingCardCopy?.card.uid, second.uid)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 16)
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [first.uid, second.uid, thirdEye.uid])
+})
+
+check('each queued Weave receives its own stacked copy modifier', () => {
+  const thirdEye = instance('third_eye')
+  const weaves = [instance('weave'), instance('weave')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: weaves, energy: 1,
+  })], [makeEnemy({ hp: 40, maxHp: 40 })])
+  state.players[0].doubledAttacksThisTurn = 2
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: weaves.map((card) => card.uid),
+  })
+  while (state.phase === 'copy') state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 16)
+  assertEqual(state.players[0].doubledAttacksThisTurn, 0)
+})
+
+check('Scry-played Weave consumes Swivel and resolves pending Attack multipliers', () => {
+  const cases = [
+    { field: 'freeAttacksThisTurn', sources: ['Weave'], plays: 1 },
+    { field: 'doubledAttacksThisTurn', sources: ['Double Tap', 'Double Tap'], plays: 2 },
+    { field: 'tripledAttacksThisTurn', sources: ['Blasphemy', 'Blasphemy', 'Blasphemy'], plays: 3 },
+  ]
+  for (const spec of cases) {
+    const thirdEye = instance('third_eye')
+    const weave = instance('weave')
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [thirdEye], draw: [weave], energy: 1,
+    })], [makeEnemy({ hp: 30, maxHp: 30 })])
+    state.players[0][spec.field] = 1
+    state = playCard(state, 'p1', thirdEye.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [weave.uid],
+    })
+    assertDeepEqual(state.pendingCardCopy?.sourceNames, spec.sources)
+    while (state.phase === 'copy') {
+      state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    }
+    assertEqual(state.players[0][spec.field], 0, `${spec.field} was not consumed by Weave`)
+    assertEqual(state.enemies[0].hp, 30 - 6 * spec.plays)
+    assertEqual(state.players[0].attacksPlayedThisTurn, spec.plays)
+  }
+})
+
+check('Foresight resumes the shared Draw step after it plays Weave', () => {
+  const weave = instance('weave')
+  const deck = [weave, ...Array.from({ length: 5 }, () => instance('defend_watcher'))]
+  let state = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: deck, powers: [instance('foresight')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })]))
+  const preview = startTurnScryPreview(state)
+  state = resolveStartTurnScry(state, 'p1', preview.id, [weave.uid])
+  assertEqual(state.phase, 'copy')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].hand.length, 5)
+  assertEqual(state.enemies[0].hp, 4)
 })
 
 report('combat')

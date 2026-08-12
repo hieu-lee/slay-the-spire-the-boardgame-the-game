@@ -70,6 +70,7 @@ export type Condition =
   | { kind: 'firstCardPlayedThisTurn' }
   | { kind: 'hasNoAttacksInHand' }
   | { kind: 'allCardsInHandAreAttacks' }
+  | { kind: 'onlyAttackInHand' }
   | { kind: 'goldAtLeast'; amount: number }
   /** Charge Battery: the player has at least this many occupied Orb slots. */
   | { kind: 'orbsAtLeast'; amount: number }
@@ -90,7 +91,9 @@ export type CountOf =
   | 'orbTypes'
   | 'block'
   | 'strength'
+  | 'miracles'
   | 'cardsInHand'
+  | 'retainCardsInHand'
   | 'cardsInExhaust'
   | 'energySpent'
   | 'strikesInHand'
@@ -169,7 +172,7 @@ type EffectKind =
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   | { kind: 'doubleStrength' }
   /** Strength that is removed during this Player Turn's end-of-turn step. */
-  | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
+  | { kind: 'gainTemporaryStrength'; amount: Amount; loseGainedOnly?: boolean }
   | { kind: 'poison'; amount: Amount }
   /** Separate Poison cubes, each independently assigned to a living enemy. */
   | { kind: 'poisonChoices'; amount: number; targets: number }
@@ -178,19 +181,31 @@ type EffectKind =
   | { kind: 'attachCorpseExplosion'; damage: number }
   /** Doppelganger: queue the latest matching public play as a free copy. */
   | { kind: 'copyLastPlayed' }
+  /** Foreign Influence: queue the latest non-copy Attack played by another player. */
+  | { kind: 'copyLastAllyAttack' }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   /** Tools of the Trade: draw, then pause for its owner's private discard choice. */
   | { kind: 'drawThenDiscard'; amount: number }
   | { kind: 'drawToHandSize'; size: number }
   | { kind: 'cycleHand' }
+  /** Vault: discard every card without Retain before drawing a fresh hand. */
+  | { kind: 'discardNonRetain' }
   /** Prevent this player from drawing again until the next Player Turn. */
   | { kind: 'preventDraw' }
+  /** Prevent this player from playing another card until the next Player Turn. */
+  | { kind: 'preventCardPlay' }
   /** The next card played this turn costs 0 Energy. */
   | { kind: 'discountNextCard' }
+  /** The next Attack played this turn costs 0 Energy. */
+  | { kind: 'discountNextAttack' }
   /** Every card currently in the caster's hand costs 0 this turn. */
   | { kind: 'discountHand' }
+  /** Retained cards currently in hand cost this much less for the turn. */
+  | { kind: 'discountRetainedCards'; amount: number }
   /** The next Attack played this turn resolves as two separately targeted cards. */
   | { kind: 'doubleNextAttack' }
+  /** The next Attack played this turn resolves as three separately targeted cards. */
+  | { kind: 'tripleNextAttack' }
   /** The next Attack or Skill played this turn resolves as two separate cards. */
   | { kind: 'doubleNextAttackOrSkill' }
   /** The next Skill played this turn resolves as two separate cards. */
@@ -203,6 +218,8 @@ type EffectKind =
   | { kind: 'preventHpLoss'; uses: number }
   /** Permanently improve this combat's starter Strikes and Defends. */
   | { kind: 'upgradeStarterCards'; amount: number }
+  /** Conjure Blade: store cubes on this Power and add them to starter Strike hits. */
+  | { kind: 'empowerStarterStrikes'; amount: Amount }
   /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
   | { kind: 'countdownDamage'; cubes: number; damage: number }
   /** Put a cube on this Power and Exhaust it at the threshold. */
@@ -217,7 +234,7 @@ type EffectKind =
   | { kind: 'gainShivPerDiscard'; bonus: number }
   /** Spend every held Shiv now; each one is still its own attack. */
   | { kind: 'useAllShivs'; bonus: number }
-  | ({ kind: 'gainMiracle'; amount: number } & Redirectable)
+  | ({ kind: 'gainMiracle'; amount: Amount } & Redirectable)
   | { kind: 'enterStance'; stance: Stance }
   | { kind: 'channel'; orb: OrbType; amount: Amount }
   /** Remove one chosen Orb and apply that Orb's Evoke effect this many times. */
@@ -245,15 +262,21 @@ type EffectKind =
   | { kind: 'clearTargetBlock' }
   | { kind: 'gainEnergyIfTargetDead'; amount: number }
   | { kind: 'gainStrengthIfTargetDead'; amount: number }
+  /** Set the target's HP to 0 when it is at or below the printed threshold. */
+  | { kind: 'execute'; hpAtMost: number }
+  /** Gain Block equal to the preceding hit's unblocked damage. */
+  | { kind: 'gainBlockFromLastHit' }
   | { kind: 'scry'; amount: number }
   /** Put chosen cards from hand on top of the draw pile, in chosen order. */
   | { kind: 'topdeck'; amount: number }
-  /** Put one chosen card from the face-up discard pile on the draw top or into hand. */
-  | { kind: 'recoverDiscard'; amount: 1; toHand?: boolean }
+  /** Put chosen cards from the face-up discard pile on the draw top or into hand. */
+  | { kind: 'recoverDiscard'; amount: number; toHand?: boolean; retain?: boolean }
   /** Put one chosen card from the face-up Exhaust pile into hand. */
   | { kind: 'recoverExhaust'; amount: 1 }
   /** Choose cards from the private draw pile, put them in hand, then shuffle it. */
   | { kind: 'searchDraw'; amount: number }
+  /** Omniscience: search an Attack or Skill and play it twice for free, then Exhaust it. */
+  | { kind: 'searchDrawAndPlayTwice' }
   /** Draw a card and immediately play it for 0 Energy. */
   | { kind: 'drawAndPlayFree'; exhaustNonPower?: boolean }
   | { kind: 'addDaze'; amount: number; pile: 'draw' | 'discard' }
@@ -278,6 +301,8 @@ type EffectKind =
   | { kind: 'exhaustAny'; amount: number; minimum?: number }
   /** Exhaust every remaining card in hand, optionally keeping one printed type. */
   | { kind: 'exhaustHand'; except?: CardType }
+  /** Exhaust every card in the caster's private draw pile. */
+  | { kind: 'exhaustDrawPile' }
   /** Gain Block for each card taken by this card's preceding automatic Exhaust. */
   | { kind: 'gainBlockPerExhaust'; amount: number }
   /** Deal one separate hit per card taken by this card's preceding automatic Exhaust. */
@@ -323,6 +348,8 @@ export type CardDef = {
   handEndOfTurn?: HandEndOfTurnEffect[]
   /** Effects printed as "If this card is discarded by a card's effect...". */
   discardReaction?: { effects: Effect[]; exhaust?: boolean }
+  /** If discarded by Scry, play this card instead and add this much to its hit. */
+  scryPlayBonus?: number
   /** Effects printed as "If this card is Exhausted...". */
   exhaustReaction?: { effects: Effect[] }
   /**
@@ -1588,6 +1615,220 @@ export const CARDS: Record<string, CardDef> = {
         { kind: 'applyWeak', amount: 2, when: { kind: 'inStance', stance: 'calm' } },
       ],
     },
+  }),
+  conclude: card({
+    id: 'conclude', name: 'Conclude', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
+    target: 'row',
+    effects: [{ kind: 'hit', amount: 1, times: 2 }, { kind: 'preventCardPlay' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 1, times: 3 }, { kind: 'preventCardPlay' }] },
+  }),
+  judgment: card({
+    id: 'judgment', name: 'Judgment', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 1,
+    ethereal: true,
+    effects: [{ kind: 'execute', hpAtMost: 7 }],
+    upgrade: { ethereal: false, retain: true, effects: [{ kind: 'execute', hpAtMost: 8 }] },
+  }),
+  ragnarok: card({
+    id: 'ragnarok', name: 'Ragnarok', owner: 'watcher', type: 'attack', rarity: 'rare', cost: 3,
+    effects: [{ kind: 'hitChoices', amount: 1, targets: 5 }],
+    upgrade: { effects: [{ kind: 'hitChoices', amount: 1, targets: 6 }] },
+  }),
+  scrawl: card({
+    id: 'scrawl', name: 'Scrawl', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 1,
+    exhaust: true,
+    effects: [{ kind: 'draw', amount: 5 }],
+    upgrade: { cost: 0 },
+  }),
+  signature_move: card({
+    id: 'signature_move', name: 'Signature Move', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    playCondition: { kind: 'onlyAttackInHand' },
+    effects: [{ kind: 'hit', amount: 6 }],
+    upgrade: { effects: [{ kind: 'hit', amount: 8 }] },
+  }),
+  spirit_shield: card({
+    id: 'spirit_shield', name: 'Spirit Shield', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 2,
+    exhaust: true,
+    effects: [{ kind: 'block', amount: { base: 0, per: 'cardsInHand' } }],
+    upgrade: { exhaust: false },
+  }),
+  swivel: card({
+    id: 'swivel', name: 'Swivel', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'block', amount: 2 }, { kind: 'discountNextAttack' }],
+    upgrade: {
+      supportTarget: 'anyPlayer',
+      effects: [{ kind: 'block', amount: 3, toChosen: true }, { kind: 'discountNextAttack' }],
+    },
+  }),
+  wallop: card({
+    id: 'wallop', name: 'Wallop', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'gainBlockFromLastHit' }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'gainBlockFromLastHit' }] },
+  }),
+  wish: card({
+    id: 'wish', name: 'Wish', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 3,
+    exhaust: true,
+    effects: [],
+    modes: [
+      { label: 'Gain 1 Strength', effects: [{ kind: 'gainStrength', amount: 1 }] },
+      { label: 'Gain 10 Block', effects: [{ kind: 'block', amount: 10 }] },
+      { label: 'Gain 4 Miracles', effects: [{ kind: 'gainMiracle', amount: 4 }] },
+    ],
+    upgrade: { modes: [
+      { label: 'Gain 2 Strength', effects: [{ kind: 'gainStrength', amount: 2 }] },
+      { label: 'Gain 15 Block', effects: [{ kind: 'block', amount: 15 }] },
+      { label: 'Gain 5 Miracles', effects: [{ kind: 'gainMiracle', amount: 5 }] },
+    ] },
+  }),
+  deva_form: card({
+    id: 'deva_form', name: 'Deva Form', owner: 'watcher', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'gainMiracle', amount: 1 }],
+    upgrade: { effects: [{ kind: 'gainMiracle', amount: 2 }] },
+  }),
+  omniscience: card({
+    id: 'omniscience', name: 'Omniscience', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 3,
+    exhaust: true,
+    effects: [{ kind: 'searchDrawAndPlayTwice' }],
+    upgrade: { cost: 2 },
+  }),
+  vault: card({
+    id: 'vault', name: 'Vault', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 3,
+    exhaust: true,
+    effects: [{ kind: 'discardNonRetain' }, { kind: 'draw', amount: 5 }, { kind: 'gainEnergy', amount: 3 }],
+    upgrade: { cost: 2 },
+  }),
+  talk_to_the_hand: card({
+    id: 'talk_to_the_hand', name: 'Talk to the Hand', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'block', amount: { base: 0, per: 'miracles' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'block', amount: { base: 0, per: 'miracles' } }] },
+  }),
+  tantrum: card({
+    id: 'tantrum', name: 'Tantrum', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
+    toDrawTop: true,
+    effects: [{ kind: 'hit', amount: 2 }, { kind: 'enterStance', stance: 'wrath' }],
+    upgrade: { effects: [{ kind: 'hitChoices', amount: 1, targets: 2 }, { kind: 'enterStance', stance: 'wrath' }] },
+  }),
+  weave: card({
+    id: 'weave', name: 'Weave', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 0,
+    scryPlayBonus: 5,
+    effects: [{ kind: 'hit', amount: 1 }],
+    upgrade: { scryPlayBonus: 6, effects: [{ kind: 'hit', amount: 2 }] },
+  }),
+  blasphemy: card({
+    id: 'blasphemy', name: 'Blasphemy', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 2,
+    exhaust: true,
+    effects: [{ kind: 'tripleNextAttack' }, { kind: 'exhaustDrawPile' }],
+    upgrade: { retain: true },
+  }),
+  brilliance: card({
+    id: 'brilliance', name: 'Brilliance', owner: 'watcher', type: 'attack', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 0, per: 'miracles', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 0, per: 'miracles', scale: 3 } }] },
+  }),
+  devotion: card({
+    id: 'devotion', name: 'Devotion', owner: 'watcher', type: 'power', rarity: 'rare', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'countdownExhaust', cubes: 3 }, { kind: 'gainMiracle', amount: 1 }, { kind: 'draw', amount: 1 }],
+    upgrade: { effects: [{ kind: 'countdownExhaust', cubes: 4 }, { kind: 'gainMiracle', amount: 1 }, { kind: 'draw', amount: 1 }] },
+  }),
+  worship: card({
+    id: 'worship', name: 'Worship', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 'X',
+    exhaust: true,
+    effects: [{ kind: 'gainMiracle', amount: { base: 1, per: 'energySpent' } }],
+    upgrade: { retain: true },
+  }),
+  wreath_of_flame: card({
+    id: 'wreath_of_flame', name: 'Wreath of Flame', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 'X',
+    exhaust: true,
+    effects: [{ kind: 'gainTemporaryStrength', amount: { base: 0, per: 'energySpent' } }],
+    upgrade: { exhaust: false },
+  }),
+  conjure_blade: card({
+    id: 'conjure_blade', name: 'Conjure Blade', owner: 'watcher', type: 'power', rarity: 'rare', cost: 'X',
+    resolvesOnPlay: true,
+    effects: [{ kind: 'empowerStarterStrikes', amount: { base: 1, per: 'energySpent' } }],
+    upgrade: { effects: [{ kind: 'empowerStarterStrikes', amount: { base: 2, per: 'energySpent' } }] },
+  }),
+  deus_ex_machina: card({
+    id: 'deus_ex_machina', name: 'Deus Ex Machina', owner: 'watcher', type: 'skill', rarity: 'rare', cost: 0,
+    exhaust: true,
+    effects: [{ kind: 'gainMiracle', amount: 2 }],
+    upgrade: { effects: [{ kind: 'gainMiracle', amount: 3 }] },
+  }),
+  foreign_influence: card({
+    id: 'foreign_influence', name: 'Foreign Influence', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [],
+    modes: [
+      { label: 'Deal 3 damage', effects: [{ kind: 'hit', amount: 3 }] },
+      { label: "Copy another player's last Attack", effects: [{ kind: 'copyLastAllyAttack' }] },
+    ],
+    upgrade: { modes: [
+      { label: 'Deal 4 damage', effects: [{ kind: 'hit', amount: 4 }] },
+      { label: "Copy another player's last Attack", effects: [{ kind: 'copyLastAllyAttack' }] },
+    ] },
+  }),
+  omega: card({
+    id: 'omega', name: 'Omega', owner: 'watcher', type: 'power', rarity: 'rare', cost: 3,
+    trigger: { kind: 'endOfTurn' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 5 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 6 }] },
+  }),
+  reach_heaven: card({
+    id: 'reach_heaven', name: 'Reach Heaven', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [{ kind: 'hit', amount: { base: 2, per: 'miracles' } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 2, per: 'miracles', scale: 2 } }] },
+  }),
+  study: card({
+    id: 'study', name: 'Study', owner: 'watcher', type: 'power', rarity: 'uncommon', cost: 2,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'draw', amount: 2, when: { kind: 'inStance', stance: 'calm' } }],
+    upgrade: { cost: 1 },
+  }),
+  establishment: card({
+    id: 'establishment', name: 'Establishment', owner: 'watcher', type: 'power', rarity: 'rare', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'discountRetainedCards', amount: 1 }],
+    upgrade: { effects: [{ kind: 'discountRetainedCards', amount: 2 }] },
+  }),
+  meditate: card({
+    id: 'meditate', name: 'Meditate', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    effects: [
+      { kind: 'recoverDiscard', amount: 1, toHand: true, retain: true },
+      { kind: 'enterStance', stance: 'calm' },
+      { kind: 'preventCardPlay' },
+    ],
+    upgrade: { effects: [
+      { kind: 'recoverDiscard', amount: 2, toHand: true, retain: true },
+      { kind: 'enterStance', stance: 'calm' },
+      { kind: 'preventCardPlay' },
+    ] },
+  }),
+  perseverance: card({
+    id: 'perseverance', name: 'Perseverance', owner: 'watcher', type: 'skill', rarity: 'uncommon', cost: 1,
+    retain: true,
+    effects: [{ kind: 'block', amount: {
+      base: 1, bonus: { plus: 2, when: { kind: 'retainedLastTurn' } },
+    } }],
+    upgrade: { effects: [{ kind: 'block', amount: {
+      base: 2, bonus: { plus: 2, when: { kind: 'retainedLastTurn' } },
+    } }] },
+  }),
+  sands_of_time: card({
+    id: 'sands_of_time', name: 'Sands of Time', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    retain: true,
+    effects: [{ kind: 'hit', amount: { base: 3, per: 'retainCardsInHand', scale: 2 } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 3, per: 'retainCardsInHand', scale: 3 } }] },
+  }),
+  windmill_strike: card({
+    id: 'windmill_strike', name: 'Windmill Strike', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    retain: true,
+    effects: [{ kind: 'hit', amount: {
+      base: 2, bonus: { plus: 3, when: { kind: 'retainedLastTurn' } },
+    } }],
+    upgrade: { effects: [{ kind: 'hit', amount: {
+      base: 2, bonus: { plus: 5, when: { kind: 'retainedLastTurn' } },
+    } }] },
   }),
 
   crescendo: card({

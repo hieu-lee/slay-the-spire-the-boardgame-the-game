@@ -157,10 +157,13 @@ export function PowerRow({ powers }: PowerRowProps) {
           const countdown = def.effects.find((effect) =>
             effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
           const buffer = def.effects.find((effect) => effect.kind === 'preventHpLoss')
+          const conjure = def.effects.find((effect) => effect.kind === 'empowerStarterStrikes')
           const counterLimit = countdown?.cubes ?? (buffer?.kind === 'preventHpLoss' && buffer.uses > 1
             ? buffer.uses
             : undefined)
-          const described = `${describePower(def)}${counterLimit ? `, ${card.counter ?? 0} of ${counterLimit} cubes` : ''}`
+          const described = `${describePower(def)}${counterLimit
+            ? `, ${card.counter ?? 0} of ${counterLimit} cubes`
+            : conjure ? `, ${card.counter ?? 0} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
@@ -344,6 +347,10 @@ const WHEN: Record<string, string> = {
  */
 function amountLabel(amount: Amount): string {
   if (typeof amount === 'number') return String(amount)
+  if (amount.per === 'energySpent' && !amount.bonus && !amount.targetTokens) {
+    const variable = (amount.scale ?? 1) === 1 ? 'X' : `${amount.scale}X`
+    return amount.base ? `${variable}+${amount.base}` : variable
+  }
   const parts = [String(amount.base)]
   if (amount.per) parts.push(`per ${amount.per}`)
   if (amount.bonus) {
@@ -361,7 +368,7 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'gainStrength':
       return `${effect.amount} Strength`
     case 'draw':
-      return `draw ${effect.amount}`
+      return `draw ${effect.amount} ${effect.amount === 1 ? 'card' : 'cards'}`
     case 'drawThenDiscard':
       return `draw ${effect.amount} card then discard 1 card`
     case 'scry':
@@ -380,6 +387,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `channel ${effect.amount} ${effect.orb} Orb${effect.amount === 1 ? '' : 's'}`
     case 'gainShiv':
       return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
+    case 'gainMiracle':
+      return `gain ${amountLabel(effect.amount)} Miracle${effect.amount === 1 ? '' : 's'}`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':
@@ -404,6 +413,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `hits apply ${effect.amount} Poison`
     case 'upgradeStarterCards':
       return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'empowerStarterStrikes':
+      return `put ${amountLabel(effect.amount)} cubes here; starter Strikes deal +1 damage per cube`
     case 'countdownDamage':
       return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
     case 'countdownExhaust':

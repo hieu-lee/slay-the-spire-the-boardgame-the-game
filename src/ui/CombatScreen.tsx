@@ -8,6 +8,7 @@ import {
   beginEndPlayerTurn,
   cardEnemyChoiceCount,
   cardIsPlayable,
+  cardModeIsAvailable,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardPlayerChoiceCount,
@@ -40,6 +41,7 @@ import {
   powerAbilityKey,
   powerAbilityUsed,
   remainingRoundHpLoss,
+  reachedTimeWarpLimit,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
@@ -66,7 +68,7 @@ import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
-import { healthBand, strikeClass } from './board-signals.ts'
+import { healthBand, pendingUiSurvivesContext, strikeClass } from './board-signals.ts'
 
 type CombatScreenProps = {
   state: CombatState
@@ -117,6 +119,8 @@ type Pending = {
   cardInHand: boolean
   /** Energy chosen for an X-cost card; null until the player decides. */
   energySpent: number | null
+  /** Effective X after a fixed-cost override; never sent as a player choice. */
+  effectEnergy: number | null
   needsEnemy: boolean
   /**
    * The card can land its support on someone other than the caster, as Defend+,
@@ -202,7 +206,7 @@ function requirementsOf(
   state: CombatState,
   energySpent?: number,
   cardInHand = true,
-): Omit<Pending, 'card' | 'cardInHand' | 'energySpent' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
+): Omit<Pending, 'card' | 'cardInHand' | 'energySpent' | 'effectEnergy' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
   const onPlayEffects = def.type === 'power' && def.resolvesOnPlay !== true ? [] : def.effects
   // The same predicate the engine uses to decide whether to REFUSE the play.
   // Two copies of this list drifted apart once already: the UI would prompt for
@@ -227,7 +231,8 @@ function requirementsOf(
   const topdeck = onPlayEffects.find((effect) => effect.kind === 'topdeck')
   const recover = onPlayEffects.find((effect) => effect.kind === 'recoverDiscard')
   const recoverExhaust = onPlayEffects.find((effect) => effect.kind === 'recoverExhaust')
-  const search = onPlayEffects.find((effect) => effect.kind === 'searchDraw')
+  const search = onPlayEffects.find((effect) =>
+    effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
   const scried = onPlayEffects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
     effect.kind === 'scry' && effectIsActive(effect, state, viewer))
   const choice = discard
@@ -247,7 +252,7 @@ function requirementsOf(
         : recoverExhaust && viewer.exhaust.length > 0
           ? { kind: 'recoverExhaust' as const, amount: recoverExhaust.amount }
         : search
-          ? { kind: 'search' as const, amount: search.amount }
+          ? { kind: 'search' as const, amount: search.kind === 'searchDraw' ? search.amount : 1 }
         : null
   return {
     needsEnemy,
@@ -273,14 +278,17 @@ function pendingFor(
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const forced = state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
     state.startTurnProgress.forcedCard.cardUid === card.uid
-  const energySpent = copiedEnergySpent ?? (!forced && playCost(def, viewer, card) === 'X' ? null : 0)
+  const cost = forced ? 0 : playCost(def, viewer, card)
+  const energySpent = copiedEnergySpent ?? (cost === 'X' ? null : 0)
+  const effectEnergy = copiedEnergySpent ?? (def.cost === 'X' && cost !== 'X' ? cost : energySpent)
   const requirements = requirementsOf(
-    def, state.players.filter((player) => !player.dead).length, viewer, state, energySpent ?? undefined, cardInHand,
+    def, state.players.filter((player) => !player.dead).length, viewer, state, effectEnergy ?? undefined, cardInHand,
   )
   return {
     card,
     cardInHand,
     energySpent,
+    effectEnergy,
     ...requirements,
     enemyUid: null,
     playerId: null,
@@ -382,8 +390,13 @@ function describeSeat(player: Player): string {
     parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
   }
   if (player.drawLocked) parts.push('cannot draw more cards this turn')
+  if (player.cardPlayLocked) parts.push('cannot play additional cards this turn')
+  if ((player.freeAttacksThisTurn ?? 0) > 0) parts.push('next Attack costs 0 this turn')
   if ((player.doubledAttacksThisTurn ?? 0) > 0) {
     parts.push(`Double Tap, next ${player.doubledAttacksThisTurn} Attack${player.doubledAttacksThisTurn === 1 ? '' : 's'} played twice`)
+  }
+  if ((player.tripledAttacksThisTurn ?? 0) > 0) {
+    parts.push(`Blasphemy, next ${player.tripledAttacksThisTurn} Attack${player.tripledAttacksThisTurn === 1 ? '' : 's'} played three times`)
   }
   if ((player.doubledCardsThisTurn ?? 0) > 0) {
     parts.push(`Echo Form, next ${player.doubledCardsThisTurn} Attack or Skill card${
@@ -437,9 +450,10 @@ function canAfford(
 ): boolean {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   if (!cardIsPlayable(def, state, player, drawCount)) return false
+  if (reachedTimeWarpLimit(state, player)) return false
   const cost = playCost(def, player, card)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
-  if (def.cost === 'X' && cost !== 'X' && (def.minimumX ?? 0) > 0) return false
+  if (def.cost === 'X' && cost !== 'X' && cost < (def.minimumX ?? 0)) return false
   return cost === 'X'
     ? player.energy >= (def.minimumX ?? 0)
     : cost <= player.energy + (spendMiracle ? 1 : 0)
@@ -659,14 +673,16 @@ export function CombatScreen({
 
   // Drop stale targeting when the phase, seat, or mandatory trigger changes.
   useEffect(() => {
-    setPending(null)
+    // Entering copy has its own effect below that replaces the parent card's
+    // pending UI. Do not race that replacement with a second clear.
+    if (!pendingUiSurvivesContext(state.phase, state.pendingCardCopy?.playerId, viewerId)) setPending(null)
     setMiracleOnCard(false)
     setSpendingShiv(false)
     setPendingPotion(null)
     setPendingPowerUid(null)
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
-  }, [state.phase, viewerId, pendingTrigger?.id])
+  }, [state.phase, state.pendingCardCopy?.playerId, viewerId, pendingTrigger?.id])
 
   useEffect(() => {
     if (!orderingStage) return
@@ -863,7 +879,7 @@ export function CombatScreen({
       const shivEnemyUids = overflowChanged || spentChanged
         ? []
         : current.shivEnemyUids.filter((uid) => alive.has(uid))
-      const needsEnemy = cardNeedsEnemy(def, viewer, false, current.energySpent ?? undefined) || spentShivs > 0 ||
+      const needsEnemy = cardNeedsEnemy(def, viewer, false, current.effectEnergy ?? undefined) || spentShivs > 0 ||
         overflowShivs > 0 || enemyChoices > 0
       const needsSwitch = def.effects.some((effect) => effect.kind === 'switchRows') && livingPlayers.size > 1
       const switchTargetAlive = current.switchPlayerId === null || livingPlayers.has(current.switchPlayerId)
@@ -879,7 +895,7 @@ export function CombatScreen({
       const evokeSlots = invalidEvokeTarget ? [] : current.evokeSlots
       const evokeEnemyUids = invalidEvokeTarget ? [] : current.evokeEnemyUids
       if (overflowChanged && !needsEnemy && !current.needsAlly && !needsSwitch && !current.choice &&
-        !nextEvokeChoice(def, viewer, evokeSlots, current.mode ?? undefined, current.energySpent ?? 0) &&
+        !nextEvokeChoice(def, viewer, evokeSlots, current.mode ?? undefined, current.effectEnergy ?? 0) &&
         !evokeEnemyUids.some((target) => target === undefined)) return null
       if (
         overflowShivs === current.overflowShivs &&
@@ -976,7 +992,7 @@ export function CombatScreen({
     const ordered = new Set(savedDiscardOrder)
     setRetainedCards({
       [viewerId]: viewer?.hand.filter((card) => !ordered.has(card.uid) && !card.endTurnProtected &&
-        !faceOf(cardDef(card.defId), card.upgraded).retain).map((card) => card.uid) ?? [],
+        !card.retainThisTurn && !faceOf(cardDef(card.defId), card.upgraded).retain).map((card) => card.uid) ?? [],
     })
     const top = savedDiscardOrder.at(-1)
     if (top) setDiscardTops({ [viewerId]: top })
@@ -1098,7 +1114,7 @@ export function CombatScreen({
     ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
     : livingPlayers.filter((player) => discardOrders[player.id]).length
   const discardableHand = viewer.hand.filter((card) =>
-    !card.endTurnProtected && !faceOf(cardDef(card.defId), card.upgraded).retain)
+    !card.endTurnProtected && !card.retainThisTurn && !faceOf(cardDef(card.defId), card.upgraded).retain)
   const retainAllowance = viewer.retainCardsThisTurn ?? 0
   const viewerRetainedCards = (retainedCards[viewer.id] ?? [])
     .filter((uid) => discardableHand.some((card) => card.uid === uid))
@@ -1546,22 +1562,22 @@ export function CombatScreen({
   const pendingNeedsCardEnemy = pendingDef
     ? cardNeedsEnemy(pendingDef.modes && pending?.mode != null
       ? { ...pendingDef, modes: undefined, effects: pendingDef.modes[pending.mode]?.effects ?? [] }
-      : pendingDef, viewer, false, pending?.energySpent ?? undefined)
+      : pendingDef, viewer, false, pending?.effectEnergy ?? undefined)
     : false
   const pendingEvokeChoice = pendingDef && pending
-    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.energySpent ?? 0)
+    ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.effectEnergy ?? 0)
     : null
   const pendingEvokeTarget = pending?.evokeEnemyUids.findIndex((target) => target === undefined) ?? -1
   const pendingEvokeTargetOptions = pendingDef && pending && viewer
     ? evokeTargetProgress(
       pendingDef, state, viewer, pending.evokeSlots, pending.evokeEnemyUids,
-      pending.mode ?? undefined, pending.energySpent ?? 0,
+      pending.mode ?? undefined, pending.effectEnergy ?? 0,
     ).options
     : []
   const pendingEvokeTargetUids = new Set(pendingEvokeTargetOptions.map((option) => option.uid))
   const pendingEvokeUsesRows = Boolean(pending && pendingEvokeTarget >= 0 &&
     chosenEvokeOrbs(pendingDef!, viewer, pending.evokeSlots,
-      pending.mode ?? undefined, pending.energySpent ?? 0)[pendingEvokeTarget] === 'lightning' &&
+      pending.mode ?? undefined, pending.effectEnergy ?? 0)[pendingEvokeTarget] === 'lightning' &&
     lightningTargetsRows(viewer, pending.card.defId))
   const evokeChoicesDone = pendingEvokeChoice === null && pendingEvokeTarget < 0
   const enemyChoicesDone = pending ? (
@@ -1593,7 +1609,7 @@ export function CombatScreen({
         : undefined,
       scryDiscardUids: next.choice?.kind === 'scry' ? next.picked : undefined,
       topdeckUids: next.choice?.kind === 'topdeck' ? next.picked : undefined,
-      recoverDiscardUid: next.choice?.kind === 'recover' ? next.picked[0] : undefined,
+      recoverDiscardUids: next.choice?.kind === 'recover' ? next.picked : undefined,
       recoverExhaustUid: next.choice?.kind === 'recoverExhaust' ? next.picked[0] : undefined,
       searchDrawUids: next.choice?.kind === 'search' ? next.picked : undefined,
       spendMiracle: miracleOnCard,
@@ -1674,7 +1690,7 @@ export function CombatScreen({
             }
             setPending({
               ...next,
-              choice: cards.length > 0 ? { kind: next.choice.kind, amount: 1 } : null,
+              choice: cards.length > 0 ? { kind: next.choice.kind, amount: next.choice.amount } : null,
               choiceCards: cards.length > 0 ? cards : null,
               choiceConfirmed: false,
               picked: [],
@@ -1694,10 +1710,11 @@ export function CombatScreen({
           const spentShivs = cardShivChoiceCount(def, authoritative.player)
           const enemyChoices = cardEnemyChoiceCount(def)
           const playerChoices = cardPlayerChoiceCount(def)
-          const energySpent = next.cardInHand
-            ? playCost(def, authoritative.player, next.card) === 'X' ? null : 0
+          const cost = next.cardInHand ? playCost(def, authoritative.player, next.card) : 0
+          const energySpent = next.cardInHand ? cost === 'X' ? null : 0
             : authoritative.combat.pendingCardCopy?.energySpent ?? 0
-          const needsEnemy = cardNeedsEnemy(def, authoritative.player, false, energySpent ?? undefined) || spentShivs > 0 ||
+          const effectEnergy = next.cardInHand && def.cost === 'X' && cost !== 'X' ? cost : energySpent
+          const needsEnemy = cardNeedsEnemy(def, authoritative.player, false, effectEnergy ?? undefined) || spentShivs > 0 ||
             overflowShivs > 0 || enemyChoices > 0
           const needsAlly = def.supportTarget === 'anyPlayer' &&
             authoritative.combat.players.filter((player) => !player.dead).length > 1
@@ -1705,10 +1722,11 @@ export function CombatScreen({
             authoritative.combat.players.filter((player) => !player.dead).length > 1
           setMiracleOnCard(usingMiracle)
           if (needsEnemy || needsAlly || playerChoices > 0 || needsSwitch || def.modes || next.choice ||
-            nextEvokeChoice(def, authoritative.player, [], undefined, energySpent ?? 0)) {
+            nextEvokeChoice(def, authoritative.player, [], undefined, effectEnergy ?? 0)) {
             setPending({
               ...next,
               energySpent,
+              effectEnergy,
               needsEnemy,
               needsAlly,
               needsSwitch,
@@ -1750,7 +1768,7 @@ export function CombatScreen({
     const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
     const evokeProgress = evokeTargetProgress(
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
-      next.mode ?? undefined, next.energySpent ?? 0,
+      next.mode ?? undefined, next.effectEnergy ?? 0,
     )
     if (evokeProgress.endedCombat && next.evokeEnemyUids.length > evokeProgress.index) {
       next = { ...next, evokeEnemyUids: next.evokeEnemyUids.slice(0, evokeProgress.index) }
@@ -1781,11 +1799,11 @@ export function CombatScreen({
     const ready = selectionReady && minimumPaid && (!next.choiceCards || next.choiceConfirmed) &&
       (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' || next.choiceConfirmed) &&
       (!def.modes || next.mode !== null) &&
-      !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined, next.energySpent ?? 0) &&
+      !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined, next.effectEnergy ?? 0) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
       (def.cost !== 'X' || next.energySpent !== null) &&
       (!cardNeedsEnemy(def.modes ? { ...def, modes: undefined, effects: def.modes[next.mode!]!.effects } : def,
-        viewer!, false, next.energySpent ?? undefined) || next.enemyUid !== null) &&
+        viewer!, false, next.effectEnergy ?? undefined) || next.enemyUid !== null) &&
       next.enemyUids.length >= next.enemyChoices &&
       next.shivEnemyUids.length >= next.spentShivs + next.overflowShivs &&
       next.playerIds.length >= next.playerChoices &&
@@ -1917,7 +1935,7 @@ export function CombatScreen({
       !next.needsEnemy && !next.needsAlly &&
       next.playerIds.length >= next.playerChoices && !next.needsSwitch && owed === 0 &&
       (def.cost !== 'X' || next.energySpent !== null) &&
-      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots, undefined, next.energySpent ?? 0)) commit(next)
+      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots, undefined, next.effectEnergy ?? 0)) commit(next)
   }
 
   function onChoiceCardClick(card: CardInstance) {
@@ -2036,7 +2054,7 @@ export function CombatScreen({
     if (!option) return
     const evokeSlots = [...pending.evokeSlots, slot]
     const orbs = chosenEvokeOrbs(pendingDef!, viewer!, evokeSlots,
-      pending.mode ?? undefined, pending.energySpent ?? 0)
+      pending.mode ?? undefined, pending.effectEnergy ?? 0)
     stageOrCommit({
       ...pending,
       evokeSlots,
@@ -2047,13 +2065,15 @@ export function CombatScreen({
 
   function onModeClick(mode: number) {
     if (!pending || !pendingDef?.modes?.[mode]) return
+    const effects = pendingDef.modes[mode].effects
+    const selectedDef = { ...pendingDef, modes: undefined, effects }
     const enemyChoices = cardEnemyChoiceCount(pendingDef, mode)
-    if (pendingDef.modes[mode].effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+    if (effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
       enemyChoices > state.enemies.filter((enemy) => !enemy.dead).length) return
     const playerChoices = cardPlayerChoiceCount(pendingDef, mode)
     stageOrCommit({
       ...pending, mode, enemyChoices, playerChoices, enemyUids: [],
-      needsEnemy: pending.needsEnemy || enemyChoices > 0,
+      needsEnemy: cardNeedsEnemy(selectedDef, viewer!, false, pending.effectEnergy ?? undefined) || enemyChoices > 0,
       playerIds: state.players.filter((player) => !player.dead).length === 1
         ? Array(playerChoices).fill(viewer!.id)
         : [],
@@ -2100,15 +2120,28 @@ export function CombatScreen({
   const copySource = pending?.cardInHand !== false && pendingDef?.id !== 'burst'
     ? (pendingDef?.type === 'attack' || pendingDef?.type === 'skill') && (viewer.doubledCardsThisTurn ?? 0) > 0
       ? 'Echo Form'
-      : pendingDef?.type === 'attack' && (viewer.doubledAttacksThisTurn ?? 0) > 0
-        ? 'Double Tap'
-        : pendingDef?.type === 'skill' && (viewer.doubledSkillsThisTurn ?? 0) > 0 ? 'Burst' : null
+      : pendingDef?.type === 'attack' && (viewer.tripledAttacksThisTurn ?? 0) > 0
+        ? 'Blasphemy'
+        : pendingDef?.type === 'attack' && (viewer.doubledAttacksThisTurn ?? 0) > 0
+          ? 'Double Tap'
+          : pendingDef?.type === 'skill' && (viewer.doubledSkillsThisTurn ?? 0) > 0 ? 'Burst' : null
     : null
   const copyTarget = copySource ? ` for ${pendingDef?.name ?? 'card'} copy (${copySource})` : ''
+  const activeCopy = state.pendingCardCopy
+  const activeCopyName = activeCopy
+    ? faceOf(cardDef(activeCopy.card.defId), activeCopy.card.upgraded).name
+    : 'card'
+  const copyResolutionLabel = activeCopy
+    ? activeCopy.sourceNames.length > 1
+      ? `${activeCopyName} copy (${activeCopy.sourceNames[0]})`
+      : activeCopy.card.scryDamageBonus !== undefined
+        ? `Scry-played ${activeCopyName}`
+        : activeCopy.virtualOnly
+          ? `${activeCopyName} copy (${activeCopy.sourceNames[0]})`
+          : `original ${activeCopyName} after ${activeCopy.sourceNames[0]} copy`
+    : null
   const originalTarget = pending?.cardInHand === false
-    ? state.pendingCardCopy?.virtualOnly
-      ? ` for ${pendingDef?.name ?? 'card'} copy (Doppelganger)`
-      : ` for original ${pendingDef?.name ?? 'card'} after ${state.pendingCardCopy?.sourceNames[0] ?? 'its'} copy`
+    ? ` for ${copyResolutionLabel ?? pendingDef?.name ?? 'card'}`
     : ''
   const normalEnemyPrompt = pending?.hitsRow
     ? state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
@@ -2215,9 +2248,7 @@ export function CombatScreen({
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
-          ? state.pendingCardCopy?.virtualOnly
-            ? `Resolve copied ${pendingDef?.name ?? 'card'}`
-            : `Resolve original ${pendingDef?.name ?? 'card'}`
+          ? `Resolve ${copyResolutionLabel ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
           {!viewer.dead && !relicScry && (state.phase === 'player' || state.phase === 'discard' ||
@@ -2523,8 +2554,8 @@ export function CombatScreen({
       ) : null}
 
       {prompt ? (
-        <p className="prompt" role="status">
-          {prompt}
+        <div className="prompt">
+          <span className="prompt__text" role="status">{prompt}</span>
           {pendingStartShiv && canResolveStartTurn ? (
             <button type="button" className="prompt__cancel" onClick={() => chooseStartTurnShiv(null)}>
               Skip this Shiv
@@ -2557,7 +2588,7 @@ export function CombatScreen({
               const energy = at + (pendingDef.minimumX ?? 0)
               return (
                 <button type="button" className="prompt__mode" key={energy}
-                  onClick={() => stageOrCommit({ ...pending, energySpent: energy })}>
+                  onClick={() => stageOrCommit({ ...pending, energySpent: energy, effectEnergy: energy })}>
                   Spend {energy}
                 </button>
               )
@@ -2581,8 +2612,10 @@ export function CombatScreen({
           )) : null}
           {pendingDef?.modes && !modeSatisfied ? pendingDef.modes.map((mode, index) => (
             <button type="button" className="prompt__mode" key={mode.label}
-              disabled={mode.effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
-                cardEnemyChoiceCount(pendingDef, index) > state.enemies.filter((enemy) => !enemy.dead).length}
+              disabled={!cardModeIsAvailable(pendingDef, state, viewer!, index, drawCount,
+                pending.cardInHand ? pending.card.uid : undefined) ||
+                (mode.effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+                  cardEnemyChoiceCount(pendingDef, index) > state.enemies.filter((enemy) => !enemy.dead).length)}
               onClick={() => onModeClick(index)}>
               {mode.label}
             </button>
@@ -2632,7 +2665,7 @@ export function CombatScreen({
           >
             Cancel
           </button> : null}
-        </p>
+        </div>
       ) : null}
 
       {pendingPotionNeedsCards ? (
@@ -2855,7 +2888,7 @@ export function CombatScreen({
                 : pending.choice.kind === 'topdeck'
                   ? `Choose ${choiceNeeded} for the top of your draw pile`
                 : pending.choice.kind === 'recover'
-                  ? 'Choose a card from your discard pile'
+                  ? `Choose ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} from your discard pile`
                 : pending.choice.kind === 'recoverExhaust'
                   ? 'Choose a card from your Exhaust pile'
                 : pending.choice.kind === 'search'
@@ -2894,12 +2927,16 @@ export function CombatScreen({
                   ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : pending.choice.kind === 'recover'
                   ? pendingDef?.effects.some((effect) => effect.kind === 'recoverDiscard' && effect.toHand)
-                    ? 'Return selected card to hand'
-                    : 'Put selected card on top'
+                    ? `Return selected card${choiceNeeded === 1 ? '' : 's'} to hand`
+                    : `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
                 : pending.choice.kind === 'recoverExhaust'
                   ? 'Return selected card to hand'
                 : pending.choice.kind === 'search'
-                  ? `Put selected card${choiceNeeded === 1 ? '' : 's'} in hand and shuffle`
+                  ? choiceNeeded === 0
+                    ? 'Shuffle and continue'
+                    : pendingDef?.effects.some((effect) => effect.kind === 'searchDrawAndPlayTwice')
+                    ? 'Play selected card twice and shuffle'
+                    : `Put selected card${choiceNeeded === 1 ? '' : 's'} in hand and shuffle`
                 : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
             </button>
             {pending.cardInHand &&
@@ -3087,11 +3124,24 @@ export function CombatScreen({
                       {occupant.drawLocked ? (
                         <span className="seat__pending">Cannot draw more cards this turn</span>
                       ) : null}
+                      {occupant.cardPlayLocked ? (
+                        <span className="seat__pending">No additional cards this turn</span>
+                      ) : null}
+                      {(occupant.freeAttacksThisTurn ?? 0) > 0 ? (
+                        <span className="seat__pending">Swivel · next Attack costs 0 this turn</span>
+                      ) : null}
                       {(occupant.doubledAttacksThisTurn ?? 0) > 0 ? (
                         <span className="seat__pending">
                           Double Tap · next {occupant.doubledAttacksThisTurn} Attack{
                             occupant.doubledAttacksThisTurn === 1 ? '' : 's'
                           } played twice
+                        </span>
+                      ) : null}
+                      {(occupant.tripledAttacksThisTurn ?? 0) > 0 ? (
+                        <span className="seat__pending">
+                          Blasphemy · next {occupant.tripledAttacksThisTurn} Attack{
+                            occupant.tripledAttacksThisTurn === 1 ? '' : 's'
+                          } played three times
                         </span>
                       ) : null}
                       {(occupant.doubledCardsThisTurn ?? 0) > 0 ? (
@@ -3234,7 +3284,7 @@ export function CombatScreen({
         {/* Fanned, the way a hand is actually held: each card tilted and
             lifted by its distance from the middle. The angle is set here
             because only the component knows how many cards there are. */}
-        <div className="hand" data-count={viewer.hand.length}>
+        <div className="hand-scroll"><div className="hand" data-count={viewer.hand.length}>
           {viewer.hand.map((card, index) => (
             <Card
               key={card.uid}
@@ -3266,7 +3316,7 @@ export function CombatScreen({
             />
           ))}
           {viewer.hand.length === 0 ? <span className="muted">no cards in hand</span> : null}
-        </div>
+        </div></div>
       </footer>
     </div>
   )

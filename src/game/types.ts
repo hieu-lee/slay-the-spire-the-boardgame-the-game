@@ -38,10 +38,16 @@ export type CardInstance = {
   endTurnProtected?: boolean
   /** This exact card was kept by Retain at the end of the previous Player Turn. */
   retainedLastTurn?: boolean
+  /** Meditate guarantees this card is kept during the upcoming discard step. */
+  retainThisTurn?: boolean
   /** Cubes accumulated on a Power such as The Bomb. */
   counter?: number
   /** Bullet Time reduced this specific card's cost to 0 for the current turn. */
   freeThisTurn?: boolean
+  /** Establishment reduces this retained card's cost for the current turn. */
+  costReductionThisTurn?: number
+  /** Weave was discarded by Scry and is being forced with its printed bonus. */
+  scryDamageBonus?: number
 }
 
 export type RelicInstance = {
@@ -97,10 +103,16 @@ export type Player = {
   hpLossLimitThisRound?: number
   /** Madness makes this many subsequently played cards cost 0 this turn. */
   freeCardsThisTurn?: number
+  /** Swivel makes this many subsequently played Attacks cost 0 this turn. */
+  freeAttacksThisTurn?: number
+  /** Conclude prevents any further card play until the next Player Turn. */
+  cardPlayLocked?: boolean
   /** Double Tap makes this many subsequent Attack cards play twice this turn. */
   doubledAttacksThisTurn?: number
   /** Akabeko adds one Strength for exactly the next Attack, then removes it. */
   akabekoAttacks?: number
+  /** Blasphemy makes this many subsequent Attack cards play three times this turn. */
+  tripledAttacksThisTurn?: number
   /** Echo Form makes this many subsequent Attack or Skill cards play twice this turn. */
   doubledCardsThisTurn?: number
   /** Burst makes this many subsequent Skill cards play twice this turn. */

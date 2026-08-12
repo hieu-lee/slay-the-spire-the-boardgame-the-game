@@ -6,7 +6,7 @@ import { relicDef } from '../game/relics.ts'
 import type { Room } from '../game/map.ts'
 import type { Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
-import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
+import type { PublicSeat, VisibleCombat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
@@ -34,6 +34,18 @@ function playerForUi(player: VisiblePlayer): Player {
     cardRewards: [],
     rareRewards: [],
   }
+}
+
+export function pendingCardCopyLabel(copy: NonNullable<VisibleCombat['pendingCardCopy']>): string {
+  const name = cardDef(copy.card.defId).name
+  const source = copy.sourceNames[0]
+  return copy.sourceNames.length > 1
+    ? `a ${name} copy (${source})`
+    : copy.card.scryDamageBonus !== undefined
+      ? `Scry-played ${name}`
+      : copy.virtualOnly
+        ? `a ${name} copy (${source})`
+        : `the original ${name} after a ${source} copy`
 }
 
 function choices(map: { position: string | null; rows: string[][]; rooms: Record<string, Room> }): Room[] {
@@ -280,9 +292,7 @@ export function OnlineGame({ onLocal }: Props) {
       {foreignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
           foreignCardCopy
-            ? run.combat?.pendingCardCopy?.virtualOnly
-              ? `a ${cardDef(run.combat.pendingCardCopy.card.defId).name} copy (Doppelganger)`
-              : `the original card after a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
+            ? pendingCardCopyLabel(run.combat!.pendingCardCopy!)
             : 'a revealed card'
         }…</p>
         : null}

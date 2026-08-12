@@ -1544,6 +1544,12 @@ button:disabled {
     transform: none;
     margin-inline: 0.15rem;
   }
+
+  .hand .card:hover:not(:disabled),
+  .hand .card:focus-visible,
+  .hand .card--selected {
+    transform: none;
+  }
 }
 
 /* ---------- feedback ---------- */
@@ -2970,6 +2976,20 @@ button:disabled {
   display: contents;
 }
 
+.hand-scroll {
+  min-width: 0;
+  margin-top: -3rem;
+  padding-top: 3rem;
+  overflow: auto hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+.hand-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .pip--energy {
   position: absolute;
   z-index: 8;
@@ -3016,7 +3036,11 @@ button:disabled {
   align-items: flex-end;
   min-height: calc(var(--card-width) * var(--card-ratio));
   padding: 1rem 8.5rem 0.2rem;
-  overflow-y: visible;
+  /* `overflow-x: auto` from the base layout forces a declared visible Y axis
+     to compute as auto too, clipping card crowns and hover lifts. Desktop hands
+     overlap to fit, so both axes can stay visible. */
+  overflow: visible;
+  pointer-events: none;
 }
 
 .hand .card {
