@@ -32,6 +32,8 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
 | Board backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat status and Power pictograms | original OpenAI Imagegen fan illustrations created for this implementation |
+| Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
+| Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 
 The repository tracks 90 portraits extracted from the enemy cards. The sync scripts keep card
 scans and icons out of version control; enemy portrait refreshes overwrite the tracked bundle
@@ -41,6 +43,8 @@ and should be reviewed before committing.
 `public/assets/combat/` contains the generated combat stage and transparent actor cutouts,
 and `public/assets/status-icons/` plus `public/assets/power-icons/` contain generated
 transparent HUD pictograms normalized to consistent visible bounds.
+`public/assets/menu/` contains the generated title-screen spire and compendium archive backdrops.
+`public/assets/fonts/Kreon.ttf` is distributed under the bundled `Kreon-OFL.txt` license.
 These are original AI-generated fan illustrations made with OpenAI Imagegen for this
 implementation. The character silhouettes were visually grounded in the locally synced
 board-game starter-card scans; the combat stage extends the Act I background palette. No
