@@ -151,6 +151,8 @@ export type HandEndOfTurnEffect =
 type EffectKind =
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
   | { kind: 'hit'; amount: Amount; times?: Amount }
+  /** Separate hits, each independently assigned to a living enemy. */
+  | { kind: 'hitChoices'; amount: Amount; targets: number; distinct?: boolean }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
   | { kind: 'damage'; amount: Amount }
   /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
@@ -1559,6 +1561,31 @@ export const CARDS: Record<string, CardDef> = {
       effects: [
         { kind: 'draw', amount: 4, when: { kind: 'inStance', stance: 'calm' } },
         { kind: 'enterStance', stance: 'calm', when: { kind: 'notInStance', stance: 'calm' } },
+      ],
+    },
+  }),
+  carve_reality: card({
+    id: 'carve_reality', name: 'Carve Reality', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 2,
+    effects: [],
+    modes: [
+      { label: 'Deal 3 damage to one enemy', effects: [{ kind: 'hitChoices', amount: 3, targets: 1 }] },
+      { label: 'Deal 3 damage to two enemies', effects: [{ kind: 'hitChoices', amount: 3, targets: 2, distinct: true }] },
+    ],
+    upgrade: { modes: [
+      { label: 'Deal 4 damage to one enemy', effects: [{ kind: 'hitChoices', amount: 4, targets: 1 }] },
+      { label: 'Deal 4 damage to two enemies', effects: [{ kind: 'hitChoices', amount: 4, targets: 2, distinct: true }] },
+    ] },
+  }),
+  sash_whip: card({
+    id: 'sash_whip', name: 'Sash Whip', owner: 'watcher', type: 'attack', rarity: 'uncommon', cost: 1,
+    effects: [
+      { kind: 'hit', amount: 2 },
+      { kind: 'applyWeak', amount: 1, when: { kind: 'inStance', stance: 'calm' } },
+    ],
+    upgrade: {
+      effects: [
+        { kind: 'hit', amount: 2 },
+        { kind: 'applyWeak', amount: 2, when: { kind: 'inStance', stance: 'calm' } },
       ],
     },
   }),

@@ -303,6 +303,10 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${amountLabel(effect.amount)} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':
       return `${amountLabel(effect.amount)} damage`
+    case 'hitChoices':
+      return `${amountLabel(effect.amount)} damage to ${effect.targets === 1
+        ? 'one enemy'
+        : `${effect.targets}${effect.distinct ? ' distinct' : ''} enemies`}`
     case 'gainEnergy':
       return `${effect.amount} Energy`
     case 'channel':

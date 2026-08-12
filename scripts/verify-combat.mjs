@@ -2374,6 +2374,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'doppelganger', energySpent: [0, 0], energy: [E, E], exhaust: [1, 0] },
     { id: 'wraith_form', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'tools_of_the_trade', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'carve_reality', enemyHp: [17, 16], energy: [E - 2, E - 2] },
+    { id: 'sash_whip', enemyHp: [18, 18], energy: [E - 1, E - 1] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -2457,10 +2459,14 @@ check('every newly transcribed card does what its face prints', () => {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
       }
+      if (face.modes) context.mode = 0
       if (face.cost === 'X') context.energySpent = spec.energySpent?.[at] ?? 0
-      const enemyChoices = face.effects.reduce(
-        (sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
-      const playerChoices = face.effects.reduce(
+      const playedEffects = face.modes ? face.modes[context.mode].effects : face.effects
+      const enemyChoices = playedEffects.reduce(
+        (sum, effect) => sum + (
+          effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' ? effect.targets : 0
+        ), 0)
+      const playerChoices = playedEffects.reduce(
         (sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
       if (enemyChoices > 0) context.enemyUids = Array(enemyChoices).fill('e1')
       if (playerChoices > 0) context.playerIds = Array(playerChoices).fill('p1')
@@ -3826,6 +3832,59 @@ check('Tools of the Trade privately draws then discards and resumes ordered star
   )
   assertEqual(lethal.phase, 'won')
   assertEqual(lethal.startTurnProgress, undefined, 'lethal deferred draw reaction left stale start progress')
+})
+
+check('Carve Reality assigns its two printed hits independently', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('carve_reality', upgraded)
+    const state = combat([makePlayer({ character: 'watcher', hand: [card], strength: 1 })], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'right', hp: 10, maxHp: 10 }),
+    ])
+    assertEqual(playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left'],
+    }), state, 'Carve Reality accepted only one hit target')
+    const split = playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'right'],
+    })
+    assertDeepEqual(split.enemies.map((enemy) => enemy.hp), upgraded ? [5, 5] : [6, 6])
+
+    const weakenedCard = instance('carve_reality', upgraded)
+    const weakened = playCard(combat([makePlayer({
+      character: 'watcher', hand: [weakenedCard], weak: 1,
+    })], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'right', hp: 10, maxHp: 10 }),
+    ]), 'p1', weakenedCard.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'right'],
+    })
+    assertDeepEqual(weakened.enemies.map((enemy) => enemy.hp), upgraded ? [7, 7] : [8, 8])
+    assertEqual(weakened.players[0].weak, 0)
+
+    const stacked = playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 0, enemyUids: ['left'],
+    })
+    assertDeepEqual(stacked.enemies.map((enemy) => enemy.hp), upgraded ? [5, 10] : [6, 10])
+    assertEqual(playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'left'],
+    }), state, 'Carve Reality accepted the same enemy twice in its two-enemy mode')
+  }
+})
+
+check('Sash Whip applies Weak only while its player is in Calm', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('sash_whip', upgraded)
+    const neutral = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [card], stance: 'neutral' }),
+    ], [makeEnemy()]), 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(neutral.enemies[0].weak, 0)
+
+    const calmCard = instance('sash_whip', upgraded)
+    const calm = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [calmCard], stance: 'calm' }),
+    ], [makeEnemy()]), 'p1', calmCard.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(calm.enemies[0].weak, upgraded ? 2 : 1)
+  }
 })
 
 check('Dark Shackles counts enemies whose current intent attacks its player', () => {

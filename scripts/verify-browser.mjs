@@ -1486,6 +1486,112 @@ await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Re
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    character: 'watcher', stance: 'calm', energy: 3,
+    hand: [
+      { uid: 'ui-carve', defId: 'carve_reality', upgraded: true },
+      { uid: 'ui-sash', defId: 'sash_whip', upgraded: true },
+    ],
+    discard: [], exhaust: [], powers: [],
+  })
+  if (run.combat.enemies.length < 2) run.combat.enemies.push({
+    ...structuredClone(run.combat.enemies[0]), uid: 'ui-carve-second', row: 1,
+  })
+  run.combat.enemies = run.combat.enemies.slice(0, 2).map((enemy, index) => ({
+    ...enemy, uid: `ui-carve-enemy-${index}`, row: index, hp: 10, maxHp: 10,
+    block: 0, weak: 0, dead: false, abilityUsed: true,
+  }))
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const watcherCarveCard = page.getByRole('button', { name: /^Carve Reality\+,/ })
+const watcherCarveLabel = await watcherCarveCard.getAttribute('aria-label')
+check('Carve Reality announces both exact targeting modes', () => {
+  assert(watcherCarveLabel.includes('deal 4 damage to one enemy'), watcherCarveLabel)
+  assert(watcherCarveLabel.includes('deal 4 damage to 2 distinct enemies'), watcherCarveLabel)
+})
+await watcherCarveCard.click()
+await page.getByRole('button', { name: 'Deal 4 damage to two enemies' }).click()
+await page.getByText('Choose damage target 1/2').waitFor()
+await page.locator('.enemy').nth(0).click()
+await page.getByText('Choose damage target 2/2').waitFor()
+const watcherMidChoiceRun = await readRun()
+await page.locator('.enemy').nth(0).click()
+await page.getByText('Choose damage target 2/2').waitFor()
+await page.locator('.enemy').nth(1).click()
+await page.getByRole('button', { name: /^Sash Whip\+,/ }).click()
+await page.locator('.enemy').nth(1).click()
+const watcherChoices = await readState()
+check('Watcher choice attacks split hits and apply Calm-only Weak through the controls', () => {
+  assertDeepEqual(watcherChoices.enemies.map((enemy) => enemy.hp), [4, 6])
+  assertDeepEqual(watcherChoices.enemies.map((enemy) => enemy.weak), [2, 0])
+})
+await shot('06zlc-watcher-choice-attacks')
+
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), watcherMidChoiceRun)
+await page.getByRole('button', { name: /^Carve Reality\+,/ }).click()
+await page.getByRole('button', { name: 'Deal 4 damage to two enemies' }).click()
+await page.locator('.enemy').nth(0).click()
+const watcherSharedBoardRun = await readRun()
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.enemies[1].dead = true
+  next.combat.enemies[1].hp = 0
+  window.__STS_DEBUG__.setRun(next)
+}, watcherSharedBoardRun)
+  await page.getByText('Choose how to play Carve Reality').waitFor()
+const resetCarveModeAvailability = [
+  await page.getByRole('button', { name: 'Deal 4 damage to one enemy', exact: true }).isDisabled(),
+  await page.getByRole('button', { name: 'Deal 4 damage to two enemies', exact: true }).isDisabled(),
+]
+check('A shared-board target death resets an impossible Carve Reality mode', () => {
+  assertDeepEqual(resetCarveModeAvailability, [false, true])
+})
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(run.combat, {
+    phase: 'copy', turn: 1, startTurnProgress: undefined,
+    pendingCardCopy: {
+      playerId: actor.id,
+      card: { uid: 'ui-carve-copy', defId: 'carve_reality', upgraded: true },
+      energySpent: 2,
+      resumePhase: 'player',
+      forcedExhaust: false,
+      forcedChoices: null,
+      deferredHavocs: [],
+      sourceNames: ['Double Tap'],
+    },
+  })
+  Object.assign(actor, {
+    character: 'watcher', stance: 'neutral', hand: [], discard: [], exhaust: [], powers: [],
+  })
+  run.combat.players = [actor]
+  run.combat.enemies = [{
+    ...source, uid: 'ui-carve-only-enemy', row: 0, hp: 10, maxHp: 10,
+    block: 0, weak: 0, dead: false, abilityUsed: true,
+  }]
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const oneEnemyCarveMode = page.getByRole('button', { name: 'Deal 4 damage to one enemy', exact: true })
+const twoEnemyCarveMode = page.getByRole('button', { name: 'Deal 4 damage to two enemies', exact: true })
+await twoEnemyCarveMode.waitFor()
+const carveModeAvailability = [await oneEnemyCarveMode.isDisabled(), await twoEnemyCarveMode.isDisabled()]
+check('Copied Carve Reality disables an impossible two-enemy mode', () => {
+  assertDeepEqual(carveModeAvailability, [false, true])
+})
+await oneEnemyCarveMode.click()
+await page.locator('.enemy').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const oneEnemyCarve = await readState()
+check('Copied Carve Reality can still resolve against its sole enemy', () => {
+  assertEqual(oneEnemyCarve.enemies[0].hp, 6)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
   const player = run.combat.players[0]
   const tactician = { uid: 'ui-tools-tactician', defId: 'tactician', upgraded: false }
   const strike = { uid: 'ui-tools-strike', defId: 'strike_silent', upgraded: false }

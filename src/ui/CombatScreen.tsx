@@ -801,10 +801,14 @@ export function CombatScreen({
       const overflowChanged = overflowShivs !== current.overflowShivs
       const spentShivs = cardShivChoiceCount(def, viewer)
       const spentChanged = spentShivs !== current.spentShivs
-      const enemyChoices = cardEnemyChoiceCount(def)
-      const playerChoices = cardPlayerChoiceCount(def)
+      const selectedMode = current.mode == null ? undefined : def.modes?.[current.mode]
+      const selectedEnemyChoices = cardEnemyChoiceCount(def, current.mode ?? undefined)
+      const mode = selectedMode?.effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+        selectedEnemyChoices > alive.size ? null : current.mode
+      const enemyChoices = cardEnemyChoiceCount(def, mode ?? undefined)
+      const playerChoices = cardPlayerChoiceCount(def, mode ?? undefined)
       const enemyUid = current.enemyUid && alive.has(current.enemyUid) ? current.enemyUid : null
-      const enemyUids = current.enemyUids.filter((uid) => alive.has(uid))
+      const enemyUids = mode === current.mode ? current.enemyUids.filter((uid) => alive.has(uid)) : []
       const playerIds = current.playerIds.filter((id) => livingPlayers.has(id))
       const picked = choiceCards
         ? recover || recoverExhaust
@@ -840,6 +844,7 @@ export function CombatScreen({
         overflowShivs === current.overflowShivs &&
         spentShivs === current.spentShivs &&
         enemyUid === current.enemyUid &&
+        mode === current.mode &&
         enemyUids.length === current.enemyUids.length &&
         playerIds.length === current.playerIds.length &&
         choice?.kind === current.choice?.kind &&
@@ -856,6 +861,7 @@ export function CombatScreen({
         ...current,
         overflowShivs,
         spentShivs,
+        mode,
         needsEnemy,
         needsSwitch,
         enemyChoices,
@@ -1461,7 +1467,9 @@ export function CombatScreen({
   const choiceSatisfied = handChoiceSatisfied && revealedChoiceSatisfied && variableChoiceSatisfied &&
     modeSatisfied && energyChoiceSatisfied
   const pendingNeedsCardEnemy = pendingDef
-    ? cardNeedsEnemy(pendingDef, viewer, false, pending?.energySpent ?? undefined)
+    ? cardNeedsEnemy(pendingDef.modes && pending?.mode != null
+      ? { ...pendingDef, modes: undefined, effects: pendingDef.modes[pending.mode]?.effects ?? [] }
+      : pendingDef, viewer, false, pending?.energySpent ?? undefined)
     : false
   const pendingEvokeChoice = pendingDef && pending
     ? nextEvokeChoice(pendingDef, viewer, pending.evokeSlots, pending.mode ?? undefined, pending.energySpent ?? 0)
@@ -1699,7 +1707,8 @@ export function CombatScreen({
       !nextEvokeChoice(def, viewer!, next.evokeSlots, next.mode ?? undefined, next.energySpent ?? 0) &&
       !next.evokeEnemyUids.some((target) => target === undefined) &&
       (def.cost !== 'X' || next.energySpent !== null) &&
-      (!cardNeedsEnemy(def, viewer!, false, next.energySpent ?? undefined) || next.enemyUid !== null) &&
+      (!cardNeedsEnemy(def.modes ? { ...def, modes: undefined, effects: def.modes[next.mode!]!.effects } : def,
+        viewer!, false, next.energySpent ?? undefined) || next.enemyUid !== null) &&
       next.enemyUids.length >= next.enemyChoices &&
       next.shivEnemyUids.length >= next.spentShivs + next.overflowShivs &&
       next.playerIds.length >= next.playerChoices &&
@@ -1925,6 +1934,11 @@ export function CombatScreen({
       return
     }
     if (pending.enemyUids.length < pending.enemyChoices) {
+      const effects = pendingDef?.modes && pending.mode != null
+        ? pendingDef.modes[pending.mode]?.effects ?? []
+        : pendingDef?.effects ?? []
+      if (effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+        pending.enemyUids.includes(enemy.uid)) return
       const next = { ...pending, enemyUids: [...pending.enemyUids, enemy.uid] }
       if (next.enemyUids.length < next.enemyChoices || next.spentShivs + next.overflowShivs > 0 ||
         next.needsAlly || next.playerIds.length < next.playerChoices || next.needsSwitch) setPending(next)
@@ -1956,7 +1970,17 @@ export function CombatScreen({
 
   function onModeClick(mode: number) {
     if (!pending || !pendingDef?.modes?.[mode]) return
-    stageOrCommit({ ...pending, mode })
+    const enemyChoices = cardEnemyChoiceCount(pendingDef, mode)
+    if (pendingDef.modes[mode].effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+      enemyChoices > state.enemies.filter((enemy) => !enemy.dead).length) return
+    const playerChoices = cardPlayerChoiceCount(pendingDef, mode)
+    stageOrCommit({
+      ...pending, mode, enemyChoices, playerChoices, enemyUids: [],
+      needsEnemy: pending.needsEnemy || enemyChoices > 0,
+      playerIds: state.players.filter((player) => !player.dead).length === 1
+        ? Array(playerChoices).fill(viewer!.id)
+        : [],
+    })
   }
 
   function onAllyClick(ally: Player) {
@@ -1991,6 +2015,10 @@ export function CombatScreen({
     (!pendingNeedsCardEnemy || pending.enemyUid !== null) &&
     pending.enemyUids.length >= pending.enemyChoices)
   const independentEnemyPending = Boolean(pending && pending.enemyUids.length < pending.enemyChoices)
+  const independentHitPending = Boolean(independentEnemyPending && pendingDef &&
+    (pendingDef.modes && pending?.mode != null
+      ? pendingDef.modes[pending.mode]?.effects ?? []
+      : pendingDef.effects).some((effect) => effect.kind === 'hitChoices'))
   const independentPlayerPending = Boolean(pending && pending.playerIds.length < pending.playerChoices)
   const copySource = pending?.cardInHand !== false && pendingDef?.id !== 'burst'
     ? (pendingDef?.type === 'attack' || pendingDef?.type === 'skill') && (viewer.doubledCardsThisTurn ?? 0) > 0
@@ -2013,7 +2041,7 @@ export function CombatScreen({
   const enemyPrompt = normalEnemyPending
     ? normalEnemyPrompt
     : independentEnemyPending
-      ? `Choose token target ${(pending?.enemyUids.length ?? 0) + 1}/${pending?.enemyChoices}`
+      ? `Choose ${independentHitPending ? 'damage' : 'token'} target ${(pending?.enemyUids.length ?? 0) + 1}/${pending?.enemyChoices}`
     : spentShivPending
       ? `Choose Shiv attack ${(pending?.shivEnemyUids.length ?? 0) + 1}/${pending?.spentShivs}`
     : overflowOnly
@@ -2444,6 +2472,8 @@ export function CombatScreen({
           )) : null}
           {pendingDef?.modes && !modeSatisfied ? pendingDef.modes.map((mode, index) => (
             <button type="button" className="prompt__mode" key={mode.label}
+              disabled={mode.effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct) &&
+                cardEnemyChoiceCount(pendingDef, index) > state.enemies.filter((enemy) => !enemy.dead).length}
               onClick={() => onModeClick(index)}>
               {mode.label}
             </button>

@@ -890,6 +890,8 @@ function applyEffect(
   context: PlayContext,
   /** The Power or relic that caused this, when it was not a card being played. */
   source?: string,
+  /** Keep the attacker's Weak until a parent multi-target clause finishes. */
+  deferWeakSpend = false,
 ): void {
   const mods = attackerModsOfPlayer(actor)
   /** Who the log should credit: the ongoing effect if there is one, else the player. */
@@ -991,9 +993,24 @@ function applyEffect(
       }
       // The attacker's own Weak is spent by attacking, exactly as an enemy's is
       // (p.24). One token per attack, however many targets or hits it had.
-      if (targets.length > 0 && actor.weak > 0) {
+      if (!deferWeakSpend && targets.length > 0 && actor.weak > 0) {
         actor.weak -= 1
         // Logged because it is usually the reason the attack underperformed.
+        note(`${actor.name} spends a Weak`)
+      }
+      return
+    }
+    case 'hitChoices': {
+      const weakAtStart = actor.weak
+      for (const enemyUid of context.enemyUids ?? []) {
+        applyEffect(state, actor, { kind: 'hit', amount: effect.amount }, 'enemy', 'self', {
+          ...context,
+          enemyUid,
+        }, source, true)
+        if (combatIsOver(state)) return
+      }
+      if (weakAtStart > 0 && actor.weak === weakAtStart && (context.enemyUids?.length ?? 0) > 0) {
+        actor.weak -= 1
         note(`${actor.name} spends a Weak`)
       }
       return
@@ -2141,7 +2158,9 @@ export function cardNeedsEnemy(
 /** Independent printed targets collected before an atomic card play. */
 export function cardEnemyChoiceCount(def: CardDef, mode?: number): number {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
-  return effects.reduce((sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
+  return effects.reduce((sum, effect) => sum + (
+    effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' ? effect.targets : 0
+  ), 0)
 }
 
 export function cardPlayerChoiceCount(def: CardDef, mode?: number): number {
@@ -2308,8 +2327,10 @@ function needsChosenEnemy(
   actor: Player,
   includeEvokes = true,
   energySpent?: number,
+  mode?: number,
 ): boolean {
-  if (!cardNeedsEnemy(def, actor, includeEvokes, energySpent)) return false
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects : undefined
+  if (!cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def, actor, includeEvokes, energySpent)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 
@@ -2461,9 +2482,12 @@ function cardResolutionChoicesAreValid(
       (uid !== null && !livingEnemies(state).some((enemy) => enemy.uid === uid)))) return false
 
   const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
+  const enemyChoices = context.enemyUids ?? []
+  const requiresDistinct = effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct)
   if (enemyChoiceCount > 0 && (
-    context.enemyUids?.length !== enemyChoiceCount ||
-    context.enemyUids.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
+    enemyChoices.length !== enemyChoiceCount ||
+    (requiresDistinct && new Set(enemyChoices).size !== enemyChoices.length) ||
+    enemyChoices.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
   )) return false
   const playerChoiceCount = cardPlayerChoiceCount(def, context.mode)
   if (playerChoiceCount > 0 && (
@@ -2503,7 +2527,7 @@ function cardResolutionChoicesAreValid(
     )
     if (!targetPlan.complete || targetPlan.index !== context.evokeEnemyUids.length) return false
   }
-  return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids, energySpent) &&
+  return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids, energySpent, context.mode) &&
     !hasInvalidChosenPlayer(state, def, context.playerId) &&
     !hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)
 }
