@@ -142,6 +142,7 @@ function effectText(effect: Effect): string {
       : `prevent the next ${effect.uses} times you would lose hit points, then exhaust this Power`
     case 'upgradeStarterCards': return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
+    case 'countdownExhaust': return `place a cube; at ${effect.cubes} cubes exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'
     case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
@@ -273,6 +274,7 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     ...(def.modes
       ? def.modes.map((mode) => `choose ${mode.effects.map(effectText).join(' and ')}`)
       : def.effects.map(effectText)),
+    ...(def.persistentEffects ?? []).map(effectText),
     ...(def.handEndOfTurn ?? []).map(handEndOfTurnText),
     ...(def.discardReaction?.effects ?? []).map((effect) =>
       `when discarded by a card effect, ${effectText(effect)}`),

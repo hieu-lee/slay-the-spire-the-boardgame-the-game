@@ -201,6 +201,8 @@ type EffectKind =
   | { kind: 'upgradeStarterCards'; amount: number }
   /** Put a cube on this Power; at the threshold, damage all enemies and Exhaust it. */
   | { kind: 'countdownDamage'; cubes: number; damage: number }
+  /** Put a cube on this Power and Exhaust it at the threshold. */
+  | { kind: 'countdownExhaust'; cubes: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
   | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
@@ -293,6 +295,8 @@ export type CardDef = {
   /** Replace the printed cost after this player has lost HP in this combat. */
   costAfterHpLoss?: number
   effects: Effect[]
+  /** Ongoing effects read directly while this Power remains in play. */
+  persistentEffects?: Effect[]
   /** A condition that must hold before the card may be played at all. */
   playCondition?: Condition
   /** Mutually exclusive printed effect lines chosen when this card is played. */
@@ -2411,6 +2415,13 @@ export const CARDS: Record<string, CardDef> = {
     resolvesOnPlay: true,
     effects: [{ kind: 'gainHitPoison', amount: 1 }],
     upgrade: { cost: 2 },
+  }),
+  wraith_form: card({
+    id: 'wraith_form', name: 'Wraith Form', owner: 'silent', type: 'power', rarity: 'rare', cost: 3,
+    trigger: { kind: 'startOfTurn' },
+    persistentEffects: [{ kind: 'limitRoundHpLoss', amount: 1 }],
+    effects: [{ kind: 'countdownExhaust', cubes: 2 }],
+    upgrade: { effects: [{ kind: 'countdownExhaust', cubes: 3 }] },
   }),
   bouncing_flask: card({
     id: 'bouncing_flask', name: 'Bouncing Flask', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,

@@ -199,6 +199,19 @@ function findPlayer(state: CombatState, playerId: string): Player | undefined {
   return state.players.find((player) => player.id === playerId)
 }
 
+/** Public remaining HP-loss allowance from Apparition and persistent Powers. */
+export function remainingRoundHpLoss(player: Player): number | undefined {
+  const powerLimit = player.powers.flatMap((held) =>
+    faceOf(cardDef(held.defId), held.upgraded).persistentEffects ?? [])
+    .filter((effect): effect is Extract<Effect, { kind: 'limitRoundHpLoss' }> =>
+      effect.kind === 'limitRoundHpLoss')
+    .reduce<number | undefined>((limit, effect) => Math.min(limit ?? effect.amount, effect.amount), undefined)
+  const limit = powerLimit === undefined
+    ? player.hpLossLimitThisRound
+    : Math.min(player.hpLossLimitThisRound ?? powerLimit, powerLimit)
+  return limit === undefined ? undefined : Math.max(0, limit - (player.hpLostThisRound ?? 0))
+}
+
 function combatRows(state: CombatState): number[] {
   return [...new Set([
     ...state.players.map((player) => player.row),
@@ -441,10 +454,11 @@ function preventPlayerHpLoss(state: CombatState, player: Player, amount: number)
 }
 
 function losePlayerHp(state: CombatState, player: Player, amount: number): number {
-  const remaining = player.hpLossLimitThisRound === undefined
+  const remaining = remainingRoundHpLoss(player)
+  const limited = remaining === undefined
     ? amount
-    : Math.min(amount, Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0)))
-  const losable = Math.min(player.hp, Math.max(0, remaining))
+    : Math.min(amount, remaining)
+  const losable = Math.min(player.hp, Math.max(0, limited))
   if (preventPlayerHpLoss(state, player, losable)) return 0
   const outcome = applyHpLoss(player.hp, losable)
   if (outcome.hpLost > 0) {
@@ -1258,6 +1272,18 @@ function applyEffect(
       held.counter = undefined
       exhaustCards(state, actor, [held])
       note(`${actor.name} exhausts The Bomb`)
+      return
+    }
+    case 'countdownExhaust': {
+      const held = actor.powers.find((card) => card.uid === context.sourcePowerUid)
+      if (!held) return
+      held.counter = (held.counter ?? 0) + 1
+      note(`${actor.name} places cube ${held.counter} of ${effect.cubes}`)
+      if (held.counter < effect.cubes) return
+      actor.powers = actor.powers.filter((card) => card.uid !== held.uid)
+      held.counter = undefined
+      exhaustCards(state, actor, [held])
+      note(`${actor.name} exhausts ${cardDef(held.defId).name}`)
       return
     }
     case 'switchRows': {

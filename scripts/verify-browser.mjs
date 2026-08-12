@@ -1460,6 +1460,31 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'play
   !window.__STS_DEBUG__.getState().players[0].powers.some((card) => card.uid === 'ui-bomb'))
 
 await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  Object.assign(run.combat.players[0], {
+    hand: [], discard: [], exhaust: [], hpLostThisRound: 0,
+    powers: [{ uid: 'ui-wraith', defId: 'wraith_form', upgraded: true, counter: 1 }],
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const wraithPower = page.getByRole('button', { name: /^Wraith Form\+?:/ })
+await wraithPower.waitFor()
+const wraithLabel = await wraithPower.getAttribute('aria-label')
+const wraithCounter = await wraithPower.locator('.power__counter').textContent()
+const wraithSeat = await page.getByRole('button', { name: /Wraith Form protection/ }).getAttribute('aria-label')
+check('Wraith Form+ exposes its HP cap and public cube countdown', () => {
+  assert(wraithLabel.includes('cannot lose more than 1 HP per round'), wraithLabel)
+  assert(wraithLabel.includes('at 3 cubes Exhaust this Power'), wraithLabel)
+  assert(wraithLabel.includes('1 of 3 cubes'), wraithLabel)
+  assertEqual(wraithCounter, '◆1/3')
+  assert(wraithSeat.includes('Wraith Form protection, 1 hit point loss remaining'), wraithSeat)
+})
+await wraithPower.click()
+await shot('06zla-wraith-form-one-cube')
+await page.keyboard.press('Escape')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+
+await page.evaluate((baseline) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(baseline)
   Object.assign(run.combat.players[0], {

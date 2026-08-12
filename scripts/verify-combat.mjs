@@ -2370,6 +2370,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'bullet_time', energy: [E - 3, E - 2] },
     { id: 'corpse_explosion', poison: [2, 3], energy: [E - 2, E - 2] },
     { id: 'doppelganger', energySpent: [0, 0], energy: [E, E], exhaust: [1, 0] },
+    { id: 'wraith_form', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -3728,6 +3729,41 @@ check('Apparition loses Ethereal when upgraded', () => {
   const upgradedEnd = endPlayerTurn(combat([makePlayer({ hand: [upgraded] })], [makeEnemy()]))
   assertDeepEqual(baseEnd.players[0].exhaust.map((card) => card.uid), [base.uid])
   assertDeepEqual(upgradedEnd.players[0].discard.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Wraith Form caps round HP loss immediately and Exhausts after its cube threshold', () => {
+  for (const upgraded of [false, true]) {
+    const wraith = instance('wraith_form', upgraded)
+    const offering = instance('offering')
+    let state = playCard(combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [wraith, offering], energy: 6,
+      draw: Array.from({ length: 3 }, () => instance('defend_silent')),
+    })], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', wraith.uid, {
+      enemyUid: null, playerId: null,
+    })
+    state = playCard(state, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hp, 9, 'Wraith Form did not cap its play round')
+    state = enemyTurn(endPlayerTurn(state))
+    assertEqual(state.players[0].hp, 9, 'later damage exceeded Wraith Form\'s round cap')
+
+    const threshold = upgraded ? 3 : 2
+    for (let cube = 1; cube <= threshold; cube++) {
+      state = preparePlayerTurn({ ...state, phase: 'roundEnd' })
+      const ability = startTurnAbilities(state).find((entry) => entry.label.includes('Wraith Form'))
+      assert(ability, 'Wraith Form start-of-turn ability disappeared early')
+      state = resolveStartPlayerTurn(state, [{ id: ability.id, shivEnemyUids: [] }])
+      if (cube < threshold) {
+        const held = state.players[0].powers.find((card) => card.uid === wraith.uid)
+        assertEqual(held?.counter, cube)
+      }
+    }
+    assertEqual(state.players[0].powers.some((card) => card.uid === wraith.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === wraith.uid), true)
+
+    state.players[0].hpLostThisRound = 0
+    const unprotected = enemyTurn({ ...state, phase: 'enemy' })
+    assert(unprotected.players[0].hp < 9, 'Wraith Form still protected after Exhausting')
+  }
 })
 
 check('Dark Shackles counts enemies whose current intent attacks its player', () => {

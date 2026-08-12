@@ -5082,7 +5082,7 @@ check('online Doppelganger uses public co-op history and survives reconnect', ()
     name: 'Silent', character: 'silent', hand: [doppelganger], energy: 1, strength: 1,
   })
   const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  target.hp = target.maxHp = 10
+  Object.assign(target, { hp: 10, maxHp: 10, block: 0, vulnerable: 0, abilityUsed: true })
 
   apply(room, a.token, {
     kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true,

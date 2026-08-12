@@ -37,6 +37,7 @@ import {
   previewCardCopyChoice,
   powerAbilityKey,
   powerAbilityUsed,
+  remainingRoundHpLoss,
   resolveStartPlayerTurn,
   resolveStartTurnScry,
   resolvePendingTrigger,
@@ -370,8 +371,9 @@ function describeSeat(player: Player): string {
   if ((player.doubledSkillsThisTurn ?? 0) > 0) {
     parts.push(`Burst, next ${player.doubledSkillsThisTurn} Skill${player.doubledSkillsThisTurn === 1 ? '' : 's'} played twice`)
   }
-  if (player.hpLossLimitThisRound !== undefined) {
-    parts.push(`Apparition protection, ${Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0))} hit point loss remaining this round`)
+  const hpLossRemaining = remainingRoundHpLoss(player)
+  if (hpLossRemaining !== undefined) {
+    parts.push(`${player.powers.some((power) => power.defId === 'wraith_form') ? 'Wraith Form' : 'Apparition'} protection, ${hpLossRemaining} hit point loss remaining this round`)
   }
   if (player.character === 'defect') {
     parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
@@ -2702,9 +2704,9 @@ export function CombatScreen({
                           } played twice
                         </span>
                       ) : null}
-                      {occupant.hpLossLimitThisRound !== undefined ? (
+                      {remainingRoundHpLoss(occupant) !== undefined ? (
                         <span className="seat__pending">
-                          Apparition · {Math.max(0, occupant.hpLossLimitThisRound - (occupant.hpLostThisRound ?? 0))} HP loss remaining
+                          {occupant.powers.some((power) => power.defId === 'wraith_form') ? 'Wraith Form' : 'Apparition'} · {remainingRoundHpLoss(occupant)} HP loss remaining
                         </span>
                       ) : null}
                       {occupant.potions.length > 0 ? (

@@ -144,7 +144,8 @@ export function PowerRow({ powers }: PowerRowProps) {
       <ul className="powers" aria-label="Powers in play">
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
-          const countdown = def.effects.find((effect) => effect.kind === 'countdownDamage')
+          const countdown = def.effects.find((effect) =>
+            effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
           const buffer = def.effects.find((effect) => effect.kind === 'preventHpLoss')
           const counterLimit = countdown?.cubes ?? (buffer?.kind === 'preventHpLoss' && buffer.uses > 1
             ? buffer.uses
@@ -231,12 +232,14 @@ export function describePower(def: CardDef): string {
     : def.trigger?.kind === 'onEnterStance' && def.trigger.stance
       ? `whenever you enter ${def.trigger.stance}`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
-  const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
+  const effectOwnsScope = def.effects.some((effect) =>
+    effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
   const where = effectOwnsScope ? '' : def.target === 'allEnemies'
     ? ' to every enemy'
     : def.target === 'row' ? ' to one enemy row and any boss'
     : def.target === 'enemy' ? ' to one enemy' : ''
-  const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
+  const effects = [...(def.persistentEffects ?? []), ...def.effects]
+    .map(describeEffect).filter(Boolean).join(', ')
   if (!effects) return def.name
   const what = `${effects}${where}`
   if (def.activeAbility) return `${def.name}: ${what}, activate once per turn`
@@ -330,6 +333,10 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
     case 'countdownDamage':
       return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'countdownExhaust':
+      return `place a cube; at ${effect.cubes} cubes Exhaust this Power`
+    case 'limitRoundHpLoss':
+      return `cannot lose more than ${effect.amount} HP per round`
     case 'preventHpLoss':
       return effect.uses === 1
         ? 'prevent the next HP loss, then Exhaust this Power'
