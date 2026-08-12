@@ -7158,6 +7158,47 @@ check('a dead seat cannot use or give held Potions', () => {
   assert(deadPotionActions.every((button) => button.expanded !== 'true'))
 })
 
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'local-pending-relic'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const localRelicSeats = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].relics.push({ defId: 'astrolabe', spent: false, pending: true })
+  debug.setRun(run)
+  return run.players.map((player) => player.id)
+})
+await page.getByLabel('Seat').selectOption(localRelicSeats[0])
+await page.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+await page.locator('.map[inert]').waitFor()
+const localOwnerMapBlocked = await page.locator('.map').evaluate((map) => {
+  const room = map.querySelector('button')
+  room?.focus()
+  return map.inert && document.activeElement !== room
+})
+await page.getByLabel('Seat').selectOption(localRelicSeats[1])
+await page.getByRole('status').filter({ hasText: 'Waiting for Ironclad to resolve Astrolabe' }).waitFor()
+await page.locator('.map[inert]').waitFor()
+const localTeammateMapBlocked = await page.locator('.map').evaluate((map) => {
+  const room = map.querySelector('button')
+  room?.focus()
+  return map.inert && document.activeElement !== room
+})
+check('a mandatory local Relic makes owner and teammate map progression inert', () => {
+  assert(localOwnerMapBlocked)
+  assert(localTeammateMapBlocked)
+})
+await page.getByLabel('Seat').selectOption(localRelicSeats[0])
+const localAstrolabeChoices = page.locator('.campfire__deck button')
+for (let index = 0; index < 3; index++) await localAstrolabeChoices.nth(index).click()
+await page.getByRole('button', { name: 'Resolve Relic' }).click()
+await page.locator('.map:not([inert]) .room--reachable').first().waitFor()
+await page.waitForFunction(() => document.activeElement?.classList.contains('room--reachable'))
+const localMapFocusRestored = await page.locator('.room--reachable').first()
+  .evaluate((room) => document.activeElement === room)
+check('resolving a local Relic restores map keyboard focus', () => {
+  assert(localMapFocusRestored)
+})
+
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire'))

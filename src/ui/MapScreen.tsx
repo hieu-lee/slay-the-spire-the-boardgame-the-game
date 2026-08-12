@@ -6,6 +6,7 @@ import type { IconName } from './icons.ts'
 type MapScreenProps = {
   map: SpireMap
   choices: Room[]
+  blocked?: boolean
   onEnter: (roomId: string) => void
 }
 
@@ -36,8 +37,9 @@ type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live:
  * rather than computed from the layout: the rows wrap and centre themselves, so
  * the only reliable source of a room's position is the DOM.
  */
-export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
+export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
+  const wasBlocked = useRef(blocked)
   const [lines, setLines] = useState<Line[]>([])
   const reachable = new Set(choices.map((room) => room.id))
   const rows = [...map.rows].reverse()
@@ -91,8 +93,15 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
     }
   }, [measure])
 
+  useEffect(() => {
+    if (wasBlocked.current && !blocked && document.activeElement === document.body) {
+      frameRef.current?.querySelector<HTMLButtonElement>('.room--reachable')?.focus()
+    }
+    wasBlocked.current = blocked
+  }, [blocked])
+
   return (
-    <div className="map">
+    <div className="map" inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
         {choices.length === 0
           ? 'Nowhere to go.'

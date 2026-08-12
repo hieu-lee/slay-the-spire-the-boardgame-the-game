@@ -329,7 +329,8 @@ export function OnlineGame({ onLocal }: Props) {
           onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
           onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
       ) : null}
-      {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)} onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
+      {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
+        blocked={pendingAcquisition} onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
         {!pendingAcquisition && wingChoices(run.map, viewer).length > 0 ? <section className="room-screen"><strong>Wing Boots</strong>
           {wingChoices(run.map, viewer).map((target) => <button type="button" key={target.id}
             onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>Ignore paths to {target.kind}</button>)}

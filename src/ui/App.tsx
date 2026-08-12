@@ -228,7 +228,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
 
       {run.phase === 'map' ? (
         <>
-          <MapScreen map={run.map} choices={pendingAcquisition ? [] : roomChoices(run)}
+          <MapScreen map={run.map} choices={pendingAcquisition ? [] : roomChoices(run)} blocked={pendingAcquisition}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
           {!pendingAcquisition && wingBootChoices(run, viewerId).length > 0 ? <section className="room-screen">
             <strong>Wing Boots</strong>

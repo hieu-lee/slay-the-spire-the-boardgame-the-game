@@ -2618,20 +2618,56 @@ try {
   await roomAction(a, { kind: 'relicReward', choice: 'gain' })
   await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await b.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
-  await a.setViewportSize({ width: 390, height: 844 })
+  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 390, height: 844 })))
+  await Promise.all([a, b].map((page) => page.locator('.map[inert]').waitFor()))
+  const [ownerMapBlocked, teammateMapBlocked] = await Promise.all([a, b].map((page) =>
+    page.locator('.map').evaluate((map) => {
+      const room = map.querySelector('button')
+      room?.focus()
+      return map.inert && document.activeElement !== room
+    })))
   const reachableDuringRelic = await a.locator('.room--reachable').count()
   const wingBootsDuringRelic = await a.getByRole('button', { name: /Ignore paths to/ }).count()
   await a.screenshot({ path: join(outDir, '08a-mobile-pending-relic.png'), fullPage: true })
   const pendingOnMobile = (await snapshot(a)).pendingRelic?.relicId
   check('pending Relic acquisition is exposed on the mobile owner surface', () => {
     assertEqual(pendingOnMobile, 'astrolabe')
-    assertEqual(reachableDuringRelic, 0, 'map progression stayed focusable behind a mandatory Relic')
+    assert(ownerMapBlocked, 'the owner map stayed focusable behind a mandatory Relic')
+    assert(teammateMapBlocked, 'the teammate map stayed focusable behind a mandatory Relic')
+    assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
     assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
   })
+  await b.reload({ waitUntil: 'domcontentloaded' })
+  await b.locator('.connection--connected').waitFor()
+  await b.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await b.locator('.map[inert]').waitFor()
+  const reconnectedMapBlocked = await b.locator('.map').evaluate((map) => {
+    const room = map.querySelector('button')
+    room?.focus()
+    return map.inert && document.activeElement !== room
+  })
+  check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
+    assert(reconnectedMapBlocked)
+  })
+  const teammateHeaderControl = b.getByRole('button', { name: 'Solo table' })
+  await teammateHeaderControl.focus()
   const astrolabeChoices = a.locator('.campfire__deck button')
   for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
   await a.getByRole('button', { name: 'Resolve Relic' }).click()
   await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
+  await Promise.all([a, b].map((page) => page.locator('.map:not([inert]) .room--reachable').first().waitFor()))
+  await a.waitForFunction(() => document.activeElement?.classList.contains('room--reachable'))
+  const ownerMapFocusRestored = await a.locator('.room--reachable').first()
+    .evaluate((room) => document.activeElement === room)
+  const teammateHeaderFocusPreserved = await teammateHeaderControl.evaluate((control) =>
+    document.activeElement === control)
+  const teammateMapFocusable = await b.locator('.room--reachable').first()
+    .evaluate((room) => !room.closest('.map')?.inert && room.tabIndex >= 0)
+  check('resolving a mandatory Relic restores map access without stealing teammate focus', () => {
+    assert(ownerMapFocusRestored)
+    assert(teammateMapFocusable)
+    assert(teammateHeaderFocusPreserved)
+  })
 
   Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
