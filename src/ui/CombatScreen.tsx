@@ -106,7 +106,7 @@ type PendingStartChoice =
 /** What a card still needs before it can be played. */
 type Pending = {
   card: CardInstance
-  /** False for a play-twice virtual copy, which is no longer in hand. */
+  /** False for a physical original resolving after its virtual copy. */
   cardInHand: boolean
   /** Energy chosen for an X-cost card; null until the player decides. */
   energySpent: number | null
@@ -179,7 +179,7 @@ function roundLog(log: readonly string[]): string[] {
 /** The engine's phase names are for the engine; players get words. */
 const PHASE_LABEL: Record<CombatState['phase'], string> = {
   player: 'Your turn',
-  copy: 'Resolve card copy',
+  copy: 'Resolve original card',
   start: 'Start of turn',
   discard: 'Order discards',
   enemy: 'Enemies act',
@@ -366,6 +366,9 @@ function describeSeat(player: Player): string {
     parts.push(`Echo Form, next ${player.doubledCardsThisTurn} Attack or Skill card${
       player.doubledCardsThisTurn === 1 ? '' : 's'
     } played twice`)
+  }
+  if ((player.doubledSkillsThisTurn ?? 0) > 0) {
+    parts.push(`Burst, next ${player.doubledSkillsThisTurn} Skill${player.doubledSkillsThisTurn === 1 ? '' : 's'} played twice`)
   }
   if (player.hpLossLimitThisRound !== undefined) {
     parts.push(`Apparition protection, ${Math.max(0, player.hpLossLimitThisRound - (player.hpLostThisRound ?? 0))} hit point loss remaining this round`)
@@ -1956,13 +1959,22 @@ export function CombatScreen({
     pending.enemyUids.length >= pending.enemyChoices)
   const independentEnemyPending = Boolean(pending && pending.enemyUids.length < pending.enemyChoices)
   const independentPlayerPending = Boolean(pending && pending.playerIds.length < pending.playerChoices)
+  const copySource = pending?.cardInHand !== false && pendingDef?.id !== 'burst'
+    ? (pendingDef?.type === 'attack' || pendingDef?.type === 'skill') && (viewer.doubledCardsThisTurn ?? 0) > 0
+      ? 'Echo Form'
+      : pendingDef?.type === 'attack' && (viewer.doubledAttacksThisTurn ?? 0) > 0
+        ? 'Double Tap'
+        : pendingDef?.type === 'skill' && (viewer.doubledSkillsThisTurn ?? 0) > 0 ? 'Burst' : null
+    : null
+  const copyTarget = copySource ? ` for ${pendingDef?.name ?? 'card'} copy (${copySource})` : ''
+  const originalTarget = pending?.cardInHand === false
+    ? ` for original ${pendingDef?.name ?? 'card'} after ${state.pendingCardCopy?.sourceNames[0] ?? 'its'} copy`
+    : ''
   const normalEnemyPrompt = pending?.hitsRow
     ? state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
-      ? 'Choose an enemy — its whole row is hit, and the boss'
-      : 'Choose an enemy — its whole row is hit'
-    : pending?.cardInHand === false
-      ? `Choose an enemy for ${pendingDef?.name ?? 'the'} ${state.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
-      : 'Choose an enemy'
+      ? `Choose an enemy${originalTarget || copyTarget} — its whole row is hit, and the boss`
+      : `Choose an enemy${originalTarget || copyTarget} — its whole row is hit`
+    : `Choose an enemy${originalTarget || copyTarget}`
   const enemyPrompt = normalEnemyPending
     ? normalEnemyPrompt
     : independentEnemyPending
@@ -2050,7 +2062,7 @@ export function CombatScreen({
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
-          ? `Resolve ${state.pendingCardCopy?.sourceNames[0] ?? 'card copy'}`
+          ? `Resolve original ${pendingDef?.name ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
           {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (
@@ -2676,6 +2688,13 @@ export function CombatScreen({
                         <span className="seat__pending">
                           Echo Form · next {occupant.doubledCardsThisTurn} Attack or Skill card{
                             occupant.doubledCardsThisTurn === 1 ? '' : 's'
+                          } played twice
+                        </span>
+                      ) : null}
+                      {(occupant.doubledSkillsThisTurn ?? 0) > 0 ? (
+                        <span className="seat__pending">
+                          Burst · next {occupant.doubledSkillsThisTurn} Skill{
+                            occupant.doubledSkillsThisTurn === 1 ? '' : 's'
                           } played twice
                         </span>
                       ) : null}

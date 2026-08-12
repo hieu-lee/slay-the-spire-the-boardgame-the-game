@@ -346,7 +346,6 @@ export function apply(room, seatToken, action) {
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
   const pendingCopy = room.run.combat?.pendingCardCopy
-  const pendingCopyName = pendingCopy?.sourceNames?.[0] ?? 'Double Tap'
   const copyForSeat = pendingCopy?.playerId === seat.playerId
   const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
     forcedCard?.playerId === seat.playerId &&
@@ -404,23 +403,23 @@ export function apply(room, seatToken, action) {
   )) fail('Finish the forced card before taking another action')
   if (pendingCopy && !(copyForSeat &&
     (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy'))) {
-    fail(copyForSeat ? `Finish the ${pendingCopyName} copy` : `Wait for the ${pendingCopyName} copy`)
+    fail(copyForSeat ? 'Finish resolving the original card' : 'Wait for the original card')
   }
 
   if (action?.kind === 'previewCardCopy') {
-    if (!copyForSeat) fail(`No ${pendingCopyName} copy is waiting for you`)
+    if (!copyForSeat) fail('No original card is waiting for you')
     const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
     const needsEnemy = cardNeedsEnemy(def, player, false, pendingCopy.energySpent)
     const enemyUid = needsEnemy ? action.enemyUid : null
     if (needsEnemy && (typeof enemyUid !== 'string' ||
       resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
-      fail('Choose a living enemy before revealing this copy')
+      fail('Choose a living enemy before revealing the original card')
     }
     if (locked && (locked.copy !== true || enemyUid !== locked.enemyUid)) {
-      fail('The revealed copy target is already committed')
+      fail('The revealed original target is already committed')
     }
     const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
-    if (!preview) fail('That copy cannot reveal a choice now')
+    if (!preview) fail('That original card cannot reveal a choice now')
     room.cardPreviews = {
       ...room.cardPreviews,
       [seat.playerId]: {
@@ -481,17 +480,17 @@ export function apply(room, seatToken, action) {
     }
   }
   if (action?.kind === 'playCardCopy') {
-    if (!copyForSeat || action.cardUid !== pendingCopy.card.uid) fail(`No matching ${pendingCopyName} copy is waiting`)
+    if (!copyForSeat || action.cardUid !== pendingCopy.card.uid) fail('No matching original card is waiting')
     const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
     if (cardNeedsChoicePreview(def, room.run.combat, player)) {
       if (!locked || locked.copy !== true || locked.cardUid !== action.cardUid) {
-        fail('Reveal this copy before resolving its choice')
+        fail('Reveal this original card before resolving its choice')
       }
-      if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final copy target does not match its reveal')
+      if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final original target does not match its reveal')
       const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
       if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
         preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
-        fail('The revealed copy cards changed; reveal them again')
+        fail('The revealed original cards changed; reveal them again')
       }
     }
   }
@@ -993,14 +992,13 @@ function dispatch(run, seat, action) {
     case 'playCardCopy': {
       if (!run.combat) fail('No combat in progress')
       const copied = action.kind === 'playCardCopy'
-      const pendingCopyName = run.combat.pendingCardCopy?.sourceNames?.[0] ?? 'Double Tap'
       // A seat may only play cards from its OWN hand. Without this check any
       // client could spend another player's energy and empty their hand.
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
       const card = copied && run.combat.pendingCardCopy?.playerId === seat.playerId
         ? run.combat.pendingCardCopy.card
         : player?.hand.find((held) => held.uid === action.cardUid)
-      if (!card) fail(copied ? `No ${pendingCopyName} copy is waiting for you` : 'That card is not in your hand')
+      if (!card) fail(copied ? 'No original card is waiting for you' : 'That card is not in your hand')
       const def = faceOf(cardDef(card.defId), card.upgraded)
       const cardsOutsidePlay = player.hand.length - Number(!copied)
       const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
@@ -1384,6 +1382,7 @@ function redactPlayer(player, viewerId) {
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
     doubledCardsThisTurn: player.doubledCardsThisTurn ?? 0,
+    doubledSkillsThisTurn: player.doubledSkillsThisTurn ?? 0,
     retainCardsThisTurn: player.retainCardsThisTurn ?? 0,
     cardsPlayedThisTurn: player.cardsPlayedThisTurn ?? 0,
     attacksPlayedThisTurn: player.attacksPlayedThisTurn ?? 0,

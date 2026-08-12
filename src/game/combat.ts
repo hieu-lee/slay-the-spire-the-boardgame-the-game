@@ -82,7 +82,7 @@ export type CombatState = {
       deferredHavocs?: DeferredHavoc[]
     }
   }
-  /** Card copies that must finish before any other combat action. */
+  /** Physical cards waiting to resolve after their virtual copy. */
   pendingCardCopy?: {
     playerId: string
     card: CardInstance
@@ -91,8 +91,8 @@ export type CombatState = {
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: DeferredHavoc[]
-    /** One entry per still-unresolved copy; different effects can stack. */
-    sourceNames: ('Double Tap' | 'Echo Form')[]
+    /** The sole play-twice effect applied to this card. */
+    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst')[]
   }
   log: string[]
 }
@@ -105,7 +105,7 @@ export type PendingTrigger = {
   enemyUid?: string
 }
 
-type CopySource = 'Double Tap' | 'Echo Form'
+type CopySource = 'Double Tap' | 'Echo Form' | 'Burst'
 type DeferredHavoc = {
   card: CardInstance
   exhaust: boolean
@@ -1132,6 +1132,11 @@ function applyEffect(
     case 'doubleNextAttackOrSkill': {
       actor.doubledCardsThisTurn = (actor.doubledCardsThisTurn ?? 0) + 1
       note(`${actor.name}'s next Attack or Skill will be played twice`)
+      return
+    }
+    case 'doubleNextSkill': {
+      actor.doubledSkillsThisTurn = (actor.doubledSkillsThisTurn ?? 0) + 1
+      note(`${actor.name}'s next Skill will be played twice`)
       return
     }
     case 'retainAtEndOfTurn': {
@@ -2284,7 +2289,7 @@ function finishDeferredHavocs(
       }
       state.phase = 'copy'
       state.log = [...state.log,
-        `${actor.name}'s ${copySourceNames.join(' and ')} will play ${cardDef(card.defId).name} again`]
+        `${actor.name}'s ${copySourceNames[0]} copy finished; ${cardDef(card.defId).name} remains to resolve`]
       return
     }
     if (exhaust) exhaustCards(state, actor, [card])
@@ -2427,7 +2432,7 @@ export function playCard(
   )) return state
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
   // Choices are checked together at the trust boundary. The same validator is
-  // reused when Double Tap resolves its separately targeted copy.
+  // reused when the physical card resolves after its separately targeted copy.
   if (resolvesOnPlay && !cardResolutionChoicesAreValid(
     state, player, def, effects, context, xCost ? cost : 0,
   )) return state
@@ -2436,6 +2441,20 @@ export function playCard(
   // The player was just found in `state`, so a clone must contain them too.
   // Returning `state` here would masquerade as "illegal move" and hide a bug.
   if (!actor) throw new Error(`player ${playerId} vanished from the cloned state`)
+
+  // A card can be played twice by only one effect; later effects wait for the
+  // next valid card (rulebook p.24). Burst itself explicitly cannot be copied.
+  // The first resolution below is the virtual copy; the physical original
+  // stays outside every pile and resolves through `playCardCopy` afterwards.
+  const copySources: CopySource[] = def.id === 'burst' ? []
+    : (def.type === 'attack' || def.type === 'skill') && (actor.doubledCardsThisTurn ?? 0) > 0
+      ? ['Echo Form']
+      : def.type === 'attack' && (actor.doubledAttacksThisTurn ?? 0) > 0
+        ? ['Double Tap']
+        : def.type === 'skill' && (actor.doubledSkillsThisTurn ?? 0) > 0
+          ? ['Burst']
+          : []
+  const doubled = copySources.length > 0
 
   // The card leaves hand before resolving and belongs to no pile until cleanup,
   // which is what stops a card that draws from drawing itself (p.12).
@@ -2454,7 +2473,9 @@ export function playCard(
   // Logged before its effects resolve: appended afterwards, a kill the card
   // caused reads as OLDER than the card, which is nonsense in a newest-first
   // log.
-  next.log = [...next.log, `${actor.name} played ${def.name}`]
+  next.log = [...next.log, doubled
+    ? `${actor.name} played ${def.name} copy (${copySources[0]})`
+    : `${actor.name} played ${def.name}`]
 
   const scope: TargetScope = def.target ?? 'enemy'
   const supportScope: TargetScope = def.supportTarget ?? 'self'
@@ -2476,16 +2497,6 @@ export function playCard(
     }
   }
 
-  const copySources: CopySource[] = [
-    ...((def.type === 'attack' || def.type === 'skill') && (actor.doubledCardsThisTurn ?? 0) > 0
-      ? ['Echo Form' as const]
-      : []),
-    ...(def.type === 'attack' && (actor.doubledAttacksThisTurn ?? 0) > 0
-      ? ['Double Tap' as const]
-      : []),
-  ]
-  const doubled = copySources.length > 0
-
   // Havoc's child is part of Havoc's resolution. Its own cleanup, card-play
   // triggers, and Enraged reaction therefore wait until that child finishes.
   // A Havoc drawn by another Havoc extends the same small stack.
@@ -2493,6 +2504,7 @@ export function playCard(
     const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
     if (copySources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
     if (copySources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
+    if (copySources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...(forced?.deferredHavocs ?? []),
       { card: forgetRetain(held), exhaust: def.exhaust === true ||
@@ -2552,7 +2564,7 @@ export function playCard(
 
   // "Abilities triggered by a card do not take effect until the card has
   // finished resolving all of its text" (p.12). A doubled card stays outside
-  // every pile until its copy finishes, so only that exceptional cleanup waits.
+  // every pile until both resolutions finish, so only that exceptional cleanup waits.
   // `held.uid` is excluded: a Power that reacts to cards being played was not
   // in front of you when THIS card was played, so it does not see it.
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, held.uid)
@@ -2564,6 +2576,7 @@ export function playCard(
   if (doubled) {
     if (copySources.includes('Echo Form')) actor.doubledCardsThisTurn = actor.doubledCardsThisTurn! - 1
     if (copySources.includes('Double Tap')) actor.doubledAttacksThisTurn = actor.doubledAttacksThisTurn! - 1
+    if (copySources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
     next.pendingCardCopy = {
       playerId: actor.id,
       card: { ...held },
@@ -2575,7 +2588,7 @@ export function playCard(
       sourceNames: copySources,
     }
     next.phase = 'copy'
-    next.log = [...next.log, `${actor.name}'s ${copySources.join(' and ')} will play ${def.name} again`]
+    next.log = [...next.log, `${actor.name}'s ${copySources[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
     return settle(next)
   }
@@ -2586,7 +2599,7 @@ export function playCard(
   return finishForcedCardPlay(settle(next), forcedChoices)
 }
 
-/** Resolves a separately targeted virtual card created by a play-twice effect. */
+/** Resolves the physical original after its separately targeted virtual copy. */
 export function playCardCopy(
   state: CombatState,
   playerId: string,
@@ -2600,7 +2613,8 @@ export function playCardCopy(
   const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
   const sourceName = pending.sourceNames[0]
   if ((sourceName === 'Double Tap' && def.type !== 'attack') ||
-    (sourceName === 'Echo Form' && def.type !== 'attack' && def.type !== 'skill')) return state
+    (sourceName === 'Echo Form' && def.type !== 'attack' && def.type !== 'skill') ||
+    (sourceName === 'Burst' && def.type !== 'skill')) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
@@ -2612,7 +2626,7 @@ export function playCardCopy(
   const actor = findPlayer(next, playerId)!
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
   const ctx = resolutionContext(context, def, copy.card, copy.energySpent)
-  next.log = [...next.log, `${actor.name} played ${def.name} again (${sourceName})`]
+  next.log = [...next.log, `${actor.name} played ${def.name}`]
 
   for (const effect of effects) {
     applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', ctx)
@@ -2623,7 +2637,7 @@ export function playCardCopy(
     }
   }
   // The forced child is part of a copied Havoc. Suspend this copy until that
-  // child finishes, just as the original Havoc does above.
+  // child finishes, just as the copied Havoc does above.
   if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...copy.deferredHavocs,
@@ -2685,7 +2699,7 @@ export function playCardCopy(
   }
   if (!finalCopy) {
     copy.sourceNames = copy.sourceNames.slice(1)
-    next.log = [...next.log, `${actor.name}'s ${copy.sourceNames[0]} will play ${def.name} again`]
+    next.log = [...next.log, `${actor.name}'s ${copy.sourceNames[0]} copy finished; ${def.name} remains to resolve`]
     releasePendingTriggers(next, ctx)
     return settle(next)
   }
@@ -2713,12 +2727,12 @@ export function abandonCardCopy(state: CombatState, playerId: string): CombatSta
     const owner = findPlayer(next, pendingExhaust.playerId)
     if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
   }
-  next.log = [...next.log, `${actor.name}'s ${copy.sourceNames.join(' and ')} copy was skipped after disconnecting`]
+  next.log = [...next.log, `${actor.name}'s original ${def.name} was skipped after disconnecting`]
   finishDeferredHavocs(next, actor, copy.deferredHavocs)
   return finishForcedCardPlay(settle(next), copy.forcedChoices)
 }
 
-/** Privately previews a copied card's post-draw or Scry choice. */
+/** Privately previews the original card's post-copy draw or Scry choice. */
 export function previewCardCopyChoice(state: CombatState, playerId: string): CardChoicePreview | null {
   const pending = state.pendingCardCopy
   const player = findPlayer(state, playerId)
@@ -2871,6 +2885,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.freeCardsThisTurn = 0
     player.doubledAttacksThisTurn = 0
     player.doubledCardsThisTurn = 0
+    player.doubledSkillsThisTurn = 0
     player.retainCardsThisTurn = 0
     player.cardsPlayedThisTurn = 0
     player.attacksPlayedThisTurn = 0
@@ -4453,6 +4468,7 @@ export function createCombat(
       freeCardsThisTurn: 0,
       doubledAttacksThisTurn: 0,
       doubledCardsThisTurn: 0,
+      doubledSkillsThisTurn: 0,
       retainCardsThisTurn: 0,
       cardsPlayedThisTurn: 0,
       attacksPlayedThisTurn: 0,

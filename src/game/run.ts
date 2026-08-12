@@ -172,6 +172,8 @@ export function createPlayer(
     hpLossLimitThisRound: undefined,
     freeCardsThisTurn: 0,
     doubledAttacksThisTurn: 0,
+    doubledCardsThisTurn: 0,
+    doubledSkillsThisTurn: 0,
     retainCardsThisTurn: 0,
     cardsPlayedThisTurn: 0,
     attacksPlayedThisTurn: 0,

@@ -131,6 +131,7 @@ function effectText(effect: Effect): string {
     case 'discountNextCard': return 'your next card this turn costs 0'
     case 'doubleNextAttack': return 'your next Attack this turn is played twice, with separate targets and modifiers'
     case 'doubleNextAttackOrSkill': return 'your next Attack or Skill this turn is played twice, with separate choices and modifiers'
+    case 'doubleNextSkill': return 'your next Skill this turn is played twice, with separate choices and modifiers; Burst cannot be copied or played twice'
     case 'retainAtEndOfTurn': return `may retain ${effect.amount} card${effect.amount === 1 ? '' : 's'} this turn`
     case 'limitRoundHpLoss': return `cannot lose more than ${effect.amount} hit points this round`
     case 'preventHpLoss': return effect.uses === 1

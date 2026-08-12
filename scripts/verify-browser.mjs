@@ -2234,7 +2234,7 @@ await page.evaluate((baseline) => {
       { uid: 'ui-plans-defend', defId: 'defend_silent', upgraded: false },
       { uid: 'ui-plans-neutralize', defId: 'neutralize', upgraded: false },
     ],
-    discard: [], draw: [], exhaust: [], powers: [], energy: 1, block: 0,
+    discard: [], draw: [], exhaust: [], powers: [], energy: 1, block: 0, drawLocked: false,
     orbs: [null, null, null], retainCardsThisTurn: 0,
   })
   run.combat.players = [actor]
@@ -2395,10 +2395,10 @@ await shot('06zphgic6-echo-form-armed')
 await echoPower.click()
 await page.waitForFunction(() => !document.querySelector('.power__zoom'))
 await page.getByRole('button', { name: /^Strike,/ }).click()
-await page.getByText('Choose an enemy').waitFor()
+await page.getByText('Choose an enemy for Strike copy (Echo Form)').waitFor()
 await page.getByRole('button', { name: /^Cultist,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
-await page.getByText('Choose an enemy for Strike Echo Form copy').waitFor()
+await page.getByText('Choose an enemy for original Strike after Echo Form copy').waitFor()
 await page.locator('.prompt').evaluate((prompt) => Promise.all(
   prompt.getAnimations().map((animation) => animation.finished),
 ))
@@ -7171,11 +7171,54 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-burst', defId: 'burst', upgraded: true },
+      { uid: 'ui-burst-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 1, block: 0, drawLocked: false,
+    doubledSkillsThisTurn: 0, doubledCardsThisTurn: 0, doubledAttacksThisTurn: 0,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  debug.setRun(run)
+})
+const burstCard = page.getByRole('button', { name: /^Burst\+,/ })
+const burstLabel = await burstCard.getAttribute('aria-label')
+assert(await artWidth(burstCard) >= 700)
+check('Burst+ announces the physical copy restriction and separate Skill copy', () => {
+  assert(burstLabel.includes('next Skill this turn is played twice'))
+  assert(burstLabel.includes('Burst cannot be copied or played twice'))
+})
+await burstCard.click()
+const queuedBurstText = await page.locator('.seat__pending').filter({ hasText: 'Burst' }).textContent()
+const queuedBurstSeat = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('queued Burst count is visible and included in the seat accessible name', () => {
+  assert(queuedBurstText.includes('next 1 Skill played twice'))
+  assert(queuedBurstSeat.includes('Burst, next 1 Skill played twice'))
+})
+await shot('16i-silent-burst-armed')
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
+  window.__STS_DEBUG__.getState().players[0].block === 2)
+const burstResolved = await readState()
+check('Burst+ auto-resolves a choice-free Skill copy and cleans the physical card once', () => {
+  assertEqual(burstResolved.players[0].block, 2)
+  assertEqual(burstResolved.players[0].doubledSkillsThisTurn, 0)
+  assertEqual(burstResolved.players[0].discard.filter((card) => card.uid === 'ui-burst-defend').length, 1)
+  assertEqual(burstResolved.pendingCardCopy, undefined)
+})
+await shot('16j-silent-burst-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
   const source = run.combat.enemies[0]
   Object.assign(actor, {
     hand: [
       { uid: 'ui-double-tap', defId: 'double_tap', upgraded: true },
-      { uid: 'ui-double-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'ui-double-cleave', defId: 'cleave', upgraded: false },
     ],
     draw: [], discard: [], exhaust: [], powers: [], energy: 3,
     doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
@@ -7202,11 +7245,11 @@ check('queued Double Tap count is visible and included in the seat accessible na
   assert(queuedDoubleTapText.includes('next 1 Attack played twice'))
   assert(queuedDoubleTapSeat.includes('Double Tap, next 1 Attack played twice'))
 })
-await page.getByRole('button', { name: /^Strike,/ }).click()
-await page.getByText('Choose an enemy').waitFor()
+await page.getByRole('button', { name: /^Cleave,/ }).click()
+await page.getByText('Choose an enemy for Cleave copy (Double Tap) — its whole row is hit').waitFor()
 await page.getByRole('button', { name: /^Cultist,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'copy')
-await page.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
+await page.getByText('Choose an enemy for original Cleave after Double Tap copy — its whole row is hit').waitFor()
 await page.locator('.prompt').evaluate((prompt) => Promise.all(
   prompt.getAnimations().map((animation) => animation.finished),
 ))
@@ -7214,8 +7257,8 @@ await shot('16e-double-tap-copy-target')
 await page.getByRole('button', { name: /^Red Louse,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const doubleTapResolved = await readState()
-check('Double Tap visibly pauses for and resolves its independently targeted copy', () => {
-  assertDeepEqual(doubleTapResolved.enemies.map((enemy) => enemy.hp), [4, 5])
+check('Double Tap visibly labels and separately targets copy-first row attacks', () => {
+  assertDeepEqual(doubleTapResolved.enemies.map((enemy) => enemy.hp), [2, 4])
   assertEqual(doubleTapResolved.players[0].attacksPlayedThisTurn, 2)
   assertEqual(doubleTapResolved.players[0].energy, 2)
   assertEqual(doubleTapResolved.pendingCardCopy, undefined)

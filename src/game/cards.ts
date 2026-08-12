@@ -183,6 +183,8 @@ type EffectKind =
   | { kind: 'doubleNextAttack' }
   /** The next Attack or Skill played this turn resolves as two separate cards. */
   | { kind: 'doubleNextAttackOrSkill' }
+  /** The next Skill played this turn resolves as two separate cards. */
+  | { kind: 'doubleNextSkill' }
   /** Let the player choose this many cards to Retain during this turn's discard step. */
   | { kind: 'retainAtEndOfTurn'; amount: number }
   /** Total HP lost this round cannot exceed this amount. */
@@ -2265,6 +2267,11 @@ export const CARDS: Record<string, CardDef> = {
       { kind: 'applyWeak', amount: { base: 1, per: 'energySpent' } },
       { kind: 'poison', amount: { base: 1, per: 'energySpent' } },
     ] },
+  }),
+  burst: card({
+    id: 'burst', name: 'Burst', owner: 'silent', type: 'skill', rarity: 'rare', cost: 1,
+    effects: [{ kind: 'doubleNextSkill' }],
+    upgrade: { cost: 0 },
   }),
   blur: card({
     id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,

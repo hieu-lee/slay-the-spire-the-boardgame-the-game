@@ -246,7 +246,7 @@ export function OnlineGame({ onLocal }: Props) {
       {foreignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
           foreignDoubleTap
-            ? `a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
+            ? `the original card after a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
             : 'a revealed card'
         }…</p>
         : null}

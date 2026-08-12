@@ -87,6 +87,8 @@ export type Player = {
   doubledAttacksThisTurn?: number
   /** Echo Form makes this many subsequent Attack or Skill cards play twice this turn. */
   doubledCardsThisTurn?: number
+  /** Burst makes this many subsequent Skill cards play twice this turn. */
+  doubledSkillsThisTurn?: number
   /** Equilibrium lets this many otherwise-discarded cards stay in hand this turn. */
   retainCardsThisTurn?: number
   /** FTL checks this public per-turn card-play ledger. Copies count; Shivs do not. */

@@ -5002,6 +5002,43 @@ check('end-turn Fire Breathing cannot deadlock on an already-disconnected owner'
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [8, 10])
 })
 
+check('online Burst publishes its queued Skill and keeps the copy owner-authoritative', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const burst = { uid: 'room-burst', defId: 'burst', upgraded: true }
+  const defend = { uid: 'room-burst-defend', defId: 'defend_silent', upgraded: false }
+  Object.assign(actor, {
+    name: 'Silent', character: 'silent', hand: [burst, defend], energy: 1, block: 0,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: burst.uid, preflight: true })
+  const armed = snapshotFor(room, b.token).run.combat.players.find((player) => player.id === a.playerId)
+  assertEqual(armed.doubledSkillsThisTurn, 1)
+  apply(room, a.token, { kind: 'playCard', cardUid: defend.uid, playerId: actor.id, preflight: true })
+  const waiting = snapshotFor(room, b.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertDeepEqual(waiting.pendingCardCopy.sourceNames, ['Burst'])
+
+  let denied = null
+  try {
+    apply(room, b.token, { kind: 'playCardCopy', cardUid: defend.uid, playerId: actor.id, preflight: true })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'another seat resolved Burst')
+
+  const disconnected = structuredClone(room)
+  markDisconnected(disconnected, a.token)
+  assertEqual(disconnected.run.combat.phase, 'player')
+  assertEqual(disconnected.run.combat.pendingCardCopy, undefined)
+  assertEqual(disconnected.run.combat.players.find((player) => player.id === actor.id).block, 1,
+    'disconnect should keep the resolved Burst copy but skip the remaining original Skill')
+
+  apply(room, a.token, { kind: 'playCardCopy', cardUid: defend.uid, playerId: actor.id, preflight: true })
+  const resolved = snapshotFor(room, b.token).run.combat
+  assertEqual(resolved.players.find((player) => player.id === actor.id).block, 2)
+  assertEqual(resolved.players.find((player) => player.id === actor.id).doubledSkillsThisTurn, 0)
+})
+
 check('online Double Tap locks the room until its owner separately targets the copy', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -5111,7 +5148,7 @@ check('disconnecting the Double Tap owner releases the shared room lock', () => 
   const released = snapshotFor(room, b.token).run.combat
   assertEqual(released.phase, 'player')
   assertEqual(released.pendingCardCopy, undefined)
-  assert(released.log.some((line) => line.includes('Double Tap copy was skipped after disconnecting')))
+  assert(released.log.some((line) => line.includes('original Strike was skipped after disconnecting')))
 })
 
 check('a Double Tap copy reveals its post-draw choice only to its owner', () => {
