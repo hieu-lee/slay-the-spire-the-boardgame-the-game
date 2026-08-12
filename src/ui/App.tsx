@@ -114,7 +114,7 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${run.phase === 'combat' ? ' app-shell--combat' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">

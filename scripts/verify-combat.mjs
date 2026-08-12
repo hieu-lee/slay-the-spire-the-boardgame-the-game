@@ -5128,8 +5128,8 @@ check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', ()
     const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
     assert(loopAbility, 'Loop must publish its ordered end-turn ability')
     assertDeepEqual(loopAbility.targets.map((target) => target.label), [
-      'Lightning Orb 1 → Cultist (row 0)',
       'Lightning Orb 1 → Cultist (row 1)',
+      'Lightning Orb 1 → Cultist (row 2)',
       'Frost Orb 2',
     ])
     const loopTarget = upgraded ? loopAbility.targets[1] : loopAbility.targets[2]
@@ -6802,7 +6802,7 @@ check('a multi-hit that kills partway still reports one clean attack', () => {
 
 check('two of the same enemy in ONE row can still be told apart', () => {
   // The row is the natural discriminator, but a row-targeting card puts both
-  // copies in the same row -- and then "Cultist (row 0)" names them both. The
+  // copies in the same row -- and then "Cultist (row 1)" names them both. The
   // log then reads as striking a corpse: kill one and the next line reports a
   // hit on what looks like the same creature.
   const spray = instance('dagger_spray')

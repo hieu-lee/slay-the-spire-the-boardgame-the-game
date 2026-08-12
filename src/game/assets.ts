@@ -4,6 +4,7 @@
 // card, so adding a card to cards.ts does not also mean editing a lookup table.
 // scripts/verify-assets.mjs proves every card resolves to a file that exists.
 import type { CardDef } from './cards.ts'
+import type { EnemyDef } from './enemies.ts'
 
 /** Where the sync script writes, and where the client reads from. */
 export const CARD_ASSET_ROOT = '/assets/cards'
@@ -48,4 +49,8 @@ export function tierOf(def: CardDef): string {
 export function cardImagePath(def: CardDef, upgraded: boolean): string {
   const key = `${tierOf(def)}/${slugify(def.name)}${upgraded ? '+' : ''}`.replace(/\//g, '__')
   return `${CARD_ASSET_ROOT}/${key}.webp`
+}
+
+export function enemyImagePath(def: EnemyDef): string {
+  return `/assets/combat/enemies/${def.id}.webp`
 }

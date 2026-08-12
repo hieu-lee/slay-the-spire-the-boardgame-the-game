@@ -27,8 +27,8 @@ src/**/*.d.ts
 /*.webp
 artifacts/
 
-# All artwork is the publisher's. It is fetched into the working tree by the
-# sync-* scripts and deliberately NOT redistributed here. See ATTRIBUTION.md.
+# Publisher scans and rulebook extractions stay local. Generated original
+# combat art is bundled under public/assets/combat, status-icons and power-icons.
 public/assets/cards/
 public/assets/cards-hd/
 public/assets/icons/

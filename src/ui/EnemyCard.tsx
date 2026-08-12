@@ -1,8 +1,9 @@
 import { cardDef } from '../game/cards.ts'
 import { abilityText, actionsFor, enemyDef } from '../game/enemies.ts'
-import { cardImagePath } from '../game/assets.ts'
+import { cardImagePath, enemyImagePath } from '../game/assets.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
+import type { CSSProperties } from 'react'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
@@ -17,8 +18,12 @@ type EnemyCardProps = {
   targeted?: boolean
   /** Just took damage: flinch, so the hit is felt and not merely recorded. */
   struck?: boolean
+  hitDamage?: number
   /** Which hit this is, so a second blow restarts the animation. */
   beat?: number
+  stageIndex?: number
+  /** Player whose row this enemy occupies; bosses affect the whole party. */
+  rowLabel?: string
   onClick?: (enemy: Enemy) => void
 }
 
@@ -78,12 +83,13 @@ function intentParts(action: EnemyAction): IntentPart[] {
  * for players. The intent especially: it is the one thing choosing a target
  * depends on, and it was not being announced at all.
  */
-function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], ability: string | null): string {
+function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], ability: string | null, rowLabel?: string): string {
   // The label is built by the engine and is the SAME string the log prints --
-  // "Cultist (row 0, #2)" when two of them share a row. Two identically named
+  // "Cultist (row 1, #2)" when two of them share a row. Two identically named
   // buttons would leave a screen-reader user unable to match log to board, and
   // rebuilding the name here is what let the two drift apart before.
   const parts = [label]
+  if (rowLabel) parts.push(`facing ${rowLabel} in row ${enemy.row + 1}`)
   if (enemy.dead) {
     parts.push('defeated')
     return parts.join(', ')
@@ -125,7 +131,10 @@ export function EnemyCard({
   die,
   targeted = false,
   struck = false,
+  hitDamage,
   beat = 0,
+  stageIndex = 0,
+  rowLabel,
   onClick,
 }: EnemyCardProps) {
   const def = enemyDef(enemy.defId)
@@ -151,8 +160,12 @@ export function EnemyCard({
       type="button"
       className={className}
       disabled={enemy.dead}
+      data-row={enemy.row}
+      style={{
+        '--stage-index': stageIndex,
+      } as CSSProperties}
       onClick={() => onClick?.(enemy)}
-      aria-label={describeEnemy(enemy, label, intent, ability)}
+      aria-label={describeEnemy(enemy, label, intent, ability, rowLabel)}
     >
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.
@@ -193,7 +206,8 @@ export function EnemyCard({
 
       <span className="enemy__portrait">
         <img
-          src={`/assets/enemies/${enemy.defId}.webp`}
+          className="enemy__art--cutout"
+          src={enemyImagePath(def)}
           alt=""
           loading="lazy"
           onError={(event) => {
@@ -202,10 +216,17 @@ export function EnemyCard({
             event.currentTarget.style.display = 'none'
           }}
         />
+        {rowLabel ? (
+          <span className="enemy__row" title={`Row ${enemy.row + 1} · ${rowLabel}`} aria-hidden="true">
+            <span className="enemy__row-long">{rowLabel}</span>
+            <span className="enemy__row-short">P{enemy.row + 1}</span>
+          </span>
+        ) : null}
         <span className="enemy__head">
           <Icon name={enemy.isBoss ? 'boss' : 'monster'} size={16} />
           <span className="enemy__name">{def.name}</span>
         </span>
+        {struck ? <span className="hit-vfx" aria-hidden="true"><strong>{hitDamage}</strong></span> : null}
       </span>
 
       <span className="bar" aria-hidden="true">

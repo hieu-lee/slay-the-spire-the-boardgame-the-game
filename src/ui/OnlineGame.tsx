@@ -229,7 +229,7 @@ export function OnlineGame({ onLocal }: Props) {
   } satisfies CombatState : null
 
   return (
-    <main className="app-shell app-shell--online">
+    <main className={`app-shell app-shell--online${run.phase === 'combat' ? ' app-shell--combat' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">

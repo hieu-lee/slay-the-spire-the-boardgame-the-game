@@ -63,7 +63,7 @@ import { Card } from './Card.tsx'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
-import { TokenRow } from './TokenRow.tsx'
+import { OrbRow, TokenRow } from './TokenRow.tsx'
 import { healthBand, strikeClass } from './board-signals.ts'
 
 type CombatScreenProps = {
@@ -337,6 +337,22 @@ function revealViewerRow(board: HTMLElement | null, row: HTMLElement | null) {
   const boardBox = board.getBoundingClientRect()
   const rowBox = row.getBoundingClientRect()
   board.scrollTop += rowBox.top - boardBox.top - (board.clientHeight - rowBox.height) / 2
+  let actors = [...row.querySelectorAll<HTMLElement>('.row__seat, .enemy')]
+  const enemies = [...row.querySelectorAll<HTMLElement>('.enemy')]
+  const bosses = [...board.querySelectorAll<HTMLElement>('.board__bosses .enemy:not(.enemy--dead)')]
+  if (enemies.length === 0 && bosses.length > 0) actors = bosses
+  const span = (items: HTMLElement[]): [number, number] => {
+    const boxes = items.map((actor) => actor.getBoundingClientRect())
+    return [Math.min(...boxes.map((box) => box.left)), Math.max(...boxes.map((box) => box.right))]
+  }
+  if (actors.length > 0 && enemies.length > 0) {
+    const [left, right] = span(actors)
+    if (right - left > board.clientWidth) actors = enemies
+  }
+  if (actors.length > 0) {
+    const [left, right] = span(actors)
+    board.scrollLeft += left - boardBox.left - (board.clientWidth - (right - left)) / 2
+  }
 }
 
 /**
@@ -348,7 +364,7 @@ function revealViewerRow(board: HTMLElement | null, row: HTMLElement | null) {
  * shown on the seat has to be listed.
  */
 function describeSeat(player: Player): string {
-  const parts = [`${player.name}, ${player.hp} of ${player.maxHp} hit points, row ${player.row}`]
+  const parts = [`${player.name}, ${player.hp} of ${player.maxHp} hit points, row ${player.row + 1}`]
   const tokens: [string, number][] = [
     ['Block', player.block],
     ['Strength', player.strength],
@@ -432,8 +448,9 @@ function canAfford(
  * A hit that only changes a number is a hit the player misses entirely. The
  * flinch animation already existed in the stylesheet; nothing ever applied it.
  */
-function useStruck(state: CombatState): { struck: Set<string>; beat: number } {
+function useStruck(state: CombatState): { struck: Set<string>; beat: number; damage: Map<string, number> } {
   const previous = useRef(new Map<string, number>())
+  const damage = useRef(new Map<string, number>())
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [struck, setStruck] = useState<Set<string>>(new Set())
   // Bumped on every hit. Two blows on the same target inside the window leave
@@ -448,7 +465,10 @@ function useStruck(state: CombatState): { struck: Set<string>; beat: number } {
       const id = 'uid' in entity ? entity.uid : entity.id
       now.set(id, entity.hp)
       const before = previous.current.get(id)
-      if (before !== undefined && entity.hp < before) hurt.add(id)
+      if (before !== undefined && entity.hp < before) {
+        hurt.add(id)
+        damage.current.set(id, before - entity.hp)
+      }
     }
     previous.current = now
     if (hurt.size === 0) return
@@ -463,13 +483,14 @@ function useStruck(state: CombatState): { struck: Set<string>; beat: number } {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       timer.current = null
+      damage.current.clear()
       setStruck(new Set())
     }, 380)
   }, [state])
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
-  return { struck, beat }
+  return { struck, beat, damage: damage.current }
 }
 
 export function CombatScreen({
@@ -525,7 +546,7 @@ export function CombatScreen({
   const startTurnDiscardDialogRef = useRef<HTMLDialogElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const followViewerRow = useRef(true)
-  const programmaticScrollTop = useRef<number | null>(null)
+  const programmaticScroll = useRef<{ left: number; top: number } | null>(null)
   const manualBoardScroll = useRef(false)
   const potionActionPending = useRef(false)
   const powerActionPending = useRef(false)
@@ -573,7 +594,7 @@ export function CombatScreen({
     `${ability.id}:${ability.overflowShivs}:${ability.targets?.map((target) => target.uid).join(',') ?? ''}:` +
     `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}`).join('\0')
 
-  const { struck, beat } = useStruck(state)
+  const { struck, beat, damage } = useStruck(state)
 
   // Unknown delivery with the item still visible stays locked until a causally
   // later REST refresh. Exact inventory evidence can recognize a commit sooner.
@@ -622,7 +643,7 @@ export function CombatScreen({
   function recenterViewerRow() {
     const board = boardRef.current
     revealViewerRow(board, viewerRowRef.current)
-    programmaticScrollTop.current = board?.scrollTop ?? null
+    programmaticScroll.current = board ? { left: board.scrollLeft, top: board.scrollTop } : null
   }
 
   // Drop stale targeting when the phase, seat, or mandatory trigger changes.
@@ -948,6 +969,10 @@ export function CombatScreen({
     if (logRef.current) logRef.current.scrollTop = 0
   }, [state.log.length])
   const bosses = state.enemies.filter((enemy) => enemy.isBoss)
+  const stageEnemies = state.enemies.filter((enemy) => !enemy.isBoss)
+  const stageGap = state.players.length >= 3 ? 8 : 10
+  const mobileStageGap = 8
+  const stageLayoutKey = state.enemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
 
   // With a full party the board can outgrow the viewport. Rather than shrink
   // everything, keep the row the player actually controls on screen.
@@ -961,7 +986,7 @@ export function CombatScreen({
   useLayoutEffect(() => {
     followViewerRow.current = true
     recenterViewerRow()
-  }, [viewerId, state.turn, state.phase])
+  }, [viewerId, state.turn, state.phase, stageLayoutKey])
 
   useLayoutEffect(() => {
     if (followViewerRow.current) recenterViewerRow()
@@ -983,13 +1008,14 @@ export function CombatScreen({
     if (!board) return
     const inspectElsewhere = () => {
       if (
-        programmaticScrollTop.current !== null &&
-        Math.abs(board.scrollTop - programmaticScrollTop.current) < 1
+        programmaticScroll.current !== null &&
+        Math.abs(board.scrollLeft - programmaticScroll.current.left) < 1 &&
+        Math.abs(board.scrollTop - programmaticScroll.current.top) < 1
       ) {
-        programmaticScrollTop.current = null
+        programmaticScroll.current = null
         return
       }
-      programmaticScrollTop.current = null
+      programmaticScroll.current = null
       if (manualBoardScroll.current) {
         manualBoardScroll.current = false
         followViewerRow.current = false
@@ -997,7 +1023,7 @@ export function CombatScreen({
     }
     const armScroll = () => { manualBoardScroll.current = true }
     const armKeyboardScroll = (event: KeyboardEvent) => {
-      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) armScroll()
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) armScroll()
     }
     const armScrollbar = (event: PointerEvent) => {
       if (event.target === board) armScroll()
@@ -2298,7 +2324,7 @@ export function CombatScreen({
                 </details>
               ) : null}
               {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
-              {!forcedCard ? <button type="button" onClick={finishTurn}
+              {!forcedCard ? <button type="button" className="combat__end-turn" onClick={finishTurn}
                 disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) ||
                   (orderingStage && viewer.id !== endTurnCoordinatorId)}>
                 {state.phase === 'discard'
@@ -2387,7 +2413,7 @@ export function CombatScreen({
                   Reset start choices
                 </button>
               ) : null}
-              <button type="button" onClick={finishStartTurn}
+              <button type="button" className="combat__end-turn" onClick={finishStartTurn}
                 disabled={!startTurnReady || !canResolveStartTurn}>
                 {canResolveStartTurn ? 'Resolve start of turn' : 'Waiting for start-turn order'}
               </button>
@@ -2396,6 +2422,7 @@ export function CombatScreen({
           {state.phase === 'enemy' ? (
             <button
               type="button"
+              className="combat__end-turn"
               onClick={() => onAction ? onAction({ kind: 'resolveEnemies' }) : onChange?.(enemyTurn(state))}
             >
               Resolve enemies
@@ -2407,6 +2434,7 @@ export function CombatScreen({
           {state.phase === 'roundEnd' ? (
             <button
               type="button"
+              className="combat__end-turn"
               onClick={beginNextTurn}
             >
               Start turn {state.turn + 1}
@@ -2625,17 +2653,55 @@ export function CombatScreen({
         </dialog>
       ) : null}
 
-      <div className="board" data-rows={rows.length} ref={boardRef} tabIndex={0} aria-label="Combat board">
+      <div
+        className="board"
+        data-rows={rows.length}
+        ref={boardRef}
+        tabIndex={0}
+        aria-label="Combat board"
+        style={{
+          '--stage-width': `${Math.max(48, (state.players.length + state.enemies.length) * stageGap + 4)}rem`,
+          '--stage-mobile-width': `${Math.max(22, (state.players.length + state.enemies.length) * mobileStageGap + 4)}rem`,
+          '--stage-gap': `${stageGap}rem`,
+          '--stage-mobile-gap': `${mobileStageGap}rem`,
+          '--stage-actor-width': `${state.players.length >= 3 ? 7.5 : 9}rem`,
+        } as React.CSSProperties}
+      >
+        <aside className="party-rail" aria-hidden="true">
+          {state.players.map((player) => (
+            <span className={player.id === viewerId ? 'party-rail__player party-rail__player--viewer' : 'party-rail__player'} key={player.id}>
+              <img src={`/assets/combat/characters/${player.character}.webp`} alt="" aria-hidden="true"
+                onError={(event) => { event.currentTarget.style.display = 'none' }} />
+              <span>
+                <strong>{player.name}</strong>
+                <small>{player.hp}/{player.maxHp}</small>
+                {player.id === viewerId ? (
+                  <TokenRow
+                    block={player.block}
+                    strength={player.strength}
+                    vulnerable={player.vulnerable}
+                    weak={player.weak}
+                    shivs={player.shivs}
+                    miracles={player.miracles}
+                    clawCubes={player.clawCubesGainedThisCombat}
+                  />
+                ) : null}
+              </span>
+            </span>
+          ))}
+        </aside>
         {bosses.length > 0 ? (
           <div className="board__bosses">
-            {bosses.map((enemy) => (
+            {bosses.map((enemy, index) => (
               <EnemyCard
                 key={enemy.uid}
                 enemy={enemy}
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
                 struck={struck.has(enemy.uid)}
+                hitDamage={damage.get(enemy.uid)}
                 beat={beat}
+                stageIndex={stageEnemies.length + index}
                 targeted={(isStartTurnEnemyTarget(enemy.uid) ||
                   (pendingTrigger?.playerId === viewer.id &&
                     pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
@@ -2657,6 +2723,7 @@ export function CombatScreen({
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
               key={row}
               ref={occupant?.id === viewerId ? viewerRowRef : undefined}
+              style={{ '--stage-row': rows.indexOf(row) } as React.CSSProperties}
             >
               {pendingPotionDef?.target === 'row' ? (
                 <button
@@ -2728,6 +2795,16 @@ export function CombatScreen({
                       onClick={() => onAllyClick(occupant)}
                       aria-label={describeSeat(occupant)}
                     >
+                      <span className="seat__portrait" aria-hidden="true">
+                        <img
+                          src={`/assets/combat/characters/${occupant.character}.webp`}
+                          alt=""
+                          onError={(event) => { event.currentTarget.style.display = 'none' }}
+                        />
+                      </span>
+                      {struck.has(occupant.id) ? (
+                        <span className="hit-vfx" aria-hidden="true"><strong>{damage.get(occupant.id)}</strong></span>
+                      ) : null}
                       <span className="seat__name">{occupant.name}</span>
                       <span className="bar">
                         <span
@@ -2739,18 +2816,12 @@ export function CombatScreen({
                           {occupant.hp}/{occupant.maxHp}
                         </span>
                       </span>
-                      <TokenRow
+                      <OrbRow
                         orbs={occupant.character === 'defect'
                           ? occupant.orbs
                           : occupant.orbs.filter((orb) => orb !== null)}
-                        block={occupant.block}
-                        strength={occupant.strength}
-                        vulnerable={occupant.vulnerable}
-                        weak={occupant.weak}
-                        shivs={occupant.shivs}
-                        miracles={occupant.miracles}
-                        clawCubes={occupant.clawCubesGainedThisCombat}
                       />
+                      <span className="seat__meta">
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">
                           −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
@@ -2793,17 +2864,27 @@ export function CombatScreen({
                       {occupant.stance !== 'neutral' ? (
                         <span className={`stance stance--${occupant.stance}`}>{occupant.stance}</span>
                       ) : null}
+                      </span>
                     </button>
-                    <PowerRow powers={occupant.powers} />
+                    <div className="seat__status-strip">
+                      <TokenRow
+                        block={occupant.block}
+                        strength={occupant.strength}
+                        vulnerable={occupant.vulnerable}
+                        weak={occupant.weak}
+                        shivs={occupant.shivs}
+                        miracles={occupant.miracles}
+                        clawCubes={occupant.clawCubesGainedThisCombat}
+                      />
+                      <PowerRow powers={occupant.powers} />
+                    </div>
                   </>
                 ) : (
                   <span className="seat seat--empty">empty row</span>
                 )}
               </div>
               <div className="row__enemies" data-enemies={foes.length}>
-                {foes.length === 0 ? (
-                  <span className="muted">clear</span>
-                ) : (
+                {foes.length > 0 ? (
                   foes.map((enemy) => (
                     <EnemyCard
                       key={enemy.uid}
@@ -2811,7 +2892,10 @@ export function CombatScreen({
                       label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
                       struck={struck.has(enemy.uid)}
+                      hitDamage={damage.get(enemy.uid)}
                       beat={beat}
+                      stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
+                      rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       targeted={(isStartTurnEnemyTarget(enemy.uid) ||
                         (pendingTrigger?.playerId === viewer.id &&
                           pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
@@ -2822,7 +2906,7 @@ export function CombatScreen({
                       onClick={onEnemyClick}
                     />
                   ))
-                )}
+                ) : null}
               </div>
             </div>
           )
@@ -2833,7 +2917,7 @@ export function CombatScreen({
           Without the combat log on screen the only trace of the Enemy Turn is
           a hit-point number quietly changing. */}
       {state.log.length > 0 ? (
-        <ol className="combat__log" aria-label="Combat log" ref={logRef}>
+        <ol className="combat__log" aria-label="Combat log" ref={logRef} tabIndex={0}>
           {/* Newest first, reversed HERE rather than with `column-reverse`:
               with the CSS trick the newest line is the last DOM child, so it
               is the one the scroll box pushes out of view and `li:first-child`

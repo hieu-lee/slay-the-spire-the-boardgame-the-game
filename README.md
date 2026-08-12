@@ -1,13 +1,13 @@
 # Slay the Spire — The Board Game
 
 An unofficial digital implementation of Contention Games' *Slay the Spire: The Board Game*.
-See [ATTRIBUTION.md](ATTRIBUTION.md) — this is a fan project and ships no artwork.
+See [ATTRIBUTION.md](ATTRIBUTION.md) for the provenance of the limited bundled artwork.
 
 ## Quick start
 
 ```bash
 pnpm install
-pnpm sync:assets     # fetch card art, icons and enemy portraits (see below)
+pnpm sync:assets     # fetch the local card/icon pack (see below)
 pnpm dev             # play at http://localhost:5180
 ```
 
@@ -20,14 +20,16 @@ For 2–4 player authoritative online co-op, voice chat, and Cloudflare Tunnel s
 
 ## Assets
 
-No artwork is committed. `pnpm sync:assets` fetches it into `public/assets/`, which is
-gitignored:
+The repository includes original generated combat art for the four characters, eleven Act I
+enemies, and the Act I stage. Publisher card scans and rulebook icons are fetched locally by
+`pnpm sync:assets` and remain gitignored.
 
 | Group | Source | Needs |
 | --- | --- | --- |
 | Card, relic and potion scans | a third-party card browser | network, `ffmpeg`, `cwebp` |
 | Keyword and token icons | the official rulebook PDF | `docs/reference/STS_KS_Rulebook.pdf`, PyMuPDF, Pillow |
 | Enemy portraits | enemy card scans in the same PDF | same as icons, plus `cwebp` |
+| Combat stage and cutouts | original OpenAI Imagegen illustrations | committed WebP files |
 
 ```bash
 brew install ffmpeg webp          # cwebp ships in the webp formula
@@ -40,7 +42,8 @@ curl -L https://contentiongames.com/_images/STS_KS_Rulebook.pdf \
 On Debian or Ubuntu: `apt install ffmpeg webp`. Each sync script checks for what it
 needs and tells you what is missing rather than failing halfway through.
 
-The app runs without any of it — cards and enemies simply render without pictures.
+Run `pnpm sync:assets` for complete card faces and official HUD symbols. The app retains
+readable text/generated-symbol fallbacks when that local pack is absent.
 
 ## Layout
 

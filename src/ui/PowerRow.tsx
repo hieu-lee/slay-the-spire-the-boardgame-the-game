@@ -2,27 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { Amount, CardDef } from '../game/cards.ts'
+import type { Amount, CardDef, Effect } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
+import type { StatusIconName } from './Icon.tsx'
+import { statusIconPath } from './icons.ts'
 
 type PowerRowProps = { powers: CardInstance[] }
 
-/** The enlarged card: which one, and where to put it. */
-type Zoom = { uid: string; src: string; x: number; y: number; pinned: boolean }
+/** The enlarged card or text fallback, and where to put it. */
+type Zoom = { uid: string; src: string; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
 
 const ZOOM_WIDTH = 190
 const ZOOM_HEIGHT = ZOOM_WIDTH * (4 / 3)
 const MARGIN = 8
 
 /**
- * Powers in play, as the miniature face-up cards they physically are.
+ * Powers in play, as compact effect icons beside the other combat statuses.
  *
- * p.12: a Power is "placed face up in front of you". Everything else on the
- * board is a symbol or a piece of art, so a Power rendered as its own name in a
- * text pill was the one status that read like a web page rather than a table.
- * The scan carries its own rules text, so enlarging it beats printing a second
- * copy of that text in prose beside it.
+ * The digital game's played Powers become borderless effect pictograms near
+ * HP, rather than unreadable miniature cards. Hover, focus, or click still
+ * enlarges the full board-game card when the player needs its exact rules.
  */
 /**
  * Only one enlarged card exists at a time, across every seat on the board.
@@ -73,7 +73,10 @@ export function PowerRow({ powers }: PowerRowProps) {
 
   // A pinned card must not outlive the Power that opened it.
   useEffect(() => {
-    if (zoom && !powers.some((card) => card.uid === zoom.uid)) setZoom(null)
+    if (zoom && !powers.some((card) => card.uid === zoom.uid)) {
+      releaseZoom(close.current)
+      setZoom(null)
+    }
   }, [powers, zoom])
 
   // While a card is pinned, Escape has to work from anywhere and the card must
@@ -120,9 +123,8 @@ export function PowerRow({ powers }: PowerRowProps) {
    * board's scroll container, and at smaller viewports half the card was
    * being cut off at the board's edge.
    */
-  function place(target: HTMLElement, card: CardInstance, pinned: boolean) {
+  function place(target: HTMLElement, card: CardInstance, description: string, pinned: boolean) {
     const tile = target.getBoundingClientRect()
-    const def = faceOf(cardDef(card.defId), card.upgraded)
     const x = Math.min(Math.max(MARGIN, tile.left), window.innerWidth - ZOOM_WIDTH - MARGIN)
     // Prefer above the tile, the way a card held up over the table reads; drop
     // below when there is no room above.
@@ -136,7 +138,15 @@ export function PowerRow({ powers }: PowerRowProps) {
     // deliberately pinned theirs, which a passing hover must not destroy.
     if (!pinned && zoomIsPinnedElsewhere(close.current)) return
     claimTheOnlyZoom(close.current, pinned)
-    setZoom({ uid: card.uid, src: cardImagePath(def, card.upgraded), x, y, pinned })
+    setZoom({
+      uid: card.uid,
+      src: cardImagePath(cardDef(card.defId), card.upgraded),
+      description,
+      x,
+      y,
+      pinned,
+      loaded: false,
+    })
   }
 
   return (
@@ -165,10 +175,10 @@ export function PowerRow({ powers }: PowerRowProps) {
                 // A pinned card belongs to the player, not to the pointer:
                 // drifting across a neighbour used to silently destroy the pin.
                 onMouseEnter={(event) => {
-                  if (!zoom?.pinned) place(event.currentTarget, card, false)
+                  if (!zoom?.pinned) place(event.currentTarget, card, described, false)
                 }}
                 onFocus={(event) => {
-                  if (!zoom?.pinned) place(event.currentTarget, card, false)
+                  if (!zoom?.pinned) place(event.currentTarget, card, described, false)
                 }}
                 onMouseLeave={() => setZoom((current) => (current?.pinned ? current : null))}
                 onBlur={() => setZoom((current) => (current?.pinned ? current : null))}
@@ -177,26 +187,13 @@ export function PowerRow({ powers }: PowerRowProps) {
                     releaseZoom(close.current)
                     setZoom(null)
                   } else {
-                    place(event.currentTarget, card, true)
+                    place(event.currentTarget, card, described, true)
                   }
                 }}
               >
-                <img
-                  className="power__art"
-                  src={cardImagePath(def, card.upgraded)}
-                  alt=""
-                  loading="lazy"
-                  onError={(event) => {
-                    // Missing scan: fall back to the name rather than a broken
-                    // image, the same way Card does.
-                    event.currentTarget.style.display = 'none'
-                  }}
-                />
-                <span className="power__fallback" aria-hidden="true">
-                  {def.name}
-                </span>
+                <PowerGlyph def={def} />
                 {counterLimit ? (
-                  <span className="power__counter" aria-hidden="true">◆{card.counter ?? 0}/{counterLimit}</span>
+                  <span className="power__counter" aria-hidden="true">{card.counter ?? 0}/{counterLimit}</span>
                 ) : null}
               </button>
             </li>
@@ -207,17 +204,87 @@ export function PowerRow({ powers }: PowerRowProps) {
       {/* Into the body, so nothing on the board can clip it. */}
       {zoom
         ? createPortal(
-            <img
-              className="power__zoom"
-              src={zoom.src}
-              alt=""
-              aria-hidden="true"
+            <span
+              className={`power__zoom${zoom.loaded ? '' : ' power__zoom--fallback'}`}
+              role="tooltip"
               style={{ left: `${Math.round(zoom.x)}px`, top: `${Math.round(zoom.y)}px` }}
-            />,
+            >
+              {!zoom.loaded ? zoom.description : null}
+              <img
+                key={zoom.src}
+                className="power__zoom-image"
+                src={zoom.src}
+                alt=""
+                aria-hidden="true"
+                onLoad={() => setZoom((current) => current?.uid === zoom.uid ? { ...current, loaded: true } : current)}
+                style={{ visibility: zoom.loaded ? 'visible' : 'hidden' }}
+              />
+            </span>,
             document.body,
           )
         : null}
     </>
+  )
+}
+
+type PowerGlyphName = StatusIconName
+
+const EFFECT_GLYPHS: Partial<Record<Effect['kind'], PowerGlyphName>> = {
+  block: 'block',
+  gainCardBlockBonus: 'block',
+  gainStrength: 'strength',
+  poison: 'poison',
+  gainHitPoison: 'poison',
+  gainShiv: 'shiv',
+  gainShivDamageBonus: 'shiv',
+  gainEnergy: 'energy',
+  draw: 'draw',
+  drawAndPlayFree: 'draw',
+  channel: 'orb',
+  gainOrbSlots: 'orb',
+  gainOrbEvokeBonus: 'orb',
+  gainOrbEndTurnBonus: 'orb',
+  damage: 'attack',
+  countdownDamage: 'aoe',
+  applyWeak: 'weak',
+  applyVulnerable: 'vulnerable',
+}
+
+const POWER_ICONS = new Set([
+  'accuracy', 'after_image', 'apotheosis', 'barricade', 'capacitor', 'combust', 'consume',
+  'corruption', 'dark_embrace', 'defragment', 'demon_form', 'distraction', 'envenom', 'evolve',
+  'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
+  'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
+  'storm', 'the_bomb',
+])
+
+/** Pick the printed symbol that best describes what this persistent effect does. */
+export function powerGlyph(def: CardDef): PowerGlyphName {
+  if (def.corruptSkills) return 'burn'
+  if (def.retainBlock) return 'block'
+  for (const effect of def.effects) {
+    const glyph = EFFECT_GLYPHS[effect.kind]
+    if (glyph) return glyph
+  }
+  return 'power'
+}
+
+function PowerGlyph({ def }: { def: CardDef }) {
+  const fallback = powerGlyph(def)
+  return (
+    <img
+      className="icon icon--status"
+      src={POWER_ICONS.has(def.id) ? `/assets/power-icons/${def.id}.png` : statusIconPath(fallback)}
+      width="22"
+      height="22"
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      onError={(event) => {
+        event.currentTarget.onerror = null
+        event.currentTarget.src = statusIconPath(fallback)
+      }}
+    />
   )
 }
 
