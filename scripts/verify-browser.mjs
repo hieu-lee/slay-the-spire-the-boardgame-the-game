@@ -5104,6 +5104,15 @@ const energyContrast = await page.evaluate(() => {
   const pip = document.querySelector('.pip--energy')
   const number = pip?.querySelector('.icon-value__number')
   if (!pip || !number) return { missing: true }
+  const pipBox = pip.getBoundingClientRect()
+  const numberBox = number.getBoundingClientRect()
+  const iconBox = pip.querySelector('.icon').getBoundingClientRect()
+  const pairBox = {
+    left: Math.min(numberBox.left, iconBox.left),
+    right: Math.max(numberBox.right, iconBox.right),
+    top: Math.min(numberBox.top, iconBox.top),
+    bottom: Math.max(numberBox.bottom, iconBox.bottom),
+  }
   const parse = (value) => (value.match(/\d+/g) ?? []).slice(0, 3).map(Number)
   const lum = ([r, g, b]) => {
     const channel = (v) => {
@@ -5116,7 +5125,16 @@ const energyContrast = await page.evaluate(() => {
   // The disc is a gradient; sample its lightest declared stop conservatively.
   const plate = lum([255, 226, 150])
   const ratio = (Math.max(ink, plate) + 0.05) / (Math.min(ink, plate) + 0.05)
-  return { missing: false, ratio }
+  return {
+    missing: false,
+    ratio,
+    pairCenterOffset: Math.hypot(
+      (pairBox.left + pairBox.right - pipBox.left - pipBox.right) / 2,
+      (pairBox.top + pairBox.bottom - pipBox.top - pipBox.bottom) / 2,
+    ),
+    contained: pairBox.left >= pipBox.left && pairBox.right <= pipBox.right &&
+      pairBox.top >= pipBox.top && pairBox.bottom <= pipBox.bottom,
+  }
 })
 check('the energy count is readable on its disc', () => {
   assert(!energyContrast.missing, 'expected an energy pip')
@@ -5124,6 +5142,9 @@ check('the energy count is readable on its disc', () => {
     energyContrast.ratio >= 4.5,
     `the count contrasts at ${energyContrast.ratio.toFixed(2)}:1 against the disc`,
   )
+  assert(energyContrast.contained, 'the energy count is clipped by its disc')
+  assert(energyContrast.pairCenterOffset <= 1,
+    `the energy count and icon are ${energyContrast.pairCenterOffset}px off-centre`)
 })
 
 // Four players is the maximum the box supports and the layout most likely to
