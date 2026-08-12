@@ -2616,52 +2616,65 @@ try {
       potion: false, relic: 'astrolabe', bossRelics: false }],
   }
   await roomAction(a, { kind: 'relicReward', choice: 'gain' })
-  await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
-  await b.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  const ownerGame = a.locator('.app-shell--online')
+  const teammateGame = b.locator('.app-shell--online')
+  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
   await Promise.all([a, b].map((page) => page.setViewportSize({ width: 390, height: 844 })))
-  await Promise.all([a, b].map((page) => page.locator('.map[inert]').waitFor()))
-  const [ownerMapBlocked, teammateMapBlocked] = await Promise.all([a, b].map((page) =>
-    page.locator('.map').evaluate((map) => {
-      const room = map.querySelector('button')
-      room?.focus()
-      return map.inert && document.activeElement !== room
+  const activeGames = [ownerGame, teammateGame]
+  await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
+  const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
+    game.locator('.map').evaluate((map) => {
+      const rooms = [...map.querySelectorAll('button')]
+      let focusable = 0
+      for (const room of rooms) {
+        room.focus()
+        if (document.activeElement === room) focusable++
+      }
+      return { inert: map.inert, focusable }
     })))
-  const reachableDuringRelic = await a.locator('.room--reachable').count()
-  const wingBootsDuringRelic = await a.getByRole('button', { name: /Ignore paths to/ }).count()
+  const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
+  const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
   await a.screenshot({ path: join(outDir, '08a-mobile-pending-relic.png'), fullPage: true })
   const pendingOnMobile = (await snapshot(a)).pendingRelic?.relicId
   check('pending Relic acquisition is exposed on the mobile owner surface', () => {
     assertEqual(pendingOnMobile, 'astrolabe')
-    assert(ownerMapBlocked, 'the owner map stayed focusable behind a mandatory Relic')
-    assert(teammateMapBlocked, 'the teammate map stayed focusable behind a mandatory Relic')
+    assert(ownerMapBlocked.inert, 'the active owner map was not inert')
+    assert(teammateMapBlocked.inert, 'the active teammate map was not inert')
+    assertEqual(ownerMapBlocked.focusable, 0, 'the owner map kept focusable progression controls')
+    assertEqual(teammateMapBlocked.focusable, 0, 'the teammate map kept focusable progression controls')
     assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
     assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
   })
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()
-  await b.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
-  await b.locator('.map[inert]').waitFor()
-  const reconnectedMapBlocked = await b.locator('.map').evaluate((map) => {
-    const room = map.querySelector('button')
-    room?.focus()
-    return map.inert && document.activeElement !== room
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await teammateGame.locator('.map[inert]').waitFor()
+  const reconnectedMapBlocked = await teammateGame.locator('.map').evaluate((map) => {
+    const rooms = [...map.querySelectorAll('button')]
+    let focusable = 0
+    for (const room of rooms) {
+      room.focus()
+      if (document.activeElement === room) focusable++
+    }
+    return map.inert && focusable === 0
   })
   check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
     assert(reconnectedMapBlocked)
   })
-  const teammateHeaderControl = b.getByRole('button', { name: 'Solo table' })
+  const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Solo table' })
   await teammateHeaderControl.focus()
-  const astrolabeChoices = a.locator('.campfire__deck button')
+  const astrolabeChoices = ownerGame.locator('.campfire__deck button')
   for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
-  await a.getByRole('button', { name: 'Resolve Relic' }).click()
-  await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
-  await Promise.all([a, b].map((page) => page.locator('.map:not([inert]) .room--reachable').first().waitFor()))
+  await ownerGame.getByRole('button', { name: 'Resolve Relic' }).click()
+  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
+  await Promise.all(activeGames.map((game) => game.locator('.map:not([inert]) .room--reachable').first().waitFor()))
   await a.waitForFunction(() => document.activeElement?.classList.contains('room--reachable'))
-  const ownerMapFocusRestored = await a.locator('.room--reachable').first()
+  const ownerMapFocusRestored = await ownerGame.locator('.room--reachable').first()
     .evaluate((room) => document.activeElement === room)
   const teammateHeaderFocusPreserved = await teammateHeaderControl.evaluate((control) =>
     document.activeElement === control)
-  const teammateMapFocusable = await b.locator('.room--reachable').first()
+  const teammateMapFocusable = await teammateGame.locator('.room--reachable').first()
     .evaluate((room) => !room.closest('.map')?.inert && room.tabIndex >= 0)
   check('resolving a mandatory Relic restores map access without stealing teammate focus', () => {
     assert(ownerMapFocusRestored)
