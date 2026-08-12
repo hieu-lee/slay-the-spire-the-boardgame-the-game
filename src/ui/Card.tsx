@@ -223,15 +223,8 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
   }
 }
 
-function accessibleName(def: CardDef, cost = def.cost): string {
+export function cardRulesText(def: CardDef): string {
   return [
-    def.name,
-    // "cost —" reads as a dangling "cost" once a screen reader drops the dash
-    // at its default punctuation setting. An unplayable card and one you merely
-    // cannot afford are both greyed out, so the name is the only thing that can
-    // tell them apart.
-    def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`,
-    def.type,
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
     // safe from it, which is the opposite of the rule.
@@ -267,6 +260,24 @@ function accessibleName(def: CardDef, cost = def.cost): string {
   ]
     .filter(Boolean)
     .join(', ')
+}
+
+export function cardPlayText(def: CardDef, cost = def.cost): string {
+  return [
+    // "cost —" reads as a dangling "cost" once a screen reader drops the dash
+    // at its default punctuation setting. An unplayable card and one you merely
+    // cannot afford are both greyed out, so the name is the only thing that can
+    // tell them apart.
+    def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`,
+    cardRulesText(def),
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+export function cardAccessibleName(def: CardDef, cost = def.cost): string {
+  const [playability, ...rules] = cardPlayText(def, cost).split(', ')
+  return [def.name, playability, def.type, ...rules].filter(Boolean).join(', ')
 }
 
 /** The energy cost badge, or nothing at all for an unplayable card (p.24). */
@@ -308,7 +319,7 @@ export function Card({
       } as React.CSSProperties}
       disabled={!playable}
       onClick={() => onClick?.(card)}
-      aria-label={accessibleName(def, cost)}
+      aria-label={cardAccessibleName(def, cost)}
       aria-pressed={selected || picked}
       title={def.name}
     >

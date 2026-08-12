@@ -119,6 +119,181 @@ await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
 
+await shot('00-title-menu')
+const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
+  const box = menu.getBoundingClientRect()
+  const title = menu.querySelector('.start-menu__title')?.getBoundingClientRect()
+  const nav = menu.querySelector('.start-menu__nav')?.getBoundingClientRect()
+  const setup = menu.querySelector('.start-menu__setup')?.getBoundingClientRect()
+  return {
+    box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
+    title: title && { left: title.left, top: title.top, right: title.right, bottom: title.bottom },
+    nav: nav && { left: nav.left, top: nav.top, right: nav.right, bottom: nav.bottom },
+    setup: setup && { left: setup.left, top: setup.top, right: setup.right, bottom: setup.bottom },
+    background: getComputedStyle(menu).backgroundImage,
+    font: getComputedStyle(menu).fontFamily,
+    titleBottom: menu.querySelector('.start-menu__title h1')?.getBoundingClientRect().bottom,
+    editionTop: menu.querySelector('.start-menu__edition')?.getBoundingClientRect().top,
+  }
+})
+const menuSelection = await page.locator('.start-menu__nav').evaluate((nav) => ({
+  selected: [...nav.querySelectorAll('button')].filter((button) => button.dataset.selected === 'true')
+    .map((button) => button.textContent?.trim()),
+  marker: getComputedStyle(nav.querySelector('button[data-selected="true"]'), '::before').content,
+}))
+check('the title menu fills the viewport without clipping its controls', () => {
+  assert(titleMenu.background.includes('title-spire.webp'), 'the generated title backdrop is missing')
+  assert(titleMenu.font.includes('Kreon'), `the game-style typeface is missing: ${titleMenu.font}`)
+  assert(titleMenu.titleBottom !== undefined && titleMenu.editionTop !== undefined &&
+    titleMenu.editionTop >= titleMenu.titleBottom + 8,
+  `the board-game subtitle clips the title: ${titleMenu.titleBottom} / ${titleMenu.editionTop}`)
+  for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav, setup: titleMenu.setup })) {
+    assert(box && box.left >= titleMenu.box.left - 1 && box.right <= titleMenu.box.right + 1 &&
+      box.top >= titleMenu.box.top - 1 && box.bottom <= titleMenu.box.bottom + 1,
+    `${name} leaves the title viewport: ${JSON.stringify(box)}`)
+  }
+  assertDeepEqual(menuSelection.selected, ['Play'])
+  assert(!menuSelection.marker.includes('☞'), `the menu still uses the cheap finger marker: ${menuSelection.marker}`)
+})
+
+await page.getByRole('button', { name: 'Compendium' }).click()
+await page.locator('.compendium').waitFor()
+const allCardCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: 'Ironclad' }).click()
+const ironcladCardCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: 'Power cards' }).click()
+const powerCardLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('button', { name: 'All card types' }).click()
+await page.getByRole('checkbox', { name: 'rare', exact: true }).check()
+const rareCardLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('checkbox', { name: 'rare', exact: true }).uncheck()
+await page.getByRole('button', { name: '0 energy', exact: true }).click()
+const zeroCostCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: 'Any energy cost' }).click()
+const firstAscending = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium__sort').click()
+const firstDescending = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium__sort').click()
+await page.getByPlaceholder('Search').fill('Bash')
+const bashCards = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByLabel('View upgrades').check()
+const upgradedBashSource = await page.locator('.compendium-card img').first().getAttribute('src')
+await page.locator('.compendium-card').first().click()
+const detailOpen = await page.locator('.compendium__detail').count()
+const detailModal = await page.locator('.compendium__detail').evaluate((dialog) => dialog.matches(':modal'))
+await shot('00b-compendium-card-detail')
+await page.keyboard.press('Escape')
+await page.locator('.compendium__detail').waitFor({ state: 'detached' })
+await page.getByPlaceholder('Search').fill('Havoc')
+await page.getByRole('button', { name: '0 energy', exact: true }).click()
+const upgradedZeroCostNames = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('button', { name: 'Any energy cost', exact: true }).click()
+await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Curses' }).click()
+await page.getByPlaceholder('Search').fill('Clumsy')
+const curseUpgradeSource = await page.locator('.compendium-card img').first().getAttribute('src')
+const curseImageVisible = await page.locator('.compendium-card img').first().evaluate((img) =>
+  img.complete && img.naturalWidth > 0 && getComputedStyle(img).visibility === 'visible')
+await page.getByRole('button', { name: 'Statuses' }).click()
+await page.getByPlaceholder('Search').fill('Daze')
+const dazeLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium-card').first().click()
+const statusDetailFallback = await page.locator('.compendium__detail-card').evaluate((card) => ({
+  hasImage: Boolean(card.querySelector('img')),
+  fallbackVisible: getComputedStyle(card.querySelector('.compendium-card__fallback')).visibility === 'visible',
+  text: card.querySelector('.compendium-card__fallback')?.textContent ?? '',
+}))
+await page.keyboard.press('Escape')
+await page.getByPlaceholder('Search').fill('Slimed')
+const slimedLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Ironclad' }).click()
+await shot('00a-compendium')
+check('the compendium filters the real card catalog and opens card detail', () => {
+  assert(allCardCount > ironcladCardCount && ironcladCardCount > 0,
+    `pool filtering did not narrow the catalog: ${allCardCount} / ${ironcladCardCount}`)
+  assert(powerCardLabels.length > 0 && powerCardLabels.every((label) => label?.includes(', power,')),
+    `card-type filtering leaked: ${powerCardLabels.join(' / ')}`)
+  assert(rareCardLabels.length > 0 && rareCardLabels.every((label) => label?.endsWith(', rare')),
+    `rarity filtering leaked: ${rareCardLabels.join(' / ')}`)
+  assert(zeroCostCount > 0 && zeroCostCount < ironcladCardCount,
+    `cost filtering did not narrow the catalog: ${zeroCostCount} / ${ironcladCardCount}`)
+  assert(firstAscending !== firstDescending, 'A–Z sort did not reverse the card order')
+  assertEqual(bashCards.length, 1)
+  assert(bashCards[0]?.startsWith('Bash, cost 2, attack') && bashCards[0]?.endsWith(', starter'), bashCards[0])
+  assert(upgradedBashSource?.endsWith('ironclad__starter__bash+.webp'), upgradedBashSource)
+  assert(upgradedZeroCostNames.some((label) => label?.startsWith('Havoc+, cost 0,')),
+    `upgraded cost filter omitted Havoc+: ${upgradedZeroCostNames.join(' / ')}`)
+  assertEqual(detailOpen, 1)
+  assert(detailModal, 'card detail should use native modal semantics')
+  assert(curseUpgradeSource?.endsWith('curses__clumsy.webp') && !curseUpgradeSource.includes('clumsy+'),
+    `non-upgradable curse requested the wrong face: ${curseUpgradeSource}`)
+  assert(curseImageVisible, 'the curse scan stayed hidden after changing filters')
+  assert(!statusDetailFallback.hasImage && statusDetailFallback.fallbackVisible &&
+    statusDetailFallback.text.includes('Daze') && statusDetailFallback.text.includes('unplayable') &&
+    statusDetailFallback.text.includes('ethereal'),
+  `unscanned status detail has no fallback: ${JSON.stringify(statusDetailFallback)}`)
+  assert(dazeLabel?.includes('unplayable') && dazeLabel.includes('ethereal'), dazeLabel)
+  assert(slimedLabel?.includes('cost 1'), slimedLabel)
+})
+await page.setViewportSize({ width: 390, height: 844 })
+const mobileCompendium = await page.locator('.compendium').evaluate((root) => {
+  const viewport = root.getBoundingClientRect()
+  const filters = root.querySelector('.compendium__filters')?.getBoundingClientRect()
+  const library = root.querySelector('.compendium__library')?.getBoundingClientRect()
+  const card = root.querySelector('.compendium-card')?.getBoundingClientRect()
+  return {
+    viewport: { left: viewport.left, right: viewport.right, top: viewport.top, bottom: viewport.bottom },
+    filters: filters && { left: filters.left, right: filters.right, top: filters.top, bottom: filters.bottom },
+    library: library && { left: library.left, right: library.right, top: library.top, bottom: library.bottom },
+    cardWidth: card?.width,
+    wrappedLabels: [...root.querySelectorAll('.compendium__checks label')]
+      .filter((label) => label.getBoundingClientRect().height > parseFloat(getComputedStyle(label).lineHeight) * 1.5).length,
+    backBeforeSearch: Boolean(root.querySelector('.compendium__back')?.compareDocumentPosition(
+      root.querySelector('input[type="search"]')) & Node.DOCUMENT_POSITION_FOLLOWING),
+    back: (() => {
+      const box = root.querySelector('.compendium__back')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+    sort: (() => {
+      const box = root.querySelector('.compendium__sort')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+    upgrade: (() => {
+      const box = root.querySelector('.compendium__upgrade')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+  }
+})
+await shot('00c-compendium-mobile')
+check('the compendium remains usable on a phone-sized viewport', () => {
+  assert(mobileCompendium.filters && mobileCompendium.library,
+    `mobile compendium columns are missing: ${JSON.stringify(mobileCompendium)}`)
+  assert(mobileCompendium.filters.left >= mobileCompendium.viewport.left - 1 &&
+    mobileCompendium.library.right <= mobileCompendium.viewport.right + 1,
+  `mobile compendium leaves the viewport: ${JSON.stringify(mobileCompendium)}`)
+  assert((mobileCompendium.cardWidth ?? 0) >= 100,
+    `mobile cards became unreadably small: ${mobileCompendium.cardWidth}`)
+  assertEqual(mobileCompendium.wrappedLabels, 0, 'mobile rarity labels should not wrap')
+  assert(mobileCompendium.backBeforeSearch, 'Back must precede Search in keyboard and source order')
+  assert(mobileCompendium.back && mobileCompendium.back.top < mobileCompendium.viewport.bottom &&
+    mobileCompendium.back.bottom <= mobileCompendium.viewport.bottom + 1,
+  `mobile back control is not initially reachable: ${JSON.stringify(mobileCompendium)}`)
+  assert(mobileCompendium.sort && mobileCompendium.upgrade &&
+    mobileCompendium.back.bottom <= mobileCompendium.sort.top + 1 &&
+    mobileCompendium.back.bottom <= mobileCompendium.upgrade.top + 1 &&
+    mobileCompendium.sort.bottom <= mobileCompendium.upgrade.top + 1,
+  `mobile compendium controls overlap: ${JSON.stringify(mobileCompendium)}`)
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.getByRole('button', { name: 'Back to main menu' }).click()
+await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.locator('.map').waitFor()
+
 // A run opens on the map with the boot beside the board (p.9).
 const opening = await readRun()
 await shot('01-map-start')

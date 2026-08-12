@@ -33,6 +33,8 @@ enemy portrait refreshes update the tracked bundle and should be reviewed before
 | Boss battle backgrounds | original OpenAI Imagegen illustrations | four committed WebP files |
 | Combat stage and cutouts | original OpenAI Imagegen illustrations | committed WebP files |
 | Combat status and Power pictograms | original OpenAI Imagegen illustrations | committed transparent PNG files |
+| Title-menu and compendium backgrounds | original OpenAI Imagegen illustrations | committed WebP files |
+| Kreon UI typeface | Google Fonts / Kreon Project Authors, SIL OFL 1.1 | committed TTF and license |
 
 ```bash
 brew install ffmpeg webp          # cwebp ships in the webp formula

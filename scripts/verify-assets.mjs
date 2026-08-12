@@ -32,6 +32,8 @@ const iconRoot = join(publicRoot, 'assets/icons')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
+const menuRoot = join(publicRoot, 'assets/menu')
+const fontRoot = join(publicRoot, 'assets/fonts')
 
 const cardFiles = listing(cardRoot, '.webp')
 const iconFiles = listing(iconRoot, '.png')
@@ -274,6 +276,15 @@ check('generated status and Power icon inventories are complete, transparent, an
       )
     }
   }
+})
+
+check('the menu backgrounds and licensed UI font are bundled', () => {
+  for (const file of ['title-spire.webp', 'compendium-archive.webp']) {
+    assert(existsSync(join(menuRoot, file)), `missing menu artwork: ${file}`)
+  }
+  assert(existsSync(join(fontRoot, 'Kreon.ttf')), 'missing Kreon UI font')
+  const license = readFileSync(join(fontRoot, 'Kreon-OFL.txt'), 'utf8')
+  assert(license.includes('SIL OPEN FONT LICENSE Version 1.1'), 'Kreon OFL license is incomplete')
 })
 
 check('every committed battlefield asset exists, decodes, and cutouts stay transparent', () => {

@@ -62,7 +62,6 @@ async function enterOnline(page, name, character, code, localSeed, doubleSubmit 
   await page.goto(origin, { waitUntil: 'networkidle' })
   if (localSeed) {
     await page.getByLabel('Seed').fill(localSeed)
-    await page.getByLabel('Seed').blur()
   }
   await page.getByRole('button', { name: 'Play online' }).click()
   await page.getByLabel('Your name').fill(name)
@@ -161,7 +160,7 @@ try {
   await guardedEntry.getByRole('button', { name: 'Join voice' }).click()
   await iceStarted
   await guardedEntry.getByRole('button', { name: '← Leave room' }).click()
-  await guardedEntry.getByLabel('Seed').waitFor()
+  await guardedEntry.getByRole('button', { name: 'Play online' }).waitFor()
   releaseIce()
   await guardedEntry.waitForTimeout(200)
   const mediaCallsAfterLeaving = await guardedEntry.evaluate(() => window.__VOICE_MEDIA_CALLS__)
