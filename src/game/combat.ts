@@ -91,9 +91,15 @@ export type CombatState = {
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: DeferredHavoc[]
+    /** Parent-card triggers waiting for this nested copy to finish. */
+    deferredTriggers?: PendingTrigger[]
     /** The sole play-twice effect applied to this card. */
-    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst')[]
+    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst' | 'Doppelganger')[]
+    /** Doppelganger queues only a virtual card, with no physical original to clean up. */
+    virtualOnly?: boolean
   }
+  /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
+  playedCardsThisTurn: { card: CardInstance; copied: boolean }[]
   log: string[]
 }
 
@@ -109,6 +115,8 @@ type CopySource = 'Double Tap' | 'Echo Form' | 'Burst'
 type DeferredHavoc = {
   card: CardInstance
   exhaust: boolean
+  /** A Doppelganger Havoc is virtual and never enters a pile. */
+  virtualOnly?: boolean
   /** A copied Havoc waits until its immediate child finishes. */
   copySourceNames?: CopySource[]
   copyResumePhase?: 'start' | 'player'
@@ -586,6 +594,8 @@ export type PlayContext = {
   sourceCardUpgraded?: boolean
   /** Virtual play-twice copies cannot attach a physical card. */
   sourceIsCopy?: boolean
+  /** The eligible card selected by a physical Doppelganger resolution. */
+  doppelgangerCopy?: CardInstance
   /** This resolution attached its source card instead of discarding it. */
   sourceAttached?: boolean
   /** Power instance currently resolving its trigger, for counters and self-Exhaust. */
@@ -663,6 +673,7 @@ function resolutionContext(
     sourceCardUid: held.uid,
     sourceCardUpgraded: held.upgraded,
     sourceIsCopy,
+    doppelgangerCopy: undefined,
     sourceAttached: false,
     energySpent,
     sourceAttackCounted: false,
@@ -1129,6 +1140,30 @@ function applyEffect(
       }
       context.sourceAttached = true
       note(`${actor.name} attaches Corpse Explosion to ${enemyLabel(state.enemies, target)}`)
+      return
+    }
+    case 'copyLastPlayed': {
+      if (context.sourceIsCopy) return
+      const plays = state.playedCardsThisTurn ?? []
+      const latest = [...plays].reverse().find((played, reverseIndex) => {
+        if (played.copied || (reverseIndex === 0 && played.card.uid === context.sourceCardUid)) return false
+        const def = faceOf(cardDef(played.card.defId), played.card.upgraded)
+        return cardCost(def, actor.powers, actor.lostHpThisCombat) === context.energySpent &&
+          (def.type === 'attack' || def.type === 'skill')
+      })
+      if (!latest || !context.sourceCardUid) return
+      const copiedDef = faceOf(cardDef(latest.card.defId), latest.card.upgraded)
+      if (copiedDef.id === 'burst') {
+        note(`${actor.name}'s Doppelganger cannot copy Burst`)
+        return
+      }
+      if (!cardIsPlayable(copiedDef, state, actor) ||
+        context.energySpent! < (copiedDef.minimumX ?? 0)) {
+        note(`${actor.name}'s Doppelganger cannot play ${copiedDef.name}`)
+        return
+      }
+      context.doppelgangerCopy = { ...latest.card, uid: `${context.sourceCardUid}:copy` }
+      note(`${actor.name}'s Doppelganger copies ${copiedDef.name}`)
       return
     }
     case 'draw': {
@@ -2324,7 +2359,7 @@ function finishDeferredHavocs(
 ): void {
   const remaining = [...deferred]
   while (remaining.length > 0) {
-    const { card, exhaust, copySourceNames, copyResumePhase } = remaining.pop()!
+    const { card, exhaust, virtualOnly, copySourceNames, copyResumePhase } = remaining.pop()!
     if (combatIsOver(state)) return
     if (copySourceNames?.length) {
       fireTriggers(state, { kind: 'onPlayCard', cardType: 'skill' }, actor, card.uid)
@@ -2346,8 +2381,10 @@ function finishDeferredHavocs(
         `${actor.name}'s ${copySourceNames[0]} copy finished; ${cardDef(card.defId).name} remains to resolve`]
       return
     }
-    if (exhaust) exhaustCards(state, actor, [card])
-    else actor.discard = [...actor.discard, card]
+    if (!virtualOnly) {
+      if (exhaust) exhaustCards(state, actor, [card])
+      else actor.discard = [...actor.discard, card]
+    }
     if (combatIsOver(state)) return
     fireTriggers(state, { kind: 'onPlayCard', cardType: 'skill' }, actor, card.uid)
     if (combatIsOver(state)) return
@@ -2524,6 +2561,12 @@ export function playCard(
     next.log = [...next.log, `${actor.name} spends a Miracle toward ${def.name}`]
   }
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
+  if (def.type === 'attack' || def.type === 'skill') {
+    next.playedCardsThisTurn = [
+      ...(next.playedCardsThisTurn ?? []),
+      { card: forgetRetain(held), copied: doubled },
+    ]
+  }
 
   // Logged before its effects resolve: appended afterwards, a kill the card
   // caused reads as OLDER than the card, which is nonsense in a newest-first
@@ -2585,6 +2628,34 @@ export function playCard(
   // so refusing it here costs the caller nothing and still signals illegality
   // the way every other refusal does: by handing back the very same reference.
   if (invalidPlayChoice(ctx)) return state
+
+  if (ctx.doppelgangerCopy) {
+    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    next.pendingCardCopy = {
+      playerId: actor.id,
+      card: ctx.doppelgangerCopy,
+      energySpent: xCost ? cost : 0,
+      resumePhase: state.phase === 'start' ? 'start' : 'player',
+      forcedExhaust: false,
+      forcedChoices,
+      deferredHavocs: [
+        ...(forced?.deferredHavocs ?? []),
+        {
+          card: forgetRetain(held),
+          exhaust: def.exhaust === true ||
+            (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt,
+        },
+      ],
+      deferredTriggers: [
+        ...(forced?.pendingTriggers ?? []),
+        ...(ctx.pendingTriggers ?? []),
+      ],
+      sourceNames: ['Doppelganger'],
+      virtualOnly: true,
+    }
+    next.phase = 'copy'
+    return settle(next)
+  }
 
   for (const pending of ctx.pendingDiscards ?? []) {
     const owner = findPlayer(next, pending.playerId)
@@ -2669,7 +2740,8 @@ export function playCardCopy(
   const sourceName = pending.sourceNames[0]
   if ((sourceName === 'Double Tap' && def.type !== 'attack') ||
     (sourceName === 'Echo Form' && def.type !== 'attack' && def.type !== 'skill') ||
-    (sourceName === 'Burst' && def.type !== 'skill')) return state
+    (sourceName === 'Burst' && def.type !== 'skill') ||
+    (sourceName === 'Doppelganger' && def.type !== 'attack' && def.type !== 'skill')) return state
   if (def.modes) {
     if (!Number.isInteger(context.mode) || context.mode! < 0 || context.mode! >= def.modes.length) return state
   } else if (context.mode !== undefined) return state
@@ -2680,7 +2752,16 @@ export function playCardCopy(
   const copy = next.pendingCardCopy!
   const actor = findPlayer(next, playerId)!
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
-  const ctx = resolutionContext(context, def, copy.card, copy.energySpent)
+  if (def.type === 'attack' || def.type === 'skill') {
+    next.playedCardsThisTurn = [
+      ...(next.playedCardsThisTurn ?? []),
+      {
+        card: forgetRetain(copy.card),
+        copied: copy.virtualOnly === true || copy.sourceNames.length > 1,
+      },
+    ]
+  }
+  const ctx = resolutionContext(context, def, copy.card, copy.energySpent, copy.virtualOnly === true)
   next.log = [...next.log, `${actor.name} played ${def.name}`]
 
   for (const effect of effects) {
@@ -2696,9 +2777,12 @@ export function playCardCopy(
   if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...copy.deferredHavocs,
-      { card: { ...copy.card }, exhaust: copy.forcedExhaust },
+      { card: { ...copy.card }, exhaust: copy.forcedExhaust, virtualOnly: copy.virtualOnly },
     ]
     next.startTurnProgress.forcedCard.pendingTriggers = [...(ctx.pendingTriggers ?? [])]
+    if (copy.deferredTriggers?.length) {
+      next.startTurnProgress.forcedCard.pendingTriggers.push(...copy.deferredTriggers)
+    }
     if (copy.forcedChoices) {
       next.startTurnProgress.choices = copy.forcedChoices.map((choice) => ({ ...choice }))
     }
@@ -2717,7 +2801,27 @@ export function playCardCopy(
     }
   }
   const finalCopy = copy.sourceNames.length === 1
-  if (finalCopy) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  if (ctx.doppelgangerCopy) {
+    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    next.pendingCardCopy = {
+      playerId: actor.id,
+      card: ctx.doppelgangerCopy,
+      energySpent: copy.energySpent,
+      resumePhase: copy.resumePhase,
+      forcedExhaust: false,
+      forcedChoices: copy.forcedChoices,
+      deferredHavocs: [
+        ...copy.deferredHavocs,
+        { card: forgetRetain(copy.card), exhaust: def.exhaust === true || copy.forcedExhaust || corrupt },
+      ],
+      deferredTriggers: [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])],
+      sourceNames: ['Doppelganger'],
+      virtualOnly: true,
+    }
+    next.phase = 'copy'
+    return settle(next)
+  }
+  if (finalCopy && !copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
   for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pendingExhaust.playerId)
     if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
@@ -2761,6 +2865,7 @@ export function playCardCopy(
   delete next.pendingCardCopy
   next.phase = copy.resumePhase
   finishDeferredHavocs(next, actor, copy.deferredHavocs)
+  ctx.pendingTriggers = [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])]
   releasePendingTriggers(next, ctx)
   return finishForcedCardPlay(settle(next), copy.forcedChoices)
 }
@@ -2777,13 +2882,20 @@ export function abandonCardCopy(state: CombatState, playerId: string): CombatSta
   next.phase = copy.resumePhase
   const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
   const ctx = resolutionContext({ enemyUid: null, playerId }, def, copy.card, copy.energySpent)
-  cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  if (!copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
   for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pendingExhaust.playerId)
     if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
   }
-  next.log = [...next.log, `${actor.name}'s original ${def.name} was skipped after disconnecting`]
+  next.log = [...next.log, copy.virtualOnly
+    ? `${actor.name}'s Doppelganger copy of ${def.name} was skipped after disconnecting`
+    : `${actor.name}'s original ${def.name} was skipped after disconnecting`]
   finishDeferredHavocs(next, actor, copy.deferredHavocs)
+  releasePendingTriggers(next, {
+    enemyUid: null,
+    playerId: actor.id,
+    pendingTriggers: copy.deferredTriggers,
+  })
   return finishForcedCardPlay(settle(next), copy.forcedChoices)
 }
 
@@ -2916,6 +3028,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
   next.powerTriggersUsedThisTurn = []
+  next.playedCardsThisTurn = []
   next.startTurnProgress = undefined
   // Where this round's log starts, so the divider can be placed above anything
   // the Start of Turn itself writes.
@@ -4546,6 +4659,7 @@ export function createCombat(
     powerTriggersUsedThisTurn: [],
     pendingTriggers: [],
     nextTriggerId: 0,
+    playedCardsThisTurn: [],
     log: [],
   }
 }

@@ -1968,7 +1968,9 @@ export function CombatScreen({
     : null
   const copyTarget = copySource ? ` for ${pendingDef?.name ?? 'card'} copy (${copySource})` : ''
   const originalTarget = pending?.cardInHand === false
-    ? ` for original ${pendingDef?.name ?? 'card'} after ${state.pendingCardCopy?.sourceNames[0] ?? 'its'} copy`
+    ? state.pendingCardCopy?.virtualOnly
+      ? ` for ${pendingDef?.name ?? 'card'} copy (Doppelganger)`
+      : ` for original ${pendingDef?.name ?? 'card'} after ${state.pendingCardCopy?.sourceNames[0] ?? 'its'} copy`
     : ''
   const normalEnemyPrompt = pending?.hitsRow
     ? state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
@@ -2062,7 +2064,9 @@ export function CombatScreen({
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
         </span>
         <span className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
-          ? `Resolve original ${pendingDef?.name ?? 'card'}`
+          ? state.pendingCardCopy?.virtualOnly
+            ? `Resolve copied ${pendingDef?.name ?? 'card'}`
+            : `Resolve original ${pendingDef?.name ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
           {!viewer.dead && (state.phase === 'player' || state.phase === 'discard') ? (

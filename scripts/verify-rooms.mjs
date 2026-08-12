@@ -5071,6 +5071,67 @@ check('online Burst publishes its queued Skill and keeps the copy owner-authorit
   assertEqual(resolved.players.find((player) => player.id === actor.id).doubledSkillsThisTurn, 0)
 })
 
+check('online Doppelganger uses public co-op history and survives reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const first = room.run.combat.players.find((player) => player.id === a.playerId)
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  const strike = { uid: 'room-doppel-strike', defId: 'strike_ironclad', upgraded: false }
+  const doppelganger = { uid: 'room-doppel', defId: 'doppelganger', upgraded: false }
+  Object.assign(first, { hand: [strike], energy: 1 })
+  Object.assign(silent, {
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 1, strength: 1,
+  })
+  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
+  target.hp = target.maxHp = 10
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: strike.uid, enemyUid: target.uid, preflight: true,
+  })
+  apply(room, b.token, {
+    kind: 'playCard', cardUid: doppelganger.uid, energySpent: 1, preflight: true,
+  })
+  const waiting = snapshotFor(room, a.token).run.combat
+  assertEqual(waiting.phase, 'copy')
+  assertEqual(waiting.pendingCardCopy.card.defId, 'strike_ironclad')
+  assertEqual(waiting.pendingCardCopy.virtualOnly, true)
+  assertEqual(waiting.playedCardsThisTurn.at(-1).card.defId, 'doppelganger')
+  assertEqual(waiting.players.find((player) => player.id === b.playerId).exhaust.length, 0,
+    'Doppelganger cleaned up before its nested copy')
+
+  let denied = null
+  try {
+    apply(room, a.token, {
+      kind: 'playCardCopy', cardUid: waiting.pendingCardCopy.card.uid,
+      enemyUid: target.uid, preflight: true,
+    })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'another seat resolved Doppelganger')
+
+  const abandoned = structuredClone(room)
+  markDisconnected(abandoned, b.token)
+  assertEqual(abandoned.run.combat.phase, 'player')
+  assertEqual(abandoned.run.combat.pendingCardCopy, undefined)
+  assertDeepEqual(
+    abandoned.run.combat.players.find((player) => player.id === b.playerId).exhaust.map((card) => card.uid),
+    [doppelganger.uid],
+  )
+
+  const rejoined = joinRoom(room, { token: b.token })
+  const resumed = snapshotFor(room, rejoined.token).run.combat
+  assertEqual(resumed.pendingCardCopy.card.defId, 'strike_ironclad')
+  apply(room, rejoined.token, {
+    kind: 'playCardCopy', cardUid: resumed.pendingCardCopy.card.uid,
+    enemyUid: target.uid, preflight: true,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, 7)
+  const resolvedSilent = room.run.combat.players.find((player) => player.id === b.playerId)
+  assertEqual(resolvedSilent.discard.some((card) => card.uid.endsWith(':copy')), false)
+  assertDeepEqual(resolvedSilent.exhaust.map((card) => card.uid), [doppelganger.uid])
+})
+
 check('Bullet Time hand discounts survive reconnect without leaking private card identities', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

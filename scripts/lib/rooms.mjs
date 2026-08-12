@@ -1340,8 +1340,11 @@ function redactCombat(combat, viewerId) {
       forcedExhaust: combat.pendingCardCopy.forcedExhaust,
       forcedChoices: structuredClone(combat.pendingCardCopy.forcedChoices),
       deferredHavocs: structuredClone(combat.pendingCardCopy.deferredHavocs),
+      deferredTriggers: structuredClone(combat.pendingCardCopy.deferredTriggers ?? []),
       sourceNames: structuredClone(combat.pendingCardCopy.sourceNames),
+      virtualOnly: combat.pendingCardCopy.virtualOnly === true,
     } : undefined,
+    playedCardsThisTurn: structuredClone(combat.playedCardsThisTurn ?? []),
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { cardDef } from '../game/cards.ts'
 import type { CombatState } from '../game/combat.ts'
 import type { Room } from '../game/map.ts'
 import type { Player } from '../game/types.ts'
@@ -210,7 +211,7 @@ export function OnlineGame({ onLocal }: Props) {
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
-  const foreignDoubleTap = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
+  const foreignCardCopy = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
   const triggerOwner = snapshot.seats.find((seat) =>
     seat.playerId === run.combat?.pendingTriggers[0]?.playerId)
   const foreignTrigger = triggerOwner !== undefined && triggerOwner.playerId !== snapshot.you.playerId
@@ -221,6 +222,7 @@ export function OnlineGame({ onLocal }: Props) {
     rng: { seed: 0, calls: 0 },
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
+    playedCardsThisTurn: run.combat.playedCardsThisTurn ?? [],
     players: run.combat.players.map(playerForUi),
   } satisfies CombatState : null
 
@@ -245,8 +247,10 @@ export function OnlineGame({ onLocal }: Props) {
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {foreignCardChoice && cardChoiceSeat?.connected
         ? <p className="online-banner" role="status">{cardChoiceSeat.name} is resolving {
-          foreignDoubleTap
-            ? `the original card after a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
+          foreignCardCopy
+            ? run.combat?.pendingCardCopy?.virtualOnly
+              ? `a ${cardDef(run.combat.pendingCardCopy.card.defId).name} copy (Doppelganger)`
+              : `the original card after a ${run.combat?.pendingCardCopy?.sourceNames[0] ?? 'card'} copy`
             : 'a revealed card'
         }…</p>
         : null}

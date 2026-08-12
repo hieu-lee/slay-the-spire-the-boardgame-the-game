@@ -61,8 +61,11 @@ export type VisibleCombat = {
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: { card: CardInstance; exhaust: boolean }[]
-    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst')[]
+    deferredTriggers?: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
+    sourceNames: ('Double Tap' | 'Echo Form' | 'Burst' | 'Doppelganger')[]
+    virtualOnly?: boolean
   }
+  playedCardsThisTurn: { card: CardInstance; copied: boolean }[]
   log: string[]
 }
 

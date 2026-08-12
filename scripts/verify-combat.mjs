@@ -2369,6 +2369,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'burst', energy: [E - 1, E] },
     { id: 'bullet_time', energy: [E - 3, E - 2] },
     { id: 'corpse_explosion', poison: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'doppelganger', energySpent: [0, 0], energy: [E, E], exhaust: [1, 0] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -7305,6 +7306,236 @@ check('Corpse Explosion on a boss damages summons in every row', () => {
   state = playCard(state, 'p1', card.uid, { enemyUid: 'boss', playerId: null })
   state = playCard(state, 'p1', finisher.uid, { enemyUid: 'boss', playerId: null })
   assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 4, 4])
+})
+
+check('Doppelganger copies the latest matching co-op card with the copier\'s modifiers', () => {
+  const defend = instance('defend_ironclad')
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  let state = combat([
+    makePlayer({ hand: [defend, strike], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+      strength: 1 }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p2', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 1 })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.pendingCardCopy?.card.defId, 'strike_ironclad')
+  assertEqual(state.players[1].energy, 1)
+  assertDeepEqual(state.players[1].exhaust, [], 'Doppelganger cleaned up before its copy resolved')
+  state = playCardCopy(state, 'p2', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 7, 'the copier\'s Strength did not modify the copied Strike')
+  assertDeepEqual(state.players[1].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.players[1].discard.some((card) => card.uid.endsWith(':copy')), false,
+    'a virtual copy entered the discard pile')
+  assertEqual(state.playedCardsThisTurn.at(-1)?.card.defId, 'strike_ironclad')
+})
+
+check('Doppelganger skips newer mismatched costs and its upgrade does not Exhaust', () => {
+  const firstStrike = instance('strike_silent')
+  const defend = instance('defend_silent')
+  const freeStrike = instance('slice')
+  const doppelganger = instance('doppelganger', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [firstStrike, defend, freeStrike, doppelganger], energy: 4,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', firstStrike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', freeStrike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 1 })
+  assertEqual(state.pendingCardCopy?.card.uid, `${doppelganger.uid}:copy`)
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].block, 2)
+  assert(state.players[0].discard.some((card) => card.uid === doppelganger.uid))
+  assert(!state.players[0].exhaust.some((card) => card.uid === doppelganger.uid))
+})
+
+check('Doppelganger with no matching legal card pays and resolves no copy', () => {
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].energy, 0)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.pendingCardCopy, undefined)
+})
+
+check('Doppelganger ignores copies and cards whose current cost does not match X', () => {
+  const copiedStrike = instance('strike_silent')
+  const whirlwind = instance('whirlwind')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state.playedCardsThisTurn = [
+    { card: whirlwind, copied: false },
+    { card: copiedStrike, copied: true },
+  ]
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+})
+
+check('Doppelganger uses a played card current cost, not its expired hand discount', () => {
+  const bulletTime = instance('bullet_time', true)
+  const defend = instance('defend_silent')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [bulletTime, defend], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', bulletTime.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state.players[0].hand.push(doppelganger)
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+})
+
+check('Doppelganger ignores a matching card the copier cannot currently play', () => {
+  const clash = instance('clash')
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  const obstructingSkill = instance('defend_silent')
+  let state = combat([
+    makePlayer({ hand: [clash, strike], energy: 1 }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent',
+      hand: [doppelganger, obstructingSkill], energy: 1,
+    }),
+  ], [makeEnemy()])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', clash.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p2', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.phase, 'player')
+})
+
+check('Doppelganger finishes its nested copy before cleanup and Enraged', () => {
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  let state = {
+    ...combat([makePlayer({ hp: 1, hand: [strike, doppelganger], energy: 2 })], [
+      makeEnemy({ defId: 'gremlin_nob', hp: 2, maxHp: 2 }),
+    ]),
+    turn: 2,
+  }
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hp, 1, 'Enraged fired before the nested copy')
+  assertEqual(state.players[0].exhaust.length, 0, 'Doppelganger cleaned up before the nested copy')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'won')
+  assertEqual(state.players[0].hp, 1, 'the defeated Nob reacted after the nested copy')
+})
+
+check('Burst lets the physical Doppelganger queue exactly one virtual copy', () => {
+  const defend = instance('defend_silent')
+  const burst = instance('burst', true)
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [defend, burst, doppelganger], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', burst.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.pendingCardCopy?.sourceNames[0], 'Burst')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.pendingCardCopy?.sourceNames[0], 'Doppelganger')
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+  assertDeepEqual(state.players[0].exhaust, [], 'Doppelganger cleaned up before its nested copy')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].block, 2)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.players[0].discard.filter((card) => card.defId === 'defend_silent').length, 1)
+})
+
+check('a Corruption-discounted Burst Doppelganger ignores itself and cannot copy Burst', () => {
+  const slice = instance('slice')
+  const burst = instance('burst')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [slice, burst, doppelganger], energy: 2,
+    powers: [instance('corruption')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', slice.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', burst.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].doubledSkillsThisTurn, 0)
+  assertEqual(state.enemies[0].hp, 9)
+})
+
+check('a completed physical Doppelganger remains public history but its copy does nothing', () => {
+  const slice = instance('slice')
+  const first = instance('doppelganger')
+  const second = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [slice, first, second], energy: 2,
+    powers: [instance('corruption')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', slice.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  assertEqual(state.pendingCardCopy?.card.defId, 'doppelganger')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.enemies[0].hp, 8)
+})
+
+check('replaying the same physical Doppelganger can select its earlier completed play', () => {
+  const doppelganger = instance('doppelganger', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 1,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  state.players[0].hand.push(state.players[0].discard.pop())
+  state.players[0].powers.push(instance('corruption'))
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy?.card.defId, 'doppelganger')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.phase, 'player')
+})
+
+check('Doppelganger respects a copied X card minimum after Corruption', () => {
+  const reinforcedBody = instance('reinforced_body')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [reinforcedBody, doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', reinforcedBody.uid, {
+    enemyUid: null, playerId: 'p1', playerIds: ['p1'], energySpent: 1,
+  })
+  state.players[0].powers.push(instance('corruption'))
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.players[0].block, 2)
 })
 
 check('Double Tap plays the next Attack twice with separate targets and modifiers', () => {

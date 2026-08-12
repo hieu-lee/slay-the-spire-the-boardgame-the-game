@@ -174,6 +174,8 @@ type EffectKind =
   | { kind: 'multiplyPoison'; factor: number }
   /** Attach this physical card; when the enemy dies, damage its row and discard the card. */
   | { kind: 'attachCorpseExplosion'; damage: number }
+  /** Doppelganger: queue the latest matching public play as a free copy. */
+  | { kind: 'copyLastPlayed' }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   | { kind: 'drawToHandSize'; size: number }
   | { kind: 'cycleHand' }
@@ -2286,6 +2288,12 @@ export const CARDS: Record<string, CardDef> = {
     id: 'corpse_explosion', name: 'Corpse Explosion', owner: 'silent', type: 'skill', rarity: 'rare', cost: 2,
     effects: [{ kind: 'poison', amount: 2 }, { kind: 'attachCorpseExplosion', damage: 6 }],
     upgrade: { effects: [{ kind: 'poison', amount: 3 }, { kind: 'attachCorpseExplosion', damage: 10 }] },
+  }),
+  doppelganger: card({
+    id: 'doppelganger', name: 'Doppelganger', owner: 'silent', type: 'skill', rarity: 'rare', cost: 'X',
+    exhaust: true,
+    effects: [{ kind: 'copyLastPlayed' }],
+    upgrade: { exhaust: false },
   }),
   blur: card({
     id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
