@@ -215,6 +215,8 @@ export function OnlineGame({ onLocal }: Props) {
   const triggerOwner = snapshot.seats.find((seat) =>
     seat.playerId === run.combat?.pendingTriggers[0]?.playerId)
   const foreignTrigger = triggerOwner !== undefined && triggerOwner.playerId !== snapshot.you.playerId
+  const discardOwner = snapshot.seats.find((seat) => seat.playerId === snapshot.startTurnDiscard?.playerId)
+  const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const combat = run.combat ? {
@@ -263,10 +265,13 @@ export function OnlineGame({ onLocal }: Props) {
       {foreignTrigger ? <p className="online-banner" role="status">
         Waiting for {triggerOwner.name} to resolve a triggered ability…
       </p> : null}
+      {foreignStartTurnDiscard ? <p className="online-banner" role="status">
+        Waiting for {discardOwner.name} to discard for Tools of the Trade…
+      </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || undefined}
-        aria-disabled={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || undefined}>
+      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}
+        aria-disabled={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}>
       {run.phase === 'combat' && combat ? (
         <CombatScreen
           state={combat}
@@ -280,6 +285,7 @@ export function OnlineGame({ onLocal }: Props) {
           partyStartTurnScryAbilities={snapshot.startTurnScryAbilities}
           startTurnCoordinatorId={snapshot.startTurnCoordinatorId}
           partyStartTurnScry={snapshot.startTurnScry}
+          partyStartTurnDiscard={snapshot.startTurnDiscard}
           savedDiscardOrder={snapshot.discardOrder}
           cardPreview={snapshot.cardPreview}
           authoritativeVersion={snapshot.version}

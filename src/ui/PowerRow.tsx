@@ -295,6 +295,8 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `${effect.amount} Strength`
     case 'draw':
       return `draw ${effect.amount}`
+    case 'drawThenDiscard':
+      return `draw ${effect.amount} card then discard 1 card`
     case 'scry':
       return `Scry ${effect.amount}`
     case 'damage':

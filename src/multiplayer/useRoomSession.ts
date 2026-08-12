@@ -46,6 +46,7 @@ export type VisibleCombat = {
       sources: { playerId: string; sourceId: string }[]
       ordered: boolean
     }
+    discard?: { playerId: string; sourceId: string; pendingTriggers: VisibleCombat['pendingTriggers'] }
     forcedCard?: {
       playerId: string
       cardUid: string | null
@@ -104,6 +105,12 @@ export type RoomSnapshot = {
     playerId: string
     label: string
     amount: number
+    cards: CardInstance[] | null
+  }
+  startTurnDiscard?: {
+    playerId: string
+    sourceId: string
+    label: string
     cards: CardInstance[] | null
   }
   discardOrder?: string[]

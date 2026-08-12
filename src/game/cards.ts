@@ -177,6 +177,8 @@ type EffectKind =
   /** Doppelganger: queue the latest matching public play as a free copy. */
   | { kind: 'copyLastPlayed' }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
+  /** Tools of the Trade: draw, then pause for its owner's private discard choice. */
+  | { kind: 'drawThenDiscard'; amount: number }
   | { kind: 'drawToHandSize'; size: number }
   | { kind: 'cycleHand' }
   /** Prevent this player from drawing again until the next Player Turn. */
@@ -2422,6 +2424,12 @@ export const CARDS: Record<string, CardDef> = {
     persistentEffects: [{ kind: 'limitRoundHpLoss', amount: 1 }],
     effects: [{ kind: 'countdownExhaust', cubes: 2 }],
     upgrade: { effects: [{ kind: 'countdownExhaust', cubes: 3 }] },
+  }),
+  tools_of_the_trade: card({
+    id: 'tools_of_the_trade', name: 'Tools of the Trade', owner: 'silent', type: 'power', rarity: 'rare', cost: 1,
+    trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'drawThenDiscard', amount: 1 }],
+    upgrade: { cost: 0 },
   }),
   bouncing_flask: card({
     id: 'bouncing_flask', name: 'Bouncing Flask', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,

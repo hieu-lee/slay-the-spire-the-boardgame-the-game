@@ -1485,6 +1485,42 @@ await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
 
 await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  const tactician = { uid: 'ui-tools-tactician', defId: 'tactician', upgraded: false }
+  const strike = { uid: 'ui-tools-strike', defId: 'strike_silent', upgraded: false }
+  Object.assign(run.combat, {
+    phase: 'start',
+    startTurnProgress: {
+      choices: [],
+      discard: { playerId: player.id, sourceId: 'power:ui-tools', pendingTriggers: [] },
+    },
+  })
+  Object.assign(player, {
+    character: 'silent', hand: [tactician, strike], draw: [], discard: [], exhaust: [], energy: 3,
+    powers: [{ uid: 'ui-tools', defId: 'tools_of_the_trade', upgraded: false }],
+  })
+  window.__STS_DEBUG__.setRun(run)
+}, colorlessBatch1Restore)
+const toolsDialog = page.getByRole('dialog', { name: /Tools of the Trade — discard 1 card/ })
+await toolsDialog.waitFor()
+const toolsDialogOpen = await toolsDialog.getAttribute('open')
+const toolsDialogCards = await toolsDialog.getByRole('button').count()
+check('Tools of the Trade presents a focused private discard choice', () => {
+  assertEqual(toolsDialogOpen, '')
+  assertEqual(toolsDialogCards, 2)
+})
+await shot('06zlb-tools-of-the-trade-discard')
+await toolsDialog.getByRole('button', { name: /^Tactician/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const toolsResolved = await page.evaluate(() => window.__STS_DEBUG__.getState())
+check('Tools of the Trade resolves its discard reaction and resumes the turn', () => {
+  assertEqual(toolsResolved.players[0].energy, 5)
+  assertEqual(toolsResolved.players[0].exhaust.some((card) => card.uid === 'ui-tools-tactician'), true)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
+
+await page.evaluate((baseline) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(baseline)
   Object.assign(run.combat.players[0], {

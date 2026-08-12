@@ -26,11 +26,13 @@ import {
   resolveEnemyTargets,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
+  resolveStartTurnDiscard,
   resolveStartTurnScry,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
   startTurnAbilities,
+  startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
 } from '../src/game/combat.ts'
@@ -2371,6 +2373,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'corpse_explosion', poison: [2, 3], energy: [E - 2, E - 2] },
     { id: 'doppelganger', energySpent: [0, 0], energy: [E, E], exhaust: [1, 0] },
     { id: 'wraith_form', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'tools_of_the_trade', powers: [1, 1], energy: [E - 1, E] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -3764,6 +3767,65 @@ check('Wraith Form caps round HP loss immediately and Exhausts after its cube th
     const unprotected = enemyTurn({ ...state, phase: 'enemy' })
     assert(unprotected.players[0].hp < 9, 'Wraith Form still protected after Exhausting')
   }
+})
+
+check('Tools of the Trade privately draws then discards and resumes ordered start abilities', () => {
+  const tools = instance('tools_of_the_trade')
+  const fumes = instance('noxious_fumes')
+  const discard = instance('tactician')
+  const drawn = instance('strike_silent')
+  const opening = Array.from({ length: 5 }, () => instance('defend_silent'))
+  const prepared = preparePlayerTurn({
+    ...combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [discard], draw: [...opening, drawn],
+      powers: [tools, fumes], energy: 0,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  const abilities = startTurnAbilities(prepared)
+  const toolsAbility = abilities.find((ability) => ability.label.includes('Tools of the Trade'))
+  const fumesAbility = abilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  assert(toolsAbility && fumesAbility)
+  const paused = resolveStartPlayerTurn(prepared, [
+    { id: toolsAbility.id, shivEnemyUids: [] },
+    { id: fumesAbility.id, enemyUid: prepared.enemies[0].uid, shivEnemyUids: [] },
+  ])
+  const preview = startTurnDiscardPreview(paused)
+  assertEqual(preview?.playerId, 'p1')
+  assertDeepEqual(preview?.cards.map((card) => card.uid), paused.players[0].hand.map((card) => card.uid))
+  assertEqual(resolveStartTurnDiscard(paused, 'forged', preview.sourceId, discard.uid), paused)
+  assertEqual(resolveStartTurnDiscard(paused, 'p1', preview.sourceId, 'forged'), paused)
+  const resolved = resolveStartTurnDiscard(paused, 'p1', preview.sourceId, discard.uid)
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.players[0].energy, 5, 'Tactician discard reaction did not resolve')
+  assertEqual(resolved.enemies[0].poison, 1, 'later ordered Power did not resume')
+  assertEqual(resolved.players[0].exhaust.some((card) => card.uid === discard.uid), true)
+
+  const lethalTools = instance('tools_of_the_trade')
+  const fire = instance('fire_breathing')
+  const lethalFumes = instance('noxious_fumes')
+  const lethalPrepared = preparePlayerTurn({
+    ...combat([makePlayer({
+      hand: [instance('strike_silent')],
+      draw: [...Array.from({ length: 5 }, () => instance('defend_ironclad')), instance('daze')],
+      powers: [lethalTools, fire, lethalFumes],
+    })], [makeEnemy({ hp: 2, maxHp: 2, row: 0 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  const lethalAbilities = startTurnAbilities(lethalPrepared)
+  const lethalToolsAbility = lethalAbilities.find((ability) => ability.label.includes('Tools of the Trade'))
+  const lethalFumesAbility = lethalAbilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  assert(lethalToolsAbility && lethalFumesAbility)
+  const lethalPaused = resolveStartPlayerTurn(lethalPrepared, [
+    { id: lethalToolsAbility.id, shivEnemyUids: [] },
+    { id: lethalFumesAbility.id, enemyUid: lethalPrepared.enemies[0].uid, shivEnemyUids: [] },
+  ])
+  const lethalPreview = startTurnDiscardPreview(lethalPaused)
+  const lethal = resolveStartTurnDiscard(
+    lethalPaused, 'p1', lethalPreview.sourceId, lethalPreview.cards[0].uid,
+  )
+  assertEqual(lethal.phase, 'won')
+  assertEqual(lethal.startTurnProgress, undefined, 'lethal deferred draw reaction left stale start progress')
 })
 
 check('Dark Shackles counts enemies whose current intent attacks its player', () => {

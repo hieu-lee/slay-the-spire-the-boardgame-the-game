@@ -39,11 +39,13 @@ import {
   powerAbilityUsed,
   remainingRoundHpLoss,
   resolveStartPlayerTurn,
+  resolveStartTurnDiscard,
   resolveStartTurnScry,
   resolvePendingTrigger,
   spendMiracle,
   spendShiv,
   startTurnAbilities,
+  startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
   startPlayerTurnWithChoices,
@@ -89,6 +91,7 @@ type CombatScreenProps = {
   partyStartTurnScryAbilities?: StartTurnScryAbility[]
   startTurnCoordinatorId?: string | null
   partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
+  partyStartTurnDiscard?: { playerId: string; sourceId: string; label: string; cards: CardInstance[] | null }
   /** Room snapshot version; omitted for the local table. */
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */
@@ -484,6 +487,7 @@ export function CombatScreen({
   partyStartTurnScryAbilities,
   startTurnCoordinatorId,
   partyStartTurnScry,
+  partyStartTurnDiscard,
   cardPreview,
   authoritativeVersion,
   authoritativeRefresh,
@@ -514,9 +518,11 @@ export function CombatScreen({
   >({})
   const [startTurnScryPicked, setStartTurnScryPicked] = useState<string[]>([])
   const [resolvingStartTurnScry, setResolvingStartTurnScry] = useState(false)
+  const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const startTurnScryDialogRef = useRef<HTMLDialogElement | null>(null)
+  const startTurnDiscardDialogRef = useRef<HTMLDialogElement | null>(null)
   const viewerRowRef = useRef<HTMLDivElement | null>(null)
   const followViewerRow = useRef(true)
   const programmaticScrollTop = useRef<number | null>(null)
@@ -531,6 +537,7 @@ export function CombatScreen({
   const pendingTrigger = pendingTriggerAbility(state)
   const forcedCard = state.startTurnProgress?.forcedCard
   const activeStartTurnScry = partyStartTurnScry ?? (!onAction ? startTurnScryPreview(state) : undefined)
+  const activeStartTurnDiscard = partyStartTurnDiscard ?? (!onAction ? startTurnDiscardPreview(state) : undefined)
   const startTurnScryKey = activeStartTurnScry
     ? `${activeStartTurnScry.playerId}:${activeStartTurnScry.label}:${activeStartTurnScry.cards?.map((card) => card.uid).join(',') ?? 'hidden'}`
     : ''
@@ -710,6 +717,30 @@ export function CombatScreen({
       if (dialog && !dialog.open) dialog.showModal()
     } else if (dialog?.open) dialog.close()
   }, [startTurnScryKey, activeStartTurnScry?.playerId, activeStartTurnScry?.cards, viewerId])
+
+  useEffect(() => {
+    setResolvingStartTurnDiscard(false)
+    const dialog = startTurnDiscardDialogRef.current
+    const owned = activeStartTurnDiscard?.playerId === viewerId && activeStartTurnDiscard.cards !== null
+    if (owned) {
+      if (dialog && !dialog.open) dialog.showModal()
+    } else if (dialog?.open) dialog.close()
+  }, [activeStartTurnDiscard?.playerId, activeStartTurnDiscard?.sourceId,
+    activeStartTurnDiscard?.cards, viewerId])
+
+  async function finishStartTurnDiscard(card: CardInstance) {
+    if (!activeStartTurnDiscard || activeStartTurnDiscard.playerId !== viewerId || resolvingStartTurnDiscard) return
+    setResolvingStartTurnDiscard(true)
+    if (onAction) {
+      await onAction({
+        kind: 'resolveStartTurnDiscard', sourceId: activeStartTurnDiscard.sourceId, discardUid: card.uid,
+      })
+      setResolvingStartTurnDiscard(false)
+      return
+    }
+    onChange?.(resolveStartTurnDiscard(state, viewerId, activeStartTurnDiscard.sourceId, card.uid))
+    setResolvingStartTurnDiscard(false)
+  }
 
   // A teammate can spend Shivs or kill a staged target while this client is
   // choosing Cunning Potion's overflow attacks. Restart a changed count and
@@ -2476,6 +2507,21 @@ export function CombatScreen({
                 ? 'Keep all and continue'
                 : `Discard ${startTurnScryPicked.length} and continue`}
             </button>
+          </div>
+        </dialog>
+      ) : null}
+
+      {activeStartTurnDiscard?.playerId === viewerId && activeStartTurnDiscard.cards ? (
+        <dialog ref={startTurnDiscardDialogRef} className="choice-modal" aria-labelledby="start-turn-discard-title"
+          onCancel={(event) => event.preventDefault()}>
+          <div className="choice-modal__panel">
+            <h2 id="start-turn-discard-title">Tools of the Trade — discard 1 card</h2>
+            <p>Choose one card from your hand. This choice is private.</p>
+            <div className="choice-modal__cards">
+              {activeStartTurnDiscard.cards.map((card) => (
+                <Card key={card.uid} card={card} onClick={() => void finishStartTurnDiscard(card)} />
+              ))}
+            </div>
           </div>
         </dialog>
       ) : null}

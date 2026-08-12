@@ -4808,6 +4808,66 @@ check('Foresight orders private pre-draw choices and rejects replayed actions', 
     'Foresight leaked cards kept and drawn into the owner\'s hand')
 })
 
+check('Tools of the Trade keeps its start-turn hand private and survives reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === b.playerId)
+  const secrets = Array.from({ length: 6 }, (_, index) => ({
+    uid: `room-tools-secret-${index}`,
+    defId: index === 0 ? 'tactician' : index === 5 ? 'daze' : 'strike_silent',
+    upgraded: false,
+  }))
+  Object.assign(room.run.combat, {
+    phase: 'roundEnd', turn: 1, startTurnProgress: undefined, pendingTriggers: [],
+  })
+  Object.assign(actor, {
+    hand: [], draw: secrets, discard: [], exhaust: [], energy: 0,
+    powers: [
+      { uid: 'room-tools', defId: 'tools_of_the_trade', upgraded: false },
+      { uid: 'room-tools-evolve', defId: 'evolve', upgraded: false },
+    ],
+  })
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const owner = snapshotFor(room, b.token)
+  const teammate = snapshotFor(room, a.token)
+  assertEqual(owner.startTurnDiscard.playerId, b.playerId)
+  assertEqual(owner.startTurnDiscard.cards.length, 6)
+  assertEqual(teammate.startTurnDiscard.cards, null)
+  assertDeepEqual(teammate.run.combat.startTurnProgress.discard.pendingTriggers, [],
+    'a private draw reaction queue leaked the drawn card type')
+  assertEqual(teammate.run.combat.nextTriggerId, 0,
+    'the trigger allocator leaked whether the private draw matched a reaction')
+  assert(!secrets.some((card) => allStrings(teammate).includes(card.uid)),
+    'Tools of the Trade leaked its owner\'s hand to a teammate')
+
+  let forged = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurnDiscard', sourceId: owner.startTurnDiscard.sourceId,
+      discardUid: secrets[0].uid,
+    })
+  } catch (error) {
+    forged = error
+  }
+  assertEqual(forged?.name, 'RoomError', 'a teammate resolved another player\'s private discard')
+
+  const disconnected = structuredClone(room)
+  markDisconnected(disconnected, b.token)
+  assertEqual(disconnected.run.combat.phase, 'player', 'a disconnected discard owner held the table')
+  joinRoom(disconnected, { token: b.token })
+  assertEqual(snapshotFor(disconnected, b.token).run.combat.players
+    .find((player) => player.id === b.playerId).handCount, 5)
+
+  apply(room, b.token, {
+    kind: 'resolveStartTurnDiscard', sourceId: owner.startTurnDiscard.sourceId,
+    discardUid: secrets[0].uid,
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.players.find((player) => player.id === b.playerId).energy, 5)
+  assert(!secrets.slice(1).some((card) => allStrings(snapshotFor(room, a.token)).includes(card.uid)),
+    'Tools of the Trade leaked the owner\'s remaining hand after resolution')
+})
+
 check('Indignation chooses no target outside Wrath and upgrades to a row', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

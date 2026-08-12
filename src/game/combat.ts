@@ -71,6 +71,8 @@ export type CombatState = {
     }
     /** The Draw step paused on a trigger before the shared die was rolled. */
     rollPending?: { drewFrom: number }
+    /** Tools of the Trade drew; only its owner may choose the card to discard. */
+    discard?: { playerId: string; sourceId: string; pendingTriggers: PendingTrigger[] }
     forcedCard?: {
       playerId: string
       cardUid: string | null
@@ -173,6 +175,13 @@ export type StartTurnScryPreview = {
 }
 
 export type StartTurnScryAbility = Omit<StartTurnScryPreview, 'cards'>
+
+export type StartTurnDiscardPreview = {
+  playerId: string
+  sourceId: string
+  label: string
+  cards: CardInstance[]
+}
 
 const END_TURN_TARGET = '@'
 export const endTurnChoiceId = (choice: string): string => choice.split(END_TURN_TARGET, 1)[0]!
@@ -1198,6 +1207,20 @@ function applyEffect(
         if (drawn > 0) {
           const line = source ? `${source}: ${target.name} draws ${drawn}` : `${target.name} draws ${drawn}`
           state.log = [...state.log.slice(0, at), line, ...state.log.slice(at)]
+        }
+      }
+      return
+    }
+    case 'drawThenDiscard': {
+      applyEffect(state, actor, { kind: 'draw', amount: effect.amount }, scope, supportScope, context, source)
+      if (actor.hand.length > 0) {
+        state.startTurnProgress = {
+          choices: [],
+          discard: {
+            playerId: actor.id,
+            sourceId: context.sourcePowerUid ? `power:${context.sourcePowerUid}` : '',
+            pendingTriggers: [],
+          },
         }
       }
       return
@@ -3216,7 +3239,8 @@ function loopOrbTargets(state: CombatState, player: Player): EndTurnAbility['tar
 }
 
 function startTurnSources(state: CombatState): StartTurnSource[] {
-  if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending) return []
+  if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
+    state.startTurnProgress?.discard) return []
   const events: TriggerEvent[] = [
     ...(state.turn === 1 ? [{ kind: 'startOfCombat' as const }] : []),
     { kind: 'startOfTurn' },
@@ -3364,7 +3388,8 @@ function startTurnAbilitiesFor(
       }
     }
     if (!planningBlocked && evokePlanComplete) {
-      const privateDraw = entry.source.effects.some((effect) => effect.kind === 'draw')
+      const privateDraw = entry.source.effects.some((effect) =>
+        effect.kind === 'draw' || effect.kind === 'drawThenDiscard')
       const forcedDraw = entry.source.effects.some((effect) => effect.kind === 'drawAndPlayFree')
       if (forcedDraw) {
         planningBlocked = true
@@ -3458,6 +3483,7 @@ export function resolveStartPlayerTurn(
 ): CombatState {
   if (state.phase !== 'start' || state.startTurnProgress?.forcedCard ||
     state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
+    state.startTurnProgress?.discard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
@@ -3560,6 +3586,10 @@ function continueStartTurn(
       next.startTurnProgress.choices = choices.slice(index + 1).map((pending) => ({ ...pending }))
       return settle(next)
     }
+    if (next.startTurnProgress?.discard) {
+      next.startTurnProgress.choices = choices.slice(index + 1).map((pending) => ({ ...pending }))
+      return settle(next)
+    }
     if (combatIsOver(next)) return settle(next)
   }
   next.startTurnProgress = undefined
@@ -3614,6 +3644,41 @@ export function abandonForcedCard(state: CombatState, playerId: string): CombatS
   return finishForcedCardPlay(settle(next), choices)
 }
 
+export function startTurnDiscardPreview(state: CombatState): StartTurnDiscardPreview | undefined {
+  const pending = state.phase === 'start' ? state.startTurnProgress?.discard : undefined
+  const player = pending && findPlayer(state, pending.playerId)
+  const source = player && triggerSourceById(player, pending.sourceId)
+  if (!pending || !player || !source) return undefined
+  return { playerId: player.id, sourceId: pending.sourceId, label: source.name, cards: player.hand }
+}
+
+/** Resolves Tools of the Trade without exposing its owner's hand to the table. */
+export function resolveStartTurnDiscard(
+  state: CombatState,
+  playerId: string,
+  sourceId: string,
+  discardUid: string,
+): CombatState {
+  const preview = startTurnDiscardPreview(state)
+  if (!preview || preview.playerId !== playerId || preview.sourceId !== sourceId ||
+    !preview.cards.some((card) => card.uid === discardUid)) return state
+  const next = clone(state)
+  const pending = next.startTurnProgress!.discard!
+  const choices = [...next.startTurnProgress!.choices]
+  const actor = findPlayer(next, playerId)!
+  const card = actor.hand.find((held) => held.uid === discardUid)!
+  next.startTurnProgress = undefined
+  next.pendingTriggers = [...next.pendingTriggers, ...pending.pendingTriggers]
+  discardByCardEffect(next, actor, [card])
+  flushPendingTriggers(next)
+  if (combatIsOver(next)) return settle(next)
+  if ((next.pendingTriggers?.length ?? 0) > 0) {
+    next.startTurnProgress = { choices }
+    return settle(next)
+  }
+  return continueStartTurn(settle(next), choices)
+}
+
 /** Backwards-compatible deterministic start for simulations with no UI choice. */
 export function startPlayerTurn(state: CombatState): CombatState {
   let prepared = preparePlayerTurn(state)
@@ -3624,9 +3689,17 @@ export function startPlayerTurn(state: CombatState): CombatState {
     if (next === prepared) break
     prepared = next
   }
-  return prepared === state || prepared.phase !== 'start'
+  let resolved = prepared === state || prepared.phase !== 'start'
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  for (let preview = startTurnDiscardPreview(resolved); preview; preview = startTurnDiscardPreview(resolved)) {
+    const card = preview.cards[0]
+    if (!card) break
+    const next = resolveStartTurnDiscard(resolved, preview.playerId, preview.sourceId, card.uid)
+    if (next === resolved) break
+    resolved = next
+  }
+  return resolved
 }
 
 /** Starts a table-facing turn, pausing only when order or overflow matters. */
@@ -4432,6 +4505,11 @@ function resolveTriggerSource(
     applyEffect(state, player, effect, source.scope, source.supportScope, context, source.name)
     if (!allowCombatOver && combatIsOver(state)) return true
   }
+  const privateDiscard = state.startTurnProgress?.discard
+  if (privateDiscard) {
+    privateDiscard.pendingTriggers = pendingTriggers
+    return !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice
+  }
   const forced = state.startTurnProgress?.forcedCard
   if (forced && pendingTriggers.length > 0) {
     forced.pendingTriggers = [...(forced.pendingTriggers ?? []), ...pendingTriggers]
@@ -4557,7 +4635,8 @@ export function resolvePendingTrigger(
   const settled = settle(next)
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.phase === 'start' &&
     settled.startTurnProgress && !settled.startTurnProgress.forcedCard &&
-    !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending) {
+    !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending &&
+    !settled.startTurnProgress.discard) {
     return continueStartTurn(settled, settled.startTurnProgress.choices)
   }
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.endTurnProgress) {

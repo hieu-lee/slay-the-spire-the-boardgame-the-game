@@ -55,11 +55,13 @@ import {
   resolveEnemyTargets,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
+  resolveStartTurnDiscard,
   resolveStartTurnScry,
   spendMiracle,
   spendShiv,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
   validEndTurnOrder,
@@ -254,6 +256,16 @@ function settleForcedCards(room) {
       const next = resolvePendingTrigger(
         combat, pending.playerId, pending.id, pending.rows?.[0]?.row, pending.targets?.[0]?.uid,
       )
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.phase === 'start') {
+      const discard = startTurnDiscardPreview(combat)
+      const owner = room.seats.find((seat) => seat.playerId === discard?.playerId)
+      if (!discard || owner?.connected !== false) break
+      const next = resolveStartTurnDiscard(combat, discard.playerId, discard.sourceId, discard.cards[0]?.uid)
       if (next === combat) break
       room.run = { ...room.run, combat: next }
       combat = next
@@ -501,6 +513,7 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
   if (action?.kind === 'orderStartTurnScries') return orderBeforeDrawScries(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurnScry') return resolveBeforeDrawScry(room, seat, action, seatToken)
+  if (action?.kind === 'resolveStartTurnDiscard') return resolvePrivateStartTurnDiscard(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurn') return resolveStartTurn(room, seat, action, seatToken)
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
@@ -720,6 +733,22 @@ function resolveBeforeDrawScry(room, seat, action, seatToken) {
   }
   const next = resolveStartTurnScry(combat, seat.playerId, action.sourceId, action.discardUids)
   if (next === combat) fail('The Scry choice is stale')
+  room.run = { ...room.run, combat: next }
+  settleForcedCards(room)
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function resolvePrivateStartTurnDiscard(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  const preview = combat && startTurnDiscardPreview(combat)
+  if (!combat || !preview) fail('The party is not resolving a start-turn discard')
+  if (preview.playerId !== seat.playerId) fail('Only the discard owner may see or resolve these cards')
+  if (action.sourceId !== preview.sourceId || typeof action.discardUid !== 'string') {
+    fail('The discard must name one card in hand')
+  }
+  const next = resolveStartTurnDiscard(combat, seat.playerId, action.sourceId, action.discardUid)
+  if (next === combat) fail('The discard choice is stale')
   room.run = { ...room.run, combat: next }
   settleForcedCards(room)
   room.version += 1
@@ -1258,6 +1287,13 @@ export function snapshotFor(room, seatToken) {
         cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
       } : undefined
     })() : undefined,
+    startTurnDiscard: room.run?.combat ? (() => {
+      const preview = startTurnDiscardPreview(room.run.combat)
+      return preview ? {
+        ...preview,
+        cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
+      } : undefined
+    })() : undefined,
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,
@@ -1321,10 +1357,19 @@ function redactCombat(combat, viewerId) {
     phase: combat.phase,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
     pendingTriggers: structuredClone(combat.pendingTriggers ?? []),
-    nextTriggerId: combat.nextTriggerId ?? 0,
+    // Trigger ids are server allocators, not client state. Masking them also
+    // prevents private draw reactions from becoming a count side channel.
+    nextTriggerId: 0,
     startTurnProgress: progress ? {
       choices: structuredClone(progress.choices),
       beforeDraw: progress.beforeDraw ? structuredClone(progress.beforeDraw) : undefined,
+      discard: progress.discard ? {
+        playerId: progress.discard.playerId,
+        sourceId: progress.discard.sourceId,
+        // Draw reactions can reveal the privately drawn card's type. The
+        // authoritative queue stays server-side until the owner discards.
+        pendingTriggers: [],
+      } : undefined,
       forcedCard: progress.forcedCard ? {
         playerId: progress.forcedCard.playerId,
         cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,

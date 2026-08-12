@@ -127,6 +127,7 @@ function effectText(effect: Effect): string {
     case 'attachCorpseExplosion': return `attach this card to the target; when it dies, deal ${effect.damage} damage to its row and discard this card${condition}`
     case 'copyLastPlayed': return 'play a copy of the last Attack or Skill played by any player this turn with cost equal to X'
     case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
+    case 'drawThenDiscard': return `draw ${effect.amount} card then discard 1 card`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
