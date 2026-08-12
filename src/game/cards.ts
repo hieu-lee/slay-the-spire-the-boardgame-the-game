@@ -2555,6 +2555,16 @@ CARDS.daze = {
   effects: [],
 }
 
+CARDS.slimed = {
+  id: 'slimed', name: 'Slimed', owner: 'status', type: 'status', rarity: 'special',
+  cost: 1, exhaust: true, effects: [],
+}
+
+CARDS.burn = {
+  id: 'burn', name: 'Burn', owner: 'status', type: 'status', rarity: 'special',
+  cost: 0, unplayable: true, handEndOfTurn: [{ kind: 'damage', amount: 1 }], effects: [],
+}
+
 export function cardDef(id: string): CardDef {
   const def = CARDS[id]
   if (!def) throw new Error(`unknown card id: ${id}`)

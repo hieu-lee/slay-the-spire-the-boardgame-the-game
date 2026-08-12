@@ -260,7 +260,7 @@ export function createRoomServer({
         if (room.seats.some((seat) => !seat.connected)) {
           return send(response, 409, { error: 'Every seat must be connected before starting' })
         }
-        snapshot = startRun(room, token, { ascension: room.ascension })
+        snapshot = startRun(room, token)
       }
       else if (operation === 'action') {
         const result = apply(room, token, body.action)

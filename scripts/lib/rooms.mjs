@@ -20,13 +20,16 @@ import {
   abandonForcedCard,
   activatePower,
   activatePotion,
+  activateRelic,
   advanceAct,
+  canUpgradeCard,
   cardDef,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardShivChoiceCount,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
+  chooseDistilledCard,
   defaultEndTurnOrder,
   discardOrderIsValid,
   endTurnAbilities,
@@ -38,8 +41,11 @@ import {
   enemyTurn,
   enterRoom,
   faceOf,
+  hasPendingRelicAcquisition,
   leaveRoom,
   overflowShivCount,
+  pendingRelicPreview,
+  pendingRelicEligibleCards,
   orderStartTurnScries,
   pendingTriggerAbility,
   playCard,
@@ -49,17 +55,27 @@ import {
   previewCardCopyChoice,
   potionDef,
   revealCardReward,
+  revealPotionReward,
+  revealRelicReward,
+  resolveRelicReward,
+  resolveBossRelicReward,
+  resolvePotionReward,
   resolveCampfire,
   resolveCardRewards,
   resolveCombat,
   resolveEnemyTargets,
   resolvePendingTrigger,
+  resolvePendingRelic,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
   spendMiracle,
   spendShiv,
+  tradePotion,
+  usePotionOutsideCombat,
+  switchBetweenCombatRow,
   startPlayerTurnWithChoices,
+  startPendingBoss,
   startTurnAbilities,
   startTurnDiscardPreview,
   startTurnScryAbilities,
@@ -238,11 +254,73 @@ export function markDisconnected(room, seatToken) {
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
   // only unstuck if someone re-sent a choice they had already made.
   settleCampfire(room)
+  settlePendingRelics(room)
+  settleDisconnectedRewards(room)
   settleReward(room)
   settleEndTurn(room)
   settleDiscard(room)
   settleForcedCards(room)
   return snapshotFor(room, seatToken)
+}
+
+/** Skip every disconnected seat's public reward stages deterministically. */
+function settleDisconnectedRewards(room) {
+  for (const seat of room.seats.filter((candidate) => candidate.connected === false)) {
+    for (;;) {
+      const run = room.run
+      const offer = run?.phase === 'reward'
+        ? run.rewards.find((candidate) => candidate.playerId === seat.playerId)
+        : undefined
+      if (!run || !offer) break
+      const next = offer.potion !== false
+        ? resolvePotionReward(run, seat.playerId, { kind: 'skip' })
+        : (offer.relic ?? false) !== false
+          ? resolveRelicReward(run, seat.playerId, false)
+          : (offer.bossRelics ?? false) !== false
+            ? resolveBossRelicReward(run, seat.playerId, null)
+            : run
+      if (next === run) break
+      room.run = next
+      room.version += 1
+    }
+    const offer = room.run?.phase === 'reward'
+      ? room.run.rewards.find((candidate) => candidate.playerId === seat.playerId)
+      : undefined
+    if (offer?.cardReward) {
+      room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: null }
+      room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
+    }
+  }
+}
+
+/** Resolve disconnected owners' private acquisition choices with stable defaults. */
+function settlePendingRelics(room) {
+  for (const seat of room.seats) {
+    if (seat.connected !== false) continue
+    for (;;) {
+      const pending = room.run && pendingRelicPreview(room.run, seat.playerId)
+      const player = room.run?.players.find((candidate) => candidate.id === seat.playerId)
+      if (!pending || !player) break
+      const count = {
+        war_paint: 1,
+        whetstone: 1,
+        astrolabe: 3,
+        empty_cage: 2,
+        pandoras_box: 3,
+        tiny_house: 1,
+      }[pending.relicId] ?? 0
+      const eligible = pendingRelicEligibleCards(player, pending.relicId)
+      const resolvedCount = Math.min(count, eligible.length)
+      const next = resolvePendingRelic(
+        room.run,
+        seat.playerId,
+        eligible.slice(0, resolvedCount).map((card) => card.uid),
+        (pending.rewardChoices ?? []).map((choices) => choices.length > 0 ? 0 : -1),
+      )
+      if (next === room.run) break
+      room.run = next
+    }
+  }
 }
 
 function settleForcedCards(room) {
@@ -255,6 +333,7 @@ function settleForcedCards(room) {
       if (!pending || owner?.connected !== false) break
       const next = resolvePendingTrigger(
         combat, pending.playerId, pending.id, pending.rows?.[0]?.row, pending.targets?.[0]?.uid,
+        pending.players?.[0]?.id,
       )
       if (next === combat) break
       room.run = { ...room.run, combat: next }
@@ -295,6 +374,26 @@ function settleForcedCards(room) {
         delete room.cardPreviews[ownerId]
       }
     }
+    while (combat?.phase === 'player' && combat.pendingDistilled && !combat.startTurnProgress?.forcedCard) {
+      const ownerId = combat.pendingDistilled.playerId
+      const owner = room.seats.find((seat) => seat.playerId === ownerId)
+      if (owner?.connected !== false) break
+      const next = chooseDistilledCard(combat, ownerId, combat.pendingDistilled.cards[0]?.uid)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.pendingRelicScry) {
+      const pending = combat.pendingRelicScry
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const next = activateRelic(combat, pending.playerId, pending.relicIndex, { scryDiscardUids: [] })
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
     while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
       const ownerId = combat.startTurnProgress.forcedCard.playerId
       const owner = room.seats.find((seat) => seat.playerId === ownerId)
@@ -327,7 +426,7 @@ function settleForcedCards(room) {
  * which is the very thing `snapshotFor` withholds the rng state to prevent.
  * Tests and playtests pass one explicitly.
  */
-export function startRun(room, seatToken, { seed, ascension = 0 } = {}) {
+export function startRun(room, seatToken, { seed } = {}) {
   findSeat(room, seatToken) ?? fail('Claim a seat before starting')
   if (room.phase !== 'lobby') fail('The run has already started')
   if (room.seats.length === 0) fail('Nobody has claimed a seat')
@@ -337,7 +436,7 @@ export function startRun(room, seatToken, { seed, ascension = 0 } = {}) {
     name: seat.name,
     character: seat.character,
   }))
-  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, ascension)
+  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension)
   room.phase = 'run'
   room.version += 1
   return snapshotFor(room, seatToken)
@@ -353,11 +452,15 @@ export function startRun(room, seatToken, { seed, ascension = 0 } = {}) {
 export function apply(room, seatToken, action) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
+  if (hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
+    fail('Finish the pending Relic acquisition first')
+  }
 
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
   const pendingCopy = room.run.combat?.pendingCardCopy
+  const pendingDistilled = room.run.combat?.pendingDistilled
   const copyForSeat = pendingCopy?.playerId === seat.playerId
   const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
     forcedCard?.playerId === seat.playerId &&
@@ -395,6 +498,9 @@ export function apply(room, seatToken, action) {
     if (action.enemyUid !== undefined && typeof action.enemyUid !== 'string') {
       fail('Triggered ability enemy must be a valid id')
     }
+    if (action.targetPlayerId !== undefined && typeof action.targetPlayerId !== 'string') {
+      fail('Triggered ability player must be a valid id')
+    }
     const combat = room.run.combat
     const next = resolvePendingTrigger(
       combat,
@@ -402,6 +508,7 @@ export function apply(room, seatToken, action) {
       action.triggerId,
       action.enemyRow,
       action.enemyUid,
+      action.targetPlayerId,
     )
     if (next === combat) fail('That triggered ability target is no longer legal')
     room.run = { ...room.run, combat: next }
@@ -416,6 +523,15 @@ export function apply(room, seatToken, action) {
   if (pendingCopy && !(copyForSeat &&
     (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy'))) {
     fail(copyForSeat ? 'Finish resolving the original card' : 'Wait for the original card')
+  }
+  if (pendingDistilled && !room.run.combat?.startTurnProgress?.forcedCard &&
+    !(room.run.combat?.pendingTriggers?.length) && !room.run.combat?.pendingCardCopy &&
+    action?.kind !== 'chooseDistilledCard') {
+    fail(pendingDistilled.playerId === seat.playerId ? 'Choose the next Distilled Chaos card' : 'Wait for Distilled Chaos')
+  }
+  const pendingRelicScry = room.run.combat?.pendingRelicScry
+  if (pendingRelicScry && action?.kind !== 'activateRelic') {
+    fail(pendingRelicScry.playerId === seat.playerId ? 'Finish Golden Eye Scry' : 'Wait for Golden Eye')
   }
 
   if (action?.kind === 'previewCardCopy') {
@@ -518,6 +634,8 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'discardHand') return submitDiscard(room, seat, action, seatToken)
   if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
   if (room.run.combat?.phase === 'start' && !(
+    action?.kind === 'activateRelic' ||
+    action?.kind === 'usePotion' ||
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the Start-of-Turn abilities')
@@ -559,6 +677,8 @@ export function apply(room, seatToken, action) {
     room.rewardChoices = undefined
     room.rewardConfirmed = undefined
   }
+  settleDisconnectedRewards(room)
+  settleReward(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -699,6 +819,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
   if (!Array.isArray(choices) || choices.length > UID_LIMIT || choices.some((choice) =>
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
     (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
+    (choice.targetPlayerId !== undefined && typeof choice.targetPlayerId !== 'string') ||
     choice.shivEnemyUids.length > CAPS.shivs ||
     choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string') ||
     (choice.evokeSlots !== undefined && (!Array.isArray(choice.evokeSlots) ||
@@ -710,6 +831,7 @@ function resolveStartTurn(room, seat, action, seatToken) {
   const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
     id: choice.id,
     enemyUid: choice.enemyUid,
+    targetPlayerId: choice.targetPlayerId,
     shivEnemyUids: [...choice.shivEnemyUids],
     evokeSlots: slotList(choice.evokeSlots),
     evokeEnemyUids: targetList(choice.evokeEnemyUids),
@@ -825,12 +947,26 @@ function campfire(room, seat, action, seatToken) {
   // not exactly 'rest' as a Smith, and a Smith naming no card silently does
   // nothing — so 'Rest' with a capital R quietly burned a seat's only heal.
   const choice = action.choices?.[seat.playerId]
-  if (!choice || (choice.choice !== 'rest' && choice.choice !== 'smith')) {
-    fail('Choose Rest or Smith')
+  if (!choice || !['rest', 'smith', 'leave'].includes(choice.choice)) {
+    fail('Choose Rest, Smith, or Leave')
   }
+  const player = run.players.find((candidate) => candidate.id === seat.playerId)
+  if (choice.choice === 'rest' && player?.relics.some((relic) => relic.defId === 'coffee_dripper')) {
+    fail('Coffee Dripper prevents Resting')
+  }
+  if (choice.choice === 'smith' && player?.relics.some((relic) => relic.defId === 'fusion_hammer')) {
+    fail('Fusion Hammer prevents Smithing')
+  }
+  const restBlocked = player?.relics.some((relic) => relic.defId === 'coffee_dripper')
+  const smithBlocked = player?.relics.some((relic) => relic.defId === 'fusion_hammer') ||
+    !player?.deck.some(canUpgradeCard)
+  if (choice.choice === 'leave' && !(restBlocked && smithBlocked)) fail('Leave only when Rest and Smith are blocked')
+  if (choice.removeCardUid !== undefined && (
+    choice.choice !== 'rest' || !player?.relics.some((relic) => relic.defId === 'peace_pipe') ||
+    !player.deck.some((card) => card.uid === choice.removeCardUid && card.defId !== 'ascenders_bane')
+  )) fail('Peace Pipe can remove one of your cards only while Resting')
   if (choice.choice === 'smith') {
-    const player = run.players.find((candidate) => candidate.id === seat.playerId)
-    const target = player?.deck.find((card) => card.uid === choice.cardUid && !card.upgraded)
+    const target = player?.deck.find((card) => card.uid === choice.cardUid && canUpgradeCard(card))
     if (!target) fail('Choose one of your own cards that is not already upgraded')
   }
 
@@ -883,7 +1019,7 @@ function settleCampfire(room) {
 function cardReward(room, seat, action, seatToken) {
   const run = room.run
   if (run.phase !== 'reward') fail('The party is not choosing rewards')
-  const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
+  const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId && candidate.cardReward)
   if (!offer) fail('This seat has no card reward')
   const choice = action.choice
   if (choice === 'reveal') {
@@ -892,11 +1028,15 @@ function cardReward(room, seat, action, seatToken) {
     room.run = next
     // Revealing changes the information every permanent choice is based on.
     room.rewardConfirmed = undefined
+    settleDisconnectedRewards(room)
     room.version += 1
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (choice === 'confirm') {
-    const undecided = run.rewards.filter((candidate) => !(candidate.playerId in (room.rewardChoices ?? {})))
+    if (run.rewards.some((candidate) => candidate.potion !== false || (candidate.relic ?? false) !== false || (candidate.bossRelics ?? false) !== false)) {
+      fail('Settle every item reward first')
+    }
+    const undecided = run.rewards.filter((candidate) => candidate.cardReward && !(candidate.playerId in (room.rewardChoices ?? {})))
     if (undecided.length > 0) fail('Everyone must choose before rewards are confirmed')
     room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
     room.version += 1
@@ -911,6 +1051,7 @@ function cardReward(room, seat, action, seatToken) {
   room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: choice }
   // Any changed decision reopens the final table confirmation for everyone.
   room.rewardConfirmed = undefined
+  settleDisconnectedRewards(room)
   room.version += 1
   const waiting = settleReward(room)
   return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
@@ -920,15 +1061,15 @@ function settleReward(room) {
   const run = room.run
   if (!run || run.phase !== 'reward' || !room.rewardChoices) return null
   if (!room.seats.some((seat) => seat.connected)) return null
-  const waiting = run.rewards
+  const waiting = run.rewards.filter((offer) => offer.cardReward)
     .filter((offer) => !(offer.playerId in room.rewardChoices))
     .map((offer) => offer.playerId)
   if (waiting.length > 0) return waiting
-  const confirming = run.rewards
+  const confirming = run.rewards.filter((offer) => offer.cardReward)
     .filter((offer) => !(offer.playerId in (room.rewardConfirmed ?? {})))
     .map((offer) => offer.playerId)
   if (confirming.length > 0) return confirming
-  const decisions = Object.fromEntries(run.rewards.map((offer) => [
+  const decisions = Object.fromEntries(run.rewards.filter((offer) => offer.cardReward).map((offer) => [
     offer.playerId,
     room.rewardChoices[offer.playerId],
   ]))
@@ -1142,6 +1283,34 @@ function dispatch(run, seat, action) {
       }
       return combat === run.combat ? run : { ...run, combat }
     }
+    case 'activateRelic': {
+      if (!run.combat || !Number.isInteger(action.relicIndex)) fail('No matching Relic in combat')
+      const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
+      if (!player?.relics[action.relicIndex]) fail('That Relic is not yours')
+      const combat = activateRelic(run.combat, seat.playerId, action.relicIndex, {
+        enemyUid: action.enemyUid ?? null,
+        cardUids: Array.isArray(action.cardUids) ? action.cardUids : [],
+        targetRelicPlayerId: action.targetRelicPlayerId,
+        targetRelicIndex: action.targetRelicIndex,
+        targetAbilityIndex: action.targetAbilityIndex,
+        die: action.die,
+        scryDiscardUids: Array.isArray(action.scryDiscardUids)
+          ? action.scryDiscardUids.filter((uid) => typeof uid === 'string')
+          : undefined,
+        shivEnemyUids: Array.isArray(action.shivEnemyUids)
+          ? action.shivEnemyUids.filter((uid) => typeof uid === 'string')
+          : undefined,
+      })
+      if (combat === run.combat) fail('That Relic activation is not legal')
+      return { ...run, combat }
+    }
+    case 'resolvePendingRelic': {
+      const next = resolvePendingRelic(run, seat.playerId,
+        Array.isArray(action.cardUids) ? action.cardUids : [],
+        Array.isArray(action.rewardIndices) ? action.rewardIndices : [])
+      if (next === run) fail('That Relic choice is not legal')
+      return next
+    }
 
     // The turn is shared, so any seat may advance it — at the table this is
     // one player asking "everyone done?" and nobody objecting.
@@ -1162,6 +1331,12 @@ function dispatch(run, seat, action) {
       if (!run.combat) fail('No combat in progress')
       const combat = spendMiracle(run.combat, seat.playerId)
       return combat === run.combat ? run : { ...run, combat }
+    }
+    case 'chooseDistilledCard': {
+      if (!run.combat) fail('No combat in progress')
+      const combat = chooseDistilledCard(run.combat, seat.playerId, action.cardUid)
+      if (combat === run.combat) fail('That Distilled Chaos choice is not legal')
+      return { ...run, combat }
     }
     case 'spendShiv': {
       if (!run.combat) fail('No combat in progress')
@@ -1185,6 +1360,12 @@ function dispatch(run, seat, action) {
           targetPlayerId: action.targetPlayerId ?? null,
           enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
           shivEnemyUids,
+          recoverDiscardUid: typeof action.recoverDiscardUid === 'string' ? action.recoverDiscardUid : undefined,
+          exhaustUids: Array.isArray(action.exhaustUids)
+            ? action.exhaustUids.filter((uid) => typeof uid === 'string')
+            : undefined,
+          die: Number.isInteger(action.die) ? action.die : undefined,
+          replacePotionId: typeof action.replacePotionId === 'string' ? action.replacePotionId : undefined,
         },
       )
       if (
@@ -1202,7 +1383,7 @@ function dispatch(run, seat, action) {
       return combat === run.combat ? run : { ...run, combat }
     }
     case 'enterRoom':
-      return enterRoom(run, action.roomId)
+      return enterRoom(run, action.roomId, action.useWingBoots === true ? seat.playerId : undefined)
     case 'leaveRoom':
       // A campfire's only exit is everyone having chosen (p.9). Otherwise one
       // misclick walks the party out and costs everybody their Rest.
@@ -1221,8 +1402,66 @@ function dispatch(run, seat, action) {
       return run
     case 'cardReward':
       return run
+    case 'potionReward': {
+      if (run.phase !== 'reward') fail('The party is not choosing rewards')
+      const offer = run.rewards.find((candidate) => candidate.playerId === seat.playerId)
+      if (!offer || offer.potion === false) fail('This seat has no Potion reward')
+      if (action.choice === 'reveal') return revealPotionReward(run, seat.playerId)
+      const decision = action.choice === 'skip' ? { kind: 'skip' }
+        : action.choice === 'gain' ? { kind: 'gain' }
+          : action.choice === 'pass' ? { kind: 'pass', playerId: action.playerId }
+            : action.choice === 'replace' ? { kind: 'replace', potionId: action.potionId }
+              : null
+      if (!decision) fail('Choose a legal Potion reward action')
+      const next = resolvePotionReward(run, seat.playerId, decision)
+      if (next === run) fail('That Potion reward choice is no longer legal')
+      return next
+    }
+    case 'relicReward': {
+      if (!['reveal', 'gain', 'skip'].includes(action.choice)) {
+        fail('Choose reveal, gain, or skip for the Relic reward')
+      }
+      if (action.choice === 'reveal') {
+        const next = revealRelicReward(run, seat.playerId)
+        if (next === run) fail('That Relic reward cannot be revealed')
+        return next
+      }
+      const next = resolveRelicReward(run, seat.playerId, action.choice === 'gain')
+      if (next === run) fail('That Relic reward choice is not legal')
+      return next
+    }
+    case 'bossRelicReward': {
+      if (action.choice !== 'gain' && action.choice !== 'skip') {
+        fail('Choose gain or skip for the boss Relic reward')
+      }
+      if (action.choice === 'gain' && typeof action.relicId !== 'string') {
+        fail('Choose a revealed boss Relic to gain')
+      }
+      if (action.choice === 'skip' && action.relicId !== undefined) {
+        fail('A boss Relic skip cannot name a Relic')
+      }
+      const next = resolveBossRelicReward(run, seat.playerId,
+        action.choice === 'gain' ? action.relicId : null)
+      if (next === run) fail('That boss Relic choice is not legal')
+      return next
+    }
+    case 'tradePotion': {
+      const next = tradePotion(run, seat.playerId, action.playerId, action.potionId)
+      if (next === run) fail('That Potion trade is not legal')
+      return next
+    }
+    case 'usePotionOutsideCombat': {
+      const next = usePotionOutsideCombat(run, seat.playerId, action.potionId,
+        typeof action.replacePotionId === 'string' ? action.replacePotionId : undefined)
+      if (next === run) fail('That Potion cannot be used now')
+      return next
+    }
     case 'advanceAct':
       return advanceAct(run)
+    case 'switchBetweenCombatRow':
+      return switchBetweenCombatRow(run, seat.playerId, action.row)
+    case 'startPendingBoss':
+      return startPendingBoss(run)
     default:
       return fail(`Unknown action: ${action?.kind}`)
   }
@@ -1250,6 +1489,8 @@ function dispatch(run, seat, action) {
 export function snapshotFor(room, seatToken) {
   const seat = findSeat(room, seatToken)
   const viewerId = seat?.playerId ?? null
+  const pendingOwner = room.run?.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
 
   return {
     code: room.code,
@@ -1302,6 +1543,10 @@ export function snapshotFor(room, seatToken) {
       : undefined,
     cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ?? room.run?.combat?.pendingCardCopy?.playerId,
     seats: room.seats.map(seatPublic),
+    pendingRelic: viewerId && room.run ? pendingRelicPreview(room.run, viewerId) : null,
+    pendingRelicStatus: pendingOwner && pendingRelic ? {
+      playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
+    } : null,
     run: room.run ? redactRun(room.run, viewerId) : null,
   }
 }
@@ -1337,6 +1582,7 @@ function redactRun(run, viewerId) {
     ascension: run.ascension,
     act: run.act,
     phase: run.phase,
+    pendingBossDefId: null,
     map: run.map,
     // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
     log: run.log,
@@ -1344,7 +1590,10 @@ function redactRun(run, viewerId) {
     combat: run.combat ? redactCombat(run.combat, viewerId) : null,
     // Full Knowledge (p.8): once any reward is revealed, every player may see
     // it before final decisions. Unrevealed offers still carry choices: null.
-    rewards: run.rewards,
+    rewards: run.rewards.map((offer) => ({
+      ...offer,
+      potionQueue: offer.potionQueue?.map(() => null),
+    })),
   }
 }
 
@@ -1374,6 +1623,7 @@ function redactCombat(combat, viewerId) {
         playerId: progress.forcedCard.playerId,
         cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
         sourceCardId: progress.forcedCard.sourceCardId ?? 'mayhem',
+        sourceLabel: progress.forcedCard.sourceLabel,
         exhaustNonPower: progress.forcedCard.exhaustNonPower === true,
       } : undefined,
     } : undefined,
@@ -1389,7 +1639,23 @@ function redactCombat(combat, viewerId) {
       sourceNames: structuredClone(combat.pendingCardCopy.sourceNames),
       virtualOnly: combat.pendingCardCopy.virtualOnly === true,
     } : undefined,
+    pendingDistilled: combat.pendingDistilled ? {
+      playerId: combat.pendingDistilled.playerId,
+      cards: combat.pendingDistilled.playerId === viewerId
+        ? structuredClone(combat.pendingDistilled.cards)
+        : null,
+    } : undefined,
+    pendingRelicScry: combat.pendingRelicScry ? {
+      playerId: combat.pendingRelicScry.playerId,
+      relicIndex: combat.pendingRelicScry.relicIndex,
+      cards: combat.pendingRelicScry.playerId === viewerId
+        ? structuredClone(combat.pendingRelicScry.cards)
+        : null,
+    } : undefined,
     playedCardsThisTurn: structuredClone(combat.playedCardsThisTurn ?? []),
+    // Pending summons are public telegraphed enemy-card effects; the shuffled
+    // Summons deck itself remains server-only.
+    pendingSummons: structuredClone(combat.pendingSummons ?? []),
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
@@ -1428,6 +1694,7 @@ function redactPlayer(player, viewerId) {
     hpLostThisRound: player.hpLostThisRound ?? 0,
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
+    nextCardCost: player.nextCardCost ?? null,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
     doubledCardsThisTurn: player.doubledCardsThisTurn ?? 0,
     doubledSkillsThisTurn: player.doubledSkillsThisTurn ?? 0,

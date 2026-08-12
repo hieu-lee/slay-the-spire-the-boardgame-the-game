@@ -240,7 +240,15 @@ button:disabled {
 }
 
 .online-mutations {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.online-mutations > .combat,
+.online-mutations > .reward-screen,
+.online-mutations > .room-screen {
+  flex: 1;
 }
 
 .online-banner {
@@ -1050,6 +1058,63 @@ button:disabled {
   color: var(--ink);
   padding: 0.2rem 0.5rem;
   text-transform: capitalize;
+}
+
+.distilled-choice {
+  position: fixed;
+  z-index: 80;
+  inset: 0.5rem;
+  width: auto;
+  max-width: 760px;
+  height: fit-content;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 1rem);
+  margin: auto;
+  padding: 1rem;
+  overflow: auto;
+  text-align: center;
+  background: linear-gradient(160deg, #241d17, #100d0b);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  box-shadow: 0 0 0 100vmax rgb(8 6 5 / 82%), 0 18px 60px #000;
+  animation: prompt-in var(--motion-medium) var(--ease);
+}
+
+.distilled-choice h2,
+.distilled-choice p {
+  margin: 0 0 0.75rem;
+}
+
+.distilled-choice__cards {
+  --card-width: clamp(105px, 15vw, 130px);
+  display: flex;
+  justify-content: safe center;
+  gap: 0.5rem;
+  min-height: calc(var(--card-width) * var(--card-ratio));
+  overflow-x: auto;
+}
+
+.relic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  background: rgb(215 169 75 / 8%);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+}
+
+.relic-actions details {
+  padding: 0.3rem;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+}
+
+.relic-actions button,
+.relic-actions summary,
+.distilled-choice > button {
+  min-height: 44px;
 }
 
 .choice-modal {
@@ -1904,6 +1969,19 @@ button:disabled {
     radial-gradient(circle at 50% 12%, rgb(205 151 56 / 18%), transparent 38%),
     linear-gradient(180deg, #1d1811, #100e0b);
   border: 1px solid var(--line);
+  animation: reward-reveal 180ms ease-out;
+}
+
+.reward-screen__title {
+  width: fit-content;
+  margin: 0 auto 8px;
+  padding: 8px 34px;
+  color: #fff4d0;
+  background: linear-gradient(#8b6b3f, #4d341f);
+  border: 2px solid #cda76a;
+  clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 2px #120b06;
 }
 
 .reward-screen__players {
@@ -1930,6 +2008,14 @@ button:disabled {
   flex: 0 1 clamp(92px, 10vw, 165px);
   flex-direction: column;
   gap: 6px;
+  position: relative;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.reward-screen__choice:focus-within {
+  z-index: 2;
+  transform: translateY(-8px) scale(1.03);
+  filter: drop-shadow(0 0 10px rgb(72 202 228 / 70%));
 }
 
 .reward-screen__cards .card {
@@ -1976,6 +2062,82 @@ button:disabled {
   color: var(--gold);
 }
 
+.reward-screen .reward-screen__skip {
+  border-color: #a84237;
+  color: #ffd4cb;
+  background: linear-gradient(180deg, #762d28, #461b1a);
+  min-height: 44px;
+}
+
+.reward-screen .reward-screen__collect {
+  min-height: 48px;
+  color: #e8fbff;
+  border-color: #55b8cc;
+  background: linear-gradient(180deg, #246b7b, #143d49);
+}
+
+.reward-screen__rare {
+  min-height: 24px;
+  color: #ffe08a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px #bc7e24;
+}
+
+.reward-screen__relic,
+.reward-screen__potion {
+  display: grid;
+  gap: 10px;
+  margin: 12px auto;
+  padding: 16px;
+  max-width: 520px;
+  border: 1px solid rgb(205 167 106 / 70%);
+  background: radial-gradient(circle at 50% 0, rgb(205 151 56 / 22%), rgb(10 9 8 / 82%));
+  box-shadow: 0 0 18px rgb(205 151 56 / 14%);
+}
+
+.reward-screen__relic button,
+.reward-screen__potion button,
+.between-combat button,
+.between-combat select {
+  min-height: 44px;
+}
+
+.outside-potions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-block: 1px solid var(--edge);
+  background: rgb(8 7 6 / 86%);
+  overflow-x: auto;
+}
+
+.outside-potions__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.outside-potions button,
+.outside-potions__targets button {
+  min-height: 44px;
+}
+
+.outside-potions__targets {
+  display: flex;
+  gap: 6px;
+}
+
+@keyframes reward-reveal {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+
 .reward-screen > button {
   display: block;
   margin: 20px auto 0;
@@ -1996,6 +2158,25 @@ button:disabled {
 }
 
 @media (max-width: 720px) {
+  .outside-potions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .outside-potions__item,
+  .outside-potions__targets {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .outside-potions__item {
+    max-width: 100%;
+  }
+
+  .outside-potions__targets {
+    flex: 1 0 100%;
+  }
+
   .reward-screen__cards {
     max-width: 100%;
     justify-content: flex-start;

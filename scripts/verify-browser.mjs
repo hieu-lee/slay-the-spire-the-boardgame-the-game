@@ -452,12 +452,14 @@ await shot('05d-victory')
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'reward', { timeout: 5000 })
 const hiddenRewardRun = await readRun()
 const revealButtons = await page.getByRole('button', { name: /^Reveal 3 for/ }).count()
+const potionSkips = page.getByRole('button', { name: 'Skip Potion unseen' })
 check('card rewards stay face down until each player reveals or skips', () => {
   assertEqual(hiddenRewardRun.rewards.length, 2)
   assert(hiddenRewardRun.rewards.every((offer) => offer.choices === null), 'an offer leaked before reveal')
   assertEqual(revealButtons, 2)
 })
 await shot('05e-card-rewards-hidden')
+while (await potionSkips.count()) await potionSkips.first().click()
 for (const player of hiddenRewardRun.players) {
   await page.getByRole('button', { name: `Reveal 3 for ${player.name}` }).click()
 }
@@ -494,22 +496,21 @@ check('victory reveals three card rewards to every living player', () => {
 })
 await shot('05ea-card-rewards')
 const firstReward = page.locator('.reward-screen__choice').first()
-const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
-const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
-await firstReward.getByRole('button', { name: /^Show .* upgrade$/ }).click()
 const upgradedRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
 const upgradedRewardArt = await firstReward.locator('.card__art').getAttribute('src')
 const previewPressed = await firstReward.getByRole('button', { name: /^Show .* base$/ }).getAttribute('aria-pressed')
+await shot('05eaa-card-reward-upgrade')
+await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
+const baseRewardLabel = await firstReward.locator('.card').getAttribute('aria-label')
+const baseRewardArt = await firstReward.locator('.card__art').getAttribute('src')
 const previewSelected = await firstReward.locator('.card').getAttribute('aria-pressed')
 check('Full Knowledge previews both faces even when the collected reward will be upgraded', () => {
-  assert(!(baseRewardLabel ?? '').includes('+,'), `the base face was not shown first: ${baseRewardLabel}`)
   assert((upgradedRewardLabel ?? '').includes('+,'), `the upgraded face is not announced: ${upgradedRewardLabel}`)
+  assert(!(baseRewardLabel ?? '').includes('+,'), `the base face cannot be previewed: ${baseRewardLabel}`)
   assert(baseRewardArt !== upgradedRewardArt && upgradedRewardArt?.endsWith('+.webp'), 'the art did not flip')
   assertEqual(previewPressed, 'true', 'the upgrade preview control is not announced as pressed')
   assertEqual(previewSelected, 'false', 'previewing an upgrade must not choose the reward')
 })
-await shot('05eaa-card-reward-upgrade')
-await firstReward.getByRole('button', { name: /^Show .* base$/ }).click()
 await page.setViewportSize({ width: 390, height: 844 })
 const mobileRewardLayout = await page.locator('.reward-screen').evaluate((element) => ({
   width: element.clientWidth,
@@ -6187,7 +6188,8 @@ await page.evaluate(() => {
   run.combat.enemies[0].defId = 'fungi_beast'
   debug.setRun(run)
 })
-const longAbilityInspect = await page.locator('.enemy__ability').first().evaluate((ability) => ({
+const longAbilityInspect = await page.locator('.enemy').filter({ hasText: 'Fungi Beast' })
+  .locator('.enemy__ability').evaluate((ability) => ({
   text: ability.textContent ?? '',
   clipped: ability.scrollHeight > ability.clientHeight + 1 || ability.scrollWidth > ability.clientWidth + 1,
 }))
@@ -7042,6 +7044,109 @@ check('Regret stays retained after the rest of the Curse hand is discarded', () 
   assertDeepEqual(curseDiscarded.players[0].hand.map((card) => card.uid), ['curse-regret'])
 })
 
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'potion-seat-reset'))
+const potionSeatIds = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'map'
+  run.combat = null
+  run.players = run.players.map((player) => ({ ...player, potions: ['energy_potion'] }))
+  debug.setRun(run)
+  return run.players.map((player) => player.id)
+})
+await page.getByLabel('Seat').selectOption(potionSeatIds[0])
+await page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true }).click()
+await page.locator('.outside-potions__targets').waitFor()
+await page.getByLabel('Seat').selectOption(potionSeatIds[1])
+await page.locator('.outside-potions__targets').waitFor({ state: 'detached' })
+const inheritedPotionMenu = await page.locator('.outside-potions')
+  .getByRole('button', { name: 'Give Energy Potion', exact: true }).getAttribute('aria-expanded')
+check('switching equal-inventory hot-seat players closes staged Potion actions', () => {
+  assertEqual(inheritedPotionMenu, 'false')
+})
+await page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true }).click()
+await page.locator('.outside-potions__targets').waitFor()
+const potionViewerId = await page.getByLabel('Seat').inputValue()
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const recipient = run.players.find((player) => player.id !== viewerId)
+  sessionStorage.setItem('potion-seat-removed', JSON.stringify(recipient))
+  run.players = run.players.filter((player) => player.id === viewerId)
+  debug.setRun(run)
+}, potionViewerId)
+const soloGive = page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true })
+const soloGiveDisabled = await soloGive.isDisabled()
+const soloGiveExpanded = await soloGive.getAttribute('aria-expanded')
+check('a Potion cannot open an empty Give disclosure with no legal recipient', () => {
+  assert(soloGiveDisabled)
+  assertEqual(soloGiveExpanded, null)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players.push(JSON.parse(sessionStorage.getItem('potion-seat-removed')))
+  debug.setRun(run)
+})
+const restoredGiveExpanded = await page.locator('.outside-potions')
+  .getByRole('button', { name: 'Give Energy Potion', exact: true }).getAttribute('aria-expanded')
+check('restoring a legal Potion recipient does not reopen a stale Give menu', () => {
+  assertEqual(restoredGiveExpanded, 'false')
+})
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion'] }
+    : player)
+  debug.setRun(run)
+}, potionViewerId)
+const localBrewUse = page.locator('.outside-potions').getByRole('button', { name: 'Use Entropic Brew', exact: true })
+await localBrewUse.click()
+await page.locator('.outside-potions__targets').waitFor()
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, relics: [...player.relics, { defId: 'sozu', spent: false }] }
+    : player)
+  debug.setRun(run)
+}, potionViewerId)
+await page.locator('.outside-potions__targets').waitFor({ state: 'detached' })
+const sozuBrewDisabled = await localBrewUse.isDisabled()
+const sozuBrewExpanded = await localBrewUse.getAttribute('aria-expanded')
+check('gaining Sozu closes and disables an open Entropic replacement disclosure', () => {
+  assert(sozuBrewDisabled)
+  assertEqual(sozuBrewExpanded, 'false')
+})
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, relics: player.relics.filter((relic) => relic.defId !== 'sozu'),
+        potions: ['entropic_brew', 'blood_potion', 'energy_potion'] }
+    : player)
+  debug.setRun(run)
+}, potionViewerId)
+await localBrewUse.click()
+await page.locator('.outside-potions__targets').waitFor()
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, dead: true, hp: 0 }
+    : player)
+  debug.setRun(run)
+}, potionViewerId)
+await page.locator('.outside-potions__targets').waitFor({ state: 'detached' })
+const deadPotionActions = await page.locator('.outside-potions').getByRole('button').evaluateAll((buttons) =>
+  buttons.map((button) => ({ name: button.getAttribute('aria-label'), disabled: button.disabled,
+    expanded: button.getAttribute('aria-expanded') })))
+check('a dead seat cannot use or give held Potions', () => {
+  assert(deadPotionActions.every((button) => button.disabled))
+  assert(deadPotionActions.every((button) => button.expanded !== 'true'))
+})
+
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire'))
@@ -7696,6 +7801,84 @@ await copiedHeadbuttChoice.getByRole('button', { name: /^Double Tap\+,/ }).click
 await copiedHeadbuttChoice.getByRole('button', { name: 'Put selected card on top' }).click()
 await page.getByRole('button', { name: /^Red Louse,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+
+// Manual Relics are game actions, not catalog text. Exercise the private,
+// reconnect-shaped Golden Eye interaction at a phone viewport so the card
+// choice remains both reachable and visually reviewable.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.relics = [
+    { defId: 'golden_eye', spent: false },
+    { defId: 'akabeko', spent: false },
+  ]
+  actor.draw = [
+    { uid: 'ui-golden-eye-1', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'ui-golden-eye-2', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-golden-eye-3', defId: 'bash', upgraded: false },
+  ]
+  run.combat.phase = 'player'
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 390, height: 844 })
+await page.getByRole('button', { name: 'Use Golden Eye' }).click()
+const goldenEyePanel = page.getByRole('dialog', { name: 'Golden Eye — Scry 3' })
+await goldenEyePanel.waitFor()
+await page.mouse.move(0, 0)
+await page.waitForTimeout(400)
+const goldenEyeCardCount = await goldenEyePanel.locator('.card').count()
+const competingRelicActions = await page.getByRole('button', { name: 'Use Akabeko' }).count()
+check('manual Relics expose a private mobile card-choice surface', () => {
+  assertEqual(goldenEyeCardCount, 3)
+  assert(competingRelicActions === 0,
+    'other combat actions stayed available during the private Scry')
+})
+await shot('manual-relic-mobile')
+await goldenEyePanel.getByRole('button', { name: /^Strike,/ }).click()
+await goldenEyePanel.getByRole('button', { name: 'Discard 1' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().pendingRelicScry === undefined)
+const afterGoldenEye = await readState()
+check('Golden Eye resolves the selected physical Scry choice', () => {
+  assertEqual(afterGoldenEye.players[0].relics[0].spent, true)
+  assertEqual(afterGoldenEye.players[0].discard.at(-1).uid, 'ui-golden-eye-1')
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  run.combat.phase = 'start'
+  run.combat.die = 3
+  actor.potions = ['gamblers_brew']
+  actor.relics = [
+    { defId: 'dollys_mirror', spent: false },
+    { defId: 'nilrys_codex', spent: false },
+    { defId: 'loaded_die', spent: false },
+    { defId: 'charons_ashes', spent: false },
+    { defId: 'the_abacus', spent: false },
+  ]
+  debug.setRun(run)
+})
+const invalidPostRollRelics = await page.locator('.relic-actions summary').filter({
+  hasText: /Dolly's Mirror|Nilry's Codex|Loaded Die|Charon's Ashes/,
+}).count()
+const validPostRollRelic = await page.getByRole('button', { name: 'Use The Abacus' }).count()
+check('a paused post-roll window shows only Relics matching the rolled face', () => {
+  assertEqual(invalidPostRollRelics, 0)
+  assertEqual(validPostRollRelic, 1)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.startTurnProgress = { choices: [] }
+  debug.setRun(run)
+})
+const relicDuringStartProgress = await page.getByRole('button', { name: 'Use The Abacus' }).count()
+check('private start progress hides post-roll Relic controls', () => {
+  assertEqual(relicDuringStartProgress, 0)
+})
+await shot('manual-relic-post-roll')
+await page.setViewportSize({ width: 1440, height: 900 })
 
 writeFileSync(
   join(outDir, 'summary.json'),

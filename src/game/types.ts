@@ -25,6 +25,8 @@ export const CAPS = {
   potions: 3,
   /** The physical Daze deck is shared by the party. */
   daze: 10,
+  /** The 36 double-sided Burn/Slimed cards share one supply. */
+  status: 36,
 } as const
 
 /** Card definitions are static; instances are what live in a deck. */
@@ -46,6 +48,12 @@ export type RelicInstance = {
   defId: string
   /** "Once per combat" and "once per room" relics flip face down when spent. */
   spent: boolean
+  /** Remaining printed uses for Wing Boots and the upgrade Eggs. */
+  uses?: number
+  /** Holy Water's once-per-combat Energy cubes. */
+  cubes?: number
+  /** Immediate out-of-combat text still waiting for its owner's card choices. */
+  pending?: boolean
 }
 
 export type Player = {
@@ -58,6 +66,8 @@ export type Player = {
   maxHp: number
   block: number
   energy: number
+  /** Snecko's Confusion overrides the next card's printed cost this turn. */
+  nextCardCost?: number | null
   /** The only token kept through the end-of-combat reset (p.13). */
   gold: number
 
@@ -79,6 +89,8 @@ export type Player = {
   drawLocked: boolean
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
+  /** Red Skull remembers whether the draw pile shuffled this combat. */
+  shuffledThisCombat?: boolean
   /** HP already lost this round, including damage and direct HP loss. */
   hpLostThisRound?: number
   /** Apparition caps the total HP this player can lose during this round. */
@@ -87,6 +99,8 @@ export type Player = {
   freeCardsThisTurn?: number
   /** Double Tap makes this many subsequent Attack cards play twice this turn. */
   doubledAttacksThisTurn?: number
+  /** Akabeko adds one Strength for exactly the next Attack, then removes it. */
+  akabekoAttacks?: number
   /** Echo Form makes this many subsequent Attack or Skill cards play twice this turn. */
   doubledCardsThisTurn?: number
   /** Burst makes this many subsequent Skill cards play twice this turn. */
@@ -95,6 +109,13 @@ export type Player = {
   retainCardsThisTurn?: number
   /** FTL checks this public per-turn card-play ledger. Copies count; Shivs do not. */
   cardsPlayedThisTurn?: number
+  /** Mummified Hand checks whether any Power was played this turn. */
+  powerPlayedThisTurn?: boolean
+  /** Act IV's Shield/Spear choice; public and serialized for reconnects. */
+  facingEnemyUid?: string | null
+  damageDealtZeroThisTurn?: boolean
+  /** Calipers preserves Block through exactly the next Reset after activation. */
+  calipersArmed?: boolean
   attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number
@@ -109,6 +130,8 @@ export type Player = {
   starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
+  /** Holy Water's two once-per-combat Energy cubes. */
+  holyWaterCubes?: number
   stance: Stance
   /** Added to each Attack hit while in Wrath, reset between combats. */
   wrathAttackDamageBonus: number
@@ -139,6 +162,12 @@ export type Enemy = {
   row: number
   /** Bosses are treated as being in every row and are hit by every AoE. */
   isBoss: boolean
+  /** Encounter-card override, such as Red Slavers summoned by Taskmaster. */
+  actsLast?: boolean
+  /** Printed alternate rows selected when this enemy card entered play. */
+  ascension?: number
+  /** A mode change printed for the start of the next Player Turn. */
+  pendingDefId?: string
 
   hp: number
   maxHp: number
@@ -155,12 +184,23 @@ export type Enemy = {
   /** Reward printed by the encounter card that spawned this enemy. */
   goldReward: number
   cardReward: 'normal' | 'upgraded' | null
+  potionReward?: boolean
+  relicReward?: boolean
 
   /** Position on a cube-action track. */
   actionIndex: number
 
+  /** Boss form/phase. Ordinary enemies stay at zero. */
+  phase?: number
+
+  /** Grey cube slots already resolved and skipped on later loops. */
+  spentOnceSlots?: number[]
+
   /** Whether this enemy's once-per-combat special ability has fired. */
   abilityUsed: boolean
+
+  /** Cubes on printed enemy ability tracks. */
+  abilityCubes?: number
 
   dead: boolean
 }

@@ -376,7 +376,7 @@ check('an enemy action actually applies Weak to the player in its row', () => {
   const next = enemyTurn(state)
   assertEqual(next.players[0].weak, 1, 'the player sharing the row is Weakened')
   assertEqual(next.players[1].weak, 0, 'a player in another row is not')
-  assertEqual(next.players[0].hp, 8, 'and still takes the attack')
+  assertEqual(next.players[0].hp, 7, 'and still takes the printed 3 damage')
 })
 
 check('a Weak player deals one less damage per hit', () => {
@@ -464,17 +464,17 @@ const withRelic = (defId, over = {}) =>
 
 // Relics were defined but nothing fired them, so a player "had" a relic that
 // did nothing. These pin each trigger point.
-check('a start-of-combat relic fires on turn 1 only', () => {
+check('Akabeko waits for its printed manual once-per-combat activation', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
   let state = createCombat(createRng(5), [withRelic('akabeko', { draw: deck })], [enemy()])
   state = startPlayerTurn(state)
-  assertEqual(state.players[0].strength, 1, 'Akabeko grants 1 Strength at the start of combat')
+  assertEqual(state.players[0].strength, 0, 'Akabeko does not grant digital-style permanent Strength')
 
   // A real round-trip. `startPlayerTurn` on a turn already begun is refused,
   // so the old version never reached turn 2 and asserted nothing.
   state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
   assertEqual(state.turn, 2, 'precondition: the second round must actually begin')
-  assertEqual(state.players[0].strength, 1, 'and it does not fire again on turn 2')
+  assertEqual(state.players[0].strength, 0, 'and it stays inert until its owner activates it')
 })
 
 check('a start-of-combat draw relic fills the hand further', () => {
@@ -547,7 +547,7 @@ check('one player\'s relic never fires for another', () => {
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].strength, 1, 'the owner gets the Strength')
+  assertEqual(state.players[0].strength, 0, 'the owner must activate the once-per-combat effect')
   assertEqual(state.players[1].strength, 0, 'the other player gets nothing')
 })
 

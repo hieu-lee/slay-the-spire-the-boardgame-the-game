@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { CampfireChoice } from '../game/run.ts'
+import { canUpgradeCard } from '../game/run.ts'
+import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { Icon } from './Icon.tsx'
 
 type CampfireScreenProps = {
   players: Player[]
-  onResolve: (choices: Record<string, { choice: CampfireChoice; cardUid?: string }>) => void
+  onResolve: (choices: Record<string, CampfireDecision>) => void
 }
 
-type Decision = { choice: CampfireChoice; cardUid?: string }
+type Decision = CampfireDecision
 
 /**
  * Each player picks Rest or Smith independently (p.9). Nobody moves on until
@@ -23,7 +24,7 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
-    return decision.choice === 'rest' || decision.cardUid !== undefined
+    return decision.choice === 'rest' || decision.choice === 'leave' || decision.cardUid !== undefined
   })
 
   return (
@@ -36,7 +37,12 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
       <div className="campfire__players">
         {living.map((player) => {
           const decision = decisions[player.id]
-          const upgradable = player.deck.filter((card) => !card.upgraded)
+          const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
+          const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
+          const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
+          const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
+          const upgradable = player.deck.filter(canUpgradeCard)
+          const blocked = coffee && (hammer || upgradable.length === 0)
           const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
           return (
             <div className="campfire__player" key={player.id}>
@@ -45,20 +51,26 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
               </span>
 
               <div className="campfire__choices">
+                {blocked ? <button type="button"
+                  className={decision?.choice === 'leave' ? 'is-chosen' : ''}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'leave' } }))}>
+                  Leave <span className="muted">No campfire action available</span>
+                </button> : null}
                 <button
                   type="button"
                   className={decision?.choice === 'rest' ? 'is-chosen' : ''}
+                  disabled={coffee}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
                   }
                 >
                   Rest
-                  <span className="muted"> +3 HP</span>
+                  <span className="muted"> +{restHeal} HP{coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
                 <button
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}
-                  disabled={upgradable.length === 0}
+                  disabled={hammer || upgradable.length === 0}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
                   }
@@ -67,6 +79,14 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
                   <span className="muted"> upgrade</span>
                 </button>
               </div>
+
+              {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
+                {player.deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card}
+                  selected={decision.removeCardUid === card.uid}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
+                    ...decision, removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid,
+                  } }))} />)}
+              </div> : null}
 
               {decision?.choice === 'smith' ? (
                 <>

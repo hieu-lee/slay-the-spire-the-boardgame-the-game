@@ -2,14 +2,28 @@ import { useEffect, useState } from 'react'
 import type { CombatState } from '../game/combat.ts'
 import {
   advanceAct,
+  ASCENSION_RULES,
   createRun,
   enterRoom,
+  hasPendingRelicAcquisition,
   leaveRoom,
   resolveCampfire,
   revealCardReward,
+  revealPotionReward,
+  revealRelicReward,
+  resolveRelicReward,
+  resolveBossRelicReward,
+  resolvePotionReward,
+  pendingRelicPreview,
+  resolvePendingRelic,
   resolveCardRewards,
   resolveCombat,
   roomChoices,
+  startPendingBoss,
+  switchBetweenCombatRow,
+  tradePotion,
+  usePotionOutsideCombat,
+  wingBootChoices,
 } from '../game/run.ts'
 import type { RunState } from '../game/run.ts'
 import { seedFromString } from '../game/rng.ts'
@@ -19,8 +33,11 @@ import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
+import { relicDef } from '../game/relics.ts'
 import { Icon, IconValue } from './Icon.tsx'
 import { OnlineGame } from './OnlineGame.tsx'
+import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -111,6 +128,9 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
   }, [run.combat])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
+  const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
 
   return (
@@ -147,6 +167,10 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
               ))}
             </select>
           </label>
+          <details className="ascension-rules">
+            <summary>Ascension {ascension} modifiers</summary>
+            <ol>{ASCENSION_RULES.slice(1, ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
+          </details>
           <label>
             Seed
             <input
@@ -186,22 +210,66 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
           onChange={(next: CombatState) => setRun((current) => ({ ...current, combat: next }))}
         />
       ) : null}
+      {run.phase !== 'combat' && run.phase !== 'defeat' && !pendingAcquisition ? (
+        <OutsidePotionBar players={run.players} viewerId={viewerId}
+          potionLimit={run.ascension >= 4 ? 2 : 3}
+          onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
+          onUse={(potionId, replacePotionId) => setRun((current) =>
+            usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
+      ) : null}
+      {pendingRelicPreview(run, viewerId) ? <RelicResolvePanel key={pendingRelicPreview(run, viewerId)!.relicId}
+        pending={pendingRelicPreview(run, viewerId)!}
+        deck={viewer?.deck ?? []} onResolve={(cardUids, rewardIndices) => setRun((current) =>
+          resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
+      {pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+        Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
+        <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
+      </section> : null}
 
       {run.phase === 'map' ? (
-        <MapScreen
-          map={run.map}
-          choices={roomChoices(run)}
-          onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))}
-        />
+        <>
+          <MapScreen map={run.map} choices={pendingAcquisition ? [] : roomChoices(run)}
+            onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
+          {!pendingAcquisition && wingBootChoices(run, viewerId).length > 0 ? <section className="room-screen">
+            <strong>Wing Boots</strong>
+            {wingBootChoices(run, viewerId).map((room) => <button type="button" key={room.id}
+              onClick={() => setRun((current) => enterRoom(current, room.id, viewerId))}>
+              Ignore paths to {room.kind}
+            </button>)}
+          </section> : null}
+        </>
       ) : null}
 
-      {run.phase === 'reward' ? (
+      {run.phase === 'reward' && !pendingAcquisition ? (
         <RewardScreen
           players={run.players}
           rewards={run.rewards}
           onReveal={(playerId) => setRun((current) => revealCardReward(current, playerId))}
+          onRevealPotion={(playerId) => setRun((current) => revealPotionReward(current, playerId))}
+          onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
+          onRelic={(playerId, choice) => setRun((current) => choice === 'reveal'
+            ? revealRelicReward(current, playerId) : resolveRelicReward(current, playerId, choice === 'gain'))}
+          onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
           onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
+          potionLimit={run.ascension >= 4 ? 2 : 3}
         />
+      ) : null}
+
+      {run.phase === 'betweenCombat' ? (
+        <section className="room-screen between-combat">
+          <h2>Another boss approaches</h2>
+          <p className="muted">Switch rows now. Relics and once-per-combat effects reset for the next fight.</p>
+          {run.players.filter((player) => !player.dead).map((player) => (
+            <label key={player.id}>{player.name}
+              <select value={player.row} onChange={(event) => setRun((current) =>
+                switchBetweenCombatRow(current, player.id, Number(event.target.value)))}>
+                {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+              </select>
+            </label>
+          ))}
+          <button type="button" disabled={pendingAcquisition}
+            onClick={() => setRun((current) => startPendingBoss(current))}>Face the next boss</button>
+        </section>
       ) : null}
 
       {run.phase === 'room' && roomKind === 'campfire' ? (
@@ -226,10 +294,11 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
 
       {run.phase === 'victory' ? (
         <section className="room-screen">
-          <h2>Act {run.act} complete</h2>
-          <button type="button" onClick={() => setRun((current) => advanceAct(current))}>
+          <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          {run.act < 4 ? <button type="button" disabled={pendingAcquisition}
+            onClick={() => setRun((current) => advanceAct(current))}>
             Climb to Act {run.act + 1}
-          </button>
+          </button> : null}
         </section>
       ) : null}
 

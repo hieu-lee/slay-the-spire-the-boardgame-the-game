@@ -52,5 +52,5 @@ export function cardImagePath(def: CardDef, upgraded: boolean): string {
 }
 
 export function enemyImagePath(def: EnemyDef): string {
-  return `/assets/combat/enemies/${def.id}.webp`
+  return `/assets/combat/enemies/${def.artId ?? def.id}.webp`
 }

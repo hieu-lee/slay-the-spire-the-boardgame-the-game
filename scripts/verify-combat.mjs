@@ -1,8 +1,10 @@
 import {
   activatePower,
   activatePotion,
+  activateRelic,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
+  chooseDistilledCard,
   chosenEvokeOrbs,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
@@ -31,6 +33,7 @@ import {
   spendMiracle,
   spendShiv,
   startPlayerTurn,
+  startPlayerTurnWithChoices,
   startTurnAbilities,
   startTurnDiscardPreview,
   startTurnScryAbilities,
@@ -148,7 +151,7 @@ check('Curl Up fires once, only after HP damage, and can block later hits', () =
   assertEqual(noDamage.enemies[0].block, 0, 'and therefore did not Curl Up')
 })
 
-check('Curl Up resolves between the hits of a multi-hit attack', () => {
+check('Curl Up waits until a multi-hit Attack card is complete', () => {
   const spray = instance('dagger_spray')
   const next = playCard(
     combat(
@@ -159,8 +162,8 @@ check('Curl Up resolves between the hits of a multi-hit attack', () => {
     spray.uid,
     { enemyUid: 'e1', playerId: null },
   )
-  assertEqual(next.enemies[0].hp, 5, 'the first dagger deals damage')
-  assertEqual(next.enemies[0].block, 1, 'Curl Up blocks the second dagger immediately')
+  assertEqual(next.enemies[0].hp, 4, 'both daggers resolve before the reaction')
+  assertEqual(next.enemies[0].block, 2, 'Curl Up gains its printed Block after the card')
 })
 
 check('Spore Cloud applies Vulnerable to its row however the Fungi Beast dies', () => {
@@ -2412,7 +2415,7 @@ check('every newly transcribed card does what its face prints', () => {
     'strike_silent', 'defend_silent', 'neutralize', 'survivor', 'acrobatics',
     'strike_defect', 'defend_defect', 'zap', 'dual_cast', 'chaos', 'recursion',
     'strike_watcher', 'defend_watcher', 'eruption', 'vigilance', 'third_eye',
-    'daze', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
+    'daze', 'slimed', 'burn', 'clumsy', 'decay', 'doubt', 'injury', 'pain', 'parasite', 'regret',
     'shame', 'writhe', 'ascenders_bane',
   ])
   const covered = new Set(CASES.map((spec) => spec.id))
@@ -3373,19 +3376,19 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
 
   const modifiedShiv = combat([makePlayer({
     character: 'defect', shivs: 5,
-    relics: [{ defId: 'akabeko', spent: false }],
+    relics: [{ defId: 'mutagen', spent: false }],
     powers: [instance('infinite_blades'), instance('storm')],
     orbs: ['lightning', 'lightning', 'lightning'],
   })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
   Object.assign(modifiedShiv, { phase: 'roundEnd', turn: 0 })
   const modifiedPrepared = preparePlayerTurn(modifiedShiv)
   const modifiedAbilities = startTurnAbilities(modifiedPrepared)
-  const akabeko = modifiedAbilities.find((ability) => ability.label.includes('Akabeko'))
+  const mutagen = modifiedAbilities.find((ability) => ability.label.includes('Mutagen'))
   const modifiedBlades = modifiedAbilities.find((ability) => ability.label.includes('Infinite Blades'))
   const modifiedStorm = modifiedAbilities.find((ability) => ability.label.includes('Storm'))
   const modifiedPlan = startTurnAbilities(modifiedPrepared,
-    [akabeko.id, modifiedBlades.id, modifiedStorm.id], [
-      { id: akabeko.id, shivEnemyUids: [] },
+    [mutagen.id, modifiedBlades.id, modifiedStorm.id], [
+      { id: mutagen.id, shivEnemyUids: [] },
       { id: modifiedBlades.id, shivEnemyUids: ['e1'] },
       { id: modifiedStorm.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'] },
     ]).find((ability) => ability.id === modifiedStorm.id)
@@ -4307,7 +4310,12 @@ check('Power Through blocks any player but puts its Daze on the caster draw-top'
 check('Flame Barrier damages only enemies whose current intent attacks its player', () => {
   ENEMIES.flame_barrier_multi_hit_fixture = {
     id: 'flame_barrier_multi_hit_fixture', name: 'Multi-hit fixture', hpByPlayers: [5, 5, 5, 5],
-    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
+    ability: {
+      kind: 'furyOnAllyDeath', allyDefId: 'cultist', strength: 0,
+      actions: [{ kind: 'attackSequence', hits: [{ amount: 1 }, { amount: 1 }, { amount: 1 }] }],
+    },
+    ascension: [{ min: 10, pattern: { kind: 'single', actions: [{ kind: 'idle' }] } }],
   }
   try {
     for (const upgraded of [false, true]) {
@@ -4319,7 +4327,8 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
           makeEnemy({ uid: 'boss', row: 2, defId: 'cultist', isBoss: true, hp: 5, maxHp: 5 }),
           makeEnemy({ uid: 'idle', row: 0, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 0 }),
           makeEnemy({ uid: 'off-row-aoe', row: 1, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 1 }),
-          makeEnemy({ uid: 'multi-hit', row: 0, defId: 'flame_barrier_multi_hit_fixture', hp: 5, maxHp: 5 }),
+          makeEnemy({ uid: 'multi-hit', row: 0, defId: 'flame_barrier_multi_hit_fixture', ascension: 10,
+            abilityUsed: true, hp: 5, maxHp: 5 }),
         ]),
         die: 1,
       }
@@ -4330,11 +4339,17 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'boss').hp, 4)
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'idle').hp, 5)
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'off-row-aoe').hp, 4)
-      assertEqual(played.enemies.find((enemy) => enemy.uid === 'multi-hit').hp, 3)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'multi-hit').hp, 2)
     }
   } finally {
     delete ENEMIES.flame_barrier_multi_hit_fixture
   }
+})
+
+check('Snecko next-card cost is the shared displayed and enforced play cost', () => {
+  const bash = faceOf(cardDef('bash'), false)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 0 })), 0)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 3 })), 3)
 })
 
 check('Rampage counts the whole Exhaust pile after its upgraded Exhaust resolves', () => {
@@ -6564,6 +6579,25 @@ check('a Miracle can be spent for Energy only during the Player Turn', () => {
   assertEqual(paid.players[0].energy, 5, 'the Miracle subsidises the card without storing 7 Energy')
 })
 
+check('Miracle cubes are a shared supply usable by every character without trading', () => {
+  const collect = instance('collect')
+  const full = combat([
+    makePlayer({ id: 'p1', character: 'ironclad', miracles: 4 }),
+    makePlayer({ id: 'p2', character: 'watcher', hand: [collect], miracles: 1 }),
+  ], [makeEnemy()])
+  const capped = playCard(full, 'p2', collect.uid, { enemyUid: null, playerId: null })
+  assertEqual(capped.players.reduce((sum, player) => sum + player.miracles, 0), 5,
+    'Collect cannot take a sixth cube from the physical supply')
+
+  const spent = spendMiracle(combat([
+    makePlayer({ id: 'p1', character: 'defect', miracles: 1, energy: 2 }),
+    makePlayer({ id: 'p2', character: 'watcher', miracles: 0, energy: 2 }),
+  ], [makeEnemy()]), 'p1')
+  assertEqual(spent.players[0].miracles, 0, 'another character may use the Miracle mechanic')
+  assertEqual(spent.players[0].energy, 3)
+  assertEqual(spent.players[1].miracles, 0, 'using the token does not transfer it')
+})
+
 check('Shivs are separate attacks and overflow may attack immediately', () => {
   const armed = combat(
     [makePlayer({ character: 'silent', shivs: 2, strength: 1 })],
@@ -7978,6 +8012,208 @@ check('the physical Attack stays outside every pile until both Double Tap resolu
   })
   assertDeepEqual(state.players[0].discard.map((card) => card.uid), [headbutt.uid])
   assertEqual(state.enemies[0].hp, 6)
+})
+
+check('Distilled Chaos privately queues three cards and plays them in the chosen order for free', () => {
+  const first = instance('strike_ironclad')
+  const second = instance('defend_ironclad')
+  const third = instance('strike_ironclad')
+  let state = combat([makePlayer({ draw: [first, second, third], potions: ['distilled_chaos'], energy: 0 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, second.uid, third.uid])
+  state = chooseDistilledCard(state, 'p1', second.uid)
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].energy, 0, 'the first chosen card costs 0')
+  state = chooseDistilledCard(state, 'p1', third.uid)
+  state = playCard(state, 'p1', third.uid, { enemyUid: 'e1', playerId: null })
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 8)
+  assertEqual(state.pendingDistilled, undefined)
+})
+
+check('Liquid Memories makes exactly the recovered card free this turn', () => {
+  const recovered = instance('bash')
+  let state = combat([makePlayer({ discard: [recovered], potions: ['liquid_memories'], energy: 0 })], [makeEnemy()])
+  state = activatePotion(state, 'p1', 'liquid_memories', { recoverDiscardUid: recovered.uid })
+  assertEqual(state.players[0].hand[0].freeThisTurn, true)
+  const played = playCard(state, 'p1', recovered.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(played.players[0].energy, 0)
+})
+
+check('Entropic Brew replaces one held Potion when its two gains exceed the slot limit', () => {
+  const state = createCombat(
+    createRng(42),
+    [makePlayer({ potions: ['entropic_brew', 'block_potion'] })],
+    [makeEnemy()],
+    'entropic-test',
+    ['fire_potion', 'skill_potion', 'weak_potion'],
+    2,
+  )
+  assertEqual(activatePotion(state, 'p1', 'entropic_brew'), state, 'full slots need an explicit replacement')
+  const used = activatePotion(state, 'p1', 'entropic_brew', { replacePotionId: 'block_potion' })
+  assertDeepEqual(used.players[0].potions, ['fire_potion', 'skill_potion'])
+  assertDeepEqual(used.potionDeck, ['weak_potion', 'entropic_brew', 'block_potion'])
+})
+
+check('manual Relics are owner-authoritative, finite, and Akabeko lasts one Attack', () => {
+  const strike = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  let state = combat([makePlayer({
+    hand: [strike, second],
+    relics: [{ defId: 'akabeko', spent: false }, { defId: 'holy_water', spent: false, cubes: 2 }],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assert(activateRelic(state, 'p1', 9) === state, 'a forged Relic index is refused')
+  state = activateRelic(state, 'p1', 0)
+  assertEqual(state.players[0].relics[0].spent, true, 'Akabeko flips after use')
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 8, 'Akabeko adds exactly one Strength to its Attack')
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 7, 'the following Attack gets no Akabeko bonus')
+  state = activateRelic(state, 'p1', 1)
+  assertEqual(state.players[0].relics[1].cubes, 1, 'Holy Water spends one persisted cube')
+  assertEqual(state.players[0].energy, 2, 'the cube grants one Energy after two Strike costs')
+})
+
+check('die-changing Relics are legal only in the post-roll start window', () => {
+  const player = makePlayer({ relics: [{ defId: 'the_abacus', spent: false }] })
+  const playing = combat([player], [makeEnemy()])
+  playing.die = 3
+  assertEqual(activateRelic(playing, 'p1', 0), playing)
+  const starting = { ...playing, phase: 'start' }
+  assertEqual(activateRelic(starting, 'p1', 0).die, 4)
+})
+
+check('the real table turn keeps the post-roll item window open', () => {
+  const player = makePlayer({ potions: ['gamblers_brew'] })
+  const starting = startPlayerTurnWithChoices({ ...combat([player], [makeEnemy()]), phase: 'roundEnd' })
+  assertEqual(starting.phase, 'start')
+  assertEqual(activatePotion(starting, 'p1', 'gamblers_brew', { die: 6 }).die, 6)
+})
+
+check('the post-roll window rejects unrelated manual Relics', () => {
+  const card = instance('defend_ironclad')
+  const state = { ...combat([makePlayer({ hand: [card], relics: [{ defId: 'blue_candle', spent: false }] })],
+    [makeEnemy()]), phase: 'start' }
+  assertEqual(activateRelic(state, 'p1', 0, { cardUids: [card.uid] }), state)
+  const pending = { ...state, players: [{ ...state.players[0], relics: [{ defId: 'the_abacus', spent: false }] }],
+    startTurnProgress: { choices: [] } }
+  assertEqual(activateRelic(pending, 'p1', 0), pending)
+})
+
+check('Gambling Chip rerolls from authoritative RNG and rejects a chosen face', () => {
+  const state = { ...combat([makePlayer({ relics: [{ defId: 'gambling_chip', spent: false }] })], [makeEnemy()]),
+    phase: 'start', die: 1 }
+  assertEqual(activateRelic(state, 'p1', 0, { die: 6 }), state)
+  const first = activateRelic(state, 'p1', 0)
+  const second = activateRelic(structuredClone(state), 'p1', 0)
+  assertEqual(first.die, second.die)
+  assert(first.die >= 1 && first.die <= 6, 'authoritative reroll was outside the die')
+})
+
+check('per-roll Relics activate once and Loaded Die can reroute another owned Relic', () => {
+  const drawn = instance('defend_ironclad')
+  const state = { ...combat([makePlayer({ draw: [drawn], relics: [
+    { defId: 'loaded_die', spent: false }, { defId: 'ink_bottle', spent: false },
+  ] })], [makeEnemy()]), phase: 'start', die: 6 }
+  const used = activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  })
+  assertEqual(used.players[0].hand[0].uid, drawn.uid)
+  assertEqual(used.players[0].relics[0].spent, true)
+  assertEqual(activateRelic(used, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  }), used)
+  assert(!startTurnAbilities(used).some((ability) => ability.label.includes('Loaded Die')),
+    'Loaded Die paid both its Energy and reroute choices')
+})
+
+check("Nilry's Codex cannot reroute its own die ability", () => {
+  const state = { ...combat([makePlayer({ relics: [{ defId: 'nilrys_codex', spent: false }] })], [makeEnemy()]),
+    phase: 'start', die: 4 }
+  assertEqual(activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 0, targetAbilityIndex: 0,
+  }), state)
+})
+
+check('Calipers preserves Block through only the next Reset', () => {
+  let state = combat([makePlayer({ block: 5, relics: [{ defId: 'calipers', spent: false }] })], [makeEnemy()])
+  state = activateRelic(state, 'p1', 0)
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].block, 5)
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].block, 0)
+})
+
+check('Spire Shield no-damage facing effect suppresses player damage for the turn', () => {
+  const strike = instance('strike_ironclad')
+  const state = combat([makePlayer({ hand: [strike], damageDealtZeroThisTurn: true, strength: 3,
+    stance: 'wrath', wrathAttackDamageBonus: 1 })], [makeEnemy({ defId: 'giant_head', vulnerable: 1 })])
+  const played = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(played.enemies[0].hp, 6)
+})
+
+check('Distilled Chaos prunes queued cards moved out of hand by an earlier card', () => {
+  const cards = [instance('fiend_fire'), instance('defend_ironclad'), instance('bash')]
+  let state = combat([makePlayer({ draw: cards, potions: ['distilled_chaos'] })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  state = chooseDistilledCard(state, 'p1', cards[0].uid)
+  state = playCard(state, 'p1', cards[0].uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.startTurnProgress, undefined)
+})
+
+check('Mark of Pain caps combat healing at 6 HP', () => {
+  const state = combat([makePlayer({ hp: 5, maxHp: 10, potions: ['blood_potion'],
+    relics: [{ defId: 'mark_of_pain', spent: false }] })], [makeEnemy()])
+  assertEqual(activatePotion(state, 'p1', 'blood_potion').players[0].hp, 6)
+})
+
+check('Ninja Scroll respects the shared Shiv supply and throws overflow immediately', () => {
+  const initial = combat([
+    makePlayer({ shivs: 0, relics: [{ defId: 'ninja_scroll', spent: false }] }),
+    makePlayer({ id: 'p2', name: 'Silent', shivs: 4 }),
+  ], [makeEnemy()])
+  assertEqual(activateRelic(initial, 'p1', 0), initial, 'overflow needs its immediate target')
+  const used = activateRelic(initial, 'p1', 0, { shivEnemyUids: ['e1'] })
+  assertEqual(used.players.reduce((sum, player) => sum + player.shivs, 0), CAPS.shivs)
+  assertEqual(used.enemies[0].hp, 5)
+  assertEqual(used.players[0].relics[0].spent, true)
+})
+
+check('Oddly Smooth Stone pauses for an explicit living player target', () => {
+  let prepared
+  for (let seed = 1; seed < 100 && !prepared; seed++) {
+    const state = createCombat(createRng(seed), [
+      makePlayer({ relics: [{ defId: 'oddly_smooth_stone', spent: false }] }),
+      makePlayer({ id: 'p2', name: 'Silent' }),
+    ], [makeEnemy()])
+    const started = preparePlayerTurn(state)
+    if (started.die === 4) prepared = started
+  }
+  assert(prepared, 'fixture did not roll the printed 4 face')
+  const ability = startTurnAbilities(prepared).find((candidate) => candidate.label.includes('Oddly Smooth Stone'))
+  assertDeepEqual(ability.players.map((player) => player.id), ['p1', 'p2'])
+  const choices = defaultStartTurnChoices(prepared).map((choice) => choice.id === ability.id
+    ? { ...choice, targetPlayerId: 'p2' }
+    : choice)
+  const resolved = resolveStartPlayerTurn(prepared, choices)
+  assertEqual(resolved.players[0].block, 0)
+  assertEqual(resolved.players[1].block, 2)
+})
+
+check('Golden Eye persists a private Scry choice and validates the revealed cards', () => {
+  const cards = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash'), instance('anger')]
+  const initial = combat([makePlayer({ draw: cards, relics: [{ defId: 'golden_eye', spent: false }] })], [makeEnemy()])
+  const staged = activateRelic(initial, 'p1', 0)
+  assertDeepEqual(staged.pendingRelicScry.cards.map((card) => card.uid), cards.slice(0, 3).map((card) => card.uid))
+  assertEqual(activateRelic(staged, 'p1', 0, { scryDiscardUids: ['forged'] }), staged)
+  const resolved = activateRelic(staged, 'p1', 0, { scryDiscardUids: [cards[1].uid] })
+  assertDeepEqual(resolved.players[0].draw.map((card) => card.uid), [cards[0].uid, cards[2].uid, cards[3].uid])
+  assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [cards[1].uid])
+  assertEqual(resolved.players[0].relics[0].spent, true)
+  assertEqual(resolved.pendingRelicScry, undefined)
 })
 
 report('combat')

@@ -93,6 +93,18 @@ async function snapshot(page) {
   return body
 }
 
+async function roomAction(page, action) {
+  const saved = await credentials(page)
+  const response = await fetch(`${roomOrigin}/api/rooms/${saved.code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': saved.token },
+    body: JSON.stringify({ action }),
+  })
+  const body = await response.json()
+  assert(response.ok, `action failed ${response.status}: ${body.error}`)
+  return body
+}
+
 try {
   suite('online browser')
   const guardedEntry = await cContext.newPage()
@@ -2593,6 +2605,102 @@ try {
   await b.close()
   b = recoveryTab
 
+  // Online item surfaces use the same server-owned state and survive a mobile
+  // reconnect. These fixtures publish through real room actions so both seats
+  // receive the exact redacted snapshots used in production.
+  const itemBaseline = structuredClone(liveRoom.run)
+  const annRun = liveRoom.run.players.find((player) => player.name === 'Ann')
+  liveRoom.run = {
+    ...liveRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
+      potion: false, relic: 'astrolabe', bossRelics: false }],
+  }
+  await roomAction(a, { kind: 'relicReward', choice: 'gain' })
+  await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+  await b.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await a.setViewportSize({ width: 390, height: 844 })
+  const reachableDuringRelic = await a.locator('.room--reachable').count()
+  const wingBootsDuringRelic = await a.getByRole('button', { name: /Ignore paths to/ }).count()
+  await a.screenshot({ path: join(outDir, '08a-mobile-pending-relic.png'), fullPage: true })
+  const pendingOnMobile = (await snapshot(a)).pendingRelic?.relicId
+  check('pending Relic acquisition is exposed on the mobile owner surface', () => {
+    assertEqual(pendingOnMobile, 'astrolabe')
+    assertEqual(reachableDuringRelic, 0, 'map progression stayed focusable behind a mandatory Relic')
+    assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
+  })
+  const astrolabeChoices = a.locator('.campfire__deck button')
+  for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
+  await a.getByRole('button', { name: 'Resolve Relic' }).click()
+  await a.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
+
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
+      potion: null, relic: false, bossRelics: false }],
+  })
+  await roomAction(a, { kind: 'potionReward', choice: 'reveal' })
+  await a.locator('.reward-screen__potion').waitFor()
+  await b.locator('.reward-screen__potion').waitFor()
+  await a.locator('.reward-screen').evaluate(async (screen) => {
+    await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
+  })
+  const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
+  const mobilePotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
+    width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
+  }))
+  check('revealed Potion rewards are shared without foreign controls', () => {
+    assertEqual(foreignPotionGain, 0)
+    assert(mobilePotionLayout.scrollWidth <= mobilePotionLayout.width,
+      'the outside Potion controls overflow the mobile viewport')
+    assert(mobilePotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
+  })
+  await a.screenshot({ path: join(outDir, '08b-mobile-potion-replacement.png'), fullPage: true })
+  await a.locator('.reward-screen__potion').getByRole('button', { name: 'Skip' }).click()
+
+  const annCards = liveRoom.run.players.find((player) => player.id === annRun.id)
+  annCards.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
+  annCards.rareRewards = ['bludgeon']
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: true, choices: null, upgraded: false,
+      potion: false, relic: false, bossRelics: false }],
+  })
+  await roomAction(a, { kind: 'cardReward', choice: 'reveal' })
+  const ticketBadge = a.getByText('Golden Ticket · Rare')
+  await ticketBadge.waitFor()
+  await b.getByText('Golden Ticket · Rare').waitFor()
+  await ticketBadge.scrollIntoViewIfNeeded()
+  const ticketBadgeVisible = await ticketBadge.evaluate((badge) => {
+    const box = badge.getBoundingClientRect()
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
+  })
+  check('Golden Ticket presentation is public after reveal', () => {
+    assert(ticketBadgeVisible, 'the mobile screenshot hides the Golden Ticket source badge')
+  })
+  await a.screenshot({ path: join(outDir, '08c-mobile-golden-ticket.png'), fullPage: true })
+
+  liveRoom.run = { ...itemBaseline, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
+    pendingBossDefId: 'time_eater' }
+  await roomAction(a, { kind: 'switchBetweenCombatRow', row: 1 })
+  await Promise.all([
+    a.getByRole('heading', { name: 'Another boss approaches' }).waitFor(),
+    b.getByRole('heading', { name: 'Another boss approaches' }).waitFor(),
+  ])
+  const hiddenReservedBoss = (await snapshot(b)).run.pendingBossDefId
+  check('A13 regroup is mobile, shared, and keeps the reserved boss hidden', () => {
+    assertEqual(hiddenReservedBoss, null)
+  })
+  await a.screenshot({ path: join(outDir, '08d-mobile-a13-regroup.png'), fullPage: true })
+  liveRoom.run = structuredClone(itemBaseline)
+  Object.assign(liveRoom.run.combat, {
+    phase: 'player', startTurnProgress: undefined, pendingTriggers: [],
+  })
+  const restoredAnn = liveRoom.run.combat.players.find((player) => player.id === annRun.id)
+  Object.assign(restoredAnn, { energy: 0, miracles: 1 })
+  await roomAction(a, { kind: 'spendMiracle' })
+  await a.setViewportSize({ width: 1440, height: 900 })
+  await a.locator('.app-shell--online .combat').waitFor()
+
   const abandonedCombat = liveRoom.run.combat
   const abandonedAnn = abandonedCombat.players.find((player) => player.name === 'Ann')
   const abandonedBo = abandonedCombat.players.find((player) => player.name === 'Bo')
@@ -2636,6 +2744,136 @@ try {
     assert(!liveRoom.run.combat.players.find((player) => player.id === abandonedAnn.id).hand
       .some((card) => card.uid === 'abandoned-acrobatics'))
   })
+
+  const fourContexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext({
+    viewport: { width: 390, height: 844 }, permissions: ['microphone'],
+  })))
+  await Promise.all(fourContexts.map((context) => context.addInitScript(() => {
+    const sockets = []
+    window.__ROOM_SOCKETS__ = sockets
+    window.WebSocket = new Proxy(window.WebSocket, {
+      construct(Target, args) {
+        const socket = new Target(...args)
+        sockets.push(socket)
+        return socket
+      },
+    })
+  })))
+  const fourPages = await Promise.all(fourContexts.map((context) => context.newPage()))
+  fourPages.forEach((page) => {
+    page.on('pageerror', (error) => failures.push(String(error)))
+    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
+  })
+  await enterOnline(fourPages[0], 'Iris', 'ironclad')
+  const fourCode = await fourPages[0].locator('.online-lobby h1').textContent()
+  for (const [index, character] of ['silent', 'defect', 'watcher'].entries()) {
+    await enterOnline(fourPages[index + 1], ['Sable', 'Cobalt', 'Violet'][index], character, fourCode)
+  }
+  await fourPages[0].locator('.online-seat').filter({ hasText: 'online' }).nth(3).waitFor()
+  await fourPages[0].locator('.online-lobby').getByLabel('Ascension').fill('13')
+  await fourPages[0].getByRole('button', { name: 'Enter the Spire' }).click()
+  await Promise.all(fourPages.map((page) => page.locator('.app-shell--online .map').waitFor()))
+  const fourRoom = rooms.store.rooms.get(fourCode)
+  const iris = fourRoom.run.players.find((player) => player.name === 'Iris')
+  iris.potions = ['energy_potion', 'energy_potion', 'energy_potion']
+  Object.assign(fourRoom.run, {
+    phase: 'reward', combat: null, ascension: 0, rewardDestination: 'map',
+    rewards: [{ playerId: iris.id, cardReward: true, choices: null, upgraded: false,
+      potion: false, relic: false, bossRelics: false }],
+  })
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
+  const fourGive = fourPages[0].locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true })
+  const fullPotionBarHeight = await fourPages[0].locator('.outside-potions').evaluate((bar) =>
+    bar.getBoundingClientRect().height)
+  await fourGive.first().click()
+  const expandedDuplicateRows = await fourPages[0].locator('.outside-potions__targets').count()
+  const expandedDuplicateButtons = await fourGive.evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute('aria-expanded')))
+  const expandedTradeLayout = await fourPages[0].locator('.outside-potions').evaluate((bar) => ({
+    width: bar.clientWidth,
+    scrollWidth: bar.scrollWidth,
+    items: [...bar.querySelectorAll('.outside-potions__item, .outside-potions__targets')].map((item) => {
+      const box = item.getBoundingClientRect()
+      return { left: box.left, right: box.right }
+    }),
+  }))
+  check('four-player mobile Potion trading keeps every target inside the viewport', () => {
+    assertEqual(expandedDuplicateRows, 1, 'duplicate Potions opened duplicate trade target groups')
+    assertDeepEqual(expandedDuplicateButtons, ['true', 'false', 'false'])
+    assert(fullPotionBarHeight < 160, 'a full three-Potion inventory stretched into the mobile stage')
+    assert(expandedTradeLayout.scrollWidth <= expandedTradeLayout.width)
+    assert(expandedTradeLayout.items.every((item) => item.left >= 0 && item.right <= 390),
+      `expanded Potion trade overflowed: ${JSON.stringify(expandedTradeLayout.items)}`)
+  })
+  await fourGive.first().click()
+  iris.potions = ['entropic_brew', 'entropic_brew', 'energy_potion']
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: null })
+  const brewUses = fourPages[0].locator('.outside-potions').getByRole('button', { name: 'Use Entropic Brew', exact: true })
+  await brewUses.first().click()
+  const duplicateBrewTargets = await fourPages[0].locator('.outside-potions__targets').count()
+  const expandedBrewButtons = await brewUses.evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute('aria-expanded')))
+  check('duplicate Entropic Brews open one replacement group', () => {
+    assertEqual(duplicateBrewTargets, 1)
+    assertDeepEqual(expandedBrewButtons, ['true', 'false'])
+  })
+  await brewUses.first().click()
+  iris.potions = ['entropic_brew']
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 0 })
+  const immediateBrewExpanded = await fourPages[0].locator('.outside-potions')
+    .getByRole('button', { name: 'Use Entropic Brew', exact: true }).getAttribute('aria-expanded')
+  check('an immediately usable Entropic Brew is not announced as a disclosure', () => {
+    assertEqual(immediateBrewExpanded, null)
+  })
+  const rewardIris = fourRoom.run.players.find((player) => player.id === iris.id)
+  rewardIris.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
+  rewardIris.rareRewards = ['bludgeon']
+  fourRoom.run = {
+    ...fourRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
+    rewards: [{ playerId: rewardIris.id, cardReward: true, choices: null, upgraded: false,
+      potion: null, relic: 'astrolabe', bossRelics: false }],
+  }
+  fourRoom.rewardChoices = undefined
+  fourRoom.rewardConfirmed = undefined
+  await roomAction(fourPages[0], { kind: 'potionReward', choice: 'reveal' })
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
+  await fourPages[1].getByText('Golden Ticket · Rare').waitFor()
+  const fourSeatCount = await fourPages[0].locator('.setup .pip').evaluateAll((pips) =>
+    pips.filter((pip) => /[●○]/.test(pip.textContent ?? '')).length)
+  const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
+  const freshRewardChoice = (await snapshot(fourPages[0])).rewardChoice
+  check('the four-player Golden Ticket fixture starts genuinely undecided', () => {
+    assertEqual(freshRewardChoice, undefined)
+  })
+  await fourPages[0].getByText('Golden Ticket · Rare').scrollIntoViewIfNeeded()
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-mobile-items.png'), fullPage: true })
+  await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
+  await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+  await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
+  await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-mobile-pending-relic.png'), fullPage: true })
+  await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'item reconnect test'))
+  await fourPages[1].locator('.setup .pip', { hasText: 'Iris ○' }).waitFor()
+  await fourPages[0].reload({ waitUntil: 'domcontentloaded' })
+  await fourPages[0].locator('.connection--connected').waitFor()
+  const pendingAfterFourReconnect = (await snapshot(fourPages[0])).pendingRelic
+  check('four-player mobile item rewards settle deterministically across reconnect', () => {
+    assertEqual(fourSeatCount, 4)
+    assertEqual(teammatePotionControls, 0)
+    assertEqual(pendingAfterFourReconnect, null, 'disconnect did not settle the private Relic deterministically')
+  })
+  fourRoom.run = { ...fourRoom.run, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
+    pendingBossDefId: 'time_eater', rewards: [], rewardDestination: null,
+    players: fourRoom.run.players.map((player) => ({ ...player,
+      relics: player.relics.map((relic) => ({ ...relic, pending: undefined })) })) }
+  await roomAction(fourPages[0], { kind: 'switchBetweenCombatRow', row: 3 })
+  await Promise.all(fourPages.map((page) => page.getByRole('heading', { name: 'Another boss approaches' }).waitFor()))
+  const fourBossViews = await Promise.all(fourPages.map(snapshot))
+  check('four-player A13 regroup stays shared and hides the reserved boss', () => {
+    assertEqual(fourRoom.run.players.find((player) => player.id === iris.id).row, 3)
+    assert(fourBossViews.every((view) => view.run.pendingBossDefId === null), 'reserved boss leaked to a seat')
+  })
+  await fourPages[0].screenshot({ path: join(outDir, '10-four-player-mobile-a13.png'), fullPage: true })
+  await Promise.all(fourContexts.map((context) => context.close()))
 
   check('the online flow has no browser errors', () => {
     assertEqual(failures.length, 0, failures.join('\n'))

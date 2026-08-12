@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
-import type { CampfireChoice, CardRewardOffer, RunPhase } from '../game/run.ts'
+import type { CampfireChoice, CardRewardOffer, PendingRelicPreview, RunPhase } from '../game/run.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
@@ -51,6 +51,7 @@ export type VisibleCombat = {
       playerId: string
       cardUid: string | null
       sourceCardId: string
+      sourceLabel?: string
       exhaustNonPower: boolean
     }
   }
@@ -66,7 +67,21 @@ export type VisibleCombat = {
     sourceNames: ('Double Tap' | 'Echo Form' | 'Burst' | 'Doppelganger')[]
     virtualOnly?: boolean
   }
+  pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
+  pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
   playedCardsThisTurn: { card: CardInstance; copied: boolean }[]
+  pendingSummons: {
+    sourceUid: string
+    row: number
+    defIds: string[]
+    turn: number
+    timing?: 'startOfTurn' | 'endOfTurn'
+    direct?: boolean
+    isBoss?: boolean
+    strength?: number
+    strengthDefId?: string
+    strengthPerPower?: boolean
+  }[]
   log: string[]
 }
 
@@ -74,6 +89,7 @@ export type VisibleRun = {
   ascension: number
   act: number
   phase: RunPhase
+  pendingBossDefId: string | null
   map: SpireMap
   log: string[]
   players: VisiblePlayer[]
@@ -88,6 +104,8 @@ export type RoomSnapshot = {
   version: number
   you: PublicSeat
   seats: PublicSeat[]
+  pendingRelic?: PendingRelicPreview | null
+  pendingRelicStatus?: { playerId: string; playerName: string; relicId: string } | null
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
   campfireDecided: string[]
   rewardChoice?: number | null

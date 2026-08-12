@@ -66,11 +66,10 @@ check('player Block is NOT cleared by the Enemy Turn', () => {
 
 check('an enemy gaining Block keeps it on itself, never on a player', () => {
   const state = inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })])
-  const next = enemyTurn({ ...state, die: 5 })
-  assertEqual(next.enemies[0].block, 2, 'on a 5 the Jaw Worm blocks itself for 2')
+  const next = enemyTurn({ ...state, die: 1 })
+  assertEqual(next.enemies[0].block, 1, 'on a 1 the Jaw Worm blocks itself for 1')
   assertEqual(next.players[0].block, 0, 'the player gains nothing')
-  assertEqual(next.enemies[0].strength, 1, 'and gains 1 Strength on that roll')
-  assertEqual(next.players[0].hp, 10, 'that roll carries no attack')
+  assertEqual(next.players[0].hp, 7, 'and its printed attack deals 3')
 })
 
 // Transcribed from the Jaw Worm card: 1-2 is 3 damage + 1 Block, 3-4 is 4
@@ -142,18 +141,19 @@ check('a cube enemy runs its one-time slot then loops past it', () => {
   assertEqual(advanceCube(nob, 1), 1, 'at the bottom it returns to the topmost RED slot, skipping the grey one')
 })
 
-// The Blue Slaver alternates a plain attack with one that Weakens.
-check('a cube enemy walks its track and loops', () => {
+// This printed Blue Slaver variant keys its three rows to the shared die.
+check('a die enemy follows each printed paired row', () => {
   let state = inEnemyPhase([player()], [enemy({ defId: 'blue_slaver', hp: 7 })])
-  state = enemyTurn(state)
-  assertEqual(state.players[0].hp, 9, 'slot 0 is a plain 1-damage attack')
-  assertEqual(state.players[0].weak, 0, 'and applies no Weak')
+  state = enemyTurn({ ...state, die: 1 })
+  assertEqual(state.players[0].hp, 8, 'the low row attacks for 2')
+  assertEqual(state.players[0].weak, 1, 'and applies Weak')
 
-  state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.players[0].weak, 1, 'slot 1 attacks and Weakens')
+  state = enemyTurn({ ...state, phase: 'enemy', die: 3 })
+  assertEqual(state.players[0].hp, 5, 'the middle row is a plain 3-damage attack')
 
-  state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.enemies[0].actionIndex, 1, 'the cube loops back through the track')
+  state = enemyTurn({ ...state, phase: 'enemy', die: 5 })
+  assertEqual(state.players[0].draw.filter((card) => card.defId === 'daze').length, 1,
+    'the high row attacks and adds Daze')
 })
 
 // The Cultist card shows one action with no dice column: 1 damage and 1
@@ -225,10 +225,10 @@ check('a Daze-free roll adds no Daze at all', () => {
 
 check('HP scales with the party size', () => {
   const nob = enemyDef('gremlin_nob')
-  assertEqual(startingHp(nob, 1), 14, 'solo uses the first HP column')
-  assertEqual(startingHp(nob, 3), 42, 'three players use the third column')
-  assertEqual(startingHp(nob, 4), 56, 'four players use the fourth column')
-  assertEqual(startingHp(nob, 9), 56, 'more than four players clamps to the four-player column')
+  assertEqual(startingHp(nob, 1), 15, 'solo uses the first HP column')
+  assertEqual(startingHp(nob, 3), 45, 'three players use the third column')
+  assertEqual(startingHp(nob, 4), 60, 'four players use the fourth column')
+  assertEqual(startingHp(nob, 9), 60, 'more than four players clamps to the four-player column')
 })
 
 check('a full round runs Player Turn then Enemy Turn and repeats', () => {
@@ -542,14 +542,18 @@ check('a fully blocked attack credits the Block, on both sides', () => {
 })
 
 check('an enemy that buffs or debuffs says so, and stays quiet at the cap', () => {
+  const blockingJaw = enemyTurn({
+    ...inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })]),
+    die: 1,
+  })
+  assert(
+    blockingJaw.log.some((line) => /gained 1 Block/.test(line)),
+    `expected a Block line: ${blockingJaw.log.join(' | ')}`,
+  )
   const jaw = enemyTurn({
     ...inEnemyPhase([player()], [enemy({ defId: 'jaw_worm', hp: 10 })]),
     die: 5,
   })
-  assert(
-    jaw.log.some((line) => /gained 2 Block/.test(line)),
-    `expected a Block line: ${jaw.log.join(' | ')}`,
-  )
   assert(
     jaw.log.some((line) => /gained 1 Strength/.test(line)),
     `expected a Strength line: ${jaw.log.join(' | ')}`,
@@ -849,10 +853,6 @@ check('a capped enemy gain is not claimed either', () => {
     !capped.log.some((line) => /gained \d+ Strength/.test(line)),
     `a capped Strength claimed a gain: ${capped.log.join(' | ')}`,
   )
-  assert(
-    capped.log.some((line) => /gained 2 Block/.test(line)),
-    `but Block still happened and should be reported: ${capped.log.join(' | ')}`,
-  )
 })
 
 check('a capped debuff from an enemy is not claimed', () => {
@@ -1007,21 +1007,33 @@ check('the first end-of-turn guard stops a later player acting after the fight',
   )
 })
 
-check('an "acts last" enemy goes after the rest of its row', () => {
+check('an action marked "acts last" changes order only on that die row', () => {
   // The Spike Slime carries actsLast. Bosses-last was pinned; this was not,
   // so the flag could be ignored and the order silently change.
-  const order = enemyActingOrder(
-    inEnemyPhase(
+  const state = inEnemyPhase(
       [player()],
       [
         enemy({ uid: 'slime', row: 2, defId: 'spike_slime', hp: 5 }),
         enemy({ uid: 'louse', row: 0, defId: 'green_louse' }),
         enemy({ uid: 'worm', row: 1, defId: 'jaw_worm', hp: 10 }),
       ],
-    ),
-  ).map((foe) => foe.uid)
+    )
+  const order = enemyActingOrder({ ...state, die: 1 }).map((foe) => foe.uid)
   assertEqual(order[order.length - 1], 'slime', `acts-last should be last: ${order.join(', ')}`)
   assertDeepEqual(order, ['worm', 'louse', 'slime'], 'and the rest go highest row first')
+  assertDeepEqual(
+    enemyActingOrder({ ...state, die: 3 }).map((foe) => foe.uid),
+    ['slime', 'worm', 'louse'],
+    'the Daze row follows ordinary highest-row ordering',
+  )
+})
+
+check('an encounter instance explicitly marked acts-last stays at the end', () => {
+  const state = inEnemyPhase([player()], [
+    enemy({ uid: 'late', row: 3, actsLast: true }),
+    enemy({ uid: 'normal', row: 0 }),
+  ])
+  assertDeepEqual(enemyActingOrder(state).map((enemy) => enemy.uid), ['normal', 'late'])
 })
 
 check('a Weak token is not spent on an attack that hits nothing', () => {
@@ -1099,6 +1111,32 @@ check('a boss reaches every row, even without an area attack', () => {
   for (const seat of next.players) {
     assertEqual(seat.hp, 9, `${seat.id} should have been reached by the boss`)
   }
+})
+
+check('Void spends Energy to Exhaust a drawn Slimed and fires Exhaust effects', () => {
+  const boss = enemy({
+    uid: 'boss', defId: 'awakened_one_phase_2', isBoss: true, hp: 50, maxHp: 50,
+  })
+  const next = startPlayerTurn(createCombat(createRng(98), [player({
+    draw: [instance('slimed')], powers: [instance('feel_no_pain')],
+  })], [boss]))
+  assertEqual(next.players[0].energy, 2, 'Void spends exactly 1 Energy')
+  assertEqual(next.players[0].hand.some((card) => card.defId === 'slimed'), false)
+  assertEqual(next.players[0].exhaust.some((card) => card.defId === 'slimed'), false,
+    'the shared Status returns to its supply')
+  assertEqual(next.players[0].block, 1, 'the Exhaust fires Feel No Pain')
+})
+
+check('Void leaves a drawn Slimed in hand when no Energy can be spent', () => {
+  const trance = instance('battle_trance')
+  const boss = enemy({
+    uid: 'boss', defId: 'awakened_one_phase_2', isBoss: true, hp: 50, maxHp: 50,
+  })
+  const next = playCard(createCombat(createRng(981), [player({
+    energy: 0, hand: [trance], draw: [instance('slimed')],
+  })], [boss]), 'p1', trance.uid, { enemyUid: null, playerId: null })
+  assertEqual(next.players[0].energy, 0)
+  assert(next.players[0].hand.some((card) => card.defId === 'slimed'))
 })
 
 check('an upgraded card is named as upgraded', () => {

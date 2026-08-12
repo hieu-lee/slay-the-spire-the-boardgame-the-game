@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { cardDef } from '../game/cards.ts'
 import type { CombatState } from '../game/combat.ts'
+import { ASCENSION_RULES, hasPendingRelicAcquisition } from '../game/run.ts'
+import { relicDef } from '../game/relics.ts'
 import type { Room } from '../game/map.ts'
 import type { Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
@@ -11,6 +13,8 @@ import { IconValue } from './Icon.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
+import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -40,6 +44,15 @@ function choices(map: { position: string | null; rows: string[][]; rooms: Record
   return map.rooms[map.position]?.exits
     .map((id) => map.rooms[id])
     .filter((room): room is Room => room !== undefined) ?? []
+}
+
+function wingChoices(map: { position: string | null; rows: string[][]; rooms: Record<string, Room> }, player?: VisiblePlayer): Room[] {
+  if (!player?.relics.some((relic) => relic.defId === 'wing_boots' && (relic.uses ?? 0) > 0) || map.position === null) return []
+  const current = map.rooms[map.position]
+  if (!current) return []
+  const normal = new Set(current.exits)
+  return (map.rows[current.row + 1] ?? []).filter((id) => !normal.has(id)).map((id) => map.rooms[id])
+    .filter((room): room is Room => room !== undefined)
 }
 
 function Seat({ seat }: { seat?: PublicSeat }) {
@@ -198,6 +211,10 @@ export function OnlineGame({ onLocal }: Props) {
             Ascension
             <input type="number" min={0} max={13} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))} />
           </label>
+          <details className="ascension-rules">
+            <summary>Ascension {snapshot.ascension} modifiers</summary>
+            <ol>{ASCENSION_RULES.slice(1, snapshot.ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
+          </details>
           <button type="button" disabled={!ready} onClick={room.start}>
             {ready ? 'Enter the Spire' : 'Waiting for every seat to connect'}
           </button>
@@ -209,6 +226,7 @@ export function OnlineGame({ onLocal }: Props) {
 
   const run = snapshot.run
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
+  const pendingAcquisition = hasPendingRelicAcquisition(run)
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const foreignCardCopy = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
@@ -225,6 +243,18 @@ export function OnlineGame({ onLocal }: Props) {
     discardedThisTurn: [],
     stanceChangedThisTurn: [],
     playedCardsThisTurn: run.combat.playedCardsThisTurn ?? [],
+    potionDeck: [],
+    potionLimit: run.ascension >= 4 ? 2 : 3,
+    summonSupply: {},
+    pendingSummons: run.combat.pendingSummons ?? [],
+    pendingDistilled: run.combat.pendingDistilled ? {
+      ...run.combat.pendingDistilled,
+      cards: run.combat.pendingDistilled.cards ?? [],
+    } : undefined,
+    pendingRelicScry: run.combat.pendingRelicScry ? {
+      ...run.combat.pendingRelicScry,
+      cards: run.combat.pendingRelicScry.cards ?? [],
+    } : undefined,
     players: run.combat.players.map(playerForUi),
   } satisfies CombatState : null
 
@@ -293,8 +323,25 @@ export function OnlineGame({ onLocal }: Props) {
           onAction={room.act}
         />
       ) : null}
-      {run.phase === 'map' ? <MapScreen map={run.map} choices={choices(run.map)} onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} /> : null}
-      {run.phase === 'reward' ? (
+      {run.phase !== 'combat' && run.phase !== 'defeat' && !pendingAcquisition ? (
+        <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
+          potionLimit={run.ascension >= 4 ? 2 : 3}
+          onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
+          onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
+      ) : null}
+      {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)} onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
+        {!pendingAcquisition && wingChoices(run.map, viewer).length > 0 ? <section className="room-screen"><strong>Wing Boots</strong>
+          {wingChoices(run.map, viewer).map((target) => <button type="button" key={target.id}
+            onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>Ignore paths to {target.kind}</button>)}
+        </section> : null}</> : null}
+      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={snapshot.pendingRelic.relicId}
+        pending={snapshot.pendingRelic} deck={viewer.deck}
+        onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}
+      {!snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
+        Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
+        {relicDef(snapshot.pendingRelicStatus.relicId).name}.
+      </section> : null}
+      {run.phase === 'reward' && !pendingAcquisition ? (
         <OnlineRewardScreen
           run={run}
           viewerId={snapshot.you.playerId}
@@ -303,6 +350,19 @@ export function OnlineGame({ onLocal }: Props) {
           confirmed={snapshot.rewardConfirmed}
           onAction={room.act}
         />
+      ) : null}
+      {run.phase === 'betweenCombat' ? (
+        <section className="room-screen between-combat">
+          <h2>Another boss approaches</h2>
+          <p className="muted">Choose your row before the second Ascension 13 boss.</p>
+          <label>Your row
+            <select value={viewer?.row ?? 0} onChange={(event) => room.act({ kind: 'switchBetweenCombatRow', row: Number(event.target.value) })}>
+              {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+            </select>
+          </label>
+          <button type="button" disabled={pendingAcquisition}
+            onClick={() => room.act({ kind: 'startPendingBoss' })}>Face the next boss</button>
+        </section>
       ) : null}
       {run.phase === 'room' && roomKind === 'campfire' && viewer ? (
         <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats} onAction={room.act} />
@@ -315,8 +375,9 @@ export function OnlineGame({ onLocal }: Props) {
       ) : null}
       {run.phase === 'victory' ? (
         <section className="room-screen">
-          <h2>Act {run.act} complete</h2>
-          <button type="button" onClick={() => room.act({ kind: 'advanceAct' })}>Climb to Act {run.act + 1}</button>
+          <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          {run.act < 4 ? <button type="button" disabled={pendingAcquisition}
+            onClick={() => room.act({ kind: 'advanceAct' })}>Climb to Act {run.act + 1}</button> : null}
         </section>
       ) : null}
       {run.phase === 'defeat' ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2></section> : null}

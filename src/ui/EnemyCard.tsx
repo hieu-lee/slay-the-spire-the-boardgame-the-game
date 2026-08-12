@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { abilityText, actionsFor, enemyDef } from '../game/enemies.ts'
+import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import { cardImagePath, enemyImagePath } from '../game/assets.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
@@ -42,6 +42,8 @@ type IntentPart = {
   times?: number
   /** Silent to a screen reader: a later copy of a repeated symbol. */
   echo?: boolean
+  label?: string
+  visibleLabel?: string
 }
 
 /** An enemy's telegraphed intent, in the game's own symbols. */
@@ -60,16 +62,62 @@ function intentParts(action: EnemyAction): IntentPart[] {
         echo: index > 0,
       }))
     }
+    case 'attackSequence':
+      return action.hits.map((hit) => ({ icon: 'attack', value: hit.amount, aoe: hit.aoe }))
     case 'block':
-      return [{ icon: 'block', value: action.amount }]
+      return [{ icon: 'block', value: action.perPlayer ? `${action.amount}/player` : action.amount }]
     case 'gainStrength':
       return [{ icon: 'strength', value: action.amount, prefix: '+' }]
+    case 'blockAllEnemies':
+      return [{ icon: 'block', value: action.amount, label: 'Block to all enemies' }]
+    case 'strengthenAllEnemies':
+      return [{ icon: 'strength', value: action.amount, prefix: '+', label: 'Strength to all enemies' }]
+    case 'healAllEnemies':
+      return [{ icon: 'monster', value: action.amount, label: 'heal all enemies', visibleLabel: 'Heal' }]
+    case 'healSelf':
+      return [{ icon: 'monster', value: action.amount, label: 'heals itself', visibleLabel: 'Heal' }]
+    case 'blockNamed':
+      return [{ icon: 'block', value: action.amount, label: `Block to ${action.defId.replaceAll('_', ' ')}` }]
+    case 'clearSelfDebuffs':
+      return [{ icon: 'monster', label: 'removes Weak and Vulnerable', visibleLabel: 'Cleanse' }]
+    case 'reviveAll':
+      return [{ icon: 'monster', label: `revives all dead ${action.group}s`, visibleLabel: 'Revive' }]
     case 'applyWeak':
       return [{ icon: 'weak', value: action.amount, aoe: action.aoe }]
     case 'applyVulnerable':
       return [{ icon: 'vulnerable', value: action.amount, aoe: action.aoe }]
     case 'daze':
       return [{ icon: 'daze', value: action.amount, aoe: action.aoe }]
+    case 'status':
+      return [{
+        icon: action.card === 'burn' ? 'burn' : 'monster',
+        value: action.amount,
+        aoe: action.aoe,
+        label: action.card,
+        visibleLabel: action.card === 'slimed' ? 'Slimed' : undefined,
+      }]
+    case 'loseGold':
+      return [{ icon: 'gold', value: action.amount, prefix: '-', label: 'gold' }]
+    case 'summon':
+      return [{ icon: 'monster', value: action.defIds.length, label: 'summons', visibleLabel: 'Summon' }]
+    case 'summonUntil':
+      return [{ icon: 'monster', value: action.perPlayer, label: 'summons per player', visibleLabel: 'Summon per player' }]
+    case 'leave':
+      return [{ icon: 'monster', label: 'leaves combat', visibleLabel: 'Leaves' }]
+    case 'die':
+      return [{ icon: 'monster', label: 'dies', visibleLabel: 'Dies' }]
+    case 'addAbilityCube':
+      return [{ icon: 'monster', value: action.amount, label: 'ability cube', visibleLabel: 'Cube' }]
+    case 'transform':
+      return [{ icon: 'monster', label: `enters ${action.defId.replaceAll('_', ' ')}`, visibleLabel: 'Mode' }]
+    case 'guardianModeShift':
+      return [{ icon: 'attack', value: action.amount, label: 'if Block remains; otherwise enters Defensive Mode' }]
+    case 'removeInvincible':
+      return [{ icon: 'monster', label: 'removes Invincible', visibleLabel: 'Invincible off' }]
+    case 'shuffleStatus':
+      return [{ icon: action.card === 'burn' ? 'burn' : 'monster', value: action.amount, label: `shuffle ${action.card} into every deck`, visibleLabel: action.card }]
+    case 'actsLast':
+      return [{ icon: 'monster', label: 'acts last', visibleLabel: 'Acts last' }]
     case 'idle':
       return []
   }
@@ -101,7 +149,7 @@ function describeEnemy(enemy: Enemy, label: string, intent: IntentPart[], abilit
     .map((part) => {
       const value = part.value === undefined || part.value === '' ? '' : `${part.value} `
       const repeat = part.times ? `, ${part.times} times` : ''
-      return `${part.aoe ? 'all rows, ' : ''}to apply ${value}${part.icon}${repeat}`
+      return `${part.aoe ? 'all rows, ' : ''}to ${part.prefix === '-' ? 'lose' : 'apply'} ${value}${part.label ?? part.icon}${repeat}`
     })
     .join(', ')
   // "intends to apply 1 Vulnerable" rather than "vulnerable 1": the tokens the
@@ -137,12 +185,19 @@ export function EnemyCard({
   rowLabel,
   onClick,
 }: EnemyCardProps) {
-  const def = enemyDef(enemy.defId)
-  const intent = actionsFor(def, die, enemy.actionIndex).flatMap(intentParts)
-  const spentAbility = def.ability?.kind === 'curlUp' && enemy.abilityUsed
-  const ability = def.ability
-    ? `${abilityText(def.ability)}${spentAbility ? ', spent' : ''}`
-    : null
+  const def = enemyDef(enemy.defId, enemy.ascension)
+  const intent = actionsForEnemy(enemy, die).flatMap(intentParts)
+  const abilities = enemyAbilities(def)
+  const spentAbility = abilities.some((entry) => entry.kind === 'curlUp') && enemy.abilityUsed
+  const abilityLabels = abilities.map((entry) => {
+    if (entry.kind === 'confusion') return `Confusion, first card costs ${entry.byRoll[die] ?? '?'}`
+    if (entry.kind === 'thorns') return `Thorns, ${enemy.abilityCubes ?? 0} cubes`
+    if (entry.kind === 'immuneOnSlots') {
+      return entry.slots.includes(enemy.actionIndex) ? 'Cannot lose HP this turn' : 'HP immunity, inactive'
+    }
+    return `${abilityText(entry)}${spentAbility && entry.kind === 'curlUp' ? ', spent' : ''}`
+  })
+  const ability = abilityLabels.length > 0 ? abilityLabels.join(', ') : null
   const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
 
   const className = [
@@ -184,16 +239,31 @@ export function EnemyCard({
             <span className="intent" key={`${part.icon}-${i}`}>
               {part.aoe ? <Icon name="aoe" size={20} /> : null}
               <IconValue name={part.icon} value={part.value ?? ''} prefix={part.prefix} size={28} />
+              {part.visibleLabel ? <span className="intent__label">{part.visibleLabel}</span> : null}
             </span>
           ))
         )}
       </span>
-      {def.ability ? (
+      {abilities.length > 0 ? (
         <span
           className={`enemy__ability${spentAbility ? ' enemy__ability--spent' : ''}`}
-          title={ability ?? undefined}
+          title={abilityLabels.join('\n')}
         >
-          {spentAbility ? 'Curl Up · spent' : abilityText(def.ability, true)}
+          {abilities.map((ability, index) => (
+            <span key={`${ability.kind}-${index}`}>
+              {spentAbility && ability.kind === 'curlUp'
+                ? 'Curl Up · spent'
+                : ability.kind === 'confusion'
+                  ? `Confusion · first card costs ${ability.byRoll[die] ?? '?'}`
+                  : ability.kind === 'thorns'
+                    ? `Thorns · ${enemy.abilityCubes ?? 0} cubes`
+                  : ability.kind === 'immuneOnSlots'
+                    ? ability.slots.includes(enemy.actionIndex)
+                      ? 'Cannot lose HP this turn'
+                      : 'HP immunity · inactive'
+                  : abilityText(ability, true)}
+            </span>
+          ))}
         </span>
       ) : null}
 
