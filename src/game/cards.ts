@@ -163,12 +163,12 @@ type EffectKind =
   /** Separate printed Block icons, each independently assigned to any living player. */
   | { kind: 'blockChoices'; amount: Amount; targets: number }
   | { kind: 'applyVulnerable'; amount: number }
-  | { kind: 'applyWeak'; amount: number }
+  | { kind: 'applyWeak'; amount: Amount }
   | ({ kind: 'gainStrength'; amount: number } & Redirectable)
   | { kind: 'doubleStrength' }
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: number; loseGainedOnly?: boolean }
-  | { kind: 'poison'; amount: number }
+  | { kind: 'poison'; amount: Amount }
   /** Separate Poison cubes, each independently assigned to a living enemy. */
   | { kind: 'poisonChoices'; amount: number; targets: number }
   | { kind: 'multiplyPoison'; factor: number }
@@ -2246,6 +2246,25 @@ export const CARDS: Record<string, CardDef> = {
     playCondition: { kind: 'drawPileEmpty' },
     effects: [{ kind: 'hit', amount: 10 }],
     upgrade: { effects: [{ kind: 'hit', amount: 12 }] },
+  }),
+  a_thousand_cuts: card({
+    id: 'a_thousand_cuts', name: 'A Thousand Cuts', owner: 'silent', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'onShuffle' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 5 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 7 }] },
+  }),
+  malaise: card({
+    id: 'malaise', name: 'Malaise', owner: 'silent', type: 'skill', rarity: 'rare', cost: 'X',
+    exhaust: true,
+    effects: [
+      { kind: 'applyWeak', amount: { base: 0, per: 'energySpent' } },
+      { kind: 'poison', amount: { base: 0, per: 'energySpent' } },
+    ],
+    upgrade: { effects: [
+      { kind: 'applyWeak', amount: { base: 1, per: 'energySpent' } },
+      { kind: 'poison', amount: { base: 1, per: 'energySpent' } },
+    ] },
   }),
   blur: card({
     id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,

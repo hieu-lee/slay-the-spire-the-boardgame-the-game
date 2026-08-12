@@ -261,7 +261,7 @@ const WHEN: Record<string, string> = {
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
   onPutEnemyToken: 'whenever you put a token on an enemy',
-  onShuffle: 'whenever you shuffle',
+  onShuffle: 'whenever you shuffle your draw pile',
 }
 
 /**
@@ -341,9 +341,9 @@ function describeEffect(effect: CardDef['effects'][number]): string {
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':
-      return `${effect.amount} Poison`
+      return `${amountLabel(effect.amount)} Poison`
     case 'applyWeak':
-      return `${effect.amount} Weak`
+      return `${amountLabel(effect.amount)} Weak`
     case 'applyVulnerable':
       return `${effect.amount} Vulnerable`
     default:

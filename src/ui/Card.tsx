@@ -115,13 +115,13 @@ function effectText(effect: Effect): string {
       : `gain ${amountText(effect.amount)} Block${condition}`
     case 'blockChoices': return `assign ${effect.targets} separate ${amountText(effect.amount)} Block icons to any players${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
-    case 'applyWeak': return `apply ${effect.amount} Weak${condition}`
+    case 'applyWeak': return `apply ${amountText(effect.amount)} Weak${condition}`
     case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
     case 'doubleStrength': return `double your Strength, maximum Strength 8${condition}`
     case 'gainTemporaryStrength': return effect.loseGainedOnly
       ? `gain ${effect.amount} Strength, lose that Strength at end of turn${condition}`
       : `gain ${effect.amount} Strength, lose ${effect.amount} Strength at end of turn${condition}`
-    case 'poison': return `apply ${effect.amount} Poison${condition}`
+    case 'poison': return `apply ${amountText(effect.amount)} Poison${condition}`
     case 'poisonChoices': return `assign ${effect.targets} separate ${effect.amount} Poison tokens to enemies${condition}`
     case 'multiplyPoison': return `multiply the target's Poison by ${effect.factor}${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
@@ -221,7 +221,7 @@ function triggerText(trigger: Trigger): string {
     case 'onGainBlock': return 'whenever you gain Block'
     case 'onApplyPoison': return 'when you put Poison on an enemy'
     case 'onPutEnemyToken': return 'whenever you put a token on an enemy'
-    case 'onShuffle': return 'whenever you shuffle your discard pile'
+    case 'onShuffle': return 'whenever you shuffle your draw pile'
   }
 }
 

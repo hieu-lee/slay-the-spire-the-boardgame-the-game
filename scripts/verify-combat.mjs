@@ -2364,6 +2364,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'flechettes', enemyHp: [20, 19] },
     { id: 'adrenaline', energy: [6, 6], hand: [2, 2], exhaust: [1, 1] },
     { id: 'grand_finale', player: { draw: [] }, enemyHp: [10, 8] },
+    { id: 'a_thousand_cuts', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'malaise', energySpent: [1, 1], energy: [E - 1, E - 1], weak: [1, 2], poison: [1, 2], exhaust: [1, 1] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -4864,6 +4866,28 @@ check('Seek privately searches its draw pile, takes 1/2 cards, shuffles, and Exh
   assert(searched.players[0].exhaust.some((card) => card.uid === base.uid))
   assertEqual(searched.rng.calls, state.rng.calls + 1, 'Seek did not shuffle the two-card remainder')
 
+  const shardSeek = instance('seek')
+  const shardState = combat([makePlayer({
+    character: 'silent', hand: [shardSeek], draw: sought, energy: 0,
+    powers: [instance('a_thousand_cuts')],
+  })], [
+    makeEnemy({ uid: 'seek-left', row: 0, hp: 10, maxHp: 10 }),
+    makeEnemy({ uid: 'seek-right', row: 1, hp: 10, maxHp: 10 }),
+  ])
+  const shardSearched = playCard(shardState, 'p1', shardSeek.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[0].uid],
+  })
+  assert(shardSearched.players[0].exhaust.some((card) => card.uid === shardSeek.uid),
+    'A Thousand Cuts interrupted Seek before its cleanup')
+  assertEqual(shardSearched.players[0].hand[0].uid, sought[0].uid,
+    'A Thousand Cuts interrupted Seek before its searched card reached hand')
+  assertDeepEqual(shardSearched.enemies.map((enemy) => enemy.hp), [10, 10])
+  assertDeepEqual(pendingTriggerAbility(shardSearched)?.rows?.map((target) => target.row), [0, 1])
+  const shardResolved = resolvePendingTrigger(
+    shardSearched, 'p1', shardSearched.pendingTriggers[0].id, 1,
+  )
+  assertDeepEqual(shardResolved.enemies.map((enemy) => enemy.hp), [10, 5])
+
   const upgraded = instance('seek', true)
   const plusState = combat([makePlayer({
     character: 'defect', hand: [upgraded], draw: sought, energy: 0,
@@ -6904,6 +6928,57 @@ check('Berserk waits for an Exhaust, then its owner chooses a row', () => {
     assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [6, 6 - damage, 6 - damage])
     assertEqual(resolved.pendingTriggers.length, 0)
   }
+})
+
+check('A Thousand Cuts waits for the shuffling card, then its owner chooses a row', () => {
+  for (const upgraded of [false, true]) {
+    const battleTrance = instance('battle_trance')
+    const state = combat(
+      [makePlayer({
+        character: 'silent', hand: [battleTrance], draw: [instance('strike_silent')],
+        discard: [instance('defend_silent'), instance('neutralize')],
+        powers: [instance('a_thousand_cuts', upgraded)],
+      })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 12, maxHp: 12 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 12, maxHp: 12 }),
+        makeEnemy({ uid: 'boss', row: 2, isBoss: true, hp: 20, maxHp: 20 }),
+      ],
+    )
+    const shuffled = playCard(state, 'p1', battleTrance.uid, { enemyUid: null, playerId: null })
+    assert(shuffled.players[0].drawLocked, 'A Thousand Cuts interrupted Battle Trance before its draw lock')
+    assertEqual(shuffled.players[0].hand.length, 3)
+    assert(shuffled.players[0].discard.some((card) => card.uid === battleTrance.uid),
+      'A Thousand Cuts interrupted Battle Trance before cleanup')
+    assertDeepEqual(shuffled.enemies.map((enemy) => enemy.hp), [12, 12, 20])
+    assertDeepEqual(pendingTriggerAbility(shuffled)?.rows?.map((target) => target.row), [0, 1])
+
+    const damage = upgraded ? 7 : 5
+    const resolved = resolvePendingTrigger(shuffled, 'p1', shuffled.pendingTriggers[0].id, 1)
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [12, 12 - damage, 20 - damage])
+  }
+})
+
+check('Malaise applies Weak and Poison X times, or X plus one when upgraded', () => {
+  const base = instance('malaise')
+  const spent = playCard(combat(
+    [makePlayer({ character: 'silent', hand: [base], energy: 3 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  ), 'p1', base.uid, { enemyUid: 'e1', playerId: null, energySpent: 2 })
+  assertEqual(spent.players[0].energy, 1)
+  assertEqual(spent.enemies[0].weak, 2)
+  assertEqual(spent.enemies[0].poison, 2)
+  assert(spent.players[0].exhaust.some((card) => card.uid === base.uid))
+
+  const upgraded = instance('malaise', true)
+  const zero = playCard(combat(
+    [makePlayer({ character: 'silent', hand: [upgraded], energy: 3 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  ), 'p1', upgraded.uid, { enemyUid: 'e1', playerId: null, energySpent: 0 })
+  assertEqual(zero.players[0].energy, 3)
+  assertEqual(zero.enemies[0].weak, 1)
+  assertEqual(zero.enemies[0].poison, 1)
+  assert(zero.players[0].exhaust.some((card) => card.uid === upgraded.uid))
 })
 
 check('Juggernaut waits for Block gain, then its owner chooses an enemy', () => {

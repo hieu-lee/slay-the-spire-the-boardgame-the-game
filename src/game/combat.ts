@@ -1018,7 +1018,7 @@ function applyEffect(
     case 'applyWeak': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.weak
-        target.weak = gainWeak(target.weak, effect.amount)
+        target.weak = gainWeak(target.weak, amountOf(effect.amount, state, actor, target, context))
         if (target.weak > before) note(`${enemyLabel(state.enemies, target)} is weakened`)
         enemyTokensApplied(state, actor, target, target.weak - before, context)
       }
@@ -1051,7 +1051,7 @@ function applyEffect(
     }
     case 'poison': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        const gained = putPoison(state, target, effect.amount)
+        const gained = putPoison(state, target, amountOf(effect.amount, state, actor, target, context))
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
@@ -1628,6 +1628,7 @@ function applyEffect(
       actor.draw = shuffle(state.rng, actor.draw.filter((card) => !picked.has(card.uid)))
       actor.hand = [...actor.hand, ...chosen.map(forgetRetain)]
       if (chosen.length > 0) note(`${actor.name} searches ${chosen.length} card${chosen.length === 1 ? '' : 's'} into their hand`)
+      context.pendingTriggers?.push(...queuedTriggers(state, { kind: 'onShuffle' }, actor))
       return
     }
     case 'drawAndPlayFree': {

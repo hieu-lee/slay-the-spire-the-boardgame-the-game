@@ -1510,7 +1510,10 @@ check('Simmering Fury stays public across reconnect and resolves Wrath hits auth
   Object.assign(actor, {
     character: 'watcher', hand: [fury, crescendo, sleeves], energy: 3, stance: 'neutral', powers: [],
   })
-  Object.assign(enemy, { hp: 30, maxHp: 30, block: 0, weak: 0, vulnerable: 0, dead: false })
+  Object.assign(enemy, {
+    defId: 'cultist', hp: 30, maxHp: 30, block: 0, weak: 0, vulnerable: 0,
+    abilityUsed: true, dead: false,
+  })
 
   apply(room, a.token, { kind: 'playCard', cardUid: fury.uid, preflight: true })
   assertEqual(snapshotFor(room, b.token).run.combat.players
@@ -1865,7 +1868,9 @@ check('Whirlwind keeps X Energy and row damage authoritative online', () => {
   const anchor = room.run.combat.enemies.find((enemy) => !enemy.dead)
   const whirlwind = { uid: 'room-whirlwind', defId: 'whirlwind', upgraded: true }
   Object.assign(actor, { hand: [whirlwind], energy: 3, discard: [] })
-  Object.assign(anchor, { row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  Object.assign(anchor, {
+    defId: 'cultist', row: 0, hp: 10, maxHp: 10, block: 0, abilityUsed: true, dead: false,
+  })
   room.run.combat.enemies.push(
     { ...anchor, uid: 'room-whirlwind-same', hp: 10 },
     { ...anchor, uid: 'room-whirlwind-other', row: 1, hp: 10 },
@@ -4929,6 +4934,47 @@ check('online Juggernaut keeps its enemy choice owner-authoritative and reconnec
   apply(room, a.token, { kind: 'resolveTrigger', triggerId, enemyUid: second.uid, preflight: true })
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [10, 8])
   assertEqual(room.run.combat.pendingTriggers.length, 0)
+})
+
+check('online A Thousand Cuts and Malaise preserve owner choices and X-cost authority', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const battleTrance = { uid: 'room-cuts-draw', defId: 'battle_trance', upgraded: false }
+  Object.assign(actor, {
+    character: 'silent', hand: [battleTrance],
+    draw: [{ uid: 'room-cuts-strike', defId: 'strike_silent', upgraded: false }],
+    discard: [
+      { uid: 'room-cuts-defend', defId: 'defend_silent', upgraded: false },
+      { uid: 'room-cuts-neutralize', defId: 'neutralize', upgraded: false },
+    ],
+    energy: 3, powers: [{ uid: 'room-cuts-power', defId: 'a_thousand_cuts', upgraded: true }],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { defId: 'cultist', row: 0, hp: 12, maxHp: 12, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', row: 1, hp: 12, maxHp: 12, block: 0, dead: false })
+
+  apply(room, a.token, { kind: 'playCard', cardUid: battleTrance.uid, preflight: true })
+  const triggerId = room.run.combat.pendingTriggers[0].id
+  let denied = null
+  try {
+    apply(room, b.token, { kind: 'resolveTrigger', triggerId, enemyRow: 1, preflight: true })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'a teammate chose A Thousand Cuts\' row')
+  apply(room, a.token, { kind: 'resolveTrigger', triggerId, enemyRow: 1, preflight: true })
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [12, 5])
+
+  const malaise = { uid: 'room-malaise', defId: 'malaise', upgraded: true }
+  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(currentActor, { hand: [malaise], energy: 3, drawLocked: false })
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: malaise.uid, enemyUid: first.uid, energySpent: 2, preflight: true,
+  })
+  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).energy, 1)
+  const poisoned = room.run.combat.enemies.find((enemy) => enemy.uid === first.uid)
+  assertEqual(poisoned.weak, 3)
+  assertEqual(poisoned.poison, 3)
 })
 
 check('end-turn Fire Breathing cannot deadlock on an already-disconnected owner', () => {

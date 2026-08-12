@@ -7102,6 +7102,77 @@ await page.evaluate(() => {
   const actor = run.combat.players[0]
   const source = run.combat.enemies[0]
   Object.assign(actor, {
+    name: 'Silent', character: 'silent',
+    hand: [
+      { uid: 'ui-thousand-cuts', defId: 'a_thousand_cuts', upgraded: true },
+      { uid: 'ui-malaise', defId: 'malaise', upgraded: true },
+      { uid: 'ui-cuts-trance', defId: 'battle_trance', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-cuts-strike', defId: 'strike_silent', upgraded: false }],
+    discard: [
+      { uid: 'ui-cuts-defend', defId: 'defend_silent', upgraded: false },
+      { uid: 'ui-cuts-neutralize', defId: 'neutralize', upgraded: false },
+    ],
+    exhaust: [], powers: [], energy: 6, block: 0, drawLocked: false,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingTriggers = []
+  run.combat.enemies = [
+    { ...source, uid: 'cuts-left', defId: 'green_louse', row: 0, hp: 12, maxHp: 12,
+      block: 0, weak: 0, poison: 0, dead: false, isBoss: false, abilityUsed: true },
+    { ...source, uid: 'cuts-right', defId: 'cultist', row: 1, hp: 12, maxHp: 12,
+      block: 0, weak: 0, poison: 0, dead: false, isBoss: false, abilityUsed: true },
+    { ...source, uid: 'cuts-boss', defId: 'cultist', row: 2, hp: 20, maxHp: 20,
+      block: 0, weak: 0, poison: 0, dead: false, isBoss: true, abilityUsed: true },
+  ]
+  run.combat.log = []
+  debug.setRun(run)
+})
+const thousandCutsCard = page.getByRole('button', { name: /^A Thousand Cuts\+,/ })
+const malaiseCard = page.getByRole('button', { name: /^Malaise\+, cost X,/ })
+await thousandCutsCard.waitFor()
+const silentRareArt = await Promise.all([artWidth(thousandCutsCard), artWidth(malaiseCard)])
+assert(silentRareArt.every((width) => width >= 700),
+  `expected upscaled Silent rare art, got ${silentRareArt.join(', ')}px`)
+const thousandCutsLabel = await thousandCutsCard.getAttribute('aria-label')
+const malaiseLabel = await malaiseCard.getAttribute('aria-label')
+check('A Thousand Cuts+ and Malaise+ announce their physical shuffle and X rules', () => {
+  assert(thousandCutsLabel.includes('whenever you shuffle your draw pile'))
+  assert(thousandCutsLabel.includes('deal 7 damage') && thousandCutsLabel.includes('whole row and any boss'))
+  assert(malaiseLabel.includes('apply 1 plus 1 per Energy spent on this card Weak'))
+  assert(malaiseLabel.includes('apply 1 plus 1 per Energy spent on this card Poison'))
+})
+await thousandCutsCard.click()
+const thousandCutsPowerLabel = await page.locator('.power[aria-label^="A Thousand Cuts+"]').getAttribute('aria-label')
+assert(thousandCutsPowerLabel.includes('whenever you shuffle your draw pile'))
+await malaiseCard.click()
+await page.getByText('Choose Energy for Malaise+').waitFor()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.getByRole('button', { name: /^Green Louse,/ }).click()
+await page.getByRole('button', { name: /^Battle Trance,/ }).click()
+await page.getByText("Silent's A Thousand Cuts+ — choose a row").waitFor()
+const thousandCutsPower = page.locator('.power[aria-label^="A Thousand Cuts+"]')
+await thousandCutsPower.click()
+await shot('16h-silent-shuffle-x-rares')
+await thousandCutsPower.click()
+await page.getByRole('button', { name: /A Thousand Cuts\+ in row 2$/ }).click()
+const silentRaresResolved = await readState()
+check('Malaise+ and A Thousand Cuts+ resolve through X and shuffle choices', () => {
+  assertEqual(silentRaresResolved.enemies[0].weak, 3)
+  assertEqual(silentRaresResolved.enemies[0].poison, 3)
+  assertDeepEqual(silentRaresResolved.enemies.map((enemy) => enemy.hp), [12, 5, 13])
+  assertEqual(silentRaresResolved.players[0].energy, 2)
+  assert(silentRaresResolved.players[0].drawLocked)
+  assert(silentRaresResolved.players[0].exhaust.some((card) => card.uid === 'ui-malaise'))
+  assertEqual(silentRaresResolved.pendingTriggers.length, 0)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
     hand: [
       { uid: 'ui-double-tap', defId: 'double_tap', upgraded: true },
       { uid: 'ui-double-strike', defId: 'strike_ironclad', upgraded: false },
