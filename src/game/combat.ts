@@ -101,6 +101,8 @@ export type PendingTrigger = {
   id: number
   playerId: string
   sourceId: string
+  /** Event-bound target, such as the enemy that received a token. */
+  enemyUid?: string
 }
 
 type CopySource = 'Double Tap' | 'Echo Form'
@@ -990,7 +992,7 @@ function applyEffect(
         (context.sourceCardId?.startsWith('defend_') ? (actor.starterDefendBlockBonus ?? 0) : 0)
       for (const target of supportTargets(state, effect, supportScope, context, actor)) {
         const before = target.block
-        grantBlock(state, target, amount)
+        grantBlock(state, target, amount, context.sourceCardId ? context.pendingTriggers : undefined)
         if (target.block > before) note(`${target.name} gains ${target.block - before} Block`)
       }
       return
@@ -1667,10 +1669,18 @@ function applyEffect(
  * The trigger fires only on a real increase: at the 20 Block cap the gain is a
  * no-op, and a Power reacting to a no-op is paying out for nothing.
  */
-function grantBlock(state: CombatState, target: Player, amount: number): void {
+function grantBlock(
+  state: CombatState,
+  target: Player,
+  amount: number,
+  pendingTriggers?: PendingTrigger[],
+): void {
   const before = target.block
   target.block = gainBlock(target.block, amount)
-  if (target.block > before) fireTriggers(state, { kind: 'onGainBlock' }, target)
+  if (target.block <= before) return
+  const event = { kind: 'onGainBlock' as const }
+  if (pendingTriggers) pendingTriggers.push(...queuedTriggers(state, event, target))
+  else fireTriggers(state, event, target)
 }
 
 /**
@@ -3920,6 +3930,7 @@ function applyOrbEvokeEffect(
   orb: OrbType,
   chosenTarget: string | null | undefined,
   sourceCardId?: string,
+  pendingTriggers?: PendingTrigger[],
 ): boolean {
   if (orb === 'lightning') {
     const targets = lightningDamageTargets(state, actor, chosenTarget, sourceCardId)
@@ -3929,7 +3940,7 @@ function applyOrbEvokeEffect(
     }
   } else if (orb === 'frost') {
     const before = actor.block
-    grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0))
+    grantBlock(state, actor, 1 + (actor.orbEvokeBonus ?? 0), pendingTriggers)
     if (actor.block > before) {
       state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }
@@ -3982,7 +3993,14 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext, times
       (orb === 'lightning' && lightningTargetsRows(actor, context.sourceCardId) && fallbackEnemy
         ? lightningRowTarget(fallbackEnemy.row)
         : fallbackEnemy?.uid)
-    if (!applyOrbEvokeEffect(state, actor, orb, chosenTarget, context.sourceCardId) &&
+    if (!applyOrbEvokeEffect(
+      state,
+      actor,
+      orb,
+      chosenTarget,
+      context.sourceCardId,
+      context.sourceCardId ? context.pendingTriggers : undefined,
+    ) &&
       livingEnemies(state).length > 0) context.invalidEvokeTarget = true
   }
   return orb
@@ -4126,12 +4144,23 @@ function queuedTriggers(
   return state.players.flatMap((player) => player.dead || (only && player.id !== only.id) ? [] :
     triggerSources(player, event, excludeUid).map((source) => ({
       id: state.nextTriggerId++, playerId: player.id, sourceId: source.id,
+      enemyUid: event.enemyUid,
     })))
 }
 
 function triggerNeedsRowChoice(state: CombatState, player: Player, source: TriggerSource): boolean {
   return source.scope === 'row' && source.effects.some((effect) => reachesEnemy(effect, player)) &&
     combatRows(state).length > 1
+}
+
+function triggerNeedsEnemyChoice(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  enemyUid?: string,
+): boolean {
+  return enemyUid === undefined && source.scope === 'enemy' &&
+    source.effects.some((effect) => reachesEnemy(effect, player)) && livingEnemies(state).length > 1
 }
 
 function resolveTriggerSource(
@@ -4199,6 +4228,26 @@ function resolveTriggerSource(
   return !context.invalidShivTarget && !context.invalidEvokeTarget && !context.invalidScryChoice
 }
 
+function resolveQueuedTriggerSource(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  enemyUid?: string,
+  enemyRow?: number,
+): void {
+  if (source.trigger.kind === 'onDraw') {
+    resolveTriggerSource(state, player, source, false, undefined, enemyUid, enemyRow)
+    return
+  }
+  if (triggerDepth >= MAX_TRIGGER_DEPTH) return
+  triggerDepth++
+  try {
+    resolveTriggerSource(state, player, source, false, undefined, enemyUid, enemyRow)
+  } finally {
+    triggerDepth--
+  }
+}
+
 function flushPendingTriggers(state: CombatState): void {
   state.pendingTriggers ??= []
   while (state.pendingTriggers.length > 0 && !combatIsOver(state)) {
@@ -4209,15 +4258,14 @@ function flushPendingTriggers(state: CombatState): void {
       state.pendingTriggers.shift()
       continue
     }
-    if (triggerNeedsRowChoice(state, player, source)) return
+    if (triggerNeedsRowChoice(state, player, source) ||
+      triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)) return
     state.pendingTriggers.shift()
-    resolveTriggerSource(
+    resolveQueuedTriggerSource(
       state,
       player,
       source,
-      false,
-      undefined,
-      undefined,
+      pending.enemyUid ?? (source.scope === 'enemy' ? livingEnemies(state)[0]?.uid : undefined),
       source.scope === 'row' ? combatRows(state)[0] : undefined,
     )
   }
@@ -4228,6 +4276,7 @@ export type PendingTriggerAbility = {
   playerId: string
   label: string
   rows?: { row: number; label: string }[]
+  targets?: { uid: string; label: string }[]
 }
 
 export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility | undefined {
@@ -4242,6 +4291,12 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
     rows: triggerNeedsRowChoice(state, player, source)
       ? combatRows(state).map((row) => ({ row, label: `Row ${row + 1}` }))
       : undefined,
+    targets: triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)
+      ? livingEnemies(state).map((enemy) => ({
+        uid: enemy.uid,
+        label: enemyLabel(state.enemies, enemy),
+      }))
+      : undefined,
   }
 }
 
@@ -4251,6 +4306,7 @@ export function resolvePendingTrigger(
   playerId: string,
   triggerId: number,
   enemyRow?: number,
+  enemyUid?: string,
 ): CombatState {
   const pending = state.pendingTriggers?.[0]
   if (!pending || pending.playerId !== playerId || pending.id !== triggerId) return state
@@ -4258,19 +4314,22 @@ export function resolvePendingTrigger(
   const source = player && triggerSourceById(player, pending.sourceId)
   if (!player || player.dead || !source) return state
   const needsRow = triggerNeedsRowChoice(state, player, source)
+  const needsEnemy = triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)
   if ((needsRow && !rowExists(state, enemyRow)) || (!needsRow && enemyRow !== undefined)) return state
+  if ((needsEnemy && !livingEnemies(state).some((enemy) => enemy.uid === enemyUid)) ||
+    (!needsEnemy && enemyUid !== undefined)) return state
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
   const queued = next.pendingTriggers.shift()!
   const liveSource = triggerSourceById(actor, queued.sourceId)!
-  resolveTriggerSource(
+  resolveQueuedTriggerSource(
     next,
     actor,
     liveSource,
-    false,
-    undefined,
-    undefined,
+    queued.enemyUid ?? (needsEnemy ? enemyUid : liveSource.scope === 'enemy'
+      ? livingEnemies(next)[0]?.uid
+      : undefined),
     needsRow ? enemyRow : liveSource.scope === 'row' ? combatRows(next)[0] : undefined,
   )
   flushPendingTriggers(next)
@@ -4310,10 +4369,14 @@ function fireTriggersInner(
 
     for (const source of triggerSources(player, event, excludeUid)) {
       if (!allowCombatOver && ((state.pendingTriggers?.length ?? 0) > 0 ||
-        triggerNeedsRowChoice(state, player, source))) {
+        triggerNeedsRowChoice(state, player, source) ||
+        triggerNeedsEnemyChoice(state, player, source, event.enemyUid))) {
         state.pendingTriggers ??= []
         state.nextTriggerId ??= 0
-        state.pendingTriggers.push({ id: state.nextTriggerId++, playerId: player.id, sourceId: source.id })
+        state.pendingTriggers.push({
+          id: state.nextTriggerId++, playerId: player.id, sourceId: source.id,
+          enemyUid: event.enemyUid,
+        })
         continue
       }
       resolveTriggerSource(

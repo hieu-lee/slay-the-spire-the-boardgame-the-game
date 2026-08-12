@@ -638,6 +638,19 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'gainStrength', amount: 1 }],
     upgrade: { cost: 2 },
   }),
+  berserk: card({
+    id: 'berserk', name: 'Berserk', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 1,
+    trigger: { kind: 'onExhaust' },
+    target: 'row',
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
+  juggernaut: card({
+    id: 'juggernaut', name: 'Juggernaut', owner: 'ironclad', type: 'power', rarity: 'rare', cost: 2,
+    trigger: { kind: 'onGainBlock' },
+    effects: [{ kind: 'damage', amount: 1 }],
+    upgrade: { effects: [{ kind: 'damage', amount: 2 }] },
+  }),
   feel_no_pain: card({
     id: 'feel_no_pain',
     name: 'Feel No Pain',

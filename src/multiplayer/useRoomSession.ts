@@ -37,7 +37,7 @@ export type VisibleCombat = {
   players: VisiblePlayer[]
   enemies: Enemy[]
   powerTriggersUsedThisTurn: string[]
-  pendingTriggers: { id: number; playerId: string; sourceId: string }[]
+  pendingTriggers: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
   nextTriggerId: number
   startTurnProgress?: {
     choices: StartTurnChoice[]

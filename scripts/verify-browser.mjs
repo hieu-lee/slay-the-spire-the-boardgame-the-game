@@ -7034,6 +7034,75 @@ await page.evaluate(() => {
   const source = run.combat.enemies[0]
   Object.assign(actor, {
     hand: [
+      { uid: 'ui-berserk', defId: 'berserk', upgraded: true },
+      { uid: 'ui-juggernaut', defId: 'juggernaut', upgraded: true },
+      { uid: 'ui-juggernaut-defend', defId: 'defend_ironclad', upgraded: false },
+      { uid: 'ui-berserk-exhaust', defId: 'seeing_red', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], powers: [], energy: 6, block: 0, drawLocked: false,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingTriggers = []
+  run.combat.enemies = [
+    { ...source, uid: 'trigger-left', defId: 'cultist', row: 0, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: false },
+    { ...source, uid: 'trigger-right', defId: 'cultist', row: 1, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: false },
+    { ...source, uid: 'trigger-boss', defId: 'cultist', row: 2, hp: 10, maxHp: 10,
+      block: 0, dead: false, isBoss: true },
+  ]
+  run.combat.log = []
+  debug.setRun(run)
+})
+const berserkCard = page.getByRole('button', { name: /^Berserk\+,/ })
+const juggernautCard = page.getByRole('button', { name: /^Juggernaut\+,/ })
+await berserkCard.waitFor()
+const ironcladRareArt = await Promise.all([artWidth(berserkCard), artWidth(juggernautCard)])
+assert(ironcladRareArt.every((width) => width >= 700),
+  `expected upscaled Ironclad rare art, got ${ironcladRareArt.join(', ')}px`)
+const berserkLabel = await berserkCard.getAttribute('aria-label')
+const juggernautLabel = await juggernautCard.getAttribute('aria-label')
+check('Berserk+ and Juggernaut+ announce their physical triggers and damage', () => {
+  assert(berserkLabel.includes('whenever you exhaust a card') && berserkLabel.includes('deal 2 damage'))
+  assert(berserkLabel.includes('affects a whole row and any boss'))
+  assert(juggernautLabel.includes('whenever you gain Block') && juggernautLabel.includes('deal 2 damage'))
+})
+await berserkCard.click()
+await juggernautCard.click()
+const berserkPowerLabel = await page.locator('.power[aria-label^="Berserk+"]').getAttribute('aria-label')
+const juggernautPower = page.locator('.power[aria-label^="Juggernaut+"]')
+const juggernautPowerLabel = await juggernautPower.getAttribute('aria-label')
+assert(berserkPowerLabel.includes('one enemy row and any boss'))
+assert(juggernautPowerLabel.includes('whenever you gain Block'))
+
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.getByText("Ironclad's Juggernaut+ — choose an enemy").waitFor()
+assertEqual(await page.locator('.enemy--targeted').count(), 3,
+  'Juggernaut should allow any living enemy')
+await juggernautPower.click()
+await shot('16g-ironclad-trigger-powers')
+await juggernautPower.click()
+await page.locator('.enemy--targeted').nth(1).click()
+await page.getByRole('button', { name: /^Seeing Red,/ }).click()
+await page.getByText("Ironclad's Berserk+ — choose a row").waitFor()
+assertEqual(await page.getByRole('button', { name: /^Resolve .*Berserk\+ in row/ }).count(), 2)
+await page.getByRole('button', { name: /Berserk\+ in row 2$/ }).click()
+const ironcladRareResolved = await readState()
+check('Juggernaut and Berserk resolve chosen targets only after their source cards finish', () => {
+  assertDeepEqual(ironcladRareResolved.enemies.map((enemy) => enemy.hp), [10, 6, 8])
+  assertEqual(ironcladRareResolved.players[0].block, 1)
+  assertEqual(ironcladRareResolved.players[0].energy, 3)
+  assert(ironcladRareResolved.players[0].exhaust.some((card) => card.uid === 'ui-berserk-exhaust'))
+  assertEqual(ironcladRareResolved.pendingTriggers.length, 0)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const source = run.combat.enemies[0]
+  Object.assign(actor, {
+    hand: [
       { uid: 'ui-double-tap', defId: 'double_tap', upgraded: true },
       { uid: 'ui-double-strike', defId: 'strike_ironclad', upgraded: false },
     ],

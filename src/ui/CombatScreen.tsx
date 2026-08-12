@@ -1386,10 +1386,10 @@ export function CombatScreen({
     }, () => waitForRefresh())
   }
 
-  function resolveTrigger(enemyRow: number) {
+  function resolveTrigger(enemyRow?: number, enemyUid?: string) {
     const trigger = pendingTrigger
     if (usingTrigger || !trigger || trigger.playerId !== viewer?.id) return
-    const result = resolvePendingTrigger(state, viewer!.id, trigger.id, enemyRow)
+    const result = resolvePendingTrigger(state, viewer!.id, trigger.id, enemyRow, enemyUid)
     if (result === state) return
     if (!onAction) {
       onChange?.(result)
@@ -1397,7 +1397,7 @@ export function CombatScreen({
     }
     setUsingTrigger(true)
     Promise.resolve(onAction({
-      kind: 'resolveTrigger', triggerId: trigger.id, enemyRow, preflight: true,
+      kind: 'resolveTrigger', triggerId: trigger.id, enemyRow, enemyUid, preflight: true,
     }))
       .finally(() => setUsingTrigger(false))
   }
@@ -1815,6 +1815,11 @@ export function CombatScreen({
   }
 
   function onEnemyClick(enemy: Enemy) {
+    if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+      pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) {
+      resolveTrigger(undefined, enemy.uid)
+      return
+    }
     if (pendingStartEnemy) {
       chooseStartTurnEnemy(enemy.uid)
       return
@@ -1983,7 +1988,7 @@ export function CombatScreen({
     : null
   const triggerPrompt = pendingTrigger
     ? pendingTrigger.playerId === viewer.id
-      ? `${pendingTrigger.label} — choose a row`
+      ? `${pendingTrigger.label} — choose ${pendingTrigger.targets ? 'an enemy' : 'a row'}`
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
   const beforeDrawPrompt = activeStartTurnScry && activeStartTurnScry.playerId !== viewer.id
@@ -2537,7 +2542,10 @@ export function CombatScreen({
                 die={state.die}
                 struck={struck.has(enemy.uid)}
                 beat={beat}
-                targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
+                targeted={(isStartTurnEnemyTarget(enemy.uid) ||
+                  (pendingTrigger?.playerId === viewer.id &&
+                    pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
+                  ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                     (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                 ))) && !enemy.dead}
@@ -2703,7 +2711,10 @@ export function CombatScreen({
                       die={state.die}
                       struck={struck.has(enemy.uid)}
                       beat={beat}
-                      targeted={(isStartTurnEnemyTarget(enemy.uid) || ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
+                      targeted={(isStartTurnEnemyTarget(enemy.uid) ||
+                        (pendingTrigger?.playerId === viewer.id &&
+                          pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
+                        ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                           (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                       ))) && !enemy.dead}

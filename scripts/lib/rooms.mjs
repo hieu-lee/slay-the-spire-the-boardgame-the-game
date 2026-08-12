@@ -251,7 +251,9 @@ function settleForcedCards(room) {
       const pending = pendingTriggerAbility(combat)
       const owner = room.seats.find((seat) => seat.playerId === pending?.playerId)
       if (!pending || owner?.connected !== false) break
-      const next = resolvePendingTrigger(combat, pending.playerId, pending.id, pending.rows?.[0]?.row)
+      const next = resolvePendingTrigger(
+        combat, pending.playerId, pending.id, pending.rows?.[0]?.row, pending.targets?.[0]?.uid,
+      )
       if (next === combat) break
       room.run = { ...room.run, combat: next }
       combat = next
@@ -376,12 +378,19 @@ export function apply(room, seatToken, action) {
     if (action?.kind !== 'resolveTrigger') fail('Finish the triggered ability first')
     if (pendingTrigger.playerId !== seat.playerId) fail('Wait for the triggered ability owner')
     if (!Number.isInteger(action.triggerId)) fail('Triggered ability id must be a whole number')
+    if (action.enemyRow !== undefined && !Number.isInteger(action.enemyRow)) {
+      fail('Triggered ability row must be a whole number')
+    }
+    if (action.enemyUid !== undefined && typeof action.enemyUid !== 'string') {
+      fail('Triggered ability enemy must be a valid id')
+    }
     const combat = room.run.combat
     const next = resolvePendingTrigger(
       combat,
       seat.playerId,
       action.triggerId,
-      Number.isInteger(action.enemyRow) ? action.enemyRow : undefined,
+      action.enemyRow,
+      action.enemyUid,
     )
     if (next === combat) fail('That triggered ability target is no longer legal')
     room.run = { ...room.run, combat: next }

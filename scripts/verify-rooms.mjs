@@ -4893,6 +4893,44 @@ check('online Fire Breathing keeps bad draws private and its row choices owner-a
     'disconnect fallback should resolve into the first legal row')
 })
 
+check('online Juggernaut keeps its enemy choice owner-authoritative and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const defend = { uid: 'room-juggernaut-defend', defId: 'defend_ironclad', upgraded: false }
+  Object.assign(actor, {
+    hand: [defend], block: 0, energy: 3,
+    powers: [{ uid: 'room-juggernaut', defId: 'juggernaut', upgraded: true }],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { defId: 'cultist', row: 0, hp: 10, maxHp: 10, block: 0, dead: false })
+  Object.assign(second, { defId: 'cultist', row: 1, hp: 10, maxHp: 10, block: 0, dead: false })
+
+  apply(room, a.token, {
+    kind: 'playCard', cardUid: defend.uid, playerId: actor.id, preflight: true,
+  })
+  assertEqual(room.run.combat.pendingTriggers.length, 1)
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [10, 10])
+  const triggerId = room.run.combat.pendingTriggers[0].id
+
+  let denied = null
+  try {
+    apply(room, b.token, { kind: 'resolveTrigger', triggerId, enemyUid: second.uid, preflight: true })
+  } catch (error) {
+    denied = error
+  }
+  assertEqual(denied?.name, 'RoomError', 'a teammate chose Juggernaut\'s private action')
+
+  const disconnected = structuredClone(room)
+  markDisconnected(disconnected, a.token)
+  assertEqual(disconnected.run.combat.pendingTriggers.length, 0, 'a disconnected owner deadlocked Juggernaut')
+  assertDeepEqual(disconnected.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [8, 10],
+    'disconnect fallback should choose the first living enemy')
+
+  apply(room, a.token, { kind: 'resolveTrigger', triggerId, enemyUid: second.uid, preflight: true })
+  assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [10, 8])
+  assertEqual(room.run.combat.pendingTriggers.length, 0)
+})
+
 check('end-turn Fire Breathing cannot deadlock on an already-disconnected owner', () => {
   const { room, a, b } = twoSeatRoom()
   markDisconnected(room, a.token)

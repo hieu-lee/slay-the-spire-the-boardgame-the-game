@@ -16,6 +16,7 @@ import {
   lightningRowTarget,
   nextEvokeChoice,
   orderStartTurnScries,
+  pendingTriggerAbility,
   playCard,
   playCardCopy,
   playCost,
@@ -2277,6 +2278,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'feed', enemyHp: [17, 17], strength: [0, 0], exhaust: [1, 1] },
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'berserk', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'juggernaut', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
     { id: 'clash', enemyHp: [17, 16] },
     { id: 'spot_weakness', strength: [1, 1] },
@@ -4725,6 +4728,21 @@ check('Fission removes or Evokes every chosen Orb, then pays once per Orb', () =
   assertEqual(evoked.players[0].block, 1)
   assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 17])
   assert(evoked.players[0].exhaust.some((card) => card.uid === upgraded.uid))
+
+  const finishingFission = instance('fission', true)
+  const finishingDraw = instance('strike_defect')
+  const finished = playCard(combat([makePlayer({
+    character: 'defect', hand: [finishingFission], draw: [finishingDraw], energy: 0,
+    orbs: ['frost', null, null], powers: [instance('juggernaut')],
+  })], [makeEnemy({ hp: 1, maxHp: 1 })]), 'p1', finishingFission.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null],
+  })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.players[0].energy, 1, 'Juggernaut interrupted Fission+ before its Energy')
+  assert(finished.players[0].hand.some((card) => card.uid === finishingDraw.uid),
+    'Juggernaut interrupted Fission+ before its draw')
+  assert(finished.players[0].exhaust.some((card) => card.uid === finishingFission.uid),
+    'Juggernaut interrupted Fission+ before cleanup')
 })
 
 check('Multi-Cast removes one Orb and repeats only that Orb X or X+1 times', () => {
@@ -6860,6 +6878,63 @@ check('Fire Breathing waits for card text, then damages a chosen row once per ba
       [10 - damage, 10 - damage, 10 - damage * 2])
     assertEqual(right.pendingTriggers.length, 0)
   }
+})
+
+check('Berserk waits for an Exhaust, then its owner chooses a row', () => {
+  for (const upgraded of [false, true]) {
+    const seeingRed = instance('seeing_red')
+    const state = combat(
+      [makePlayer({ hand: [seeingRed], powers: [instance('berserk', upgraded)] })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 6 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 6 }),
+        makeEnemy({ uid: 'boss', row: 2, isBoss: true, hp: 6 }),
+      ],
+    )
+    const exhausted = playCard(state, 'p1', seeingRed.uid, { enemyUid: null, playerId: null })
+    assertEqual(exhausted.players[0].energy, 4, 'Seeing Red finishes before Berserk resolves')
+    assert(exhausted.players[0].exhaust.some((card) => card.uid === seeingRed.uid))
+    assertDeepEqual(exhausted.enemies.map((enemy) => enemy.hp), [6, 6, 6])
+    assertDeepEqual(pendingTriggerAbility(exhausted)?.rows?.map((target) => target.row), [0, 1])
+    assertEqual(resolvePendingTrigger(exhausted, 'p2', exhausted.pendingTriggers[0].id, 1), exhausted,
+      'another player chose Berserk\'s row')
+
+    const damage = upgraded ? 2 : 1
+    const resolved = resolvePendingTrigger(exhausted, 'p1', exhausted.pendingTriggers[0].id, 1)
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [6, 6 - damage, 6 - damage])
+    assertEqual(resolved.pendingTriggers.length, 0)
+  }
+})
+
+check('Juggernaut waits for Block gain, then its owner chooses an enemy', () => {
+  for (const upgraded of [false, true]) {
+    const defend = instance('defend_ironclad')
+    const state = combat(
+      [makePlayer({ hand: [defend], powers: [instance('juggernaut', upgraded)] })],
+      [makeEnemy({ uid: 'left', hp: 6 }), makeEnemy({ uid: 'right', row: 1, hp: 6 })],
+    )
+    const blocked = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(blocked.players[0].block, 1)
+    assertEqual(blocked.players[0].energy, 2)
+    assert(blocked.players[0].discard.some((card) => card.uid === defend.uid),
+      'Juggernaut interrupted Defend before cleanup')
+    assertDeepEqual(blocked.enemies.map((enemy) => enemy.hp), [6, 6])
+    assertDeepEqual(pendingTriggerAbility(blocked)?.targets?.map((target) => target.uid), ['left', 'right'])
+    assertEqual(resolvePendingTrigger(blocked, 'p1', blocked.pendingTriggers[0].id, undefined, 'missing'), blocked,
+      'Juggernaut accepted a dead or unknown enemy')
+
+    const damage = upgraded ? 2 : 1
+    const resolved = resolvePendingTrigger(blocked, 'p1', blocked.pendingTriggers[0].id, undefined, 'right')
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [6, 6 - damage])
+    assertEqual(resolved.pendingTriggers.length, 0)
+  }
+
+  const cappedDefend = instance('defend_ironclad')
+  const capped = playCard(combat(
+    [makePlayer({ block: CAPS.block, hand: [cappedDefend], powers: [instance('juggernaut')] })],
+    [makeEnemy()],
+  ), 'p1', cappedDefend.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(capped.pendingTriggers.length, 0, 'Juggernaut fired when the Block cap prevented the gain')
 })
 
 check('Fire Breathing waits for Havoc and its forced Curse to finish', () => {
