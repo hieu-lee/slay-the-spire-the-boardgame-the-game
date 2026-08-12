@@ -179,7 +179,7 @@ export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTu
 const clone = <T,>(value: T): T => structuredClone(value)
 
 function forgetRetain(card: CardInstance): CardInstance {
-  const { retainedLastTurn: _retained, ...rest } = card
+  const { retainedLastTurn: _retained, freeThisTurn: _free, ...rest } = card
   return rest
 }
 
@@ -443,8 +443,12 @@ function damagePlayer(state: CombatState, player: Player, damage: number): boole
 }
 
 /** The Energy actually charged for a card on this player's current board. */
-export function playCost(def: CardDef, player: Pick<Player, 'powers' | 'lostHpThisCombat' | 'freeCardsThisTurn'>): number | 'X' {
-  return (player.freeCardsThisTurn ?? 0) > 0
+export function playCost(
+  def: CardDef,
+  player: Pick<Player, 'powers' | 'lostHpThisCombat' | 'freeCardsThisTurn'>,
+  card?: Pick<CardInstance, 'freeThisTurn'>,
+): number | 'X' {
+  return card?.freeThisTurn === true || (player.freeCardsThisTurn ?? 0) > 0
     ? 0
     : cardCost(def, player.powers, player.lostHpThisCombat)
 }
@@ -1122,6 +1126,11 @@ function applyEffect(
     case 'discountNextCard': {
       actor.freeCardsThisTurn = (actor.freeCardsThisTurn ?? 0) + 1
       note(`${actor.name}'s next card costs 0 this turn`)
+      return
+    }
+    case 'discountHand': {
+      actor.hand = actor.hand.map((card) => ({ ...card, freeThisTurn: true }))
+      note(`${actor.name}'s cards in hand cost 0 this turn`)
       return
     }
     case 'doubleNextAttack': {
@@ -1895,7 +1904,7 @@ export function previewCardChoice(
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player)
+  const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player, held)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (def.unplayable || !cardPlayConditionMet(def, state, player) ||
     cost > player.energy || !cardNeedsChoicePreview(def, state, player)) return null
@@ -2418,7 +2427,7 @@ export function playCard(
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
   const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
-  const printedCost = forcedPlay ? 0 : playCost(def, player)
+  const printedCost = forcedPlay ? 0 : playCost(def, player, held)
   if (def.cost === 'X' && printedCost !== 'X' && (def.minimumX ?? 0) > 0) return state
   const xCost = printedCost === 'X'
   if (xCost && (!Number.isInteger(context.energySpent) || context.energySpent! < (def.minimumX ?? 0) ||
@@ -2889,6 +2898,9 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.retainCardsThisTurn = 0
     player.cardsPlayedThisTurn = 0
     player.attacksPlayedThisTurn = 0
+    for (const pile of ['hand', 'draw', 'discard', 'exhaust', 'powers'] as const) {
+      player[pile] = player[pile].map(({ freeThisTurn: _free, ...card }) => card)
+    }
   }
   const beforeDraw = next.players.flatMap((player) => player.dead ? [] :
     triggerSources(player, { kind: 'beforeDraw' }).map((source) => ({

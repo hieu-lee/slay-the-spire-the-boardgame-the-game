@@ -2367,6 +2367,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'a_thousand_cuts', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'malaise', energySpent: [1, 1], energy: [E - 1, E - 1], weak: [1, 2], poison: [1, 2], exhaust: [1, 1] },
     { id: 'burst', energy: [E - 1, E] },
+    { id: 'bullet_time', energy: [E - 3, E - 2] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
@@ -2729,6 +2730,48 @@ check('Battle Trance and Pray draw first, then block later draws until next turn
     assert(!nextTurn.players[0].drawLocked, `${id} draw lock survived the next Player Turn`)
     assertEqual(nextTurn.players[0].hand.length, 5)
   }
+})
+
+check('Bullet Time discounts only cards already in hand and blocks later draws', () => {
+  for (const upgraded of [false, true]) {
+    const bulletTime = instance('bullet_time', upgraded)
+    const held = instance('defend_silent')
+    const drawingAttack = instance('pommel_strike')
+    const future = instance('strike_silent')
+    let state = combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [bulletTime, held, drawingAttack], draw: [future], energy: 6,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', bulletTime.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].energy, upgraded ? 4 : 3)
+    assert(state.players[0].drawLocked)
+    assert(state.players[0].hand.every((card) => card.freeThisTurn === true))
+    state = playCard(state, 'p1', drawingAttack.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.players[0].energy, upgraded ? 4 : 3)
+    assertDeepEqual(state.players[0].draw.map((card) => card.uid), [future.uid], 'Bullet Time allowed a later draw')
+    state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+    assert(!state.players[0].drawLocked)
+    assert(state.players[0].hand.every((card) => card.freeThisTurn === undefined), 'the hand discount survived the turn')
+  }
+})
+
+check('Bullet Time discounts disappear when cards leave hand or cross a turn in play', () => {
+  const hologram = instance('hologram', true)
+  const recovered = { ...instance('strike_defect'), freeThisTurn: true }
+  let state = combat([makePlayer({
+    character: 'defect', hand: [hologram], discard: [recovered], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', hologram.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUid: recovered.uid,
+  })
+  assertEqual(state.players[0].hand[0].freeThisTurn, undefined, 'a recovered card kept Bullet Time')
+
+  const buffer = { ...instance('buffer'), freeThisTurn: true }
+  state = combat([makePlayer({ character: 'defect', hand: [buffer], energy: 0 })], [makeEnemy()])
+  state = playCard(state, 'p1', buffer.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].powers[0].freeThisTurn, undefined, 'a played Power kept Bullet Time')
+  state.players[0].powers[0].freeThisTurn = true
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].powers[0].freeThisTurn, undefined, 'a Power kept Bullet Time across a turn')
 })
 
 check('Machine Learning draws after the normal five-card start-of-turn draw', () => {

@@ -5039,6 +5039,26 @@ check('online Burst publishes its queued Skill and keeps the copy owner-authorit
   assertEqual(resolved.players.find((player) => player.id === actor.id).doubledSkillsThisTurn, 0)
 })
 
+check('Bullet Time hand discounts survive reconnect without leaking private card identities', () => {
+  const { room, a, b } = twoSeatRoom()
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  const bulletTime = { uid: 'room-bullet-time', defId: 'bullet_time', upgraded: true }
+  const defend = { uid: 'room-bullet-defend', defId: 'defend_silent', upgraded: false }
+  const future = { uid: 'room-bullet-future', defId: 'strike_silent', upgraded: false }
+  Object.assign(actor, {
+    name: 'Silent', character: 'silent', hand: [bulletTime, defend], draw: [future], energy: 2, drawLocked: false,
+  })
+  apply(room, a.token, { kind: 'playCard', cardUid: bulletTime.uid, preflight: true })
+  const teammate = snapshotFor(room, b.token)
+  const publicActor = teammate.run.combat.players.find((player) => player.id === actor.id)
+  assert(publicActor.drawLocked)
+  assert(!allStrings(teammate).includes(defend.uid), 'Bullet Time leaked a discounted hand card')
+  const rejoined = snapshotFor(room, a.token).run.combat.players.find((player) => player.id === actor.id)
+  assertEqual(rejoined.hand.find((card) => card.uid === defend.uid).freeThisTurn, true)
+  apply(room, a.token, { kind: 'playCard', cardUid: defend.uid, playerId: actor.id, preflight: true })
+  assertEqual(room.run.combat.players.find((player) => player.id === actor.id).energy, 0)
+})
+
 check('online Double Tap locks the room until its owner separately targets the copy', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

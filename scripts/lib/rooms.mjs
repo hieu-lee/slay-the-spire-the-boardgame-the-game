@@ -435,7 +435,7 @@ export function apply(room, seatToken, action) {
     const held = player?.hand.find((card) => card.uid === action.cardUid)
     const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
     const spendMiracle = action.spendMiracle === true
-    const cost = forcedForSeat && forcedCard.cardUid === action.cardUid ? 0 : def && player ? playCost(def, player) : null
+    const cost = forcedForSeat && forcedCard.cardUid === action.cardUid ? 0 : def && player ? playCost(def, player, held) : null
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
       cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')

@@ -179,6 +179,8 @@ type EffectKind =
   | { kind: 'preventDraw' }
   /** The next card played this turn costs 0 Energy. */
   | { kind: 'discountNextCard' }
+  /** Every card currently in the caster's hand costs 0 this turn. */
+  | { kind: 'discountHand' }
   /** The next Attack played this turn resolves as two separately targeted cards. */
   | { kind: 'doubleNextAttack' }
   /** The next Attack or Skill played this turn resolves as two separate cards. */
@@ -2272,6 +2274,11 @@ export const CARDS: Record<string, CardDef> = {
     id: 'burst', name: 'Burst', owner: 'silent', type: 'skill', rarity: 'rare', cost: 1,
     effects: [{ kind: 'doubleNextSkill' }],
     upgrade: { cost: 0 },
+  }),
+  bullet_time: card({
+    id: 'bullet_time', name: 'Bullet Time', owner: 'silent', type: 'skill', rarity: 'rare', cost: 3,
+    effects: [{ kind: 'preventDraw' }, { kind: 'discountHand' }],
+    upgrade: { cost: 2 },
   }),
   blur: card({
     id: 'blur', name: 'Blur', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,

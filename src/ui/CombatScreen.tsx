@@ -266,7 +266,7 @@ function pendingFor(
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const forced = state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
     state.startTurnProgress.forcedCard.cardUid === card.uid
-  const energySpent = copiedEnergySpent ?? (!forced && playCost(def, viewer) === 'X' ? null : 0)
+  const energySpent = copiedEnergySpent ?? (!forced && playCost(def, viewer, card) === 'X' ? null : 0)
   const requirements = requirementsOf(
     def, state.players.filter((player) => !player.dead).length, viewer, state, energySpent ?? undefined, cardInHand,
   )
@@ -413,7 +413,7 @@ function canAfford(
 ): boolean {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   if (!cardIsPlayable(def, state, player, drawCount)) return false
-  const cost = playCost(def, player)
+  const cost = playCost(def, player, card)
   if (spendMiracle && (cost === 'X' || cost === 0)) return false
   if (def.cost === 'X' && cost !== 'X' && (def.minimumX ?? 0) > 0) return false
   return cost === 'X'
@@ -1577,7 +1577,7 @@ export function CombatScreen({
           const enemyChoices = cardEnemyChoiceCount(def)
           const playerChoices = cardPlayerChoiceCount(def)
           const energySpent = next.cardInHand
-            ? playCost(def, authoritative.player) === 'X' ? null : 0
+            ? playCost(def, authoritative.player, next.card) === 'X' ? null : 0
             : authoritative.combat.pendingCardCopy?.energySpent ?? 0
           const needsEnemy = cardNeedsEnemy(def, authoritative.player, false, energySpent ?? undefined) || spentShivs > 0 ||
             overflowShivs > 0 || enemyChoices > 0
@@ -2817,7 +2817,7 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
-              cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer)}
+              cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer, card)}
               playable={
                 !usingCard &&
                 !pendingTrigger &&

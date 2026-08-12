@@ -3398,10 +3398,10 @@ const corruptionPower = page.getByRole('button', {
   name: 'Corruption+: your Skills cost 0 and Exhaust when played',
 })
 await corruptionPower.waitFor()
-const freeDefend = page.getByRole('button', { name: /^Defend, cost 0,/ })
-await freeDefend.waitFor()
+const corruptionFreeDefend = page.getByRole('button', { name: /^Defend, cost 0,/ })
+await corruptionFreeDefend.waitFor()
 await shot('06zl-corruption-active')
-await freeDefend.click()
+await corruptionFreeDefend.click()
 await page.waitForFunction(() => ![...document.querySelectorAll('button')]
   .some((button) => button.getAttribute('aria-label')?.startsWith('Defend,')))
 const corruption = await readState()
@@ -7209,6 +7209,46 @@ check('Burst+ auto-resolves a choice-free Skill copy and cleans the physical car
   assertEqual(burstResolved.pendingCardCopy, undefined)
 })
 await shot('16j-silent-burst-resolved')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, {
+    hand: [
+      { uid: 'ui-bullet-time', defId: 'bullet_time', upgraded: true },
+      { uid: 'ui-bullet-defend', defId: 'defend_silent', upgraded: false },
+    ],
+    draw: [{ uid: 'ui-bullet-future', defId: 'strike_silent', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 2, block: 0, drawLocked: false,
+  })
+  run.combat.phase = 'player'
+  run.combat.pendingCardCopy = undefined
+  debug.setRun(run)
+})
+const bulletTimeCard = page.getByRole('button', { name: /^Bullet Time\+, cost 2,/ })
+const bulletTimeLabel = await bulletTimeCard.getAttribute('aria-label')
+assert(await artWidth(bulletTimeCard) >= 700)
+check('Bullet Time+ announces its printed draw lock and hand-only discount', () => {
+  assert(bulletTimeLabel.includes('cannot draw more cards this turn'))
+  assert(bulletTimeLabel.includes('cards currently in your hand cost 0 this turn'))
+})
+await bulletTimeCard.click()
+const bulletFreeDefend = page.getByRole('button', { name: /^Defend, cost 0,/ })
+await bulletFreeDefend.waitFor()
+const bulletSeat = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('Bullet Time+ visibly discounts the current hand and exposes its draw lock', () => {
+  assert(bulletSeat.includes('cannot draw more cards this turn'))
+})
+await shot('16k-silent-bullet-time')
+await bulletFreeDefend.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
+const bulletResolved = await readState()
+check('Bullet Time+ pays only its own Energy while the discounted card resolves normally', () => {
+  assertEqual(bulletResolved.players[0].block, 1)
+  assertEqual(bulletResolved.players[0].energy, 0)
+  assertDeepEqual(bulletResolved.players[0].draw.map((card) => card.uid), ['ui-bullet-future'])
+})
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

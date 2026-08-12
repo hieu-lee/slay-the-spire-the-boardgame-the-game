@@ -129,6 +129,7 @@ function effectText(effect: Effect): string {
     case 'cycleHand': return 'discard your hand, then draw that many cards'
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'discountHand': return 'cards currently in your hand cost 0 this turn'
     case 'doubleNextAttack': return 'your next Attack this turn is played twice, with separate targets and modifiers'
     case 'doubleNextAttackOrSkill': return 'your next Attack or Skill this turn is played twice, with separate choices and modifiers'
     case 'doubleNextSkill': return 'your next Skill this turn is played twice, with separate choices and modifiers; Burst cannot be copied or played twice'

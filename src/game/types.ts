@@ -38,6 +38,8 @@ export type CardInstance = {
   retainedLastTurn?: boolean
   /** Cubes accumulated on a Power such as The Bomb. */
   counter?: number
+  /** Bullet Time reduced this specific card's cost to 0 for the current turn. */
+  freeThisTurn?: boolean
 }
 
 export type RelicInstance = {
@@ -73,7 +75,7 @@ export type Player = {
   /** Enemies can Weaken and make players Vulnerable, same caps as enemies. */
   vulnerable: number
   weak: number
-  /** Battle Trance and Pray prevent further draws until the next Player Turn. */
+  /** Battle Trance, Pray and Bullet Time prevent further draws until the next Player Turn. */
   drawLocked: boolean
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
