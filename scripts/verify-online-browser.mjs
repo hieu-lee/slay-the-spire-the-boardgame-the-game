@@ -2818,11 +2818,15 @@ try {
     assertDeepEqual(expandedBrewButtons, ['true', 'false'])
   })
   await brewUses.first().click()
-  iris.potions = ['entropic_brew']
+  fourRoom.run.players.find((player) => player.id === iris.id).potions = ['entropic_brew']
   await roomAction(fourPages[0], { kind: 'cardReward', choice: 0 })
-  const immediateBrewExpanded = await fourPages[0].locator('.outside-potions')
-    .getByRole('button', { name: 'Use Entropic Brew', exact: true }).getAttribute('aria-expanded')
+  await fourPages[0].waitForFunction(() =>
+    document.querySelectorAll('.outside-potions [aria-label="Use Entropic Brew"]').length === 1)
+  const immediateBrew = fourPages[0].locator('.outside-potions__item').first()
+    .getByRole('button', { name: 'Use Entropic Brew', exact: true })
+  const immediateBrewExpanded = await immediateBrew.getAttribute('aria-expanded')
   check('an immediately usable Entropic Brew is not announced as a disclosure', () => {
+    assertEqual(fourRoom.run.players.find((player) => player.id === iris.id).potions.length, 1)
     assertEqual(immediateBrewExpanded, null)
   })
   const rewardIris = fourRoom.run.players.find((player) => player.id === iris.id)

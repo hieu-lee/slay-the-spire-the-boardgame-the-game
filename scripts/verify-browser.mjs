@@ -7076,6 +7076,11 @@ await page.evaluate((viewerId) => {
   debug.setRun(run)
 }, potionViewerId)
 const soloGive = page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true })
+await page.waitForFunction(() => {
+  const button = [...document.querySelectorAll('.outside-potions button')]
+    .find((candidate) => candidate.getAttribute('aria-label') === 'Give Energy Potion')
+  return button?.disabled && !button.hasAttribute('aria-expanded')
+})
 const soloGiveDisabled = await soloGive.isDisabled()
 const soloGiveExpanded = await soloGive.getAttribute('aria-expanded')
 check('a Potion cannot open an empty Give disclosure with no legal recipient', () => {
@@ -7087,6 +7092,12 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   run.players.push(JSON.parse(sessionStorage.getItem('potion-seat-removed')))
   debug.setRun(run)
+})
+await page.waitForFunction(() => {
+  const button = [...document.querySelectorAll('.outside-potions button')]
+    .find((candidate) => candidate.getAttribute('aria-label') === 'Give Energy Potion')
+  return button && !button.disabled && button.getAttribute('aria-expanded') === 'false' &&
+    !document.querySelector('.outside-potions__targets')
 })
 const restoredGiveExpanded = await page.locator('.outside-potions')
   .getByRole('button', { name: 'Give Energy Potion', exact: true }).getAttribute('aria-expanded')
