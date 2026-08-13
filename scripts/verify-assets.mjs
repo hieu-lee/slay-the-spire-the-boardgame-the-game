@@ -38,6 +38,8 @@ const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
 const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
+const menuRoot = join(publicRoot, 'assets/menu')
+const fontRoot = join(publicRoot, 'assets/fonts')
 
 const cardFiles = listing(cardRoot, '.webp')
 const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
@@ -233,6 +235,15 @@ check('every icon the UI can render exists on disk', () => {
 check('the optional enemy art table names only real enemies', () => {
   const stray = Object.keys(ENEMY_ART).filter((defId) => !(defId in ENEMIES))
   assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
+})
+
+check('the menu backgrounds and licensed UI font are bundled', () => {
+  for (const file of ['title-spire.webp', 'compendium-archive.webp']) {
+    assert(existsSync(join(menuRoot, file)), `missing menu artwork: ${file}`)
+  }
+  assert(existsSync(join(fontRoot, 'Kreon.ttf')), 'missing Kreon UI font')
+  const license = readFileSync(join(fontRoot, 'Kreon-OFL.txt'), 'utf8')
+  assert(license.includes('SIL OPEN FONT LICENSE Version 1.1'), 'Kreon OFL license is incomplete')
 })
 
 // Legacy rulebook-card crops remain optional and local. Combat uses the

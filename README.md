@@ -32,6 +32,9 @@ scans and rulebook icons are fetched locally by `pnpm sync:assets` and remain gi
 | Keyword and token icons | the official rulebook PDF | `docs/reference/STS_KS_Rulebook.pdf`, PyMuPDF, Pillow |
 | Enemy portraits | enemy card scans in the same PDF | same as icons, plus `cwebp` |
 | Combat stage and cutouts | original OpenAI Imagegen illustrations | committed WebP files |
+| Combat status and Power pictograms | original OpenAI Imagegen illustrations | committed transparent PNG files |
+| Title-menu and compendium backgrounds | original OpenAI Imagegen illustrations | committed WebP files |
+| Kreon UI typeface | Google Fonts / Kreon Project Authors, SIL OFL 1.1 | committed TTF and license |
 
 ```bash
 brew install ffmpeg webp          # cwebp ships in the webp formula

@@ -38,6 +38,8 @@ import { Icon, IconValue } from './Icon.tsx'
 import { OnlineGame } from './OnlineGame.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
+import { StartMenu } from './StartMenu.tsx'
+import { CompendiumScreen } from './CompendiumScreen.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -57,20 +59,24 @@ function newRun(playerCount: number, seedText: string, ascension = 0): RunState 
 
 export function App() {
   const [online, setOnline] = useState(hasRoomSession)
+  const [localOpen, setLocalOpen] = useState(false)
   return (
     <>
-      <div className="game-mode" hidden={online}><LocalGame onOnline={() => setOnline(true)} /></div>
+      <div className="game-mode" hidden={online}>
+        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onOnline={() => setOnline(true)} />
+      </div>
       {online ? <OnlineGame onLocal={() => setOnline(false)} /> : null}
     </>
   )
 }
 
-function LocalGame({ onOnline }: { onOnline: () => void }) {
+function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => void; onOnline: () => void }) {
   const [playerCount, setPlayerCount] = useState(2)
   const [seedText, setSeedText] = useState('spire')
   const [ascension, setAscension] = useState(0)
   const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
   const [viewerId, setViewerId] = useState('p1')
+  const [compendium, setCompendium] = useState(false)
 
   /** The settings the run in progress was actually built from. */
   const [built, setBuilt] = useState({ count: 2, seed: 'spire', ascension: 0 })
@@ -132,6 +138,21 @@ function LocalGame({ onOnline }: { onOnline: () => void }) {
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
+
+  if (!open) {
+    if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
+    return <StartMenu
+      playerCount={playerCount}
+      seed={seedText}
+      ascension={ascension}
+      onPlayerCount={setPlayerCount}
+      onSeed={setSeedText}
+      onAscension={setAscension}
+      onStart={() => { restart(playerCount, seedText, ascension); onOpen() }}
+      onOnline={onOnline}
+      onCompendium={() => setCompendium(true)}
+    />
+  }
 
   return (
     <main className={`app-shell${run.phase === 'combat' ? ' app-shell--combat' : ''}`}>

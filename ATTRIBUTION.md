@@ -31,6 +31,8 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
 | Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
+| Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 
 The sync scripts keep those scans, rulebook icons, source-resolution working files, and
 extracted legacy enemy portraits out of version control.
@@ -49,6 +51,9 @@ asset contains a card scan, logo, or readable text.
 `public/assets/status-icons/` contains fourteen committed generated combat-status symbols,
 and `public/assets/power-icons/` contains twenty-eight committed generated Power symbols.
 Cards without a dedicated Power symbol use a generated generic status symbol.
+
+`public/assets/menu/` contains the generated title-screen spire and compendium archive backdrops.
+`public/assets/fonts/Kreon.ttf` is distributed under the bundled `Kreon-OFL.txt` license.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.
 

@@ -12,6 +12,8 @@ import { chromium } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const cardArtDir = join(repoRoot, 'public/assets/cards')
+const artSynced = existsSync(cardArtDir) && readdirSync(cardArtDir).length > 0
 const args = process.argv.slice(2)
 const headed = args.includes('--headed')
 const outDir = join(
@@ -135,6 +137,241 @@ await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
+
+await shot('00-title-menu')
+const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
+  const box = menu.getBoundingClientRect()
+  const title = menu.querySelector('.start-menu__title')?.getBoundingClientRect()
+  const nav = menu.querySelector('.start-menu__nav')?.getBoundingClientRect()
+  const setup = menu.querySelector('.start-menu__setup')?.getBoundingClientRect()
+  return {
+    box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
+    title: title && { left: title.left, top: title.top, right: title.right, bottom: title.bottom },
+    nav: nav && { left: nav.left, top: nav.top, right: nav.right, bottom: nav.bottom },
+    setup: setup && { left: setup.left, top: setup.top, right: setup.right, bottom: setup.bottom },
+    background: getComputedStyle(menu).backgroundImage,
+    font: getComputedStyle(menu).fontFamily,
+    titleBottom: menu.querySelector('.start-menu__title h1')?.getBoundingClientRect().bottom,
+    editionTop: menu.querySelector('.start-menu__edition')?.getBoundingClientRect().top,
+  }
+})
+const menuSelection = await page.locator('.start-menu__nav').evaluate((nav) => ({
+  selected: [...nav.querySelectorAll('button')].filter((button) => button.dataset.selected === 'true')
+    .map((button) => button.textContent?.trim()),
+  marker: getComputedStyle(nav.querySelector('button[data-selected="true"]'), '::before').content,
+}))
+check('the title menu fills the viewport without clipping its controls', () => {
+  assert(titleMenu.background.includes('title-spire.webp'), 'the generated title backdrop is missing')
+  assert(titleMenu.font.includes('Kreon'), `the game-style typeface is missing: ${titleMenu.font}`)
+  assert(titleMenu.titleBottom !== undefined && titleMenu.editionTop !== undefined &&
+    titleMenu.editionTop >= titleMenu.titleBottom + 8,
+  `the board-game subtitle clips the title: ${titleMenu.titleBottom} / ${titleMenu.editionTop}`)
+  for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav, setup: titleMenu.setup })) {
+    assert(box && box.left >= titleMenu.box.left - 1 && box.right <= titleMenu.box.right + 1 &&
+      box.top >= titleMenu.box.top - 1 && box.bottom <= titleMenu.box.bottom + 1,
+    `${name} leaves the title viewport: ${JSON.stringify(box)}`)
+  }
+  assertDeepEqual(menuSelection.selected, ['Play'])
+  assert(!menuSelection.marker.includes('☞'), `the menu still uses the cheap finger marker: ${menuSelection.marker}`)
+})
+
+await page.setViewportSize({ width: 720, height: 360 })
+const landscapeMenu = await page.locator('.start-menu').evaluate((menu) => {
+  const viewport = menu.getBoundingClientRect()
+  const box = (selector) => {
+    const rect = menu.querySelector(selector)?.getBoundingClientRect()
+    return rect && { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+  }
+  return {
+    viewport: { left: viewport.left, top: viewport.top, right: viewport.right, bottom: viewport.bottom },
+    title: box('.start-menu__title'), nav: box('.start-menu__nav'), setup: box('.start-menu__setup'),
+  }
+})
+check('the title menu remains separated and reachable in short landscape', () => {
+  const { viewport, title, nav, setup } = landscapeMenu
+  assert(viewport && title && nav && setup, `short landscape regions are missing: ${JSON.stringify(landscapeMenu)}`)
+  assert(title.bottom <= nav.top || title.left >= nav.right || title.right <= nav.left,
+    `title overlaps navigation: ${JSON.stringify(landscapeMenu)}`)
+  assert(nav.bottom <= setup.top || nav.left >= setup.right || nav.right <= setup.left,
+    `navigation overlaps setup: ${JSON.stringify(landscapeMenu)}`)
+  for (const [name, box] of Object.entries({ title, nav, setup })) {
+    assert(box.left >= viewport.left && box.top >= viewport.top && box.right <= viewport.right && box.bottom <= viewport.bottom,
+      `${name} leaves short landscape: ${JSON.stringify(box)}`)
+  }
+})
+await shot('00-title-menu-landscape')
+await page.setViewportSize({ width: 1440, height: 900 })
+
+await page.getByRole('button', { name: 'Compendium' }).click()
+await page.locator('.compendium').waitFor()
+const allCardCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: '0 energy', exact: true }).click()
+const allZeroCostLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('button', { name: 'Any energy cost' }).click()
+await page.getByRole('button', { name: 'Ironclad' }).click()
+const ironcladCardCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: 'Power cards' }).click()
+const powerCardLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('button', { name: 'All card types' }).click()
+await page.getByRole('checkbox', { name: 'rare', exact: true }).check()
+const rareCardLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('checkbox', { name: 'rare', exact: true }).uncheck()
+await page.getByRole('button', { name: '0 energy', exact: true }).click()
+const zeroCostCount = await page.locator('.compendium-card').count()
+await page.getByRole('button', { name: 'Any energy cost' }).click()
+const firstAscending = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium__sort').click()
+const firstDescending = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium__sort').click()
+await page.getByPlaceholder('Search').fill('Bash')
+const bashCards = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByLabel('View upgrades').check()
+const upgradedBashSource = await page.locator('.compendium-card img').first().getAttribute('src')
+await page.locator('.compendium-card').first().click()
+const detailOpen = await page.locator('.compendium__detail').count()
+const detailModal = await page.locator('.compendium__detail').evaluate((dialog) => dialog.matches(':modal'))
+await shot('00b-compendium-card-detail')
+await page.keyboard.press('Escape')
+await page.locator('.compendium__detail').waitFor({ state: 'detached' })
+await page.getByPlaceholder('Search').fill('Havoc')
+await page.getByRole('button', { name: '0 energy', exact: true }).click()
+const upgradedZeroCostNames = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('button', { name: 'Any energy cost', exact: true }).click()
+await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Curses' }).click()
+await page.getByPlaceholder('Search').fill('Clumsy')
+const curseUpgradeSource = await page.locator('.compendium-card img').first().getAttribute('src')
+const curseImageVisible = !artSynced || await page.locator('.compendium-card > img').first().evaluate((img) =>
+  img.complete && img.naturalWidth > 0 && getComputedStyle(img).visibility === 'visible')
+await page.getByRole('button', { name: 'Statuses' }).click()
+await page.getByPlaceholder('Search').fill('Daze')
+const dazeLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.locator('.compendium-card').first().click()
+const statusDetailFallback = await page.locator('.compendium__detail-card').evaluate((card) => ({
+  hasPublisherImage: Boolean(card.querySelector(':scope > img')),
+  fallbackVisible: getComputedStyle(card.querySelector('.card-face')).visibility === 'visible',
+  text: card.querySelector('.card-face')?.textContent ?? '',
+  rulesSize: Number.parseFloat(getComputedStyle(card.querySelector('.card-face__rules')).fontSize),
+}))
+await page.keyboard.press('Escape')
+await page.getByPlaceholder('Search').fill('Slimed')
+const slimedLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Ironclad' }).click()
+await shot('00a-compendium')
+check('the compendium filters the real card catalog and opens card detail', () => {
+  assert(allCardCount > ironcladCardCount && ironcladCardCount > 0,
+    `pool filtering did not narrow the catalog: ${allCardCount} / ${ironcladCardCount}`)
+  assert(allZeroCostLabels.length > 0 && allZeroCostLabels.every((label) => !label?.includes('unplayable')),
+    `the 0-Energy filter included unplayable cards: ${allZeroCostLabels.join(' / ')}`)
+  assert(powerCardLabels.length > 0 && powerCardLabels.every((label) => label?.includes(', power,')),
+    `card-type filtering leaked: ${powerCardLabels.join(' / ')}`)
+  assert(rareCardLabels.length > 0 && rareCardLabels.every((label) => label?.endsWith(', rare')),
+    `rarity filtering leaked: ${rareCardLabels.join(' / ')}`)
+  assert(zeroCostCount > 0 && zeroCostCount < ironcladCardCount,
+    `cost filtering did not narrow the catalog: ${zeroCostCount} / ${ironcladCardCount}`)
+  assert(firstAscending !== firstDescending, 'A–Z sort did not reverse the card order')
+  assertEqual(bashCards.length, 1)
+  assert(bashCards[0]?.startsWith('Bash, cost 2, attack') && bashCards[0]?.endsWith(', starter'), bashCards[0])
+  assert(upgradedBashSource?.endsWith('ironclad__starter__bash+.webp'), upgradedBashSource)
+  assert(upgradedZeroCostNames.some((label) => label?.startsWith('Havoc+, cost 0,')),
+    `upgraded cost filter omitted Havoc+: ${upgradedZeroCostNames.join(' / ')}`)
+  assertEqual(detailOpen, 1)
+  assert(detailModal, 'card detail should use native modal semantics')
+  assert(curseUpgradeSource?.endsWith('curses__clumsy.webp') && !curseUpgradeSource.includes('clumsy+'),
+    `non-upgradable curse requested the wrong face: ${curseUpgradeSource}`)
+  assert(curseImageVisible, 'the curse scan stayed hidden after changing filters')
+  assert(!statusDetailFallback.hasPublisherImage && statusDetailFallback.fallbackVisible &&
+    statusDetailFallback.text.includes('Daze') && statusDetailFallback.text.includes('unplayable') &&
+    statusDetailFallback.text.includes('ethereal') && statusDetailFallback.rulesSize >= 13,
+  `unscanned status detail has no fallback: ${JSON.stringify(statusDetailFallback)}`)
+  assert(dazeLabel?.includes('unplayable') && dazeLabel.includes('ethereal'), dazeLabel)
+  assert(slimedLabel?.includes('cost 1'), slimedLabel)
+})
+await page.setViewportSize({ width: 390, height: 844 })
+const mobileCompendium = await page.locator('.compendium').evaluate((root) => {
+  const viewport = root.getBoundingClientRect()
+  const filters = root.querySelector('.compendium__filters')?.getBoundingClientRect()
+  const library = root.querySelector('.compendium__library')?.getBoundingClientRect()
+  const card = root.querySelector('.compendium-card')?.getBoundingClientRect()
+  return {
+    viewport: { left: viewport.left, right: viewport.right, top: viewport.top, bottom: viewport.bottom },
+    filters: filters && { left: filters.left, right: filters.right, top: filters.top, bottom: filters.bottom },
+    library: library && { left: library.left, right: library.right, top: library.top, bottom: library.bottom },
+    cardWidth: card?.width,
+    wrappedLabels: [...root.querySelectorAll('.compendium__checks label')]
+      .filter((label) => label.getBoundingClientRect().height > parseFloat(getComputedStyle(label).lineHeight) * 1.5).length,
+    checkboxTargets: [...root.querySelectorAll('.compendium__checks label')].map((label) => {
+      const box = label.getBoundingClientRect()
+      return { height: box.height, center: (box.top + box.bottom) / 2 }
+    }),
+    backBeforeSearch: Boolean(root.querySelector('.compendium__back')?.compareDocumentPosition(
+      root.querySelector('input[type="search"]')) & Node.DOCUMENT_POSITION_FOLLOWING),
+    back: (() => {
+      const box = root.querySelector('.compendium__back')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+    sort: (() => {
+      const box = root.querySelector('.compendium__sort')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+    upgrade: (() => {
+      const box = root.querySelector('.compendium__upgrade')?.getBoundingClientRect()
+      return box && { top: box.top, bottom: box.bottom }
+    })(),
+  }
+})
+const mobileTitleOverflow = await page.locator('.compendium-card .card-face__title').first().evaluate(async (title) => {
+  const { CARDS: definitions, faceOf } = await import('/src/game/cards.ts')
+  const original = title.textContent
+  const clipped = []
+  for (const def of Object.values(definitions)) {
+    for (const upgraded of [false, true]) {
+      const shown = faceOf(def, upgraded && Boolean(def.upgrade))
+      title.textContent = shown.name
+      if (title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1) {
+        clipped.push(`${shown.name}${upgraded && def.upgrade ? '+' : ''}`)
+      }
+    }
+  }
+  title.textContent = original
+  return clipped
+})
+await shot('00c-compendium-mobile')
+check('the compendium remains usable on a phone-sized viewport', () => {
+  assert(mobileCompendium.filters && mobileCompendium.library,
+    `mobile compendium columns are missing: ${JSON.stringify(mobileCompendium)}`)
+  assert(mobileCompendium.filters.left >= mobileCompendium.viewport.left - 1 &&
+    mobileCompendium.library.right <= mobileCompendium.viewport.right + 1,
+  `mobile compendium leaves the viewport: ${JSON.stringify(mobileCompendium)}`)
+  assert((mobileCompendium.cardWidth ?? 0) >= 100,
+    `mobile cards became unreadably small: ${mobileCompendium.cardWidth}`)
+  assertEqual(mobileCompendium.wrappedLabels, 0, 'mobile rarity labels should not wrap')
+  assert(mobileCompendium.checkboxTargets.every((target) => target.height >= 24),
+    `mobile rarity targets are too short: ${JSON.stringify(mobileCompendium.checkboxTargets)}`)
+  assert(mobileCompendium.checkboxTargets.slice(1).every((target, index) =>
+    target.center - mobileCompendium.checkboxTargets[index].center >= 24),
+  `mobile rarity targets are too tightly spaced: ${JSON.stringify(mobileCompendium.checkboxTargets)}`)
+  assertDeepEqual(mobileTitleOverflow, [], 'mobile compendium title clipping')
+  assert(mobileCompendium.backBeforeSearch, 'Back must precede Search in keyboard and source order')
+  assert(mobileCompendium.back && mobileCompendium.back.top < mobileCompendium.viewport.bottom &&
+    mobileCompendium.back.bottom <= mobileCompendium.viewport.bottom + 1,
+  `mobile back control is not initially reachable: ${JSON.stringify(mobileCompendium)}`)
+  assert(mobileCompendium.sort && mobileCompendium.upgrade &&
+    mobileCompendium.back.bottom <= mobileCompendium.sort.top + 1 &&
+    mobileCompendium.back.bottom <= mobileCompendium.upgrade.top + 1 &&
+    mobileCompendium.sort.bottom <= mobileCompendium.upgrade.top + 1,
+  `mobile compendium controls overlap: ${JSON.stringify(mobileCompendium)}`)
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.getByRole('button', { name: 'Back to main menu' }).click()
+await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.locator('.map').waitFor()
 
 // A run opens on the map with the boot beside the board (p.9).
 const opening = await readRun()
@@ -302,8 +539,6 @@ const artStatus = await page.evaluate(() =>
     ok: img.complete && img.naturalWidth > 0,
   })),
 )
-const cardArtDir = join(repoRoot, 'public/assets/cards')
-const artSynced = existsSync(cardArtDir) && readdirSync(cardArtDir).length > 0
 // A missing file under public/ is served by Vite's SPA fallback as 200 + HTML,
 // so a network-status check cannot see it. Only naturalWidth tells the truth.
 const enemyArtStatus = await page.evaluate(() =>
@@ -6832,6 +7067,15 @@ const energyContrast = await page.evaluate(() => {
   const pip = document.querySelector('.pip--energy')
   const number = pip?.querySelector('.icon-value__number')
   if (!pip || !number) return { missing: true }
+  const pipBox = pip.getBoundingClientRect()
+  const numberBox = number.getBoundingClientRect()
+  const iconBox = pip.querySelector('.icon').getBoundingClientRect()
+  const pairBox = {
+    left: Math.min(numberBox.left, iconBox.left),
+    right: Math.max(numberBox.right, iconBox.right),
+    top: Math.min(numberBox.top, iconBox.top),
+    bottom: Math.max(numberBox.bottom, iconBox.bottom),
+  }
   const parse = (value) => (value.match(/\d+/g) ?? []).slice(0, 3).map(Number)
   const lum = ([r, g, b]) => {
     const channel = (v) => {
@@ -6844,7 +7088,16 @@ const energyContrast = await page.evaluate(() => {
   // The disc is a gradient; sample its lightest declared stop conservatively.
   const plate = lum([255, 226, 150])
   const ratio = (Math.max(ink, plate) + 0.05) / (Math.min(ink, plate) + 0.05)
-  return { missing: false, ratio }
+  return {
+    missing: false,
+    ratio,
+    pairCenterOffset: Math.hypot(
+      (pairBox.left + pairBox.right - pipBox.left - pipBox.right) / 2,
+      (pairBox.top + pairBox.bottom - pipBox.top - pipBox.bottom) / 2,
+    ),
+    contained: pairBox.left >= pipBox.left && pairBox.right <= pipBox.right &&
+      pairBox.top >= pipBox.top && pairBox.bottom <= pipBox.bottom,
+  }
 })
 check('the energy count is readable on its disc', () => {
   assert(!energyContrast.missing, 'expected an energy pip')
@@ -6852,6 +7105,9 @@ check('the energy count is readable on its disc', () => {
     energyContrast.ratio >= 4.5,
     `the count contrasts at ${energyContrast.ratio.toFixed(2)}:1 against the disc`,
   )
+  assert(energyContrast.contained, 'the energy count is clipped by its disc')
+  assert(energyContrast.pairCenterOffset <= 1,
+    `the energy count and icon are ${energyContrast.pairCenterOffset}px off-centre`)
 })
 
 // Four players is the maximum the box supports and the layout most likely to
