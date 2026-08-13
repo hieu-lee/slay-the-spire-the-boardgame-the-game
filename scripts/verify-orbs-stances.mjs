@@ -466,7 +466,7 @@ const withRelic = (defId, over = {}) =>
 // did nothing. These pin each trigger point.
 check('Akabeko waits for its printed manual once-per-combat activation', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
-  let state = createCombat(createRng(5), [withRelic('akabeko', { draw: deck })], [enemy()])
+  let state = createCombat(createRng(5), [withRelic('anchor', { draw: deck })], [enemy()])
   state = startPlayerTurn(state)
   assertEqual(state.players[0].strength, 0, 'Akabeko does not grant digital-style permanent Strength')
 
@@ -524,8 +524,8 @@ check('a dead player ends combat before any relics fire', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('akabeko', { id: 'p1', dead: true, hp: 0, draw: deck }),
-        withRelic('akabeko', { id: 'p2', row: 1, draw: [...deck] }),
+        withRelic('anchor', { id: 'p1', dead: true, hp: 0, draw: deck }),
+        withRelic('anchor', { id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],
     ),
@@ -541,7 +541,7 @@ check('one player\'s relic never fires for another', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('akabeko', { id: 'p1', draw: deck }),
+        withRelic('anchor', { id: 'p1', draw: deck }),
         player({ id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],

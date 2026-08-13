@@ -3,11 +3,24 @@ import type { CombatState } from '../game/combat.ts'
 import {
   advanceAct,
   ASCENSION_RULES,
+  canSkipEvent,
+  chooseNeow,
+  decideCourier,
+  chooseEvent,
+  chooseRelicReward,
   createRun,
   enterRoom,
   hasPendingRelicAcquisition,
   leaveRoom,
+  finishMerchant,
+  finishRun,
+  purchaseAtMerchant,
+  removeAtCurrentMerchant,
   resolveCampfire,
+  resolveNeowEffect,
+  resolveNeowGold,
+  revealNeowReward,
+  resolveNeowReward,
   revealCardReward,
   revealPotionReward,
   revealRelicReward,
@@ -18,17 +31,23 @@ import {
   resolvePendingRelic,
   resolveCardRewards,
   resolveCombat,
+  revealCourier,
   roomChoices,
   startPendingBoss,
   switchBetweenCombatRow,
   tradePotion,
   usePotionOutsideCombat,
   wingBootChoices,
+  skipEvent,
 } from '../game/run.ts'
 import type { RunState } from '../game/run.ts'
 import { seedFromString } from '../game/rng.ts'
 import type { CharacterId } from '../game/types.ts'
+import { ROOM_LABEL } from '../game/run.ts'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
+import { isActIVUnlocked } from '../game/campaign.ts'
+import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
+import type { CampaignProgress } from '../game/campaign.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
@@ -40,6 +59,8 @@ import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { CompendiumScreen } from './CompendiumScreen.tsx'
+import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
+import { NeowScreen } from './NeowScreen.tsx'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -47,14 +68,45 @@ const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'defect', name: 'Defect' },
   { character: 'watcher', name: 'Watcher' },
 ]
+const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
-function newRun(playerCount: number, seedText: string, ascension = 0): RunState {
-  const party = ROSTER.slice(0, playerCount).map((entry, index) => ({
+const CAMPAIGN_KEY = 'sts-physical-campaign'
+
+function savedCampaign(): CampaignProgress {
+  try { return parseCampaignProgress(JSON.parse(localStorage.getItem(CAMPAIGN_KEY) ?? '{}')) }
+  catch { return createCampaignProgress() }
+}
+
+function legalCharacters(selected: readonly CharacterId[]): CharacterId[] {
+  const result: CharacterId[] = []
+  for (let seat = 0; seat < ROSTER.length; seat += 1) {
+    const wanted = selected[seat]
+    result.push(wanted && !result.includes(wanted)
+      ? wanted
+      : DEFAULT_CHARACTERS.find((character) => !result.includes(character))!)
+  }
+  return result
+}
+
+function newRun(playerCount: number, seedText: string, ascension = 0, progress = savedCampaign(), chooseYourRelic = false, selected = DEFAULT_CHARACTERS): RunState {
+  const party = legalCharacters(selected).slice(0, playerCount).map((character, index) => ({
     id: `p${index + 1}`,
-    name: entry.name,
-    character: entry.character,
+    name: ROSTER.find((entry) => entry.character === character)!.name,
+    character,
   }))
-  return createRun(seedFromString(seedText), party, ascension)
+  return createRun(seedFromString(seedText), party, Math.min(ascension, progress.highestAscension), progress, chooseYourRelic)
+}
+
+function campaignBeforeCurrentRun(run: RunState): CampaignProgress {
+  return !run.campaign.finalized
+    ? { ...run.campaignProgress, nextRunNumber: Math.max(0, run.campaignProgress.nextRunNumber - 1) }
+    : run.campaignProgress
+}
+
+function campaignBeforePendingRun(run: RunState): CampaignProgress {
+  return !run.campaign.finalized && run.campaignProgress.unspentMarks > 0
+    ? campaignBeforeCurrentRun(run)
+    : run.campaignProgress
 }
 
 export function App() {
@@ -74,20 +126,27 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   const [playerCount, setPlayerCount] = useState(2)
   const [seedText, setSeedText] = useState('spire')
   const [ascension, setAscension] = useState(0)
+  const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])
+  const [chooseYourRelic, setChooseYourRelic] = useState(false)
   const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
 
   /** The settings the run in progress was actually built from. */
-  const [built, setBuilt] = useState({ count: 2, seed: 'spire', ascension: 0 })
+  const [built, setBuilt] = useState({ count: 2, seed: 'spire', ascension: 0, chooseYourRelic: false, characters: [...DEFAULT_CHARACTERS] })
 
-  function restart(count: number, seed: string, nextAscension = 0) {
+  function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, selected = characters) {
+    const nextCharacters = legalCharacters(selected)
+    const progress = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
+    const legalAscension = Math.min(nextAscension, progress.highestAscension)
     setPlayerCount(count)
     setSeedText(seed)
-    setAscension(nextAscension)
+    setAscension(legalAscension)
+    setCharacters(nextCharacters)
+    setChooseYourRelic(nextChooseYourRelic)
     setViewerId('p1')
-    setBuilt({ count, seed, ascension: nextAscension })
-    setRun(newRun(count, seed, nextAscension))
+    setBuilt({ count, seed, ascension: legalAscension, chooseYourRelic: nextChooseYourRelic, characters: nextCharacters })
+    setRun(newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextCharacters))
   }
 
   /**
@@ -97,16 +156,20 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
    * away the combat in progress — no change to the value required, no warning.
    * Now it only acts on a real change, and asks first if a run is underway.
    */
-  function restartIfWanted(count: number, seed: string, nextAscension: number) {
-    if (count === built.count && seed === built.seed && nextAscension === built.ascension) return
+  function restartIfWanted(count: number, seed: string, nextAscension: number, nextChooseYourRelic = chooseYourRelic, selected = characters) {
+    const nextCharacters = legalCharacters(selected)
+    if (count === built.count && seed === built.seed && nextAscension === built.ascension && nextChooseYourRelic === built.chooseYourRelic &&
+      nextCharacters.every((character, seat) => character === built.characters[seat])) return
     const underway = run.phase !== 'map' || run.map.position !== null
     if (underway && !window.confirm('Start a new run? The one in progress will be lost.')) {
       setPlayerCount(built.count)
       setSeedText(built.seed)
       setAscension(built.ascension)
+      setCharacters(built.characters)
+      setChooseYourRelic(built.chooseYourRelic)
       return
     }
-    restart(count, seed, nextAscension)
+    restart(count, seed, nextAscension, nextChooseYourRelic, nextCharacters)
   }
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
@@ -117,11 +180,17 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
       /** The combat state, or null outside a fight. */
       getState: () => run.combat,
       setRun: (next: RunState) => setRun(next),
-      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension),
+      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, DEFAULT_CHARACTERS),
       setViewer: (id: string) => setViewerId(id),
     }
     ;(window as unknown as { __STS_DEBUG__?: typeof bridge }).__STS_DEBUG__ = bridge
   }, [run])
+
+  useEffect(() => {
+    setAscension((current) => Math.min(current, run.campaignProgress.highestAscension))
+  }, [run.campaignProgress.highestAscension])
+
+  useEffect(() => localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run))), [open, run.campaignProgress, run.campaign.finalized])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
@@ -138,17 +207,37 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
+  const allocatingCampaignMarks = run.campaign.finalized || run.campaignProgress.unspentMarks > 0
+
+  function allocateCampaignMark(colorless: number, actIV: number) {
+    setRun((current) => {
+      const progress = allocateSharedMarks(current.campaignProgress, colorless, actIV)
+      if (current.campaign.finalized) return { ...current, campaignProgress: progress }
+      return newRun(built.count, built.seed, built.ascension, { ...progress, nextRunNumber: progress.nextRunNumber - 1 }, built.chooseYourRelic, built.characters)
+    })
+  }
 
   if (!open) {
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     return <StartMenu
       playerCount={playerCount}
+      characters={characters}
       seed={seedText}
       ascension={ascension}
+      maxAscension={run.campaignProgress.highestAscension}
       onPlayerCount={setPlayerCount}
+      onCharacter={(seat, character) => setCharacters((current) => {
+        const next = [...current]
+        const previous = next[seat]
+        if (!previous) return current
+        const otherSeat = next.indexOf(character)
+        if (otherSeat >= 0) next[otherSeat] = previous
+        next[seat] = character
+        return next
+      })}
       onSeed={setSeedText}
       onAscension={setAscension}
-      onStart={() => { restart(playerCount, seedText, ascension); onOpen() }}
+      onStart={() => { restart(playerCount, seedText, ascension, chooseYourRelic, characters); onOpen() }}
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
     />
@@ -204,7 +293,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
             Ascension
             <select value={ascension}
               onChange={(event) => restartIfWanted(playerCount, seedText, Number(event.target.value))}>
-              {Array.from({ length: 14 }, (_, level) => <option key={level}>{level}</option>)}
+              {Array.from({ length: run.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}
             </select>
           </label>
           <label>
@@ -217,6 +306,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
               ))}
             </select>
           </label>
+          {playerCount > 1 ? <label>Choose Your Relic<input type="checkbox" checked={chooseYourRelic} onChange={(event) => restartIfWanted(playerCount, seedText, ascension, event.target.checked)} /></label> : null}
           <button type="button" onClick={() => restart(playerCount, seedText, ascension)}>
             New run
           </button>
@@ -224,14 +314,14 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         </div>
       </header>
 
-      {run.phase === 'combat' && run.combat ? (
-        <CombatScreen
+      {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
+        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
           onChange={(next: CombatState) => setRun((current) => ({ ...current, combat: next }))}
-        />
+        /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
-      {run.phase !== 'combat' && run.phase !== 'defeat' && !pendingAcquisition ? (
+      {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' && !pendingAcquisition ? (
         <OutsidePotionBar players={run.players} viewerId={viewerId}
           potionLimit={run.ascension >= 4 ? 2 : 3}
           onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
@@ -242,12 +332,29 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         pending={pendingRelicPreview(run, viewerId)!}
         deck={viewer?.deck ?? []} onResolve={(cardUids, rewardIndices) => setRun((current) =>
           resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
-      {pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+      {run.phase !== 'neow' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
       </section> : null}
 
-      {run.phase === 'map' ? (
+      {!allocatingCampaignMarks && run.phase === 'neow' && run.neow ? <NeowScreen
+        players={run.players}
+        progress={run.neow.players}
+        viewerId={viewerId}
+        potionLimit={run.ascension >= 4 ? 2 : 3}
+        enabled={!pendingAcquisition}
+        disabledMessage={pendingOwner && pendingRelic
+          ? `Waiting for ${pendingOwner.name} to resolve ${relicDef(pendingRelic.defId).name}.`
+          : undefined}
+        onViewer={setViewerId}
+        onGold={(playerId, gain) => setRun((current) => resolveNeowGold(current, playerId, gain))}
+        onReveal={(playerId) => setRun((current) => revealNeowReward(current, playerId))}
+        onReward={(playerId, choice) => setRun((current) => resolveNeowReward(current, playerId, choice))}
+        onEffect={(playerId, gain, decision) => setRun((current) => resolveNeowEffect(current, playerId, gain, decision))}
+        onChoose={(playerId, optionIndex, decision) => setRun((current) => chooseNeow(current, playerId, optionIndex, decision))}
+      /> : null}
+
+      {!allocatingCampaignMarks && run.phase === 'map' ? (
         <>
           <MapScreen map={run.map} choices={pendingAcquisition ? [] : roomChoices(run)} blocked={pendingAcquisition}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
@@ -261,7 +368,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         </>
       ) : null}
 
-      {run.phase === 'reward' && !pendingAcquisition ? (
+      {!allocatingCampaignMarks && run.phase === 'reward' && !pendingAcquisition ? (
         <RewardScreen
           players={run.players}
           rewards={run.rewards}
@@ -276,7 +383,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         />
       ) : null}
 
-      {run.phase === 'betweenCombat' ? (
+      {!allocatingCampaignMarks && run.phase === 'betweenCombat' ? (
         <section className="room-screen between-combat">
           <h2>Another boss approaches</h2>
           <p className="muted">Switch rows now. Relics and once-per-combat effects reset for the next fight.</p>
@@ -293,44 +400,61 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         </section>
       ) : null}
 
-      {run.phase === 'room' && roomKind === 'campfire' ? (
+      {!allocatingCampaignMarks && run.phase === 'room' && roomKind === 'campfire' ? (
         <CampfireScreen
           players={run.players}
+          rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
           onResolve={(choices) => setRun((current) => resolveCampfire(current, choices))}
         />
       ) : null}
 
-      {run.phase === 'room' && roomKind !== 'campfire' ? (
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && run.roomState ? (
+        <RoomScreen
+          room={run.roomState}
+          players={run.players}
+          viewerId={viewerId}
+          ascension={run.ascension}
+          onPurchase={(purchase) => setRun((current) => purchaseAtMerchant(current, purchase))}
+          onRemove={(playerId, cardUid, payments) => setRun((current) => removeAtCurrentMerchant(current, playerId, cardUid, payments))}
+          onFinishMerchant={() => setRun((current) => finishMerchant(current))}
+          onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
+          onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
+          eventCanSkip={canSkipEvent(run, viewerId)}
+          onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
+          sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
+          eventForwardRooms={Object.values(run.map.rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${ROOM_LABEL[room.kind]}` }))}
+        />
+      ) : null}
+
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (
         <section className="room-screen">
           <h2>{roomKind ?? 'room'}</h2>
-          <p className="muted">
-            {roomKind} rooms are on the map but have no interaction yet — walking in and out is all
-            they do. Shops, treasure and events are still to come.
-          </p>
           <button type="button" onClick={() => setRun((current) => leaveRoom(current))}>
             Back to the map
           </button>
         </section>
       ) : null}
 
-      {run.phase === 'victory' ? (
+      {!allocatingCampaignMarks && run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
-          {run.act < 4 ? <button type="button" disabled={pendingAcquisition}
+          {run.act < 3 || canEnterActIV(run.campaignProgress, run.campaign.keys, run.act) ? <button type="button" disabled={pendingAcquisition}
             onClick={() => setRun((current) => advanceAct(current))}>
             Climb to Act {run.act + 1}
           </button> : null}
+          <button type="button" disabled={pendingAcquisition}
+            onClick={() => setRun((current) => finishRun(current))}>Stop and record result</button>
         </section>
       ) : null}
 
-      {run.phase === 'defeat' ? (
+      {!allocatingCampaignMarks && run.phase === 'defeat' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
-          <button type="button" onClick={() => restart(playerCount, seedText, ascension)}>
-            Try again
-          </button>
+          {!run.campaign.finalized ? <button type="button" onClick={() => setRun((current) => finishRun(current))}>Record campaign result</button> : null}
         </section>
       ) : null}
+
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => restart(playerCount, seedText, Math.min(ascension, run.campaignProgress.highestAscension))}>Begin next run →</button> : null}</div></section> : null}
 
       <aside className="log" aria-label="Run log">
         {run.log.slice(-6).map((line, i) => (

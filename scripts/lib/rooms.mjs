@@ -14,6 +14,8 @@
 // the same instant. Every mutation therefore goes through `apply`, which is the
 // single writer — Node's single thread does the rest.
 import { randomBytes } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import {
   CAPS,
   abandonCardCopy,
@@ -23,10 +25,14 @@ import {
   activateRelic,
   advanceAct,
   canUpgradeCard,
+  chooseEvent,
+  chooseNeow,
+  chooseRelicReward,
   cardDef,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardShivChoiceCount,
+  canSkipEvent,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
   chooseDistilledCard,
@@ -36,13 +42,23 @@ import {
   endTurnChoiceId,
   endTurnChoiceTarget,
   createRun,
+  courierCost,
   currentRoom,
   endPlayerTurn,
   enemyTurn,
   enterRoom,
+  finishRun,
+  finishMerchant,
   faceOf,
   hasPendingRelicAcquisition,
   leaveRoom,
+  purchaseAtMerchant,
+  decideCourier,
+  revealCourier,
+  merchantPurchaseCost,
+  merchantRemovalCost,
+  neowPreview,
+  removeAtCurrentMerchant,
   overflowShivCount,
   pendingRelicPreview,
   pendingRelicEligibleCards,
@@ -58,6 +74,10 @@ import {
   revealPotionReward,
   revealRelicReward,
   resolveRelicReward,
+  resolveNeowEffect,
+  resolveNeowGold,
+  resolveNeowReward,
+  revealNeowReward,
   resolveBossRelicReward,
   resolvePotionReward,
   resolveCampfire,
@@ -74,6 +94,7 @@ import {
   tradePotion,
   usePotionOutsideCombat,
   switchBetweenCombatRow,
+  skipEvent,
   startPlayerTurnWithChoices,
   startPendingBoss,
   startTurnAbilities,
@@ -81,6 +102,9 @@ import {
   startTurnScryAbilities,
   startTurnScryPreview,
   validEndTurnOrder,
+  createCampaignProgress,
+  parseCampaignProgress,
+  allocateSharedMarks,
 } from '../../src/game/state.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
@@ -116,8 +140,54 @@ function token(random = randomBytes) {
   return random(24).toString('base64url')
 }
 
-export function createStore() {
-  return { rooms: new Map() }
+export function createStore({ file } = {}) {
+  const store = { rooms: new Map(), file }
+  if (!file) return store
+  try {
+    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    if (!Array.isArray(saved?.rooms)) throw new Error('rooms must be an array')
+    for (const room of saved.rooms) {
+      if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
+        room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
+        room.campaignProgress = parseCampaignProgress(room.campaignProgress)
+        if (room.run) {
+          const runNumber = Number(/^campaign-(\d+)$/.exec(room.run.campaign?.runId ?? '')?.[1])
+          const fallback = {
+            ...room.campaignProgress,
+            nextRunNumber: Number.isSafeInteger(runNumber)
+              ? Math.max(room.campaignProgress.nextRunNumber, runNumber)
+              : room.campaignProgress.nextRunNumber,
+          }
+          room.run.campaignProgress = parseCampaignProgress(room.run.campaignProgress, fallback)
+          if (room.run.phase === 'neow' && room.run.neow?.players) {
+            for (const progress of Object.values(room.run.neow.players)) {
+              if (!progress || typeof progress !== 'object') continue
+              if (typeof progress.redGoldPending !== 'boolean') progress.redGoldPending = false
+              if (typeof progress.redRewardPending !== 'boolean') progress.redRewardPending = Boolean(progress.redReward)
+              if (!Object.hasOwn(progress, 'pendingEffect')) progress.pendingEffect = null
+              if (!Object.hasOwn(progress, 'rewardKind')) progress.rewardKind = progress.reward?.kind ?? null
+              if (Array.isArray(progress.rewardQueue) && progress.rewardQueue.includes('curse')) {
+                progress.rewardQueue = progress.rewardQueue.map((entry) => entry === 'curse' ? { kind: 'curse' } : entry)
+              }
+            }
+          }
+        }
+        room.chooseYourRelic = room.chooseYourRelic === true
+        store.rooms.set(room.code, room)
+      }
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw new Error(`Could not load room store: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return store
+}
+
+export function saveStore(store) {
+  if (!store.file) return
+  mkdirSync(dirname(store.file), { recursive: true })
+  const temporary = `${store.file}.tmp`
+  writeFileSync(temporary, JSON.stringify({ version: 1, rooms: [...store.rooms.values()] }), { mode: 0o600 })
+  renameSync(temporary, store.file)
 }
 
 export function createRoom(store, options = {}) {
@@ -126,10 +196,13 @@ export function createRoom(store, options = {}) {
   if (store.rooms.has(code)) fail(`Room ${code} already exists`)
   const room = {
     code,
+    lastActivityAt: Date.now(),
     phase: 'lobby',
     ascension: 0,
+    chooseYourRelic: false,
     seats: [],
     run: null,
+    campaignProgress: options.campaignProgress ?? createCampaignProgress(),
     /** Bumped on every accepted mutation so clients can drop stale frames. */
     version: 0,
   }
@@ -231,9 +304,22 @@ export function chooseCharacter(room, seatToken, character) {
 export function chooseAscension(room, seatToken, ascension) {
   findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'lobby') fail('Ascension is locked once the run starts')
-  if (!Number.isInteger(ascension) || ascension < 0 || ascension > 13) fail('Ascension must be an integer from 0 to 13')
+  if (!Number.isInteger(ascension) || ascension < 0 || ascension > room.campaignProgress.highestAscension) {
+    fail(`Ascension must be an unlocked integer from 0 to ${room.campaignProgress.highestAscension}`)
+  }
   if (room.ascension === ascension) return snapshotFor(room, seatToken)
   room.ascension = ascension
+  room.version += 1
+  return snapshotFor(room, seatToken)
+}
+
+export function chooseRelicRule(room, seatToken, enabled) {
+  findSeat(room, seatToken) ?? fail('Unknown seat')
+  if (room.phase !== 'lobby') fail('Choose Your Relic is locked once the run starts')
+  if (typeof enabled !== 'boolean') fail('Choose Your Relic must be on or off')
+  if (enabled && room.seats.length < 2) fail('Choose Your Relic is multiplayer only')
+  if (room.chooseYourRelic === enabled) return snapshotFor(room, seatToken)
+  room.chooseYourRelic = enabled
   room.version += 1
   return snapshotFor(room, seatToken)
 }
@@ -242,6 +328,7 @@ export function removeSeat(room, seatToken) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'lobby') fail('A run seat must be preserved for reconnection')
   room.seats = room.seats.filter((candidate) => candidate !== seat)
+  if (room.seats.length < 2) room.chooseYourRelic = false
   room.version += 1
 }
 
@@ -250,11 +337,21 @@ export function markDisconnected(room, seatToken) {
   if (!seat) return snapshotFor(room, seatToken)
   seat.connected = false
   room.version += 1
+  const courierOffer = room.run?.courier?.offer
+  if (courierOffer?.playerId === seat.playerId && !room.courierPledge) {
+    const next = decideCourier(room.run, seat.playerId, 'discard')
+    if (next !== room.run) {
+      room.run = next
+      room.version += 1
+    }
+  }
   // The party may have been waiting on exactly this player. Dropping without
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
   // only unstuck if someone re-sent a choice they had already made.
   settleCampfire(room)
-  settlePendingRelics(room)
+  // Neow is pre-game setup, not a shared combat/reward wait. Its private
+  // Relic choices must survive a disconnect exactly like its card choices.
+  if (room.run?.phase !== 'neow') settlePendingRelics(room)
   settleDisconnectedRewards(room)
   settleReward(room)
   settleEndTurn(room)
@@ -295,6 +392,7 @@ function settleDisconnectedRewards(room) {
 
 /** Resolve disconnected owners' private acquisition choices with stable defaults. */
 function settlePendingRelics(room) {
+  if (!Array.isArray(room.run?.players)) return
   for (const seat of room.seats) {
     if (seat.connected !== false) continue
     for (;;) {
@@ -436,10 +534,71 @@ export function startRun(room, seatToken, { seed } = {}) {
     name: seat.name,
     character: seat.character,
   }))
-  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension)
+  if (!Number.isInteger(room.ascension) || room.ascension < 0 || room.ascension > room.campaignProgress.highestAscension) {
+    fail('That Ascension is not unlocked')
+  }
+  room.run = createRun(seed ?? Number(BigInt('0x' + randomBytes(4).toString('hex'))), party, room.ascension, room.campaignProgress, room.chooseYourRelic && party.length > 1)
   room.phase = 'run'
   room.version += 1
   return snapshotFor(room, seatToken)
+}
+
+function neowRewardChoice(action) {
+  const choice = action.choice
+  if (choice === null || Number.isInteger(choice)) return choice
+  if (!choice || typeof choice !== 'object' || Array.isArray(choice)) fail('Choose a valid Neow reward')
+  if (choice.kind === 'gain' || choice.kind === 'skip') {
+    if (Object.keys(choice).some((key) => key !== 'kind')) fail('Choose a valid Neow reward')
+    return { kind: choice.kind }
+  }
+  if (choice.kind === 'pass' && typeof choice.playerId === 'string' &&
+    Object.keys(choice).every((key) => key === 'kind' || key === 'playerId')) {
+    return { kind: 'pass', playerId: choice.playerId }
+  }
+  if (choice.kind === 'replace' && typeof choice.potionId === 'string' &&
+    Object.keys(choice).every((key) => key === 'kind' || key === 'potionId')) {
+    return { kind: 'replace', potionId: choice.potionId }
+  }
+  fail('Choose a valid Neow reward')
+}
+
+/** One authenticated action covers Neow's red reward, blue option, and queued rewards. */
+function neowAction(room, seat, action, seatToken) {
+  if (action.playerId !== undefined) fail('Neow choices are bound to your seat')
+  const preview = neowPreview(room.run, seat.playerId)
+  if (!preview || preview.done) fail('This seat has no pending Neow choice')
+  let next
+  if (action.stage === 'redGold') {
+    if (Object.keys(action).some((key) => !['kind', 'stage', 'gain'].includes(key)) || typeof action.gain !== 'boolean') fail('Choose a valid Neow Gold reward')
+    if (!preview.redGoldPending) fail('The red Neow Gold is no longer pending')
+    next = resolveNeowGold(room.run, seat.playerId, action.gain)
+  } else if (action.stage === 'reveal') {
+    if (Object.keys(action).some((key) => key !== 'kind' && key !== 'stage')) fail('Choose a valid Neow reveal')
+    if (!preview.redRewardPending && !preview.rewardKind) fail('No Neow reward is waiting to be revealed')
+    next = revealNeowReward(room.run, seat.playerId)
+  } else if (action.stage === 'red') {
+    if (!preview.redRewardPending) fail('The red Neow reward is no longer pending')
+    next = resolveNeowReward(room.run, seat.playerId, neowRewardChoice(action))
+  } else if (action.stage === 'option') {
+    if (preview.redGoldPending || preview.redRewardPending || preview.blueOption !== null || preview.pendingEffect || preview.rewardKind) fail('The blue Neow option is not pending')
+    if (!Number.isInteger(action.optionIndex) || action.cardUids !== undefined &&
+      (!Array.isArray(action.cardUids) || action.cardUids.some((uid) => typeof uid !== 'string'))) {
+      fail('Choose a valid Neow option')
+    }
+    next = chooseNeow(room.run, seat.playerId, action.optionIndex, { cardUids: action.cardUids ?? [] })
+  } else if (action.stage === 'effect') {
+    if (!preview.pendingEffect || typeof action.gain !== 'boolean' || action.cardUids !== undefined &&
+      (!Array.isArray(action.cardUids) || action.cardUids.some((uid) => typeof uid !== 'string')) ||
+      Object.keys(action).some((key) => !['kind', 'stage', 'gain', 'cardUids'].includes(key))) fail('Choose a valid Neow immediate reward')
+    next = resolveNeowEffect(room.run, seat.playerId, action.gain, { cardUids: action.cardUids ?? [] })
+  } else if (action.stage === 'reward') {
+    if (!preview.rewardKind) fail('No blue Neow reward is pending')
+    next = resolveNeowReward(room.run, seat.playerId, neowRewardChoice(action))
+  } else fail('Choose the current Neow stage')
+  if (next === room.run) fail('That Neow choice is not legal')
+  room.run = next
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
 /**
@@ -452,7 +611,14 @@ export function startRun(room, seatToken, { seed } = {}) {
 export function apply(room, seatToken, action) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
-  if (hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
+  if (room.run.phase === 'neow') {
+    if (action?.kind === 'neow') return neowAction(room, seat, action, seatToken)
+    if (action?.kind !== 'resolvePendingRelic') fail('Finish Neow before entering the Spire')
+  }
+  // War Paint and Whetstone bought from The Courier are kept face up because
+  // their text forbids resolving them in combat. Combat must continue until
+  // the acquisition becomes legal outside combat.
+  if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
     fail('Finish the pending Relic acquisition first')
   }
 
@@ -624,6 +790,20 @@ export function apply(room, seatToken, action) {
   }
 
   if (action?.kind === 'campfire') return campfire(room, seat, action, seatToken)
+  if (action?.kind === 'finishRun') return finishCampaignRun(room, seatToken)
+  if (action?.kind === 'allocateCampaign') return allocateCampaign(room, seat, action, seatToken)
+  if (action?.kind === 'returnToLobby') return returnToLobby(room, seat, seatToken)
+  if (action?.kind === 'merchantPurchase') return merchantPurchase(room, seat, action, seatToken)
+  if (action?.kind === 'merchantRemove') return merchantRemove(room, seat, action, seatToken)
+  if (action?.kind === 'merchantWithdraw') return merchantWithdraw(room, seat, action, seatToken)
+  if (action?.kind === 'merchantFinish') return merchantFinish(room, seat, seatToken)
+  if (action?.kind === 'courierReveal') return courierReveal(room, seat, action, seatToken)
+  if (action?.kind === 'courierResolve') return courierResolve(room, seat, action, seatToken)
+  if (room.run?.courier?.offer) fail('Resolve The Courier offer before continuing combat')
+  if (action?.kind === 'relicReward') return relicReward(room, seat, action, seatToken)
+  if (action?.kind === 'eventCancel') return cancelEventPledge(room, seat, seatToken)
+  if (action?.kind === 'eventSkip') return eventSkip(room, seat, action, seatToken)
+  if (action?.kind === 'event') return eventChoice(room, seat, action, seatToken)
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
   if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
@@ -646,6 +826,7 @@ export function apply(room, seatToken, action) {
 
   room.run = next
   settleForcedCards(room)
+  if (before.phase === 'combat' && room.run.phase !== 'combat') settlePendingRelics(room)
   const current = room.run
   if ((action?.kind === 'playCard' || action?.kind === 'playCardCopy') && locked?.cardUid === action.cardUid) {
     room.cardPreviews = { ...room.cardPreviews }
@@ -676,9 +857,331 @@ export function apply(room, seatToken, action) {
     room.campfireChoices = undefined
     room.rewardChoices = undefined
     room.rewardConfirmed = undefined
+    room.merchantPledges = undefined
+    room.eventPledge = undefined
   }
   settleDisconnectedRewards(room)
   settleReward(room)
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function purchaseKey(purchase) {
+  return `${purchase?.buyerId ?? ''}/${purchase?.section ?? ''}/${purchase?.slot ?? ''}`
+}
+
+function pledgedGold(room, playerId, exceptKey) {
+  return Object.entries(room.merchantPledges ?? {}).reduce((sum, [key, pledge]) =>
+    key === exceptKey ? sum : sum + (pledge.payments?.[playerId] ?? 0), 0)
+}
+
+/** Each token pledges only its own gold; the purchase settles atomically at exact cost. */
+function merchantPurchase(room, seat, action, seatToken) {
+  const run = room.run
+  if (run.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
+  const purchase = action.purchase
+  if (!purchase || typeof purchase.buyerId !== 'string' || !run.players.some((player) => player.id === purchase.buyerId) ||
+    !['relic', 'potion', 'card', 'colorless'].includes(purchase.section) || !Number.isInteger(purchase.slot) || purchase.slot < 0) {
+    fail('Choose a valid Merchant offer and seated buyer')
+  }
+  const amount = purchase.payments?.[seat.playerId]
+  if (!Number.isInteger(amount) || amount < 0 || Object.keys(purchase.payments ?? {}).some((id) => id !== seat.playerId)) {
+    fail('You may pledge only your own Gold')
+  }
+  const payer = run.players.find((player) => player.id === seat.playerId)
+  const key = purchaseKey(purchase)
+  if (!payer || amount + pledgedGold(room, seat.playerId, key) > payer.gold) fail('You do not have that much unpledged Gold')
+  const existing = room.merchantPledges?.[key]
+  if (!existing && ['relic', 'potion', 'colorless'].includes(purchase.section) && Object.entries(room.merchantPledges ?? {}).some(([otherKey, pledge]) =>
+    otherKey !== key && pledge.section === purchase.section && pledge.slot === purchase.slot)) {
+    fail('Another buyer is already funding that shared item')
+  }
+  if (!existing && purchase.buyerId !== seat.playerId) fail('The buyer must authorize the purchase')
+  if (purchase.section === 'potion' && purchase.potionRecipientId && purchase.potionRecipientId !== purchase.buyerId) {
+    fail('The potion recipient must authorize the purchase as its buyer')
+  }
+  if (!existing && purchase.discardPotionId && (purchase.potionRecipientId ?? purchase.buyerId) !== seat.playerId) {
+    fail('The potion owner must authorize replacing a Potion')
+  }
+  if (existing && (existing.buyerId !== purchase.buyerId || existing.section !== purchase.section || existing.slot !== purchase.slot)) {
+    fail('That purchase changed while it was being funded')
+  }
+  if (existing && (existing.potionRecipientId !== purchase.potionRecipientId || existing.discardPotionId !== purchase.discardPotionId)) {
+    fail('That purchase recipient changed while it was being funded')
+  }
+  const payments = { ...(existing?.payments ?? {}), [seat.playerId]: amount }
+  const total = Object.values(payments).reduce((sum, value) => sum + value, 0)
+  const available = merchantPurchaseCost(run.roomState, purchase)
+  if (available === null) fail('That item is no longer for sale')
+  if (total > available) fail(`That purchase needs only ${available} Gold`)
+  if (!existing && run.players.reduce((sum, player) => sum + player.gold - pledgedGold(room, player.id, key), 0) < available) fail('The party cannot afford that purchase')
+  const pledge = { buyerId: purchase.buyerId, section: purchase.section, slot: purchase.slot, potionRecipientId: purchase.potionRecipientId, discardPotionId: purchase.discardPotionId, payments }
+  if (!existing) {
+    const probe = structuredClone(run)
+    probe.players.find((player) => player.id === purchase.buyerId).gold = available
+    if (purchaseAtMerchant(probe, { ...pledge, payments: { [purchase.buyerId]: available } }) === probe) fail('That purchase cannot be completed')
+  }
+  if (total < available) room.merchantPledges = { ...room.merchantPledges, [key]: pledge }
+  else {
+    const next = purchaseAtMerchant(run, pledge)
+    if (next === run) fail('That purchase cannot be completed')
+    room.run = next
+    room.merchantPledges = { ...room.merchantPledges }
+    delete room.merchantPledges[key]
+  }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function merchantRemove(room, seat, action, seatToken) {
+  const run = room.run
+  if (run.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
+  const targetId = action.playerId
+  if (!run.players.some((player) => player.id === targetId)) fail('Choose a seated player')
+  const amount = action.payments?.[seat.playerId]
+  if (!Number.isInteger(amount) || amount < 0 || Object.keys(action.payments ?? {}).some((id) => id !== seat.playerId)) {
+    fail('You may pledge only your own Gold')
+  }
+  const payer = run.players.find((player) => player.id === seat.playerId)
+  const key = `remove/${targetId}`
+  if (!payer || amount + pledgedGold(room, seat.playerId, key) > payer.gold) fail('You do not have that much unpledged Gold')
+  const existing = room.merchantPledges?.[key]
+  if (!existing && (seat.playerId !== targetId || typeof action.cardUid !== 'string')) {
+    fail('The card owner must choose the card before teammates contribute')
+  }
+  if (existing?.cardUid && action.cardUid && existing.cardUid !== action.cardUid) fail('That removal is already being funded')
+  const payments = { ...(existing?.payments ?? {}), [seat.playerId]: amount }
+  const cost = merchantRemovalCost(run.ascension)
+  if (Object.values(payments).reduce((sum, value) => sum + value, 0) > cost) fail(`Card removal needs only ${cost} Gold`)
+  if (!existing && run.players.reduce((sum, player) => sum + player.gold - pledgedGold(room, player.id, key), 0) < cost) fail('The party cannot afford card removal')
+  const pledge = { kind: 'removal', buyerId: targetId, cardUid: existing?.cardUid ?? action.cardUid, payments }
+  if (!existing) {
+    const probe = structuredClone(run)
+    probe.players.find((player) => player.id === targetId).gold = cost
+    if (removeAtCurrentMerchant(probe, targetId, pledge.cardUid, { [targetId]: cost }) === probe) fail('That card cannot be removed')
+  }
+  if (Object.values(payments).reduce((sum, value) => sum + value, 0) < cost) room.merchantPledges = { ...room.merchantPledges, [key]: pledge }
+  else {
+    const next = removeAtCurrentMerchant(run, targetId, pledge.cardUid, payments)
+    if (next === run) fail('That card cannot be removed')
+    room.run = next
+    room.merchantPledges = { ...room.merchantPledges }
+    delete room.merchantPledges[key]
+  }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function merchantWithdraw(room, seat, action, seatToken) {
+  const pending = typeof action.key === 'string' && Object.hasOwn(room.merchantPledges ?? {}, action.key) ? room.merchantPledges[action.key] : undefined
+  if (!pending || !(seat.playerId in pending.payments)) fail('You have no pledge on that purchase')
+  const payments = { ...pending.payments }
+  delete payments[seat.playerId]
+  room.merchantPledges = { ...room.merchantPledges }
+  if (Object.keys(payments).length === 0 || pending.buyerId === seat.playerId) delete room.merchantPledges[action.key]
+  else room.merchantPledges[action.key] = { ...pending, payments }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function merchantFinish(room, seat, seatToken) {
+  if (seat.playerId !== room.seats[0]?.playerId) fail('The party leader closes the Merchant')
+  if (Object.keys(room.merchantPledges ?? {}).length > 0) fail('Resolve or cancel pending Merchant contributions first')
+  const next = finishMerchant(room.run)
+  if (next === room.run) fail('The party is not at a Merchant')
+  room.run = next
+  room.merchantPledges = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function courierReveal(room, seat, action, seatToken) {
+  if (action.kind !== 'courierReveal' || (action.itemKind !== 'relic' && action.itemKind !== 'potion')) fail('Choose a Courier deck')
+  const next = revealCourier(room.run, seat.playerId, action.itemKind)
+  if (next === room.run) fail('The Courier cannot reveal that deck now')
+  room.run = next
+  room.courierPledge = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function courierResolve(room, seat, action, seatToken) {
+  const offer = room.run?.courier?.offer
+  if (!offer) fail('The Courier has no offer')
+  if (action.playerId !== undefined && action.playerId !== offer.playerId) fail('That Courier offer belongs to another player')
+  if (action.decision === 'discard') {
+    if (seat.playerId !== offer.playerId) fail('Only the Courier owner may discard the offer')
+    const next = decideCourier(room.run, offer.playerId, 'discard')
+    if (next === room.run) fail('That Courier decision is not legal')
+    room.run = next
+    room.courierPledge = undefined
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (action.decision !== 'buy') fail('Choose whether to buy or discard')
+  const amount = action.payments?.[seat.playerId]
+  if (!Number.isInteger(amount) || amount < 0 || Object.keys(action.payments ?? {}).some((id) => id !== seat.playerId)) fail('You may pledge only your own Gold')
+  const payer = room.run.combat?.players.find((player) => player.id === seat.playerId)
+  if (!payer || amount > payer.gold) fail('You do not have that much Gold')
+  const cost = courierCost(offer)
+  if (cost === null) fail('That Courier card cannot be bought')
+  const pending = room.courierPledge
+  if (!pending && seat.playerId !== offer.playerId) fail('The Courier owner must authorize the purchase')
+  if (pending && (pending.playerId !== offer.playerId || pending.id !== offer.id || pending.discardPotionId !== action.discardPotionId)) fail('That Courier purchase changed')
+  if (!pending && action.discardPotionId && seat.playerId !== offer.playerId) fail('The Potion owner must authorize replacement')
+  const payments = { ...(pending?.payments ?? {}), [seat.playerId]: amount }
+  const total = Object.values(payments).reduce((sum, paid) => sum + paid, 0)
+  if (total > cost) fail(`That Courier offer needs only ${cost} Gold`)
+  if (!pending && room.run.combat.players.reduce((sum, player) => sum + player.gold, 0) < cost) fail('The party cannot afford that Courier offer')
+  const pledge = { playerId: offer.playerId, id: offer.id, discardPotionId: action.discardPotionId, payments }
+  if (!pending) {
+    const probe = structuredClone(room.run)
+    probe.combat.players.find((player) => player.id === offer.playerId).gold = cost
+    if (decideCourier(probe, offer.playerId, 'buy', { [offer.playerId]: cost }, action.discardPotionId) === probe) fail('That Courier purchase is not legal')
+  }
+  if (total === cost) {
+    const next = decideCourier(room.run, offer.playerId, 'buy', payments, action.discardPotionId)
+    if (next === room.run) fail('That Courier purchase is not legal')
+    room.run = next
+    room.courierPledge = undefined
+  } else room.courierPledge = pledge
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function relicReward(room, seat, action, seatToken) {
+  if (room.run?.phase === 'reward' && action.choice !== undefined) {
+    if (!['reveal', 'gain', 'skip'].includes(action.choice)) fail('Choose reveal, gain, or skip for the Relic reward')
+    const next = action.choice === 'reveal'
+      ? revealRelicReward(room.run, seat.playerId)
+      : resolveRelicReward(room.run, seat.playerId, action.choice === 'gain')
+    if (next === room.run) fail('That Relic reward choice is not legal')
+    room.run = next
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (action.playerId !== undefined && action.playerId !== seat.playerId) fail('Choose only your own relic')
+  const next = chooseRelicReward(room.run, seat.playerId, action.decision)
+  if (next === room.run) fail('That relic choice is not legal')
+  room.run = next
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function eventChoice(room, seat, action, seatToken) {
+  const actorId = action.playerId ?? seat.playerId
+  if (actorId !== seat.playerId && room.eventPledge?.actorId !== actorId) fail('Choose only your own Event option')
+  let decision = action.decision
+  const stringArray = (value) => value === undefined || (Array.isArray(value) && value.every((entry) => typeof entry === 'string'))
+  if (!decision || typeof decision !== 'object' || !Array.isArray(decision.optionIds) || !decision.optionIds.every((id) => typeof id === 'string') ||
+    !stringArray(decision.cardUids) || !stringArray(decision.relicIds) || !stringArray(decision.potionIds) || !stringArray(decision.potionRecipientIds) ||
+    (decision.potionReplacementIds !== undefined && (!Array.isArray(decision.potionReplacementIds) || !decision.potionReplacementIds.every((id) => id === null || typeof id === 'string'))) ||
+    (decision.rewardItemChoices !== undefined && (!Array.isArray(decision.rewardItemChoices) || !decision.rewardItemChoices.every((choice) => choice === 'take' || choice === 'skip'))) ||
+    decision.rewardItemIds !== undefined || decision.rewardItemKinds !== undefined ||
+    (decision.rewardIndexes !== undefined && (!Array.isArray(decision.rewardIndexes) || !decision.rewardIndexes.every((index) => Number.isInteger(index) && index >= -1))) ||
+    (decision.payments !== undefined && (!decision.payments || typeof decision.payments !== 'object' || Array.isArray(decision.payments) || Object.entries(decision.payments).some(([id, amount]) => typeof id !== 'string' || !Number.isInteger(amount) || amount < 0))) ||
+    decision.receiveCardUid !== undefined || decision.receiveRelicId !== undefined ||
+    ['targetPlayerId', 'potionRecipientId', 'roomId'].some((field) => decision[field] !== undefined && typeof decision[field] !== 'string')) {
+    fail('That Event choice is malformed')
+  }
+  if (room.eventPledge && (room.eventPledge.actorId !== actorId || room.eventPledge.optionId !== decision.optionIds.join(','))) {
+    fail('That Event payment changed')
+  }
+  const options = room.run.roomState?.kind === 'event'
+    ? decision.optionIds.map((id) => room.run.roomState.card.options.find((candidate) => candidate.id === id))
+    : []
+  const paymentEffects = options.flatMap((option) => option?.effects.filter((effect) => effect.tag === 'pay-gold') ?? [])
+  const paysWithItem = paymentEffects.length === 1 && paymentEffects[0]?.filter?.includes('or lose one Relic or Potion') && ((decision.relicIds?.length ?? 0) > 0 || (decision.potionIds?.length ?? 0) > 0)
+  if (paysWithItem && seat.playerId !== actorId) fail('Only the Event chooser can offer an item')
+  if (room.eventPledge && paysWithItem) fail('That Event payment method is already Gold')
+  const cost = paymentEffects.reduce((sum, payment) => sum + (typeof payment.amount === 'number' ? payment.amount : 0), 0)
+  const rewardStages = options.some((option) => option?.effects.some((effect) => ['card-reward', 'rare-reward', 'gain-relic', 'gain-potion'].includes(effect.tag)))
+  const enginePending = room.run.roomState?.kind === 'event' && room.run.roomState.pendingDecisions?.[actorId]
+  const rollPaymentSettled = cost > 0 && enginePending && (room.run.roomState.pendingRolls?.[actorId]?.length ?? 0) > 0
+  if (rollPaymentSettled) {
+    if (enginePending.optionIds.join(',') !== decision.optionIds.join(',')) fail('That Event choice changed after its die roll')
+    decision = { ...enginePending }
+  }
+  else if (cost > 0 && rewardStages && !enginePending) decision = { ...decision, payments: undefined }
+  else if (cost > 0 && !paysWithItem) {
+    const amount = decision.payments?.[seat.playerId]
+    if (!Number.isInteger(amount) || Object.keys(decision.payments ?? {}).some((id) => id !== seat.playerId)) fail('You may pledge only your own Gold')
+    const payer = room.run.players.find((player) => player.id === seat.playerId)
+    if (!payer || amount > payer.gold) fail('You do not have that much Gold')
+    const pending = room.eventPledge
+    if (!pending && actorId !== seat.playerId) fail('The Event chooser must authorize payment')
+    const optionId = decision.optionIds.join(',')
+    if (pending && (pending.actorId !== actorId || pending.optionId !== optionId)) fail('That Event payment changed')
+    const payments = { ...(pending?.payments ?? {}), [seat.playerId]: amount }
+    const total = Object.values(payments).reduce((sum, paid) => sum + paid, 0)
+    if (total > cost) fail(`That Event needs only ${cost} Gold`)
+    if (!pending && room.run.players.reduce((sum, player) => sum + player.gold, 0) < cost) fail('The party cannot afford that Event choice')
+    const pledge = { actorId, optionId, cost, decision: pending?.decision ?? { ...decision, payments: undefined }, payments }
+    if (total < cost) {
+      if (!pending) {
+        const probe = structuredClone(room.run)
+        probe.players.find((player) => player.id === actorId).gold = Math.max(probe.players.find((player) => player.id === actorId).gold, cost)
+        if (chooseEvent(probe, actorId, { ...pledge.decision, payments: { [actorId]: cost } }) === probe) fail('That Event choice is not legal')
+      }
+      room.eventPledge = pledge
+      room.version += 1
+      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    }
+    decision = { ...pledge.decision, payments }
+  }
+  const next = chooseEvent(room.run, actorId, decision)
+  if (next === room.run) fail('That Event choice is not legal')
+  room.run = next
+  room.eventPledge = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function cancelEventPledge(room, seat, seatToken) {
+  if (!room.eventPledge || room.eventPledge.actorId !== seat.playerId) fail('Only the Event chooser can cancel this payment')
+  room.eventPledge = undefined
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function eventSkip(room, seat, action, seatToken) {
+  if (action.playerId !== undefined && action.playerId !== seat.playerId) fail('Skip only your own unavailable Event choice')
+  if (!canSkipEvent(room.run, seat.playerId)) fail('A printed Event choice is available')
+  room.run = skipEvent(room.run, seat.playerId)
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function finishCampaignRun(room, seatToken) {
+  const next = finishRun(room.run)
+  if (next === room.run) fail('This campaign run is not ready to finish')
+  room.run = next
+  room.campaignProgress = next.campaignProgress
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function allocateCampaign(room, seat, action, seatToken) {
+  if (!room.run?.campaign.finalized) fail('Finish the campaign run before assigning marks')
+  if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper assigns shared campaign marks')
+  if (action.expectedRunId !== room.run.campaign.runId || !Number.isInteger(action.expectedUnspentMarks) || action.expectedUnspentMarks !== room.campaignProgress.unspentMarks) fail('That campaign allocation is stale')
+  if (action.colorless === 0 && action.actIV === 0) fail('Assign at least one campaign mark')
+  try {
+    room.campaignProgress = allocateSharedMarks(room.campaignProgress, action.colorless, action.actIV)
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'That campaign allocation is not legal')
+  }
+  room.run = { ...room.run, campaignProgress: room.campaignProgress }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function returnToLobby(room, seat, seatToken) {
+  if (!room.run?.campaign.finalized || room.campaignProgress.unspentMarks > 0) fail('Finish assigning campaign marks first')
+  if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper begins the next run')
+  room.phase = 'lobby'
+  room.run = null
+  room.ascension = Math.min(room.ascension, room.campaignProgress.highestAscension)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -954,8 +1457,11 @@ function campfire(room, seat, action, seatToken) {
   // not exactly 'rest' as a Smith, and a Smith naming no card silently does
   // nothing — so 'Rest' with a capital R quietly burned a seat's only heal.
   const choice = action.choices?.[seat.playerId]
-  if (!choice || !['rest', 'smith', 'leave'].includes(choice.choice)) {
-    fail('Choose Rest, Smith, or Leave')
+  if (!choice || !['rest', 'smith', 'leave', 'ruby'].includes(choice.choice)) {
+    fail('Choose Rest, Smith, Leave, or the Ruby Key')
+  }
+  if (choice.choice === 'ruby' && (run.campaignProgress.actIV < 5 || run.campaign.keys.ruby)) {
+    fail('The Ruby Key is not available')
   }
   const player = run.players.find((candidate) => candidate.id === seat.playerId)
   if (choice.choice === 'rest' && player?.relics.some((relic) => relic.defId === 'coffee_dripper')) {
@@ -1007,9 +1513,9 @@ function settleCampfire(room) {
   const undecided = room.seats.filter((other) => {
     const player = run.players.find((candidate) => candidate.id === other.playerId)
     if (!player || player.dead) return false
-    // A dropped player must not hold the table hostage: they cannot answer, and
-    // the only other way out would forfeit everyone else's rest.
-    if (!other.connected) return false
+    // Ruby and ordinary Campfire choices are simultaneous physical decisions.
+    // A disconnected seat reconnects to its pending choice; it is never an
+    // implicit skip or abstention.
     return !room.campfireChoices[other.playerId]
   })
   if (undecided.length > 0) return undecided.map((other) => other.playerId)
@@ -1504,13 +2010,15 @@ function dispatch(run, seat, action) {
 export function snapshotFor(room, seatToken) {
   const seat = findSeat(room, seatToken)
   const viewerId = seat?.playerId ?? null
-  const pendingOwner = room.run?.players.find((player) => player.relics.some((relic) => relic.pending))
+  const run = Array.isArray(room.run?.players) ? room.run : null
+  const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
 
   return {
     code: room.code,
     phase: room.phase,
     ascension: room.ascension,
+    chooseYourRelic: room.chooseYourRelic === true,
     version: room.version,
     you: seat ? seatPublic(seat) : null,
     campfireChoice: viewerId !== null && room.campfireChoices?.[viewerId]
@@ -1529,22 +2037,22 @@ export function snapshotFor(room, seatToken) {
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
     endTurnCoordinatorId: room.endTurnAbilities ? endTurnCoordinator(room) : undefined,
-    startTurnAbilities: room.run?.combat?.phase === 'start'
-      ? startTurnAbilities(room.run.combat)
+    startTurnAbilities: run?.combat?.phase === 'start'
+      ? startTurnAbilities(run.combat)
       : undefined,
-    startTurnScryAbilities: room.run?.combat?.phase === 'start'
-      ? startTurnScryAbilities(room.run.combat)
+    startTurnScryAbilities: run?.combat?.phase === 'start'
+      ? startTurnScryAbilities(run.combat)
       : undefined,
-    startTurnCoordinatorId: room.run?.combat?.phase === 'start' ? startTurnCoordinator(room) : undefined,
-    startTurnScry: room.run?.combat ? (() => {
-      const preview = startTurnScryPreview(room.run.combat)
+    startTurnCoordinatorId: run?.combat?.phase === 'start' ? startTurnCoordinator(room) : undefined,
+    startTurnScry: run?.combat ? (() => {
+      const preview = startTurnScryPreview(run.combat)
       return preview ? {
         ...preview,
         cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
       } : undefined
     })() : undefined,
-    startTurnDiscard: room.run?.combat ? (() => {
-      const preview = startTurnDiscardPreview(room.run.combat)
+    startTurnDiscard: run?.combat ? (() => {
+      const preview = startTurnDiscardPreview(run.combat)
       return preview ? {
         ...preview,
         cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
@@ -1556,13 +2064,37 @@ export function snapshotFor(room, seatToken) {
     cardPreview: viewerId !== null && room.cardPreviews?.[viewerId]
       ? structuredClone(room.cardPreviews[viewerId])
       : undefined,
-    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ?? room.run?.combat?.pendingCardCopy?.playerId,
+    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ?? run?.combat?.pendingCardCopy?.playerId,
+    merchantPledges: Object.fromEntries(Object.entries(room.merchantPledges ?? {}).map(([key, pledge]) => [key, {
+      ...structuredClone(pledge),
+      cardUid: pledge.kind === 'removal' && pledge.buyerId !== viewerId ? undefined : pledge.cardUid,
+    }])),
+    courierPledge: room.courierPledge ? structuredClone(room.courierPledge) : undefined,
+    eventPledge: room.eventPledge ? {
+      actorId: room.eventPledge.actorId,
+      optionId: room.eventPledge.optionId,
+      cost: room.eventPledge.cost,
+      payments: structuredClone(room.eventPledge.payments),
+      decision: room.eventPledge.actorId === viewerId
+        ? structuredClone(room.eventPledge.decision)
+        : { optionIds: [room.eventPledge.optionId] },
+    } : undefined,
+    eventCanSkip: viewerId !== null && run ? canSkipEvent(run, viewerId) : false,
+    campaignProgress: {
+      version: room.campaignProgress.version,
+      characters: structuredClone(room.campaignProgress.characters),
+      colorless: room.campaignProgress.colorless,
+      actIV: room.campaignProgress.actIV,
+      unspentMarks: room.campaignProgress.unspentMarks,
+      highestAscension: room.campaignProgress.highestAscension,
+      nextRunNumber: room.campaignProgress.nextRunNumber ?? 0,
+    },
     seats: room.seats.map(seatPublic),
-    pendingRelic: viewerId && room.run ? pendingRelicPreview(room.run, viewerId) : null,
+    pendingRelic: viewerId && run ? pendingRelicPreview(run, viewerId) : null,
     pendingRelicStatus: pendingOwner && pendingRelic ? {
       playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
     } : null,
-    run: room.run ? redactRun(room.run, viewerId) : null,
+    run: run ? redactRun(run, viewerId) : null,
   }
 }
 
@@ -1593,10 +2125,67 @@ function publicEndTurnChoice(room, choice) {
 }
 
 function redactRun(run, viewerId) {
+  const roomState = run.roomState?.kind === 'event'
+    ? {
+        kind: 'event',
+        card: structuredClone(run.roomState.card),
+        decisions: Object.fromEntries(Object.entries(run.roomState.decisions).map(([playerId, decision]) => [
+          playerId,
+          playerId === viewerId ? structuredClone(decision) : { optionIds: [...decision.optionIds] },
+        ])),
+        dieRolls: structuredClone(run.roomState.dieRolls),
+        rewardOffers: structuredClone(run.roomState.rewardOffers ?? {}),
+        itemOffers: structuredClone(run.roomState.itemOffers ?? {}),
+        pendingDecisions: viewerId && run.roomState.pendingDecisions?.[viewerId]
+          ? { [viewerId]: structuredClone(run.roomState.pendingDecisions[viewerId]) }
+          : {},
+        pendingRolls: viewerId && run.roomState.pendingRolls?.[viewerId]
+          ? { [viewerId]: structuredClone(run.roomState.pendingRolls[viewerId]) }
+          : {},
+        revealedCards: structuredClone(run.roomState.revealedCards ?? {}),
+        revealedCardDefs: structuredClone(run.roomState.revealedCardDefs ?? {}),
+        revealedRelics: structuredClone(run.roomState.revealedRelics ?? {}),
+        partyOptionIds: structuredClone(run.roomState.partyOptionIds),
+        pendingTrade: run.roomState.pendingTrade
+          ? viewerId === run.roomState.pendingTrade.actorId || viewerId === run.roomState.pendingTrade.targetId
+            ? {
+              ...structuredClone(run.roomState.pendingTrade),
+              decision: viewerId === run.roomState.pendingTrade.actorId
+                ? structuredClone(run.roomState.pendingTrade.decision)
+                : { optionIds: [...run.roomState.pendingTrade.decision.optionIds], targetPlayerId: run.roomState.pendingTrade.targetId },
+            }
+            : {
+                actorId: run.roomState.pendingTrade.actorId,
+                targetId: run.roomState.pendingTrade.targetId,
+                kind: run.roomState.pendingTrade.kind,
+                offeredId: '',
+                decision: { optionIds: [], targetPlayerId: run.roomState.pendingTrade.targetId },
+              }
+          : undefined,
+        labChoices: Object.fromEntries(Object.keys(run.roomState.labChoices ?? {}).map((playerId) => [playerId, playerId === viewerId ? structuredClone(run.roomState.labChoices[playerId]) : { optionIds: ['resolve'] }])),
+      }
+    : run.roomState?.kind === 'treasure' || run.roomState?.kind === 'elite'
+      ? {
+          ...structuredClone(run.roomState),
+          decisions: Object.fromEntries(Object.entries(run.roomState.decisions).map(([playerId, decision]) => [
+            playerId,
+            playerId === viewerId || typeof decision === 'number' ? decision : 'skip',
+          ])),
+        }
+      : run.roomState ? structuredClone(run.roomState) : null
   return {
     ascension: run.ascension,
+    chooseYourRelic: run.chooseYourRelic,
     act: run.act,
     phase: run.phase,
+    // The dealt faces and face-up rewards are public. The remaining shuffled
+    // Blessing deck and queued future rewards stay on the authoritative table.
+    neow: run.neow ? {
+      players: Object.fromEntries(Object.keys(run.neow.players).map((playerId) => [
+        playerId,
+        neowPreview(run, playerId),
+      ])),
+    } : null,
     pendingBossDefId: null,
     map: run.map,
     // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
@@ -1609,6 +2198,15 @@ function redactRun(run, viewerId) {
       ...offer,
       potionQueue: offer.potionQueue?.map(() => null),
     })),
+    roomState,
+    courier: structuredClone(run.courier),
+    campaign: {
+      runId: run.campaign.runId,
+      bossesDefeated: run.campaign.bossesDefeated,
+      highestBossActDefeated: run.campaign.highestBossActDefeated,
+      keys: structuredClone(run.campaign.keys),
+      finalized: run.campaign.finalized,
+    },
   }
 }
 

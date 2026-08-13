@@ -14,9 +14,10 @@ type Props = {
   decided: string[]
   seats: { playerId: string; name: string }[]
   onAction: (action: object) => void
+  rubyAvailable?: boolean
 }
 
-export function OnlineCampfireScreen({ player, saved, decided, seats, onAction }: Props) {
+export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, rubyAvailable = false }: Props) {
   const [decision, setDecision] = useState<Decision | null>(saved ?? null)
   const deck = player.deck ?? []
   const upgradable = deck.filter(canUpgradeCard)
@@ -25,7 +26,7 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction }
   const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
   const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
-  const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.cardUid !== undefined
+  const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.choice === 'ruby' || decision?.cardUid !== undefined
 
   useEffect(() => {
     if (saved) setDecision(saved)
@@ -50,6 +51,9 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction }
           <button type="button" disabled={hammer || upgradable.length === 0} className={decision?.choice === 'smith' ? 'is-chosen' : ''} onClick={() => setDecision({ choice: 'smith' })}>
             Smith <span className="muted">upgrade</span>
           </button>
+          {rubyAvailable ? <button type="button" className={decision?.choice === 'ruby' ? 'is-chosen' : ''} onClick={() => setDecision({ choice: 'ruby' })}>
+            ◆ Ruby Key <span className="muted">skip campfire</span>
+          </button> : null}
         </div>
         {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
           {deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card} selected={card.uid === decision.removeCardUid}

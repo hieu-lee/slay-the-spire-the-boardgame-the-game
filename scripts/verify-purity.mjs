@@ -16,7 +16,6 @@
 import {
   advanceAct,
   cardNeedsEnemy,
-  createRun,
   endPlayerTurn,
   enemyTurn,
   enterRoom,
@@ -32,6 +31,7 @@ import {
 } from '../src/game/state.ts'
 import { CARDS } from '../src/game/cards.ts'
 import { suite, check, assert, report } from './lib/harness.mjs'
+import { postNeowRun } from './lib/post-neow-run.mjs'
 
 /** Runs `call` and fails if it changed anything reachable from `input`. */
 function unchanged(label, input, call) {
@@ -55,7 +55,7 @@ const party = [
 
 /** A run parked in its opening combat, with a hand dealt. */
 function inCombat(seed = 4242) {
-  const run = createRun(seed, party)
+  const run = postNeowRun(seed, party)
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const player = entered.combat.players[0]
   if (player.hand.some((card) => card.defId.startsWith('strike'))) return entered
@@ -96,17 +96,17 @@ check('the mutation detector actually detects mutation', () => {
 
 check('createRun does not touch the party it is given', () => {
   const input = party.map((member) => ({ ...member }))
-  const built = createRun(7, input)
+  const built = postNeowRun(7, input)
   assert(
     built.players.length === input.length &&
       built.players.every((player, i) => player.id === input[i].id && player.character === input[i].character),
     'precondition: the run must actually be built from this party',
   )
-  unchanged('createRun', input, () => createRun(7, input))
+  unchanged('createRun', input, () => postNeowRun(7, input))
 })
 
 check('enterRoom leaves the run it was called on alone', () => {
-  const run = createRun(11, party)
+  const run = postNeowRun(11, party)
   const roomId = roomChoices(run)[0].id
   assert(enterRoom(run, roomId) !== run, 'precondition: this call must actually do something')
   unchanged('enterRoom', run, () => enterRoom(run, roomId))
@@ -169,7 +169,14 @@ check('resolveCombat leaves the run it was called on alone', () => {
 
 check('resolveCardRewards leaves the offer and reward stacks alone', () => {
   const run = inCombat()
-  const hidden = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won' } })
+  const hidden = resolveCombat({
+    ...run,
+    combat: {
+      ...run.combat,
+      phase: 'won',
+      enemies: run.combat.enemies.map((enemy) => ({ ...enemy, potionReward: false, relicReward: false })),
+    },
+  })
   const offered = hidden.rewards.reduce(
     (current, offer) => revealCardReward(current, offer.playerId),
     hidden,
@@ -181,7 +188,7 @@ check('resolveCardRewards leaves the offer and reward stacks alone', () => {
 })
 
 check('moveTo leaves the map it was called on alone', () => {
-  const run = createRun(21, party)
+  const run = postNeowRun(21, party)
   const roomId = roomChoices(run)[0].id
   assert(moveTo(run.map, roomId) !== run.map, 'precondition: this call must actually do something')
   unchanged('moveTo', run.map, () => moveTo(run.map, roomId))
@@ -191,7 +198,7 @@ check('leaveRoom leaves the run it was called on alone', () => {
   // Parked in a room first. A fresh run is on the MAP, where leaveRoom hits
   // its guard and returns before executing a line — so the check passed
   // whatever the body did.
-  const run = createRun(31, party)
+  const run = postNeowRun(31, party)
   const parked = { ...run, phase: 'room' }
   assert(leaveRoom(parked) !== parked, 'precondition: this call must actually do something')
   unchanged('leaveRoom', parked, () => leaveRoom(parked))
@@ -200,7 +207,7 @@ check('leaveRoom leaves the run it was called on alone', () => {
 check('advanceAct leaves the run it was called on alone', () => {
   // It needs BOTH a victory and a finished act; with only the phase set it
   // returns early and the check inspects nothing.
-  const run = createRun(31, party)
+  const run = postNeowRun(31, party)
   const boss = Object.values(run.map.rooms).find((room) => room.kind === 'boss')
   assert(boss, 'precondition: the act should end at a boss')
   const won = {
@@ -217,7 +224,7 @@ check('advanceAct leaves the run it was called on alone', () => {
 })
 
 check('resolveCampfire leaves the run it was called on alone', () => {
-  const run = createRun(41, party)
+  const run = postNeowRun(41, party)
   const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
   assert(campfire, 'precondition: the act should contain a campfire')
   const parked = {

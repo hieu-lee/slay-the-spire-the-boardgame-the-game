@@ -81,6 +81,26 @@ async function shot(label) {
 const readRun = () => page.evaluate(() => window.__STS_DEBUG__.getRun())
 const readState = () => page.evaluate(() => window.__STS_DEBUG__.getState())
 
+async function bypassNeow() {
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+  const run = await readRun()
+  const solo = run.players.length === 1
+  const next = {
+    ...run,
+    phase: 'map',
+    neow: null,
+    players: run.players.map((player) => ({
+      ...player,
+      gold: solo ? 2 : 0,
+      relics: solo && !player.relics.some((relic) => relic.defId === 'loaded_die')
+        ? [...player.relics, { defId: 'loaded_die', spent: false }]
+        : player.relics,
+    })),
+  }
+  await page.evaluate((state) => window.__STS_DEBUG__.setRun(state), next)
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map' && !document.querySelector('.neow-screen'))
+}
+
 async function artWidth(card) {
   const image = card.locator(artSynced
     ? ':scope > img.card__art'
@@ -126,6 +146,7 @@ async function endTurn() {
 
 /** Clicks the first reachable room, which starts whatever that room is. */
 async function enterFirstRoom() {
+  await page.locator('.room--reachable').first().waitFor()
   await page.locator('.room--reachable').first().click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map')
   if ((await readState()).phase === 'start') {
@@ -138,7 +159,24 @@ await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
 
+await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-physical-campaign')).nextRunNumber === 0)
+const freshMenuCampaign = await page.evaluate(() => ({
+  saved: JSON.parse(localStorage.getItem('sts-physical-campaign')),
+  draftRunId: window.__STS_DEBUG__.getRun().campaign.runId,
+}))
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined && JSON.parse(localStorage.getItem('sts-physical-campaign')).nextRunNumber === 0)
+const reloadedMenuCampaign = await page.evaluate(() => ({
+  saved: JSON.parse(localStorage.getItem('sts-physical-campaign')),
+  draftRunId: window.__STS_DEBUG__.getRun().campaign.runId,
+}))
 await shot('00-title-menu')
+const localAscensions = await page.getByLabel('Ascension').locator('option').evaluateAll((options) =>
+  options.map((option) => option.value))
+const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
+await page.getByLabel('Players').selectOption('4')
+const fourPlayerCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
+await page.getByLabel('Players').selectOption('2')
 const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
   const box = menu.getBoundingClientRect()
   const title = menu.querySelector('.start-menu__title')?.getBoundingClientRect()
@@ -173,6 +211,13 @@ check('the title menu fills the viewport without clipping its controls', () => {
   }
   assertDeepEqual(menuSelection.selected, ['Play'])
   assert(!menuSelection.marker.includes('☞'), `the menu still uses the cheap finger marker: ${menuSelection.marker}`)
+  assertDeepEqual(localAscensions, ['0'], 'a fresh campaign offered locked Ascension levels')
+  assertEqual(localCharacterSeats, 2, 'local setup did not expose one character choice per active seat')
+  assertEqual(fourPlayerCharacterSeats, 4, 'a four-player local party cannot choose every seat')
+  assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
+  assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
+  assertEqual(freshMenuCampaign.draftRunId, 'campaign-1')
+  assertEqual(reloadedMenuCampaign.draftRunId, 'campaign-1')
 })
 
 await page.setViewportSize({ width: 720, height: 360 })
@@ -370,8 +415,26 @@ check('the compendium remains usable on a phone-sized viewport', () => {
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
+await page.getByLabel('Player 1 character').selectOption('watcher')
+await page.getByLabel('Player 2 character').selectOption('defect')
 await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+const openingNeowFaces = await page.locator('.neow-face').count()
+await shot('00a-neow-opening')
+check('a new local run deals one public Neow face per seat', () => assertEqual(openingNeowFaces, 2))
+await bypassNeow()
 await page.locator('.map').waitFor()
+
+const firstLocalRun = await readRun()
+const selectedLocalParty = firstLocalRun.players.map((player) => player.character)
+check('local setup starts an arbitrary legal character party', () => {
+  assertDeepEqual(selectedLocalParty, ['watcher', 'defect'])
+  assertEqual(firstLocalRun.campaign.runId, 'campaign-1', 'the first played local run skipped its campaign number')
+})
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'spire'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players[0]?.character === 'ironclad')
+await bypassNeow()
+await page.locator('.room--reachable').waitFor()
 
 // A run opens on the map with the boot beside the board (p.9).
 const opening = await readRun()
@@ -738,6 +801,7 @@ const finished = await playOutCombat()
 // Against a short round these all pass trivially: a tail keeps every line, so
 // the fixed-tail regression they exist to catch slips straight through.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'log-round'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await enterFirstRoom()
 await endTurn()
@@ -835,6 +899,7 @@ await shot('05c-combat-over')
 // than hoped for. Testing "won or lost" alone would pass with the victory path
 // completely broken.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'winnable'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
 await page.evaluate(() => {
@@ -1009,6 +1074,7 @@ await shot('05f-back-on-map')
 // stick forever the first time a state change landed inside its 380ms window
 // without hurting anyone — and being unchanged, it then never re-animated.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'flinch'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
 
@@ -6285,6 +6351,27 @@ await page.waitForFunction((enemyUid) => window.__STS_DEBUG__.getState().enemies
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.potions = ['entropic_brew', 'block_potion']
+  actor.relics = [...actor.relics.filter((relic) => relic.defId !== 'sozu'), { defId: 'sozu', spent: false }]
+  run.combat.potionDeck = ['fire_potion', 'skill_potion']
+  debug.setRun(run)
+})
+const combatBrewUse = page.locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ })
+await combatBrewUse.click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('entropic_brew'))
+const sozuBrew = await readState()
+const sozuBrewDialog = await page.getByRole('dialog', { name: 'Entropic Brew' }).count()
+check('Sozu lets Entropic Brew resolve directly without gaining or replacing Potions', () => {
+  assertEqual(sozuBrewDialog, 0)
+  assertDeepEqual(sozuBrew.players[0].potions, ['block_potion'])
+  assertDeepEqual(sozuBrew.potionDeck, ['fire_potion', 'skill_potion', 'entropic_brew'])
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeStorm)
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.combat.players[0].potions = ['cunning_potion', 'block_potion', 'fire_potion', 'explosive_potion']
   run.combat.players[0].shivs = 3
   run.combat.players[0].strength = 0
@@ -6668,6 +6755,7 @@ check('two hits in quick succession are both felt', () => {
 // this point in the suite the seat carries injected Powers and tokens that
 // make the row taller for unrelated reasons.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'fold'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
 await enterFirstRoom()
 const foldProbe = []
@@ -6677,6 +6765,7 @@ for (const size of [
   { width: 1440, height: 900 },
 ]) {
   await page.setViewportSize(size)
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   foldProbe.push(
     await page.evaluate((label) => {
       const board = document.querySelector('.board')
@@ -6716,6 +6805,7 @@ check("an enemy's hit points are on screen without scrolling, at every size", ()
 // and by this point in the suite the seat carries injected Powers and tokens
 // that make the row taller for reasons that have nothing to do with the log.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'pause'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
 await enterFirstRoom()
 await endTurn()
@@ -6751,6 +6841,7 @@ await page.setViewportSize({ width: 1440, height: 900 })
 // squash rules apply. Both fold probes ran only on the two-player board, so
 // the squash could be deleted with everything green.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'fold-four'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await enterFirstRoom()
 const crowdedState = await readState()
@@ -7113,6 +7204,7 @@ check('the energy count is readable on its disc', () => {
 // Four players is the maximum the box supports and the layout most likely to
 // break, so it gets its own capture.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'four-player'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await shot('06a-four-player-map')
 await enterFirstRoom()
@@ -7178,7 +7270,7 @@ check('mobile enemy abilities remain directly readable', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.combat.enemies[0].defId = 'fungi_beast'
+  for (const enemy of run.combat.enemies) Object.assign(enemy, { defId: 'fungi_beast', abilityUsed: false })
   debug.setRun(run)
 })
 const longAbilityInspect = await page.locator('.enemy').filter({ hasText: 'Fungi Beast' })
@@ -7320,6 +7412,7 @@ check('a mobile boss-only combat opens with the boss visible', () => {
 // selection and quietly breaks the printed rule.
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'choice-flows'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
 await page.evaluate(() => {
@@ -7426,14 +7519,15 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   const [stale, fallback] = run.combat.enemies.filter((enemy) => !enemy.dead)
   if (!stale || !fallback) throw new Error('Predator retry fixture needs two living enemies')
-  Object.assign(stale, { hp: 7, maxHp: 7, block: 0 })
+  stale.uid = 'predator-stale'
+  Object.assign(stale, { hp: 13, maxHp: 13, block: 0 })
   Object.assign(fallback, { hp: 9, maxHp: 9, block: 0 })
   debug.setRun(run)
 })
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.hp === 7))
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => enemy.uid === 'predator-stale'))
 const allyHandBeforePredator = (await readState()).players[1].hand.length
 await clickCard('h-predator')
-await page.locator('.enemy[aria-label*="7 of 7 hit points"]').click()
+await page.locator('.enemy[aria-label*="13 of 13 hit points"]').click()
 const predatorPrompt = await page.locator('.prompt').textContent()
 check('Predator asks for its ally after its enemy is chosen', () => {
   assert(/Choose who gets it/i.test(predatorPrompt ?? ''), `expected an ally prompt, got ${predatorPrompt}`)
@@ -7441,7 +7535,7 @@ check('Predator asks for its ally after its enemy is chosen', () => {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  const stale = run.combat.enemies.find((enemy) => enemy.hp === 7)
+  const stale = run.combat.enemies.find((enemy) => enemy.uid === 'predator-stale')
   Object.assign(stale, { hp: 0, dead: true })
   debug.setRun(run)
 })
@@ -7463,6 +7557,7 @@ check('Predator draws two cards for the chosen ally', () => {
 // reset() goes through React state, so reading it back in the same tick would
 // see the old run. Wait for it to land before touching anything.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'debuff-display'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
 await page.evaluate(() => {
@@ -7961,6 +8056,7 @@ await page.setViewportSize({ width: 1440, height: 900 })
 // Curses are full card faces, not hidden counters: verify their scans, spoken
 // rules, end-turn effects, Ethereal cleanup and Retain through the real UI.
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'curse-playtest'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
 await page.evaluate(() => {
@@ -8046,6 +8142,7 @@ check('Regret stays retained after the rest of the Curse hand is discarded', () 
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'potion-seat-reset'))
+await bypassNeow()
 const potionSeatIds = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -8125,11 +8222,11 @@ await page.evaluate((viewerId) => {
   debug.setRun(run)
 }, potionViewerId)
 await page.locator('.outside-potions__targets').waitFor({ state: 'detached' })
-const sozuBrewDisabled = await localBrewUse.isDisabled()
+const sozuBrewEnabled = await localBrewUse.isEnabled()
 const sozuBrewExpanded = await localBrewUse.getAttribute('aria-expanded')
-check('gaining Sozu closes and disables an open Entropic replacement disclosure', () => {
-  assert(sozuBrewDisabled)
-  assertEqual(sozuBrewExpanded, 'false')
+check('gaining Sozu closes replacement while keeping Entropic Brew usable', () => {
+  assert(sozuBrewEnabled)
+  assertEqual(sozuBrewExpanded, null)
 })
 await page.evaluate((viewerId) => {
   const debug = window.__STS_DEBUG__
@@ -8160,6 +8257,7 @@ check('a dead seat cannot use or give held Potions', () => {
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'local-pending-relic'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const localRelicSeats = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -8203,6 +8301,7 @@ check('resolving a local Relic restores map keyboard focus', () => {
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire'))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 2)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -8260,6 +8359,11 @@ check('enemy cards stay a sane size and the page does not run away', () => {
   )
 })
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  debug.setRun({ ...run, campaignProgress: { ...run.campaignProgress, highestAscension: 13 } })
+})
 page.once('dialog', (dialog) => dialog.accept())
 await page.getByLabel('Ascension').selectOption('9')
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().ascension === 9)
@@ -8277,10 +8381,11 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   debug.setRun({ ...structuredClone(debug.getRun()), phase: 'defeat' })
 })
-await page.getByRole('button', { name: 'Try again' }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+await page.getByRole('button', { name: 'Record campaign result' }).click()
+await page.getByRole('button', { name: 'Begin next run →' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
 const ascensionRetry = await readRun()
-check('Try again preserves every Ascension setup modifier', () => {
+check('the campaign journal next run preserves every Ascension setup modifier', () => {
   assertEqual(ascensionRetry.ascension, 9)
   assertEqual(ascensionRetry.players[0].maxHp, 9)
   assertEqual(ascensionRetry.players[0].hp, 8)
@@ -8288,6 +8393,7 @@ check('Try again preserves every Ascension setup modifier', () => {
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'combust-ui'))
+await bypassNeow()
 await page.locator('.room--reachable').first().click()
 await page.locator('.combat').waitFor()
 await page.evaluate(() => {

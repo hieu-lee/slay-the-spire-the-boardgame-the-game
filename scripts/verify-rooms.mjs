@@ -11,16 +11,21 @@ import {
   apply,
   chooseAscension,
   chooseCharacter,
+  chooseRelicRule,
   createRoom,
   createStore,
   uidList,
   joinRoom,
   markDisconnected,
+  removeSeat,
   roomCode,
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
 import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
+import { createEventRoom } from '../src/game/event-room.ts'
+import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
@@ -43,12 +48,39 @@ function allKeys(value, out = []) {
   return out
 }
 
+function finishNeow(room) {
+  while (room.run.phase === 'neow') {
+    let changed = false
+    for (const seat of room.seats) {
+      const preview = snapshotFor(room, seat.token).run.neow?.players[seat.playerId]
+      if (!preview || preview.done) continue
+      if (preview.redGoldPending) {
+        apply(room, seat.token, { kind: 'neow', stage: 'redGold', gain: false })
+      } else if (preview.redRewardPending) {
+        apply(room, seat.token, { kind: 'neow', stage: 'red', choice: null })
+      } else if (preview.pendingEffect) {
+        apply(room, seat.token, { kind: 'neow', stage: 'effect', gain: false })
+      } else if (preview.blueOption === null) {
+        apply(room, seat.token, { kind: 'neow', stage: 'option', optionIndex: 0 })
+      } else if (preview.rewardKind) {
+        apply(room, seat.token, {
+          kind: 'neow', stage: 'reward',
+          choice: null,
+        })
+      }
+      changed = true
+    }
+    assert(changed, 'Neow fixture could not make progress')
+  }
+}
+
 /**
  * A run opens on the map, so a room fixture that wants a combat has to walk
  * into one. Resolve any multi-ability Start-of-Turn choice so fixtures that
  * exercise the Player Turn do not depend on the party size.
  */
 function enterFirstCombat(room, seatToken) {
+  finishNeow(room)
   const [first] = roomChoices(room.run)
   apply(room, seatToken, { kind: 'enterRoom', roomId: first.id })
   if (room.run.combat?.phase === 'start') {
@@ -88,6 +120,146 @@ check('codes avoid glyphs that sound alike over voice', () => {
 check('codes are not all identical', () => {
   const codes = new Set(Array.from({ length: 50 }, () => roomCode()))
   assert(codes.size > 40, `50 codes collapsed to ${codes.size} distinct values`)
+})
+
+check('Choose Your Relic is a persisted server-authoritative multiplayer lobby option', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'RELICX' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  chooseRelicRule(room, a.token, true)
+  assertEqual(snapshotFor(room, b.token).chooseYourRelic, true)
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: b.token })
+  assertEqual(snapshotFor(room, b.token).chooseYourRelic, true)
+  startRun(room, a.token, { seed: 17 })
+  assertEqual(room.run.chooseYourRelic, true)
+})
+
+check('Choose Your Relic turns off when its lobby becomes solo', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'RELICS' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  chooseRelicRule(room, a.token, true)
+  removeSeat(room, b.token)
+  assertEqual(snapshotFor(room, a.token).chooseYourRelic, false)
+  startRun(room, a.token, { seed: 18 })
+  assertEqual(room.run.chooseYourRelic, false)
+})
+
+check('disconnect snapshots tolerate legacy partial run markers', () => {
+  const room = createRoom(createStore(), { code: 'LEGACY' })
+  const seat = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  room.run = { phase: 'map' }
+  assertEqual(markDisconnected(room, seat.token).run, null)
+})
+
+suite('Neow authority')
+
+check('Neow deals public faces without leaking its remaining deck and blocks normal play', () => {
+  const room = createRoom(createStore(), { code: 'NEOWAA' })
+  const seats = CHARACTERS.map((character, index) => joinRoom(room, { name: `Player ${index + 1}`, character }))
+  startRun(room, seats[0].token, { seed: 410 })
+  const hidden = [...room.run.neow.deck]
+  const snapshot = snapshotFor(room, seats[1].token)
+  assertEqual(snapshot.run.phase, 'neow')
+  assertEqual(Object.hasOwn(snapshot.run.neow, 'deck'), false, 'the face-down Neow deck was serialized')
+  assertEqual(Object.keys(snapshot.run.neow.players).length, 4, 'not every dealt Neow face is public')
+  for (const cardId of hidden) assert(!allStrings(snapshot).includes(cardId), `hidden Neow card ${cardId} leaked`)
+  let blocked
+  try { apply(room, seats[0].token, { kind: 'enterRoom', roomId: room.run.map.rows[0]?.[0] }) } catch (error) { blocked = error }
+  assertEqual(blocked?.name, 'RoomError')
+})
+
+check('Neow binds every stage to the authenticated seat and rejects stale or forged choices', () => {
+  const room = createRoom(createStore(), { code: 'NEOWAB' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  startRun(room, a.token, { seed: 411 })
+  apply(room, a.token, { kind: 'neow', stage: 'redGold', gain: false })
+  const before = JSON.stringify(room.run)
+  for (const action of [
+    { kind: 'neow', stage: 'red', playerId: b.playerId, choice: null },
+    { kind: 'neow', stage: 'option', optionIndex: 0 },
+    { kind: 'neow', stage: 'red', choice: 99 },
+  ]) {
+    let refused
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError')
+    assertEqual(JSON.stringify(room.run), before, 'a refused Neow action changed authoritative state')
+  }
+  apply(room, a.token, { kind: 'neow', stage: 'red', choice: null })
+  const afterRed = JSON.stringify(room.run)
+  for (const action of [
+    { kind: 'neow', stage: 'red', choice: null },
+    { kind: 'neow', stage: 'option', optionIndex: -1 },
+    { kind: 'neow', stage: 'option', optionIndex: 3 },
+    { kind: 'neow', stage: 'option', optionIndex: 0, cardUids: ['forged-card'] },
+  ]) {
+    let refused
+    try { apply(room, a.token, action) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError')
+    assertEqual(JSON.stringify(room.run), afterRed, 'a stale or forged Neow choice changed the run')
+  }
+})
+
+check('Neow reveal is authenticated, public, and skip-unseen preserves exact deck order', () => {
+  const room = createRoom(createStore(), { code: 'NEOWAR' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  startRun(room, a.token, { seed: 412 })
+  apply(room, a.token, { kind: 'neow', stage: 'redGold', gain: false })
+  apply(room, b.token, { kind: 'neow', stage: 'redGold', gain: false })
+  const before = [...room.run.players[0].cardRewards]
+  let refused
+  try { apply(room, b.token, { kind: 'neow', stage: 'reveal', playerId: a.playerId }) } catch (error) { refused = error }
+  assertEqual(refused?.name, 'RoomError')
+  assertDeepEqual(room.run.players[0].cardRewards, before)
+  refused = undefined
+  try { apply(room, a.token, { kind: 'neow', stage: 'reveal', choice: null }) } catch (error) { refused = error }
+  assertEqual(refused?.name, 'RoomError')
+
+  apply(room, a.token, { kind: 'neow', stage: 'reveal' })
+  const owner = snapshotFor(room, a.token).run.neow.players[a.playerId]
+  const observer = snapshotFor(room, b.token).run.neow.players[a.playerId]
+  assert(owner.redReward?.choices.length > 0, 'revealed red offer was absent')
+  assertDeepEqual(observer.redReward, owner.redReward, 'face-up reward was not public')
+  assertDeepEqual(room.run.players[0].cardRewards, before, 'reveal advanced the deck before resolution')
+  apply(room, a.token, { kind: 'neow', stage: 'red', choice: null })
+  assertDeepEqual(room.run.players[0].cardRewards.slice(-owner.redReward.cardsDrawn.length), owner.redReward.cardsDrawn)
+
+  const beforeB = [...room.run.players[1].cardRewards]
+  apply(room, b.token, { kind: 'neow', stage: 'red', choice: null })
+  assertDeepEqual(room.run.players[1].cardRewards, beforeB, 'unseen red skip drew or bottomed cards')
+})
+
+check('Neow preserves pending choices across disconnect and completes one through four seats', () => {
+  for (let count = 1; count <= 4; count++) {
+    const room = createRoom(createStore(), { code: `NEOW${count}X` })
+    const seats = CHARACTERS.slice(0, count).map((character, index) =>
+      joinRoom(room, { name: `Player ${index + 1}`, character }))
+    startRun(room, seats[0].token, { seed: 420 + count })
+    apply(room, seats.at(-1).token, { kind: 'neow', stage: 'redGold', gain: false })
+    apply(room, seats.at(-1).token, { kind: 'neow', stage: 'red', choice: null })
+    if (count === 1) room.run.players[0].relics.push({ defId: 'astrolabe', spent: false, pending: true })
+    const pending = structuredClone(room.run.neow)
+    markDisconnected(room, seats.at(-1).token)
+    assertDeepEqual(room.run.neow, pending, 'disconnect auto-resolved a Neow choice')
+    joinRoom(room, { token: seats.at(-1).token })
+    if (count === 1) {
+      assert(room.run.players[0].relics.some((relic) => relic.pending), 'disconnect auto-resolved a Neow Relic')
+      const player = room.run.players[0]
+      const eligible = player.deck.filter((card) => !card.upgraded && CARDS[card.defId]?.upgrade)
+      apply(room, seats[0].token, { kind: 'resolvePendingRelic', cardUids: eligible.slice(0, 3).map((card) => card.uid), rewardIndices: [] })
+    }
+    assertDeepEqual(snapshotFor(room, seats.at(-1).token).run.neow.players[seats.at(-1).playerId],
+      snapshotFor(room, seats[0].token).run.neow.players[seats.at(-1).playerId],
+      'reconnect changed the public pending Neow state')
+    finishNeow(room)
+    assertEqual(room.run.phase, 'map', `${count}-player Neow did not finish`)
+    assertEqual(room.run.neow, null)
+  }
 })
 
 suite('seats')
@@ -168,6 +340,7 @@ check('a disconnected owner cannot strand a three-player run on a private Relic 
   const b = joinRoom(room, { name: 'Bo', character: 'silent' })
   joinRoom(room, { name: 'Cy', character: 'defect' })
   startRun(room, a.token, { seed: 31 })
+  finishNeow(room)
   const owner = room.run.players.find((player) => player.id === a.playerId)
   const chosen = owner.deck.filter((card) => !card.upgraded).slice(0, 3)
   owner.relics.push({ defId: 'astrolabe', spent: false, pending: true })
@@ -198,6 +371,7 @@ check('four-player disconnect settlement keeps private Relic rewards owner-only'
   joinRoom(room, { name: 'Cy', character: 'defect' })
   joinRoom(room, { name: 'Dee', character: 'watcher' })
   startRun(room, a.token, { seed: 41 })
+  finishNeow(room)
   const owner = room.run.players.find((player) => player.id === a.playerId)
   const selected = owner.rareRewards[0]
   owner.relics.push({ defId: 'enchiridion', spent: false, pending: true })
@@ -265,6 +439,7 @@ check('starting a run always honors the lobby Ascension selection', () => {
   const store = createStore()
   const room = createRoom(store, { code: 'ASCEND' })
   const seat = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  room.campaignProgress.highestAscension = 13
   chooseAscension(room, seat.token, 13)
   startRun(room, seat.token, { seed: 906, ascension: 0 })
   assertEqual(room.run.ascension, 13)
@@ -3736,6 +3911,7 @@ check('no function but joinRoom ever returns a seat token', () => {
     }
   }
 
+  finishNeow(room)
   const acted = apply(room, a.token, { kind: 'enterRoom', roomId: roomChoices(room.run)[0].id })
   const seen = new Set(allStrings(acted))
   for (const token of tokens) {
@@ -4482,16 +4658,19 @@ check('one seat cannot walk the party out of a campfire', () => {
   assertEqual(room.run.players[0].hp, 4, 'and nobody has rested yet')
 })
 
-check('a dropped player does not hold the campfire hostage', () => {
-  // They cannot answer, and the only other way out forfeits everyone's Rest.
+check('a dropped player remains pending at a simultaneous campfire', () => {
   const { room, a, b } = twoSeatRoom()
   atCampfire(room)
   for (const player of room.run.players) player.hp = 4
   markDisconnected(room, b.token)
 
   apply(room, a.token, { kind: 'campfire', choices: { [a.playerId]: { choice: 'rest' } } })
-  assertEqual(room.run.phase, 'map', 'the party leaves once everyone present has chosen')
-  assertEqual(room.run.players[0].hp, 7, 'and Ann rested')
+  assertEqual(room.run.phase, 'room', 'disconnect is never treated as a physical abstention')
+  assertEqual(room.run.players[0].hp, 4, 'and no choice resolves early')
+  joinRoom(room, { token: b.token })
+  apply(room, b.token, { kind: 'campfire', choices: { [b.playerId]: { choice: 'rest' } } })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.players[0].hp, 7)
 })
 
 check('a room with no campfire refuses campfire choices', () => {
@@ -4721,10 +4900,7 @@ check('every character draws its documented opening hand', () => {
   }
 })
 
-check('a player dropping while the table waits does not strand the campfire', () => {
-  // The drop can be the thing that completes the table. Without re-checking,
-  // leaveRoom stayed refused and the room only unstuck if someone re-sent a
-  // choice they had already made — which the "waiting on Bo" UI never offers.
+check('a player reconnects into the pending campfire choice', () => {
   const { room, a, b } = twoSeatRoom()
   atCampfire(room)
   for (const player of room.run.players) player.hp = 4
@@ -4734,11 +4910,15 @@ check('a player dropping while the table waits does not strand the campfire', ()
   assertEqual(room.run.phase, 'room', 'and still at the campfire')
 
   markDisconnected(room, b.token)
-  assertEqual(room.run.phase, 'map', 'Bo dropping releases the party')
-  assertEqual(room.run.players[0].hp, 7, 'and Ann gets the rest she chose')
+  assertEqual(room.run.phase, 'room', 'Bo dropping does not invent a simultaneous choice')
+  const again = joinRoom(room, { token: b.token })
+  assertEqual(again.playerId, b.playerId)
+  apply(room, b.token, { kind: 'campfire', choices: { [b.playerId]: { choice: 'rest' } } })
+  assertEqual(room.run.phase, 'map')
+  assertEqual(room.run.players[0].hp, 7)
 })
 
-check('a campfire choice must actually be Rest or Smith', () => {
+check('a campfire choice must actually be Rest, Smith, or Ruby', () => {
   // resolveCampfire treats anything that is not exactly 'rest' as a Smith, and
   // a Smith naming no card does nothing — so a near-miss silently burned the
   // seat's only in-act heal.
@@ -4770,6 +4950,11 @@ check('a campfire choice must actually be Rest or Smith', () => {
     }
     assert(threw, `smith with cardUid ${String(cardUid)} was accepted`)
   }
+  const mine = room.run.players[0]
+  mine.deck.unshift({ uid: 'room-bane', defId: 'ascenders_bane', upgraded: false })
+  let bane
+  try { apply(room, a.token, { kind: 'campfire', choices: { [a.playerId]: { choice: 'smith', cardUid: 'room-bane' } } }) } catch (error) { bane = error }
+  assertEqual(bane?.name, 'RoomError')
 
   assertEqual(room.run.phase, 'room', 'and none of that left the campfire')
   assertEqual(room.run.players[0].hp, 4, 'nor healed anyone')
@@ -6216,6 +6401,868 @@ check('a Foresight Weave interrupt stays private and cannot deadlock after disco
   assertEqual(room.run.combat.phase, 'player')
   assertEqual(room.run.combat.startTurnProgress, undefined)
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hand.length, 5)
+})
+
+suite('non-combat room authority')
+
+function atMerchantRoom() {
+  const result = twoSeatRoom()
+  const { room } = result
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 12 }))
+  room.run.itemDecks.relics = ['anchor', 'happy_flower', 'akabeko', ...room.run.itemDecks.relics]
+  room.run.itemDecks.potions = ['fire_potion', 'swift_potion', 'blood_potion', ...room.run.itemDecks.potions]
+  room.run.roomState = createMerchant(room.run.itemDecks, room.run.players)
+  return result
+}
+
+check('a Merchant token can pledge only its own public Gold', () => {
+  const { room, a, b } = atMerchantRoom()
+  const before = JSON.stringify(room.run)
+  let forged
+  try {
+    apply(room, a.token, {
+      kind: 'merchantPurchase',
+      purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 5 } },
+    })
+  } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  assertEqual(JSON.stringify(room.run), before)
+})
+
+check('separate contributor pledges settle one shared Merchant purchase atomically', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, {
+    kind: 'merchantPurchase',
+    purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 2 } },
+  })
+  assertEqual(room.run.roomState.relics[0], 'anchor', 'an underfunded pledge did not buy early')
+  apply(room, b.token, {
+    kind: 'merchantPurchase',
+    purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 3 } },
+  })
+  assertEqual(room.run.roomState.relics[0], null)
+  assert(room.run.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.defId === 'anchor'))
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, 10)
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).gold, 9)
+})
+
+check('Merchant reserves shared offers and Gold across every pending purchase', () => {
+  const { room, a, b } = atMerchantRoom()
+  room.run.players.find((player) => player.id === a.playerId).gold = 5
+  apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 3 } } })
+  let competing
+  try { apply(room, b.token, { kind: 'merchantPurchase', purchase: { buyerId: b.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 1 } } }) } catch (error) { competing = error }
+  assertEqual(competing?.name, 'RoomError')
+  let overcommitted
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 1, payments: { [a.playerId]: 3 } } }) } catch (error) { overcommitted = error }
+  assertEqual(overcommitted?.name, 'RoomError')
+  assertEqual(room.merchantPledges[`${a.playerId}/relic/1`], undefined)
+
+  let aliased
+  try { apply(room, b.token, { kind: 'merchantPurchase', purchase: { buyerId: b.playerId, section: 'relic', slot: '0', payments: { [b.playerId]: 0 } } }) } catch (error) { aliased = error }
+  assertEqual(aliased?.name, 'RoomError')
+  assertEqual(Object.keys(room.merchantPledges).length, 1)
+})
+
+check('Merchant buyer cancellation clears teammate funding and impossible exact settlements', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 0 } } })
+  apply(room, b.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 2 } } })
+  apply(room, a.token, { kind: 'merchantWithdraw', key: `${a.playerId}/relic/0` })
+  assertEqual(room.merchantPledges[`${a.playerId}/relic/0`], undefined)
+  markDisconnected(room, b.token)
+
+  room.merchantPledges.safe = { buyerId: a.playerId, section: 'relic', slot: 1, payments: { [a.playerId]: 0 } }
+  let inherited
+  try { apply(room, a.token, { kind: 'merchantWithdraw', key: '__proto__' }) } catch (error) { inherited = error }
+  assertEqual(inherited?.name, 'RoomError')
+  delete room.merchantPledges.safe
+
+  room.run.ascension = 4
+  const buyer = room.run.players.find((player) => player.id === a.playerId)
+  buyer.potions = ['fire_potion', 'swift_potion']
+  const version = room.version
+  let impossible
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 0, potionRecipientId: a.playerId, payments: { [a.playerId]: 2 } } }) } catch (error) { impossible = error }
+  assertEqual(impossible?.name, 'RoomError')
+  assertEqual(room.version, version)
+  assertEqual(room.merchantPledges?.[`${a.playerId}/potion/0`], undefined)
+})
+
+check('Merchant rejects impossible purchases before storing partial funding', () => {
+  const { room, a } = atMerchantRoom()
+  room.run.ascension = 4
+  const buyer = room.run.players.find((player) => player.id === a.playerId)
+  buyer.potions = ['fire_potion', 'swift_potion']
+  const version = room.version
+  let potion
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 0, payments: { [a.playerId]: 1 } } }) } catch (error) { potion = error }
+  assertEqual(potion?.name, 'RoomError')
+  assertEqual(room.merchantPledges?.[`${a.playerId}/potion/0`], undefined)
+  let removal
+  try { apply(room, a.token, { kind: 'merchantRemove', playerId: a.playerId, cardUid: 'forged-card', payments: { [a.playerId]: 1 } }) } catch (error) { removal = error }
+  assertEqual(removal?.name, 'RoomError')
+  assertEqual(room.merchantPledges?.[`remove/${a.playerId}`], undefined)
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 0, potions: [] }))
+  let unaffordable
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 0 } } }) } catch (error) { unaffordable = error }
+  assertEqual(unaffordable?.name, 'RoomError')
+  assertEqual(room.merchantPledges?.[`${a.playerId}/relic/0`], undefined)
+  assertEqual(room.version, version)
+})
+
+check('Merchant cannot close while an authorized purchase still needs contributions', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 1 } } })
+  let closed
+  try { apply(room, a.token, { kind: 'merchantFinish' }) } catch (error) { closed = error }
+  assertEqual(closed?.name, 'RoomError')
+  assertEqual(room.run.roomState.kind, 'merchant')
+  assert(room.merchantPledges[`${a.playerId}/relic/0`])
+  apply(room, a.token, { kind: 'merchantWithdraw', key: `${a.playerId}/relic/0` })
+  let foreign
+  try { apply(room, b.token, { kind: 'merchantFinish' }) } catch (error) { foreign = error }
+  assertEqual(foreign?.name, 'RoomError')
+  apply(room, a.token, { kind: 'merchantFinish' })
+  assertEqual(room.run.phase, 'map')
+})
+
+check('Merchant rejects overfunding and freezes potion recipient metadata', () => {
+  const { room, a, b } = atMerchantRoom()
+  let overpay
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 0, potionRecipientId: a.playerId, payments: { [a.playerId]: 3 } } }) } catch (error) { overpay = error }
+  assertEqual(overpay?.name, 'RoomError')
+  apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 0, potionRecipientId: a.playerId, payments: { [a.playerId]: 1 } } })
+  const before = JSON.stringify(room.run)
+  let hijack
+  try { apply(room, b.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 0, potionRecipientId: b.playerId, payments: { [b.playerId]: 1 } } }) } catch (error) { hijack = error }
+  assertEqual(hijack?.name, 'RoomError')
+  assertEqual(JSON.stringify(room.run), before)
+
+  let forcedGift
+  try { apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'potion', slot: 1, potionRecipientId: b.playerId, payments: { [a.playerId]: 2 } } }) } catch (error) { forcedGift = error }
+  assertEqual(forcedGift?.name, 'RoomError', 'the buyer forced a Potion into a teammate inventory')
+})
+
+check('shared A8 removal requires owner consent and owner withdrawal cancels it', () => {
+  const { room, a, b } = atMerchantRoom()
+  room.run.ascension = 8
+  const uid = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  apply(room, a.token, { kind: 'merchantRemove', playerId: a.playerId, cardUid: uid, payments: { [a.playerId]: 1 } })
+  apply(room, b.token, { kind: 'merchantRemove', playerId: a.playerId, payments: { [b.playerId]: 1 } })
+  assertEqual(snapshotFor(room, b.token).merchantPledges[`remove/${a.playerId}`].cardUid, undefined)
+  apply(room, a.token, { kind: 'merchantWithdraw', key: `remove/${a.playerId}` })
+  assertEqual(room.merchantPledges[`remove/${a.playerId}`], undefined)
+  let forced
+  try { apply(room, b.token, { kind: 'merchantRemove', playerId: a.playerId, payments: { [b.playerId]: 4 } }) } catch (error) { forced = error }
+  assertEqual(forced?.name, 'RoomError')
+
+  apply(room, a.token, { kind: 'merchantRemove', playerId: a.playerId, cardUid: uid, payments: { [a.playerId]: 1 } })
+  apply(room, b.token, { kind: 'merchantRemove', playerId: a.playerId, payments: { [b.playerId]: 3 } })
+  assert(!room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.uid === uid))
+})
+
+check('Merchant offers and own pledge survive disconnect and reconnect without leaking hidden decks', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, {
+    kind: 'merchantPurchase',
+    purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 2 } },
+  })
+  const before = snapshotFor(room, a.token)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  const after = snapshotFor(room, a.token)
+  assertDeepEqual(after.run.roomState, before.run.roomState)
+  assertDeepEqual(after.merchantPledges, before.merchantPledges)
+  const strings = allStrings(snapshotFor(room, b.token))
+  const visible = new Set(room.run.roomState.relics.filter(Boolean))
+  for (const hidden of room.run.itemDecks.relics.filter((id) => !visible.has(id)).slice(0, 4)) {
+    assert(!strings.includes(hidden), `${hidden} leaked from the relic deck`)
+  }
+})
+
+check('one seat cannot choose another seat relic and disconnect never completes Sapphire', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.campaignProgress = { ...room.run.campaignProgress, actIV: 5 }
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createRelicReward('treasure', room.run.itemDecks, room.run.players)
+  let spoofed
+  try { apply(room, a.token, { kind: 'relicReward', playerId: b.playerId, decision: 'sapphire' }) } catch (error) { spoofed = error }
+  assertEqual(spoofed?.name, 'RoomError')
+  apply(room, a.token, { kind: 'relicReward', playerId: a.playerId, decision: 'sapphire' })
+  assertEqual(snapshotFor(room, a.token).run.roomState.decisions[a.playerId], 'sapphire')
+  assertEqual(snapshotFor(room, b.token).run.roomState.decisions[a.playerId], 'skip', 'another seat learned the simultaneous Sapphire choice')
+  markDisconnected(room, b.token)
+  assertEqual(room.run.phase, 'room')
+  assertEqual(room.run.campaign.keys.sapphire, false)
+  joinRoom(room, { token: b.token })
+  apply(room, b.token, { kind: 'relicReward', playerId: b.playerId, decision: 'sapphire' })
+  assertEqual(room.run.campaign.keys.sapphire, true)
+})
+
+check('shared relic claims are public without revealing skip or Sapphire decisions', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createRelicReward('treasure', room.run.itemDecks, room.run.players, true)
+  apply(room, a.token, { kind: 'relicReward', decision: 0 })
+  assertEqual(snapshotFor(room, b.token).run.roomState.decisions[a.playerId], 0)
+  let duplicate
+  try { apply(room, b.token, { kind: 'relicReward', decision: 0 }) } catch (error) { duplicate = error }
+  assertEqual(duplicate?.name, 'RoomError')
+  apply(room, b.token, { kind: 'relicReward', decision: 1 })
+  assertEqual(room.run.phase, 'map')
+})
+
+check('an Elite relic reward can produce the physical Sapphire Key', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.campaignProgress = { ...room.run.campaignProgress, actIV: 5 }
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createRelicReward('elite', room.run.itemDecks, room.run.players)
+  apply(room, a.token, { kind: 'relicReward', decision: 'sapphire' })
+  apply(room, b.token, { kind: 'relicReward', decision: 'sapphire' })
+  assertEqual(room.run.campaign.keys.sapphire, true)
+})
+
+check('malformed Event choices are rejected without crashing or mutating the room', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.living_wall, instanceId: 'test-wall', act: 1, minAscension: 0, requiresColorlessUnlock: false })
+  const before = JSON.stringify(room.run)
+  for (const decision of [null, {}, { optionIds: 'forget' }, { optionIds: ['forget'], cardUids: [7] }, { optionIds: ['forget'], rewardIndexes: [-1] }]) {
+    let refused
+    try { apply(room, a.token, { kind: 'event', decision }) } catch (error) { refused = error }
+    assertEqual(refused?.name, 'RoomError')
+    assertEqual(JSON.stringify(room.run), before)
+  }
+  let nullPayments
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['forget'], payments: null } }) } catch (error) { nullPayments = error }
+  assertEqual(nullPayments?.name, 'RoomError')
+  assertEqual(JSON.stringify(room.run), before)
+})
+
+check('a staged Event die survives reconnect and hides private selections', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.wheel_of_change, instanceId: 'test-wheel', act: 1, minAscension: 0, requiresColorlessUnlock: false })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['spin'] } })
+  const roll = room.run.roomState.pendingRolls[a.playerId][0]
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.roomState.pendingRolls[a.playerId][0], roll)
+  assertEqual(snapshotFor(room, b.token).run.roomState.pendingRolls[a.playerId], undefined)
+})
+
+check('Event exchanges require the target owner and restore their private prompt on reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.note_for_yourself, instanceId: 'test-note', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const offered = room.run.players.find((player) => player.id === a.playerId).deck[0]
+  const returned = room.run.players.find((player) => player.id === b.playerId).deck[0]
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['exchange'], targetPlayerId: b.playerId, cardUids: [offered.uid] } })
+  const targetView = snapshotFor(room, b.token)
+  assertEqual(targetView.run.roomState.pendingTrade.offeredId, offered.defId)
+  assert(!allStrings(snapshotFor(room, a.token)).includes(returned.uid), 'the target deck leaked while an exchange waited')
+  let forged
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['accept_trade'], cardUids: [returned.uid] } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: b.token })
+  assertEqual(snapshotFor(room, b.token).run.roomState.pendingTrade.targetId, b.playerId)
+  apply(room, b.token, { kind: 'event', decision: { optionIds: ['accept_trade'], cardUids: [returned.uid] } })
+  assert(room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.uid === returned.uid))
+  assert(room.run.players.find((player) => player.id === b.playerId).deck.some((card) => card.uid === offered.uid))
+})
+
+check('uninvolved seats see a privacy-safe pending Event exchange marker', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'TRADEX' })
+  const a = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  const b = joinRoom(room, { name: 'Bo', character: 'silent' })
+  const c = joinRoom(room, { name: 'Cy', character: 'defect' })
+  startRun(room, a.token, { seed: 552 })
+  room.run.phase = 'room'
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.note_for_yourself, instanceId: 'test-note-public-wait', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const offered = room.run.players.find((player) => player.id === a.playerId).deck[0]
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['exchange'], targetPlayerId: b.playerId, cardUids: [offered.uid] } })
+  const marker = snapshotFor(room, c.token).run.roomState.pendingTrade
+  assertEqual(marker.targetId, b.playerId)
+  assertEqual(marker.offeredId, '')
+  assert(!allStrings(marker).includes(offered.defId), 'the offered private card leaked to an uninvolved seat')
+  markDisconnected(room, c.token)
+  joinRoom(room, { token: c.token })
+  assertEqual(snapshotFor(room, c.token).run.roomState.pendingTrade.targetId, b.playerId)
+})
+
+check('paid Events preserve chooser selections while each token pledges only its own Gold', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-beggar', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: player.id === b.playerId ? 2 : 0 }))
+  const uid = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  apply(room, a.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['give'], cardUids: [uid], payments: { [a.playerId]: 0 } } })
+  assert(room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.uid === uid))
+  assert(!allStrings(snapshotFor(room, b.token).eventPledge).includes(uid), 'the chooser card selection leaked to a contributor')
+  let forged
+  try { apply(room, b.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['give'], payments: { [a.playerId]: 2 } } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  apply(room, b.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['give'], payments: { [b.playerId]: 2 } } })
+  assertEqual(room.run.phase, 'room')
+  assert(room.run.roomState.decisions[a.playerId])
+  assert(!room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.uid === uid))
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).gold, 0)
+})
+
+check('Event contributors cannot switch the chooser from Gold to an item', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.the_joust, instanceId: 'test-joust-method', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: player.id === b.playerId ? 2 : 0 }))
+  const relicId = room.run.players.find((player) => player.id === a.playerId).relics[0].defId
+  apply(room, a.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['bet'], payments: { [a.playerId]: 0 } } })
+  const before = structuredClone(room)
+  let forged
+  try { apply(room, b.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['bet'], relicIds: [relicId], payments: { [b.playerId]: 2 } } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  assertDeepEqual(room, before)
+})
+
+check('settled Joust payments survive the staged die and reconnect', () => {
+  for (const payment of ['gold', 'potion']) {
+    const { room, a } = twoSeatRoom()
+    room.run.phase = 'room'
+    room.run.combat = null
+    room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.the_joust, instanceId: `test-joust-${payment}`, act: 2, minAscension: 0, requiresColorlessUnlock: false })
+    room.run.players = room.run.players.map((player) => player.id === a.playerId
+      ? { ...player, gold: payment === 'gold' ? 2 : 0, relics: [], potions: payment === 'potion' ? ['swift_potion'] : [] }
+      : player)
+    const decision = payment === 'gold'
+      ? { optionIds: ['bet'], payments: { [a.playerId]: 2 } }
+      : { optionIds: ['bet'], potionIds: ['swift_potion'] }
+    apply(room, a.token, { kind: 'event', decision })
+    assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, 0)
+    assertEqual(room.run.players.find((player) => player.id === a.playerId).potions.length, 0)
+    assertEqual(room.run.roomState.pendingRolls[a.playerId].length, 1)
+    markDisconnected(room, a.token)
+    joinRoom(room, { token: a.token })
+    apply(room, a.token, { kind: 'event', decision: { optionIds: ['bet'] } })
+    assert(room.run.roomState.decisions[a.playerId])
+    assertEqual(room.run.roomState.pendingRolls?.[a.playerId], undefined)
+  }
+})
+
+check('only the Event chooser can cancel an underfunded pledge after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-beggar-cancel', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: player.id === b.playerId ? 2 : 0 }))
+  const uid = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['give'], cardUids: [uid], payments: { [a.playerId]: 0 } } })
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assert(snapshotFor(room, a.token).eventPledge)
+  let foreign
+  try { apply(room, b.token, { kind: 'eventCancel' }) } catch (error) { foreign = error }
+  assertEqual(foreign?.name, 'RoomError')
+  apply(room, a.token, { kind: 'eventCancel' })
+  assertEqual(room.eventPledge, undefined)
+  assertEqual(room.run.phase, 'room')
+  assert(!room.run.roomState.decisions[a.playerId])
+})
+
+check('invalid exact Event funding leaves no ghost pledge or mutation', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-beggar-invalid', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const before = structuredClone(room)
+  let rejected
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['give'], cardUids: ['forged-card'], payments: { [a.playerId]: 2 } } }) } catch (error) { rejected = error }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.eventPledge, undefined)
+  assertDeepEqual(room, before)
+})
+
+check('invalid partial Event funding leaves no reconnect-persistent pledge', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-beggar-invalid-partial', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 0 }))
+  const version = room.version
+  let rejected
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['give'], cardUids: ['forged-card'], payments: { [a.playerId]: 0 } } }) } catch (error) { rejected = error }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.eventPledge, undefined)
+  const uid = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  let unaffordable
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['give'], cardUids: [uid], payments: { [a.playerId]: 0 } } }) } catch (error) { unaffordable = error }
+  assertEqual(unaffordable?.name, 'RoomError')
+  assertEqual(room.eventPledge, undefined)
+  assertEqual(room.version, version)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).eventPledge, undefined)
+})
+
+check('paid Event items reveal publicly, survive reconnect, and charge once on resolution', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.woman_in_blue, instanceId: 'test-blue-reveal', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => player.id === a.playerId ? { ...player, gold: 3 } : player)
+  const beforeGold = room.run.players.find((player) => player.id === a.playerId).gold
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], payments: { [a.playerId]: 1 } } })
+  const offer = snapshotFor(room, b.token).run.roomState.itemOffers[a.playerId][0]
+  assertEqual(offer.kind, 'potion')
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, beforeGold, 'revealing does not charge early')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.roomState.itemOffers[a.playerId][0].id, offer.id)
+  let forged
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], rewardItemChoices: ['take'], rewardItemIds: ['fairy_in_a_bottle'], payments: { [a.playerId]: 1 } } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], rewardItemChoices: ['skip'], payments: { [a.playerId]: 1 } } })
+  assertEqual(room.run.players.find((player) => player.id === a.playerId).gold, beforeGold - 1)
+})
+
+check('shared Gold contributions survive a staged paid Event reward', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.woman_in_blue, instanceId: 'test-blue-shared', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: player.id === b.playerId ? 1 : 0 }))
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], payments: { [a.playerId]: 0 } } })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], rewardItemChoices: ['skip'], payments: { [a.playerId]: 0 } } })
+  assert(room.eventPledge)
+  apply(room, b.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['buy_one'], payments: { [b.playerId]: 1 } } })
+  assertEqual(room.eventPledge, undefined)
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).gold, 0)
+  assert(room.run.roomState.decisions[a.playerId])
+})
+
+check('paid reward Events serialize staging before shared Gold can be spent', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.woman_in_blue, instanceId: 'test-blue-concurrent', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: player.id === a.playerId ? 1 : 0 }))
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'] } })
+  let concurrent
+  try { apply(room, b.token, { kind: 'event', decision: { optionIds: ['buy_one'] } }) } catch (error) { concurrent = error }
+  assertEqual(concurrent?.name, 'RoomError')
+  assertEqual(room.run.roomState.pendingDecisions[b.playerId], undefined)
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], rewardItemChoices: ['skip'], payments: { [a.playerId]: 1 } } })
+  apply(room, b.token, { kind: 'event', decision: { optionIds: ['leave'] } })
+  assertEqual(room.run.phase, 'map')
+})
+
+check('Falling face-up identities are public without exposing decks and survive reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.falling, instanceId: 'test-falling-public', act: 3, minAscension: 0, requiresColorlessUnlock: false })
+  const reveals = Object.fromEntries(room.run.players.map((player) => [player.id, player.deck.slice(0, 3)]))
+  room.run.roomState.revealedCards = Object.fromEntries(Object.entries(reveals).map(([id, cards]) => [id, cards.map((card) => card.uid)]))
+  room.run.roomState.revealedCardDefs = Object.fromEntries(Object.entries(reveals).map(([id, cards]) => [id, cards.map((card) => card.defId)]))
+  const view = snapshotFor(room, b.token)
+  assertDeepEqual(view.run.roomState.revealedCardDefs[a.playerId], reveals[a.playerId].map((card) => card.defId))
+  assertEqual(view.run.players.find((player) => player.id === a.playerId).deck, null)
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: b.token })
+  assertDeepEqual(snapshotFor(room, b.token).run.roomState.revealedCardDefs[a.playerId], reveals[a.playerId].map((card) => card.defId))
+})
+
+check('shared Event reward previews serialize across seats and reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.sensory_stone, instanceId: 'test-stone-serialized', act: 3, minAscension: 0, requiresColorlessUnlock: true })
+  room.run.itemDecks.colorless = ['apotheosis', 'bandage_up', 'blind', 'dark_shackles', 'deep_breath', 'discovery']
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['recall_one'] } })
+  const offer = snapshotFor(room, b.token).run.roomState.rewardOffers[a.playerId][0]
+  let raced
+  try { apply(room, b.token, { kind: 'event', decision: { optionIds: ['recall_one'] } }) } catch (error) { raced = error }
+  assertEqual(raced?.name, 'RoomError')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).run.roomState.rewardOffers[a.playerId][0], offer)
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['recall_one'], rewardIndexes: [-1] } })
+  apply(room, b.token, { kind: 'event', decision: { optionIds: ['recall_one'] } })
+  assert(JSON.stringify(room.run.roomState.rewardOffers[b.playerId][0]) !== JSON.stringify(offer))
+})
+
+check('party Event item staging has one authoritative owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.tomb_red_mask, instanceId: 'test-tomb-serialized', act: 3, minAscension: 0, requiresColorlessUnlock: false })
+  const before = room.run.itemDecks.relics.length
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['offer_gold'] } })
+  let raced
+  try { apply(room, b.token, { kind: 'event', decision: { optionIds: ['offer_gold'] } }) } catch (error) { raced = error }
+  assertEqual(raced?.name, 'RoomError')
+  assertEqual(room.run.itemDecks.relics.length, before - 2)
+  assertEqual(Object.keys(room.run.roomState.itemOffers).length, 1)
+})
+
+check('Face Trader staged Relic choice survives reconnect without accepting a forged Relic', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.face_trader, instanceId: 'test-face-trader', act: 3, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players = room.run.players.map((player) => player.id === a.playerId ? { ...player, relics: [] } : player)
+  room.run.itemDecks.relics = ['anchor', ...room.run.itemDecks.relics.filter((id) => id !== 'anchor')]
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['take_and_give'] } })
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assert(snapshotFor(room, a.token).run.roomState.pendingDecisions[a.playerId])
+  let forged
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['take_and_give'], relicIds: ['happy_flower'] } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['take_and_give'], relicIds: ['anchor'] } })
+  assert(!room.run.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.defId === 'anchor'))
+})
+
+check('campaign finish, shared allocation, and next run stay server-authoritative', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.campaignProgress = { ...room.campaignProgress, characters: { ...room.campaignProgress.characters, ironclad: 8, silent: 8 } }
+  room.run = { ...room.run, phase: 'defeat', campaignProgress: room.campaignProgress }
+  apply(room, b.token, { kind: 'finishRun' })
+  assertEqual(room.campaignProgress.unspentMarks, 2)
+  const once = JSON.stringify(room.campaignProgress)
+  let replay
+  try { apply(room, a.token, { kind: 'finishRun' }) } catch (error) { replay = error }
+  assertEqual(replay?.name, 'RoomError')
+  assertEqual(JSON.stringify(room.campaignProgress), once)
+  let foreign
+  try { apply(room, b.token, { kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: 2, expectedRunId: room.run.campaign.runId }) } catch (error) { foreign = error }
+  assertEqual(foreign?.name, 'RoomError')
+  const allocation = { kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: 2, expectedRunId: room.run.campaign.runId }
+  const beforeNoop = structuredClone(room)
+  let noop
+  try { apply(room, a.token, { ...allocation, colorless: 0 }) } catch (error) { noop = error }
+  assertEqual(noop?.name, 'RoomError')
+  assertDeepEqual(room, beforeNoop)
+  apply(room, a.token, allocation)
+  const afterAllocation = structuredClone(room)
+  let duplicate
+  try { apply(room, a.token, allocation) } catch (error) { duplicate = error }
+  assertEqual(duplicate?.name, 'RoomError')
+  assertDeepEqual(room, afterAllocation)
+  const beforeStaleRun = structuredClone(room)
+  let staleRun
+  try { apply(room, a.token, { ...allocation, expectedUnspentMarks: 1, expectedRunId: 'campaign-previous' }) } catch (error) { staleRun = error }
+  assertEqual(staleRun?.name, 'RoomError')
+  assertDeepEqual(room, beforeStaleRun)
+  apply(room, a.token, { kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: 1, expectedRunId: room.run.campaign.runId })
+  assertEqual(room.campaignProgress.unspentMarks, 0)
+  apply(room, a.token, { kind: 'returnToLobby' })
+  assertEqual(room.phase, 'lobby')
+  assertEqual(room.run, null)
+})
+
+check('a stale advance action cannot continue a finalized campaign', () => {
+  const { room, a } = twoSeatRoom()
+  room.run = { ...room.run, phase: 'victory', map: { ...room.run.map, position: room.run.map.rows.at(-1)[0], rooms: Object.fromEntries(Object.entries(room.run.map.rooms).map(([id, value]) => [id, { ...value, visited: true }])) }, campaign: { ...room.run.campaign, bossesDefeated: 1, highestBossActDefeated: 1 } }
+  apply(room, a.token, { kind: 'finishRun' })
+  const before = JSON.stringify(room.run)
+  const stale = apply(room, a.token, { kind: 'advanceAct' })
+  assertEqual(stale.changed, false)
+  assertEqual(JSON.stringify(room.run), before)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assert(snapshotFor(room, a.token).run.campaign.finalized)
+})
+
+check('The Courier reveal and shared purchase are authoritative and reconnect-safe', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.itemDecks.relics = ['anchor', ...room.run.itemDecks.relics.filter((id) => id !== 'anchor')]
+  room.run.combat.players = room.run.combat.players.map((player) => ({
+    ...player,
+    gold: player.id === a.playerId ? 0 : 6,
+    relics: player.id === a.playerId ? [...player.relics, { defId: 'the_courier', spent: false }] : player.relics,
+  }))
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'relic' })
+  assertEqual(snapshotFor(room, b.token).run.courier.offer.id, 'anchor')
+  assertEqual(snapshotFor(room, b.token).run.itemDecks, undefined)
+  let bypass
+  try { apply(room, a.token, { kind: 'endTurn' }) } catch (error) { bypass = error }
+  assertEqual(bypass?.name, 'RoomError')
+  let hijack
+  try { apply(room, b.token, { kind: 'courierResolve', playerId: a.playerId, decision: 'buy', payments: { [b.playerId]: 4 } }) } catch (error) { hijack = error }
+  assertEqual(hijack?.name, 'RoomError')
+  apply(room, a.token, { kind: 'courierResolve', playerId: a.playerId, decision: 'buy', payments: { [a.playerId]: 0 } })
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).courierPledge.payments[a.playerId], 0)
+  apply(room, b.token, { kind: 'courierResolve', playerId: a.playerId, decision: 'buy', payments: { [b.playerId]: 6 } })
+  assert(room.run.combat.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.defId === 'anchor'))
+  assertEqual(room.run.courier.offer, null)
+  let twice
+  try { apply(room, a.token, { kind: 'courierReveal', itemKind: 'potion' }) } catch (error) { twice = error }
+  assertEqual(twice?.name, 'RoomError')
+})
+
+check('an unpledged Courier offer auto-discards when its owner disconnects', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.itemDecks.relics = ['anchor', ...room.run.itemDecks.relics.filter((id) => id !== 'anchor')]
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.relics = [...actor.relics, { defId: 'the_courier', spent: false }]
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'relic' })
+  const revealed = room.run.courier.offer.id
+
+  markDisconnected(room, a.token)
+  assertEqual(room.run.courier.offer, null)
+  assertEqual(room.run.itemDecks.relics.at(-1), revealed)
+  assertEqual(apply(room, b.token, { kind: 'endTurn' }).changed, true)
+
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.courier.offer, null)
+})
+
+check('Courier one-shot Relics wait through combat and reconnect without deadlocking authority', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.itemDecks.relics = ['war_paint', ...room.run.itemDecks.relics.filter((id) => id !== 'war_paint')]
+  let actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.gold = 8
+  actor.energy = 1
+  actor.hand = [{ uid: 'courier-pending-defend', defId: 'defend_ironclad', upgraded: false }]
+  actor.relics = [...actor.relics, { defId: 'the_courier', spent: false }]
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'relic' })
+  apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 8 } })
+  assert(room.run.players.find((player) => player.id === a.playerId).relics
+    .some((relic) => relic.defId === 'war_paint' && relic.pending))
+
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).pendingRelic?.relicId, 'war_paint')
+  apply(room, a.token, { kind: 'playCard', cardUid: 'courier-pending-defend', preflight: true })
+  assert(room.run.combat.players.find((player) => player.id === a.playerId).discard
+    .some((card) => card.uid === 'courier-pending-defend'), 'pending Courier Relic blocked combat play')
+
+  room.run.combat.phase = 'won'
+  apply(room, a.token, { kind: 'resolveCombat' })
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  const starter = owner.deck.find((card) => card.defId.startsWith('defend_') && !card.upgraded)
+  const skill = owner.deck.find((card) => card.uid !== starter?.uid && !card.upgraded && CARDS[card.defId]?.type === 'skill')
+  apply(room, a.token, { kind: 'resolvePendingRelic', cardUids: skill ? [skill.uid] : [] })
+  assert(!room.run.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.pending))
+})
+
+check('a disconnected Courier Relic owner settles after combat without blocking the party', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.itemDecks.relics = ['war_paint', ...room.run.itemDecks.relics.filter((id) => id !== 'war_paint')]
+  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
+  actor.gold = 8
+  actor.relics = [...actor.relics, { defId: 'the_courier', spent: false }]
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'relic' })
+  apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 8 } })
+  markDisconnected(room, a.token)
+
+  room.run.combat.phase = 'won'
+  apply(room, b.token, { kind: 'resolveCombat' })
+  assert(!room.run.players.find((player) => player.id === a.playerId).relics.some((relic) => relic.pending))
+  const offer = room.run.phase === 'reward'
+    ? room.run.rewards.find((reward) => reward.playerId === b.playerId)
+    : undefined
+  const followup = !offer ? null
+    : offer.cardReward ? { kind: 'cardReward', choice: 'reveal' }
+      : offer.potion !== false ? { kind: 'potionReward', choice: 'reveal' }
+        : offer.relic !== false ? { kind: 'relicReward', choice: 'reveal' }
+          : null
+  if (followup) assertEqual(apply(room, b.token, followup).changed, true)
+  else assert(room.run.phase !== 'combat', 'the connected seat remained blocked in combat')
+
+  joinRoom(room, { token: a.token })
+  const reconnected = snapshotFor(room, a.token)
+  assertEqual(reconnected.pendingRelic, null)
+  assertEqual(reconnected.pendingRelicStatus, null)
+})
+
+check('a rejected exact Courier buy leaves no poisoned pledge', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.combat.potionDeck = ['fire_potion', ...room.run.combat.potionDeck.filter((id) => id !== 'fire_potion')]
+  room.run.ascension = 4
+  room.run.combat.players = room.run.combat.players.map((player) => player.id === a.playerId ? {
+    ...player, gold: 2, potions: ['swift_potion', 'block_potion'], relics: [...player.relics, { defId: 'the_courier', spent: false }],
+  } : player)
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'potion' })
+  let rejected
+  try { apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 2 } }) } catch (error) { rejected = error }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.courierPledge, undefined)
+  apply(room, a.token, { kind: 'courierResolve', decision: 'buy', discardPotionId: 'swift_potion', payments: { [a.playerId]: 2 } })
+  const owner = room.run.combat.players.find((player) => player.id === a.playerId)
+  assert(owner.potions.includes('fire_potion'))
+  assert(!owner.potions.includes('swift_potion'))
+})
+
+check('a rejected partial Courier buy leaves no poisoned pledge', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.combat.potionDeck = ['fire_potion', ...room.run.combat.potionDeck.filter((id) => id !== 'fire_potion')]
+  room.run.ascension = 4
+  room.run.combat.players = room.run.combat.players.map((player) => player.id === a.playerId ? {
+    ...player, gold: 1, potions: ['swift_potion', 'block_potion'], relics: [...player.relics, { defId: 'the_courier', spent: false }],
+  } : player)
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'potion' })
+  const version = room.version
+  let rejected
+  try { apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 1 } }) } catch (error) { rejected = error }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.courierPledge, undefined)
+  assertEqual(room.version, version)
+})
+
+check('an unaffordable Courier offer cannot create a pledge', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.itemDecks.relics = ['anchor', ...room.run.itemDecks.relics.filter((id) => id !== 'anchor')]
+  room.run.combat.players = room.run.combat.players.map((player) => ({
+    ...player, gold: 0, relics: player.id === a.playerId ? [...player.relics, { defId: 'the_courier', spent: false }] : player.relics,
+  }))
+  apply(room, a.token, { kind: 'courierReveal', itemKind: 'relic' })
+  const version = room.version
+  let rejected
+  try { apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 0 } }) } catch (error) { rejected = error }
+  assertEqual(rejected?.name, 'RoomError')
+  assertEqual(room.courierPledge, undefined)
+  assertEqual(room.version, version)
+})
+
+check('paid staged Events reject impossible funding and locked-selector forgery', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 0 }))
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.woman_in_blue, instanceId: 'test-zero-blue', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const before = structuredClone(room.run)
+  let unaffordable
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['buy_one'], payments: { [a.playerId]: 0 } } }) } catch (error) { unaffordable = error }
+  assertEqual(unaffordable?.name, 'RoomError')
+  assertDeepEqual(room.run, before)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.roomState.itemOffers[a.playerId], undefined)
+
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.note_for_yourself, instanceId: 'test-lock-note', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  room.run.players.push({ ...room.run.players[1], id: 'p3', name: 'Cy', row: 2, cardRewards: ['ball_lightning', 'cold_snap', 'charge_battery'] })
+  room.run.players.find((player) => player.id === b.playerId).cardRewards = ['backflip', 'acrobatics', 'dagger_throw']
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['take'], targetPlayerId: b.playerId } })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['take'], targetPlayerId: 'p3', rewardIndexes: [0] } })
+  assert(room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.defId === 'backflip'))
+  assert(!room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.defId === 'ball_lightning'))
+})
+
+check('Event contributors cannot switch options or forge a target receipt', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 3 }))
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.designer, instanceId: 'test-locked-designer', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const uid = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['adjustment'], cardUids: [uid], payments: { [a.playerId]: 0 } } })
+  let switched
+  try { apply(room, b.token, { kind: 'event', playerId: a.playerId, decision: { optionIds: ['punch'] } }) } catch (error) { switched = error }
+  assertEqual(switched?.name, 'RoomError')
+  assertEqual(room.eventPledge.optionId, 'adjustment')
+
+  room.eventPledge = undefined
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.note_for_yourself, instanceId: 'test-forged-trade', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  const offered = room.run.players.find((player) => player.id === a.playerId).deck[0].uid
+  const receive = room.run.players.find((player) => player.id === b.playerId).deck[0].uid
+  let forged
+  try { apply(room, a.token, { kind: 'event', decision: { optionIds: ['exchange'], targetPlayerId: b.playerId, cardUids: [offered], receiveCardUid: receive } }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  assertEqual(room.run.roomState.pendingTrade, undefined)
+})
+
+check('Event reveal choices are server-authored and reconnect before selection', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.the_library, instanceId: 'test-server-library', act: 1, minAscension: 0, requiresColorlessUnlock: false })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['read'], rewardIndexes: [4] } })
+  const offer = room.run.roomState.rewardOffers[a.playerId][0]
+  assertEqual(snapshotFor(room, a.token).run.roomState.pendingDecisions[a.playerId].rewardIndexes, undefined)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertDeepEqual(snapshotFor(room, a.token).run.roomState.rewardOffers[a.playerId][0], offer)
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['read'], rewardIndexes: [0] } })
+  assert(room.run.players.find((player) => player.id === a.playerId).deck.some((card) => card.defId === offer[0]))
+})
+
+check('a revealed Event reward cannot swap its locked payment item', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  const owner = room.run.players.find((player) => player.id === a.playerId)
+  owner.relics = [{ defId: 'anchor', spent: false }, { defId: 'happy_flower', spent: false }]
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.we_meet_again, instanceId: 'test-lock-relic', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['exchange'], relicIds: ['anchor'] } })
+  apply(room, a.token, { kind: 'event', decision: { optionIds: ['exchange'], relicIds: ['happy_flower'], rewardItemChoices: ['take'] } })
+  const resolved = room.run.players.find((player) => player.id === a.playerId)
+  assert(resolved.relics.some((relic) => relic.defId === 'happy_flower'))
+  assert(!resolved.relics.some((relic) => relic.defId === 'anchor'))
+})
+
+check('only the blocked Event seat can use the no-legal-choice escape after reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.phase = 'room'
+  room.run.combat = null
+  room.run.players = room.run.players.map((player) => ({ ...player, gold: 0, relics: [], potions: [] }))
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-skip-beggar', act: 2, minAscension: 0, requiresColorlessUnlock: false })
+  assertEqual(snapshotFor(room, a.token).eventCanSkip, true)
+  let forged
+  try { apply(room, b.token, { kind: 'eventSkip', playerId: a.playerId }) } catch (error) { forged = error }
+  assertEqual(forged?.name, 'RoomError')
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  apply(room, a.token, { kind: 'eventSkip' })
+  assertEqual(room.run.roomState.decisions[a.playerId].optionIds[0], 'unavailable')
+  apply(room, b.token, { kind: 'eventSkip' })
+  assertEqual(room.run.phase, 'map')
+})
+
+check('four-player Big Fish rejects used staged choices and reconnects the final no-choice seat', () => {
+  const store = createStore()
+  const room = createRoom(store, { code: 'BIGFSH' })
+  const seats = [
+    joinRoom(room, { name: 'Ann', character: 'ironclad' }),
+    joinRoom(room, { name: 'Bo', character: 'silent' }),
+    joinRoom(room, { name: 'Cy', character: 'defect' }),
+    joinRoom(room, { name: 'Di', character: 'watcher' }),
+  ]
+  startRun(room, seats[0].token, { seed: 8128 })
+  room.run.phase = 'room'
+  room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.big_fish, instanceId: 'test-four-fish', act: 1, minAscension: 0, requiresColorlessUnlock: false })
+  apply(room, seats[0].token, { kind: 'event', decision: { optionIds: ['box'] } })
+  markDisconnected(room, seats[0].token)
+  joinRoom(room, { token: seats[0].token })
+  apply(room, seats[0].token, { kind: 'event', decision: { optionIds: ['box'], rewardItemChoices: ['skip'] } })
+  let duplicate
+  try { apply(room, seats[1].token, { kind: 'event', decision: { optionIds: ['box'] } }) } catch (error) { duplicate = error }
+  assertEqual(duplicate?.name, 'RoomError')
+  apply(room, seats[1].token, { kind: 'event', decision: { optionIds: ['banana'] } })
+  const third = room.run.players.find((player) => player.id === seats[2].playerId)
+  const strike = third.deck.find((entry) => CARDS[entry.defId]?.rarity === 'starter' && CARDS[entry.defId]?.name === 'Strike')
+  apply(room, seats[2].token, { kind: 'event', decision: { optionIds: ['donut'], cardUids: [strike.uid] } })
+  const fourth = room.run.players.find((player) => player.id === seats[3].playerId)
+  fourth.deck = fourth.deck.filter((entry) => !(CARDS[entry.defId]?.rarity === 'starter' && CARDS[entry.defId]?.name === 'Strike'))
+  assertEqual(snapshotFor(room, seats[3].token).eventCanSkip, false)
+  markDisconnected(room, seats[3].token)
+  joinRoom(room, { token: seats[3].token })
+  apply(room, seats[3].token, { kind: 'event', decision: { optionIds: ['restraint'] } })
+  assertEqual(room.run.phase, 'map')
 })
 
 report('co-op rooms')

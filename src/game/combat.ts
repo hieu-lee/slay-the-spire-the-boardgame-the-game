@@ -6196,15 +6196,16 @@ export function activatePotion(
   if (potionId === 'liquid_memories' && (
     !context.recoverDiscardUid || !player.discard.some((card) => card.uid === context.recoverDiscardUid)
   )) return state
-  if (potionId === 'purity' && (
+  if (potionId === 'purity_potion' && (
     (context.exhaustUids?.length ?? 0) > 3 || new Set(context.exhaustUids ?? []).size !== (context.exhaustUids?.length ?? 0) ||
     (context.exhaustUids ?? []).some((uid) => !player.hand.some((card) => card.uid === uid))
   )) return state
   if (potionId === 'entropic_brew') {
-    const overflow = Math.max(0, player.potions.length - 1 + 2 - state.potionLimit)
-    const replaceable = context.replacePotionId !== potionId && player.potions.includes(context.replacePotionId ?? '')
-    if (player.relics.some((relic) => relic.defId === 'sozu') || overflow > 1 ||
-      (overflow === 1) !== replaceable) return state
+    if (!player.relics.some((relic) => relic.defId === 'sozu')) {
+      const overflow = Math.max(0, player.potions.length - 1 + 2 - state.potionLimit)
+      const replaceable = context.replacePotionId !== potionId && player.potions.includes(context.replacePotionId ?? '')
+      if (overflow > 1 || (overflow === 1) !== replaceable) return state
+    }
   } else if (context.replacePotionId !== undefined) return state
   const target = def.target ?? 'enemy'
   if (def.target === 'row') {
@@ -6228,6 +6229,10 @@ export function activatePotion(
     return next
   }
   if (potionId === 'entropic_brew') {
+    if (actor.relics.some((relic) => relic.defId === 'sozu')) {
+      next.log = [...next.log, `${actor.name} cannot gain Potions because of Sozu`]
+      return next
+    }
     if (context.replacePotionId) {
       actor.potions.splice(actor.potions.indexOf(context.replacePotionId), 1)
       next.potionDeck.push(context.replacePotionId)

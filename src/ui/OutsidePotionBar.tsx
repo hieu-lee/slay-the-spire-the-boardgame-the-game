@@ -36,10 +36,10 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
       {id === 'blood_potion' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}
         disabled={viewerDead || viewer.hp >= healingCapFor(viewer)} onClick={() => onUse(id)}>Use</button> : null}
       {id === 'entropic_brew' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}
-        aria-expanded={viewer.potions.length - 1 + 2 > potionLimit
+        aria-expanded={!sozu && viewer.potions.length - 1 + 2 > potionLimit
           ? replacing?.context === inventoryContext && replacing.index === index && replacing.id === id : undefined}
-        disabled={viewerDead || sozu} onClick={() => {
-        if (viewer.potions.length - 1 + 2 <= potionLimit) onUse(id)
+        disabled={viewerDead} onClick={() => {
+        if (sozu || viewer.potions.length - 1 + 2 <= potionLimit) onUse(id)
         else setReplacing(replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
           ? null : { index, id, context: inventoryContext })
       }}>Use</button> : null}

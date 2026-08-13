@@ -9,6 +9,7 @@ import { Icon } from './Icon.tsx'
 type CampfireScreenProps = {
   players: Player[]
   onResolve: (choices: Record<string, CampfireDecision>) => void
+  rubyAvailable?: boolean
 }
 
 type Decision = CampfireDecision
@@ -18,13 +19,13 @@ type Decision = CampfireDecision
  * every living player has decided, which mirrors the table: you all leave the
  * campfire together.
  */
-export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
+export function CampfireScreen({ players, onResolve, rubyAvailable = false }: CampfireScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
   const living = players.filter((player) => !player.dead)
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
-    return decision.choice === 'rest' || decision.choice === 'leave' || decision.cardUid !== undefined
+    return decision.choice === 'rest' || decision.choice === 'leave' || decision.choice === 'ruby' || decision.cardUid !== undefined
   })
 
   return (
@@ -67,6 +68,11 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
                   Rest
                   <span className="muted"> +{restHeal} HP{coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
+                {rubyAvailable ? <button
+                  type="button"
+                  className={decision?.choice === 'ruby' ? 'is-chosen' : ''}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'ruby' } }))}
+                >◆ Ruby Key <span className="muted">skip campfire</span></button> : null}
                 <button
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}

@@ -123,10 +123,10 @@ export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } f
 export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
 
-export { ACT_SHAPE, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
+export { ACT_SHAPE, actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
 export type { MapShape, Room, RoomKind, SpireMap } from './map.ts'
 
-export { RELICS, POTIONS, POTION_DECK, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
+export { POTION_DECK, RELIC_DECK, RELICS, POTIONS, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
 export type { PotionDef, RelicDef, RelicTrigger } from './relics.ts'
 
 export {
@@ -137,18 +137,33 @@ export {
   MAX_HP,
   ROOM_LABEL,
   advanceAct,
+  canSkipEvent,
+  decideCourier,
+  chooseEvent,
+  chooseRelicReward,
+  chooseNeow,
   createPlayer,
   createRun,
   drawTransformReward,
   enterRoom,
   enteringRoom,
   leaveRoom,
+  finishMerchant,
+  finishRun,
+  purchaseAtMerchant,
+  revealCourier,
+  skipEvent,
+  removeAtCurrentMerchant,
   revealCardReward,
   revealPotionReward,
   revealRelicReward,
+  revealNeowReward,
   pendingRelicPreview,
   pendingRelicEligibleCards,
   resolvePendingRelic,
+  resolveNeowEffect,
+  resolveNeowGold,
+  resolveNeowReward,
   resolveRelicReward,
   resolveBossRelicReward,
   resolvePotionReward,
@@ -160,10 +175,33 @@ export {
   wingBootChoices,
   startPendingBoss,
   switchBetweenCombatRow,
+  neowPreview,
 } from './run.ts'
 export type { CardRewardOffer, PartyMember, PendingRelicPreview, PotionRewardDecision, RunPhase, RunState } from './run.ts'
+export { NEOW_CARDS, neowCard } from './neow.ts'
+export type { NeowCard, NeowDecision, NeowEffect, NeowImmediateReward, NeowOption, NeowPlayerState, NeowRewardKind, NeowRewardOffer, NeowState } from './neow.ts'
 export { resolveCampfire } from './run.ts'
 export type { CampfireChoice, CampfireDecision } from './run.ts'
+
+export { EVENT_CARDS, EVENT_DEFINITIONS, buildEventDeck } from './events.ts'
+export type { EventCard, EventDefinition, EventEffect, EventOption } from './events.ts'
+export type { EventDecision, EventRoomState } from './event-room.ts'
+export { courierCost, merchantPurchaseCost } from './noncombat.ts'
+export { merchantRemovalCost } from './acquisition.ts'
+export type { CourierOffer, MerchantPurchase, MerchantState, RelicRewardState, TreasureDecision } from './noncombat.ts'
+export {
+  ACT_IV_UNLOCK_BOXES,
+  CHARACTER_UNLOCKS,
+  COLORLESS_UNLOCK,
+  allocateSharedMarks,
+  canEnterActIV,
+  createCampaignProgress,
+  finishCampaign,
+  isActIVUnlocked,
+  isColorlessUnlocked,
+  parseCampaignProgress,
+} from './campaign.ts'
+export type { CampaignProgress, SpireKeys } from './campaign.ts'
 
 export { triggerMatches } from './triggers.ts'
 export type { Trigger, TriggerEvent } from './triggers.ts'

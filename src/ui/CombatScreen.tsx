@@ -577,6 +577,7 @@ export function CombatScreen({
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const viewerHasSozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
   const pendingTrigger = pendingTriggerAbility(state)
   const forcedCard = state.startTurnProgress?.forcedCard
   const distilled = state.pendingDistilled
@@ -753,7 +754,7 @@ export function CombatScreen({
     } else if (dialog.open) dialog.close()
   }, [pending?.choiceCards, pending?.choiceConfirmed])
 
-  const itemModalOpen = ['liquid_memories', 'purity', 'entropic_brew'].includes(pendingPotion ?? '') ||
+  const itemModalOpen = ['liquid_memories', 'purity_potion', 'entropic_brew'].includes(pendingPotion ?? '') ||
     Boolean(relicScry) || Boolean(distilled)
   useEffect(() => {
     const dialog = itemDialogRef.current
@@ -810,6 +811,10 @@ export function CombatScreen({
       setPotionOverflowRequired(0)
       return
     }
+    if (pendingPotion === 'entropic_brew' && viewerHasSozu) {
+      setPendingPotion(null)
+      return
+    }
     const gained = gainedShivs(potionDef(pendingPotion).effects)
     if (gained === 0) return
     const liveRequired = overflowShivCount(state, gained)
@@ -824,7 +829,7 @@ export function CombatScreen({
       const valid = current.filter((uid) => alive.has(uid))
       return valid.length === current.length ? current : valid
     })
-  }, [state, viewer, pendingPotion, potionOverflowRequired])
+  }, [state, viewer, viewerHasSozu, pendingPotion, potionOverflowRequired])
 
   // Card choices are made against a shared board too. Recompute overflow when
   // teammates take or spend cubes, and discard targets that died meanwhile.
@@ -1103,7 +1108,7 @@ export function CombatScreen({
 
   const over = state.phase === 'won' || state.phase === 'lost'
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
-  const pendingPotionNeedsCards = pendingPotion === 'liquid_memories' || pendingPotion === 'purity'
+  const pendingPotionNeedsCards = pendingPotion === 'liquid_memories' || pendingPotion === 'purity_potion'
   const pendingPower = pendingPowerUid
     ? viewer.powers.find((power) => power.uid === pendingPowerUid)
     : undefined
@@ -2190,9 +2195,9 @@ export function CombatScreen({
       ? "Gambler's Brew — choose the shared die face"
     : pendingPotion === 'liquid_memories'
       ? 'Liquid Memories — choose a card from your discard pile'
-    : pendingPotion === 'purity'
+    : pendingPotion === 'purity_potion'
       ? `Purity — choose up to 3 cards to Exhaust (${potionCardUids.length}/3)`
-    : pendingPotion === 'entropic_brew'
+    : pendingPotion === 'entropic_brew' && !viewerHasSozu
       ? 'Entropic Brew — choose a held Potion to replace'
     : pendingPotionDef
     ? pendingPotionDef.target === 'row'
@@ -2281,8 +2286,9 @@ export function CombatScreen({
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
                 const shivs = gainedShivs(potion.effects)
-                const needsTarget = ['gamblers_brew', 'liquid_memories', 'purity'].includes(potionId) ||
-                  potionId === 'entropic_brew' && viewer.potions.length - 1 + 2 > state.potionLimit || Boolean(potion.target) || (
+                const needsTarget = ['gamblers_brew', 'liquid_memories', 'purity_potion'].includes(potionId) ||
+                  potionId === 'entropic_brew' && !viewerHasSozu &&
+                    viewer.potions.length - 1 + 2 > state.potionLimit || Boolean(potion.target) || (
                   potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
                 ) || overflowShivCount(state, shivs) > 0
                 return (
@@ -2685,7 +2691,7 @@ export function CombatScreen({
                     : current.length < 3 ? [...current, card.uid] : current)} />
             ))}
           </div>
-          {pendingPotion === 'purity' ? (
+          {pendingPotion === 'purity_potion' ? (
             <button type="button" className="prompt__mode"
               onClick={() => consumePotion(pendingPotion, { exhaustUids: potionCardUids })}>
               Exhaust {potionCardUids.length || 'none'}
@@ -2694,7 +2700,7 @@ export function CombatScreen({
         </dialog>
       ) : null}
 
-      {pendingPotion === 'entropic_brew' ? (
+      {pendingPotion === 'entropic_brew' && !viewerHasSozu ? (
         <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="entropic-choice-title"
           onCancel={(event) => event.preventDefault()}>
           <h2 id="entropic-choice-title">Entropic Brew</h2>

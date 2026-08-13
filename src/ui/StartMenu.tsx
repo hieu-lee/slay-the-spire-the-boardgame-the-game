@@ -3,9 +3,12 @@ import type { CharacterId } from '../game/types.ts'
 
 type StartMenuProps = {
   playerCount: number
+  characters: readonly CharacterId[]
   seed: string
   ascension: number
+  maxAscension: number
   onPlayerCount: (count: number) => void
+  onCharacter: (seat: number, character: CharacterId) => void
   onSeed: (seed: string) => void
   onAscension: (ascension: number) => void
   onStart: () => void
@@ -22,9 +25,12 @@ const HEROES: { id: CharacterId; name: string }[] = [
 
 export function StartMenu({
   playerCount,
+  characters,
   seed,
   ascension,
+  maxAscension,
   onPlayerCount,
+  onCharacter,
   onSeed,
   onAscension,
   onStart,
@@ -68,19 +74,25 @@ export function StartMenu({
         </label>
         <label>
           Ascension
-          <select value={ascension} onChange={(event) => onAscension(Number(event.target.value))}>
-            {Array.from({ length: 14 }, (_, level) => <option key={level}>{level}</option>)}
+          <select aria-label="Ascension" value={ascension} onChange={(event) => onAscension(Number(event.target.value))}>
+            {Array.from({ length: maxAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}
           </select>
         </label>
+        <fieldset className="start-menu__party">
+          <legend>Characters</legend>
+          {characters.slice(0, playerCount).map((character, seat) => {
+            const hero = HEROES.find((candidate) => candidate.id === character) ?? HEROES[0]!
+            return <label key={seat} title={`Player ${seat + 1}: ${hero.name}`}>
+              <img src={`/assets/combat/characters/${hero.id}.webp`} alt="" />
+              <span>P{seat + 1}</span>
+              <select aria-label={`Player ${seat + 1} character`} value={character}
+                onChange={(event) => onCharacter(seat, event.target.value as CharacterId)}>
+                {HEROES.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+              </select>
+            </label>
+          })}
+        </fieldset>
       </section>
-
-      <div className="start-menu__party" aria-label={`${playerCount} player party`}>
-        {HEROES.slice(0, playerCount).map((hero) => (
-          <span key={hero.id} title={hero.name}>
-            <img src={`/assets/combat/characters/${hero.id}.webp`} alt="" />
-          </span>
-        ))}
-      </div>
       <p className="start-menu__version">v0.1 · unofficial fan project</p>
     </main>
   )

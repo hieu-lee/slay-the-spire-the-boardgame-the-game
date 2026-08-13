@@ -31,6 +31,7 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
 | Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 

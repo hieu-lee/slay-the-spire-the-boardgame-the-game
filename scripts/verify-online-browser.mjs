@@ -62,10 +62,12 @@ async function enterOnline(page, name, character, code, localSeed, doubleSubmit 
   await page.goto(origin, { waitUntil: 'networkidle' })
   if (localSeed) {
     await page.getByLabel('Seed').fill(localSeed)
+    await page.getByLabel('Seed').press('Tab')
   }
   await page.getByRole('button', { name: 'Play online' }).click()
-  await page.getByLabel('Your name').fill(name)
-  await page.getByLabel('Character').selectOption(character)
+  const entry = page.locator('main.online-entry')
+  await entry.getByLabel('Your name').fill(name)
+  await entry.locator('select').selectOption(character)
   if (code) {
     await page.getByLabel('Room code').fill(code)
     await page.getByRole('button', { name: 'Join', exact: true }).click()
@@ -102,6 +104,12 @@ async function roomAction(page, action) {
   const body = await response.json()
   assert(response.ok, `action failed ${response.status}: ${body.error}`)
   return body
+}
+
+function bypassRoomNeow(room) {
+  room.run = { ...room.run, phase: 'map', neow: null }
+  room.version += 1
+  rooms.publishRoom(room.code)
 }
 
 try {
@@ -187,6 +195,7 @@ try {
   await enterOnline(a, 'Ann', 'ironclad', undefined, 'kept-local-run', true)
   const code = await a.locator('.online-lobby h1').textContent()
   assert(code, 'creator did not receive a room code')
+  rooms.store.rooms.get(code).campaignProgress.highestAscension = 13
   const healthAfterDoubleCreate = await fetch(`${roomOrigin}/api/health`).then((response) => response.json())
   await enterOnline(b, 'Bo', 'silent', code)
   await a.locator('.online-seat', { hasText: 'Bo' }).waitFor()
@@ -266,8 +275,9 @@ try {
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('3')
-  await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '3')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
+  await b.locator('.online-lobby').getByLabel('Ascension').waitFor()
+  await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '3')
   const sharedLobby = await snapshot(a)
   check('lobby leave and ascension are authoritative for the party', () => {
     assertEqual(sharedLobby.ascension, 3)
@@ -291,9 +301,9 @@ try {
     await mutationReleased
     await route.fulfill({ response })
   }, { times: 1 })
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('4')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
   await mutationStarted
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('5')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
   const replacementTabPromise = bContext.waitForEvent('page')
   await b.evaluate(() => window.open(location.href, '_blank'))
   const replacementTab = await replacementTabPromise
@@ -304,8 +314,8 @@ try {
   await b.locator('.online-entry').waitFor()
   await b.getByRole('button', { name: `Resume ${code}` }).click()
   await b.locator('.online-lobby').waitFor()
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('6')
-  await a.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+  await a.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
   releaseMutation()
   await b.waitForTimeout(300)
   const resumedCredentials = await credentials(b)
@@ -330,9 +340,9 @@ try {
     await queuedAscensionGate
     await route.fulfill({ response })
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('5')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
   await queuedAscensionStart
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('4')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
   await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
   await a.locator('.connection--reconnecting').waitFor()
   await a.locator('.connection--connected').waitFor()
@@ -344,10 +354,13 @@ try {
     assertEqual(queuedAscensionRequests, 1)
     assertEqual(afterQueuedReconnect.ascension, 5)
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('6')
-  await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+  await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
+  await a.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  const openingRoom = rooms.store.rooms.get(code)
+  bypassRoomNeow(openingRoom)
   await Promise.all([
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
@@ -2451,6 +2464,8 @@ try {
     assertDeepEqual(annAfterPotion.potions, [])
   })
 
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
+    .push({ uid: 'online-scroll-strike', defId: 'strike_silent', upgraded: false })
   const beforeRemoteAction = await snapshot(b)
   const beforeRemotePlayer = beforeRemoteAction.run.combat.players
     .find((player) => player.id === aView.you.playerId)
@@ -2495,7 +2510,7 @@ try {
     await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame))
     return board.scrollTop
   })
-  await b.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
+  await b.getByRole('button', { name: /^Strike,/ }).first().click()
   if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().click()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__log li')]
     .some((line) => /Bo played/.test(line.textContent ?? '')))
@@ -2921,14 +2936,19 @@ try {
   })
   await enterOnline(fourPages[0], 'Iris', 'ironclad')
   const fourCode = await fourPages[0].locator('.online-lobby h1').textContent()
+  rooms.store.rooms.get(fourCode).campaignProgress.highestAscension = 13
   for (const [index, character] of ['silent', 'defect', 'watcher'].entries()) {
     await enterOnline(fourPages[index + 1], ['Sable', 'Cobalt', 'Violet'][index], character, fourCode)
   }
   await fourPages[0].locator('.online-seat').filter({ hasText: 'online' }).nth(3).waitFor()
-  await fourPages[0].locator('.online-lobby').getByLabel('Ascension').fill('13')
+  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')]
+    .find((label) => label.textContent?.includes('Ascension'))?.querySelectorAll('option').length === 14)
+  await fourPages[0].locator('.online-lobby').getByLabel('Ascension').selectOption('13')
   await fourPages[0].getByRole('button', { name: 'Enter the Spire' }).click()
-  await Promise.all(fourPages.map((page) => page.locator('.app-shell--online .map').waitFor()))
+  await fourPages[0].getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
   const fourRoom = rooms.store.rooms.get(fourCode)
+  bypassRoomNeow(fourRoom)
+  await Promise.all(fourPages.map((page) => page.locator('.app-shell--online .map').waitFor()))
   const iris = fourRoom.run.players.find((player) => player.name === 'Iris')
   iris.potions = ['energy_potion', 'energy_potion', 'energy_potion']
   Object.assign(fourRoom.run, {

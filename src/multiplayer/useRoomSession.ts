@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, PendingRelicPreview, RunPhase } from '../game/run.ts'
+import type { EventDecision, EventRoomState } from '../game/event-room.ts'
+import type { CourierOffer, MerchantState, RelicRewardState } from '../game/noncombat.ts'
+import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
+import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
@@ -94,20 +98,38 @@ export type VisibleCombat = {
 
 export type VisibleRun = {
   ascension: number
+  chooseYourRelic: boolean
   act: number
   phase: RunPhase
+  neow: {
+    players: Record<string, {
+      card: NeowCard | undefined
+      redGoldPending: boolean
+      redRewardPending: boolean
+      redReward: NeowRewardOffer | null
+      blueOption: number | null
+      pendingEffect: import('../game/neow.ts').NeowImmediateReward | null
+      rewardKind: NeowRewardOffer['kind'] | null
+      reward: NeowRewardOffer | null
+      done: boolean
+    } | null>
+  } | null
   pendingBossDefId: string | null
   map: SpireMap
   log: string[]
   players: VisiblePlayer[]
   combat: VisibleCombat | null
   rewards: CardRewardOffer[]
+  roomState: MerchantState | RelicRewardState | EventRoomState | null
+  courier: { usedBy: string[]; offer: CourierOffer | null }
+  campaign: { runId: string; bossesDefeated: number; highestBossActDefeated: 0 | 1 | 2 | 3 | 4; keys: SpireKeys; finalized: boolean }
 }
 
 export type RoomSnapshot = {
   code: string
   phase: 'lobby' | 'run'
   ascension: number
+  chooseYourRelic: boolean
   version: number
   you: PublicSeat
   seats: PublicSeat[]
@@ -148,6 +170,11 @@ export type RoomSnapshot = {
     enemyUid: string | null
   }
   cardChoicePlayerId?: string
+  merchantPledges?: Record<string, { buyerId: string; section?: string; slot?: number; kind?: 'removal'; cardUid?: string; potionRecipientId?: string; discardPotionId?: string; payments: Record<string, number> }>
+  courierPledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> }
+  eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
+  eventCanSkip: boolean
+  campaignProgress: Omit<CampaignProgress, 'finishedRunIds'>
   run: VisibleRun | null
 }
 
@@ -548,6 +575,7 @@ export function useRoomSession() {
 
   const chooseCharacter = useCallback((character: CharacterId) => enqueue('character', { character }), [enqueue])
   const chooseAscension = useCallback((ascension: number) => enqueue('ascension', { ascension }), [enqueue])
+  const chooseRelicRule = useCallback((enabled: boolean) => enqueue('relic-rule', { enabled }), [enqueue])
   const start = useCallback(() => enqueue('start', {}), [enqueue])
   const act = useCallback((action: object) => enqueue('action', { action }), [enqueue])
   const sendVoiceSignal = useCallback((to: string, signal: VoiceSignal['signal']) => {
@@ -583,6 +611,7 @@ export function useRoomSession() {
     forget,
     chooseCharacter,
     chooseAscension,
+    chooseRelicRule,
     start,
     act,
     sendVoiceSignal,

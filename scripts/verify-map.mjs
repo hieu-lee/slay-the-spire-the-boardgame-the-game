@@ -1,4 +1,4 @@
-import { generateMap, availableMoves, moveTo, currentRoom, isActComplete, ACT_SHAPE } from '../src/game/map.ts'
+import { generateMap, addBurningElite, availableMoves, moveTo, currentRoom, isActComplete, ACT_SHAPE } from '../src/game/map.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
@@ -15,6 +15,19 @@ check('different seeds generate different maps', () => {
   const a = JSON.stringify(build(1))
   const b = JSON.stringify(build(2))
   assert(a !== b, 'two seeds should not produce identical maps')
+})
+
+check('every unlocked campaign map gets exactly one Burning Elite', () => {
+  for (let seed = 0; seed < 10_000; seed++) {
+    const rng = createRng(seed)
+    const map = generateMap(rng, 1)
+    const originalKinds = Object.fromEntries(Object.values(map.rooms).map((room) => [room.id, room.kind]))
+    const burning = Object.values(addBurningElite(rng, map).rooms).filter((room) => room.burning)
+    assertEqual(burning.length, 1, `seed ${seed} has no unique Burning Elite`)
+    assertEqual(burning[0].kind, 'elite')
+    assertEqual(originalKinds[burning[0].id], 'encounter', `seed ${seed} replaced a non-Encounter`)
+    assert(burning[0].row > 0)
+  }
 })
 
 // p.9: the bottom row is a fixed encounter and the boss sits at the top.
@@ -182,7 +195,7 @@ import { CARDS } from '../src/game/cards.ts'
 import {
   advanceAct,
   acquireRelic,
-  createRun,
+  chooseRelicReward,
   enterRoom,
   GOLDEN_TICKET,
   drawTransformReward,
@@ -200,25 +213,30 @@ import {
   switchBetweenCombatRow,
   tradePotion,
   usePotionOutsideCombat,
+  finishRun,
   MAX_HP,
 } from '../src/game/run.ts'
 import { BOSS_RELIC_IDS, ORDINARY_RELIC_IDS, RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
 import { activatePotion } from '../src/game/combat.ts'
+import { createCampaignProgress } from '../src/game/campaign.ts'
+import { postNeowRun } from './lib/post-neow-run.mjs'
 
 suite('run')
 
-check('physical Relic decks are complete, independent, seeded, and face down', () => {
-  const first = createRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
-  const same = createRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+check('physical Relic decks are complete, seeded, face down, and shared by every room system', () => {
+  const first = postNeowRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const same = postNeowRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   assertEqual(ORDINARY_RELIC_IDS.length, 58)
   assertEqual(BOSS_RELIC_IDS.length, 20)
   assertDeepEqual(first.relicDeck, same.relicDeck)
   assertDeepEqual(first.bossRelicDeck, same.bossRelicDeck)
+  assertDeepEqual(first.relicDeck, first.itemDecks.relics)
+  assertDeepEqual(first.potionDeck, first.itemDecks.potions)
   assert(first.relicDeck.every((id) => !first.bossRelicDeck.includes(id)), 'ordinary and boss decks overlap')
 })
 
 check('Wing Boots marks every ignored-path destination visited', () => {
-  const run = createRun(922, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(922, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   let from
   let target
   for (let row = 0; row < run.map.rows.length - 1 && !target; row++) {
@@ -237,19 +255,52 @@ check('Wing Boots marks every ignored-path destination visited', () => {
 })
 
 check('Calling Bell applies Old Coin immediately instead of keeping it', () => {
-  const run = createRun(904, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(904, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.relicDeck = ['old_coin', 'anchor', 'happy_flower', ...run.relicDeck.filter((id) =>
     !['old_coin', 'anchor', 'happy_flower'].includes(id))]
+  run.itemDecks.curses = ['regret', 'injury']
   const gold = run.players[0].gold
   const acquired = acquireRelic(run, 'p1', 'calling_bell')
   assertEqual(acquired.players[0].gold, gold + 10)
   assert(!acquired.players[0].relics.some((relic) => relic.defId === 'old_coin'), 'Old Coin was kept')
   assertDeepEqual(acquired.players[0].relics.slice(-2).map((relic) => relic.defId), ['anchor', 'happy_flower'])
-  assertEqual(acquired.players[0].deck.length, run.players[0].deck.length + 1, 'Calling Bell did not add a Curse')
+  assertEqual(acquired.players[0].deck.at(-1).defId, 'regret', 'Calling Bell did not draw the top Curse')
+  assertDeepEqual(acquired.itemDecks.curses, ['injury'])
+  assertEqual(acquired.relicDeck.at(-1), 'old_coin', 'Calling Bell did not bottom Old Coin')
+  assertEqual(acquired.relicDeck.filter((id) => id === 'old_coin').length, 1)
+  assertDeepEqual(acquired.relicDeck, acquired.itemDecks.relics, 'Calling Bell consumed a second Relic supply')
+})
+
+check('Cursed Key consumes the finite Curse deck while Omamori leaves it untouched', () => {
+  const run = postNeowRun(905, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.itemDecks.curses = ['regret', 'injury', 'clumsy']
+  const before = JSON.stringify(run)
+  const cursed = acquireRelic(run, 'p1', 'cursed_key')
+  assertDeepEqual(cursed.players[0].deck.slice(-2).map((card) => card.defId), ['regret', 'injury'])
+  assertDeepEqual(cursed.itemDecks.curses, ['clumsy'])
+  assertEqual(JSON.stringify(run), before, 'Relic acquisition mutated the prior run')
+
+  const protectedRun = postNeowRun(906, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  protectedRun.itemDecks.curses = ['regret', 'injury']
+  protectedRun.players[0].relics.push({ defId: 'omamori', spent: false })
+  const protectedDeck = protectedRun.players[0].deck.length
+  const protectedResult = acquireRelic(protectedRun, 'p1', 'cursed_key')
+  assertEqual(protectedResult.players[0].deck.length, protectedDeck)
+  assertDeepEqual(protectedResult.itemDecks.curses, ['regret', 'injury'])
+})
+
+check('direct Old Coin acquisition always returns its unique card to the Relic deck bottom', () => {
+  const run = postNeowRun(909, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.relicDeck = run.relicDeck.filter((id) => id !== 'old_coin')
+  run.itemDecks.relics = [...run.relicDeck]
+  const acquired = acquireRelic(run, 'p1', 'old_coin')
+  assertEqual(acquired.relicDeck.at(-1), 'old_coin')
+  assertEqual(acquired.relicDeck.filter((id) => id === 'old_coin').length, 1)
+  assertDeepEqual(acquired.relicDeck, acquired.itemDecks.relics)
 })
 
 check("one-shot Relics cannot remove Ascender's Bane or count the starter twice", () => {
-  let run = createRun(907, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 5)
+  let run = postNeowRun(907, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 5)
   run = acquireRelic(run, 'p1', 'empty_cage')
   const bane = run.players[0].deck.find((card) => card.defId === 'ascenders_bane')
   const other = run.players[0].deck.find((card) => card.uid !== bane.uid)
@@ -261,8 +312,21 @@ check("one-shot Relics cannot remove Ascender's Bane or count the starter twice"
   assertEqual(resolvePendingRelic(run, 'p1', [starter.uid]), run)
 })
 
+check('Empty Cage applies the printed Parasite maximum-HP loss', () => {
+  let run = postNeowRun(908, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.players[0].deck[0] = { ...run.players[0].deck[0], defId: 'parasite' }
+  run.players[0].hp = run.players[0].maxHp
+  const beforeMaxHp = run.players[0].maxHp
+  run = acquireRelic(run, 'p1', 'empty_cage')
+  const parasite = run.players[0].deck.find((card) => card.defId === 'parasite')
+  const other = run.players[0].deck.find((card) => card.uid !== parasite.uid)
+  const resolved = resolvePendingRelic(run, 'p1', [parasite.uid, other.uid])
+  assertEqual(resolved.players[0].maxHp, beforeMaxHp - 2)
+  assertEqual(resolved.players[0].hp, beforeMaxHp - 2)
+})
+
 check('Tiny House reveals its Potion for replacement at the slot cap', () => {
-  let run = createRun(908, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 4)
+  let run = postNeowRun(908, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 4)
   run.phase = 'reward'
   run.rewardDestination = 'map'
   run.players[0].potions = ['block_potion', 'fire_potion']
@@ -278,7 +342,7 @@ check('Tiny House reveals its Potion for replacement at the slot cap', () => {
 })
 
 check('independent Potion rewards queue without overwriting each other', () => {
-  let run = createRun(917, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(917, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.players[0].relics.push({ defId: 'white_beast_statue', spent: false })
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const won = {
@@ -297,7 +361,7 @@ check('independent Potion rewards queue without overwriting each other', () => {
   run = resolvePotionReward(run, 'p1', { kind: 'skip' })
   assertEqual(run.rewards[0].potion, false)
 
-  run = createRun(918, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run = postNeowRun(918, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.phase = 'reward'
   run.rewardDestination = 'map'
   run.rewards = [{ playerId: 'p1', cardReward: false, choices: null, upgraded: false,
@@ -308,8 +372,10 @@ check('independent Potion rewards queue without overwriting each other', () => {
 })
 
 check('Eggs upgrade and spend uses on one-shot Relic card gains', () => {
-  let run = createRun(909, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
-  run.players[0].relics.push({ defId: 'molten_egg', spent: false, uses: 3 })
+  let run = postNeowRun(909, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  // Persisted rooms from before finite-use automation may omit `uses`; the
+  // printed Relic value remains authoritative when restoring them.
+  run.players[0].relics.push({ defId: 'molten_egg', spent: false })
   run.players[0].cardRewards = [
     'anger', 'defend_ironclad', 'shrug_it_off',
     'defend_ironclad', 'shrug_it_off', 'armaments',
@@ -322,8 +388,21 @@ check('Eggs upgrade and spend uses on one-shot Relic card gains', () => {
   assertEqual(run.players[0].relics.find((relic) => relic.defId === 'molten_egg').uses, 2)
 })
 
+check('persisted Eggs upgrade normal card rewards with their printed uses', () => {
+  let run = postNeowRun(910, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  run.players[0].relics.push({ defId: 'molten_egg', spent: false })
+  run.players[0].cardRewards = ['anger', 'defend_ironclad', 'shrug_it_off']
+  run.phase = 'reward'
+  run.rewardDestination = 'map'
+  run.rewards = [{ playerId: 'p1', cardReward: true, choices: null, upgraded: false,
+    potion: false, relic: false, bossRelics: false }]
+  run = resolveCardRewards(revealCardReward(run, 'p1'), { p1: 0 })
+  assert(run.players[0].deck.some((card) => card.defId === 'anger' && card.upgraded))
+  assertEqual(run.players[0].relics.find((relic) => relic.defId === 'molten_egg').uses, 2)
+})
+
 check('one-shot Relic card rewards may be skipped and settle exhausted decks', () => {
-  let run = createRun(915, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(915, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const deckSize = run.players[0].deck.length
   const shown = run.players[0].rareRewards.slice(0, 5)
   run = acquireRelic(run, 'p1', 'enchiridion')
@@ -340,7 +419,7 @@ check('one-shot Relic card rewards may be skipped and settle exhausted decks', (
 })
 
 check("Pandora's Box rejects every Curse, not only Ascender's Bane", () => {
-  let run = createRun(910, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(910, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.players[0].deck.push({ uid: 'pandora-curse', defId: 'regret', upgraded: false })
   run = acquireRelic(run, 'p1', 'pandoras_box')
   const choices = ['pandora-curse', ...run.players[0].deck.filter((card) => card.defId !== 'regret').slice(0, 2).map((card) => card.uid)]
@@ -348,7 +427,7 @@ check("Pandora's Box rejects every Curse, not only Ascender's Bane", () => {
 })
 
 check('Relic upgrades reject Curse cards without a physical upgraded face', () => {
-  let run = createRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.players[0].deck.push({ uid: 'upgrade-curse', defId: 'regret', upgraded: false })
   run = acquireRelic(run, 'p1', 'astrolabe')
   const valid = run.players[0].deck.filter((card) => card.uid !== 'upgrade-curse').slice(0, 2)
@@ -356,7 +435,7 @@ check('Relic upgrades reject Curse cards without a physical upgraded face', () =
 })
 
 check('Orrery expands Golden Tickets through the rare deck and bottoms both physical cards', () => {
-  let run = createRun(902, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(902, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const player = run.players[0]
   player.cardRewards = [
     GOLDEN_TICKET, GOLDEN_TICKET, 'anger',
@@ -376,9 +455,13 @@ check('Orrery expands Golden Tickets through the rare deck and bottoms both phys
   assertEqual(settled.rareRewards.at(-1), 'barricade', 'the unchosen revealed rare was not bottomed')
 })
 
+check('pending Relic preview tolerates a compatibility snapshot without players', () => {
+  assertEqual(pendingRelicPreview({}, 'p1'), null)
+})
+
 check('one-shot rewards keep visible indices when a Golden Ticket has no rare card', () => {
   for (const relicId of ['orrery', 'tiny_house']) {
-    let run = createRun(916, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+    let run = postNeowRun(916, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
     run.players[0].cardRewards = [GOLDEN_TICKET, 'anger']
     run.players[0].rareRewards = []
     run = acquireRelic(run, 'p1', relicId)
@@ -393,7 +476,7 @@ check('one-shot rewards keep visible indices when a Golden Ticket has no rare ca
 })
 
 check('Entropic Brew can replace a held Potion outside combat at the physical slot cap', () => {
-  const run = createRun(903, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 4)
+  const run = postNeowRun(903, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 4)
   run.players[0].potions = ['entropic_brew', 'block_potion']
   run.potionDeck = ['fire_potion', 'skill_potion', 'weak_potion']
   assertEqual(usePotionOutsideCombat(run, 'p1', 'entropic_brew'), run, 'replacement must be explicit')
@@ -402,8 +485,20 @@ check('Entropic Brew can replace a held Potion outside combat at the physical sl
   assertDeepEqual(used.potionDeck, ['weak_potion', 'entropic_brew', 'block_potion'])
 })
 
+check('Sozu still allows Entropic Brew outside combat without gaining Potions', () => {
+  const run = postNeowRun(903, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 4)
+  run.players[0].potions = ['entropic_brew', 'block_potion']
+  run.players[0].relics.push({ defId: 'sozu', spent: false })
+  run.potionDeck = ['fire_potion', 'skill_potion']
+  const used = usePotionOutsideCombat(run, 'p1', 'entropic_brew')
+  assertDeepEqual(used.players[0].potions, ['block_potion'], 'Sozu preserves the other held Potion')
+  assertDeepEqual(used.potionDeck, ['fire_potion', 'skill_potion', 'entropic_brew'],
+    'the Brew is bottomed without drawing from the Potion deck')
+  assertDeepEqual(used.itemDecks.potions, used.potionDeck, 'the legacy Potion supply remains mirrored')
+})
+
 check('Treasure reveals one Relic per player and gain/skip preserves deck circulation', () => {
-  const base = createRun(902, [
+  const base = postNeowRun(902, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -411,14 +506,36 @@ check('Treasure reveals one Relic per player and gain/skip preserves deck circul
   const approach = Object.values(base.map.rooms).find((room) => room.exits.includes(treasure?.id))
   assert(treasure && approach)
   let reward = enterRoom({ ...base, map: { ...base.map, position: approach.id } }, treasure.id)
-  assertEqual(reward.phase, 'reward')
-  const top = reward.relicDeck[0]
-  reward = revealRelicReward(reward, 'p1')
-  assertEqual(reward.rewards[0].relic, top)
-  reward = resolveRelicReward(reward, 'p1', true)
+  assertEqual(reward.phase, 'room')
+  assertDeepEqual(reward.relicDeck, reward.itemDecks.relics)
+  const top = reward.roomState.offers.p1
+  reward = chooseRelicReward(reward, 'p1', 'take')
+  reward = chooseRelicReward(reward, 'p2', 'skip')
   assertEqual(reward.players[0].relics.at(-1).defId, top)
-  reward = resolveRelicReward(reward, 'p2', false)
-  assertEqual(reward.phase, 'map', 'unseen skip draws nothing and finishes the room')
+  assertEqual(reward.phase, 'map', 'every player resolves the physical Treasure room')
+  assertDeepEqual(reward.relicDeck, reward.itemDecks.relics)
+})
+
+check('an Elite grants exactly one ordinary Relic from the shared physical deck per living player', () => {
+  let run = postNeowRun(915, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const room = roomChoices(run)[0]
+  run.map.rooms[room.id] = { ...room, kind: 'elite' }
+  const expected = run.relicDeck.slice(0, 2)
+  run = enterRoom(run, room.id)
+  run = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won', enemies: run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })) } })
+  assert(run.rewards.every((offer) => offer.relic === false), 'the removed legacy Elite Relic reward returned')
+  assertDeepEqual(Object.values(run.roomState.offers), expected)
+  assertDeepEqual(run.relicDeck, run.itemDecks.relics)
+  run = resolveCardRewards(run, { p1: null, p2: null })
+  assertEqual(run.phase, 'room')
+  run = chooseRelicReward(run, 'p1', 'take')
+  run = chooseRelicReward(run, 'p2', 'take')
+  assertEqual(run.phase, 'map')
+  assertDeepEqual(run.players.map((player) => player.relics.at(-1).defId), expected)
+  assertDeepEqual(run.relicDeck, run.itemDecks.relics)
 })
 
 const skipRewards = (run) => run.phase === 'reward'
@@ -428,7 +545,7 @@ const skipRewards = (run) => run.phase === 'reward'
 check('every enemy the run can spawn actually exists', () => {
   // Reach into the module's pools by walking a lot of runs and spawning rooms.
   for (let seed = 0; seed < 30; seed++) {
-    let run = createRun(seed, [
+    let run = postNeowRun(seed, [
       { id: 'p1', name: 'Ironclad', character: 'ironclad' },
       { id: 'p2', name: 'Silent', character: 'silent' },
     ])
@@ -452,12 +569,13 @@ check('every enemy the run can spawn actually exists', () => {
 })
 
 check('reward stacks contain only live cards of their character and rarity', () => {
-  const run = createRun(100, [
+  const progress = { ...createCampaignProgress(), characters: { ironclad: 4, silent: 4, defect: 4, watcher: 4 } }
+  const run = postNeowRun(100, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
     { id: 'p4', name: 'Watcher', character: 'watcher' },
-  ])
+  ], 0, progress)
   for (const player of run.players) {
     assert(player.cardRewards.length >= 3, `${player.name} cannot reveal three cards`)
     assertEqual(player.cardRewards.filter((id) => id === GOLDEN_TICKET).length, 2,
@@ -495,7 +613,7 @@ check('every enemy has a sane HP track', () => {
 })
 
 check('a run starts every character at the HP their board prints', () => {
-  const run = createRun(1, [
+  const run = postNeowRun(1, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
@@ -508,7 +626,7 @@ check('a run starts every character at the HP their board prints', () => {
 })
 
 check('a solo run starts with two extra gold AND the Loaded Die', () => {
-  const solo = createRun(1, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const solo = postNeowRun(1, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   assertEqual(solo.players[0].gold, 2, 'p.4 step 12 grants gold, not potions')
   assert(
     solo.players[0].relics.some((relic) => relic.defId === 'loaded_die'),
@@ -516,7 +634,7 @@ check('a solo run starts with two extra gold AND the Loaded Die', () => {
   )
   assertEqual(solo.players[0].relics.length, 2, 'the starting relic plus the Loaded Die')
 
-  const duo = createRun(1, [
+  const duo = postNeowRun(1, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -543,14 +661,14 @@ check('every relic and potion a run can hand out actually exists', () => {
 })
 
 check('entering a room is refused unless it is reachable', () => {
-  const run = createRun(7, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(7, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   assert(enterRoom(run, 'nowhere') === run, 'an unknown room must return the same reference')
   const far = run.map.rows[run.map.rows.length - 1][0]
   assert(enterRoom(run, far) === run, 'jumping to the boss must be refused')
 })
 
 check('the first room starts a combat with one enemy per player', () => {
-  const run = createRun(3, [
+  const run = postNeowRun(3, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -562,7 +680,7 @@ check('the first room starts a combat with one enemy per player', () => {
 })
 
 check('the four fixed-opening cards are dealt once each, with their summons', () => {
-  const run = createRun(3, [
+  const run = postNeowRun(3, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
@@ -594,7 +712,7 @@ check('the four fixed-opening cards are dealt once each, with their summons', ()
 })
 
 check('the fixed opening encounter uses its own printed rewards', () => {
-  const run = createRun(2, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(2, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const enemy = entered.combat.enemies[0]
   const printed = {
@@ -610,7 +728,7 @@ check('the fixed opening encounter uses its own printed rewards', () => {
 })
 
 check('winning a combat carries HP forward into the run', () => {
-  const run = createRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   // Bloody the player inside the combat, then win it.
   const wounded = {
@@ -629,11 +747,12 @@ check('winning a combat carries HP forward into the run', () => {
   assertEqual(after.players[0].gold, run.players[0].gold + printedGold, 'the printed gold reward is paid')
 })
 
-check('a potion consumed to win does not reappear after combat', () => {
-  const run = createRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+check('a potion consumed in combat returns to the bottom of its deck', () => {
+  const run = postNeowRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const stocked = {
     ...run,
     players: run.players.map((player) => ({ ...player, potions: ['fire_potion'] })),
+    itemDecks: { ...run.itemDecks, potions: run.itemDecks.potions.filter((id) => id !== 'fire_potion') },
   }
   const entered = enterRoom(stocked, roomChoices(stocked)[0].id)
   const target = entered.combat.enemies[0]
@@ -647,11 +766,12 @@ check('a potion consumed to win does not reappear after combat', () => {
   const won = activatePotion(prepared, 'p1', 'fire_potion', { enemyUid: target.uid })
   assertEqual(won.phase, 'won')
   const after = resolveCombat({ ...entered, combat: won })
-  assertDeepEqual(after.players[0].potions, [], 'the used potion stays discarded on the map')
+  assertDeepEqual(after.players[0].potions, [])
+  assertEqual(after.itemDecks.potions.at(-1), 'fire_potion')
 })
 
 check('a combat card reward reveals three and persists exactly one chosen card', () => {
-  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const won = resolveCombat({
     ...entered,
@@ -681,8 +801,24 @@ check('a combat card reward reveals three and persists exactly one chosen card',
   )
 })
 
+check('a short combat reward deck still offers every available physical card', () => {
+  const run = postNeowRun(105, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const entered = enterRoom({ ...run, players: run.players.map((player) => ({ ...player, cardRewards: ['anger'], rareRewards: [] })) }, roomChoices(run)[0].id)
+  const won = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true, cardReward: 'normal' })),
+    },
+  })
+  assertEqual(won.phase, 'reward')
+  const revealed = revealCardReward(won, 'p1')
+  assertDeepEqual(revealed.rewards[0].choices, ['anger'])
+})
+
 check('skipping a card reward unseen leaves the face-down deck untouched', () => {
-  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const won = resolveCombat({
     ...entered,
@@ -700,7 +836,7 @@ check('skipping a card reward unseen leaves the face-down deck untouched', () =>
 })
 
 check('skipping after reveal returns all three cards to the bottom', () => {
-  const run = createRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(104, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const won = resolveCombat({
     ...entered,
@@ -717,7 +853,7 @@ check('skipping after reveal returns all three cards to the bottom', () => {
 })
 
 check('Golden Tickets reveal rares and cycle each source stack independently', () => {
-  const base = createRun(204, [{ id: 'p1', name: 'Silent', character: 'silent' }])
+  const base = postNeowRun(204, [{ id: 'p1', name: 'Silent', character: 'silent' }])
   const player = {
     ...base.players[0],
     cardRewards: ['prepared', GOLDEN_TICKET, 'acrobatics', 'backflip'],
@@ -746,7 +882,7 @@ check('Golden Tickets reveal rares and cycle each source stack independently', (
 })
 
 check('two Golden Tickets reveal two rares and transform resolves a Ticket blindly', () => {
-  const base = createRun(205, [{ id: 'p1', name: 'Defect', character: 'defect' }])
+  const base = postNeowRun(205, [{ id: 'p1', name: 'Defect', character: 'defect' }])
   const player = {
     ...base.players[0],
     cardRewards: [GOLDEN_TICKET, 'ball_lightning', GOLDEN_TICKET, 'charge_battery'],
@@ -770,7 +906,7 @@ check('two Golden Tickets reveal two rares and transform resolves a Ticket blind
 })
 
 check('every living player must make a valid card reward decision', () => {
-  const run = createRun(105, [
+  const run = postNeowRun(105, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -789,7 +925,7 @@ check('every living player must make a valid card reward decision', () => {
 })
 
 check('reward card ids stay unique even when another run starts meanwhile', () => {
-  const first = createRun(106, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const first = postNeowRun(106, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(first, roomChoices(first)[0].id)
   const offered = revealCardReward(
     resolveCombat({
@@ -802,14 +938,14 @@ check('reward card ids stay unique even when another run starts meanwhile', () =
     }),
     'p1',
   )
-  createRun(107, [{ id: 'p1', name: 'Silent', character: 'silent' }])
+  postNeowRun(107, [{ id: 'p1', name: 'Silent', character: 'silent' }])
   const after = resolveCardRewards(offered, { p1: 0 })
   const ids = after.players[0].deck.map((card) => card.uid)
   assertEqual(new Set(ids).size, ids.length, 'another room rewound this run\'s card ids')
 })
 
 check('advancing an act heals the party and builds a new map', () => {
-  const run = createRun(9, [
+  const run = postNeowRun(9, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -838,7 +974,7 @@ check('advancing an act heals the party and builds a new map', () => {
 })
 
 check('the inter-Act victory pause permits outside-combat Potion actions', () => {
-  const run = createRun(921, [
+  const run = postNeowRun(921, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -853,7 +989,7 @@ check('the inter-Act victory pause permits outside-combat Potion actions', () =>
 })
 
 check('pending immediate Relics block progression and between-boss item actions', () => {
-  const run = createRun(919, [
+  const run = postNeowRun(919, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -878,7 +1014,7 @@ check('pending immediate Relics block progression and between-boss item actions'
 })
 
 check('Ascension 6 heals 4 instead of to full', () => {
-  const run = createRun(9, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 6)
+  const run = postNeowRun(9, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 6)
   const bossId = run.map.rows[run.map.rows.length - 1][0]
   const won = {
     ...run,
@@ -891,7 +1027,7 @@ check('Ascension 6 heals 4 instead of to full', () => {
 })
 
 check('Mark of Pain caps outside-combat and Act-transition healing at 6', () => {
-  const run = createRun(905, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(905, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.players[0].hp = 5
   run.players[0].relics.push({ defId: 'mark_of_pain', spent: false })
   run.players[0].potions = ['blood_potion']
@@ -904,10 +1040,33 @@ check('Mark of Pain caps outside-combat and Act-transition healing at 6', () => 
   const won = { ...run, phase: 'victory', map: { ...run.map, position: bossId,
     rooms: { ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true } } } }
   assertEqual(advanceAct(won).players[0].hp, 6)
+
+  const reduced = postNeowRun(906, [{ id: 'p1', name: 'Silent', character: 'silent' }])
+  reduced.players[0].hp = 4
+  reduced.players[0].maxHp = 5
+  reduced.players[0].relics.push({ defId: 'mark_of_pain', spent: false })
+  reduced.players[0].potions = ['blood_potion']
+  assertEqual(usePotionOutsideCombat(reduced, 'p1', 'blood_potion').players[0].hp, 5,
+    'Blood Potion healed above reduced maximum HP')
+  const entered = enterRoom(reduced, roomChoices(reduced)[0].id)
+  const returned = resolveCombat({
+    ...entered,
+    combat: {
+      ...entered.combat,
+      phase: 'won',
+      players: entered.combat.players.map((player) => ({ ...player, hp: 6, maxHp: 5 })),
+      enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })),
+    },
+  })
+  assertEqual(returned.players[0].hp, 5, 'combat resolution preserved HP above reduced maximum')
+  const reducedBoss = reduced.map.rows.at(-1)[0]
+  const reducedWon = { ...reduced, phase: 'victory', map: { ...reduced.map, position: reducedBoss,
+    rooms: { ...reduced.map.rooms, [reducedBoss]: { ...reduced.map.rooms[reducedBoss], visited: true } } } }
+  assertEqual(advanceAct(reducedWon).players[0].hp, 5, 'Act transition healed above reduced maximum HP')
 })
 
 check('Ectoplasm suppresses rewards without restoring stolen combat gold', () => {
-  const run = createRun(912, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(912, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   entered.players[0].relics.push({ defId: 'ectoplasm', spent: false })
   entered.combat.players[0].relics.push({ defId: 'ectoplasm', spent: false })
@@ -919,7 +1078,7 @@ check('Ectoplasm suppresses rewards without restoring stolen combat gold', () =>
 })
 
 check('defeating the Corrupt Heart ends without an unusable boss Relic reward', () => {
-  const run = createRun(911, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(911, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const bossId = run.map.rows.at(-1)[0]
   const won = { ...run, act: 4, phase: 'combat', map: { ...run.map, position: bossId }, combat: {
     ...enterRoom(run, roomChoices(run)[0].id).combat,
@@ -932,7 +1091,7 @@ check('defeating the Corrupt Heart ends without an unusable boss Relic reward', 
 })
 
 check('White Beast Statue offers its Potion after the first A13 boss before regrouping', () => {
-  const run = createRun(913, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
+  const run = postNeowRun(913, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
   const bossId = run.map.rows.at(-1)[0]
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const won = { ...run, phase: 'combat', map: { ...run.map, position: bossId }, pendingBossDefId: 'time_eater',
@@ -954,7 +1113,7 @@ check('White Beast Statue offers its Potion after the first A13 boss before regr
 })
 
 check('one-shot Relics resolve with all remaining legal cards when the deck is depleted', () => {
-  let run = createRun(914, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(914, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.phase = 'map'
   let keptDefend = false
   run.players[0].deck = run.players[0].deck.map((card) => {
@@ -969,7 +1128,7 @@ check('one-shot Relics resolve with all remaining legal cards when the deck is d
 })
 
 check('a pending Relic freezes local reward settlement at acquisition time', () => {
-  let run = createRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  let run = postNeowRun(920, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.phase = 'reward'
   run.rewardDestination = 'map'
   run.players[0].deck.push({ uid: 'local-reward-order-skill', defId: 'shrug_it_off', upgraded: false })
@@ -994,8 +1153,8 @@ check("Ascension 5 adds Ascender's Bane to every starter deck", () => {
     { id: 'p3', name: 'Defect', character: 'defect' },
     { id: 'p4', name: 'Watcher', character: 'watcher' },
   ]
-  const below = createRun(5, party, 4)
-  const ascended = createRun(5, party, 5)
+  const below = postNeowRun(5, party, 4)
+  const ascended = postNeowRun(5, party, 5)
   for (let index = 0; index < party.length; index++) {
     assertEqual(below.players[index].deck.some((card) => card.defId === 'ascenders_bane'), false)
     assertEqual(ascended.players[index].deck.filter((card) => card.defId === 'ascenders_bane').length, 1)
@@ -1010,9 +1169,9 @@ check('Ascension 2 and 9 apply their cumulative setup HP losses', () => {
     { id: 'p3', name: 'Defect', character: 'defect' },
     { id: 'p4', name: 'Watcher', character: 'watcher' },
   ]
-  const base = createRun(12, party, 0)
-  const a2 = createRun(12, party, 2)
-  const a9 = createRun(12, party, 9)
+  const base = postNeowRun(12, party, 0)
+  const a2 = postNeowRun(12, party, 2)
+  const a9 = postNeowRun(12, party, 9)
   for (let index = 0; index < party.length; index++) {
     assertEqual(a2.players[index].maxHp, base.players[index].maxHp - 1, 'A2 loses 1 max HP')
     assertEqual(a2.players[index].hp, a2.players[index].maxHp, 'A2 still starts at full HP')
@@ -1022,7 +1181,7 @@ check('Ascension 2 and 9 apply their cumulative setup HP losses', () => {
 })
 
 check('a boss room stands up a single boss that acts last', () => {
-  const run = createRun(4, [
+  const run = postNeowRun(4, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -1039,7 +1198,7 @@ check('an elite room places one elite, not one per player', () => {
   // Find a seed whose first reachable room from the start is an elite.
   let found = false
   for (let seed = 0; seed < 60 && !found; seed++) {
-    const run = createRun(seed, [
+    const run = postNeowRun(seed, [
       { id: 'p1', name: 'Ironclad', character: 'ironclad' },
       { id: 'p2', name: 'Silent', character: 'silent' },
     ])
@@ -1207,13 +1366,13 @@ check('main-enemy rewards come from the Act-specific encounter card', () => {
     fungi_beast: 1,
   }
   for (let seed = 0; seed < 30; seed++) {
-    const run = createRun(seed, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const run = postNeowRun(seed, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
     const enemy = enterRoom(run, roomChoices(run)[0].id).combat.enemies[0]
     assertEqual(enemy.goldReward, actOneGold[enemy.defId], `${enemy.defId} Act I gold`)
     assertEqual(enemy.cardReward, firstCardReward[enemy.defId], `${enemy.defId} opening card reward`)
   }
 
-  const base = createRun(80, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+  const base = postNeowRun(80, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
   const source = Object.values(base.map.rooms).find((room) =>
     room.exits.some((id) => base.map.rooms[id]?.kind === 'encounter'))
   const target = source?.exits.find((id) => base.map.rooms[id]?.kind === 'encounter')
@@ -1225,7 +1384,7 @@ check('main-enemy rewards come from the Act-specific encounter card', () => {
     [2, { defId: 'cultist', goldReward: 2, cardReward: 'normal' }],
     [3, { defId: 'jaw_worm_act3', goldReward: 2, cardReward: 'normal' }],
   ]) {
-    const base = createRun(71 + act, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const base = postNeowRun(71 + act, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
     const run = { ...base, act, enemyDecks: { act, first: [], encounter: [card], elite: [] } }
     const enemy = enterRoom(run, roomChoices(run)[0].id).combat.enemies[0]
     assertEqual(enemy.defId, card.defId, `Act ${act} uses the drawn main-enemy card`)
@@ -1235,9 +1394,11 @@ check('main-enemy rewards come from the Act-specific encounter card', () => {
 })
 
 check('the reduced live reward deck supports every reward fight across three Acts', () => {
-  let run = createRun(141, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+  const progress = createCampaignProgress()
+  progress.characters.watcher = 8
+  let run = postNeowRun(141, [{ id: 'p1', name: 'Watcher', character: 'watcher' }], 0, progress)
   for (let fight = 0; fight < 21; fight++) {
-    const fixture = createRun(200 + fight, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const fixture = postNeowRun(200 + fight, [{ id: 'p1', name: 'Watcher', character: 'watcher' }], 0, progress)
     const entered = enterRoom(fixture, roomChoices(fixture)[0].id)
     run = {
       ...run,
@@ -1288,7 +1449,7 @@ check('every enemy HP track matches the number printed on its card', () => {
 })
 
 check('encounter HP comes from the enemy definition, not a fixture', () => {
-  const run = createRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   for (const spawned of entered.combat.enemies) {
     assertEqual(
@@ -1301,7 +1462,7 @@ check('encounter HP comes from the enemy definition, not a fixture', () => {
 
 // A campfire lets each player Rest (heal 3) or Smith (upgrade a card), p.9.
 function atCampfire(seed = 11) {
-  const run = createRun(seed, [
+  const run = postNeowRun(seed, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
   ])
@@ -1328,6 +1489,20 @@ check('Rest heals 3 and never past the maximum', () => {
   for (const player of capped.players) {
     assertEqual(player.hp, player.maxHp, 'Rest must not heal past the maximum')
   }
+})
+
+check('Peace Pipe applies the printed Parasite maximum-HP loss', () => {
+  const room = atCampfire()
+  room.players[0].relics.push({ defId: 'peace_pipe', spent: false })
+  room.players[0].deck[0] = { ...room.players[0].deck[0], defId: 'parasite' }
+  room.players[0].hp = room.players[0].maxHp
+  const beforeMaxHp = room.players[0].maxHp
+  const next = resolveCampfire(room, {
+    p1: { choice: 'rest', removeCardUid: room.players[0].deck[0].uid },
+    p2: { choice: 'rest' },
+  })
+  assertEqual(next.players[0].maxHp, beforeMaxHp - 2)
+  assertEqual(next.players[0].hp, beforeMaxHp - 2)
 })
 
 check('Smith upgrades exactly the chosen card', () => {
@@ -1370,13 +1545,24 @@ check('Smith cannot upgrade a card twice', () => {
   )
 })
 
+check('Smith refuses cards without a physical upgrade face', () => {
+  const room = atCampfire()
+  const bane = { uid: 'campfire-bane', defId: 'ascenders_bane', upgraded: false }
+  room.players[0].deck = [bane, ...room.players[0].deck]
+  const next = resolveCampfire(room, {
+    p1: { choice: 'smith', cardUid: bane.uid },
+    p2: { choice: 'rest' },
+  })
+  assertEqual(next.players[0].deck[0].upgraded, false)
+})
+
 check('a campfire returns the party to the map', () => {
   const next = resolveCampfire(atCampfire(), { p1: { choice: 'rest' }, p2: { choice: 'rest' } })
   assertEqual(next.phase, 'map')
 })
 
 check('resolving a campfire anywhere else is refused', () => {
-  const run = createRun(11, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(11, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   assert(resolveCampfire(run, { p1: { choice: 'rest' } }) === run, 'not in a room at all')
 
   const inCombat = enterRoom(run, roomChoices(run)[0].id)
@@ -1412,7 +1598,7 @@ check('a dead player is not healed or upgraded at a campfire', () => {
 // many enemies an encounter draws. Four players is the box maximum and the case
 // most likely to be wrong.
 check('a four player encounter draws one enemy per row at four-player HP', () => {
-  const run = createRun(12, [
+  const run = postNeowRun(12, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
@@ -1437,7 +1623,7 @@ check('an elite stands in the bottom row, a boss in the top', () => {
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
   ]
-  const run = createRun(21, party)
+  const run = postNeowRun(21, party)
   const bottomRow = run.players[0].row
   const topRow = run.players[run.players.length - 1].row
   assert(bottomRow !== topRow, 'the fixture needs distinct rows to be meaningful')
@@ -1466,7 +1652,7 @@ check('HP board columns are read by party size', () => {
 })
 
 check('a boss room uses a physical boss definition', () => {
-  const run = createRun(4, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(4, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const bossId = run.map.rows[run.map.rows.length - 1][0]
   const parked = { ...run, map: { ...run.map, position: run.map.rows[run.map.rows.length - 2][0] } }
   const boss = enterRoom(parked, bossId).combat.enemies[0]
@@ -1484,10 +1670,63 @@ check('a player who chooses nothing is left alone', () => {
 })
 
 check('losing a combat ends the run', () => {
-  const run = createRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const run = postNeowRun(3, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const lost = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'lost' } })
   assertEqual(lost.phase, 'defeat')
+})
+
+check('campaign run ids advance independently of the deterministic gameplay seed', () => {
+  const party = [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }]
+  const first = postNeowRun(3, party)
+  const finished = finishRun({ ...first, phase: 'defeat' })
+  const second = postNeowRun(3, party, 0, finished.campaignProgress)
+  assert(first.campaign.runId !== second.campaign.runId)
+})
+
+check('the party may stop after Act II or decline unlocked Act IV', () => {
+  const party = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ]
+  const actTwo = postNeowRun(31, party)
+  const stopped = finishRun({ ...actTwo, act: 2, phase: 'victory', campaign: { ...actTwo.campaign, bossesDefeated: 2, highestBossActDefeated: 2 } })
+  assert(stopped.campaign.finalized)
+  assertEqual(stopped.campaignProgress.highestAscension, 1)
+
+  const unlocked = { ...createCampaignProgress(), actIV: 5 }
+  const actThree = postNeowRun(32, party, 0, unlocked)
+  const declined = finishRun({ ...actThree, act: 3, phase: 'victory', campaign: { ...actThree.campaign, bossesDefeated: 3, highestBossActDefeated: 3, keys: { ruby: true, sapphire: true, emerald: true } } })
+  assert(declined.campaign.finalized)
+})
+
+check('Burning Elite Status cards return to their supply after combat', () => {
+  const progress = { ...createCampaignProgress(), actIV: 5 }
+  const base = postNeowRun(81, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 0, progress)
+  const roomId = base.map.rows[0][0]
+  const prepared = { ...base, map: { ...base.map, rooms: { ...base.map.rooms, [roomId]: { ...base.map.rooms[roomId], kind: 'elite', burning: true } } } }
+  const entered = enterRoom(prepared, roomId)
+  assertEqual(entered.players[0].deck.filter((card) => CARDS[card.defId]?.owner === 'status').length, 2)
+  const cleared = resolveCombat({ ...entered, combat: { ...entered.combat, phase: 'won' } })
+  assertEqual(cleared.players[0].deck.filter((card) => CARDS[card.defId]?.owner === 'status').length, 0)
+})
+
+check('an already-held Sapphire Key cannot discard another relic reward', () => {
+  const progress = { ...createCampaignProgress(), actIV: 5 }
+  let run = postNeowRun(811, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 0, progress)
+  const room = roomChoices(run)[0]
+  run.map.rooms[room.id] = { ...room, kind: 'treasure' }
+  run.campaign.keys.sapphire = true
+  run = enterRoom(run, room.id)
+  assertEqual(chooseRelicReward(run, 'p1', 'sapphire'), run)
+})
+
+check('malformed Treasure decisions cannot discard a physical reward', () => {
+  let run = postNeowRun(812, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const room = roomChoices(run)[0]
+  run.map.rooms[room.id] = { ...room, kind: 'treasure' }
+  run = enterRoom(run, room.id)
+  assertEqual(chooseRelicReward(run, 'p1', 'forged'), run)
 })
 
 

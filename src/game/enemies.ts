@@ -252,7 +252,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   green_louse_21w: {
-    id: 'green_louse_21w', name: 'Green Louse', hpByPlayers: [3, 3, 3, 3],
+    id: 'green_louse_21w', name: 'Green Louse', artId: 'green_louse', hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }],
       [{ kind: 'attack', amount: 1 }],
@@ -279,6 +279,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   red_louse_first: {
     id: 'red_louse_first',
     name: 'Red Louse',
+    artId: 'red_louse',
     hpByPlayers: [4, 4, 4, 4],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
@@ -289,7 +290,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_louse_summon: {
-    id: 'red_louse_summon', name: 'Red Louse', hpByPlayers: [3, 3, 3, 3],
+    id: 'red_louse_summon', name: 'Red Louse', artId: 'red_louse', hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }],
       [{ kind: 'attack', amount: 1 }],

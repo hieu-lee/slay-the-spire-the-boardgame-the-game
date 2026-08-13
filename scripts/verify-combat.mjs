@@ -46,7 +46,6 @@ import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
 import {
   advanceAct,
-  createRun,
   enterRoom,
   resolveCampfire,
   resolveCardRewards,
@@ -55,6 +54,7 @@ import {
 } from '../src/game/run.ts'
 import { readFileSync } from 'node:fs'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
+import { postNeowRun } from './lib/post-neow-run.mjs'
 
 let uid = 0
 const instance = (defId, upgraded = false) => ({ uid: `c${uid++}`, defId, upgraded })
@@ -1338,7 +1338,7 @@ check('poison resolves before the party takes its own end-of-turn damage', () =>
 check('a lost combat carries the party out of it as it stood', () => {
   // The fold-back for a defeat was untested: survivors' hit points and the
   // dead flag have to come from the COMBAT, not from the run as it was before.
-  const run = createRun(77, [
+  const run = postNeowRun(77, [
     { id: 'p1', name: 'Ann', character: 'ironclad' },
     { id: 'p2', name: 'Bo', character: 'silent' },
   ])
@@ -1547,7 +1547,7 @@ check('a defeated party is never folded back into a live run', () => {
   // What the bug above actually produced downstream: a corpse carried onto the
   // map, healed to full by advanceAct, losing the next combat before anyone
   // acted.
-  const run = createRun(88, [
+  const run = postNeowRun(88, [
     { id: 'p1', name: 'Ann', character: 'ironclad' },
     { id: 'p2', name: 'Bo', character: 'silent' },
   ])
@@ -1858,7 +1858,7 @@ check('a row card with no anchor is refused, not turned into a board wipe', () =
 check('the campfire only works at a campfire', () => {
   // The engine function is exported and the local UI calls it directly, so it
   // cannot rely on the room layer's guard.
-  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const otherRoom = Object.values(run.map.rooms).find((room) => room.kind !== 'campfire')
   assert(otherRoom, 'precondition: the act should contain a non-campfire room')
   const parked = { ...run, phase: 'room', map: { ...run.map, position: otherRoom.id } }
@@ -1914,14 +1914,16 @@ check('an empty but valid slot is refused instead of changing the choice', () =>
 check('a room already occupied cannot be re-entered to farm it', () => {
   // After a win the party stands on the map WITH a position, which is the
   // state the reachability guard actually has to refuse.
-  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const rewarded = resolveCombat({
     ...entered,
     combat: {
       ...entered.combat,
       phase: 'won',
-      enemies: entered.combat.enemies.map((foe) => ({ ...foe, hp: 0, dead: true })),
+      enemies: entered.combat.enemies.map((foe) => ({
+        ...foe, hp: 0, dead: true, potionReward: false, relicReward: false,
+      })),
     },
   })
   const won = resolveCardRewards(
@@ -1942,7 +1944,7 @@ check('a room already occupied cannot be re-entered to farm it', () => {
 check('a campfire cannot be rested at twice', () => {
   // resolveCampfire leaves the map position on the campfire, so without the
   // phase guard the same message heals another 3 every time it is re-sent.
-  const run = createRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
   const parked = {
     ...run,
@@ -1962,7 +1964,7 @@ check('the boss cannot be skipped to reach the next Act', () => {
   // isActComplete is already true DURING the boss fight, because the boss room
   // counts as visited — so the phase guard is the only thing stopping a client
   // from healing to full and opening Act 2.
-  const run = createRun(51, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(51, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const boss = Object.values(run.map.rooms).find((room) => room.kind === 'boss')
   const fighting = {
     ...run,
@@ -1975,7 +1977,7 @@ check('the boss cannot be skipped to reach the next Act', () => {
 })
 
 check('the map offers no rooms while a fight is on', () => {
-  const run = createRun(61, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(61, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const fighting = enterRoom(run, roomChoices(run)[0].id)
   assertEqual(fighting.phase, 'combat', 'precondition: in a fight')
   assertEqual(roomChoices(fighting).length, 0, 'the map must offer nothing mid-combat')
@@ -2410,6 +2412,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'all_out_attack', enemyHp: [18, 17] },
     { id: 'expertise', hand: [6, 6] },
     { id: 'calculated_gamble', exhaust: [1, 0] },
+    { id: 'burn', unplayable: true },
     { id: 'reflex', unplayable: true },
     { id: 'tactician', unplayable: true },
     { id: 'after_image', powers: [1, 1] },
@@ -3670,7 +3673,7 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
 
   const lethal = combat([makePlayer({
     character: 'defect', powers: [instance('storm', true)], orbs: ['lightning', 'lightning', 'lightning'],
-  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  })], [makeEnemy({ hp: 1, maxHp: 1 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
   Object.assign(lethal, { phase: 'roundEnd', turn: 1 })
   const lethalPrepared = preparePlayerTurn(lethal)
   const lethalAbility = startTurnAbilities(lethalPrepared)[0]
@@ -7404,13 +7407,13 @@ check('support potions share the card effect resolver and obey caps', () => {
   assertEqual(ended.players[0].strengthLossAtEndOfTurn, 0)
 })
 
-check('Weak Potion applies the three printed Weak tokens', () => {
+check('Weak Potion applies the two printed Weak tokens', () => {
   const state = combat(
     [makePlayer({ potions: ['weak_potion'] })],
     [makeEnemy()],
   )
   const used = activatePotion(state, 'p1', 'weak_potion', { enemyUid: 'e1' })
-  assertEqual(used.enemies[0].weak, 3)
+  assertEqual(used.enemies[0].weak, 2)
 })
 
 check('simple printed potions resolve through the shared effect vocabulary', () => {
@@ -8536,6 +8539,24 @@ check('Entropic Brew replaces one held Potion when its two gains exceed the slot
   const used = activatePotion(state, 'p1', 'entropic_brew', { replacePotionId: 'block_potion' })
   assertDeepEqual(used.players[0].potions, ['fire_potion', 'skill_potion'])
   assertDeepEqual(used.potionDeck, ['weak_potion', 'entropic_brew', 'block_potion'])
+})
+
+check('Sozu still allows Entropic Brew to be consumed without gaining Potions', () => {
+  const state = createCombat(
+    createRng(42),
+    [makePlayer({
+      potions: ['entropic_brew', 'block_potion'],
+      relics: [{ defId: 'sozu', spent: false }],
+    })],
+    [makeEnemy()],
+    'sozu-entropic-test',
+    ['fire_potion', 'skill_potion'],
+    2,
+  )
+  const used = activatePotion(state, 'p1', 'entropic_brew')
+  assertDeepEqual(used.players[0].potions, ['block_potion'], 'Sozu preserves the other held Potion')
+  assertDeepEqual(used.potionDeck, ['fire_potion', 'skill_potion', 'entropic_brew'],
+    'the Brew is bottomed without drawing from the Potion deck')
 })
 
 check('manual Relics are owner-authoritative, finite, and Akabeko lasts one Attack', () => {

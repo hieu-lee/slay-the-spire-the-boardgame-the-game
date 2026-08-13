@@ -5,12 +5,14 @@ import {
   apply,
   chooseAscension,
   chooseCharacter,
+  chooseRelicRule,
   createRoom,
   createStore,
   findSeat,
   joinRoom,
   markDisconnected,
   removeSeat,
+  saveStore,
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
@@ -22,6 +24,7 @@ const JSON_HEADERS = {
 const MAX_BODY = 64 * 1024
 const MAX_ROOMS = 100
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000
+const RESUMABLE_ROOM_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const HEARTBEAT_MS = 30_000
 const MAX_BUFFERED_BYTES = 256 * 1024
 const MESSAGE_WINDOW_MS = 10_000
@@ -35,6 +38,7 @@ const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
 const MAX_PENDING_AUTH = 32
 const MAX_PENDING_AUTH_PER_IP = 4
+const STORE_SAVE_DELAY_MS = 1_000
 const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }]
 
 function send(response, status, body) {
@@ -70,8 +74,13 @@ export function createRoomServer({
   turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID,
   turnApiToken = process.env.CLOUDFLARE_TURN_API_TOKEN,
   fetchImpl = fetch,
+  storeFile,
+  maxUpgradesPerWindow = MAX_UPGRADES_PER_WINDOW,
+  saveDelayMs = STORE_SAVE_DELAY_MS,
+  saveStoreImpl = saveStore,
+  onSaveError = (error) => console.error('Room store save failed:', error),
 } = {}) {
-  const store = createStore()
+  const store = createStore({ file: storeFile })
   const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
@@ -82,8 +91,46 @@ export function createRoomServer({
   const voiceRates = new Map()
   const pendingAuth = new Map()
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY })
+  let saveTimer
+  let saveError = null
+  const minimumRetryMs = Math.max(saveDelayMs, 100)
+  let retryDelayMs = minimumRetryMs
+  const attemptSave = () => {
+    try {
+      saveStoreImpl(store)
+      saveError = null
+      retryDelayMs = minimumRetryMs
+      return true
+    } catch (error) {
+      saveError = error instanceof Error ? error : new Error(String(error))
+      try { onSaveError(saveError) } catch {}
+      return false
+    }
+  }
+  const queueSave = (delayMs = saveDelayMs) => {
+    if (!store.file || saveTimer) return
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined
+      if (!attemptSave()) {
+        const delay = retryDelayMs
+        retryDelayMs = Math.min(retryDelayMs * 2, 30_000)
+        queueSave(delay)
+      }
+    }, delayMs)
+    saveTimer.unref()
+  }
+  const flushSave = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = undefined
+    if (!attemptSave()) throw saveError
+  }
 
-  const touch = (room) => roomActivity.set(room.code, Date.now())
+  for (const [code, room] of store.rooms) roomActivity.set(code, room.lastActivityAt ?? Date.now())
+
+  const touch = (room) => {
+    room.lastActivityAt = Date.now()
+    roomActivity.set(room.code, room.lastActivityAt)
+  }
 
   function consume(map, key, windowMs, maximum, now = Date.now()) {
     const rate = map.get(key)
@@ -110,11 +157,14 @@ export function createRoomServer({
     for (const [key, rate] of seatRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) seatRates.delete(key)
     for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
     for (const [code, touchedAt] of roomActivity) {
-      if (now - touchedAt >= ROOM_TTL_MS) {
+      const room = store.rooms.get(code)
+      const ttl = room?.run || room?.campaignProgress?.finishedRunIds?.length > 0 ? RESUMABLE_ROOM_TTL_MS : ROOM_TTL_MS
+      if (now - touchedAt >= ttl) {
         for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
         store.rooms.delete(code)
         roomActivity.delete(code)
         roomOwners.delete(code)
+        queueSave()
       }
     }
   }
@@ -179,6 +229,7 @@ export function createRoomServer({
         try {
           const seat = joinRoom(room, { name: body.name, character: body.character, connected: false })
           touch(room)
+          queueSave()
           return send(response, 201, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
         } catch (error) {
           store.rooms.delete(room.code)
@@ -187,7 +238,7 @@ export function createRoomServer({
           throw error
         }
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|start|action|voice-ice))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|relic-rule|start|action|voice-ice))?$/)
       if (!match) return send(response, 404, { error: 'Not found' })
       const room = roomOrThrow(match[1])
       const operation = match[2]
@@ -219,7 +270,10 @@ export function createRoomServer({
         const beforeVersion = room.version
         const seat = joinRoom(room, { name: body.name, character: body.character, token, connected: live })
         touch(room)
-        if (room.version !== beforeVersion) publish(room)
+        if (room.version !== beforeVersion) {
+          queueSave()
+          publish(room)
+        }
         return send(response, 200, { token: seat.token, snapshot: snapshotFor(room, seat.token) })
       }
       const token = tokenOf(request)
@@ -233,6 +287,7 @@ export function createRoomServer({
       let changed = true
       let snapshot = null
       if (operation === 'character') snapshot = chooseCharacter(room, token, body.character)
+      else if (operation === 'relic-rule') snapshot = chooseRelicRule(room, token, body.enabled)
       else if (operation === 'ascension') {
         if (!Number.isInteger(body.ascension) || body.ascension < 0 || body.ascension > 13) {
           return send(response, 400, { error: 'Ascension must be an integer from 0 to 13' })
@@ -254,6 +309,7 @@ export function createRoomServer({
           roomActivity.delete(room.code)
           roomOwners.delete(room.code)
         }
+        queueSave()
         return send(response, 200, { ok: true })
       }
       else if (operation === 'start') {
@@ -270,6 +326,7 @@ export function createRoomServer({
       if (!snapshot) return send(response, 404, { error: 'Not found' })
       if (changed) {
         touch(room)
+        queueSave()
         publish(room)
       }
       return send(response, 200, snapshot)
@@ -287,7 +344,7 @@ export function createRoomServer({
       const source = sourceOf(request)
       const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
         || [...pendingAuth.values()].filter((pendingSource) => pendingSource === source).length >= MAX_PENDING_AUTH_PER_IP
-      if (tooManyPending || !consume(upgradeRates, source, CREATE_WINDOW_MS, MAX_UPGRADES_PER_WINDOW)) {
+      if (tooManyPending || !consume(upgradeRates, source, CREATE_WINDOW_MS, maxUpgradesPerWindow)) {
         socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n')
         return socket.destroy()
       }
@@ -350,6 +407,7 @@ export function createRoomServer({
           }
           if (!seat.connected) joinRoom(room, { token: message.token })
           touch(room)
+          queueSave()
           publish(room)
           return
         }
@@ -357,6 +415,7 @@ export function createRoomServer({
           const result = apply(room, client.token, message.action)
           if (result.changed) {
             touch(room)
+            queueSave()
             publish(room)
           }
         } else if (message.type === 'voice') {
@@ -402,6 +461,7 @@ export function createRoomServer({
       if (room) {
         markDisconnected(room, client.token)
         touch(room)
+        queueSave()
         publish(room)
       }
     })
@@ -420,9 +480,20 @@ export function createRoomServer({
   heartbeat.unref()
   const sweeper = setInterval(() => sweepRooms(), 60_000)
   sweeper.unref()
+  let closePromise
 
   return {
     store,
+    get saveError() { return saveError },
+    sweepRooms,
+    touch,
+    dropConnection(code, token) {
+      for (const [socket, client] of sockets) if (client.code === code && client.token === token) socket.terminate()
+    },
+    publishRoom(code) {
+      const room = store.rooms.get(code)
+      if (room) publish(room)
+    },
     server,
     listen(port = 8787, host = '127.0.0.1') {
       return new Promise((resolve, reject) => {
@@ -434,16 +505,25 @@ export function createRoomServer({
       })
     },
     close() {
+      if (closePromise) return closePromise
       clearInterval(heartbeat)
       clearInterval(sweeper)
-      for (const socket of wss.clients) socket.close()
-      return new Promise((resolve) => server.close(resolve))
+      const stopped = server.listening
+        ? new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+        : Promise.resolve()
+      const disconnected = Promise.all([...wss.clients].map((socket) => new Promise((resolve) => {
+        if (socket.readyState === socket.CLOSED) return resolve()
+        socket.once('close', resolve)
+        socket.terminate()
+      })))
+      closePromise = Promise.all([stopped, disconnected]).then(() => flushSave())
+      return closePromise
     },
   }
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const roomServer = createRoomServer()
+  const roomServer = createRoomServer({ storeFile: process.env.STS_ROOM_STORE ?? '.rooms/rooms.json' })
   const port = Number(process.env.PORT ?? 8787)
   await roomServer.listen(port, process.env.HOST ?? '127.0.0.1')
   console.log(`Room server listening on http://127.0.0.1:${port}`)
