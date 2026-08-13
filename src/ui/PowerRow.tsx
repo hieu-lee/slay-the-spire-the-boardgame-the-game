@@ -7,11 +7,13 @@ import { cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
+import { CardFace } from './CardFace.tsx'
+import { cardRulesText } from './Card.tsx'
 
 type PowerRowProps = { powers: CardInstance[] }
 
 /** The enlarged card or text fallback, and where to put it. */
-type Zoom = { uid: string; src: string; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
+type Zoom = { uid: string; src: string; def: CardDef; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
 
 const ZOOM_WIDTH = 190
 const ZOOM_HEIGHT = ZOOM_WIDTH * (4 / 3)
@@ -141,6 +143,7 @@ export function PowerRow({ powers }: PowerRowProps) {
     setZoom({
       uid: card.uid,
       src: cardImagePath(cardDef(card.defId), card.upgraded),
+      def: faceOf(cardDef(card.defId), card.upgraded),
       description,
       x,
       y,
@@ -212,7 +215,10 @@ export function PowerRow({ powers }: PowerRowProps) {
               role="tooltip"
               style={{ left: `${Math.round(zoom.x)}px`, top: `${Math.round(zoom.y)}px` }}
             >
-              {!zoom.loaded ? zoom.description : null}
+              <span className={zoom.loaded ? 'visually-hidden' : 'power__zoom-description'}>
+                {zoom.description}
+              </span>
+              <CardFace def={zoom.def} rules={cardRulesText(zoom.def)} className="power__zoom-card" />
               <img
                 key={zoom.src}
                 className="power__zoom-image"

@@ -421,7 +421,7 @@ try {
   assert(publishLockedFinale.ok, 'could not publish the locked Grand Finale fixture')
   const onlineFinale = b.getByRole('button', { name: /^Grand Finale,/ })
   await onlineFinale.waitFor()
-  const finaleLockedOnline = await onlineFinale.isDisabled()
+  const finaleLockedOnline = await onlineFinale.getAttribute('aria-disabled') === 'true'
   const hiddenDrawSnapshot = await snapshot(b)
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(boLive, { draw: [], miracles: 1 })
@@ -434,9 +434,9 @@ try {
   await b.waitForFunction(() => {
     const button = [...document.querySelectorAll('button')]
       .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
-    return button && !button.disabled
+    return button?.getAttribute('aria-disabled') === 'false'
   })
-  const finaleUnlockedOnline = await onlineFinale.isEnabled()
+  const finaleUnlockedOnline = await onlineFinale.getAttribute('aria-disabled') === 'false'
   await onlineFinale.click()
   await b.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -453,7 +453,7 @@ try {
   await b.waitForFunction(() => {
     const button = [...document.querySelectorAll('button')]
       .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
-    return button?.disabled && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
+    return button?.getAttribute('aria-disabled') === 'true' && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
   })
   const finaleClearedAfterRefill = await b.locator('.enemy--targeted').count() === 0
   check('online Grand Finale uses the public draw count without revealing the pile', () => {

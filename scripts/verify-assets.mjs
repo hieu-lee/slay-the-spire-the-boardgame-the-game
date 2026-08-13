@@ -10,7 +10,12 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import {
+  cardArtPath,
+  cardImagePath,
+  CARD_ART_ROOT,
+  CARD_ASSET_ROOT,
+} from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
@@ -25,6 +30,7 @@ const listing = (dir, extension) =>
   existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith(extension)) : []
 
 const cardRoot = join(publicRoot, 'assets/cards')
+const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
@@ -34,6 +40,9 @@ const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
 
 const cardFiles = listing(cardRoot, '.webp')
+const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
+const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
+  listing(join(cardArtRoot, owner), '.webp').map((file) => `${owner}/${file}`))
 const iconFiles = listing(iconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
@@ -51,6 +60,52 @@ const REQUIRED_ICONS = [
 ]
 
 suite('assets')
+
+check('every character card has exactly one committed illustration', () => {
+  const expected = Object.values(CARDS)
+    .filter((def) => CARD_ART_OWNERS.includes(def.owner))
+    .map((def) => `${def.owner}/${def.id}.webp`)
+    .sort()
+  // The bundled inventory already contains the pending Watcher batch. Keep its
+  // assets through branch composition, while still rejecting unknown IDs.
+  const indexed = new Set(cardIndex
+    .filter((entry) => CARD_ART_OWNERS.some((owner) => entry.tier.startsWith(`${owner}/`)))
+    .map((entry) => {
+      const owner = entry.tier.split('/')[0]
+      const slug = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '')
+      const id = entry.name === 'Strike' ? `strike_${owner}` : entry.name === 'Defend' ? `defend_${owner}` : slug
+      return `${owner}/${id}.webp`
+    }))
+  assertDeepEqual(expected.filter((file) => !cardArtFiles.includes(file)), [], 'live card art missing')
+  assertDeepEqual(cardArtFiles.filter((file) => !indexed.has(file)), [], 'unknown bundled card art')
+  assertEqual(cardArtFiles.length, 251, 'complete four-character illustration inventory')
+})
+
+check('committed card illustrations decode at the audited size and budget', () => {
+  const files = cardArtFiles.map((file) => join(cardArtRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect committed card illustrations')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded illustration count')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').slice(-2).join('/')
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    return width === 748 && height === 420 ? [] : [`${file} is ${width}x${height}`]
+  })
+  assertDeepEqual(faults, [], 'illustration dimensions')
+  const sizes = files.map((file) => statSync(file).size)
+  assert(Math.max(...sizes) <= 60 * 1024, 'a committed illustration exceeds 60 KiB')
+  assert(sizes.reduce((sum, bytes) => sum + bytes, 0) < 7 * 1024 * 1024, 'illustrations exceed 7 MiB')
+})
+
+check('committed card illustration paths are stable across upgrades', () => {
+  for (const def of Object.values(CARDS).filter((card) => CARD_ART_OWNERS.includes(card.owner))) {
+    const path = cardArtPath(def)
+    assertEqual(path, `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`)
+    assertEqual(cardArtPath(faceOf(def, true)), path, `${def.id} upgrade reuses its illustration`)
+  }
+})
 
 /** Slugs the sync script actually produced, so we only demand art it can fetch. */
 const indexedKeys = new Set(

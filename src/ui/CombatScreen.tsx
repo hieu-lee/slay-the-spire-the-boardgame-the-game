@@ -2825,6 +2825,7 @@ export function CombatScreen({
               <div className="distilled-choice__cards">
                 {distilled.cards.map((card) => (
                   <Card key={card.uid} card={card} cost={0} playable
+                    actionLabel="Play"
                     onClick={() => onAction
                       ? void onAction({ kind: 'chooseDistilledCard', cardUid: card.uid })
                       : onChange?.(chooseDistilledCard(state, viewerId, card.uid))} />
@@ -3290,6 +3291,7 @@ export function CombatScreen({
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
+              actionLabel="Play"
               cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer, card)}
               playable={
                 !usingCard &&

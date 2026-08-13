@@ -30,10 +30,15 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Card, relic and potion scans | a third-party card browser at `https://rustywolf.github.io/sts/` |
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
-| Combat stage, actor cutouts, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 
 The sync scripts keep those scans, rulebook icons, source-resolution working files, and
 extracted legacy enemy portraits out of version control.
+
+`public/assets/card-art/` contains one committed, text-free generated illustration for
+each character card. These are original OpenAI Imagegen restorations visually grounded
+in the corresponding locally synced illustration window; the UI supplies its own frame,
+title and rules text. Base and upgraded faces reuse the same illustration.
 
 `public/assets/combat/` contains the generated Act I combat stage and transparent actor
 cutouts for four characters and eleven Act I enemies. These are original AI-generated fan

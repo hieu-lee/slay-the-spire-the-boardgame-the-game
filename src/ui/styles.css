@@ -821,14 +821,17 @@ button:disabled {
 }
 
 .card__art {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
   display: block;
   width: 100%;
+  height: 100%;
+  object-fit: cover;
   border-radius: 6px;
 }
 
-.card:not(:disabled):hover {
+.card:not([aria-disabled="true"]):hover {
   transform: translateY(-8px);
 }
 
@@ -1526,7 +1529,7 @@ button:disabled {
 
 /* Lift with transform alone. Changing the margin re-flowed the whole hand on
    every hover, so the fan shuffled sideways as the pointer crossed it. */
-.hand .card:hover:not(:disabled),
+.hand .card:hover:not([aria-disabled="true"]),
 .hand .card:focus-visible {
   transform: translateY(-16px) scale(1.07);
   z-index: 5;
@@ -1816,20 +1819,164 @@ button:disabled {
   padding: 0.4rem 0.9rem;
 }
 
-/* A name plate behind the art, shown when a card has no scan in the source set. */
-.card__fallback {
+/* Complete repo-native face underneath the optional publisher scan. */
+.card-face {
+  --card-frame: #81554b;
+  --card-panel: #30211f;
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.3rem;
-  text-align: center;
-  font-size: 0.7rem;
-  color: var(--ink-dim);
-  background: var(--bg-raised);
-  border-radius: 6px;
   z-index: 0;
+  display: grid;
+  grid-template-rows: 13% 35% 8% 1fr;
+  overflow: hidden;
+  padding: 4% 5% 5%;
+  color: #f7edd7;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card-frame), #fff 12%), var(--card-frame) 35%, #17100f);
+  border: 2px solid color-mix(in srgb, var(--card-frame), #e8d8b4 30%);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.08);
+  font-family: Georgia, 'Times New Roman', serif;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+.card-face--ironclad { --card-frame: #8d322c; --card-panel: #351917; }
+.card-face--silent { --card-frame: #397245; --card-panel: #172a1b; }
+.card-face--defect { --card-frame: #366d88; --card-panel: #14252f; }
+.card-face--watcher { --card-frame: #755085; --card-panel: #291b30; }
+.card-face--rare { --card-frame: #9a7731; }
+
+.card-face__title {
+  align-self: center;
+  display: -webkit-box;
+  overflow: hidden;
+  padding-inline: 13%;
+  font-size: clamp(0.42rem, calc(var(--card-width) * 0.072), 0.68rem);
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.card-face__cost {
+  position: absolute;
+  z-index: 1;
+  top: 2%;
+  left: 2%;
+  display: grid;
+  width: 17%;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid #8ad8f7;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #44a8d5, #103b66 72%);
+  font-weight: 800;
+}
+
+.card > .card-face .card-face__cost { display: none; }
+
+.card-face__illustration {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1px solid rgb(238 226 194 / 0.45);
+  border-radius: 42% 42% 8% 8% / 14% 14% 8% 8%;
+}
+
+.card-face__illustration--empty {
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--card-frame), #fff 18%), var(--card-panel));
+}
+
+.card-face__type {
+  align-self: center;
+  margin-inline: 8%;
+  padding-block: 1px;
+  color: #f3e8ce;
+  background: rgb(18 15 13 / 0.62);
+  border-block: 1px solid rgb(238 226 194 / 0.24);
+  font-size: clamp(0.38rem, calc(var(--card-width) * 0.055), 0.58rem);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.card-face__rules {
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  padding: 4%;
+  background: linear-gradient(rgb(255 255 255 / 0.05), transparent), var(--card-panel);
+  font-family: 'Trebuchet MS', system-ui, sans-serif;
+  font-size: clamp(0.32rem, calc(var(--card-width) * 0.043), 0.49rem);
+  line-height: 1.15;
+  text-shadow: none;
+}
+
+/* Portaled inspectors live above the board, so the hand's scroll container
+   cannot clip the readable face. The compact card remains the play target. */
+.card__inspection {
+  --card-width: min(280px, calc(100vw - 32px), calc((100vh - 76px) * 744 / 1039));
+  position: fixed;
+  inset: 50% auto auto 50%;
+  width: var(--card-width);
+  aspect-ratio: 744 / 1039;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.8);
+}
+
+.card__inspection:not(.card__inspection--pinned) { pointer-events: none; }
+
+.card__inspection-dialog {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.card__inspection-dialog::backdrop {
+  background: rgb(0 0 0 / 0.58);
+}
+
+.card__inspection--pinned {
+  top: calc(50% - 30px);
+  overflow: visible;
+}
+
+.card__inspection .card-face__rules {
+  overflow: auto;
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.card__inspection-actions {
+  position: absolute;
+  inset: 100% 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  padding-top: 0.65rem;
+}
+
+.card__inspection-actions button {
+  min-width: 5.5rem;
+  min-height: 44px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--bg-raised);
 }
 
 /* ---------- map paths ---------- */
@@ -2339,9 +2486,13 @@ button:disabled {
   border-radius: 6px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.75);
   pointer-events: none;
+  overflow: hidden;
 }
 
 .power__zoom-image {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -2349,17 +2500,27 @@ button:disabled {
   border-radius: inherit;
 }
 
+.power__zoom-card {
+  --card-width: 190px;
+}
+
 .power__zoom--fallback {
-  box-sizing: border-box;
-  display: block;
   min-height: 253px;
-  padding: 0.75rem;
-  color: #f0ddb0;
-  background: rgb(12 17 22 / 0.98);
-  border: 1px solid #d4b65f;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  text-shadow: 0 1px 2px #000;
+}
+
+.power__zoom-description {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 2;
+  max-height: 44%;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgb(232 200 119 / 0.5);
+  border-radius: 4px;
+  color: #f8ecd3;
+  background: rgb(22 15 13 / 0.94);
+  font: 0.82rem/1.3 system-ui, sans-serif;
+  text-shadow: none;
 }
 
 /* A composited opacity fade rather than an animated box-shadow: a four-player
@@ -3048,7 +3209,7 @@ button:disabled {
   filter: drop-shadow(0 0.45rem 0.4rem rgb(0 0 0 / 0.72));
 }
 
-.hand .card:hover:not(:disabled),
+.hand .card:hover:not([aria-disabled="true"]),
 .hand .card:focus-visible,
 .hand .card--selected {
   border-color: #62e6ff;
@@ -3058,6 +3219,11 @@ button:disabled {
 @media (max-width: 720px), (max-height: 700px) {
   :root {
     --card-width: clamp(76px, 13vh, 92px);
+  }
+
+  .card-face__rules {
+    padding: 2.5%;
+    line-height: 1.05;
   }
 
   .party-rail__player--viewer > span {

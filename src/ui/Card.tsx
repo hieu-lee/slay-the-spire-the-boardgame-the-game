@@ -1,9 +1,12 @@
+import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
+import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
+import { CardFace } from './CardFace.tsx'
 import { Icon } from './Icon.tsx'
 import type { CardInstance } from '../game/types.ts'
 import type { Trigger } from '../game/triggers.ts'
@@ -19,15 +22,16 @@ type CardProps = {
   picked?: boolean
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
+  /** Commit label in the touch inspector. Non-play surfaces keep the neutral default. */
+  actionLabel?: string
   onClick?: (card: CardInstance) => void
 }
 
 /**
  * What a screen reader announces for the card.
  *
- * The face is a scan, so the printed numbers are an IMAGE and are never read
- * out. This string carries the clauses that change HOW the card is played —
- * its effects, reach, and whether playing it spends the card for good.
+ * The optional publisher face is an image and the native face is deliberately
+ * terse. This string carries the exact play clauses for assistive technology.
  */
 const COUNT_LABEL: Record<CountOf, string> = {
   orbs: 'charged orb',
@@ -274,15 +278,8 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
   }
 }
 
-function accessibleName(def: CardDef, cost = def.cost): string {
+export function cardRulesText(def: CardDef): string {
   return [
-    def.name,
-    // "cost —" reads as a dangling "cost" once a screen reader drops the dash
-    // at its default punctuation setting. An unplayable card and one you merely
-    // cannot afford are both greyed out, so the name is the only thing that can
-    // tell them apart.
-    def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`,
-    def.type,
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
     // safe from it, which is the opposite of the rule.
@@ -325,6 +322,16 @@ function accessibleName(def: CardDef, cost = def.cost): string {
     .join(', ')
 }
 
+export function cardPlayText(def: CardDef, cost = def.cost): string {
+  return [def.unplayable ? 'unplayable' : `cost ${costLabel(def, cost)}`, cardRulesText(def)]
+    .filter(Boolean).join(', ')
+}
+
+export function cardAccessibleName(def: CardDef, cost = def.cost): string {
+  const [playability, ...rules] = cardPlayText(def, cost).split(', ')
+  return [def.name, playability, def.type, ...rules].filter(Boolean).join(', ')
+}
+
 /** The energy cost badge, or nothing at all for an unplayable card (p.24). */
 function costLabel(def: CardDef, cost = def.cost): string {
   if (def.unplayable) return '—'
@@ -338,9 +345,42 @@ export function Card({
   selected = false,
   picked = false,
   fan = 0,
+  actionLabel = 'Select',
   onClick,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
+  const [inspection, setInspection] = useState<'preview' | 'pinned' | null>(null)
+  const cardButton = useRef<HTMLButtonElement>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
+  const suppressNextFocusPreview = useRef(false)
+  const touchStartedOpen = useRef(false)
+  const lastPointerType = useRef('')
+  const showInspection = () => setInspection('preview')
+  const hidePreview = () => setInspection((open) => open === 'preview' ? null : open)
+  const previewHost = cardButton.current?.closest<HTMLDialogElement>('dialog[open]') ?? document.body
+  useEffect(() => {
+    if (inspection !== 'pinned' || !dialog.current) return undefined
+    const modal = dialog.current
+    modal.showModal()
+    modal.querySelector<HTMLButtonElement>('button')?.focus()
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const controls = [...modal.querySelectorAll<HTMLElement>('button')]
+      if (controls.length === 0) return
+      const edge = event.shiftKey ? controls[0] : controls.at(-1)
+      if (document.activeElement === edge) {
+        event.preventDefault()
+        controls[event.shiftKey ? controls.length - 1 : 0]?.focus()
+      }
+    }
+    modal.addEventListener('keydown', trapFocus)
+    return () => {
+      modal.removeEventListener('keydown', trapFocus)
+      if (modal.open) modal.close()
+      suppressNextFocusPreview.current = true
+      cardButton.current?.focus()
+    }
+  }, [inspection])
   const className = [
     'card',
     playable ? '' : 'card--unplayable',
@@ -351,7 +391,9 @@ export function Card({
     .join(' ')
 
   return (
+    <>
     <button
+      ref={cardButton}
       type="button"
       className={className}
       style={{
@@ -362,9 +404,38 @@ export function Card({
         '--fan-angle': `${fan * 11}deg`,
         '--fan-lift': `${Math.abs(fan) * 14}px`,
       } as React.CSSProperties}
-      disabled={!playable}
-      onClick={() => onClick?.(card)}
-      aria-label={accessibleName(def, cost)}
+      aria-disabled={!playable}
+      onMouseEnter={showInspection}
+      onMouseLeave={hidePreview}
+      onFocus={() => {
+        if (suppressNextFocusPreview.current) suppressNextFocusPreview.current = false
+        else showInspection()
+      }}
+      onBlur={hidePreview}
+      onKeyDown={(event) => {
+        lastPointerType.current = 'keyboard'
+        if (event.key === 'Escape') setInspection(null)
+      }}
+      onPointerDown={(event) => {
+        lastPointerType.current = event.pointerType
+        touchStartedOpen.current = inspection !== null
+      }}
+      onClick={(event) => {
+        if (!playable) {
+          event.preventDefault()
+          setInspection(lastPointerType.current === 'touch' ? 'pinned' : 'preview')
+          return
+        }
+        // A first touch opens a pinned inspector. It has explicit Close and
+        // commit actions, so dismissing it never hits the board underneath.
+        if (lastPointerType.current === 'touch' && !touchStartedOpen.current) {
+          setInspection('pinned')
+          return
+        }
+        setInspection(null)
+        onClick?.(card)
+      }}
+      aria-label={cardAccessibleName(def, cost)}
       aria-pressed={selected || picked}
       title={def.name}
     >
@@ -373,15 +444,14 @@ export function Card({
         src={cardImagePath(def, card.upgraded)}
         alt=""
         loading="lazy"
+        onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
         onError={(event) => {
           // Not every card has a scan in the source set (Daze, for one). Fall
           // back to the card frame rather than showing a broken image.
           event.currentTarget.style.visibility = 'hidden'
         }}
       />
-      <span className="card__fallback" aria-hidden="true">
-        {def.name}
-      </span>
+      <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
         // `accessibleName` already says "affects a whole row" — announced here as
@@ -394,5 +464,46 @@ export function Card({
         {costLabel(def, cost)}
       </span>
     </button>
+    {inspection === 'preview'
+      ? createPortal(
+          <span className="card__inspection" role="tooltip">
+            <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
+          </span>,
+          previewHost,
+        )
+      : inspection === 'pinned'
+        ? createPortal(
+            <dialog
+              ref={dialog}
+              className="card__inspection-dialog"
+              aria-label={`Inspect ${def.name}`}
+              onCancel={() => { suppressNextFocusPreview.current = true; setInspection(null) }}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  suppressNextFocusPreview.current = true
+                  setInspection(null)
+                }
+              }}
+            >
+              <span
+                className="card__inspection card__inspection--pinned"
+              >
+                <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
+              <span className="card__inspection-actions">
+                <button type="button" onClick={() => { suppressNextFocusPreview.current = true; setInspection(null) }}>Close</button>
+                {playable ? <button type="button" onClick={() => {
+                  setInspection(null)
+                  const source = cardButton.current
+                  if (source?.isConnected && source.getAttribute('aria-disabled') !== 'true' && !source.closest('[inert]')) {
+                    onClick?.(card)
+                  }
+                }}>{actionLabel}</button> : null}
+              </span>
+              </span>
+            </dialog>,
+            document.body,
+          )
+        : null}
+    </>
   )
 }

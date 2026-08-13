@@ -2,7 +2,7 @@
 // pass proved otherwise: forcing every die to show a 1, or filing every rare
 // card under the wrong directory, both went unnoticed.
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
-import { tierOf, cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { healthBand, pendingUiSurvivesContext, strikeClass } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
@@ -67,6 +67,14 @@ check('an upgraded face resolves to its own image', () => {
 check('the upgraded name suffix never leaks into the file name twice', () => {
   const path = cardImagePath(faceOf(CARDS.bash, true), true)
   assertEqual((path.match(/\+/g) ?? []).length, 1, 'exactly one + marker')
+})
+
+check('repo-native card art is keyed by stable card ID, not printed face name', () => {
+  const base = cardArtPath(CARDS.bash)
+  const upgraded = cardArtPath(faceOf(CARDS.bash, true))
+  assertEqual(base, `${CARD_ART_ROOT}/ironclad/bash.webp`)
+  assertEqual(upgraded, base, 'base and upgrade share one text-free illustration')
+  assertEqual(cardArtPath(CARDS.strike_silent), `${CARD_ART_ROOT}/silent/strike_silent.webp`)
 })
 
 

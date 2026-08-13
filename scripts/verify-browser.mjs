@@ -80,8 +80,9 @@ const readRun = () => page.evaluate(() => window.__STS_DEBUG__.getRun())
 const readState = () => page.evaluate(() => window.__STS_DEBUG__.getState())
 
 async function artWidth(card) {
-  if (!artSynced) return 0
-  const image = card.locator('img.card__art')
+  const image = card.locator(artSynced
+    ? ':scope > img.card__art'
+    : ':scope > .card-face > img.card-face__illustration')
   await image.waitFor()
   await page.waitForFunction((img) => img.complete && img.naturalWidth > 0, await image.elementHandle())
   return image.evaluate((img) => img.naturalWidth)
@@ -168,7 +169,71 @@ const totalEnemyHp = (state) => state.enemies.reduce((sum, enemy) => sum + enemy
 // would not damage anything and the check would be vacuous.
 const attackIndex = beforePlay.players[0].hand.findIndex((card) => card.defId.startsWith('strike'))
 assert(attackIndex >= 0, 'expected at least one Strike in the opening hand')
-await page.locator('.hand .card').nth(attackIndex).click()
+const attackCard = page.locator('.hand .card').nth(attackIndex)
+await page.setViewportSize({ width: 900, height: 620 })
+await attackCard.hover()
+const cardInspection = await page.locator('.card__inspection').evaluate((zoom) => {
+  const box = zoom.getBoundingClientRect()
+  const rules = zoom.querySelector('.card-face__rules')
+  return {
+    fontSize: rules ? Number.parseFloat(getComputedStyle(rules).fontSize) : 0,
+    text: rules?.textContent ?? '',
+    inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+  }
+})
+check('hovering or focusing a native card opens a readable unclipped inspection face', () => {
+  assert(cardInspection.inViewport, 'the inspection face escaped the viewport')
+  assert(cardInspection.fontSize >= 13, `inspection rules are too small: ${cardInspection.fontSize}px`)
+  assert(cardInspection.text.length > 0, 'inspection rules are missing')
+})
+await shot('02a-card-inspection-desktop')
+await page.mouse.move(0, 0)
+await page.waitForFunction(() => !document.querySelector('.card__inspection'))
+
+// Touch has no hover. The first tap inspects without playing; the second tap
+// plays, matching how a physical card is picked up and then committed.
+const touchTap = (card) => card.evaluate((button) => {
+  button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
+  button.click()
+})
+await page.setViewportSize({ width: 390, height: 844 })
+await touchTap(attackCard)
+const afterInspectTap = await readState()
+const mobileInspection = await page.getByRole('dialog', { name: /^Inspect / }).evaluate((zoom) => {
+  const box = zoom.getBoundingClientRect()
+  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+})
+check('the first touch tap inspects a card without playing it', () => {
+  assertEqual(afterInspectTap.players[0].hand.length, beforePlay.players[0].hand.length)
+  assert(mobileInspection, 'the touch inspection face escaped the mobile viewport')
+})
+assertEqual(await page.getByRole('dialog', { name: /^Inspect / }).count(), 1, 'touch inspection dialog')
+await shot('02b-card-inspection-mobile')
+await page.getByRole('button', { name: 'Close' }).click()
+await page.mouse.move(0, 0)
+await page.waitForFunction(() => !document.querySelector('.card__inspection'))
+const afterDismissTap = await readState()
+check('closing touch inspection consumes the tap without playing or clicking through', () => {
+  assertEqual(afterDismissTap.players[0].hand.length, beforePlay.players[0].hand.length)
+  assertEqual(afterDismissTap.phase, beforePlay.phase)
+})
+await touchTap(attackCard)
+const inspectorFocus = await page.evaluate(() => ({
+  inDialog: document.activeElement?.closest('dialog.card__inspection-dialog') !== null,
+  backgroundInert: document.querySelector('.card__inspection-dialog')?.matches(':modal') ?? false,
+  color: getComputedStyle(document.querySelector('.card__inspection-actions button')).color,
+}))
+await page.keyboard.press('Tab')
+await page.keyboard.press('Tab')
+const focusStayedInDialog = await page.evaluate(() => document.activeElement?.closest('dialog.card__inspection-dialog') !== null)
+check('the touch inspector is a focus-containing native modal', () => {
+  assert(inspectorFocus.inDialog, 'focus did not move into the inspector')
+  assert(inspectorFocus.backgroundInert, 'the inspector is not in the native modal top layer')
+  assertEqual(inspectorFocus.color, 'rgb(236, 229, 216)', 'inspector action foreground')
+  assert(focusStayedInDialog, 'Tab escaped the inspector')
+})
+await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.locator('.enemy').first().click()
 const afterPlay = await readState()
 
@@ -183,10 +248,56 @@ check('clicking a card then an enemy actually plays it', () => {
 })
 await shot('03-after-card-played')
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].energy = 0
+  debug.setRun(run)
+})
+const disabledCard = page.locator('.hand .card[aria-disabled="true"]').first()
+await disabledCard.focus()
+const disabledKeyboardInspection = await page.locator('.card__inspection').count()
+await page.keyboard.press('Escape')
+await touchTap(disabledCard)
+const beforeDisabledDismiss = await readState()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.waitForFunction((card) => document.activeElement === card, await disabledCard.elementHandle())
+const focusRestored = await disabledCard.evaluate((card) => document.activeElement === card)
+const afterDisabledDismiss = await readState()
+check('an unplayable card remains inspectable by keyboard and touch without executing', () => {
+  assertEqual(disabledKeyboardInspection, 1, 'keyboard inspection for an unplayable card')
+  assertEqual(afterDisabledDismiss.players[0].hand.length, beforeDisabledDismiss.players[0].hand.length)
+  assertEqual(afterDisabledDismiss.players[0].energy, 0)
+  assert(focusRestored, 'closing inspection did not restore focus to the card')
+})
+
+await page.setViewportSize({ width: 720, height: 360 })
+await touchTap(disabledCard)
+const shortInspector = await page.getByRole('dialog', { name: /^Inspect / }).evaluate((modal) => {
+  const card = modal.querySelector('.card__inspection')?.getBoundingClientRect()
+  const actions = modal.querySelector('.card__inspection-actions')?.getBoundingClientRect()
+  return card && actions ? card.top >= 0 && actions.bottom <= innerHeight : false
+})
+check('the touch inspector and its actions fit a short landscape viewport', () => {
+  assert(shortInspector, 'the inspector controls are clipped at 720x360')
+})
+await page.getByRole('button', { name: 'Close' }).click()
+await page.setViewportSize({ width: 1440, height: 900 })
+
+await page.setViewportSize({ width: 390, height: 844 })
+await touchTap(disabledCard)
+await page.mouse.click(5, 5)
+await page.waitForFunction((card) => document.activeElement === card, await disabledCard.elementHandle())
+const backdropFocusRestored = await disabledCard.evaluate((card) => document.activeElement === card)
+check('backdrop dismissal restores focus without clicking through', () => {
+  assert(backdropFocusRestored, 'backdrop dismissal did not restore focus to the card')
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
 const artStatus = await page.evaluate(() =>
-  [...document.querySelectorAll('.card__art')].map((img) => ({
+  [...document.querySelectorAll('.card > .card-face > .card-face__illustration')].map((img) => ({
     src: img.getAttribute('src'),
     ok: img.complete && img.naturalWidth > 0,
   })),
@@ -207,16 +318,77 @@ check('every enemy portrait on screen actually loaded', () => {
   assert(broken.length === 0, `broken enemy art: ${broken.map((b) => b.src).join(', ')}`)
 })
 
-check('every card image in hand actually loaded', () => {
+check('every repo-native card illustration in hand actually loaded', () => {
   assert(artStatus.length > 0, 'expected cards to be rendered')
-  if (!artSynced) {
-    // Artwork is not committed (see ATTRIBUTION.md), so a fresh clone has none.
-    // The cards still render; only the images are absent.
-    return
-  }
   const broken = artStatus.filter((entry) => !entry.ok)
   assert(broken.length === 0, `broken card art: ${broken.map((b) => b.src).join(', ')}`)
+  assert(artStatus.every((entry) => entry.src?.startsWith('/assets/card-art/')),
+    `a native face used the wrong asset root: ${artStatus.map((entry) => entry.src).join(', ')}`)
 })
+
+const nativeFace = await page.locator('.hand .card').first().evaluate((card) => {
+  const scan = card.querySelector('.card__art')
+  const illustration = card.querySelector(':scope > .card-face > .card-face__illustration')
+  return {
+    scanHidden: scan instanceof HTMLElement && getComputedStyle(scan).visibility === 'hidden',
+    illustrationWidth: illustration instanceof HTMLImageElement ? illustration.naturalWidth : 0,
+    title: card.querySelector('.card-face__title')?.textContent ?? '',
+    type: card.querySelector('.card-face__type')?.textContent ?? '',
+    rules: card.querySelector('.card-face__rules')?.textContent ?? '',
+  }
+})
+check('a clean clone renders a complete native card face when its optional scan is missing', () => {
+  if (artSynced) return
+  assert(nativeFace.scanHidden, 'the missing optional scan should reveal the native face')
+  assertEqual(nativeFace.illustrationWidth, 748, 'native illustration width')
+  assert(nativeFace.title.length > 0, 'native face title is missing')
+  assert(/attack|skill|power/i.test(nativeFace.type), `native face type is missing: ${nativeFace.type}`)
+  assert(nativeFace.rules.length > 0, 'native face rules are missing')
+})
+
+const originalViewport = page.viewportSize()
+const nativeFaceOverflow = []
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 900, height: 620 },
+  { width: 390, height: 844 },
+]) {
+  await page.setViewportSize(viewport)
+  nativeFaceOverflow.push(await page.locator('.hand .card-face').first().evaluate(
+    async (face, size) => {
+      const { CARDS: definitions, faceOf } = await import('/src/game/cards.ts')
+      const { cardRulesText } = await import('/src/ui/Card.tsx')
+      const title = face.querySelector('.card-face__title')
+      const rules = face.querySelector('.card-face__rules')
+      const original = { title: title.textContent, rules: rules.textContent }
+      const clippedTitles = []
+      const clippedRules = []
+      for (const def of Object.values(definitions)) {
+        if (!['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner)) continue
+        for (const upgraded of [false, true]) {
+          const shown = faceOf(def, upgraded)
+          title.textContent = shown.name
+          rules.textContent = cardRulesText(shown)
+          const label = `${shown.name}${upgraded ? '+' : ''}`
+          if (title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1) clippedTitles.push(label)
+          if (rules.scrollHeight > rules.clientHeight + 1 || rules.scrollWidth > rules.clientWidth + 1) clippedRules.push(label)
+        }
+      }
+      title.textContent = original.title
+      rules.textContent = original.rules
+      return { size, clippedTitles, clippedRules, lineClamp: getComputedStyle(title).webkitLineClamp }
+    },
+    viewport,
+  ))
+}
+check('every base and upgraded character face fits at desktop, short-height, and mobile sizes', () => {
+  for (const probe of nativeFaceOverflow) {
+    assertEqual(probe.lineClamp, '2')
+    assertDeepEqual(probe.clippedTitles, [], `title clipping at ${probe.size.width}x${probe.size.height}`)
+    assertDeepEqual(probe.clippedRules, [], `rules clipping at ${probe.size.width}x${probe.size.height}`)
+  }
+})
+if (originalViewport) await page.setViewportSize(originalViewport)
 
 await page.getByRole('button', { name: 'End turn' }).click()
 const beforeDiscard = await readState()
@@ -306,7 +478,7 @@ async function playOutCombat(limit = 60) {
     // Player turn: swing with whatever is affordable, then end the turn.
     const attack = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.hand .card')]
-      const index = cards.findIndex((card) => !card.disabled)
+      const index = cards.findIndex((card) => card.getAttribute('aria-disabled') !== 'true')
       return index
     })
     if (attack >= 0) {
@@ -543,6 +715,14 @@ check('mobile reward cards stay readable inside their own horizontal tray', () =
   )
 })
 await shot('05eb-card-rewards-mobile')
+const touchReward = page.locator('.reward-screen__player').first().locator('.card').first()
+await touchTap(touchReward)
+const rewardInspectorActions = await page.getByRole('dialog', { name: /^Inspect / })
+  .locator('.card__inspection-actions button').allTextContents()
+check('touch reward inspection uses a neutral commit label', () => {
+  assertDeepEqual(rewardInspectorActions, ['Close', 'Select'])
+})
+await page.getByRole('button', { name: 'Close', exact: true }).click()
 await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = element.scrollHeight })
 const mobileCollectVisible = await page.getByRole('button', { name: 'Everyone must choose' }).evaluate((button) => {
   const box = button.getBoundingClientRect()
@@ -2166,10 +2346,17 @@ const toolsDialog = page.getByRole('dialog', { name: /Tools of the Trade — dis
 await toolsDialog.waitFor()
 const toolsDialogOpen = await toolsDialog.getAttribute('open')
 const toolsDialogCards = await toolsDialog.getByRole('button').count()
+await toolsDialog.getByRole('button', { name: /^Tactician/ }).hover()
+const toolsInspectionVisible = await toolsDialog.locator('.card__inspection').evaluate((preview) => {
+  const box = preview.getBoundingClientRect()
+  return getComputedStyle(preview).visibility === 'visible' && box.width > 0 && box.height > 0
+})
 check('Tools of the Trade presents a focused private discard choice', () => {
   assertEqual(toolsDialogOpen, '')
   assertEqual(toolsDialogCards, 2)
+  assert(toolsInspectionVisible, 'card inspection rendered behind the native choice modal')
 })
+await page.mouse.move(0, 0)
 await shot('06zlb-tools-of-the-trade-discard')
 await toolsDialog.getByRole('button', { name: /^Tactician/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
@@ -3296,7 +3483,7 @@ await page.evaluate((baseline) => {
 }, colorlessBatch1Restore)
 const reinforcedBodyCard = page.getByRole('button', { name: /^Reinforced Body, cost X,/ })
 const reinforcedBodyLabel = await reinforcedBodyCard.getAttribute('aria-label')
-const reinforcedBodyDisabled = await reinforcedBodyCard.isDisabled()
+const reinforcedBodyDisabled = await reinforcedBodyCard.getAttribute('aria-disabled') === 'true'
 check('base Reinforced Body explains and enforces that X cannot be zero', () => {
   assert(reinforcedBodyLabel.includes('must spend at least 1 Energy'), reinforcedBodyLabel)
   assert(reinforcedBodyDisabled, 'Reinforced Body should be disabled at zero Energy')
@@ -3308,7 +3495,7 @@ await page.evaluate(() => {
   run.combat.players[0].energy = 3
   debug.setRun(run)
 })
-await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Reinforced Body,"]')?.disabled)
+await page.waitForFunction(() => document.querySelector('.hand .card[aria-label^="Reinforced Body,"]')?.getAttribute('aria-disabled') === 'false')
 await reinforcedBodyCard.click()
 await page.getByText('Choose Energy for Reinforced Body').waitFor()
 const reinforcedBodySpenders = await page.locator('.prompt button').allTextContents()
@@ -4032,7 +4219,7 @@ const secondWindLabel = await secondWindCard.getAttribute('aria-label')
 const sentinelLabel = await page.getByRole('button', { name: /^Sentinel,/ }).getAttribute('aria-label')
 const dazeFallback = page.getByTitle('Daze')
 const dazeFallbackBox = await dazeFallback.boundingBox()
-const dazeFallbackLayer = await dazeFallback.locator('.card__fallback').evaluate((fallback) =>
+const dazeFallbackLayer = await dazeFallback.locator(':scope > .card__fallback').evaluate((fallback) =>
   getComputedStyle(fallback).zIndex)
 assert(dazeFallbackBox?.height > 100, `Daze collapsed to ${dazeFallbackBox?.height ?? 0}px without scan art`)
 assertEqual(dazeFallbackLayer, '0', 'Daze fallback is layered behind its card')
@@ -4242,7 +4429,7 @@ const clashCard = page.getByRole('button', { name: /^Clash,/ })
 const clashPlusCard = page.getByRole('button', { name: /^Clash\+,/ })
 await Promise.all([clashCard.waitFor(), clashPlusCard.waitFor()])
 const clashLabel = await clashCard.getAttribute('aria-label')
-assert(await clashCard.isDisabled(), 'Clash should be disabled while a Skill remains in hand')
+assert(await clashCard.getAttribute('aria-disabled') === 'true', 'Clash should be disabled while a Skill remains in hand')
 await shot('06zs-clash-restricted-hd-cards')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -4250,7 +4437,7 @@ await page.evaluate(() => {
   run.combat.players[0].hand = run.combat.players[0].hand.filter((card) => card.defId !== 'defend_ironclad')
   debug.setRun(run)
 })
-await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Clash,"]')?.disabled)
+await page.waitForFunction(() => document.querySelector('.hand .card[aria-label^="Clash,"]')?.getAttribute('aria-disabled') === 'false')
 await clashCard.click()
 await page.locator('.enemy--targeted:not(:disabled)').click()
 await clashPlusCard.click()
@@ -4352,7 +4539,7 @@ const bloodPlusCard = page.getByRole('button', { name: /^Blood for Blood\+,/ })
 await Promise.all([bloodCard.waitFor(), bloodPlusCard.waitFor()])
 const bloodLabel = await bloodCard.getAttribute('aria-label')
 const bloodPlusLabel = await bloodPlusCard.getAttribute('aria-label')
-assert(await bloodCard.isDisabled(), 'Blood for Blood should cost 3 before HP loss')
+assert(await bloodCard.getAttribute('aria-disabled') === 'true', 'Blood for Blood should cost 3 before HP loss')
 await shot('06zy-blood-for-blood-hd-cards')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -4360,7 +4547,7 @@ await page.evaluate(() => {
   Object.assign(run.combat.players[0], { lostHpThisCombat: true, energy: 1 })
   debug.setRun(run)
 })
-await page.waitForFunction(() => !document.querySelector('.hand .card[aria-label^="Blood for Blood,"]')?.disabled)
+await page.waitForFunction(() => document.querySelector('.hand .card[aria-label^="Blood for Blood,"]')?.getAttribute('aria-disabled') === 'false')
 await bloodCard.click()
 await page.locator('.enemy--targeted:not(:disabled)').click()
 await bloodPlusCard.click()
@@ -4631,7 +4818,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const finaleBeforeDraw = page.getByRole('button', { name: /^Grand Finale\+,/ })
-const finaleDisabledBeforeDraw = await finaleBeforeDraw.isDisabled()
+const finaleDisabledBeforeDraw = await finaleBeforeDraw.getAttribute('aria-disabled') === 'true'
 const finaleLabelBeforeDraw = await finaleBeforeDraw.getAttribute('aria-label')
 check('Grand Finale+ is disabled and explains its empty-draw requirement', () => {
   assert(finaleDisabledBeforeDraw, 'Grand Finale should be disabled with cards in draw')
@@ -4640,7 +4827,7 @@ check('Grand Finale+ is disabled and explains its empty-draw requirement', () =>
 await page.getByRole('button', { name: /^Adrenaline\+,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].draw.length === 0)
 const afterAdrenaline = await readState()
-const finaleEnabledAfterDraw = !(await page.getByRole('button', { name: /^Grand Finale\+,/ }).isDisabled())
+const finaleEnabledAfterDraw = await page.getByRole('button', { name: /^Grand Finale\+,/ }).getAttribute('aria-disabled') === 'false'
 check('Adrenaline+ gains 2 Energy, draws 2, and unlocks Grand Finale+', () => {
   assertEqual(afterAdrenaline.players[0].energy, 2)
   assertEqual(afterAdrenaline.players[0].hand.length, 5)
@@ -5816,10 +6003,13 @@ check('a lethal Storm skips later overflow Shiv choices', () => {
   assert(postStormShivReady)
   assertEqual(skippedPostLethalStormShiv, 0)
 })
+const postStormShivState = await readState()
 await shot('07zi-defect-storm-skips-later-shiv')
-await page.evaluate(() => {
+await page.evaluate(({ baseline, combat }) => {
   const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
+  // A won combat folds into the run asynchronously; restore its exact combat
+  // snapshot inside the saved run shell instead of racing that cleanup.
+  const run = { ...structuredClone(baseline), phase: 'combat', combat }
   const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', log: [] })
   Object.assign(actor, {
@@ -5841,7 +6031,7 @@ await page.evaluate(() => {
     })
   }
   debug.setRun(run)
-})
+}, { baseline: runBeforeStorm, combat: postStormShivState })
 await page.getByRole('button', { name: 'Start turn 6' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const postShivStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
@@ -6448,11 +6638,11 @@ const emptyEvoke = await page.evaluate(async () => {
   me.energy = 3
   debug.setRun(run)
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  const dualDisabled = document.querySelector('.hand .card')?.disabled ?? false
+  const dualDisabled = document.querySelector('.hand .card')?.getAttribute('aria-disabled') === 'true'
   me.hand = [{ uid: 'solo-recursion', defId: 'recursion', upgraded: false }]
   debug.setRun(structuredClone(run))
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  const recursionDisabled = document.querySelector('.hand .card')?.disabled ?? false
+  const recursionDisabled = document.querySelector('.hand .card')?.getAttribute('aria-disabled') === 'true'
   me.hand = [{ uid: 'solo-chaos', defId: 'chaos', upgraded: false }]
   debug.setRun(structuredClone(run))
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
@@ -7203,9 +7393,17 @@ check('the enlarged card is rendered outside the board, not inside it', () => {
 })
 
 if (!artSynced) {
-  const powerFallback = await page.locator('.power__zoom--fallback').textContent()
+  const powerFallback = await page.locator('.power__zoom--fallback').evaluate((zoom) => {
+    const description = zoom.querySelector('.power__zoom-description')
+    return {
+      text: description?.textContent ?? '',
+      fontSize: description ? Number.parseFloat(getComputedStyle(description).fontSize) : 0,
+    }
+  })
   check('a Power stays readable when optional card scans are missing', () => {
-    assert(powerFallback && /Demon Form|Metallicize/.test(powerFallback), `missing Power rules fallback: ${powerFallback}`)
+    assert(/Demon Form|Metallicize/.test(powerFallback.text), `missing Power rules fallback: ${powerFallback.text}`)
+    assert(powerFallback.fontSize >= 13,
+      `Power rules fallback is too small to inspect: ${powerFallback.fontSize}px`)
   })
 }
 await page.mouse.move(0, 0)
