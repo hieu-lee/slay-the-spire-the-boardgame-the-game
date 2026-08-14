@@ -38,14 +38,28 @@ export type CardInstance = {
   endTurnProtected?: boolean
   /** This exact card was kept by Retain at the end of the previous Player Turn. */
   retainedLastTurn?: boolean
+  /** Meditate guarantees this card is kept during the upcoming discard step. */
+  retainThisTurn?: boolean
   /** Cubes accumulated on a Power such as The Bomb. */
   counter?: number
+  /** Bullet Time reduced this specific card's cost to 0 for the current turn. */
+  freeThisTurn?: boolean
+  /** Establishment reduces this retained card's cost for the current turn. */
+  costReductionThisTurn?: number
+  /** Weave was discarded by Scry and is being forced with its printed bonus. */
+  scryDamageBonus?: number
 }
 
 export type RelicInstance = {
   defId: string
   /** "Once per combat" and "once per room" relics flip face down when spent. */
   spent: boolean
+  /** Remaining printed uses for Wing Boots and the upgrade Eggs. */
+  uses?: number
+  /** Holy Water's once-per-combat Energy cubes. */
+  cubes?: number
+  /** Immediate out-of-combat text still waiting for its owner's card choices. */
+  pending?: boolean
 }
 
 export type Player = {
@@ -58,6 +72,8 @@ export type Player = {
   maxHp: number
   block: number
   energy: number
+  /** Snecko's Confusion overrides the next card's printed cost this turn. */
+  nextCardCost?: number | null
   /** The only token kept through the end-of-combat reset (p.13). */
   gold: number
 
@@ -75,38 +91,44 @@ export type Player = {
   /** Enemies can Weaken and make players Vulnerable, same caps as enemies. */
   vulnerable: number
   weak: number
-  /** Battle Trance and Pray prevent further draws until the next Player Turn. */
+  /** Battle Trance, Pray and Bullet Time prevent further draws until the next Player Turn. */
   drawLocked: boolean
   /** Public combat ledgers used by Masterful Stab and Finisher. */
   lostHpThisCombat: boolean
+  /** Red Skull remembers whether the draw pile shuffled this combat. */
+  shuffledThisCombat?: boolean
   /** HP already lost this round, including damage and direct HP loss. */
   hpLostThisRound?: number
   /** Apparition caps the total HP this player can lose during this round. */
   hpLossLimitThisRound?: number
   /** Madness makes this many subsequently played cards cost 0 this turn. */
   freeCardsThisTurn?: number
+  /** Swivel makes this many subsequently played Attacks cost 0 this turn. */
+  freeAttacksThisTurn?: number
+  /** Conclude prevents any further card play until the next Player Turn. */
+  cardPlayLocked?: boolean
   /** Double Tap makes this many subsequent Attack cards play twice this turn. */
   doubledAttacksThisTurn?: number
-  attacksPlayedThisTurn: number
-  /** Includes statuses, but not Shivs; used by Snecko and Time Eater. */
+  /** Akabeko adds one Strength for exactly the next Attack, then removes it. */
+  akabekoAttacks?: number
+  /** Blasphemy makes this many subsequent Attack cards play three times this turn. */
+  tripledAttacksThisTurn?: number
+  /** Echo Form makes this many subsequent Attack or Skill cards play twice this turn. */
+  doubledCardsThisTurn?: number
+  /** Burst makes this many subsequent Skill cards play twice this turn. */
+  doubledSkillsThisTurn?: number
+  /** Equilibrium lets this many otherwise-discarded cards stay in hand this turn. */
+  retainCardsThisTurn?: number
+  /** FTL checks this public per-turn card-play ledger. Copies count; Shivs do not. */
   cardsPlayedThisTurn?: number
+  /** Mummified Hand checks whether any Power was played this turn. */
+  powerPlayedThisTurn?: boolean
   /** Act IV's Shield/Spear choice; public and serialized for reconnects. */
   facingEnemyUid?: string | null
   damageDealtZeroThisTurn?: boolean
-  /** Snecko replaces the first card's printed cost for this turn. */
-  nextCardCost?: number | null
-  /** Potion-created one-shot card and damage rules. */
-  cardCopyQueue?: ('attack' | 'skill')[]
-  /** Originals already committed after their separately resolved copy. */
-  copyOriginalUids?: string[]
-  /** Paid copied Attacks whose forced original must not gain Wrist Blade. */
-  copyOriginalPaidUids?: string[]
-  /** X chosen for a Playing Copies original after its virtual copy resolves. */
-  copyOriginalEnergySpent?: Record<string, number>
-  freeCardUids?: string[]
-  forcedCardUids?: string[]
-  hpLossLimitThisTurn?: number | null
-  hpLostThisTurnAmount?: number
+  /** Calipers preserves Block through exactly the next Reset after activation. */
+  calipersArmed?: boolean
+  attacksPlayedThisTurn: number
   /** Silent. */
   shivs: number
   /** Ongoing Silent Power modifiers, reset between combats. */
@@ -115,18 +137,26 @@ export type Player = {
   hitPoison: number
   /** Apotheosis bonuses for the four printed starter Strike/Defend cards. */
   starterStrikeDamageBonus?: number
+  /** Collector's Edition Claw cubes gained during this combat. */
+  clawCubesGainedThisCombat?: number
   starterDefendBlockBonus?: number
   /** Watcher. */
   miracles: number
   /** Holy Water's two once-per-combat Energy cubes. */
   holyWaterCubes?: number
   stance: Stance
+  /** Added to each Attack hit while in Wrath, reset between combats. */
+  wrathAttackDamageBonus: number
   /** Defect. `null` marks an empty slot; slot order carries no meaning. */
   orbs: (OrbType | null)[]
   /** Added to each Orb's printed Evoke effect for this combat. */
   orbEvokeBonus?: number
+  /** Amplify adds only to Dark Orb Evoke damage. */
+  darkOrbEvokeBonus?: number
   /** Added to each Orb's printed end-of-turn effect for this combat. */
   orbEndTurnBonus?: number
+  /** Static Discharge adds only to Lightning end-of-turn effects. */
+  lightningEndTurnBonus?: number
 
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */
@@ -160,6 +190,9 @@ export type Enemy = {
   weak: number
   poison: number
 
+  /** Face-up Corpse Explosion card attached until this enemy dies. */
+  corpseExplosion?: { card: CardInstance; playerId: string; damage: number }
+
   /** Reward printed by the encounter card that spawned this enemy. */
   goldReward: number
   cardReward: 'normal' | 'upgraded' | null
@@ -178,7 +211,7 @@ export type Enemy = {
   /** Whether this enemy's once-per-combat special ability has fired. */
   abilityUsed: boolean
 
-  /** Cubes on a printed enemy ability track, currently used by Spiker. */
+  /** Cubes on printed enemy ability tracks. */
   abilityCubes?: number
 
   dead: boolean

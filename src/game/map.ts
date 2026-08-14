@@ -26,6 +26,10 @@ export type Room = {
   /** Room ids on the row above that this one connects to. */
   exits: string[]
   visited: boolean
+  /** The physical Burning Elite token replacing a dark-backed Encounter. */
+  burning?: boolean
+  /** Presentation-only marker used by Uncertain Future; authoritative maps never set it. */
+  hidden?: boolean
 }
 
 export type SpireMap = {
@@ -114,6 +118,8 @@ export function generateMap(
     const width = 2 + nextInt(rng, shape.maxWidth - 1)
     addRow(Array.from({ length: width }, () => pickKind(rng)))
   }
+  const middle = rows.slice(1).flatMap((row) => row.map((id) => rooms[id]!))
+  if (!middle.some((room) => room.kind === 'encounter') && middle[0]) middle[0].kind = 'encounter'
 
   // The row below the boss is all campfires, so the party can always rest or
   // upgrade before the fight.
@@ -156,6 +162,34 @@ export function generateMap(
   }
 
   return { act, rooms, rows, position: null }
+}
+
+/** Replaces one non-opening Encounter with the physical Burning Elite token. */
+export function addBurningElite(rng: RngState, map: SpireMap): SpireMap {
+  const middleTop = map.rows.length - 2
+  const encounters = Object.values(map.rooms).filter((room) => room.row > 0 && room.row < middleTop && room.kind === 'encounter')
+  const picked = encounters[nextInt(rng, encounters.length)]
+  if (!picked) return map
+  return {
+    ...map,
+    rooms: {
+      ...map.rooms,
+      [picked.id]: { ...picked, kind: 'elite', burning: true },
+    },
+  }
+}
+
+/** The map printed on the Act IV Boss card. Ascension 11 inserts its Elite. */
+export function actIVMap(harder: boolean): SpireMap {
+  const kinds: RoomKind[] = ['campfire', 'merchant', ...(harder ? ['elite' as const] : []), 'boss']
+  const rooms: Record<string, Room> = {}
+  const rows = kinds.map((kind, row) => {
+    const id = `a4r${row}c0`
+    rooms[id] = { id, kind, row, column: 0, exits: [], visited: false }
+    return [id]
+  })
+  for (let row = 0; row < rows.length - 1; row++) rooms[rows[row]![0]!]!.exits = [rows[row + 1]![0]!]
+  return { act: 4, rooms, rows, position: null }
 }
 
 /** Rooms the party may move to right now. */

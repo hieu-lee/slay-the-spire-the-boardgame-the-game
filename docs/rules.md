@@ -196,7 +196,7 @@ spend 1 Energy to Exhaust it; with no Energy it remains in hand.
 | **Shivs** (Silent) | Max 5. Spend any time you could play a card to deal 1 damage. Each shiv is a **separate attack**, separately modified by Strength/Weak/Vulnerable. Not cards. If you have no shiv tokens left and gain one, you may deal its damage immediately instead. |
 | **Miracles** (Watcher) | Max 5. Spend any time for 1 energy. **May exceed the 6-energy cap if spent immediately on a card.** |
 | **Stances** (Watcher) | Neutral, Calm, Wrath only — **no Divinity**. Start each combat in Neutral. Entering a stance you are already in is ignored. **Calm:** leaving it grants 2 energy. **Wrath:** +1 damage on all hits; **ending your turn in Wrath costs you 1 damage** (blockable). |
-| **Orbs** (Defect) | **No focus, no rotation, no slot order.** Channel places a cube in **any open** slot; if all are full, **evoke any orb of your choice** first. Evoke removes **any** orb you pick. Out of cubes → the channel is ignored. Lightning: 1 damage at end of turn, 2 on evoke. Frost: 1 block at end of turn, 1 on evoke. Dark: nothing at end of turn, **3 damage + 1 per power you have in play** on evoke. |
+| **Orbs** (Defect) | **No focus, no rotation, no slot order.** Channel places a cube in **any open** slot; if all are full, **evoke any orb of your choice** first. Evoke removes **any** orb you pick. “Evoke an Orb” multiple times removes that one Orb once and applies its Evoke effect repeatedly; Lightning and Dark may choose a different target each time. Out of cubes → the channel is ignored. Lightning: 1 damage at end of turn, 2 on evoke. Frost: 1 block at end of turn, 1 on evoke. Dark: nothing at end of turn, **3 damage + 1 per power you have in play** on evoke. |
 
 ## 5. Cards
 
@@ -250,17 +250,32 @@ first; the original hits the discard pile when it finishes.
 | --- | --- | --- | --- |
 | Ironclad | 10 | End of combat: heal 1 | Strength, exhaust synergy |
 | Silent | 9 | Start of combat: draw 2 | Poison, shivs |
-| Defect | 9 *(verify)* | Channel 1 Lightning at start of combat *(verify)* | Orbs |
-| Watcher | 9 *(verify)* | Gain 1 Miracle | Stances, miracles, scry, retain |
+| Defect | 9 | Start of combat: channel 1 Lightning | Orbs |
+| Watcher | 9 | Start of combat: gain 1 Miracle; starts in Neutral | Stances, miracles, scry, retain |
 
-**The rulebook states none of these numbers.** Max HP and starting abilities are printed on
-the player boards; p.16 says only that "The Ironclad starts with more HP than any other
-character". The values above come from board art and community sources, so confirm all four
-against board scans before treating them as final.
+These values are verified against the publisher rulebook and the four player-board scans in
+the official Tabletop Simulator mod. The boards show Ironclad 10 HP, Silent/Defect/Watcher
+9 HP, and the printed starting abilities above; the Watcher begins each combat in Neutral.
 
 **Cross-character cards.** Gaining stances or orbs from another character's card grants the
 Prismatic Shard relic. The Defect gains no extra orb slots this way, and the Watcher cannot
 enter stances via the Shard.
+
+### Official run variants
+
+- **Daily Climb:** roll one modifier from each printed section; both rules affect the whole party.
+- **Custom Run:** choose any combination of the twelve Daily modifiers before starting.
+- **Quick Start:** begin at Act II, III, or unlocked Act IV and resolve that Act's printed setup
+  table from top to bottom. Card choices and die results remain authoritative and public.
+- **Catch Up:** up to four total players may join only at the start of an Act. Only newcomers
+  resolve the Catch Up table and visit its Merchant; they earn campaign marks only for Bosses
+  defeated after joining.
+- **Achievements:** the nineteen printed challenges are a physical campaign checklist. Players
+  mark them manually; the game does not infer hidden or table-history achievements.
+
+Daily/Custom modifiers apply at every matching reward boundary, including Neow and Events.
+Prismatic Shard reserves one physical card from each of three chosen reward decks before a
+choice is made, so simultaneous players can never reveal the same card.
 
 ## 6a. What a complete implementation contains
 

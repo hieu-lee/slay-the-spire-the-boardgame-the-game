@@ -6,6 +6,7 @@ import type { IconName } from './icons.ts'
 type MapScreenProps = {
   map: SpireMap
   choices: Room[]
+  blocked?: boolean
   onEnter: (roomId: string) => void
 }
 
@@ -36,8 +37,9 @@ type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live:
  * rather than computed from the layout: the rows wrap and centre themselves, so
  * the only reliable source of a room's position is the DOM.
  */
-export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
+export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
+  const wasBlocked = useRef(blocked)
   const [lines, setLines] = useState<Line[]>([])
   const reachable = new Set(choices.map((room) => room.id))
   const rows = [...map.rows].reverse()
@@ -91,8 +93,15 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
     }
   }, [measure])
 
+  useEffect(() => {
+    if (wasBlocked.current && !blocked && document.activeElement === document.body) {
+      frameRef.current?.querySelector<HTMLButtonElement>('.room--reachable')?.focus()
+    }
+    wasBlocked.current = blocked
+  }, [blocked])
+
   return (
-    <div className="map">
+    <div className="map" inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
         {choices.length === 0
           ? 'Nowhere to go.'
@@ -122,6 +131,7 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
               if (!room) return null
               const isHere = map.position === id
               const canGo = reachable.has(id)
+              const label = room.hidden ? 'Unknown room' : ROOM_LABEL[room.kind]
               return (
                 <button
                   type="button"
@@ -130,6 +140,7 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
                   className={[
                     'room',
                     `room--${room.kind}`,
+                    room.hidden ? 'room--hidden' : '',
                     room.visited ? 'room--visited' : '',
                     isHere ? 'room--here' : '',
                     canGo ? 'room--reachable' : '',
@@ -142,7 +153,7 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
                   aria-disabled={!canGo}
                   onClick={() => canGo && onEnter(id)}
                   aria-label={[
-                    ROOM_LABEL[room.kind],
+                    label,
                     isHere ? 'the party is here' : '',
                     room.visited && !isHere ? 'already cleared' : '',
                     canGo ? 'reachable' : 'out of reach',
@@ -150,12 +161,12 @@ export function MapScreen({ map, choices, onEnter }: MapScreenProps) {
                     .filter(Boolean)
                     .join(', ')}
                   aria-current={isHere ? 'location' : undefined}
-                  title={ROOM_LABEL[room.kind]}
+                  title={label}
                 >
                   {/* Icon only. The name is in the accessible label and in the
                       tooltip; printing it under every node turned the Spire
                       into a list of captioned boxes. */}
-                  <Icon name={ROOM_ICON[room.kind]} size={room.kind === 'boss' ? 34 : 24} />
+                  <Icon name={room.hidden ? 'daze' : ROOM_ICON[room.kind]} size={!room.hidden && room.kind === 'boss' ? 34 : 24} />
                 </button>
               )
             })}

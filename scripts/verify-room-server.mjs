@@ -1,4 +1,6 @@
 import WebSocket from 'ws'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -178,19 +180,49 @@ try {
   const invalidAscension = await request(`/api/rooms/${code}/ascension`, {
     method: 'POST', token: a.token, body: { ascension: '13' },
   })
-  const selectedAscension = await request(`/api/rooms/${code}/ascension`, {
+  const lockedAscension = await request(`/api/rooms/${code}/ascension`, {
     method: 'POST', token: a.token, body: { ascension: 13 },
   })
+  const selectedAscension = await request(`/api/rooms/${code}/ascension`, {
+    method: 'POST', token: a.token, body: { ascension: 0 },
+  })
+  const guestLastStand = await request(`/api/rooms/${code}/last-stand-rule`, {
+    method: 'POST', token: joined[0].token, body: { enabled: true },
+  })
+  const invalidLastStand = await request(`/api/rooms/${code}/last-stand-rule`, {
+    method: 'POST', token: a.token, body: { enabled: 'true' },
+  })
+  const selectedLastStand = await request(`/api/rooms/${code}/last-stand-rule`, {
+    method: 'POST', token: a.token, body: { enabled: true },
+  })
+  const invalidAchievement = await request(`/api/rooms/${code}/achievement`, {
+    method: 'POST', token: a.token, body: { id: 'forged-achievement', completed: true },
+  })
+  const guestStart = await request(`/api/rooms/${code}/start`, {
+    method: 'POST', token: joined[0].token, body: {},
+  })
   const started = await request(`/api/rooms/${code}/start`, { method: 'POST', token: a.token, body: {} })
+  const lockedLastStand = await request(`/api/rooms/${code}/last-stand-rule`, {
+    method: 'POST', token: a.token, body: { enabled: false },
+  })
   const lockedRename = await request(`/api/rooms/${code}/join`, {
     method: 'POST', token: a.token, body: { name: 'Renamed' },
   })
   check('an authenticated seat starts the authoritative run', () => {
     assertEqual(ghostStart.status, 409, 'a disconnected ghost seat must block starting')
     assertEqual(invalidAscension.status, 400, 'ascension must cross the network as a supported integer')
-    assertEqual(selectedAscension.body.ascension, 13, 'the lobby did not share its selected ascension')
+    assertEqual(lockedAscension.status, 409, 'a client selected a locked campaign Ascension')
+    assertEqual(selectedAscension.body.ascension, 0, 'the lobby did not share its selected Ascension')
+    assertEqual(guestLastStand.status, 409, 'a non-host changed The Last Stand')
+    assertEqual(invalidLastStand.status, 409, 'a non-boolean Last Stand value crossed the authority boundary')
+    assertEqual(selectedLastStand.status, 200)
+    assertEqual(selectedLastStand.body.lastStand, true, 'the lobby did not publish The Last Stand')
+    assertEqual(invalidAchievement.status, 409, 'an invented achievement crossed the authority boundary')
+    assertEqual(guestStart.status, 409, 'a connected guest started the run')
     assertEqual(started.status, 200)
-    assertEqual(started.body.run.ascension, 13)
+    assertEqual(started.body.run.ascension, 0)
+    assertEqual(started.body.run.lastStand, true, 'The Last Stand was not carried into the run')
+    assertEqual(lockedLastStand.status, 409, 'The Last Stand changed after the run started')
     assertEqual(lockedRename.status, 409, 'a reconnect renamed only part of a live run')
     assertEqual(started.body.you.name, 'Ann')
     assertEqual(started.body.phase, 'run')
@@ -199,7 +231,65 @@ try {
     assertEqual(started.body.run.players[1].deck, null, 'another seat deck is hidden')
   })
 
-  const roomId = started.body.run.map.rows[0][0]
+  const remainingNeow = service.store.rooms.get(code).run.neow.deck
+  check('the HTTP snapshot publishes dealt Neow faces but not its hidden deck', () => {
+    assertEqual(started.body.run.phase, 'neow')
+    assertEqual(Object.hasOwn(started.body.run.neow, 'deck'), false)
+    assertEqual(Object.keys(started.body.run.neow.players).length, 4)
+    for (const cardId of remainingNeow) assert(!JSON.stringify(started.body).includes(cardId), `hidden Neow card ${cardId} leaked`)
+  })
+  const forgedNeow = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'neow', stage: 'red', playerId: joined[0].playerId, choice: null } },
+  })
+  check('the Neow endpoint binds decisions to the authenticated seat', () => {
+    assertEqual(forgedNeow.status, 409)
+  })
+  for (const seat of [a, ...joined]) {
+    let current = (await request(`/api/rooms/${code}`, { token: seat.token })).body
+    let preview = current.run.neow.players[seat.playerId]
+    if (preview.redGoldPending) {
+      current = (await request(`/api/rooms/${code}/action`, {
+        method: 'POST', token: seat.token,
+        body: { action: { kind: 'neow', stage: 'redGold', gain: false } },
+      })).body
+      preview = current.run.neow.players[seat.playerId]
+    }
+    if (preview.redRewardPending) {
+      current = (await request(`/api/rooms/${code}/action`, {
+        method: 'POST', token: seat.token,
+        body: { action: { kind: 'neow', stage: 'red', choice: null } },
+      })).body
+      preview = current.run.neow.players[seat.playerId]
+    }
+    if (preview.blueOption === null) {
+      const optionIndex = preview.card.options.findIndex((option) => !option.effects.some((effect) => effect.kind === 'relic'))
+      assert(optionIndex >= 0, 'the server Neow fixture needs a non-Relic option')
+      current = (await request(`/api/rooms/${code}/action`, {
+        method: 'POST', token: seat.token,
+        body: { action: { kind: 'neow', stage: 'option', optionIndex } },
+      })).body
+    }
+    while (current.run?.phase === 'neow' && current.run.neow.players[seat.playerId]?.pendingEffect) {
+      current = (await request(`/api/rooms/${code}/action`, {
+        method: 'POST', token: seat.token,
+        body: { action: { kind: 'neow', stage: 'effect', gain: false } },
+      })).body
+    }
+    while (current.run?.phase === 'neow' && current.run.neow.players[seat.playerId]?.rewardKind) {
+      current = (await request(`/api/rooms/${code}/action`, {
+        method: 'POST', token: seat.token,
+        body: { action: { kind: 'neow', stage: 'reward', choice: null } },
+      })).body
+    }
+  }
+  const afterNeow = await request(`/api/rooms/${code}`, { token: a.token })
+  check('interleaved authenticated Neow decisions release the shared map', () => {
+    assertEqual(afterNeow.body.run.phase, 'map')
+    assertEqual(afterNeow.body.run.neow, null)
+  })
+
+  const roomId = afterNeow.body.run.map.rows[0][0]
   const inCombat = (message) => message.snapshot.run?.phase === 'combat'
   const aUpdate = nextMessage(aLive.socket, 'snapshot', inCombat)
   const bUpdate = nextMessage(bLive.socket, 'snapshot', inCombat)
@@ -300,6 +390,129 @@ try {
     assertEqual(bReturned.snapshot.you.connected, true)
   })
 
+  const catchUpCreated = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Catch Up Host', character: 'ironclad' },
+  })
+  const catchUpCode = catchUpCreated.body.snapshot.code
+  const catchUpLeader = await connect(catchUpCode, catchUpCreated.body.token)
+  const catchUpPeer = await request(`/api/rooms/${catchUpCode}/join`, {
+    method: 'POST', body: { name: 'Catch Up Peer', character: 'silent' },
+  })
+  const catchUpPeerLive = await connect(catchUpCode, catchUpPeer.body.token)
+  const catchUpStarted = await request(`/api/rooms/${catchUpCode}/start`, {
+    method: 'POST', token: catchUpCreated.body.token, body: {},
+  })
+  const catchUpRoom = service.store.rooms.get(catchUpCode)
+  catchUpRoom.run.phase = 'map'
+  catchUpRoom.run.neow = null
+  catchUpRoom.run.act = 2
+  catchUpRoom.run.map = { ...catchUpRoom.run.map, act: 2, position: null }
+  const runBeforeReservation = JSON.stringify(catchUpRoom.run)
+  const catchUpReserved = await request(`/api/rooms/${catchUpCode}/join`, {
+    method: 'POST', body: { name: 'Cancelled Reservation', character: 'defect' },
+  })
+  const overlappingPending = await request(`/api/rooms/${catchUpCode}/join`, {
+    method: 'POST', body: { name: 'Overlapping Reservation', character: 'watcher' },
+  })
+  const blockedAtBoundary = await request(`/api/rooms/${catchUpCode}/action`, {
+    method: 'POST', token: catchUpPeer.body.token,
+    body: { action: { kind: 'enterRoom', roomId: catchUpRoom.run.map.rows[0][0] } },
+  })
+  const cancelledReservation = await request(`/api/rooms/${catchUpCode}/leave`, {
+    method: 'POST', token: catchUpReserved.body.token, body: {},
+  })
+  const expiringReservation = await request(`/api/rooms/${catchUpCode}/join`, {
+    method: 'POST', body: { name: 'Never Authenticated', character: 'defect' },
+  })
+  const reservation = catchUpRoom.seats.find((seat) => seat.token === expiringReservation.body.token)
+  const versionBeforeSweep = catchUpRoom.version
+  service.sweepRooms(reservation.reservedAt + 30_000)
+  check('an unauthenticated HTTP Catch Up reservation expires without mutating the run', () => {
+    assertEqual(catchUpStarted.status, 200)
+    assertEqual(overlappingPending.status, 409, 'two unauthenticated Catch Up reservations were accepted')
+    assertEqual(blockedAtBoundary.status, 409, 'the leader advanced the run before Catch Up authentication')
+    assertEqual(cancelledReservation.status, 200, 'an abandoned Catch Up reservation could not leave')
+    assertEqual(catchUpRoom.seats.some((seat) => seat.token === catchUpReserved.body.token), false)
+    assertEqual(reservation.pendingCatchUp, true)
+    assertEqual(JSON.stringify(catchUpRoom.run), runBeforeReservation, 'HTTP reservation began Catch Up before WebSocket authentication')
+    assertEqual(catchUpRoom.seats.some((seat) => seat.token === catchUpReserved.body.token), false)
+    assertEqual(catchUpRoom.version, versionBeforeSweep + 1)
+  })
+  const hostileReservation = await request(`/api/rooms/${catchUpCode}/join`, {
+    method: 'POST', body: { name: 'Hostile Reservation', character: 'defect' },
+  })
+  const leaderProceeded = await request(`/api/rooms/${catchUpCode}/action`, {
+    method: 'POST', token: catchUpCreated.body.token,
+    body: { action: { kind: 'enterRoom', roomId: catchUpRoom.run.map.rows[0][0] } },
+  })
+  check('the leader can proceed past and cancel a hostile Catch Up reservation', () => {
+    assertEqual(leaderProceeded.status, 200)
+    assertEqual(leaderProceeded.body.run.phase, 'combat')
+    assertEqual(catchUpRoom.seats.some((seat) => seat.token === hostileReservation.body.token), false)
+  })
+  catchUpLeader.socket.close()
+  catchUpPeerLive.socket.close()
+
+  const activeCatchUpCreated = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Active Catch Up Host', character: 'ironclad' },
+  })
+  const activeCatchUpCode = activeCatchUpCreated.body.snapshot.code
+  const activeCatchUpLeader = await connect(activeCatchUpCode, activeCatchUpCreated.body.token)
+  await request(`/api/rooms/${activeCatchUpCode}/start`, {
+    method: 'POST', token: activeCatchUpCreated.body.token, body: {},
+  })
+  const activeCatchUpRoom = service.store.rooms.get(activeCatchUpCode)
+  activeCatchUpRoom.run.phase = 'map'
+  activeCatchUpRoom.run.neow = null
+  activeCatchUpRoom.run.act = 2
+  activeCatchUpRoom.run.map = { ...activeCatchUpRoom.run.map, act: 2, position: null }
+  const firstNewcomer = await request(`/api/rooms/${activeCatchUpCode}/join`, {
+    method: 'POST', body: { name: 'First Newcomer', character: 'silent' },
+  })
+  const firstNewcomerLive = await connect(activeCatchUpCode, firstNewcomer.body.token)
+  const overlappingReservation = await request(`/api/rooms/${activeCatchUpCode}/join`, {
+    method: 'POST', body: { name: 'Overlapping Newcomer', character: 'defect' },
+  })
+  const overlappingLive = await connect(activeCatchUpCode, overlappingReservation.body.token)
+  check('active Catch Up admits one additional reservation without blocking Neow', () => {
+    assertEqual(activeCatchUpRoom.run.phase, 'neow')
+    assertEqual(overlappingReservation.status, 200)
+    assertEqual(activeCatchUpRoom.run.players.some((player) => player.name === 'Overlapping Newcomer'), true)
+  })
+  activeCatchUpLeader.socket.close()
+  firstNewcomerLive.socket.close()
+  overlappingLive.socket.close()
+
+  const failedAuthCreated = await request('/api/rooms', {
+    method: 'POST', body: { name: 'Failed Auth Host', character: 'ironclad' },
+  })
+  const failedAuthCode = failedAuthCreated.body.snapshot.code
+  const failedAuthHost = await connect(failedAuthCode, failedAuthCreated.body.token)
+  await request(`/api/rooms/${failedAuthCode}/start`, {
+    method: 'POST', token: failedAuthCreated.body.token, body: {},
+  })
+  const failedAuthRoom = service.store.rooms.get(failedAuthCode)
+  failedAuthRoom.run.phase = 'map'
+  failedAuthRoom.run.neow = null
+  failedAuthRoom.run.act = 2
+  failedAuthRoom.run.map = { ...failedAuthRoom.run.map, act: 2, position: null }
+  const staleReservation = await request(`/api/rooms/${failedAuthCode}/join`, {
+    method: 'POST', body: { name: 'Stale Reservation', character: 'silent' },
+  })
+  failedAuthRoom.run.phase = 'setup'
+  const failedSocket = new WebSocket(`${wsOrigin}/ws?room=${failedAuthCode}`)
+  const failedClose = new Promise((resolve) => failedSocket.once('close', resolve))
+  await new Promise((resolve, reject) => {
+    failedSocket.once('open', resolve)
+    failedSocket.once('error', reject)
+  })
+  failedSocket.send(JSON.stringify({ type: 'authenticate', token: staleReservation.body.token }))
+  const failedCloseCode = await failedClose
+  check('failed Catch Up authentication closes before subscribing to room snapshots', () => {
+    assertEqual(failedCloseCode, 4003)
+  })
+  failedAuthHost.socket.close()
+
   const limited = await request('/api/rooms', {
     method: 'POST', body: { name: 'Rate', character: 'ironclad' },
   })
@@ -336,5 +549,120 @@ try {
 } finally {
   await service.close()
 }
+
+let burstSaves = 0
+const burstService = createRoomServer({
+  storeFile: join(tmpdir(), `sts-room-burst-${process.pid}-${Date.now()}.json`),
+  saveDelayMs: 10_000,
+  saveStoreImpl: () => { burstSaves += 1 },
+})
+const burstAddress = await burstService.listen(0)
+const burstOrigin = `http://127.0.0.1:${burstAddress.port}`
+try {
+  const created = await fetch(`${burstOrigin}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Burst', character: 'ironclad' }),
+  }).then((response) => response.json())
+  for (let index = 0; index < 12; index += 1) {
+    const response = await fetch(`${burstOrigin}/api/rooms/${created.snapshot.code}/character`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-room-token': created.token },
+      body: JSON.stringify({ character: index % 2 === 0 ? 'silent' : 'ironclad' }),
+    })
+    assertEqual(response.status, 200, 'burst mutation failed')
+  }
+  check('persistence coalesces a mutation burst off the request hot path', () => {
+    assertEqual(burstSaves, 0, 'a full-store save ran synchronously during the burst')
+  })
+} finally {
+  await burstService.close()
+}
+check('closing the server atomically flushes one coalesced save', () => {
+  assertEqual(burstSaves, 1)
+})
+
+let retryAttempts = 0
+const saveErrors = []
+const retryTimes = []
+const retryService = createRoomServer({
+  storeFile: join(tmpdir(), `sts-room-retry-${process.pid}-${Date.now()}.json`),
+  saveDelayMs: 10,
+  saveStoreImpl: () => {
+    retryAttempts += 1
+    retryTimes.push(Date.now())
+    if (retryAttempts <= 3) throw new Error('injected delayed save failure')
+  },
+  onSaveError: (error) => saveErrors.push(error.message),
+})
+const retryAddress = await retryService.listen(0)
+const retryOrigin = `http://127.0.0.1:${retryAddress.port}`
+try {
+  const created = await fetch(`${retryOrigin}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Retry', character: 'ironclad' }),
+  })
+  assertEqual(created.status, 201, 'retry fixture room creation failed')
+  const deadline = Date.now() + 2_000
+  while (retryAttempts < 4 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5))
+  const health = await fetch(`${retryOrigin}/api/health`)
+  check('delayed save failures are observable, back off until success, and leave the server responsive', () => {
+    assertEqual(saveErrors[0], 'injected delayed save failure')
+    assertEqual(retryAttempts, 4, 'the failed save was not retried through success')
+    assert(retryTimes[2] - retryTimes[1] >= 180, 'repeated failures did not back off exponentially')
+    assert(retryTimes[3] - retryTimes[2] >= 360, 'later failures retried in a hot loop')
+    assertEqual(retryService.saveError, null, 'a successful retry did not clear the save error')
+    assertEqual(health.status, 200, 'the save failure stopped the server')
+  })
+} finally {
+  await retryService.close()
+}
+
+const closeErrors = []
+const failingCloseService = createRoomServer({
+  storeFile: join(tmpdir(), `sts-room-close-failure-${process.pid}-${Date.now()}.json`),
+  saveDelayMs: 10_000,
+  saveStoreImpl: () => { throw new Error('injected close save failure') },
+  onSaveError: (error) => closeErrors.push(error.message),
+})
+await failingCloseService.listen(0)
+let closeFailure
+try { await failingCloseService.close() } catch (error) { closeFailure = error }
+check('closing reports a failed final flush after still closing the server', () => {
+  assertEqual(closeFailure?.message, 'injected close save failure')
+  assertEqual(closeErrors[0], 'injected close save failure')
+  assertEqual(failingCloseService.server.listening, false)
+})
+
+const shutdownSaves = []
+const shutdownService = createRoomServer({
+  storeFile: join(tmpdir(), `sts-room-shutdown-${process.pid}-${Date.now()}.json`),
+  saveDelayMs: 10_000,
+  saveStoreImpl: (store) => shutdownSaves.push(structuredClone([...store.rooms.values()])),
+})
+const shutdownAddress = await shutdownService.listen(0)
+const shutdownOrigin = `http://127.0.0.1:${shutdownAddress.port}`
+const shutdownCreated = await fetch(`${shutdownOrigin}/api/rooms`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: 'Shutdown', character: 'ironclad' }),
+}).then((response) => response.json())
+const shutdownSocket = new WebSocket(`ws://127.0.0.1:${shutdownAddress.port}/ws?room=${shutdownCreated.snapshot.code}`)
+await new Promise((resolve, reject) => {
+  shutdownSocket.once('open', resolve)
+  shutdownSocket.once('error', reject)
+})
+const authenticated = nextMessage(shutdownSocket, 'snapshot')
+shutdownSocket.send(JSON.stringify({ type: 'authenticate', token: shutdownCreated.token }))
+await authenticated
+assertEqual(shutdownService.store.rooms.get(shutdownCreated.snapshot.code).seats[0].connected, true)
+const firstClose = shutdownService.close()
+assertEqual(shutdownService.close(), firstClose, 'close was not idempotent while shutting down')
+await firstClose
+check('shutdown awaits WebSocket disconnect settlement before its final persistence flush', () => {
+  const finalRoom = shutdownSaves.at(-1)?.[0]
+  assertEqual(finalRoom?.seats[0].connected, false, 'the final save preceded disconnect settlement')
+  assertEqual(shutdownService.server.listening, false)
+})
 
 report('room server')

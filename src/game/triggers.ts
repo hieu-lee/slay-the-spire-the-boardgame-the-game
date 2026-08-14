@@ -15,6 +15,8 @@ import type { CardType, Stance } from './types.ts'
 export type Trigger =
   /** Turn 1 only (p.12). */
   | { kind: 'startOfCombat' }
+  /** Start of Turn, after Reset but before the shared Draw step. */
+  | { kind: 'beforeDraw' }
   | { kind: 'startOfTurn' }
   | { kind: 'endOfTurn' }
   | { kind: 'endOfCombat' }
@@ -25,7 +27,7 @@ export type Trigger =
   /** Once when one card effect makes this player discard one or more cards. */
   | { kind: 'onDiscard' }
   | { kind: 'onExhaust' }
-  | { kind: 'onDraw'; cardType?: CardType }
+  | { kind: 'onDraw'; cardType?: CardType; cardTypes?: CardType[] }
   | { kind: 'onEnterStance'; stance?: Stance }
   | { kind: 'onScry' }
   | { kind: 'onGainBlock' }
@@ -42,7 +44,6 @@ export type TriggerEvent = {
   die?: number
   /** The type of the card that was just played, for `onPlayCard`. */
   cardType?: CardType
-  cardOwner?: string
   /** The stance just entered, for `onEnterStance`. */
   stance?: Stance
   /** Enemy that received a token, for `onPutEnemyToken`. */
@@ -61,7 +62,9 @@ export function triggerMatches(trigger: Trigger, event: TriggerEvent): boolean {
     return trigger.cardType === undefined || trigger.cardType === event.cardType
   }
   if (trigger.kind === 'onDraw') {
-    return trigger.cardType === undefined || trigger.cardType === event.cardType
+    return (trigger.cardType === undefined && trigger.cardTypes === undefined) ||
+      trigger.cardType === event.cardType ||
+      (event.cardType !== undefined && trigger.cardTypes?.includes(event.cardType) === true)
   }
   if (trigger.kind === 'onEnterStance') {
     return trigger.stance === undefined || trigger.stance === event.stance

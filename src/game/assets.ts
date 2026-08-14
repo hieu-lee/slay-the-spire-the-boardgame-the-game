@@ -8,6 +8,7 @@ import type { EnemyDef } from './enemies.ts'
 
 /** Where the sync script writes, and where the client reads from. */
 export const CARD_ASSET_ROOT = '/assets/cards'
+export const CARD_ART_ROOT = '/assets/card-art'
 
 const POOL_TIERS: Record<string, string> = {
   colorless: 'colourless',
@@ -51,8 +52,21 @@ export function cardImagePath(def: CardDef, upgraded: boolean): string {
   return `${CARD_ASSET_ROOT}/${key}.webp`
 }
 
+/** Committed, text-free artwork shared by the base and upgraded CSS faces. */
+export function cardArtPath(def: CardDef): string {
+  return `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`
+}
+
+const COMBAT_ENEMY_ART = new Set([
+  'acid_slime', 'blue_slaver', 'cultist', 'fungi_beast', 'green_louse',
+  'gremlin_nob', 'jaw_worm', 'lagavulin', 'red_louse', 'small_slime', 'spike_slime',
+])
+
+export function enemyUsesCombatArt(def: EnemyDef): boolean {
+  return COMBAT_ENEMY_ART.has(def.artId ?? def.id)
+}
+
 export function enemyImagePath(def: EnemyDef): string {
-  return def.combatArt
-    ? `/assets/combat/enemies/${def.artId ?? def.id}.webp`
-    : `/assets/enemies/${def.artId ?? def.id}.webp`
+  const artId = def.artId ?? def.id
+  return `/assets/${enemyUsesCombatArt(def) ? 'combat/enemies' : 'enemies'}/${artId}.webp`
 }

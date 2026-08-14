@@ -71,13 +71,13 @@ check('Dual Cast evokes twice', () => {
     [enemy({ hp: 20 })],
   )
   const next = playCard(state, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(next.enemies[0].hp, 16, 'two Lightning evokes deal 2 damage each')
-  assertDeepEqual(next.players[0].orbs, [null, null, null], 'both orbs are spent')
+  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'only the chosen Orb is spent')
 })
 
-check('each evoke chooses its own Orb and enemy', () => {
+check('each repeated evoke of the chosen Orb can choose its own enemy', () => {
   const dual = instance('dual_cast')
   const state = combat(
     [player({ hand: [dual], orbs: ['lightning', 'frost', 'dark'] })],
@@ -86,11 +86,11 @@ check('each evoke chooses its own Orb and enemy', () => {
   const next = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [2, 0],
+    evokeSlots: [2],
     evokeEnemyUids: ['e2', 'e1'],
   })
-  assertDeepEqual(next.players[0].orbs, [null, 'frost', null], 'the chosen Dark and Lightning are spent')
-  assertDeepEqual(next.enemies.map((target) => target.hp), [18, 17], 'each damage Orb uses its own enemy')
+  assertDeepEqual(next.players[0].orbs, ['lightning', 'frost', null], 'only the chosen Dark is spent')
+  assertDeepEqual(next.enemies.map((target) => target.hp), [17, 17], 'each Dark evoke uses its own enemy')
 })
 
 check('a forced full-board channel uses the chosen Orb slot', () => {
@@ -180,7 +180,7 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
   }
   for (const context of [
     {},
-    { evokeSlots: [0, 1] },
+    { evokeSlots: [0] },
     { evokeEnemyUids: ['e1', 'e2'] },
   ]) {
     const { dual, state } = make()
@@ -189,9 +189,9 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
     }) === state, `accepted incomplete plan ${JSON.stringify(context)}`)
   }
   for (const context of [
-    { evokeSlots: [0, 0], evokeEnemyUids: ['e1', 'e2'] },
-    { evokeSlots: [0, 1], evokeEnemyUids: ['e1'] },
-    { evokeSlots: [0, 1], evokeEnemyUids: [null, 'e2'] },
+    { evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e2'] },
+    { evokeSlots: [0], evokeEnemyUids: ['e1'] },
+    { evokeSlots: [0], evokeEnemyUids: [null, 'e2'] },
   ]) {
     const { dual, state } = make()
     assert(playCard(state, 'p1', dual.uid, {
@@ -203,7 +203,7 @@ check('exact evoke choices reject malformed or stale plans atomically', () => {
   const stale = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [0, 1],
+    evokeSlots: [0],
     evokeEnemyUids: ['e1', 'e1'],
   })
   assert(stale === state, 'a later evoke silently retargeted after the first defeated its enemy')
@@ -216,15 +216,18 @@ check('a winning evoke ends combat before a later damaging evoke resolves', () =
     [player({ hand: [dual], orbs: ['lightning', 'lightning', null] })],
     [enemy({ uid: 'e1', hp: 2, maxHp: 2 })],
   )
+  assert(playCard(state, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'forged'],
+  }) === state, 'a surplus post-lethal target was accepted')
   const next = playCard(state, 'p1', dual.uid, {
     enemyUid: null,
     playerId: 'p1',
-    evokeSlots: [0, 1],
-    evokeEnemyUids: ['e1', 'e1'],
+    evokeSlots: [0],
+    evokeEnemyUids: ['e1'],
   })
   assert(next !== state, 'the winning play was rolled back when no target remained')
   assertEqual(next.phase, 'won')
-  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'the later Orb resolved after combat ended')
+  assertDeepEqual(next.players[0].orbs, [null, 'lightning', null], 'only the chosen Orb is removed')
 })
 
 // p.16: Lightning evokes for 2, Frost for 1 Block, Dark for 3 plus one per Power.
@@ -232,15 +235,15 @@ check('each orb type evokes for its printed effect', () => {
   const dual = instance('dual_cast')
   const frost = playCard(
     combat([player({ hand: [dual], orbs: ['frost', null, null] })], [enemy()]),
-    'p1', dual.uid, { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null] },
+    'p1', dual.uid, { enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: [null, null] },
   )
-  assertEqual(frost.players[0].block, 1, 'Frost evokes for 1 Block')
+  assertEqual(frost.players[0].block, 2, 'Dual Cast applies Frost Evoke twice')
 
   const darkState = combat([player({ hand: [dual], orbs: ['dark', null, null] })], [enemy({ hp: 20 })])
   const dark = playCard(darkState, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
-  assertEqual(dark.enemies[0].hp, 17, 'Dark evokes for 3 with no Powers in play')
+  assertEqual(dark.enemies[0].hp, 14, 'Dual Cast applies Dark Evoke twice')
 })
 
 check('a Dark orb evokes for 3 plus one per Power in play', () => {
@@ -257,16 +260,17 @@ check('a Dark orb evokes for 3 plus one per Power in play', () => {
     [enemy({ hp: 20 })],
   )
   const next = playCard(state, 'p1', dual.uid, {
-    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1'],
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
-  assertEqual(next.enemies[0].hp, 15, '3 base plus 1 for each of the two Powers')
+  assertEqual(next.enemies[0].hp, 10, 'each Evoke is 3 base plus 1 for each of the two Powers')
 })
 
-check('evoking an empty board does nothing rather than throwing', () => {
+check('an evoke card can be played on an empty board and simply does nothing', () => {
   const dual = instance('dual_cast')
   const next = playCard(combat([player({ hand: [dual] })], [enemy()]), 'p1', dual.uid, {
     enemyUid: 'e1', playerId: 'p1',
   })
+  assertEqual(next.players[0].hand.length, 0)
   assertEqual(next.enemies[0].hp, 20, 'no orbs, no damage')
   assertDeepEqual(next.players[0].orbs, [null, null, null])
 })
@@ -307,19 +311,6 @@ check('a Dark orb does nothing at end of turn', () => {
   const next = endPlayerTurn(combat([player({ orbs: ['dark', null, null] })], [enemy({ hp: 20 })]))
   assertEqual(next.enemies[0].hp, 20, 'Dark only pays out when evoked')
   assertEqual(next.players[0].block, 0)
-})
-
-check('Frozen Core grants its printed Block without mutating orbs', () => {
-  const state = combat([player({
-    orbs: ['dark', 'dark', 'dark'],
-    relics: [{ defId: 'frozen_core', spent: false }],
-  })], [enemy({ uid: 'e1', hp: 20 })])
-  const abilities = endTurnAbilities(state)
-  const core = abilities.find((ability) => ability.label.includes('Frozen Core'))
-  assertEqual(core.targets?.length ?? 0, 0)
-  const next = beginEndPlayerTurn(state, abilities.map((ability) => ability.id))
-  assertEqual(next.players[0].block, 1)
-  assertDeepEqual(next.players[0].orbs, ['dark', 'dark', 'dark'])
 })
 
 check('Eruption enters Wrath and Vigilance enters Calm', () => {
@@ -377,14 +368,15 @@ suite('player statuses')
 
 // Enemies can Weaken players and make them Vulnerable; both were no-ops before.
 check('an enemy action actually applies Weak to the player in its row', () => {
-  const state = { ...inEnemyPhase(
+  const state = inEnemyPhase(
     [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
-    [enemy({ defId: 'blue_slaver', hp: 7 })],
-  ), die: 1 }
+    // Slot 1 of the Blue Slaver's track is the attack that Weakens.
+    [enemy({ defId: 'blue_slaver', hp: 7, actionIndex: 1 })],
+  )
   const next = enemyTurn(state)
   assertEqual(next.players[0].weak, 1, 'the player sharing the row is Weakened')
   assertEqual(next.players[1].weak, 0, 'a player in another row is not')
-  assertEqual(next.players[0].hp, 7, 'and still takes the printed 2 attack')
+  assertEqual(next.players[0].hp, 7, 'and still takes the printed 3 damage')
 })
 
 check('a Weak player deals one less damage per hit', () => {
@@ -472,17 +464,17 @@ const withRelic = (defId, over = {}) =>
 
 // Relics were defined but nothing fired them, so a player "had" a relic that
 // did nothing. These pin each trigger point.
-check('a start-of-combat relic fires on turn 1 only', () => {
+check('Akabeko waits for its printed manual once-per-combat activation', () => {
   const deck = Array.from({ length: 10 }, () => instance('strike_ironclad'))
-  let state = createCombat(createRng(5), [withRelic('lantern', { draw: deck })], [enemy()])
+  let state = createCombat(createRng(5), [withRelic('anchor', { draw: deck })], [enemy()])
   state = startPlayerTurn(state)
-  assertEqual(state.players[0].energy, 4, 'Lantern grants 1 Energy at the start of combat')
+  assertEqual(state.players[0].strength, 0, 'Akabeko does not grant digital-style permanent Strength')
 
   // A real round-trip. `startPlayerTurn` on a turn already begun is refused,
   // so the old version never reached turn 2 and asserted nothing.
   state = startPlayerTurn(enemyTurn(endPlayerTurn(state)))
   assertEqual(state.turn, 2, 'precondition: the second round must actually begin')
-  assertEqual(state.players[0].energy, 3, 'and it does not fire again on turn 2')
+  assertEqual(state.players[0].strength, 0, 'and it stays inert until its owner activates it')
 })
 
 check('a start-of-combat draw relic fills the hand further', () => {
@@ -532,14 +524,14 @@ check('a dead player ends combat before any relics fire', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('lantern', { id: 'p1', dead: true, hp: 0, draw: deck }),
-        withRelic('lantern', { id: 'p2', row: 1, draw: [...deck] }),
+        withRelic('anchor', { id: 'p1', dead: true, hp: 0, draw: deck }),
+        withRelic('anchor', { id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].energy, 3, 'the dead gain nothing from their relics')
-  assertEqual(state.players[1].energy, 3, 'nothing resolves after the party loses')
+  assertEqual(state.players[0].strength, 0, 'the dead gain nothing from their relics')
+  assertEqual(state.players[1].strength, 0, 'nothing resolves after the party loses')
   assertEqual(state.phase, 'lost')
 })
 
@@ -549,14 +541,14 @@ check('one player\'s relic never fires for another', () => {
     createCombat(
       createRng(5),
       [
-        withRelic('lantern', { id: 'p1', draw: deck }),
+        withRelic('anchor', { id: 'p1', draw: deck }),
         player({ id: 'p2', row: 1, draw: [...deck] }),
       ],
       [enemy()],
     ),
   )
-  assertEqual(state.players[0].energy, 4, 'the owner gets the Energy')
-  assertEqual(state.players[1].energy, 3, 'the other player gets nothing')
+  assertEqual(state.players[0].strength, 0, 'the owner must activate the once-per-combat effect')
+  assertEqual(state.players[1].strength, 0, 'the other player gets nothing')
 })
 
 check('a player with no relics is unaffected', () => {

@@ -9,6 +9,7 @@ export type AttackerMods = {
   weak: number
   /** Watcher only: Wrath is "effectively the same as having 1 Strength" (p.17). */
   wrath: boolean
+  wrathAttackDamageBonus: number
 }
 
 export type DefenderMods = {
@@ -16,11 +17,16 @@ export type DefenderMods = {
 }
 
 export function attackerModsOfPlayer(player: Player): AttackerMods {
-  return { strength: player.strength, weak: player.weak, wrath: player.stance === 'wrath' }
+  return {
+    strength: player.strength,
+    weak: player.weak,
+    wrath: player.stance === 'wrath',
+    wrathAttackDamageBonus: player.wrathAttackDamageBonus ?? 0,
+  }
 }
 
 export function attackerModsOfEnemy(enemy: Enemy): AttackerMods {
-  return { strength: enemy.strength, weak: enemy.weak, wrath: false }
+  return { strength: enemy.strength, weak: enemy.weak, wrath: false, wrathAttackDamageBonus: 0 }
 }
 
 /**
@@ -31,7 +37,7 @@ export function attackerModsOfEnemy(enemy: Enemy): AttackerMods {
  * "unaffected by both" — the two cancel rather than compounding.
  */
 export function hitDamage(base: number, attacker: AttackerMods, defender: DefenderMods): number {
-  const bonus = attacker.strength + (attacker.wrath ? 1 : 0)
+  const bonus = attacker.strength + (attacker.wrath ? 1 + attacker.wrathAttackDamageBonus : 0)
   const boosted = base + bonus
 
   const attackerIsWeak = attacker.weak > 0

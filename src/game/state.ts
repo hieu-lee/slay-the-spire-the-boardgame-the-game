@@ -5,58 +5,13 @@
 // asserts every engine module is reachable from here, which is what catches a
 // module that was written but never wired up.
 //
-// Not implemented yet, so that nobody mistakes silence for correctness:
-//   - Powers fire on their triggers, honouring the target scope they declare,
-//     and fifteen are transcribed. Printed once-per-turn Powers share a public
-//     per-round use ledger.
-//   - A trigger chain is cut off after 8 levels and the rest are dropped in
-//     silence. No printed card chains that deep; a future one would look like
-//     a Power quietly under-performing.
-//   - Effects can now read the board: a clause can carry a condition, and an
-//     amount can carry a bonus or a count. Fourteen questions are transcribed
-//     (`Condition` in cards.ts), plus Orb, Orb-type, Block, Strength, hand and attack counts.
-//     Per-Miracle counts are not there yet. X-cost cards collect and validate
-//     the Energy amount as part of the same atomic play action.
-//   - Ethereal and every Curse's in-combat text are live. Empty Cage enforces
-//     Parasite's removal penalty and Ascender's Bane's removal protection;
-//     general Merchant removal is not implemented yet.
-//   - Every Act I-IV enemy, elite, summon and boss resolves its printed intent
-//     and special ability. Boss rooms draw the physical act deck; A13 draws two
-//     distinct Act III bosses, and Act IV is Shield/Spear followed by the Heart.
-//     The shared 20-card Boss Relic draft and its acquisition/passive effects are live.
-//   - Event, treasure and merchant rooms show a placeholder screen.
-//   - Physical relic and potion reward decks are shared, face down, and return
-//     skipped, discarded, and used potions to the bottom. Item effects listed
-//     without an engine trigger in relics.ts are still not automated.
-//   - Card rewards can be skipped unseen or reveal three live common/uncommon
-//     cards, allow one or a skip, return the rest to the bottom, and persist
-//     the pick into the deck.
-//     The physical reward decks are still incomplete: only transcribed cards
-//     are included and Golden Tickets are absent. Bosses and Enchiridion surface
-//     the live rare reward stacks.
-//   - 184 of 259 unique character cards are live.
-//     22 of 22 colorless cards are live. No scan-read cards are held back in `DEFERRED_CARDS`.
-//     The other 75 have not been transcribed at
-//     all: their names and printed costs are known from
-//     `data/card-index.json` and `data/raw/player-cards.csv`, but not their
-//     effects. 105 enemy definitions cover Acts I-IV, including physical intent
-//     variants and boss forms. No events or shops.
-//   - Ascension 2's max-HP loss, Ascension 4's potion limit, Ascension 5's
-//     starter Curse, Ascension 6's Act heal and Ascension 9's starting damage
-//     are applied. The remaining non-enemy changes wait on events, merchants,
-//     keys and campaign rooms.
-//   - Orbs can be individually chosen and targeted for card evokes, forced
-//     full-slot channels and end-of-turn resolution.
-//   - On-play, on-Poison, on-Exhaust and card-effect discard abilities wait until the
-//     played card has finished its printed text, as p.12 requires. Other nested
-//     triggers — such as on-draw, on-Scry, on-Block and stance changes — still fire
-//     during resolution. Defer those before transcribing a card whose outcome
-//     depends on their timing.
-//   - Miracles can be gained and spent for Energy, and Blade Dance and Cloak
-//     and Dagger produce Shivs. The tokens still cannot be transferred between
-//     players. `RelicInstance.spent` is declared for
-//     once-per-combat relics and is never read or written either — all of these
-//     are flags that read as implemented and are not.
+// Combat and 105 enemy definitions covering roughly 60 physical cards are live.
+// 251 of 259 unique character cards are live as ordinary definitions; the
+// other 8 are implemented Golden Ticket rewards. 22 of 22 colorless cards are live. Relics, potions, and their
+// Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign
+// presentation are composed from the separate noncombat implementation.
+// No scan-read cards are held back in `DEFERRED_CARDS`. Official optional run
+// modes, Quick Start/Catch Up data, and the achievement journal are live too.
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 
@@ -107,6 +62,7 @@ export {
   abandonForcedCard,
   activatePower,
   activatePotion,
+  activateRelic,
   beginEndPlayerTurn,
   cardEnemyChoiceCount,
   cardNeedsChoicePreview,
@@ -116,37 +72,51 @@ export {
   cardShivChoiceCount,
   cardPlayConditionMet,
   chooseEndTurnTarget,
+  chooseDistilledCard,
+  chosenEvokeOrbs,
   defaultEndTurnOrder,
+  discardOrderIsValid,
   endTurnAbilities,
   endTurnChoiceId,
   endTurnChoiceTarget,
+  facingChoicesAreValid,
   createCombat,
-  effectiveCardCost,
   endPlayerTurn,
   livingEnemies,
+  lightningRowFromTarget,
+  lightningRowTarget,
+  lightningTargetsRows,
   nextEvokeChoice,
   enemyLabel,
   overflowShivCount,
+  orderStartTurnScries,
+  pendingTriggerAbility,
   powerAbilityKey,
   powerAbilityUsed,
   playCard,
   playCardCopy,
   playCost,
   preparePlayerTurn,
+  remainingRoundHpLoss,
   previewCardChoice,
   previewCardCopyChoice,
   resolveStartPlayerTurn,
+  resolveStartTurnDiscard,
+  resolveStartTurnScry,
   resolveEnemyTargets,
+  resolvePendingTrigger,
   spendMiracle,
-  spendHolyWater,
   spendShiv,
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnDiscardPreview,
+  startTurnScryAbilities,
+  startTurnScryPreview,
   defaultStartTurnChoices,
   validEndTurnOrder,
 } from './combat.ts'
-export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PlayContext, PotionContext, PowerContext, StartTurnAbility, StartTurnChoice } from './combat.ts'
+export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, RelicContext, StartTurnAbility, StartTurnChoice, StartTurnDiscardPreview, StartTurnScryAbility, StartTurnScryPreview } from './combat.ts'
 
 export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 
@@ -154,41 +124,103 @@ export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } f
 export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
 
-export { ACT_SHAPE, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
+export { ACT_SHAPE, actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
 export type { MapShape, Room, RoomKind, SpireMap } from './map.ts'
 
-export { RELICS, POTIONS, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
+export { POTION_DECK, RELIC_DECK, RELICS, POTIONS, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
 export type { PotionDef, RelicDef, RelicTrigger } from './relics.ts'
 
 export {
+  GOLDEN_TICKET,
+  canUpgradeCard,
+  hasPendingRelicAcquisition,
+  healingCapFor,
   MAX_HP,
   ROOM_LABEL,
   advanceAct,
-  bossRelicCardChoice,
-  canUpgradeCard,
-  canRestAtCampfire,
-  canSmithAtCampfire,
-  validRelicCardPicks,
+  advanceQuickSetup,
+  beginCatchUp,
+  canSkipEvent,
+  decideCourier,
+  chooseEvent,
+  chooseRelicReward,
+  chooseNeow,
   createPlayer,
   createRun,
+  drawTransformReward,
   enterRoom,
   enteringRoom,
   leaveRoom,
+  finishMerchant,
+  finishRun,
+  purchaseAtMerchant,
+  revealCourier,
+  skipEvent,
+  removeAtCurrentMerchant,
   revealCardReward,
-  revealItemReward,
-  resolveCardReward,
+  revealPotionReward,
+  revealRelicReward,
+  revealNeowReward,
+  pendingRelicPreview,
+  pendingRelicEligibleCards,
+  resolvePendingRelic,
+  resolveNeowEffect,
+  resolveNeowGold,
+  resolveNeowReward,
+  resolveRelicReward,
+  resolveBossRelicReward,
+  resolvePotionReward,
+  resolveTransformReward,
+  tradePotion,
+  usePotionOutsideCombat,
+  visibleMap,
   resolveCardRewards,
   resolveCombat,
   roomChoices,
+  wingBootChoices,
   startPendingBoss,
   switchBetweenCombatRow,
-  useRunPotion,
-  tradeRunPotion,
-  validRewardDecision,
+  neowPreview,
 } from './run.ts'
-export type { CardRewardOffer, PartyMember, RewardDecision, RunPhase, RunState } from './run.ts'
+export type { CardRewardOffer, PartyMember, PendingRelicPreview, PotionRewardDecision, RunPhase, RunState } from './run.ts'
+export { NEOW_CARDS, neowCard } from './neow.ts'
+export type { NeowCard, NeowDecision, NeowEffect, NeowImmediateReward, NeowOption, NeowPlayerState, NeowRewardKind, NeowRewardOffer, NeowState } from './neow.ts'
 export { resolveCampfire } from './run.ts'
-export type { CampfireChoice } from './run.ts'
+export type { CampfireChoice, CampfireDecision } from './run.ts'
+
+export { EVENT_CARDS, EVENT_DEFINITIONS, buildEventDeck } from './events.ts'
+export type { EventCard, EventDefinition, EventEffect, EventOption } from './events.ts'
+export type { EventDecision, EventRoomState } from './event-room.ts'
+export { courierCost, merchantPurchaseCost } from './noncombat.ts'
+export { merchantRemovalCost } from './acquisition.ts'
+export type { CourierOffer, MerchantPurchase, MerchantState, RelicRewardState, TreasureDecision } from './noncombat.ts'
+export {
+  ACT_IV_UNLOCK_BOXES,
+  CHARACTER_UNLOCKS,
+  COLORLESS_UNLOCK,
+  allocateSharedMarks,
+  canEnterActIV,
+  createCampaignProgress,
+  finishCampaign,
+  isActIVUnlocked,
+  isColorlessUnlocked,
+  parseCampaignProgress,
+  setCampaignAchievement,
+} from './campaign.ts'
+export type { CampaignProgress, SpireKeys } from './campaign.ts'
+
+export {
+  DAILY_MODIFIERS,
+  DAILY_MODIFIER_SECTIONS,
+  QUICK_START_DIE_REWARDS,
+  QUICK_START_TABLE,
+  currentQuickSetupStep,
+  normalizeModifierIds,
+  rollDailyModifiers,
+} from './meta.ts'
+export type { DailyModifier, DailyModifierId, QuickSetupState, QuickStartAct, QuickStartStep, RunMetaOptions, RunMetaState, RunMode } from './meta.ts'
+export { ACHIEVEMENTS, normalizeAchievementIds, setAchievementCompleted } from './achievements.ts'
+export type { AchievementId } from './achievements.ts'
 
 export { triggerMatches } from './triggers.ts'
 export type { Trigger, TriggerEvent } from './triggers.ts'

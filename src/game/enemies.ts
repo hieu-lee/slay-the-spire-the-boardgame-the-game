@@ -104,8 +104,6 @@ export type EnemyDef = {
   abilities?: EnemyAbility[]
   /** Reuse a generated portrait across printed forms. */
   artId?: string
-  /** This portrait is an original transparent combat cutout. */
-  combatArt?: boolean
   /** Generated act-specific boss backdrop. */
   bossAct?: 1 | 2 | 3 | 4
   /** Highest matching threshold replaces only the listed printed values. */
@@ -136,8 +134,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   small_slime: {
     id: 'small_slime',
     name: 'Small Slime',
-    artId: 'acid_slime',
-    combatArt: true,
     hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
   },
@@ -145,8 +141,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   acid_slime: {
     id: 'acid_slime',
     name: 'Acid Slime',
-    artId: 'acid_slime',
-    combatArt: true,
     hpByPlayers: [5, 5, 5, 5],
     pattern: {
       kind: 'die',
@@ -159,8 +153,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   acid_slime_daw: {
-    id: 'acid_slime_daw', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
-    artId: 'acid_slime', combatArt: true,
+    id: 'acid_slime_daw', name: 'Acid Slime', artId: 'acid_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
       [{ kind: 'attack', amount: 2 }],
@@ -169,8 +162,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   acid_slime_wda: {
-    id: 'acid_slime_wda', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
-    artId: 'acid_slime', combatArt: true,
+    id: 'acid_slime_wda', name: 'Acid Slime', artId: 'acid_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'applyWeak', amount: 1 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
@@ -179,8 +171,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   acid_slime_wad: {
-    id: 'acid_slime_wad', name: 'Acid Slime', hpByPlayers: [5, 5, 5, 5],
-    artId: 'acid_slime', combatArt: true,
+    id: 'acid_slime_wad', name: 'Acid Slime', artId: 'acid_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'applyWeak', amount: 1 }],
       [{ kind: 'attack', amount: 2 }],
@@ -191,7 +182,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   cultist: {
     id: 'cultist',
     name: 'Cultist',
-    combatArt: true,
     hpByPlayers: [9, 9, 9, 9],
     pattern: {
       kind: 'single',
@@ -205,8 +195,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   jaw_worm: {
     id: 'jaw_worm',
     name: 'Jaw Worm',
-    artId: 'jaw_worm',
-    combatArt: true,
     hpByPlayers: [10, 10, 10, 10],
     pattern: {
       kind: 'die',
@@ -222,7 +210,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'jaw_worm_first',
     name: 'Jaw Worm',
     artId: 'jaw_worm',
-    combatArt: true,
     hpByPlayers: [7, 7, 7, 7],
     pattern: {
       kind: 'die',
@@ -238,7 +225,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'jaw_worm_a7',
     name: 'Jaw Worm',
     artId: 'jaw_worm',
-    combatArt: true,
     hpByPlayers: [7, 7, 7, 7],
     pattern: {
       kind: 'die',
@@ -253,8 +239,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   green_louse: {
     id: 'green_louse',
     name: 'Green Louse',
-    artId: 'green_louse',
-    combatArt: true,
     hpByPlayers: [3, 3, 3, 3],
     pattern: {
       kind: 'die',
@@ -268,8 +252,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   green_louse_21w: {
-    id: 'green_louse_21w', name: 'Green Louse', hpByPlayers: [3, 3, 3, 3],
-    artId: 'green_louse', combatArt: true,
+    id: 'green_louse_21w', name: 'Green Louse', artId: 'green_louse', hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }],
       [{ kind: 'attack', amount: 1 }],
@@ -281,8 +264,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   red_louse: {
     id: 'red_louse',
     name: 'Red Louse',
-    artId: 'red_louse',
-    combatArt: true,
     hpByPlayers: [4, 4, 4, 4],
     pattern: {
       kind: 'die',
@@ -299,7 +280,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'red_louse_first',
     name: 'Red Louse',
     artId: 'red_louse',
-    combatArt: true,
     hpByPlayers: [4, 4, 4, 4],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
@@ -310,8 +290,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_louse_summon: {
-    id: 'red_louse_summon', name: 'Red Louse', hpByPlayers: [3, 3, 3, 3],
-    artId: 'red_louse', combatArt: true,
+    id: 'red_louse_summon', name: 'Red Louse', artId: 'red_louse', hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }],
       [{ kind: 'attack', amount: 1 }],
@@ -323,7 +302,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   spike_slime: {
     id: 'spike_slime',
     name: 'Spike Slime',
-    artId: 'spike_slime_v2d',
     hpByPlayers: [5, 5, 5, 5],
     pattern: {
       kind: 'die',
@@ -365,7 +343,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   fungi_beast: {
     id: 'fungi_beast',
     name: 'Fungi Beast',
-    artId: 'fungi_beast_a7',
     hpByPlayers: [6, 6, 6, 6],
     pattern: {
       kind: 'die',
@@ -381,7 +358,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   blue_slaver: {
     id: 'blue_slaver',
     name: 'Blue Slaver',
-    artId: 'blue_slaver_3wd',
     hpByPlayers: [10, 10, 10, 10],
     pattern: {
       kind: 'die',
@@ -813,7 +789,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   // Act III encounters and their finite Summons deck variants.
   jaw_worm_act3: {
     id: 'jaw_worm_act3', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
-    artId: 'jaw_worm', combatArt: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
@@ -823,7 +798,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
 
   jaw_worm_summon: {
     id: 'jaw_worm_summon', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
-    artId: 'jaw_worm', combatArt: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 4 }],
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
@@ -1149,7 +1123,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   gremlin_nob: {
     id: 'gremlin_nob',
     name: 'Gremlin Nob',
-    combatArt: true,
     elite: true,
     // Elites scale with the party via the HP board (p.11).
     hpByPlayers: [15, 30, 45, 60],
@@ -1190,7 +1163,6 @@ export const ENEMIES: Record<string, EnemyDef> = {
   lagavulin: {
     id: 'lagavulin',
     name: 'Lagavulin',
-    combatArt: true,
     elite: true,
     hpByPlayers: [22, 44, 66, 88],
     pattern: {

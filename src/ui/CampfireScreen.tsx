@@ -1,30 +1,32 @@
 import { useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
-import { canRestAtCampfire, canSmithAtCampfire, canUpgradeCard } from '../game/run.ts'
-import type { CampfireChoice } from '../game/run.ts'
+import { canUpgradeCard } from '../game/run.ts'
+import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { Icon } from './Icon.tsx'
 
 type CampfireScreenProps = {
   players: Player[]
-  onResolve: (choices: Record<string, { choice: CampfireChoice; cardUid?: string }>) => void
+  onResolve: (choices: Record<string, CampfireDecision>) => void
+  rubyAvailable?: boolean
+  restAllowed?: boolean
 }
 
-type Decision = { choice: CampfireChoice; cardUid?: string }
+type Decision = CampfireDecision
 
 /**
  * Each player picks Rest or Smith independently (p.9). Nobody moves on until
  * every living player has decided, which mirrors the table: you all leave the
  * campfire together.
  */
-export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
+export function CampfireScreen({ players, onResolve, rubyAvailable = false, restAllowed = true }: CampfireScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
   const living = players.filter((player) => !player.dead)
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
-    return decision.choice === 'rest' || decision.choice === 'skip' || decision.cardUid !== undefined
+    return decision.choice === 'rest' || decision.choice === 'leave' || decision.choice === 'ruby' || decision.cardUid !== undefined
   })
 
   return (
@@ -37,10 +39,14 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
       <div className="campfire__players">
         {living.map((player) => {
           const decision = decisions[player.id]
+          const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
+          const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
+          const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
+          const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
           const upgradable = player.deck.filter(canUpgradeCard)
+          const restBlocked = coffee || !restAllowed
+          const blocked = restBlocked && (hammer || upgradable.length === 0)
           const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
-          const canRest = canRestAtCampfire(player)
-          const canSmith = canSmithAtCampfire(player)
           return (
             <div className="campfire__player" key={player.id}>
               <span className="campfire__name">
@@ -48,21 +54,31 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
               </span>
 
               <div className="campfire__choices">
+                {blocked ? <button type="button"
+                  className={decision?.choice === 'leave' ? 'is-chosen' : ''}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'leave' } }))}>
+                  Leave <span className="muted">No campfire action available</span>
+                </button> : null}
                 <button
                   type="button"
-                  disabled={!canRest}
                   className={decision?.choice === 'rest' ? 'is-chosen' : ''}
+                  disabled={restBlocked}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
                   }
                 >
                   Rest
-                  <span className="muted"> +3 HP</span>
+                  <span className="muted"> +{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
+                {rubyAvailable ? <button
+                  type="button"
+                  className={decision?.choice === 'ruby' ? 'is-chosen' : ''}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'ruby' } }))}
+                >◆ Ruby Key <span className="muted">skip campfire</span></button> : null}
                 <button
                   type="button"
                   className={decision?.choice === 'smith' ? 'is-chosen' : ''}
-                  disabled={!canSmith}
+                  disabled={hammer || upgradable.length === 0}
                   onClick={() =>
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
                   }
@@ -70,13 +86,15 @@ export function CampfireScreen({ players, onResolve }: CampfireScreenProps) {
                   Smith
                   <span className="muted"> upgrade</span>
                 </button>
-                {!canRest && !canSmith ? (
-                  <button type="button" className={decision?.choice === 'skip' ? 'is-chosen' : ''}
-                    onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'skip' } }))}>
-                    Do nothing
-                  </button>
-                ) : null}
               </div>
+
+              {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
+                {player.deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card}
+                  selected={decision.removeCardUid === card.uid}
+                  onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
+                    ...decision, removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid,
+                  } }))} />)}
+              </div> : null}
 
               {decision?.choice === 'smith' ? (
                 <>

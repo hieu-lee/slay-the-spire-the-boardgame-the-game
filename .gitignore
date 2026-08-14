@@ -27,9 +27,9 @@ src/**/*.d.ts
 /*.webp
 artifacts/
 
-# Sync scripts keep local card scans, icons, and refreshed source art out of
-# version control. Some enemy/background WebPs predate this rule and remain
-# tracked; original combat art lives in public/assets/combat/. See ATTRIBUTION.md.
+# Publisher card scans, rulebook icons, and extra enemy crops stay local.
+# The curated enemy portraits already tracked under public/assets/enemies remain
+# part of clean clones; generated combat art is bundled under public/assets/combat.
 public/assets/cards/
 public/assets/cards-hd/
 public/assets/icons/

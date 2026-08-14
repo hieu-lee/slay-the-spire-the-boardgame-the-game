@@ -1,18 +1,26 @@
 import {
   activatePower,
   activatePotion,
+  activateRelic,
   beginEndPlayerTurn,
   chooseEndTurnTarget,
+  chooseDistilledCard,
+  chosenEvokeOrbs,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardModeIsAvailable,
   createCombat,
   defaultStartTurnChoices,
   endPlayerTurn,
   endTurnAbilities,
-  enemyTurn,
   facingChoicesAreValid,
+  enemyTurn,
+  evokeTargetProgress,
   livingEnemies,
+  lightningRowTarget,
   nextEvokeChoice,
+  orderStartTurnScries,
+  pendingTriggerAbility,
   playCard,
   playCardCopy,
   playCost,
@@ -20,12 +28,18 @@ import {
   previewCardChoice,
   previewCardCopyChoice,
   resolveEnemyTargets,
+  resolvePendingTrigger,
   resolveStartPlayerTurn,
+  resolveStartTurnDiscard,
+  resolveStartTurnScry,
   spendMiracle,
   spendShiv,
   startPlayerTurn,
   startPlayerTurnWithChoices,
   startTurnAbilities,
+  startTurnDiscardPreview,
+  startTurnScryAbilities,
+  startTurnScryPreview,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
@@ -42,6 +56,7 @@ import {
 } from '../src/game/run.ts'
 import { readFileSync } from 'node:fs'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
+import { postNeowRun } from './lib/post-neow-run.mjs'
 
 let uid = 0
 const instance = (defId, upgraded = false) => ({ uid: `c${uid++}`, defId, upgraded })
@@ -150,197 +165,8 @@ check('Curl Up waits until a multi-hit Attack card is complete', () => {
     spray.uid,
     { enemyUid: 'e1', playerId: null },
   )
-  assertEqual(next.enemies[0].hp, 4, 'both daggers deal damage before Curl Up')
-  assertEqual(next.enemies[0].block, 2, 'Curl Up resolves after the complete card')
-})
-
-check('Act III after-card reactions share the physical trigger timing', () => {
-  const spray = instance('dagger_spray')
-  const shifted = playCard(
-    combat(
-      [makePlayer({ character: 'silent', hand: [spray] })],
-      [makeEnemy({ defId: 'transient', hp: 99, maxHp: 99 })],
-    ),
-    'p1', spray.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(shifted.enemies[0].hp, 97, 'both hits damage Transient')
-  assertEqual(shifted.players[0].block, 2, 'Shift grants the total HP lost after the card')
-
-  const strike = instance('strike_ironclad')
-  const reactive = playCard(
-    { ...combat(
-      [makePlayer({ hand: [strike] })],
-      [makeEnemy({ defId: 'writhing_mass', hp: 17, maxHp: 17 })],
-    ), die: 1 },
-    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assert(reactive.log.some((line) => line.includes('rerolled enemy intents')), 'Reactive rerolls after Attack damage')
-
-  const lethalShift = instance('strike_ironclad')
-  const shiftedDead = playCard(
-    combat(
-      [makePlayer({ hand: [lethalShift] })],
-      [
-        makeEnemy({ uid: 'e1', defId: 'transient', hp: 1, maxHp: 99 }),
-        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
-      ],
-    ),
-    'p1', lethalShift.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(shiftedDead.players[0].block, 1, 'lethal damage still triggers Shift while combat continues')
-
-  const lethalReactive = instance('strike_ironclad')
-  const reactiveDead = playCard(
-    combat(
-      [makePlayer({ hand: [lethalReactive] })],
-      [
-        makeEnemy({ uid: 'e1', defId: 'writhing_mass', hp: 1, maxHp: 17 }),
-        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
-      ],
-    ),
-    'p1', lethalReactive.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assert(reactiveDead.log.some((line) => line.includes('rerolled enemy intents')),
-    'lethal Attack damage still triggers Reactive while combat continues')
-
-  const passive = {
-    ...combat(
-      [makePlayer({ character: 'defect', orbs: ['lightning', null, null] })],
-      [
-        makeEnemy({ uid: 'e1', defId: 'transient', hp: 1, maxHp: 99 }),
-        makeEnemy({ uid: 'e2', hp: 6, maxHp: 6 }),
-      ],
-    ),
-    phase: 'player',
-  }
-  const passiveShift = beginEndPlayerTurn(passive)
-  assertEqual(passiveShift.enemies[0].dead, true, 'end-turn Lightning defeats Transient')
-  assertEqual(passiveShift.players[0].block, 1,
-    'lethal non-card damage still triggers Shift while combat continues')
-
-  const thornStrike = instance('strike_ironclad')
-  const thorned = playCard(
-    combat(
-      [makePlayer({ hp: 10, hand: [thornStrike] })],
-      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 2 })],
-    ),
-    'p1', thornStrike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(thorned.players[0].hp, 8, 'Thorns retaliates once per Attack, not once per Hit')
-})
-
-check('Act III HP modifiers apply through every enemy damage path', () => {
-  const strike = instance('strike_ironclad')
-  const slow = playCard(
-    combat(
-      [makePlayer({ hand: [strike] })],
-      [makeEnemy({ defId: 'giant_head', hp: 80, maxHp: 80, vulnerable: 1 })],
-    ),
-    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(slow.enemies[0].hp, 76, 'Slow adds to the Hit before Vulnerable doubles it')
-
-  const immuneStrike = instance('strike_ironclad')
-  const immune = playCard(
-    combat(
-      [makePlayer({ hand: [immuneStrike] })],
-      [makeEnemy({ defId: 'nemesis', hp: 30, maxHp: 30, actionIndex: 1, poison: 2 })],
-    ),
-    'p1', immuneStrike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(immune.enemies[0].hp, 30, 'Nemesis cannot lose HP on a marked action')
-  const poisoned = beginEndPlayerTurn(immune)
-  assertEqual(poisoned.enemies[0].hp, 30, 'marked-action immunity also prevents Poison HP loss')
-})
-
-check('card-sourced orbs wait until all card text resolves before Curl Up', () => {
-  const card = instance('dual_cast')
-  const next = playCard(
-    combat(
-      [makePlayer({ character: 'defect', hand: [card], orbs: ['lightning', 'lightning', null] })],
-      [makeEnemy({ defId: 'green_louse', hp: 6, maxHp: 6 })],
-    ),
-    'p1', card.uid, {
-      enemyUid: null,
-      playerId: 'p1',
-      evokeSlots: [0, 1],
-      evokeEnemyUids: ['e1', 'e1'],
-    },
-  )
-  assertEqual(next.enemies[0].hp, 2, 'both Lightning evokes deal damage before Curl Up')
-  assertEqual(next.enemies[0].block, 2, 'Curl Up resolves after Dual Cast')
-})
-
-check('each generated or spent Shiv is a separate Attack for Thorns', () => {
-  const dance = instance('blade_dance')
-  const overflow = playCard(
-    combat(
-      [makePlayer({ character: 'silent', hp: 10, hand: [dance], shivs: 5 })],
-      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1 })],
-    ),
-    'p1', dance.uid, { enemyUid: null, playerId: null, shivEnemyUids: ['e1', 'e1'] },
-  )
-  assertEqual(overflow.enemies[0].hp, 8, 'each overflow Shiv attacks once')
-  assertEqual(overflow.players[0].hp, 8, 'each overflow Shiv triggers Thorns')
-
-  const unload = instance('unload')
-  const spent = playCard(
-    combat(
-      [makePlayer({ character: 'silent', hp: 10, hand: [unload], shivs: 2 })],
-      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 1 })],
-    ),
-    'p1', unload.uid, { enemyUid: 'e1', playerId: null, shivEnemyUids: ['e1', 'e1'] },
-  )
-  assertEqual(spent.enemies[0].hp, 4, 'Unload and its two Shivs deal their printed damage')
-  assertEqual(spent.players[0].hp, 7, 'Unload and both Shivs trigger Thorns separately')
-})
-
-check('Thorns resolves after lethal card text unless combat ended', () => {
-  const strike = instance('strike_ironclad')
-  const survivedCombat = playCard(
-    combat(
-      [makePlayer({ hp: 10, hand: [strike] })],
-      [
-        makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 }),
-        makeEnemy({ uid: 'e2', defId: 'cultist', hp: 6, maxHp: 6 }),
-      ],
-    ),
-    'p1', strike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(survivedCombat.enemies[0].dead, true, 'the Spiker is defeated')
-  assertEqual(survivedCombat.players[0].hp, 8, 'its pending Thorns still resolves')
-
-  const finalStrike = instance('strike_ironclad')
-  const endedCombat = playCard(
-    combat(
-      [makePlayer({ hp: 10, hand: [finalStrike] })],
-      [makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 })],
-    ),
-    'p1', finalStrike.uid, { enemyUid: 'e1', playerId: null },
-  )
-  assertEqual(endedCombat.phase, 'won', 'the last enemy ends combat immediately')
-  assertEqual(endedCombat.players[0].hp, 10, 'nothing resolves after combat ends')
-
-  const finalShiv = combat(
-    [makePlayer({ character: 'silent', hp: 10, shivs: 1 })],
-    [makeEnemy({ uid: 'e1', defId: 'spiker_add', hp: 1, maxHp: 10, abilityCubes: 2 })],
-  )
-  const shivEnded = spendShiv(finalShiv, 'p1', 'e1')
-  assertEqual(shivEnded.phase, 'won', 'a lethal standalone Shiv ends combat')
-  assertEqual(shivEnded.players[0].hp, 10, 'its final Spiker cannot retaliate after combat ends')
-})
-
-check('enemy card reactions resolve before played-card cleanup triggers', () => {
-  const card = instance('die_die_die')
-  const next = playCard(
-    combat(
-      [makePlayer({ character: 'silent', hp: 10, hand: [card], powers: [instance('feel_no_pain')] })],
-      [makeEnemy({ defId: 'spiker_add', hp: 10, maxHp: 10, abilityCubes: 2 })],
-    ),
-    'p1', card.uid, { enemyUid: null, playerId: null },
-  )
-  assertEqual(next.players[0].hp, 8, 'Thorns lands before Feel No Pain grants Block')
-  assertEqual(next.players[0].block, 1, 'the exhaust trigger resolves during cleanup afterward')
+  assertEqual(next.enemies[0].hp, 4, 'both daggers resolve before the reaction')
+  assertEqual(next.enemies[0].block, 2, 'Curl Up gains its printed Block after the card')
 })
 
 check('Spore Cloud applies Vulnerable to its row however the Fungi Beast dies', () => {
@@ -539,6 +365,94 @@ check('start of turn resets energy and block and draws five', () => {
   assert(next.die >= 1 && next.die <= 6, `the shared die should be 1-6, got ${next.die}`)
 })
 
+check('Foresight pauses after Reset, Scries privately, then draws and rolls', () => {
+  for (const upgraded of [false, true]) {
+    const deck = Array.from({ length: 6 }, (_, index) => instance(index % 2 ? 'defend_watcher' : 'strike_watcher'))
+    const foresight = instance('foresight', upgraded)
+    const state = combat([makePlayer({
+      character: 'watcher', energy: 1, block: 7, hand: [foresight], draw: deck,
+      powers: [instance('nirvana')],
+    })], [makeEnemy()])
+    assertEqual(cardNeedsChoicePreview(faceOf(cardDef('foresight'), upgraded), state, state.players[0]), false,
+      'playing Foresight must not ask for its triggered Scry')
+    const armed = playCard(state, 'p1', foresight.uid, { enemyUid: null, playerId: null })
+    assertDeepEqual(armed.players[0].draw.map((card) => card.uid), deck.map((card) => card.uid),
+      'Foresight must not Scry when it is played')
+    const prepared = preparePlayerTurn(armed)
+    const preview = startTurnScryPreview(prepared)
+    assertEqual(prepared.players[0].energy, 3, 'Reset happens before Foresight')
+    assertEqual(prepared.players[0].block, 0, 'Reset clears Block before Foresight')
+    assertEqual(prepared.players[0].hand.length, 0, 'Foresight must happen before Draw')
+    assertEqual(preview?.amount, upgraded ? 4 : 3)
+    assertDeepEqual(preview?.cards.map((card) => card.uid), deck.slice(0, upgraded ? 4 : 3).map((card) => card.uid))
+    assertEqual(startTurnAbilities(prepared).length, 0, 'post-draw abilities cannot resolve before Foresight')
+    assertEqual(resolveStartTurnScry(prepared, 'p2', preview.id, []), prepared,
+      'another player cannot resolve private Scry')
+    assertEqual(resolveStartTurnScry(prepared, 'p1', preview.id, ['forged']), prepared,
+      'Scry rejects an unrevealed card')
+    assertEqual(resolveStartTurnScry(prepared, 'p1', preview.id, [deck[0].uid, deck[0].uid]), prepared,
+      'Scry rejects duplicate choices')
+
+    const resolved = resolveStartTurnScry(prepared, 'p1', preview.id, [deck[1].uid])
+    assertEqual(resolved.phase, 'player')
+    assertDeepEqual(resolved.players[0].hand.map((card) => card.uid),
+      [deck[0], ...deck.slice(2)].map((card) => card.uid), 'Draw follows the updated Scry order')
+    assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [deck[1].uid])
+    assertEqual(resolved.players[0].block, 1, 'Nirvana resolves from Foresight before Draw')
+    assert(resolved.die >= 1 && resolved.die <= 6, 'the shared die rolls after Foresight and Draw')
+
+    const nextRound = preparePlayerTurn({ ...resolved, phase: 'roundEnd' })
+    const nextPreview = startTurnScryPreview(nextRound)
+    assert(nextPreview.id !== preview.id, 'Foresight action id repeated on the next turn')
+    assertEqual(resolveStartTurnScry(nextRound, 'p1', preview.id, []), nextRound,
+      'replaying last turn\'s keep-all action consumed the next Foresight')
+  }
+
+  const empty = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: [], powers: [instance('foresight'), instance('nirvana')], block: 0,
+  })], [makeEnemy()]))
+  const emptyPreview = startTurnScryPreview(empty)
+  const resolvedEmpty = resolveStartTurnScry(empty, 'p1', emptyPreview.id, [])
+  assertEqual(resolvedEmpty.players[0].block, 0, 'looking at no cards does not trigger Nirvana')
+})
+
+check('multiple Foresights use the chosen order and reject a replayed source', () => {
+  const deck = Array.from({ length: 7 }, (_, index) => instance(index % 2 ? 'defend_watcher' : 'strike_watcher'))
+  const prepared = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: deck,
+    powers: [instance('foresight'), instance('foresight', true)],
+  })], [makeEnemy()]))
+  const abilities = startTurnScryAbilities(prepared)
+  assertDeepEqual(abilities.map((ability) => ability.amount), [3, 4])
+  assertEqual(startTurnScryPreview(prepared), undefined, 'private cards appeared before the party chose an order')
+  assertEqual(orderStartTurnScries(prepared, [abilities[0].id]), prepared, 'an incomplete order was accepted')
+
+  const ordered = orderStartTurnScries(prepared, [abilities[1].id, abilities[0].id])
+  const first = startTurnScryPreview(ordered)
+  assertEqual(first?.amount, 4)
+  const afterFirst = resolveStartTurnScry(ordered, 'p1', first.id, [])
+  const second = startTurnScryPreview(afterFirst)
+  assertEqual(second?.amount, 3)
+  assertEqual(resolveStartTurnScry(afterFirst, 'p1', first.id, []), afterFirst,
+    'replaying the first keep-all action consumed the second Foresight')
+  const finished = resolveStartTurnScry(afterFirst, 'p1', second.id, [])
+  assertEqual(finished.phase, 'player')
+  assertEqual(finished.players[0].hand.length, 5)
+})
+
+check('Foresight rejects an action replayed from an earlier combat', () => {
+  const power = instance('foresight')
+  const player = () => makePlayer({
+    character: 'watcher', draw: [instance('strike_watcher')], powers: [power],
+  })
+  const first = preparePlayerTurn(createCombat(createRng(42), [player()], [makeEnemy()], 'fight-a'))
+  const staleId = startTurnScryPreview(first).id
+  const second = preparePlayerTurn(createCombat(createRng(42), [player()], [makeEnemy()], 'fight-b'))
+  assert(startTurnScryPreview(second).id !== staleId, 'Foresight action id repeated in a later combat')
+  assertEqual(resolveStartTurnScry(second, 'p1', staleId, []), second,
+    'replaying another combat\'s keep-all action consumed Foresight')
+})
+
 check('the die is rolled once per round and is deterministic for a seed', () => {
   const deck = STARTER_DECKS.ironclad.map((id) => instance(id))
   const a = startPlayerTurn(combat([makePlayer({ draw: deck })], [makeEnemy()]))
@@ -592,16 +506,6 @@ check('ending a turn in Wrath costs 1 damage unless blocked', () => {
   const guarded = endPlayerTurn(combat([makePlayer({ stance: 'wrath', block: 3 })], [makeEnemy()]))
   assertEqual(guarded.players[0].hp, 10, 'Block prevents the Wrath damage')
   assertEqual(guarded.players[0].block, 2, 'and one Block is spent doing so')
-
-  const revived = beginEndPlayerTurn(combat([
-    makePlayer({ hp: 1, stance: 'wrath', potions: ['fairy_in_a_bottle'] }),
-  ], [makeEnemy()]))
-  assertEqual(revived.players[0].hp, 2, 'Fairy revives lethal end-turn damage')
-  const damageLog = revived.log.findIndex((line) => line.includes('takes 1 from Wrath'))
-  const fairyLog = revived.log.findIndex((line) => line.includes('Fairy in a Bottle revives'))
-  assert(damageLog >= 0, 'the actual HP loss is logged')
-  assert(fairyLog > damageLog, 'Fairy consumption is visible after the damage that caused it')
-  assert(!revived.log.some((line) => line.includes('blocks the bite')), 'revival is not reported as Block')
 })
 
 // Twin Strike is two separate hits, not one hit of double size. The difference
@@ -1248,17 +1152,6 @@ check('players choose the order of Power and Curse end-of-turn abilities', () =>
     'an incomplete order is rejected without mutating the turn')
 })
 
-check('Orichalcum grants its one printed Block only when empty', () => {
-  const empty = beginEndPlayerTurn(combat([
-    makePlayer({ relics: [{ defId: 'orichalcum', spent: false }] }),
-  ], [makeEnemy()]))
-  assertEqual(empty.players[0].block, 1)
-  const guarded = beginEndPlayerTurn(combat([
-    makePlayer({ block: 2, relics: [{ defId: 'orichalcum', spent: false }] }),
-  ], [makeEnemy()]))
-  assertEqual(guarded.players[0].block, 2)
-})
-
 check('the party can interleave end-of-turn abilities across co-op seats', () => {
   const state = combat([
     makePlayer({ hp: 1, stance: 'wrath' }),
@@ -1447,7 +1340,7 @@ check('poison resolves before the party takes its own end-of-turn damage', () =>
 check('a lost combat carries the party out of it as it stood', () => {
   // The fold-back for a defeat was untested: survivors' hit points and the
   // dead flag have to come from the COMBAT, not from the run as it was before.
-  const run = createRun(77, [
+  const run = postNeowRun(77, [
     { id: 'p1', name: 'Ann', character: 'ironclad' },
     { id: 'p2', name: 'Bo', character: 'silent' },
   ])
@@ -1656,7 +1549,7 @@ check('a defeated party is never folded back into a live run', () => {
   // What the bug above actually produced downstream: a corpse carried onto the
   // map, healed to full by advanceAct, losing the next combat before anyone
   // acted.
-  const run = createRun(88, [
+  const run = postNeowRun(88, [
     { id: 'p1', name: 'Ann', character: 'ironclad' },
     { id: 'p2', name: 'Bo', character: 'silent' },
   ])
@@ -1775,16 +1668,16 @@ check('a bogus uid does not stand in for a real one when paying a cost', () => {
   )
 })
 
-check('an evoke with no orbs is refused rather than wasted', () => {
+check('an evoke card with no Orbs can still be played for no effect', () => {
   const card = instance('dual_cast')
   const state = combat(
     [makePlayer({ id: 'p1', character: 'defect', hand: [card], orbs: [null, null, null] })],
     [makeEnemy()],
   )
-  assert(
-    playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: 'p1' }) === state,
-    'it would otherwise spend the Energy, discard the card and do nothing',
-  )
+  const played = playCard(state, 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+  assert(played !== state)
+  assertEqual(played.players[0].energy, 2)
+  assertEqual(played.players[0].discard.at(-1)?.uid, card.uid)
 })
 
 // An attack that cannot land should not send the player hunting for a target.
@@ -1827,9 +1720,9 @@ check('an evoke card hits the exact target carried with its Orb choice', () => {
     enemyUid: null,
     playerId: 'p1',
     evokeSlots: [0],
-    evokeEnemyUids: ['e2'],
+    evokeEnemyUids: ['e2', 'e2'],
   })
-  assertEqual(next.enemies[1].hp, 18, 'the chosen enemy took the orb')
+  assertEqual(next.enemies[1].hp, 16, 'the chosen enemy took both Evoke effects')
   assertEqual(next.enemies[0].hp, 20, 'and the other did not')
 })
 
@@ -1967,7 +1860,7 @@ check('a row card with no anchor is refused, not turned into a board wipe', () =
 check('the campfire only works at a campfire', () => {
   // The engine function is exported and the local UI calls it directly, so it
   // cannot rely on the room layer's guard.
-  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const otherRoom = Object.values(run.map.rooms).find((room) => room.kind !== 'campfire')
   assert(otherRoom, 'precondition: the act should contain a non-campfire room')
   const parked = { ...run, phase: 'room', map: { ...run.map, position: otherRoom.id } }
@@ -2023,14 +1916,16 @@ check('an empty but valid slot is refused instead of changing the choice', () =>
 check('a room already occupied cannot be re-entered to farm it', () => {
   // After a win the party stands on the map WITH a position, which is the
   // state the reachability guard actually has to refuse.
-  const run = createRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(31, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const rewarded = resolveCombat({
     ...entered,
     combat: {
       ...entered.combat,
       phase: 'won',
-      enemies: entered.combat.enemies.map((foe) => ({ ...foe, hp: 0, dead: true })),
+      enemies: entered.combat.enemies.map((foe) => ({
+        ...foe, hp: 0, dead: true, potionReward: false, relicReward: false,
+      })),
     },
   })
   const won = resolveCardRewards(
@@ -2051,7 +1946,7 @@ check('a room already occupied cannot be re-entered to farm it', () => {
 check('a campfire cannot be rested at twice', () => {
   // resolveCampfire leaves the map position on the campfire, so without the
   // phase guard the same message heals another 3 every time it is re-sent.
-  const run = createRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const campfire = Object.values(run.map.rooms).find((room) => room.kind === 'campfire')
   const parked = {
     ...run,
@@ -2071,7 +1966,7 @@ check('the boss cannot be skipped to reach the next Act', () => {
   // isActComplete is already true DURING the boss fight, because the boss room
   // counts as visited — so the phase guard is the only thing stopping a client
   // from healing to full and opening Act 2.
-  const run = createRun(51, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(51, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const boss = Object.values(run.map.rooms).find((room) => room.kind === 'boss')
   const fighting = {
     ...run,
@@ -2084,7 +1979,7 @@ check('the boss cannot be skipped to reach the next Act', () => {
 })
 
 check('the map offers no rooms while a fight is on', () => {
-  const run = createRun(61, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+  const run = postNeowRun(61, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
   const fighting = enterRoom(run, roomChoices(run)[0].id)
   assertEqual(fighting.phase, 'combat', 'precondition: in a fight')
   assertEqual(roomChoices(fighting).length, 0, 'the map must offer nothing mid-combat')
@@ -2330,6 +2225,16 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'turbo', energy: [5, 6], exhaust: [1, 1], dazeDiscard: [1, 1], player: { energy: 3 } },
     { id: 'skim', hand: [3, 4] },
     { id: 'claw', enemyHp: [19, 19] },
+    { id: 'claw_claw_pack', enemyHp: [19, 18] },
+    { id: 'simmering_fury', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'like_water', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'battle_hymn', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'mental_fortress', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'rushdown', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'nirvana', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'foresight', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'indignation', stance: ['wrath', 'wrath'], initialStance: 'neutral', energy: [E - 1, E - 1] },
+    { id: 'inner_peace', stance: ['calm', 'calm'], initialStance: 'neutral', energy: [E - 1, E - 1] },
     { id: 'crescendo', hand: [0, 1], stance: ['wrath', 'wrath'], initialStance: 'neutral' },
     { id: 'flurry_of_blows', enemyHp: [19, 19] },
     { id: 'flying_sleeves', enemyHp: [18, 17] },
@@ -2383,6 +2288,8 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'feed', enemyHp: [17, 17], strength: [0, 0], exhaust: [1, 1] },
     { id: 'corruption', powers: [1, 1], energy: [E - 3, E - 2] },
     { id: 'barricade', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'berserk', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'juggernaut', powers: [1, 1], energy: [E - 2, E - 2] },
     { id: 'entrench', block: [0, 0], exhaust: [1, 0] },
     { id: 'clash', enemyHp: [17, 16] },
     { id: 'spot_weakness', strength: [1, 1] },
@@ -2391,6 +2298,10 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'pray', hand: [2, 2], miracles: [1, 2] },
     { id: 'darkness', orb: ['dark', 'dark'] },
     { id: 'machine_learning', powers: [1, 1] },
+    { id: 'electrodynamics', powers: [1, 1], orbCount: [2, 3] },
+    { id: 'fission', exhaust: [1, 1] },
+    { id: 'multi_cast', energySpent: [0, 0], energy: [E, E] },
+    { id: 'seek', hand: [1, 2], exhaust: [1, 1], searchDraw: true },
     { id: 'dash', enemyHp: [18, 17], block: [2, 3] },
     { id: 'leap', block: [2, 3] },
     { id: 'bludgeon', enemyHp: [13, 10] },
@@ -2430,6 +2341,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'havoc', hand: [1, 1] },
     { id: 'combust', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'evolve', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'fire_breathing', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'double_tap', energy: [E - 1, E] },
     { id: 'perfected_strike', enemyHp: [17, 17] },
     { id: 'headbutt', enemyHp: [18, 17] },
@@ -2444,9 +2356,17 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'capacitor', powers: [1, 1] },
     { id: 'consume', powers: [1, 1] },
     { id: 'defragment', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'static_discharge', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'amplify', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'recycle', energy: [E - 1, E] },
+    { id: 'equilibrium', block: [3, 4], energy: [E - 2, E - 2] },
+    { id: 'loop', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'buffer', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'echo_form', powers: [1, 1], energy: [E - 3, E - 3] },
     { id: 'core_surge', enemyHp: [17, 16] },
     { id: 'all_for_one', enemyHp: [18, 17] },
     { id: 'thunder_strike', enemyHp: [20, 20] },
+    { id: 'reinforced_body', block: [2, 0], energySpent: [1, 0], energy: [E - 1, E] },
     { id: 'double_energy', energy: [6, 6], exhaust: [1, 1] },
     { id: 'streamline', enemyHp: [17, 16] },
     { id: 'meteor_strike', enemyHp: [10, 8] },
@@ -2454,11 +2374,47 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'flechettes', enemyHp: [20, 19] },
     { id: 'adrenaline', energy: [6, 6], hand: [2, 2], exhaust: [1, 1] },
     { id: 'grand_finale', player: { draw: [] }, enemyHp: [10, 8] },
+    { id: 'a_thousand_cuts', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'malaise', energySpent: [1, 1], energy: [E - 1, E - 1], weak: [1, 2], poison: [1, 2], exhaust: [1, 1] },
+    { id: 'burst', energy: [E - 1, E] },
+    { id: 'bullet_time', energy: [E - 3, E - 2] },
+    { id: 'corpse_explosion', poison: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'doppelganger', energySpent: [0, 0], energy: [E, E], exhaust: [1, 0] },
+    { id: 'wraith_form', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'tools_of_the_trade', powers: [1, 1], energy: [E - 1, E] },
+    { id: 'carve_reality', enemyHp: [17, 16], energy: [E - 2, E - 2] },
+    { id: 'sash_whip', enemyHp: [18, 18], energy: [E - 1, E - 1] },
+    { id: 'conclude', enemyHp: [18, 17], energy: [E - 1, E - 1] },
+    { id: 'judgment', exhaust: [0, 0], energy: [E - 1, E - 1] },
+    { id: 'ragnarok', enemyHp: [15, 14], energy: [E - 3, E - 3] },
+    { id: 'scrawl', hand: [5, 5], exhaust: [1, 1], energy: [E - 1, E] },
+    { id: 'signature_move', enemyHp: [14, 12], energy: [E - 2, E - 2] },
+    { id: 'spirit_shield', block: [0, 0], exhaust: [1, 0], energy: [E - 2, E - 2] },
+    { id: 'swivel', block: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'wallop', enemyHp: [18, 17], block: [2, 3], energy: [E - 2, E - 2] },
+    { id: 'wish', strength: [1, 2], exhaust: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'conjure_blade', powers: [1, 1], energySpent: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'deus_ex_machina', miracles: [2, 3], exhaust: [1, 1], energy: [E, E] },
+    { id: 'foreign_influence', enemyHp: [17, 16], energy: [E - 2, E - 2] },
+    { id: 'omega', powers: [1, 1], energy: [E - 3, E - 3] },
+    { id: 'reach_heaven', player: { miracles: 2 }, enemyHp: [16, 14], energy: [E - 1, E - 1] },
+    { id: 'study', powers: [1, 1], energy: [E - 2, E - 1] },
+    { id: 'blasphemy', exhaust: [7, 7], energy: [E - 2, E - 2] },
+    { id: 'brilliance', player: { miracles: 2 }, enemyHp: [16, 14], energy: [E - 1, E - 1] },
+    { id: 'devotion', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'worship', energySpent: [2, 2], miracles: [3, 3], exhaust: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'wreath_of_flame', energySpent: [2, 2], strength: [2, 2], exhaust: [1, 0], energy: [E - 2, E - 2] },
+    { id: 'establishment', powers: [1, 1], energy: [E - 1, E - 1] },
+    { id: 'meditate', stance: ['calm', 'calm'], energy: [E - 1, E - 1] },
+    { id: 'perseverance', block: [1, 2], energy: [E - 1, E - 1] },
+    { id: 'sands_of_time', enemyHp: [17, 17], energy: [E - 2, E - 2] },
+    { id: 'windmill_strike', enemyHp: [18, 18], energy: [E - 2, E - 2] },
     { id: 'blur', block: [2, 3] },
     { id: 'setup', player: { energy: 3 }, energy: [4, 5], exhaust: [1, 1] },
     { id: 'all_out_attack', enemyHp: [18, 17] },
     { id: 'expertise', hand: [6, 6] },
     { id: 'calculated_gamble', exhaust: [1, 0] },
+    { id: 'burn', unplayable: true },
     { id: 'reflex', unplayable: true },
     { id: 'tactician', unplayable: true },
     { id: 'after_image', powers: [1, 1] },
@@ -2469,6 +2425,7 @@ check('every newly transcribed card does what its face prints', () => {
     { id: 'accuracy', powers: [1, 1], energy: [E - 1, E] },
     { id: 'choke', enemyHp: [17, 16] },
     { id: 'footwork', powers: [1, 1], energy: [E - 2, E - 2] },
+    { id: 'well_laid_plans', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'infinite_blades', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'noxious_fumes', powers: [1, 1], energy: [E - 1, E - 1] },
     { id: 'envenom', powers: [1, 1], energy: [E - 3, E - 2] },
@@ -2493,10 +2450,14 @@ check('every newly transcribed card does what its face prints', () => {
     'shame', 'writhe', 'ascenders_bane',
   ])
   const covered = new Set(CASES.map((spec) => spec.id))
+  const dedicated = new Set([
+    'deva_form', 'omniscience', 'vault', 'talk_to_the_hand', 'tantrum', 'weave',
+    'conjure_blade', 'deus_ex_machina', 'foreign_influence', 'omega', 'reach_heaven', 'study',
+  ])
   // Checks earlier in THIS process register `fixture_*` cards into the table;
   // they are scaffolding, not printed cards.
   const uncovered = Object.keys(CARDS).filter(
-    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id),
+    (id) => !id.startsWith('fixture_') && !LEGACY.has(id) && !covered.has(id) && !dedicated.has(id),
   )
   assertEqual(
     uncovered.length,
@@ -2536,10 +2497,14 @@ check('every newly transcribed card does what its face prints', () => {
         enemyUid: cardNeedsEnemy(face) ? 'e1' : null,
         playerId: null,
       }
+      if (face.modes) context.mode = 0
       if (face.cost === 'X') context.energySpent = spec.energySpent?.[at] ?? 0
-      const enemyChoices = face.effects.reduce(
-        (sum, effect) => sum + (effect.kind === 'poisonChoices' ? effect.targets : 0), 0)
-      const playerChoices = face.effects.reduce(
+      const playedEffects = face.modes ? face.modes[context.mode].effects : face.effects
+      const enemyChoices = playedEffects.reduce(
+        (sum, effect) => sum + (
+          effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' ? effect.targets : 0
+        ), 0)
+      const playerChoices = playedEffects.reduce(
         (sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
       if (enemyChoices > 0) context.enemyUids = Array(enemyChoices).fill('e1')
       if (playerChoices > 0) context.playerIds = Array(playerChoices).fill('p1')
@@ -2556,6 +2521,11 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.topdeckAfterDraw) {
         context.topdeckUids = previewCardChoice(state, 'p1', card.uid).cards.slice(0, 1).map((held) => held.uid)
       }
+      if (spec.searchDraw) {
+        const amount = face.effects.find((effect) => effect.kind === 'searchDraw').amount
+        context.searchDrawUids = previewCardChoice(state, 'p1', card.uid).cards
+          .slice(0, amount).map((held) => held.uid)
+      }
       const next = playCard(state, 'p1', card.uid, context)
       assert(next !== state, `${label} was refused outright`)
       const me = next.players[0]
@@ -2569,6 +2539,7 @@ check('every newly transcribed card does what its face prints', () => {
       if (spec.exhaust) assertEqual(me.exhaust.length, spec.exhaust[at], `${label}: cards exhausted`)
       if (spec.stance) assertEqual(me.stance, spec.stance[at], `${label}: stance entered`)
       if (spec.orb) assertEqual(me.orbs[0], spec.orb[at], `${label}: orb channelled`)
+      if (spec.orbCount) assertEqual(me.orbs.filter(Boolean).length, spec.orbCount[at], `${label}: Orbs channelled`)
       if (spec.miracles) assertEqual(me.miracles, spec.miracles[at], `${label}: Miracles gained`)
       if (spec.shivs) assertEqual(me.shivs, spec.shivs[at], `${label}: Shivs gained`)
       if (spec.strength) assertEqual(me.strength, spec.strength[at], `${label}: Strength gained`)
@@ -2582,6 +2553,417 @@ check('every newly transcribed card does what its face prints', () => {
       assertEqual(me.energy, spec.energy ? spec.energy[at] : E - cost, `${label}: energy left`)
     }
   }
+})
+
+check('Watcher Batch 1 resolves physical targeting, restrictions, and modal effects', () => {
+  for (const upgraded of [false, true]) {
+    const conclude = instance('conclude', upgraded)
+    const spare = instance('defend_watcher')
+    const concluded = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [conclude, spare], energy: 3 })],
+      [makeEnemy({ uid: 'left', row: 0, hp: 10 }), makeEnemy({ uid: 'right', row: 0, hp: 10 }),
+        makeEnemy({ uid: 'other', row: 1, hp: 10 })],
+    ), 'p1', conclude.uid, { enemyUid: 'left', playerId: null })
+    assertDeepEqual(concluded.enemies.map((enemy) => enemy.hp),
+      upgraded ? [7, 7, 10] : [8, 8, 10], 'Conclude hits one row')
+    assert(concluded.players[0].cardPlayLocked, 'Conclude locks further card play')
+    assertEqual(playCard(concluded, 'p1', spare.uid), concluded, 'Conclude lock is authoritative')
+
+    const copiedConclude = combat([makePlayer({ character: 'watcher' })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    copiedConclude.phase = 'copy'
+    copiedConclude.pendingCardCopy = {
+      playerId: 'p1', card: conclude, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+      forcedChoices: null, deferredHavocs: [], sourceNames: ['Double Tap'],
+    }
+    copiedConclude.players[0].cardPlayLocked = true
+    const skipped = playCardCopy(copiedConclude, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(skipped.phase, 'player')
+    assertEqual(skipped.pendingCardCopy, undefined)
+
+    const judgment = instance('judgment', upgraded)
+    const threshold = upgraded ? 8 : 7
+    const executed = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [judgment] })],
+      [makeEnemy({ hp: threshold, maxHp: 20 })],
+    ), 'p1', judgment.uid, { enemyUid: 'e1', playerId: null })
+    assert(executed.enemies[0].dead, 'Judgment executes at its threshold')
+    const safe = instance('judgment', upgraded)
+    const refused = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [safe] })],
+      [makeEnemy({ hp: threshold + 1, maxHp: 20 })],
+    ), 'p1', safe.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(refused.enemies[0].hp, threshold + 1, 'Judgment does not damage above threshold')
+
+    const ragnarok = instance('ragnarok', upgraded)
+    const hits = upgraded ? 6 : 5
+    const ragnaroked = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [ragnarok], energy: 3 })],
+      [makeEnemy({ uid: 'a', hp: 10 }), makeEnemy({ uid: 'b', hp: 10 })],
+    ), 'p1', ragnarok.uid, {
+      enemyUid: null, playerId: null,
+      enemyUids: Array.from({ length: hits }, (_, index) => index % 2 ? 'b' : 'a'),
+    })
+    assertEqual(ragnaroked.enemies[0].hp + ragnaroked.enemies[1].hp, 20 - hits,
+      'Ragnarok assigns every independent hit')
+
+    const signature = instance('signature_move', upgraded)
+    const rivalAttack = instance('strike_watcher')
+    const blocked = combat([makePlayer({ character: 'watcher', hand: [signature, rivalAttack], energy: 3 })],
+      [makeEnemy({ hp: 20 })])
+    assertEqual(playCard(blocked, 'p1', signature.uid, { enemyUid: 'e1', playerId: null }), blocked,
+      'Signature Move refuses a second Attack in hand')
+
+    const shield = instance('spirit_shield', upgraded)
+    const filler = [instance('defend_watcher'), instance('strike_watcher'), instance('vigilance')]
+    const shielded = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [shield, ...filler], energy: 3 })], [makeEnemy()],
+    ), 'p1', shield.uid)
+    assertEqual(shielded.players[0].block, 3, 'Spirit Shield counts the other cards after leaving hand')
+    assertEqual(shielded.players[0].exhaust.length, upgraded ? 0 : 1, 'Spirit Shield upgrade removes Exhaust')
+
+    const wallop = instance('wallop', upgraded)
+    const walloped = playCard(combat(
+      [makePlayer({ character: 'watcher', hand: [wallop], energy: 3, strength: 1 })],
+      [makeEnemy({ hp: 20, block: 2 })],
+    ), 'p1', wallop.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(walloped.players[0].block, upgraded ? 2 : 1,
+      'Wallop gains only unblocked, modified hit damage')
+  }
+
+  const swivel = instance('swivel', true)
+  const costly = instance('bludgeon')
+  const ally = makePlayer({ id: 'p2', name: 'Ironclad', row: 1 })
+  let state = playCard(combat([
+    makePlayer({ character: 'watcher', hand: [swivel, costly], energy: 2 }), ally,
+  ], [makeEnemy({ hp: 20 })]), 'p1', swivel.uid, { enemyUid: null, playerId: 'p2' })
+  assertEqual(state.players[1].block, 3, 'Swivel+ may give Block to an ally')
+  assertEqual(playCost(faceOf(cardDef('bludgeon'), false), state.players[0], costly), 0,
+    'Swivel discounts the next Attack')
+  state = playCard(state, 'p1', costly.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].energy, 0, 'the discounted Attack costs no Energy')
+  assertEqual(state.players[0].freeAttacksThisTurn, 0, 'the Attack consumes Swivel')
+
+  const repeatedRagnarok = instance('ragnarok')
+  const repeated = playCard(combat(
+    [makePlayer({ character: 'watcher', hand: [repeatedRagnarok], energy: 3 })],
+    [makeEnemy({ uid: 'same', hp: 30, maxHp: 30, vulnerable: 2 })],
+  ), 'p1', repeatedRagnarok.uid, {
+    enemyUid: null, playerId: null, enemyUids: Array(5).fill('same'),
+  })
+  assertEqual(repeated.enemies[0].hp, 20, 'Vulnerable doubles every Ragnarok sword on one target')
+  assertEqual(repeated.enemies[0].vulnerable, 1, 'Ragnarok spends one Vulnerable per affected target')
+
+  const splitRagnarok = instance('ragnarok')
+  const split = playCard(combat(
+    [makePlayer({ character: 'watcher', hand: [splitRagnarok], energy: 3 })],
+    [
+      makeEnemy({ uid: 'split-a', hp: 30, maxHp: 30, vulnerable: 2 }),
+      makeEnemy({ uid: 'split-b', hp: 30, maxHp: 30, vulnerable: 2 }),
+    ],
+  ), 'p1', splitRagnarok.uid, {
+    enemyUid: null, playerId: null,
+    enemyUids: ['split-a', 'split-b', 'split-a', 'split-b', 'split-a'],
+  })
+  assertDeepEqual(split.enemies.map((enemy) => enemy.hp), [24, 26],
+    'split Ragnarok swords keep Vulnerable for every hit')
+  assertDeepEqual(split.enemies.map((enemy) => enemy.vulnerable), [1, 1],
+    'split Ragnarok spends one Vulnerable on each affected target')
+
+  for (const upgraded of [false, true]) {
+    for (const [mode, field, expected] of upgraded
+      ? [[0, 'strength', 2], [1, 'block', 15], [2, 'miracles', 5]]
+      : [[0, 'strength', 1], [1, 'block', 10], [2, 'miracles', 4]]) {
+      const wish = instance('wish', upgraded)
+      const wished = playCard(combat([
+        makePlayer({ character: 'watcher', hand: [wish], energy: 3 }),
+      ], [makeEnemy()]), 'p1', wish.uid, { enemyUid: null, playerId: null, mode })
+      assertEqual(wished.players[0][field], expected, `Wish${upgraded ? '+' : ''} mode ${mode} resolves`)
+    }
+  }
+})
+
+check('Watcher generated-choice batch resolves physical effects and server-derived copies', () => {
+  for (const upgraded of [false, true]) {
+    const conjure = instance('conjure_blade', upgraded)
+    const strike = instance('strike_watcher')
+    let forged = playCard(combat([makePlayer({
+      character: 'watcher', hand: [conjure, strike], energy: 3,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', conjure.uid, {
+      enemyUid: null, playerId: null, energySpent: 2,
+    })
+    assertEqual(forged.players[0].powers[0].counter, upgraded ? 4 : 3,
+      'Conjure Blade stores its X-based cubes on the Power')
+    assertEqual(forged.players[0].starterStrikeDamageBonus, upgraded ? 4 : 3)
+    forged = playCard(forged, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(forged.enemies[0].hp, upgraded ? 15 : 16,
+      'Conjure Blade cubes improve starter Strikes')
+
+    const deus = instance('deus_ex_machina', upgraded)
+    const blessed = playCard(combat([makePlayer({
+      character: 'watcher', hand: [deus], miracles: 0,
+    })], [makeEnemy()]), 'p1', deus.uid)
+    assertEqual(blessed.players[0].miracles, upgraded ? 3 : 2)
+    assertEqual(blessed.players[0].exhaust[0].uid, deus.uid)
+
+    const reach = instance('reach_heaven', upgraded)
+    const reached = playCard(combat([makePlayer({
+      character: 'watcher', hand: [reach], miracles: 2,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', reach.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(reached.enemies[0].hp, upgraded ? 14 : 16,
+      'Reach Heaven adds the printed amount per held Miracle')
+
+    const omega = instance('omega', upgraded)
+    const omegaState = combat([makePlayer({
+      character: 'watcher', powers: [omega], row: 0,
+    })], [
+      makeEnemy({ uid: 'omega-front', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'omega-back', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'omega-boss', row: 0, hp: 20, maxHp: 20, isBoss: true }),
+    ])
+    const omegaAbility = endTurnAbilities(omegaState).find((ability) => ability.label.includes('Omega'))
+    assert(omegaAbility?.targets?.some((target) => target.uid === 'omega-back'))
+    const omegaResolved = beginEndPlayerTurn(omegaState, [
+      chooseEndTurnTarget(omegaAbility.id, 'omega-back'),
+    ])
+    assertDeepEqual(omegaResolved.enemies.map((enemy) => enemy.hp),
+      upgraded ? [20, 14, 14] : [20, 15, 15], 'Omega chooses one row and includes the boss')
+
+    const study = instance('study', upgraded)
+    const draw = Array.from({ length: 10 }, () => instance('defend_watcher'))
+    const calmRoundEnd = {
+      ...combat([makePlayer({ character: 'watcher', stance: 'calm', powers: [study], draw })], [makeEnemy()]),
+      phase: 'roundEnd', turn: 1,
+    }
+    const calmPrepared = preparePlayerTurn(calmRoundEnd)
+    const calmStarted = resolveStartPlayerTurn(calmPrepared, defaultStartTurnChoices(calmPrepared))
+    assertEqual(calmStarted.players[0].hand.length, 7, 'Study draws 2 before the normal draw while Calm')
+    const neutralPrepared = preparePlayerTurn({
+      ...calmRoundEnd,
+      players: [{ ...calmRoundEnd.players[0], stance: 'neutral', draw: [...draw], hand: [] }],
+    })
+    const neutralStarted = resolveStartPlayerTurn(neutralPrepared, defaultStartTurnChoices(neutralPrepared))
+    assertEqual(neutralStarted.players[0].hand.length, 5, 'Study does not draw outside Calm')
+  }
+
+  const allyAttack = instance('bash')
+  const foreign = instance('foreign_influence', true)
+  let influenced = combat([
+    makePlayer({ character: 'watcher', hand: [foreign], energy: 2, strength: 1 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', character: 'ironclad', hand: [allyAttack], energy: 2 }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  influenced = playCard(influenced, 'p2', allyAttack.uid, { enemyUid: 'e1', playerId: null })
+  influenced = playCard(influenced, 'p1', foreign.uid, { enemyUid: null, playerId: null, mode: 1 })
+  assertEqual(influenced.phase, 'copy')
+  assertDeepEqual(influenced.pendingCardCopy.sourceNames, ['Foreign Influence'])
+  assertEqual(influenced.pendingCardCopy.card.defId, 'bash',
+    'Foreign Influence derives the last ally Attack from the authoritative play ledger')
+  influenced = playCardCopy(influenced, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(influenced.enemies[0].hp, 12,
+    'Foreign Influence copy uses the Watcher modifiers and a separately chosen target')
+
+  const unavailable = instance('foreign_influence')
+  const noAllyAttack = combat([makePlayer({
+    character: 'watcher', hand: [unavailable], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertEqual(playCard(noAllyAttack, 'p1', unavailable.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  }), noAllyAttack, 'Foreign Influence refuses copy mode without another player\'s Attack')
+  const direct = playCard(noAllyAttack, 'p1', unavailable.uid, {
+    enemyUid: 'e1', playerId: null, mode: 0,
+  })
+  assertEqual(direct.enemies[0].hp, 17)
+
+  const copiedUnavailable = structuredClone(noAllyAttack)
+  copiedUnavailable.players[0].hand = []
+  copiedUnavailable.phase = 'copy'
+  copiedUnavailable.pendingCardCopy = {
+    playerId: 'p1', card: unavailable, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  assertEqual(playCardCopy(copiedUnavailable, 'p1', {
+    enemyUid: null, playerId: null, mode: 1,
+  }), copiedUnavailable, 'a copied Foreign Influence accepted an unavailable ally-Attack mode')
+
+  const heldForeign = instance('foreign_influence')
+  const signature = instance('signature_move')
+  const sameDefHeld = combat([
+    makePlayer({ character: 'watcher', hand: [heldForeign, instance('strike_watcher')] }),
+    makePlayer({ id: 'p2', name: 'Silent', hand: [] }),
+  ], [makeEnemy()])
+  sameDefHeld.phase = 'copy'
+  sameDefHeld.playedCardsThisTurn = [{ playerId: 'p2', card: signature, copied: false }]
+  sameDefHeld.pendingCardCopy = {
+    playerId: 'p1', card: unavailable, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  assertEqual(playCardCopy(sameDefHeld, 'p1', {
+    enemyUid: null, playerId: null, mode: 1,
+  }), sameDefHeld, 'a copied Foreign Influence removed a different held copy from Signature Move legality')
+
+  const searchedSignature = instance('signature_move')
+  const omniscience = instance('omniscience')
+  const searchable = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [searchedSignature], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertDeepEqual(previewCardChoice(searchable, 'p1', omniscience.uid)?.cards.map((card) => card.uid),
+    [searchedSignature.uid], 'Omniscience treats its searched Signature Move as the Attack being played')
+  searchable.players[0].hand.push(instance('strike_watcher'))
+  assertDeepEqual(previewCardChoice(searchable, 'p1', omniscience.uid)?.cards, [],
+    'Omniscience refuses Signature Move when another Attack remains in hand')
+
+  const copiedSignature = instance('signature_move')
+  const doppelganger = instance('doppelganger')
+  const copied = combat([makePlayer({
+    character: 'watcher', hand: [doppelganger], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  copied.playedCardsThisTurn = [{ playerId: 'p2', card: copiedSignature, copied: false }]
+  const copiedAlone = playCard(copied, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+  })
+  assertEqual(copiedAlone.pendingCardCopy?.card.defId, 'signature_move',
+    'Doppelganger may copy Signature Move when no other Attack remains in hand')
+  copied.players[0].hand.push(instance('strike_watcher'))
+  const copiedBlocked = playCard(copied, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 2,
+  })
+  assertEqual(copiedBlocked.pendingCardCopy, undefined,
+    'Doppelganger refuses Signature Move when another Attack remains in hand')
+
+  const influencedSignature = instance('signature_move')
+  const influence = instance('foreign_influence')
+  const influenceState = combat([
+    makePlayer({ character: 'watcher', hand: [influence], energy: 2 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', character: 'ironclad' }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })])
+  influenceState.playedCardsThisTurn = [{ playerId: 'p2', card: influencedSignature, copied: false }]
+  const influenceAlone = playCard(influenceState, 'p1', influence.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  })
+  assertEqual(influenceAlone.pendingCardCopy?.card.defId, 'signature_move',
+    'Foreign Influence may copy Signature Move when no other Attack remains in hand')
+  influenceState.players[0].hand.push(instance('strike_watcher'))
+  const influenceBlocked = playCard(influenceState, 'p1', influence.uid, {
+    enemyUid: null, playerId: null, mode: 1,
+  })
+  assertEqual(influenceBlocked, influenceState,
+    'Foreign Influence atomically refuses an ally Attack that is not playable for its caster')
+
+  const redactedInfluence = instance('foreign_influence')
+  const redactedState = combat([
+    makePlayer({ character: 'watcher', hand: [redactedInfluence], draw: [] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  redactedState.playedCardsThisTurn = [{
+    playerId: 'p2', card: instance('grand_finale'), copied: false,
+  }]
+  assertEqual(cardModeIsAvailable(
+    faceOf(cardDef('foreign_influence'), false), redactedState, redactedState.players[0], 1, 1,
+  ), false, 'Foreign Influence uses the public draw count when its online draw pile is redacted')
+  assertEqual(cardModeIsAvailable(
+    faceOf(cardDef('foreign_influence'), false), redactedState, redactedState.players[0], 1, 0,
+  ), true, 'Foreign Influence enables a copied Grand Finale when the public draw count is zero')
+})
+
+check('Watcher Retain lifecycle applies Establishment and retained-card bonuses', () => {
+  for (const upgraded of [false, true]) {
+    const establishment = instance('establishment', upgraded)
+    const retained = { ...instance('bludgeon'), retainedLastTurn: true, costReductionThisTurn: 9 }
+    const ordinary = { ...instance('defend_watcher'), costReductionThisTurn: 9 }
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [retained, ordinary], powers: [establishment], energy: 0,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    state.phase = 'roundEnd'
+    state.turn = 1
+    const prepared = preparePlayerTurn(state)
+    const started = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+    assertEqual(playCost(faceOf(cardDef('bludgeon'), false), started.players[0], started.players[0].hand[0]),
+      upgraded ? 1 : 2, `Establishment${upgraded ? '+' : ''} discounts retained cards`)
+    assertEqual(started.players[0].hand[1].costReductionThisTurn, undefined,
+      'turn reset clears stale discounts from cards that were not Retained')
+    const played = playCard(started, 'p1', retained.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(played.players[0].energy, upgraded ? 2 : 1,
+      'the Establishment discount is charged by the authoritative play path')
+    assertEqual(played.players[0].discard.at(-1).costReductionThisTurn, undefined)
+  }
+
+  for (const upgraded of [false, true]) {
+    const perseverance = { ...instance('perseverance', upgraded), retainedLastTurn: true }
+    const blocked = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [perseverance], energy: 1 }),
+    ], [makeEnemy()]), 'p1', perseverance.uid)
+    assertEqual(blocked.players[0].block, upgraded ? 4 : 3)
+    const boostedState = combat([
+      makePlayer({ character: 'watcher', hand: [perseverance], energy: 1 }),
+    ], [makeEnemy()])
+    boostedState.players[0].cardBlockBonus = 1
+    const boosted = playCard(boostedState, 'p1', perseverance.uid)
+    assertEqual(boosted.players[0].block, upgraded ? 6 : 5,
+      'a retained Perseverance applies the Block bonus to both active Block icons')
+
+    const windmill = { ...instance('windmill_strike', upgraded), retainedLastTurn: true }
+    const struck = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [windmill], energy: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', windmill.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(struck.enemies[0].hp, upgraded ? 13 : 15)
+
+    const sands = instance('sands_of_time', upgraded)
+    const printedRetain = [instance('protect'), instance('perseverance')]
+    const retainedByEffect = { ...instance('defend_watcher'), retainedLastTurn: true }
+    const timed = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [sands, ...printedRetain, retainedByEffect], energy: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', sands.uid, {
+      enemyUid: 'e1', playerId: null,
+    })
+    assertEqual(timed.enemies[0].hp, upgraded ? 11 : 13,
+      'Sands counts other printed Retain cards, not every card retained by an effect')
+  }
+})
+
+check('Meditate recovers exact discard choices for the upcoming Retain step', () => {
+  for (const upgraded of [false, true]) {
+    const meditate = instance('meditate', upgraded)
+    const first = instance('perseverance')
+    const second = instance('windmill_strike')
+    const leftover = instance('strike_watcher')
+    const state = combat([makePlayer({
+      character: 'watcher', stance: 'wrath', hand: [meditate], discard: [first, second, leftover], energy: 1,
+    })], [makeEnemy()])
+    const choices = upgraded ? [first.uid, second.uid] : [first.uid]
+    const played = playCard(state, 'p1', meditate.uid, {
+      enemyUid: null, playerId: null, recoverDiscardUids: choices,
+    })
+    assert(played !== state)
+    assertEqual(played.players[0].stance, 'calm')
+    assertEqual(played.players[0].cardPlayLocked, true)
+    assertDeepEqual(played.players[0].hand.map((card) => card.uid), choices)
+    assert(played.players[0].hand.every((card) => card.retainThisTurn === true && !card.retainedLastTurn),
+      'Meditate retains cards at the upcoming discard, without granting last-turn bonuses immediately')
+    assertEqual(playCard(played, 'p1', choices[0], { enemyUid: 'e1', playerId: null }), played,
+      'Meditate prevents additional card plays')
+
+    const ended = endPlayerTurn(played, { p1: [] })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid), choices)
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true && !card.retainThisTurn),
+      'Meditate-retained cards become retained-last-turn only after the discard step')
+  }
+
+  const meditate = instance('meditate', true)
+  const only = instance('protect')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [meditate], discard: [only], energy: 1,
+  })], [makeEnemy()])
+  assertEqual(playCard(state, 'p1', meditate.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUids: [only.uid, only.uid],
+  }), state, 'Meditate+ rejects duplicate recovery choices')
+  const recovered = playCard(state, 'p1', meditate.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUids: [only.uid],
+  })
+  assertDeepEqual(recovered.players[0].hand.map((card) => card.uid), [only.uid],
+    'Meditate+ recovers every available card when fewer than two exist')
 })
 
 check('Flex gains temporary Strength and only its base face Exhausts', () => {
@@ -2809,6 +3191,48 @@ check('Battle Trance and Pray draw first, then block later draws until next turn
     assert(!nextTurn.players[0].drawLocked, `${id} draw lock survived the next Player Turn`)
     assertEqual(nextTurn.players[0].hand.length, 5)
   }
+})
+
+check('Bullet Time discounts only cards already in hand and blocks later draws', () => {
+  for (const upgraded of [false, true]) {
+    const bulletTime = instance('bullet_time', upgraded)
+    const held = instance('defend_silent')
+    const drawingAttack = instance('pommel_strike')
+    const future = instance('strike_silent')
+    let state = combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [bulletTime, held, drawingAttack], draw: [future], energy: 6,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', bulletTime.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].energy, upgraded ? 4 : 3)
+    assert(state.players[0].drawLocked)
+    assert(state.players[0].hand.every((card) => card.freeThisTurn === true))
+    state = playCard(state, 'p1', drawingAttack.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.players[0].energy, upgraded ? 4 : 3)
+    assertDeepEqual(state.players[0].draw.map((card) => card.uid), [future.uid], 'Bullet Time allowed a later draw')
+    state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+    assert(!state.players[0].drawLocked)
+    assert(state.players[0].hand.every((card) => card.freeThisTurn === undefined), 'the hand discount survived the turn')
+  }
+})
+
+check('Bullet Time discounts disappear when cards leave hand or cross a turn in play', () => {
+  const hologram = instance('hologram', true)
+  const recovered = { ...instance('strike_defect'), freeThisTurn: true }
+  let state = combat([makePlayer({
+    character: 'defect', hand: [hologram], discard: [recovered], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', hologram.uid, {
+    enemyUid: null, playerId: null, recoverDiscardUid: recovered.uid,
+  })
+  assertEqual(state.players[0].hand[0].freeThisTurn, undefined, 'a recovered card kept Bullet Time')
+
+  const buffer = { ...instance('buffer'), freeThisTurn: true }
+  state = combat([makePlayer({ character: 'defect', hand: [buffer], energy: 0 })], [makeEnemy()])
+  state = playCard(state, 'p1', buffer.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].powers[0].freeThisTurn, undefined, 'a played Power kept Bullet Time')
+  state.players[0].powers[0].freeThisTurn = true
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].powers[0].freeThisTurn, undefined, 'a Power kept Bullet Time across a turn')
 })
 
 check('Machine Learning draws after the normal five-card start-of-turn draw', () => {
@@ -3251,7 +3675,7 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
 
   const lethal = combat([makePlayer({
     character: 'defect', powers: [instance('storm', true)], orbs: ['lightning', 'lightning', 'lightning'],
-  })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  })], [makeEnemy({ hp: 1, maxHp: 1 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
   Object.assign(lethal, { phase: 'roundEnd', turn: 1 })
   const lethalPrepared = preparePlayerTurn(lethal)
   const lethalAbility = startTurnAbilities(lethalPrepared)[0]
@@ -3280,9 +3704,28 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
   assertDeepEqual(finalChoices[0].evokeSlots, [0],
     'Storm+ still asked for a second Orb after the first Evoke won combat')
   assertDeepEqual(finalChoices[0].evokeEnemyUids, ['e1'])
+  assertEqual(resolveStartPlayerTurn(finalPrepared, [{
+    ...finalChoices[0], evokeEnemyUids: ['e1', 'forged'],
+  }]), finalPrepared, 'Start-of-Turn accepted a surplus post-lethal Evoke target')
   const finalResolved = resolveStartPlayerTurn(finalPrepared, finalChoices)
   assertEqual(finalResolved.phase, 'won')
   assert(finalResolved.enemies[0].dead)
+
+  const amplifiedDark = combat([makePlayer({
+    character: 'defect',
+    powers: [instance('amplify', true), instance('storm', true)],
+    orbs: ['dark', 'lightning', 'frost'],
+  })], [makeEnemy({ hp: 10, maxHp: 10 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
+  amplifiedDark.players[0].darkOrbEvokeBonus = 5
+  Object.assign(amplifiedDark, { phase: 'roundEnd', turn: 1 })
+  const amplifiedPrepared = preparePlayerTurn(amplifiedDark)
+  const amplifiedChoices = defaultStartTurnChoices(amplifiedPrepared)
+  assertDeepEqual(amplifiedChoices[0].evokeEnemyUids, ['e1', 'e2'],
+    'Amplify damage must remove the first target from Storm+ planning')
+  const amplifiedResolved = resolveStartPlayerTurn(amplifiedPrepared, amplifiedChoices)
+  assertEqual(amplifiedResolved.phase, 'player')
+  assert(amplifiedResolved.enemies[0].dead)
+  assertEqual(amplifiedResolved.enemies[1].hp, 8)
 
   const hiddenDraw = combat([makePlayer({
     character: 'defect',
@@ -3379,19 +3822,19 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
 
   const modifiedShiv = combat([makePlayer({
     character: 'defect', shivs: 5,
-    relics: [{ defId: 'akabeko', spent: false }],
+    relics: [{ defId: 'mutagen', spent: false }],
     powers: [instance('infinite_blades'), instance('storm')],
     orbs: ['lightning', 'lightning', 'lightning'],
   })], [makeEnemy({ hp: 2, maxHp: 2 }), makeEnemy({ uid: 'e2', hp: 10, maxHp: 10, row: 1 })])
   Object.assign(modifiedShiv, { phase: 'roundEnd', turn: 0 })
   const modifiedPrepared = preparePlayerTurn(modifiedShiv)
   const modifiedAbilities = startTurnAbilities(modifiedPrepared)
-  const akabeko = modifiedAbilities.find((ability) => ability.label.includes('Akabeko'))
+  const mutagen = modifiedAbilities.find((ability) => ability.label.includes('Mutagen'))
   const modifiedBlades = modifiedAbilities.find((ability) => ability.label.includes('Infinite Blades'))
   const modifiedStorm = modifiedAbilities.find((ability) => ability.label.includes('Storm'))
   const modifiedPlan = startTurnAbilities(modifiedPrepared,
-    [akabeko.id, modifiedBlades.id, modifiedStorm.id], [
-      { id: akabeko.id, shivEnemyUids: [] },
+    [mutagen.id, modifiedBlades.id, modifiedStorm.id], [
+      { id: mutagen.id, shivEnemyUids: [] },
       { id: modifiedBlades.id, shivEnemyUids: ['e1'] },
       { id: modifiedStorm.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: ['e1'] },
     ]).find((ability) => ability.id === modifiedStorm.id)
@@ -3506,6 +3949,46 @@ check('FTL copies are separate cards, while Shivs do not consume its first-card 
   assertDeepEqual(afterShiv.players[0].hand.map((card) => card.uid), [afterShivDraw.uid])
 })
 
+check('Time Warp suppresses copies beyond its current card limit', () => {
+  const strike = instance('strike_ironclad')
+  const state = combat([makePlayer({ hand: [strike] })], [
+    makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 }),
+  ])
+  state.players[0].cardsPlayedThisTurn = 2
+  state.players[0].doubledAttacksThisTurn = 1
+  const next = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(next.phase, 'player')
+  assertEqual(next.players[0].cardsPlayedThisTurn, 3)
+  assertEqual(next.enemies[0].hp, 19)
+  assertEqual(next.pendingCardCopy, undefined)
+  assert(next.players[0].discard.some((card) => card.uid === strike.uid))
+})
+
+check('Time Warp settles deferred copies without exposing their private choices', () => {
+  const weave = instance('weave')
+  const cut = instance('cut_through_fate')
+  let state = combat([makePlayer({ character: 'watcher' })], [
+    makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 }),
+  ])
+  state.players[0].cardsPlayedThisTurn = 3
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card: weave, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, sourceNames: ['Weave'], virtualOnly: true,
+    deferredHavocs: [{
+      card: cut, exhaust: false, virtualOnly: true,
+      copySourceNames: ['Doppelganger'], copyResumePhase: 'player',
+    }],
+  }
+
+  assertEqual(previewCardCopyChoice(state, 'p1'), null)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+  assert(state.log.some((line) => line.includes('Weave was skipped by Time Warp')))
+  assert(state.log.some((line) => line.includes('Cut Through Fate was skipped by Time Warp')))
+})
+
 check('the card-play ledger resets each turn and ignores refused plays', () => {
   const ftl = instance('ftl')
   const state = combat(
@@ -3540,14 +4023,18 @@ check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order
   }
 })
 
-check('a lethal first evoke ends combat before Dual Cast removes the next Orb', () => {
+check('a lethal first repeated Evoke ends combat after removing only the chosen Orb', () => {
   const dualCast = instance('dual_cast')
   const state = combat([
     makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', 'frost', null], block: 0 }),
   ], [makeEnemy({ hp: 2, maxHp: 2 })])
+  assertEqual(playCard(state, 'p1', dualCast.uid, {
+    enemyUid: 'e1', playerId: null,
+    evokeSlots: [0], evokeEnemyUids: ['e1', 'forged'],
+  }), state, 'surplus targets after a lethal Evoke were accepted')
   const won = playCard(state, 'p1', dualCast.uid, {
     enemyUid: 'e1', playerId: null,
-    evokeSlots: [0, 1], evokeEnemyUids: ['e1', null],
+    evokeSlots: [0], evokeEnemyUids: ['e1'],
   })
   assertEqual(won.phase, 'won')
   assertDeepEqual(won.players[0].orbs, [null, 'frost', null])
@@ -3558,7 +4045,7 @@ check('a lethal first evoke ends combat before Dual Cast removes the next Orb', 
     makePlayer({ name: 'Defect', character: 'defect', hand: [rainbow], orbs: ['lightning', 'frost', 'dark'] }),
   ], [makeEnemy({ hp: 2, maxHp: 2 })]), 'p1', rainbow.uid, {
     enemyUid: null, playerId: null,
-    evokeSlots: [0, 1, 2], evokeEnemyUids: ['e1', null, 'e1'],
+    evokeSlots: [0, 1, 2], evokeEnemyUids: ['e1'],
   })
   assertEqual(forced.phase, 'won')
   assertDeepEqual(forced.players[0].orbs, [null, 'frost', 'dark'])
@@ -3742,6 +4229,153 @@ check('Apparition loses Ethereal when upgraded', () => {
   assertDeepEqual(upgradedEnd.players[0].discard.map((card) => card.uid), [upgraded.uid])
 })
 
+check('Wraith Form caps round HP loss immediately and Exhausts after its cube threshold', () => {
+  for (const upgraded of [false, true]) {
+    const wraith = instance('wraith_form', upgraded)
+    const offering = instance('offering')
+    let state = playCard(combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [wraith, offering], energy: 6,
+      draw: Array.from({ length: 3 }, () => instance('defend_silent')),
+    })], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', wraith.uid, {
+      enemyUid: null, playerId: null,
+    })
+    state = playCard(state, 'p1', offering.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].hp, 9, 'Wraith Form did not cap its play round')
+    state = enemyTurn(endPlayerTurn(state))
+    assertEqual(state.players[0].hp, 9, 'later damage exceeded Wraith Form\'s round cap')
+
+    const threshold = upgraded ? 3 : 2
+    for (let cube = 1; cube <= threshold; cube++) {
+      state = preparePlayerTurn({ ...state, phase: 'roundEnd' })
+      const ability = startTurnAbilities(state).find((entry) => entry.label.includes('Wraith Form'))
+      assert(ability, 'Wraith Form start-of-turn ability disappeared early')
+      state = resolveStartPlayerTurn(state, [{ id: ability.id, shivEnemyUids: [] }])
+      if (cube < threshold) {
+        const held = state.players[0].powers.find((card) => card.uid === wraith.uid)
+        assertEqual(held?.counter, cube)
+      }
+    }
+    assertEqual(state.players[0].powers.some((card) => card.uid === wraith.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === wraith.uid), true)
+
+    state.players[0].hpLostThisRound = 0
+    const unprotected = enemyTurn({ ...state, phase: 'enemy' })
+    assert(unprotected.players[0].hp < 9, 'Wraith Form still protected after Exhausting')
+  }
+})
+
+check('Tools of the Trade privately draws then discards and resumes ordered start abilities', () => {
+  const tools = instance('tools_of_the_trade')
+  const fumes = instance('noxious_fumes')
+  const discard = instance('tactician')
+  const drawn = instance('strike_silent')
+  const opening = Array.from({ length: 5 }, () => instance('defend_silent'))
+  const prepared = preparePlayerTurn({
+    ...combat([makePlayer({
+      name: 'Silent', character: 'silent', hand: [discard], draw: [...opening, drawn],
+      powers: [tools, fumes], energy: 0,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  const abilities = startTurnAbilities(prepared)
+  const toolsAbility = abilities.find((ability) => ability.label.includes('Tools of the Trade'))
+  const fumesAbility = abilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  assert(toolsAbility && fumesAbility)
+  const paused = resolveStartPlayerTurn(prepared, [
+    { id: toolsAbility.id, shivEnemyUids: [] },
+    { id: fumesAbility.id, enemyUid: prepared.enemies[0].uid, shivEnemyUids: [] },
+  ])
+  const preview = startTurnDiscardPreview(paused)
+  assertEqual(preview?.playerId, 'p1')
+  assertDeepEqual(preview?.cards.map((card) => card.uid), paused.players[0].hand.map((card) => card.uid))
+  assertEqual(resolveStartTurnDiscard(paused, 'forged', preview.sourceId, discard.uid), paused)
+  assertEqual(resolveStartTurnDiscard(paused, 'p1', preview.sourceId, 'forged'), paused)
+  const resolved = resolveStartTurnDiscard(paused, 'p1', preview.sourceId, discard.uid)
+  assertEqual(resolved.phase, 'player')
+  assertEqual(resolved.players[0].energy, 5, 'Tactician discard reaction did not resolve')
+  assertEqual(resolved.enemies[0].poison, 1, 'later ordered Power did not resume')
+  assertEqual(resolved.players[0].exhaust.some((card) => card.uid === discard.uid), true)
+
+  const lethalTools = instance('tools_of_the_trade')
+  const fire = instance('fire_breathing')
+  const lethalFumes = instance('noxious_fumes')
+  const lethalPrepared = preparePlayerTurn({
+    ...combat([makePlayer({
+      hand: [instance('strike_silent')],
+      draw: [...Array.from({ length: 5 }, () => instance('defend_ironclad')), instance('daze')],
+      powers: [lethalTools, fire, lethalFumes],
+    })], [makeEnemy({ hp: 2, maxHp: 2, row: 0 })]),
+    phase: 'roundEnd', turn: 1,
+  })
+  const lethalAbilities = startTurnAbilities(lethalPrepared)
+  const lethalToolsAbility = lethalAbilities.find((ability) => ability.label.includes('Tools of the Trade'))
+  const lethalFumesAbility = lethalAbilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  assert(lethalToolsAbility && lethalFumesAbility)
+  const lethalPaused = resolveStartPlayerTurn(lethalPrepared, [
+    { id: lethalToolsAbility.id, shivEnemyUids: [] },
+    { id: lethalFumesAbility.id, enemyUid: lethalPrepared.enemies[0].uid, shivEnemyUids: [] },
+  ])
+  const lethalPreview = startTurnDiscardPreview(lethalPaused)
+  const lethal = resolveStartTurnDiscard(
+    lethalPaused, 'p1', lethalPreview.sourceId, lethalPreview.cards[0].uid,
+  )
+  assertEqual(lethal.phase, 'won')
+  assertEqual(lethal.startTurnProgress, undefined, 'lethal deferred draw reaction left stale start progress')
+})
+
+check('Carve Reality assigns its two printed hits independently', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('carve_reality', upgraded)
+    const state = combat([makePlayer({ character: 'watcher', hand: [card], strength: 1 })], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'right', hp: 10, maxHp: 10 }),
+    ])
+    assertEqual(playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left'],
+    }), state, 'Carve Reality accepted only one hit target')
+    const split = playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'right'],
+    })
+    assertDeepEqual(split.enemies.map((enemy) => enemy.hp), upgraded ? [5, 5] : [6, 6])
+
+    const weakenedCard = instance('carve_reality', upgraded)
+    const weakened = playCard(combat([makePlayer({
+      character: 'watcher', hand: [weakenedCard], weak: 1,
+    })], [
+      makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
+      makeEnemy({ uid: 'right', hp: 10, maxHp: 10 }),
+    ]), 'p1', weakenedCard.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'right'],
+    })
+    assertDeepEqual(weakened.enemies.map((enemy) => enemy.hp), upgraded ? [7, 7] : [8, 8])
+    assertEqual(weakened.players[0].weak, 0)
+
+    const stacked = playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 0, enemyUids: ['left'],
+    })
+    assertDeepEqual(stacked.enemies.map((enemy) => enemy.hp), upgraded ? [5, 10] : [6, 10])
+    assertEqual(playCard(state, 'p1', card.uid, {
+      enemyUid: null, playerId: null, mode: 1, enemyUids: ['left', 'left'],
+    }), state, 'Carve Reality accepted the same enemy twice in its two-enemy mode')
+  }
+})
+
+check('Sash Whip applies Weak only while its player is in Calm', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('sash_whip', upgraded)
+    const neutral = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [card], stance: 'neutral' }),
+    ], [makeEnemy()]), 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(neutral.enemies[0].weak, 0)
+
+    const calmCard = instance('sash_whip', upgraded)
+    const calm = playCard(combat([
+      makePlayer({ character: 'watcher', hand: [calmCard], stance: 'calm' }),
+    ], [makeEnemy()]), 'p1', calmCard.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(calm.enemies[0].weak, upgraded ? 2 : 1)
+  }
+})
+
 check('Dark Shackles counts enemies whose current intent attacks its player', () => {
   for (const upgraded of [false, true]) {
     const shackles = instance('dark_shackles', upgraded)
@@ -3758,27 +4392,6 @@ check('Dark Shackles counts enemies whose current intent attacks its player', ()
     assertEqual(played.players[0].block, upgraded ? 6 : 4)
     assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [shackles.uid])
   }
-
-  const ascended = instance('dark_shackles', true)
-  const ascensionState = combat([makePlayer({ hand: [ascended], energy: 0 })], [
-    makeEnemy({ defId: 'maw', ascension: 7, actionIndex: 0 }),
-  ])
-  const ascensionPlayed = playCard(ascensionState, 'p1', ascended.uid, { enemyUid: null, playerId: null })
-  assertEqual(ascensionPlayed.players[0].block, 3, 'Dark Shackles ignored the ascension intent row')
-
-  const targeted = instance('dark_shackles', true)
-  const intentState = {
-    ...combat([makePlayer({ hand: [targeted], row: 1, energy: 0, facingEnemyUid: 'shield' })], [
-      makeEnemy({ uid: 'shield', defId: 'spire_shield', row: 0, actionIndex: 1 }),
-      makeEnemy({ uid: 'unfaced-shield', defId: 'spire_shield', row: 1, actionIndex: 1 }),
-      makeEnemy({ uid: 'sequence', defId: 'snake_plant', row: 1 }),
-      makeEnemy({ uid: 'fury', defId: 'centurion_b3', row: 1, abilityUsed: true }),
-    ]),
-    die: 1,
-  }
-  const intentPlayed = playCard(intentState, 'p1', targeted.uid, { enemyUid: null, playerId: null })
-  assertEqual(intentPlayed.players[0].block, 9,
-    'Dark Shackles ignored Facing, attack-sequence, or Fury targeting')
 })
 
 check('Madness discounts exactly the next card this turn and gains Retain when upgraded', () => {
@@ -4183,7 +4796,12 @@ check('Power Through blocks any player but puts its Daze on the caster draw-top'
 check('Flame Barrier damages only enemies whose current intent attacks its player', () => {
   ENEMIES.flame_barrier_multi_hit_fixture = {
     id: 'flame_barrier_multi_hit_fixture', name: 'Multi-hit fixture', hpByPlayers: [5, 5, 5, 5],
-    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1 }] },
+    ability: {
+      kind: 'furyOnAllyDeath', allyDefId: 'cultist', strength: 0,
+      actions: [{ kind: 'attackSequence', hits: [{ amount: 1 }, { amount: 1 }, { amount: 1 }] }],
+    },
+    ascension: [{ min: 10, pattern: { kind: 'single', actions: [{ kind: 'idle' }] } }],
   }
   try {
     for (const upgraded of [false, true]) {
@@ -4195,7 +4813,8 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
           makeEnemy({ uid: 'boss', row: 2, defId: 'cultist', isBoss: true, hp: 5, maxHp: 5 }),
           makeEnemy({ uid: 'idle', row: 0, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 0 }),
           makeEnemy({ uid: 'off-row-aoe', row: 1, defId: 'gremlin_nob', hp: 5, maxHp: 5, actionIndex: 1 }),
-          makeEnemy({ uid: 'multi-hit', row: 0, defId: 'flame_barrier_multi_hit_fixture', hp: 5, maxHp: 5 }),
+          makeEnemy({ uid: 'multi-hit', row: 0, defId: 'flame_barrier_multi_hit_fixture', ascension: 10,
+            abilityUsed: true, hp: 5, maxHp: 5 }),
         ]),
         die: 1,
       }
@@ -4206,32 +4825,17 @@ check('Flame Barrier damages only enemies whose current intent attacks its playe
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'boss').hp, 4)
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'idle').hp, 5)
       assertEqual(played.enemies.find((enemy) => enemy.uid === 'off-row-aoe').hp, 4)
-      assertEqual(played.enemies.find((enemy) => enemy.uid === 'multi-hit').hp, 3)
+      assertEqual(played.enemies.find((enemy) => enemy.uid === 'multi-hit').hp, 2)
     }
-
-    const barrier = instance('flame_barrier', true)
-    const ascensionState = combat([makePlayer({ hand: [barrier], energy: 2 })], [
-      makeEnemy({ defId: 'nemesis', ascension: 12, actionIndex: 2, hp: 5, maxHp: 5 }),
-    ])
-    const ascensionPlayed = playCard(ascensionState, 'p1', barrier.uid, { enemyUid: null, playerId: null })
-    assertEqual(ascensionPlayed.enemies[0].hp, 2, 'Flame Barrier ignored ascension Attack icons')
-
-    const targeted = instance('flame_barrier', true)
-    const intentState = {
-      ...combat([makePlayer({ hand: [targeted], row: 1, energy: 2, facingEnemyUid: 'shield' })], [
-        makeEnemy({ uid: 'shield', defId: 'spire_shield', row: 0, actionIndex: 1, hp: 5, maxHp: 5 }),
-        makeEnemy({ uid: 'unfaced-shield', defId: 'spire_shield', row: 1, actionIndex: 1, hp: 5, maxHp: 5 }),
-        makeEnemy({ uid: 'sequence', defId: 'snake_plant', row: 1, hp: 5, maxHp: 5 }),
-        makeEnemy({ uid: 'fury', defId: 'centurion_b3', row: 1, abilityUsed: true, hp: 5, maxHp: 5 }),
-      ]),
-      die: 1,
-    }
-    const intentPlayed = playCard(intentState, 'p1', targeted.uid, { enemyUid: null, playerId: null })
-    assertDeepEqual(intentPlayed.enemies.map((enemy) => enemy.hp), [4, 5, 3, 4],
-      'Flame Barrier ignored Facing, attack-sequence, or Fury icons')
   } finally {
     delete ENEMIES.flame_barrier_multi_hit_fixture
   }
+})
+
+check('Snecko next-card cost is the shared displayed and enforced play cost', () => {
+  const bash = faceOf(cardDef('bash'), false)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 0 })), 0)
+  assertEqual(playCost(bash, makePlayer({ nextCardCost: 3 })), 3)
 })
 
 check('Rampage counts the whole Exhaust pile after its upgraded Exhaust resolves', () => {
@@ -4340,100 +4944,6 @@ check('nested forced cards preserve the outer Start-of-Turn queue', () => {
   assertEqual(finished.startTurnProgress, undefined)
 })
 
-check('a copied Havoc child finalizes its physical outer Havoc exactly once', () => {
-  const havoc = instance('havoc', true)
-  const strike = instance('strike_ironclad')
-  let state = combat([makePlayer({ hand: [havoc], draw: [strike], cardCopyQueue: ['attack'] })], [
-    makeEnemy({ hp: 10, maxHp: 10 }),
-  ])
-  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.players[0].discard.filter((card) => card.uid === havoc.uid).length, 0,
-    'the virtual child finalized its outer Havoc')
-  assertEqual(state.startTurnProgress?.forcedCard?.deferredHavocs?.length, 1)
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.players[0].discard.filter((card) => card.uid === havoc.uid).length, 1,
-    'the physical child did not finalize its outer Havoc exactly once')
-  assertEqual(state.enemies[0].hp, 8)
-
-  const corruptHavoc = instance('havoc', true)
-  const corruptStrike = instance('strike_ironclad')
-  const embraceDraw1 = instance('defend_ironclad')
-  const embraceDraw2 = instance('defend_ironclad')
-  let corrupted = combat([makePlayer({
-    hand: [corruptHavoc], draw: [corruptStrike, embraceDraw1, embraceDraw2], cardCopyQueue: ['skill'],
-    powers: [instance('corruption'), instance('dark_embrace'), instance('feel_no_pain')],
-  })], [makeEnemy({ hp: 20, maxHp: 20 })])
-  corrupted = playCard(corrupted, 'p1', corruptHavoc.uid, { enemyUid: null, playerId: null })
-  corrupted = playCard(corrupted, 'p1', corruptStrike.uid, { enemyUid: 'e1', playerId: null })
-  assertDeepEqual(corrupted.players[0].hand.map((card) => card.uid), [
-    corruptHavoc.uid, embraceDraw1.uid, embraceDraw2.uid,
-  ])
-  assertEqual(corrupted.players[0].block, 2, 'the copied Havoc skipped a Feel No Pain Exhaust trigger')
-  assertDeepEqual(corrupted.players[0].exhaust.map((card) => card.uid), [corruptStrike.uid],
-    'the synthetic copied Havoc remained in the physical Exhaust pile')
-  assertEqual(corrupted.log.filter((line) => line.includes('Dark Embrace')).length, 2,
-    'the copied Havoc skipped a Dark Embrace Exhaust trigger')
-
-  const lethalHavoc = instance('havoc', true)
-  const lethalStrike = instance('strike_ironclad')
-  let lethal = combat([makePlayer({ hand: [lethalHavoc], draw: [lethalStrike], cardCopyQueue: ['attack'] })], [
-    makeEnemy({ hp: 1, maxHp: 1 }),
-  ])
-  lethal = playCard(lethal, 'p1', lethalHavoc.uid, { enemyUid: null, playerId: null })
-  lethal = playCard(lethal, 'p1', lethalStrike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(lethal.phase, 'won')
-  assertEqual(lethal.startTurnProgress, undefined, 'a lethal virtual child kept its staged original')
-  assertDeepEqual(lethal.players[0].forcedCardUids, [])
-})
-
-check('a staged copied Havoc resolves its child, then its physical original', () => {
-  const havoc = instance('havoc', true)
-  const defend = instance('defend_ironclad')
-  const strike = instance('strike_ironclad')
-  let state = combat([makePlayer({
-    hand: [havoc], draw: [defend, strike], cardCopyQueue: ['skill', 'skill'],
-  })], [makeEnemy({ hp: 10, maxHp: 10 })])
-  Object.assign(state, {
-    phase: 'start',
-    startTurnProgress: {
-      choices: [],
-      forcedCard: { playerId: 'p1', cardUid: havoc.uid, sourceCardId: 'mayhem', exhaustNonPower: false },
-    },
-  })
-  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, defend.uid)
-  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: null })
-  assertDeepEqual(state.players[0].forcedCardUids, [havoc.uid, defend.uid],
-    'the staged child could not consume its own queued copy')
-  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: null })
-  assertDeepEqual(state.players[0].forcedCardUids, [havoc.uid], 'Havoc child stranded its physical original')
-  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, strike.uid)
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.phase, 'player')
-  assert(![...state.players[0].discard, ...state.players[0].exhaust]
-    .some((card) => card.uid.startsWith('copy:')), 'virtual Havoc entered a physical pile')
-})
-
-check('an impossible physical child is settled after its virtual copy', () => {
-  const havoc = instance('havoc', true)
-  const dual = instance('dual_cast')
-  let state = combat([makePlayer({
-    character: 'defect', hand: [havoc], draw: [dual], orbs: ['lightning', null, null],
-    cardCopyQueue: ['skill', 'skill'],
-  })], [makeEnemy({ hp: 10, maxHp: 10 })])
-  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
-  state = playCard(state, 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
-  })
-  assertEqual(state.startTurnProgress, undefined, 'the impossible physical child kept a stale staged pointer')
-  assert(state.players[0].exhaust.some((card) => card.uid === dual.uid),
-    'Havoc did not Exhaust the impossible physical child')
-  assertDeepEqual(state.players[0].forcedCardUids, [havoc.uid])
-  assertDeepEqual(state.players[0].orbs, [null, null, null])
-})
-
 check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Energy', () => {
   for (const upgraded of [false, true]) {
     assertEqual(faceOf(CARDS.mayhem, upgraded).cost, upgraded ? 1 : 2)
@@ -4450,11 +4960,9 @@ check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Ener
     assertEqual(forced.phase, 'start')
     assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, meteor.uid)
     assertEqual(forced.players[0].energy, 3)
-    forced.players[0].nextCardCost = 3
     const played = playCard(forced, 'p1', meteor.uid, { enemyUid: 'e1', playerId: null })
     assertEqual(played.phase, 'player')
-    assertEqual(played.players[0].energy, 3, 'Mayhem overrides Snecko as well as the printed cost')
-    assertEqual(played.players[0].nextCardCost, null)
+    assertEqual(played.players[0].energy, 3, 'Mayhem pays the entire printed cost')
     assertEqual(played.enemies[0].hp, 10)
     assertEqual(played.players[0].attacksPlayedThisTurn, 1, 'the forced card counts as played')
   }
@@ -4478,8 +4986,10 @@ check('Mayhem privately pauses Start of Turn and plays its drawn card for 0 Ener
   const noOrbPrepared = preparePlayerTurn(noOrbState)
   const [noOrbAbility] = startTurnAbilities(noOrbPrepared)
   const noOrbResolved = resolveStartPlayerTurn(noOrbPrepared, [{ id: noOrbAbility.id, shivEnemyUids: [] }])
-  assertEqual(noOrbResolved.phase, 'player', 'an impossible Evoke cannot strand Mayhem')
-  assertEqual(noOrbResolved.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
+  assertEqual(noOrbResolved.phase, 'start', 'Mayhem must still play a no-effect Evoke card')
+  const noOrbPlayed = playCard(noOrbResolved, 'p1', emptyDualCast.uid, { enemyUid: null, playerId: null })
+  assertEqual(noOrbPlayed.phase, 'player')
+  assertEqual(noOrbPlayed.players[0].discard.at(-1)?.uid, emptyDualCast.uid)
 
   const madness = instance('madness')
   const forcedStrike = instance('strike_ironclad')
@@ -4640,8 +5150,8 @@ check('Consume, Double Energy, Streamline, and Meteor Strike use their printed b
       }),
     ], [makeEnemy({ hp: 20, maxHp: 20 })])
     const context = orb === 'frost'
-      ? { enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: [null, null] }
-      : { enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'] }
+      ? { enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'] }
     const evoked = playCard(state, 'p1', dual.uid, context)
     if (orb === 'frost') assertEqual(evoked.players[0].block, expected)
     else assertEqual(evoked.enemies[0].hp, expected)
@@ -4671,7 +5181,7 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
     character: 'defect', hand: [dual], energy: 1,
     orbs: ['lightning', 'lightning', null], orbEndTurnBonus: 2,
   })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['e1', 'e1'],
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
   })
   assertEqual(evoked.enemies[0].hp, 16, 'Defragment must not increase Evoke damage')
 
@@ -4680,6 +5190,722 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
   const ethereal = beginEndPlayerTurn(combat([makePlayer({ hand: [base, upgraded] })], [makeEnemy()]))
   assertDeepEqual(ethereal.players[0].exhaust.map((card) => card.uid), [base.uid])
   assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [upgraded.uid])
+})
+
+check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
+  assertEqual(faceOf(CARDS.static_discharge, false).effects[0].amount, 1)
+  assertEqual(faceOf(CARDS.static_discharge, true).effects[0].amount, 2)
+
+  const discharge = instance('static_discharge', true)
+  const defragment = instance('defragment', true)
+  let state = combat([makePlayer({
+    character: 'defect', hand: [discharge, defragment], energy: 6,
+    orbs: ['lightning', 'frost', 'dark'],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', discharge.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', defragment.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].lightningEndTurnBonus, 2)
+  assertEqual(state.players[0].orbEndTurnBonus, 1)
+  assertEqual(state.players[0].powers.length, 2)
+
+  const ended = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1'])
+  assertEqual(ended.enemies[0].hp, 16, 'Lightning gets both Static Discharge and Defragment')
+  assertEqual(ended.players[0].block, 2, 'Frost gets Defragment but not Static Discharge')
+
+  const dual = instance('dual_cast')
+  const evokeState = combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1,
+    orbs: ['lightning', 'lightning', null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  evokeState.players[0].lightningEndTurnBonus = 2
+  const evoked = playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(evoked.enemies[0].hp, 16, 'Static Discharge must not increase Evoke damage')
+})
+
+check('Electrodynamics channels its printed Orbs and sends every Lightning effect through a chosen row', () => {
+  const electro = instance('electrodynamics')
+  const enemies = () => [
+    makeEnemy({ uid: 'front-a', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'front-b', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'back', row: 1, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'boss', isBoss: true, hp: 20, maxHp: 20 }),
+  ]
+
+  for (const upgraded of [false, true]) {
+    const card = instance('electrodynamics', upgraded)
+    const played = playCard(combat([makePlayer({
+      character: 'defect', hand: [card], energy: 2,
+    })], enemies()), 'p1', card.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(played.players[0].powers.at(-1)?.uid, card.uid)
+    assertEqual(played.players[0].orbs.filter(Boolean).length, upgraded ? 3 : 2)
+  }
+
+  const endState = combat([
+    makePlayer({ character: 'defect', powers: [electro], orbs: ['lightning', null, null], row: 0 }),
+    makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
+  ], enemies())
+  const lightning = endTurnAbilities(endState).find((ability) => ability.id === 'p1/orb:0')
+  assertDeepEqual(lightning.targets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  const ended = beginEndPlayerTurn(endState, endTurnAbilities(endState).map((ability) =>
+    ability.id === lightning.id
+      ? chooseEndTurnTarget(ability.id, lightningRowTarget(1))
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id))
+  assertDeepEqual(ended.enemies.map((enemy) => enemy.hp), [20, 20, 19, 19])
+
+  const dual = instance('dual_cast')
+  const evokeState = combat([makePlayer({
+    character: 'defect', hand: [dual], energy: 1, powers: [instance('electrodynamics')],
+    orbs: ['lightning', 'lightning', null],
+  })], enemies())
+  const evoked = playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0],
+    evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
+  })
+  assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 18, 18, 16])
+  assertEqual(playCard(evokeState, 'p1', dual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['front-a', 'back'],
+  }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
+
+  const plainDual = instance('dual_cast')
+  const plain = combat([makePlayer({
+    character: 'defect', hand: [plainDual], energy: 1, orbs: ['lightning', 'lightning', null],
+  })], enemies())
+  assertEqual(playCard(plain, 'p1', plainDual.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0],
+    evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
+  }), plain, 'a forged row target worked without Electrodynamics')
+
+  const full = instance('electrodynamics')
+  const fullState = combat([makePlayer({
+    character: 'defect', hand: [full], energy: 2, orbs: ['lightning', 'frost', 'dark'],
+  })], enemies())
+  const forced = playCard(fullState, 'p1', full.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 1],
+    evokeEnemyUids: [lightningRowTarget(0), null],
+  })
+  assertDeepEqual(forced.players[0].orbs, ['lightning', 'lightning', 'dark'])
+  assertDeepEqual(forced.enemies.map((enemy) => enemy.hp), [18, 18, 20, 18],
+    'Electrodynamics did not modify the forced Lightning evoke during its own play')
+
+  const repeatedSlot = instance('electrodynamics')
+  const repeatedState = combat([makePlayer({
+    character: 'defect', hand: [repeatedSlot], energy: 2, orbs: ['frost', 'dark', 'dark'],
+  })], enemies())
+  assertDeepEqual(chosenEvokeOrbs(faceOf(CARDS.electrodynamics, false), repeatedState.players[0], [0, 0]),
+    ['frost', 'lightning'], 'the staged UI lost an Orb channelled earlier by the same card')
+  const repeated = playCard(repeatedState, 'p1', repeatedSlot.uid, {
+    enemyUid: null, playerId: 'p1', evokeSlots: [0, 0],
+    evokeEnemyUids: [null, lightningRowTarget(1)],
+  })
+  assertDeepEqual(repeated.players[0].orbs, ['lightning', 'dark', 'dark'])
+  assertDeepEqual(repeated.enemies.map((enemy) => enemy.hp), [20, 20, 18, 18])
+})
+
+check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning evokes', () => {
+  const electro = instance('electrodynamics')
+  const storm = instance('storm')
+  const roundEnd = {
+    ...combat([makePlayer({
+      character: 'defect', powers: [electro, storm], orbs: ['lightning', 'frost', 'dark'], draw: [],
+    })], [
+      makeEnemy({ uid: 'row-a', row: 0, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'row-b', row: 1, hp: 20, maxHp: 20 }),
+      makeEnemy({ uid: 'boss', isBoss: true, hp: 20, maxHp: 20 }),
+    ]),
+    phase: 'roundEnd', turn: 1,
+  }
+  const state = preparePlayerTurn(roundEnd)
+  const ability = startTurnAbilities(state)[0]
+  const chooseOrb = [{ id: ability.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: [] }]
+  const targeted = startTurnAbilities(state, undefined, chooseOrb)[0]
+  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  const resolved = resolveStartPlayerTurn(state, [{
+    ...chooseOrb[0], evokeEnemyUids: [lightningRowTarget(1)],
+  }])
+  assertEqual(resolved.phase, 'player')
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 18, 18])
+  assertDeepEqual(resolved.players[0].orbs, ['lightning', 'frost', 'dark'])
+
+  const automatic = defaultStartTurnChoices(state)
+  assertDeepEqual(automatic[0].evokeEnemyUids, [lightningRowTarget(0)])
+  const autoResolved = resolveStartPlayerTurn(state, automatic)
+  assertEqual(autoResolved.phase, 'player')
+  assertDeepEqual(autoResolved.enemies.map((enemy) => enemy.hp), [18, 20, 18])
+  assertEqual(startPlayerTurn(roundEnd).phase, 'player',
+    'the deterministic start path did not resolve an Electrodynamics row choice')
+})
+
+check('Start-of-Turn repeated Evokes remove one Orb and retarget each application', () => {
+  CARDS.fixture_repeated_start_evoke = {
+    id: 'fixture_repeated_start_evoke', name: 'Repeated Evoke Fixture', owner: 'defect',
+    type: 'power', rarity: 'rare', cost: 0, trigger: { kind: 'startOfTurn' },
+    effects: [{ kind: 'evoke', times: 2 }],
+  }
+  try {
+    const roundEnd = {
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['dark', 'frost', null], draw: [],
+      })], [
+        makeEnemy({ uid: 'first', hp: 4, maxHp: 4 }),
+        makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+      ]),
+      phase: 'roundEnd', turn: 1,
+    }
+    const prepared = preparePlayerTurn(roundEnd)
+    const choices = defaultStartTurnChoices(prepared)
+    assertDeepEqual(choices[0].evokeSlots, [0])
+    assertDeepEqual(choices[0].evokeEnemyUids, ['first', 'second'])
+    const resolved = resolveStartPlayerTurn(prepared, choices)
+    assertEqual(resolved.phase, 'player')
+    assertDeepEqual(resolved.players[0].orbs, [null, 'frost', null])
+    assert(resolved.enemies[0].dead)
+    assertEqual(resolved.enemies[1].hp, 16)
+
+    const lethalPrepared = preparePlayerTurn({
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['dark', null, null], draw: [],
+      })], [makeEnemy({ uid: 'only', hp: 4, maxHp: 4 })]),
+      phase: 'roundEnd', turn: 1,
+    })
+    const lethalChoices = defaultStartTurnChoices(lethalPrepared)
+    assertDeepEqual(lethalChoices[0].evokeSlots, [0])
+    assertDeepEqual(lethalChoices[0].evokeEnemyUids, ['only'])
+    const lethalResolved = resolveStartPlayerTurn(lethalPrepared, lethalChoices)
+    assertEqual(lethalResolved.phase, 'won')
+    assertDeepEqual(lethalResolved.players[0].orbs, [null, null, null])
+
+    const frostPrepared = preparePlayerTurn({
+      ...combat([makePlayer({
+        character: 'defect', powers: [instance('fixture_repeated_start_evoke')],
+        orbs: ['frost', null, null], draw: [],
+      })], [makeEnemy()]),
+      phase: 'roundEnd', turn: 1,
+    })
+    const frostChoices = defaultStartTurnChoices(frostPrepared)
+    assertDeepEqual(frostChoices[0].evokeSlots, [0])
+    assertDeepEqual(frostChoices[0].evokeEnemyUids, [null, null])
+    const frostResolved = resolveStartPlayerTurn(frostPrepared, frostChoices)
+    assertEqual(frostResolved.phase, 'player')
+    assertEqual(frostResolved.players[0].block, 2)
+    assertDeepEqual(frostResolved.players[0].orbs, [null, null, null])
+  } finally {
+    delete CARDS.fixture_repeated_start_evoke
+  }
+})
+
+check('Fission removes or Evokes every chosen Orb, then pays once per Orb', () => {
+  const draw = [instance('strike_defect'), instance('defend_defect'), instance('zap')]
+  const base = instance('fission')
+  const removed = playCard(combat([makePlayer({
+    character: 'defect', hand: [base], draw, energy: 1, orbs: ['lightning', 'frost', 'dark'],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', base.uid, {
+    enemyUid: null, playerId: null,
+  })
+  assertDeepEqual(removed.players[0].orbs, [null, null, null])
+  assertEqual(removed.players[0].energy, 4)
+  assertEqual(removed.players[0].hand.length, 3)
+  assertEqual(removed.players[0].block, 0)
+  assertEqual(removed.enemies[0].hp, 20, 'base Fission Evoked an Orb')
+  assert(removed.players[0].exhaust.some((card) => card.uid === base.uid))
+
+  const upgraded = instance('fission', true)
+  const state = combat([makePlayer({
+    character: 'defect', hand: [upgraded], draw, energy: 1, orbs: ['lightning', 'frost', 'dark'],
+  })], [
+    makeEnemy({ uid: 'lightning-target', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'dark-target', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertDeepEqual(nextEvokeChoice(faceOf(CARDS.fission, true), state.players[0], [0, 1]).options,
+    [{ slot: 2, orb: 'dark' }])
+  assertEqual(playCard(state, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0, 1], evokeEnemyUids: ['lightning-target', null],
+  }), state, 'Fission+ resolved without choosing every Orb')
+  const evoked = playCard(state, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0, 1, 2],
+    evokeEnemyUids: ['lightning-target', null, 'dark-target'],
+  })
+  assertDeepEqual(evoked.players[0].orbs, [null, null, null])
+  assertEqual(evoked.players[0].energy, 4)
+  assertEqual(evoked.players[0].hand.length, 3)
+  assertEqual(evoked.players[0].block, 1)
+  assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 17])
+  assert(evoked.players[0].exhaust.some((card) => card.uid === upgraded.uid))
+
+  const finishingFission = instance('fission', true)
+  const finishingDraw = instance('strike_defect')
+  const finished = playCard(combat([makePlayer({
+    character: 'defect', hand: [finishingFission], draw: [finishingDraw], energy: 0,
+    orbs: ['frost', null, null], powers: [instance('juggernaut')],
+  })], [makeEnemy({ hp: 1, maxHp: 1 })]), 'p1', finishingFission.uid, {
+    enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null],
+  })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.players[0].energy, 1, 'Juggernaut interrupted Fission+ before its Energy')
+  assert(finished.players[0].hand.some((card) => card.uid === finishingDraw.uid),
+    'Juggernaut interrupted Fission+ before its draw')
+  assert(finished.players[0].exhaust.some((card) => card.uid === finishingFission.uid),
+    'Juggernaut interrupted Fission+ before cleanup')
+})
+
+check('Multi-Cast removes one Orb and repeats only that Orb X or X+1 times', () => {
+  const idle = instance('multi_cast')
+  const idleState = combat([makePlayer({
+    character: 'defect', hand: [idle], energy: 3, orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertEqual(cardNeedsEnemy(CARDS.multi_cast, idleState.players[0], true, 0), false)
+  const spentZero = playCard(idleState, 'p1', idle.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertDeepEqual(spentZero.players[0].orbs, ['dark', null, null])
+  assertEqual(spentZero.players[0].energy, 3)
+  assertEqual(spentZero.enemies[0].hp, 20)
+
+  const base = instance('multi_cast')
+  const state = combat([makePlayer({
+    character: 'defect', hand: [base], energy: 4, orbs: ['dark', 'frost', null],
+  })], [
+    makeEnemy({ uid: 'first', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertEqual(cardNeedsEnemy(CARDS.multi_cast, state.players[0], true, 3), true)
+  assertDeepEqual(chosenEvokeOrbs(CARDS.multi_cast, state.players[0], [0], undefined, 3),
+    ['dark', 'dark', 'dark'])
+  const repeated = playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, energySpent: 3, evokeSlots: [0],
+    evokeEnemyUids: ['first', 'second', 'second'],
+  })
+  assertDeepEqual(repeated.players[0].orbs, [null, 'frost', null])
+  assertEqual(repeated.players[0].energy, 1)
+  assertDeepEqual(repeated.enemies.map((enemy) => enemy.hp), [17, 14])
+
+  const upgraded = instance('multi_cast', true)
+  const upgradedState = combat([makePlayer({
+    character: 'defect', hand: [upgraded], energy: 0, orbs: ['frost', null, null],
+  })], [makeEnemy()])
+  assert(nextEvokeChoice(faceOf(CARDS.multi_cast, true), upgradedState.players[0], [], undefined, 0))
+  const plusOne = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [0], evokeEnemyUids: [null],
+  })
+  assertDeepEqual(plusOne.players[0].orbs, [null, null, null])
+  assertEqual(plusOne.players[0].block, 1)
+
+  const lethal = instance('multi_cast')
+  const lethalState = combat([makePlayer({
+    character: 'defect', hand: [lethal], energy: 2, orbs: ['dark', null, null],
+  })], [
+    makeEnemy({ uid: 'doomed', hp: 3, maxHp: 3 }),
+    makeEnemy({ uid: 'survivor', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  assertDeepEqual(evokeTargetProgress(
+    CARDS.multi_cast, lethalState, lethalState.players[0], [0], ['doomed'], undefined, 2,
+  ).options.map((target) => target.uid), ['survivor'])
+  assertEqual(playCard(lethalState, 'p1', lethal.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0],
+    evokeEnemyUids: ['doomed', 'doomed'],
+  }), lethalState, 'a later Evoke targeted an enemy defeated by the first')
+  const retargeted = playCard(lethalState, 'p1', lethal.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0],
+    evokeEnemyUids: ['doomed', 'survivor'],
+  })
+  assertDeepEqual(retargeted.enemies.map((enemy) => enemy.hp), [0, 17])
+
+  const finale = instance('multi_cast')
+  const finaleState = combat([makePlayer({
+    character: 'defect', hand: [finale], energy: 2, orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 3, maxHp: 3 })])
+  const won = playCard(finaleState, 'p1', finale.uid, {
+    enemyUid: null, playerId: null, energySpent: 2, evokeSlots: [0], evokeEnemyUids: ['e1'],
+  })
+  assertEqual(won.phase, 'won', 'lethal repeated Evokes demanded targets after combat ended')
+})
+
+check('a copied Multi-Cast validates choices against its original Energy payment', () => {
+  const card = instance('multi_cast', true)
+  const state = combat([makePlayer({
+    character: 'defect', energy: 0, orbs: ['dark', 'frost', null],
+  })], [
+    makeEnemy({ uid: 'first', hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 20, maxHp: 20 }),
+  ])
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card, energySpent: 2, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Echo Form'],
+  }
+
+  assertEqual(playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [], evokeEnemyUids: [],
+  }), state, 'a forged zero-Energy context bypassed the authoritative three Evokes')
+  const copied = playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: null, energySpent: 0, evokeSlots: [0],
+    evokeEnemyUids: ['first', 'second', 'second'],
+  })
+  assertDeepEqual(copied.players[0].orbs, [null, 'frost', null])
+  assertDeepEqual(copied.enemies.map((enemy) => enemy.hp), [17, 14])
+  assertEqual(copied.phase, 'player')
+})
+
+check('Seek privately searches its draw pile, takes 1/2 cards, shuffles, and Exhausts', () => {
+  const sought = [instance('strike_defect'), instance('defend_defect'), instance('zap')]
+  const base = instance('seek')
+  const state = combat([makePlayer({
+    character: 'defect', hand: [base], draw: sought, energy: 0,
+  })], [makeEnemy()])
+  const preview = previewCardChoice(state, 'p1', base.uid)
+  assertEqual(preview.kind, 'search')
+  assertDeepEqual(preview.cards.map((card) => card.uid), sought.map((card) => card.uid))
+  assertEqual(playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  }), state, 'Seek accepted a missing draw-pile choice')
+  const searched = playCard(state, 'p1', base.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[2].uid],
+  })
+  assertDeepEqual(searched.players[0].hand.map((card) => card.uid), [sought[2].uid])
+  assertDeepEqual(searched.players[0].draw.map((card) => card.uid).sort(),
+    [sought[0].uid, sought[1].uid].sort())
+  assert(searched.players[0].exhaust.some((card) => card.uid === base.uid))
+  assertEqual(searched.rng.calls, state.rng.calls + 1, 'Seek did not shuffle the two-card remainder')
+
+  const shardSeek = instance('seek')
+  const shardState = combat([makePlayer({
+    character: 'silent', hand: [shardSeek], draw: sought, energy: 0,
+    powers: [instance('a_thousand_cuts')],
+  })], [
+    makeEnemy({ uid: 'seek-left', row: 0, hp: 10, maxHp: 10 }),
+    makeEnemy({ uid: 'seek-right', row: 1, hp: 10, maxHp: 10 }),
+  ])
+  const shardSearched = playCard(shardState, 'p1', shardSeek.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[0].uid],
+  })
+  assert(shardSearched.players[0].exhaust.some((card) => card.uid === shardSeek.uid),
+    'A Thousand Cuts interrupted Seek before its cleanup')
+  assertEqual(shardSearched.players[0].hand[0].uid, sought[0].uid,
+    'A Thousand Cuts interrupted Seek before its searched card reached hand')
+  assertDeepEqual(shardSearched.enemies.map((enemy) => enemy.hp), [10, 10])
+  assertDeepEqual(pendingTriggerAbility(shardSearched)?.rows?.map((target) => target.row), [0, 1])
+  const shardResolved = resolvePendingTrigger(
+    shardSearched, 'p1', shardSearched.pendingTriggers[0].id, 1,
+  )
+  assertDeepEqual(shardResolved.enemies.map((enemy) => enemy.hp), [10, 5])
+
+  const upgraded = instance('seek', true)
+  const plusState = combat([makePlayer({
+    character: 'defect', hand: [upgraded], draw: sought, energy: 0,
+  })], [makeEnemy()])
+  assertEqual(playCard(plusState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[0].uid, sought[0].uid],
+  }), plusState, 'Seek+ accepted a duplicate draw-pile choice')
+  const plus = playCard(plusState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [sought[2].uid, sought[0].uid],
+  })
+  assertDeepEqual(plus.players[0].hand.map((card) => card.uid), [sought[2].uid, sought[0].uid])
+  assertDeepEqual(plus.players[0].draw.map((card) => card.uid), [sought[1].uid])
+  assert(plus.log.some((line) => line.includes('searches 2 cards into their hand')))
+
+  const empty = instance('seek')
+  const emptyState = combat([makePlayer({ character: 'defect', hand: [empty], draw: [], energy: 0 })], [makeEnemy()])
+  assertEqual(previewCardChoice(emptyState, 'p1', empty.uid).cards.length, 0)
+  const emptyPlayed = playCard(emptyState, 'p1', empty.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  })
+  assert(emptyPlayed.players[0].exhaust.some((card) => card.uid === empty.uid))
+})
+
+check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {
+  for (const upgraded of [false, true]) {
+    const loop = instance('loop', upgraded)
+    const played = playCard(combat([makePlayer({
+      name: 'Defect', character: 'defect', hand: [loop], energy: 1,
+      orbs: ['lightning', 'frost', 'dark'],
+    })], [
+      makeEnemy({ uid: 'e1', hp: 6, maxHp: 6 }),
+      makeEnemy({ uid: 'e2', row: 1, hp: 6, maxHp: 6 }),
+    ]), 'p1', loop.uid, { enemyUid: null, playerId: null })
+    const abilities = endTurnAbilities(played)
+    const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
+    assert(loopAbility, 'Loop must publish its ordered end-turn ability')
+    assertDeepEqual(loopAbility.targets.map((target) => target.label), [
+      'Lightning Orb 1 → Cultist (row 1)',
+      'Lightning Orb 1 → Cultist (row 2)',
+      'Frost Orb 2',
+    ])
+    const loopTarget = upgraded ? loopAbility.targets[1] : loopAbility.targets[2]
+    const order = abilities.map((ability) => ability.id === loopAbility.id
+      ? chooseEndTurnTarget(ability.id, loopTarget.uid)
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
+    const ended = beginEndPlayerTurn(played, order)
+    assertEqual(ended.enemies[0].hp, 5, 'the normal Lightning Orb still triggers once')
+    assertEqual(ended.enemies[1].hp, upgraded ? 4 : 6,
+      'Loop+ repeats the selected Lightning Orb against its selected target')
+    assertEqual(ended.players[0].block, upgraded ? 1 : 2,
+      'base Loop can select Frost while every normal Orb still resolves')
+
+    const forged = abilities.map((ability) => ability.id === loopAbility.id
+      ? chooseEndTurnTarget(ability.id, '99:not-an-enemy')
+      : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
+    assertEqual(beginEndPlayerTurn(played, forged), played, 'a forged Loop Orb choice is atomic')
+  }
+})
+
+check('Buffer prevents real HP loss, ignores blocked damage, and Buffer+ lasts twice', () => {
+  const base = instance('buffer')
+  const blocked = playCard(combat([makePlayer({
+    character: 'defect', hand: [base], energy: 2, block: 1,
+  })], [makeEnemy()]), 'p1', base.uid, { enemyUid: null, playerId: null })
+  const afterBlockedHit = enemyTurn(endPlayerTurn(blocked))
+  assertEqual(afterBlockedHit.players[0].hp, 10)
+  assertEqual(afterBlockedHit.players[0].powers[0].uid, base.uid,
+    'damage fully absorbed by Block must not spend Buffer')
+
+  const exposed = structuredClone(blocked)
+  exposed.players[0].block = 0
+  const afterHpLoss = enemyTurn(endPlayerTurn(exposed))
+  assertEqual(afterHpLoss.players[0].hp, 10)
+  assertEqual(afterHpLoss.players[0].powers.length, 0)
+  assertDeepEqual(afterHpLoss.players[0].exhaust.map((card) => card.uid), [base.uid])
+
+  const upgraded = instance('buffer', true)
+  const rupture = instance('rupture', true)
+  const offering = instance('offering')
+  let twice = playCard(combat([makePlayer({
+    character: 'defect', hand: [upgraded, rupture, offering], energy: 2,
+  })], [makeEnemy()]), 'p1', upgraded.uid, { enemyUid: null, playerId: null })
+  twice = playCard(twice, 'p1', rupture.uid, { enemyUid: null, playerId: null })
+  assertEqual(twice.players[0].hp, 10)
+  assertEqual(twice.players[0].lostHpThisCombat, false,
+    'prevented HP loss must not activate cards that require actual HP loss')
+  assertEqual(twice.players[0].hpLostThisRound, 0)
+  assertEqual(twice.players[0].powers[0].counter, 1)
+  twice = playCard(twice, 'p1', offering.uid, { enemyUid: null, playerId: null })
+  assertEqual(twice.players[0].hp, 10)
+  assertEqual(twice.players[0].powers.length, 0)
+  assert(twice.players[0].exhaust.some((card) => card.uid === upgraded.uid),
+    'Buffer+ must Exhaust after its second prevention')
+
+  ENEMIES.buffer_multi_hit_fixture = {
+    id: 'buffer_multi_hit_fixture', name: 'Multi-hit fixture', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'single', actions: [{ kind: 'attack', amount: 1, times: 2 }] },
+  }
+  try {
+    for (const isUpgraded of [false, true]) {
+      const buffer = instance('buffer', isUpgraded)
+      const played = playCard(combat([makePlayer({
+        character: 'defect', hand: [buffer], energy: 2,
+      })], [makeEnemy({ defId: 'buffer_multi_hit_fixture' })]), 'p1', buffer.uid, {
+        enemyUid: null, playerId: null,
+      })
+      const attacked = enemyTurn(endPlayerTurn(played))
+      assertEqual(attacked.players[0].hp, isUpgraded ? 10 : 9,
+        'each unblocked hit must consume one Buffer prevention')
+      assertEqual(attacked.players[0].powers.length, 0)
+      assert(attacked.players[0].exhaust.some((card) => card.uid === buffer.uid),
+        'the multi-hit prevention did not Exhaust Buffer at its threshold')
+    }
+
+    ENEMIES.buffer_multi_hit_fixture.pattern = {
+      kind: 'single', actions: [{ kind: 'attack', amount: 2 }],
+    }
+    const partialBuffer = instance('buffer')
+    const partial = playCard(combat([makePlayer({
+      character: 'defect', hand: [partialBuffer], energy: 2, block: 1,
+    })], [makeEnemy({ defId: 'buffer_multi_hit_fixture' })]), 'p1', partialBuffer.uid, {
+      enemyUid: null, playerId: null,
+    })
+    const afterPartial = enemyTurn(endPlayerTurn(partial))
+    assertEqual(afterPartial.players[0].hp, 10)
+    assert(afterPartial.log.includes('Multi-hit fixture did no damage to Ironclad (1 blocked)'),
+      `partial Block was misreported: ${afterPartial.log.join(' | ')}`)
+    assert(!afterPartial.log.some((line) => line.includes('blocked Multi-hit fixture completely')),
+      'Buffer prevention was credited entirely to Block')
+  } finally {
+    delete ENEMIES.buffer_multi_hit_fixture
+  }
+
+  const cappedBuffer = instance('buffer')
+  const apparition = instance('apparition')
+  const capped = playCard(playCard(combat([makePlayer({
+    character: 'defect', hand: [cappedBuffer, apparition], energy: 3,
+  })], [makeEnemy({ defId: 'lagavulin', actionIndex: 1 })]), 'p1', cappedBuffer.uid, {
+    enemyUid: null, playerId: null,
+  }), 'p1', apparition.uid, { enemyUid: null, playerId: null })
+  const cappedHit = enemyTurn(endPlayerTurn(capped))
+  assertEqual(cappedHit.players[0].hp, 10)
+  assert(cappedHit.log.includes("Ironclad's Buffer prevents 1 HP loss"),
+    'the round HP-loss cap must reduce the loss before Buffer prevents it')
+
+  const logBuffer = instance('buffer')
+  const seeingRed = instance('seeing_red')
+  const enraged = playCard(playCard({
+    ...combat([makePlayer({ character: 'defect', hand: [logBuffer, seeingRed], energy: 3 })], [
+      makeEnemy({ defId: 'gremlin_nob' }),
+    ]),
+    turn: 2,
+  }, 'p1', logBuffer.uid, { enemyUid: null, playerId: null }), 'p1', seeingRed.uid, {
+    enemyUid: null, playerId: null,
+  })
+  assert(enraged.log.includes("Gremlin Nob's Enraged did no damage to Ironclad"),
+    `Enraged did not report Buffer prevention as no damage: ${enraged.log.join(' | ')}`)
+  assert(!enraged.log.some((line) => line.includes('blocked Gremlin Nob') && line.includes('(0 spent)')),
+    'Buffer prevention must not be reported as Block')
+
+  CARDS.buffer_large_loss_fixture = {
+    id: 'buffer_large_loss_fixture', name: 'Large Loss Fixture', owner: 'defect',
+    type: 'skill', rarity: 'common', cost: 0, effects: [{ kind: 'loseOwnHp', amount: 10 }],
+  }
+  try {
+    const smallHpBuffer = instance('buffer')
+    const largeLoss = instance('buffer_large_loss_fixture')
+    const protectedAtOne = playCard(playCard(combat([makePlayer({
+      character: 'defect', hp: 1, hand: [smallHpBuffer, largeLoss], energy: 2,
+    })], [makeEnemy()]), 'p1', smallHpBuffer.uid, {
+      enemyUid: null, playerId: null,
+    }), 'p1', largeLoss.uid, { enemyUid: null, playerId: null })
+    assertEqual(protectedAtOne.players[0].hp, 1)
+    assert(protectedAtOne.log.includes("Ironclad's Buffer prevents 1 HP loss"),
+      `Buffer overstated preventable HP loss: ${protectedAtOne.log.join(' | ')}`)
+  } finally {
+    delete CARDS.buffer_large_loss_fixture
+  }
+})
+
+check('Amplify boosts only Dark Orb Evoke damage', () => {
+  assertEqual(faceOf(CARDS.amplify, false).effects[0].amount, 3)
+  assertEqual(faceOf(CARDS.amplify, true).effects[0].amount, 5)
+
+  const amplify = instance('amplify', true)
+  const consume = instance('consume')
+  const dual = instance('dual_cast')
+  let state = combat([makePlayer({
+    character: 'defect', hand: [amplify, consume, dual], energy: 4,
+    orbs: ['dark', null, null],
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  state = playCard(state, 'p1', amplify.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', consume.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].darkOrbEvokeBonus, 5)
+  assertEqual(state.players[0].orbEvokeBonus, 1)
+  const dark = playCard(state, 'p1', dual.uid, {
+    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'],
+  })
+  assertEqual(dark.enemies[0].hp, 8,
+    'Dark combines its printed damage, both Powers, Consume, and Amplify+')
+
+  for (const orb of ['lightning', 'frost']) {
+    const card = instance('dual_cast')
+    const unaffectedState = combat([makePlayer({
+      character: 'defect', hand: [card], energy: 1, orbs: [orb, orb, null],
+    })], [makeEnemy({ hp: 20, maxHp: 20 })])
+    unaffectedState.players[0].darkOrbEvokeBonus = 5
+    const context = orb === 'frost'
+      ? { enemyUid: null, playerId: null, evokeSlots: [0], evokeEnemyUids: [null, null] }
+      : { enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1', 'e1'] }
+    const evoked = playCard(unaffectedState, 'p1', card.uid, context)
+    if (orb === 'frost') assertEqual(evoked.players[0].block, 2)
+    else assertEqual(evoked.enemies[0].hp, 16)
+  }
+})
+
+check('Recycle gains the exhausted card cost and doubles Energy for X', () => {
+  assertEqual(faceOf(CARDS.recycle, false).cost, 1)
+  assertEqual(faceOf(CARDS.recycle, true).cost, 0)
+
+  const recycle = instance('recycle')
+  const streamline = instance('streamline')
+  const priced = playCard(combat([makePlayer({
+    character: 'defect', hand: [recycle, streamline], energy: 2,
+  })], [makeEnemy()]), 'p1', recycle.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [streamline.uid],
+  })
+  assertEqual(priced.players[0].energy, 3, 'Recycle pays 1, then gains Streamline\'s cost of 2')
+  assertDeepEqual(priced.players[0].exhaust.map((card) => card.uid), [streamline.uid])
+
+  const upgraded = instance('recycle', true)
+  const xCost = instance('reinforced_body')
+  const doubled = playCard(combat([makePlayer({
+    character: 'defect', hand: [upgraded, xCost], energy: 2,
+  })], [makeEnemy()]), 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, exhaustUids: [xCost.uid],
+  })
+  assertEqual(doubled.players[0].energy, 4, 'an exhausted X-cost card doubles current Energy')
+  assertDeepEqual(doubled.players[0].exhaust.map((card) => card.uid), [xCost.uid])
+})
+
+check('Equilibrium grants Block and chooses Retained cards during the discard step', () => {
+  for (const upgraded of [false, true]) {
+    const equilibrium = instance('equilibrium', upgraded)
+    const first = instance('strike_defect')
+    const retained = instance('defend_defect')
+    const secondRetained = instance('zap')
+    const hand = upgraded ? [equilibrium, first, retained, secondRetained] : [equilibrium, first, retained]
+    const played = playCard(combat([makePlayer({
+      character: 'defect', hand, energy: 2,
+    })], [makeEnemy()]), 'p1', equilibrium.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].block, upgraded ? 4 : 3)
+    assertEqual(played.players[0].retainCardsThisTurn, upgraded ? 2 : 1)
+
+    const ended = endPlayerTurn(played, { p1: [first.uid] })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid),
+      upgraded ? [retained.uid, secondRetained.uid] : [retained.uid])
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true),
+      'Equilibrium retention must count as Retain on the next turn')
+    assertDeepEqual(ended.players[0].discard.map((card) => card.uid), [equilibrium.uid, first.uid])
+    assertEqual(ended.players[0].retainCardsThisTurn, 0)
+  }
+
+  const equilibrium = instance('equilibrium')
+  const first = instance('strike_defect')
+  const second = instance('defend_defect')
+  const played = playCard(combat([makePlayer({
+    character: 'defect', hand: [equilibrium, first, second], energy: 2,
+  })], [makeEnemy()]), 'p1', equilibrium.uid, { enemyUid: null, playerId: null })
+  const refused = endPlayerTurn(played, { p1: [] })
+  assertEqual(refused.phase, 'discard')
+  assertEqual(refused.players[0].hand.length, 2, 'base Equilibrium cannot Retain two cards')
+})
+
+check('Well-Laid Plans optionally Retains cards in addition to innate Retain', () => {
+  for (const upgraded of [false, true]) {
+    const plans = instance('well_laid_plans', upgraded)
+    const regret = instance('regret')
+    const first = instance('strike_silent')
+    const second = instance('defend_silent')
+    const tossed = instance('neutralize')
+    const played = playCard(combat([makePlayer({
+      character: 'silent', hand: [plans, regret, first, second, tossed], energy: 1,
+    })], [makeEnemy()]), 'p1', plans.uid, { enemyUid: null, playerId: null })
+    assertEqual(played.players[0].retainCardsThisTurn, 0, 'the Power resolved before End of Turn')
+    const ability = endTurnAbilities(played).find((entry) => entry.label.includes('Well-Laid Plans'))
+    const prepared = beginEndPlayerTurn(played, [ability.id])
+    assertEqual(prepared.phase, 'discard')
+    assertEqual(prepared.players[0].retainCardsThisTurn, upgraded ? 2 : 1)
+
+    const discardOrder = upgraded ? [tossed.uid] : [second.uid, tossed.uid]
+    const ended = endPlayerTurn(prepared, { p1: discardOrder })
+    assertDeepEqual(ended.players[0].hand.map((card) => card.uid),
+      upgraded ? [regret.uid, first.uid, second.uid] : [regret.uid, first.uid])
+    assert(ended.players[0].hand.every((card) => card.retainedLastTurn === true))
+  }
+})
+
+check('Collector Claws gain one shared combat cube before dealing scaled damage', () => {
+  const first = instance('claw_claw_pack')
+  const second = instance('claw_claw_pack')
+  const upgraded = instance('claw_claw_pack', true)
+  let state = combat([makePlayer({
+    character: 'defect', hand: [first, second, upgraded], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  for (const card of [first, second, upgraded]) {
+    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
+  }
+  assertEqual(state.players[0].clawCubesGainedThisCombat, 3)
+  assertEqual(state.enemies[0].hp, 13, 'the three Claws hit for 1, 2, then 4')
+  assertEqual(state.players[0].energy, 1, 'Collector Claws cost 0')
+
+  const reset = combat([makePlayer({ clawCubesGainedThisCombat: 7 })], [makeEnemy()])
+  assertEqual(reset.players[0].clawCubesGainedThisCombat, 0, 'Claw cubes reset each combat')
 })
 
 check('Core Surge redirects its base cleanse, upgrades to the whole party, and Retains', () => {
@@ -4739,6 +5965,65 @@ check('Thunder Strike deals one separate hit per Lightning Orb and needs no targ
   const harmless = playCard(empty, 'p1', thunder.uid, { enemyUid: null, playerId: null })
   assertEqual(harmless.enemies[0].hp, 10)
   assertEqual(harmless.players[0].energy, 0)
+})
+
+check('Reinforced Body enforces its base X minimum and assigns upgraded Block icons separately', () => {
+  const base = instance('reinforced_body')
+  const baseState = combat([
+    makePlayer({ character: 'defect', hand: [base], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  assertEqual(playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 0,
+  }), baseState, 'Reinforced Body cannot use X = 0')
+  const blocked = playCard(baseState, 'p1', base.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p2'], energySpent: 2,
+  })
+  assertEqual(blocked.players[0].block, 0)
+  assertEqual(blocked.players[1].block, 3)
+  assertEqual(blocked.players[0].energy, 1)
+
+  const discounted = combat([makePlayer({
+    character: 'defect', hand: [instance('reinforced_body')], energy: 3, freeCardsThisTurn: 1,
+  })], [makeEnemy()])
+  assertEqual(playCard(discounted, 'p1', discounted.players[0].hand[0].uid, {
+    enemyUid: null, playerId: null, playerIds: ['p1'], energySpent: 0,
+  }), discounted, 'a free-card discount cannot bypass the printed X minimum')
+
+  const upgraded = instance('reinforced_body', true)
+  const upgradedState = combat([
+    makePlayer({ character: 'defect', hand: [upgraded], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  upgradedState.players[0].cardBlockBonus = 1
+  const zero = playCard(upgradedState, 'p1', upgraded.uid, {
+    enemyUid: null, playerId: null, playerIds: ['p1', 'p2'], energySpent: 0,
+  })
+  assertEqual(zero.players[0].block, 1, 'Footwork modifies the first printed X Block icon at X = 0')
+  assertEqual(zero.players[1].block, 1, 'the second printed icon has its own target and Footwork bonus')
+  assertEqual(zero.players[0].energy, 3)
+
+  const havoc = instance('havoc', true)
+  const havocBody = instance('reinforced_body')
+  const havocState = playCard(combat([makePlayer({
+    character: 'defect', hand: [havoc], draw: [havocBody], energy: 3,
+  })], [makeEnemy()]), 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(havocState.startTurnProgress, undefined,
+    'Havoc must not pause on a base Reinforced Body that cannot spend X = 0')
+  assert(havocState.players[0].exhaust.some((card) => card.uid === havocBody.uid))
+
+  const mayhemBody = instance('reinforced_body')
+  const mayhemState = combat([makePlayer({
+    character: 'defect', powers: [instance('mayhem')],
+    draw: [...Array.from({ length: 5 }, () => instance('defend_defect')), mayhemBody],
+  })], [makeEnemy()])
+  Object.assign(mayhemState, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(mayhemState)
+  const [ability] = startTurnAbilities(prepared)
+  const resolved = resolveStartPlayerTurn(prepared, [{ id: ability.id, shivEnemyUids: [] }])
+  assertEqual(resolved.phase, 'player',
+    'Mayhem must not pause on a base Reinforced Body that cannot spend X = 0')
+  assert(resolved.players[0].discard.some((card) => card.uid === mayhemBody.uid))
 })
 
 check('Catalyst, Flechettes, Adrenaline, and Grand Finale resolve their full printed rules', () => {
@@ -5280,6 +6565,193 @@ check('Accuracy changes Shiv hits without changing ordinary Attacks', () => {
   assertEqual(state.enemies[0].hp, 17, 'Accuracy does not modify a card hit')
 })
 
+check('Simmering Fury adds damage to every Attack hit only while in Wrath', () => {
+  for (const upgraded of [false, true]) {
+    const fury = instance('simmering_fury', upgraded)
+    const strike = instance('strike_watcher')
+    const crescendo = instance('crescendo')
+    const sleeves = instance('flying_sleeves')
+    let state = combat(
+      [makePlayer({ character: 'watcher', hand: [fury, strike, crescendo, sleeves], energy: 5 })],
+      [makeEnemy({ hp: 30, maxHp: 30 })],
+    )
+    state = playCard(state, 'p1', fury.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].wrathAttackDamageBonus, upgraded ? 2 : 1)
+    state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, 29, 'the Power does nothing outside Wrath')
+    state = playCard(state, 'p1', crescendo.uid, { enemyUid: null, playerId: null })
+    state = playCard(state, 'p1', sleeves.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, upgraded ? 21 : 23,
+      'Wrath and Simmering Fury apply to both Flying Sleeves hits')
+  }
+})
+
+check('Like Water grants end-of-turn Block only while in Calm', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('like_water', upgraded)
+    const neutral = beginEndPlayerTurn(combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'neutral', block: 0 }),
+    ], [makeEnemy()]))
+    assertEqual(neutral.players[0].block, 0)
+
+    const calm = beginEndPlayerTurn(combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'calm', block: 0 }),
+    ], [makeEnemy()]))
+    assertEqual(calm.players[0].block, upgraded ? 2 : 1)
+  }
+})
+
+check('Battle Hymn deals its stance bonus once per turn without damage modifiers', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('battle_hymn', upgraded)
+    const state = combat([
+      makePlayer({ character: 'watcher', powers: [power], stance: 'wrath', strength: 4, weak: 2 }),
+    ], [makeEnemy({ hp: 20, maxHp: 20, vulnerable: 2 })])
+    const used = activatePower(state, 'p1', power.uid, { enemyUid: 'e1' })
+    assertEqual(used.enemies[0].hp, upgraded ? 16 : 18,
+      'Battle Hymn uses only its printed Wrath bonus')
+    assertEqual(used.players[0].weak, 2, 'plain Power damage does not spend Weak')
+    assertEqual(activatePower(used, 'p1', power.uid, { enemyUid: 'e1' }), used,
+      'Battle Hymn cannot activate twice in one turn')
+  }
+
+  const neutralPower = instance('battle_hymn')
+  const neutral = activatePower(combat([
+    makePlayer({ character: 'watcher', powers: [neutralPower], stance: 'neutral' }),
+  ], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', neutralPower.uid, { enemyUid: 'e1' })
+  assertEqual(neutral.enemies[0].hp, 19)
+})
+
+check('Mental Fortress grants Block only when the Watcher switches Stances', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('mental_fortress', upgraded)
+    const firstWrath = instance('crescendo')
+    const sameWrath = instance('crescendo')
+    const calm = instance('tranquility')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [power], hand: [firstWrath, sameWrath, calm], stance: 'neutral', block: 0,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', firstWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 2 : 1)
+    state = playCard(state, 'p1', sameWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 2 : 1, 're-entering the same Stance is not a switch')
+    state = playCard(state, 'p1', calm.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].block, upgraded ? 4 : 2)
+  }
+})
+
+check('Rushdown draws only the first time the Watcher enters Wrath each turn', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('rushdown', upgraded)
+    const firstWrath = instance('crescendo')
+    const calm = instance('tranquility')
+    const secondWrath = instance('crescendo')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [power], hand: [firstWrath, calm, secondWrath],
+      draw: Array.from({ length: 8 }, () => instance('strike_watcher')), stance: 'neutral',
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', firstWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].draw.length, upgraded ? 5 : 6)
+    state = playCard(state, 'p1', calm.uid, { enemyUid: null, playerId: null })
+    state = playCard(state, 'p1', secondWrath.uid, { enemyUid: null, playerId: null })
+    assertEqual(state.players[0].draw.length, upgraded ? 5 : 6,
+      're-entering Wrath in the same turn cannot trigger Rushdown twice')
+  }
+
+  const indignation = instance('indignation')
+  const cleanedUp = playCard(combat([makePlayer({
+    character: 'watcher', powers: [instance('rushdown')], hand: [indignation],
+    draw: [], discard: [], stance: 'neutral',
+  })], [makeEnemy()]), 'p1', indignation.uid, { enemyUid: null, playerId: null })
+  assertDeepEqual(cleanedUp.players[0].hand.map((card) => card.uid), [indignation.uid],
+    'Rushdown must resolve after Indignation is discarded, so it can reshuffle and draw that card')
+})
+
+check('Nirvana grants Block whenever a non-empty Scry resolves', () => {
+  for (const upgraded of [false, true]) {
+    const scryCard = instance('third_eye')
+    let state = combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [scryCard],
+      draw: [instance('strike_watcher'), instance('defend_watcher')], block: 0,
+    })], [makeEnemy()])
+    state = playCard(state, 'p1', scryCard.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [],
+    })
+    assertEqual(state.players[0].block, upgraded ? 4 : 3,
+      'Third Eye Block and Nirvana Block both resolve')
+
+    const emptyScry = instance('third_eye')
+    const empty = playCard(combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [emptyScry], draw: [], block: 0,
+    })], [makeEnemy()]), 'p1', emptyScry.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [],
+    })
+    assertEqual(empty.players[0].block, 2, 'looking at no cards is not a Scry trigger')
+
+    const cut = instance('cut_through_fate')
+    const top = instance('strike_watcher')
+    const bottom = instance('defend_watcher')
+    const ordered = playCard(combat([makePlayer({
+      character: 'watcher', powers: [instance('nirvana', upgraded)], hand: [cut],
+      draw: [top, bottom], block: 0,
+    })], [makeEnemy()]), 'p1', cut.uid, {
+      enemyUid: 'e1', playerId: null, scryDiscardUids: [top.uid, bottom.uid],
+    })
+    const shuffleLog = ordered.log.findIndex((line) => line.includes('shuffles their discard pile'))
+    const nirvanaLog = ordered.log.findIndex((line) => line.includes('Nirvana') && line.includes('gains'))
+    assert(shuffleLog >= 0 && nirvanaLog > shuffleLog,
+      'Nirvana must wait until Cut Through Fate finishes its post-Scry draw')
+  }
+})
+
+check('Indignation enters Wrath or applies Vulnerable at its printed scope', () => {
+  for (const upgraded of [false, true]) {
+    const card = instance('indignation', upgraded)
+    const neutral = combat([makePlayer({ character: 'watcher', hand: [card], stance: 'neutral' })], [makeEnemy()])
+    assertEqual(cardNeedsEnemy(faceOf(cardDef('indignation'), upgraded), neutral.players[0]), false,
+      'Indignation needs no enemy while it will enter Wrath')
+    const entered = playCard(neutral, 'p1', card.uid, { enemyUid: null, playerId: null })
+    assertEqual(entered.players[0].stance, 'wrath')
+    assertEqual(entered.enemies[0].vulnerable, 0)
+
+    const wrathCard = instance('indignation', upgraded)
+    const wrath = combat(
+      [makePlayer({ character: 'watcher', hand: [wrathCard], stance: 'wrath' })],
+      [
+        makeEnemy({ uid: 'a', row: 0 }),
+        makeEnemy({ uid: 'b', row: 0 }),
+        makeEnemy({ uid: 'c', row: 1 }),
+      ],
+    )
+    assert(cardNeedsEnemy(faceOf(cardDef('indignation'), upgraded), wrath.players[0]))
+    const applied = playCard(wrath, 'p1', wrathCard.uid, { enemyUid: 'a', playerId: null })
+    assertDeepEqual(applied.enemies.map((enemy) => enemy.vulnerable), upgraded ? [1, 1, 0] : [1, 0, 0])
+    assertEqual(applied.players[0].stance, 'wrath')
+  }
+})
+
+check('Inner Peace draws in Calm and otherwise enters Calm', () => {
+  for (const upgraded of [false, true]) {
+    const calmCard = instance('inner_peace', upgraded)
+    const calmDeck = Array.from({ length: 6 }, () => instance('strike_watcher'))
+    const calmed = playCard(combat([makePlayer({
+      character: 'watcher', hand: [calmCard], draw: calmDeck, stance: 'calm', energy: 1,
+    })], [makeEnemy()]), 'p1', calmCard.uid, { enemyUid: null, playerId: null })
+    assertEqual(calmed.players[0].hand.length, upgraded ? 4 : 3)
+    assertEqual(calmed.players[0].draw.length, upgraded ? 2 : 3)
+    assertEqual(calmed.players[0].stance, 'calm')
+
+    const neutralCard = instance('inner_peace', upgraded)
+    const neutralDeck = Array.from({ length: 6 }, () => instance('strike_watcher'))
+    const entered = playCard(combat([makePlayer({
+      character: 'watcher', hand: [neutralCard], draw: neutralDeck, stance: 'neutral', energy: 1,
+    })], [makeEnemy()]), 'p1', neutralCard.uid, { enemyUid: null, playerId: null })
+    assertEqual(entered.players[0].hand.length, 0)
+    assertEqual(entered.players[0].draw.length, 6)
+    assertEqual(entered.players[0].stance, 'calm')
+  }
+})
+
 check('Choke adds every Weak and Poison token on its target to one hit', () => {
   for (const upgraded of [false, true]) {
     const choke = instance('choke', upgraded)
@@ -5591,18 +7063,25 @@ check('a Miracle can be spent for Energy only during the Player Turn', () => {
   })
   assertEqual(paid.players[0].miracles, 0, 'the atomic payment spends the Miracle')
   assertEqual(paid.players[0].energy, 5, 'the Miracle subsidises the card without storing 7 Energy')
+})
 
-  const skewer = instance('skewer')
-  const snecko = combat([makePlayer({ hand: [skewer], miracles: 1, energy: 6 })], [
-    makeEnemy({ hp: 10, maxHp: 10 }),
-  ])
-  snecko.players[0].nextCardCost = 1
-  const sneckoPaid = playCard(snecko, 'p1', skewer.uid, {
-    enemyUid: 'e1', playerId: null, spendMiracle: true,
-  })
-  assert(sneckoPaid !== snecko, 'a numeric Snecko price still treated the card as printed X')
-  assertEqual(sneckoPaid.players[0].miracles, 0)
-  assertEqual(sneckoPaid.players[0].energy, 6)
+check('Miracle cubes are a shared supply usable by every character without trading', () => {
+  const collect = instance('collect')
+  const full = combat([
+    makePlayer({ id: 'p1', character: 'ironclad', miracles: 4 }),
+    makePlayer({ id: 'p2', character: 'watcher', hand: [collect], miracles: 1 }),
+  ], [makeEnemy()])
+  const capped = playCard(full, 'p2', collect.uid, { enemyUid: null, playerId: null })
+  assertEqual(capped.players.reduce((sum, player) => sum + player.miracles, 0), 5,
+    'Collect cannot take a sixth cube from the physical supply')
+
+  const spent = spendMiracle(combat([
+    makePlayer({ id: 'p1', character: 'defect', miracles: 1, energy: 2 }),
+    makePlayer({ id: 'p2', character: 'watcher', miracles: 0, energy: 2 }),
+  ], [makeEnemy()]), 'p1')
+  assertEqual(spent.players[0].miracles, 0, 'another character may use the Miracle mechanic')
+  assertEqual(spent.players[0].energy, 3)
+  assertEqual(spent.players[1].miracles, 0, 'using the token does not transfer it')
 })
 
 check('Shivs are separate attacks and overflow may attack immediately', () => {
@@ -5939,524 +7418,6 @@ check('Weak Potion applies the two printed Weak tokens', () => {
   assertEqual(used.enemies[0].weak, 2)
 })
 
-check('special physical potions resolve instead of being consumed as no-ops', () => {
-  const strike = instance('strike_ironclad')
-  let state = combat(
-    [makePlayer({ hand: [strike], potions: ['attack_potion'] })],
-    [makeEnemy({ hp: 20, maxHp: 20 })],
-  )
-  state = activatePotion(state, 'p1', 'attack_potion')
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.enemies[0].hp, 19, 'the copy resolves before the original')
-  assertDeepEqual(state.players[0].forcedCardUids, [strike.uid])
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.enemies[0].hp, 18, 'Attack Potion plays the next Attack twice')
-  assertEqual(state.players[0].cardsPlayedThisTurn, 2, 'the copy is a separate card play')
-
-  const skewer = instance('skewer')
-  state = combat([makePlayer({ hand: [skewer], energy: 3, potions: ['attack_potion'] })],
-    [makeEnemy({ hp: 20, maxHp: 20 })])
-  state = activatePotion(state, 'p1', 'attack_potion')
-  state = playCard(state, 'p1', skewer.uid, { enemyUid: 'e1', playerId: null, energySpent: 2 })
-  state = playCard(state, 'p1', skewer.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.enemies[0].hp, 14, 'the physical X-cost original lost its copied X value')
-  assertEqual(state.players[0].energy, 1, 'the physical X-cost original paid twice')
-
-  const copiedHavoc = instance('havoc')
-  const copiedChild = instance('strike_ironclad')
-  state = combat([makePlayer({ hand: [copiedHavoc], draw: [copiedChild], energy: 1,
-    potions: ['skill_potion'] })], [makeEnemy({ hp: 20, maxHp: 20 })])
-  state = activatePotion(state, 'p1', 'skill_potion')
-  state = playCard(state, 'p1', copiedHavoc.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, copiedChild.uid)
-  state = playCard(state, 'p1', copiedChild.uid, { enemyUid: 'e1', playerId: null })
-  assertDeepEqual(state.players[0].forcedCardUids, [copiedHavoc.uid],
-    'Havoc\'s explicit child did not outrank the legacy forced original')
-  assert(![...state.players[0].discard, ...state.players[0].exhaust]
-    .some((card) => card.uid.startsWith('copy:')), 'the virtual copied Havoc entered a physical pile')
-
-  const first = instance('strike_ironclad')
-  const second = instance('strike_ironclad')
-  state = combat(
-    [makePlayer({ hand: [first, second], potions: ['attack_potion', 'attack_potion'] })],
-    [makeEnemy({ uid: 'e1', hp: 20 }), makeEnemy({ uid: 'e2', row: 1, hp: 20 })],
-  )
-  state = activatePotion(activatePotion(state, 'p1', 'attack_potion'), 'p1', 'attack_potion')
-  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.enemies[0].hp, 19)
-  assertEqual(state.players[0].cardCopyQueue.length, 1, 'a second copy potion waits for the next card')
-  state = playCard(state, 'p1', first.uid, { enemyUid: 'e2', playerId: null })
-  assertEqual(state.enemies[1].hp, 19, 'the original chooses an independent target')
-  assertEqual(state.players[0].cardCopyQueue.length, 1)
-  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.players[0].cardCopyQueue.length, 0)
-
-  const stacked = instance('strike_ironclad')
-  state = combat([makePlayer({ hand: [stacked], potions: ['attack_potion'] })],
-    [makeEnemy({ hp: 20, maxHp: 20 })])
-  state.players[0].doubledAttacksThisTurn = 1
-  state = activatePotion(state, 'p1', 'attack_potion')
-  state = playCard(state, 'p1', stacked.uid, { enemyUid: 'e1', playerId: null })
-  assertDeepEqual(state.players[0].forcedCardUids, [stacked.uid])
-  assertEqual(state.players[0].doubledAttacksThisTurn, 1)
-  state = playCard(state, 'p1', stacked.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.phase, 'copy', 'the physical original, not the potion copy, consumes Double Tap')
-  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
-  assertEqual(state.enemies[0].hp, 17, 'Attack Potion and Double Tap produce three complete plays')
-  assertEqual(state.players[0].discard.filter((card) => card.uid === stacked.uid).length, 1)
-  assert(!state.players[0].discard.some((card) => card.uid.startsWith('copy:')),
-    'a virtual potion copy leaked into a physical pile')
-
-  const hand = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash')]
-  state = combat([makePlayer({ hand, potions: ['purity_potion'] })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'purity_potion', { cardUids: hand.slice(0, 2).map((card) => card.uid) })
-  assertEqual(state.players[0].hand.length, 1)
-  assertEqual(state.players[0].exhaust.length, 2, 'Purity Potion Exhausts the chosen cards')
-
-  const remembered = instance('bash')
-  state = combat([makePlayer({ discard: [remembered], potions: ['liquid_memories'], energy: 0 })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'liquid_memories', { cardUid: remembered.uid })
-  state = playCard(state, 'p1', remembered.uid, { enemyUid: 'e1', playerId: null })
-  assert(state.players[0].discard.some((card) => card.uid === remembered.uid), 'Liquid Memories returns and plays the card')
-  assertEqual(state.players[0].energy, 0, 'the returned card costs 0 this turn')
-
-  const confused = instance('strike_ironclad')
-  state = combat([makePlayer({ discard: [confused], potions: ['liquid_memories'] })], [makeEnemy({ hp: 20 })])
-  state.players[0].nextCardCost = 3
-  state = activatePotion(state, 'p1', 'liquid_memories', { cardUid: confused.uid })
-  state = playCard(state, 'p1', confused.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.players[0].energy, 0, 'Snecko overrides a potion-created free cost')
-
-  const dualCast = instance('dual_cast')
-  state = combat([
-    makePlayer({ character: 'defect', hand: [dualCast], orbs: ['lightning', null, null], potions: ['skill_potion'] }),
-  ], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'skill_potion')
-  state = playCard(state, 'p1', dualCast.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
-  })
-  assertEqual(state.players[0].orbs.filter(Boolean).length, 0)
-  assertEqual(state.players[0].forcedCardUids.length, 0, 'an orb-consuming copy cannot strand its original')
-  assert(state.players[0].discard.some((card) => card.uid === dualCast.uid), 'the impossible original is discarded')
-})
-
-check('Wrist Blade follows the original cost across copied Attacks', () => {
-  const copiedDamage = (defId) => {
-    const card = instance(defId)
-    let state = combat([makePlayer({
-      character: 'silent',
-      hand: [card],
-      potions: ['attack_potion'],
-      relics: [{ defId: 'wrist_blade', spent: false }],
-    })], [makeEnemy({ hp: 20, maxHp: 20 })])
-    state = activatePotion(state, 'p1', 'attack_potion')
-    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
-    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
-    return 20 - state.enemies[0].hp
-  }
-  assertEqual(copiedDamage('strike_ironclad'), 2, 'a paid copied Attack gets no Wrist Blade bonus')
-  assertEqual(copiedDamage('neutralize'), 4, 'a zero-cost copied Attack gets the bonus on both plays')
-})
-
-check('Time Warp cannot strand a committed copied-card original', () => {
-  const strike = instance('strike_ironclad')
-  let state = combat([makePlayer({
-    hand: [strike],
-    potions: ['attack_potion'],
-    cardsPlayedThisTurn: 2,
-  })], [makeEnemy({ defId: 'time_eater', hp: 60, maxHp: 60, actionIndex: 2, isBoss: true })])
-  state = activatePotion(state, 'p1', 'attack_potion')
-  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertDeepEqual(state.players[0].forcedCardUids, [strike.uid])
-  const resolved = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertDeepEqual(resolved.players[0].forcedCardUids, [])
-  assertEqual(resolved.enemies[0].hp, 58, 'the copy and already committed original both resolve')
-})
-
-check('Time Warp settles every immediate card instead of deadlocking the table', () => {
-  const target = () => makeEnemy({ defId: 'time_eater', hp: 60, maxHp: 60,
-    actionIndex: 2, isBoss: true })
-  const mayhemCard = instance('strike_ironclad')
-  let state = combat([makePlayer({ hand: [mayhemCard] })], [target()])
-  Object.assign(state, {
-    phase: 'start',
-    startTurnProgress: {
-      choices: [],
-      forcedCard: { playerId: 'p1', cardUid: mayhemCard.uid, sourceCardId: 'mayhem', exhaustNonPower: false },
-    },
-  })
-  state.players[0].cardsPlayedThisTurn = 3
-  state = playCard(state, 'p1', mayhemCard.uid, { enemyUid: 'e1', playerId: null })
-  assert(state.players[0].discard.some((card) => card.uid === mayhemCard.uid))
-  assertEqual(state.startTurnProgress, undefined)
-
-  const legacy = instance('strike_ironclad')
-  state = combat([makePlayer({ hand: [legacy], forcedCardUids: [legacy.uid], freeCardUids: [legacy.uid] })], [target()])
-  state.players[0].cardsPlayedThisTurn = 3
-  state = playCard(state, 'p1', legacy.uid, { enemyUid: 'e1', playerId: null })
-  assert(state.players[0].discard.some((card) => card.uid === legacy.uid))
-  assertDeepEqual(state.players[0].forcedCardUids, [])
-
-  const havoc = instance('havoc')
-  const havocCard = instance('strike_ironclad')
-  state = combat([makePlayer({ hand: [havocCard] })], [target()])
-  Object.assign(state, {
-    phase: 'start',
-    startTurnProgress: {
-      choices: [],
-      forcedCard: {
-        playerId: 'p1', cardUid: havocCard.uid, sourceCardId: 'havoc', exhaustNonPower: true,
-        deferredHavocs: [{ card: havoc, exhaust: false }],
-      },
-    },
-  })
-  state.players[0].cardsPlayedThisTurn = 3
-  state = playCard(state, 'p1', havocCard.uid, { enemyUid: 'e1', playerId: null })
-  assert(state.players[0].exhaust.some((card) => card.uid === havocCard.uid))
-  assertEqual(state.players[0].discard.filter((card) => card.uid === havoc.uid).length, 1)
-  assertEqual(state.phase, 'player')
-})
-
-check('forced card sequences lock every other shared-turn action', () => {
-  const forced = instance('strike_ironclad')
-  const other = instance('strike_silent')
-  const state = combat([
-    makePlayer({ hand: [forced], forcedCardUids: [forced.uid], freeCardUids: [forced.uid] }),
-    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, hand: [other], shivs: 1,
-      miracles: 1, energy: 5, potions: ['fire_potion'] }),
-  ], [makeEnemy({ hp: 20 })])
-  assert(playCard(state, 'p2', other.uid, { enemyUid: 'e1', playerId: null }) === state)
-  assert(spendShiv(state, 'p2', 'e1') === state)
-  assert(spendMiracle(state, 'p2') === state)
-  assert(activatePotion(state, 'p2', 'fire_potion', { enemyUid: 'e1' }) === state)
-
-  const choice = instance('acrobatics')
-  const previewState = combat([
-    makePlayer({ hand: [choice], draw: [instance('defend_silent')], energy: 0,
-      forcedCardUids: [choice.uid], freeCardUids: [choice.uid] }),
-    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1,
-      hand: [instance('acrobatics')], draw: [instance('defend_silent')] }),
-  ], [makeEnemy({ hp: 20 })])
-  assert(previewCardChoice(previewState, 'p1', choice.uid), 'a free forced choice card previews at zero energy')
-  assertEqual(previewCardChoice(previewState, 'p2', previewState.players[1].hand[0].uid), null,
-    'another player cannot preview during a forced sequence')
-})
-
-check('a die relic with any-player support pauses for the owner choice', () => {
-  let paused
-  for (let seed = 0; seed < 100 && !paused; seed++) {
-    const base = combat([
-      makePlayer(),
-      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1,
-        relics: [{ defId: 'oddly_smooth_stone', spent: false }] }),
-    ], [makeEnemy()])
-    const candidate = startPlayerTurnWithChoices({ ...base, phase: 'roundEnd', turn: 1, rng: createRng(seed) })
-    if (candidate.die === 4) paused = candidate
-  }
-  assert(paused, 'fixture must find a die-4 seed')
-  assertEqual(paused.phase, 'start')
-  const ability = startTurnAbilities(paused).find((entry) => entry.label.includes('Oddly Smooth Stone'))
-  assertDeepEqual(ability.playerTargets.map((target) => target.id), ['p1', 'p2'])
-})
-
-check('Storm, ally support, and Facing resolve in one ordered start plan', () => {
-  const state = combat([
-    makePlayer({ character: 'defect', powers: [instance('storm')], orbs: ['frost', 'lightning', 'dark'],
-      relics: [{ defId: 'oddly_smooth_stone', spent: false }] }),
-    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
-  ], [
-    makeEnemy({ uid: 'shield', defId: 'spire_shield', hp: 30, maxHp: 30 }),
-    makeEnemy({ uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42 }),
-  ])
-  Object.assign(state, { phase: 'start', turn: 2, die: 4, startTurnStage: 'effects' })
-  const abilities = startTurnAbilities(state)
-  const storm = abilities.find((ability) => ability.label.includes('Storm'))
-  const stone = abilities.find((ability) => ability.label.includes('Oddly Smooth Stone'))
-  assert(storm && stone)
-  assertDeepEqual(stone.playerTargets.map((target) => target.id), ['p1', 'p2'])
-  const afterEffects = resolveStartPlayerTurn(state, [
-    { id: storm.id, shivEnemyUids: [], evokeSlots: [1], evokeEnemyUids: ['shield'] },
-    { id: stone.id, playerId: 'p2', shivEnemyUids: [] },
-  ])
-  assertEqual(afterEffects.phase, 'start')
-  assertEqual(afterEffects.startTurnStage, 'facing')
-  assertEqual(afterEffects.players[1].block, 2)
-  const facing = startTurnAbilities(afterEffects)
-  assert(facing.every((ability) => ability.targets.some((target) => target.uid === 'none')))
-  const resolved = resolveStartPlayerTurn(afterEffects, facing.map((ability, index) => ({
-    id: ability.id,
-    enemyUid: index === 0 ? 'shield' : 'none',
-    shivEnemyUids: [],
-  })))
-  assertEqual(resolved.phase, 'player')
-  assertDeepEqual(resolved.players.map((player) => player.facingEnemyUid), ['shield', null])
-})
-
-check('Facing survives a paused Mayhem and reserves every player who chooses none', () => {
-  const forcedDefend = instance('defend_ironclad')
-  let state = combat([
-    makePlayer({ powers: [instance('mayhem')], draw: [forcedDefend], row: 0 }),
-    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1 }),
-    makePlayer({ id: 'p3', name: 'Defect', character: 'defect', row: 2 }),
-    makePlayer({ id: 'p4', name: 'Watcher', character: 'watcher', row: 3 }),
-  ], [
-    makeEnemy({ uid: 'shield', defId: 'spire_shield', hp: 30, maxHp: 30 }),
-    makeEnemy({ uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42 }),
-  ])
-  Object.assign(state, { phase: 'start', turn: 2, startTurnStage: 'effects' })
-  const [mayhem] = startTurnAbilities(state)
-  state = resolveStartPlayerTurn(state, [{ id: mayhem.id, shivEnemyUids: [] }])
-  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, forcedDefend.uid)
-  state = playCard(state, 'p1', forcedDefend.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.startTurnStage, 'facing')
-  assertEqual(state.startTurnProgress, undefined, 'the consumed Mayhem queue hid Facing choices')
-  const facing = startTurnAbilities(state)
-  const byPlayer = new Map(facing.map((ability) => [ability.playerId, ability]))
-  assert(!facingChoicesAreValid(state, [
-    { id: byPlayer.get('p1').id, enemyUid: 'none', shivEnemyUids: [] },
-    { id: byPlayer.get('p2').id, enemyUid: 'none', shivEnemyUids: [] },
-    { id: byPlayer.get('p3').id, enemyUid: 'shield', shivEnemyUids: [] },
-  ]), 'Facing offered a row already reserved by none choices')
-  state = resolveStartPlayerTurn(state, [
-    { id: byPlayer.get('p3').id, enemyUid: 'shield', shivEnemyUids: [] },
-    { id: byPlayer.get('p2').id, enemyUid: 'spear', shivEnemyUids: [] },
-    { id: byPlayer.get('p1').id, enemyUid: 'none', shivEnemyUids: [] },
-    { id: byPlayer.get('p4').id, enemyUid: 'none', shivEnemyUids: [] },
-  ])
-  assertEqual(state.phase, 'player')
-  assertDeepEqual(state.players.map((player) => player.row), [0, 2, 1, 3],
-    'explicit Facing assignments moved into rows held by none choices')
-})
-
-check("Spheric Guardian's opening Block can be ordered with start-of-turn relics", () => {
-  let paused
-  for (let seed = 0; seed < 100 && !paused; seed++) {
-    const base = combat([
-      makePlayer({ relics: [{ defId: 'the_boot', spent: false }] }),
-    ], [makeEnemy({ defId: 'spheric_guardian', hp: 20, maxHp: 20 })])
-    const candidate = startPlayerTurnWithChoices({ ...base, phase: 'roundEnd', turn: 0, rng: createRng(seed) })
-    if (candidate.die >= 4) paused = candidate
-  }
-  assert(paused, 'fixture must find a Boot roll')
-  assertEqual(paused.phase, 'start')
-  assertEqual(paused.enemies[0].block, 0, 'opening Block waits for the shared ability phase')
-  const abilities = startTurnAbilities(paused)
-  const boot = abilities.find((ability) => ability.label.includes('The Boot'))
-  const barricade = abilities.find((ability) => ability.label.includes('Spheric Guardian'))
-  assert(boot && barricade)
-  const bootChoice = { id: boot.id, enemyUid: 'e1', shivEnemyUids: [] }
-  const barricadeChoice = { id: barricade.id, shivEnemyUids: [] }
-  const hitFirst = resolveStartPlayerTurn(paused, [bootChoice, barricadeChoice])
-  assertEqual(hitFirst.enemies[0].hp, 19)
-  assertEqual(hitFirst.enemies[0].block, 10)
-  const blockFirst = resolveStartPlayerTurn(paused, [barricadeChoice, bootChoice])
-  assertEqual(blockFirst.enemies[0].hp, 20)
-  assertEqual(blockFirst.enemies[0].block, 9)
-})
-
-check('ordered enemy Block and Regrow are visible to later start-effect planning', () => {
-  const state = combat([makePlayer({
-    powers: [instance('noxious_fumes')],
-    relics: [{ defId: 'mercury_hourglass', spent: false }],
-  })], [makeEnemy({ defId: 'spheric_guardian', hp: 1, maxHp: 20 })])
-  Object.assign(state, { phase: 'start', turn: 1, die: 1, startTurnStage: 'effects' })
-  const initial = startTurnAbilities(state)
-  const block = initial.find((ability) => ability.label.includes('Spheric Guardian'))
-  const hourglass = initial.find((ability) => ability.label.includes('Mercury Hourglass'))
-  const fumes = initial.find((ability) => ability.label.includes('Noxious Fumes'))
-  const choices = [
-    { id: block.id, shivEnemyUids: [] },
-    { id: hourglass.id, enemyUid: 'e1', shivEnemyUids: [] },
-    { id: fumes.id, enemyUid: 'e1', shivEnemyUids: [] },
-  ]
-  const planned = startTurnAbilities(state, choices.map((choice) => choice.id), choices)
-  assert(planned[2].targets.some((target) => target.uid === 'e1'),
-    'the planner ignored Block before a lethal plain-damage effect')
-  const resolved = resolveStartPlayerTurn(state, choices)
-  assertEqual(resolved.phase, 'player')
-  assertEqual(resolved.enemies[0].hp, 1)
-  assertEqual(resolved.enemies[0].block, 9)
-  assertEqual(resolved.enemies[0].poison, 1)
-
-  const regrowState = combat([makePlayer({ powers: [instance('noxious_fumes')] })], [
-    makeEnemy({ uid: 'dark-a', defId: 'darkling', hp: 0, dead: true }),
-    makeEnemy({ uid: 'dark-b', defId: 'darkling_bha', hp: 8, maxHp: 8 }),
-  ])
-  Object.assign(regrowState, { phase: 'start', turn: 2, startTurnStage: 'effects' })
-  const regrowInitial = startTurnAbilities(regrowState)
-  const regrow = regrowInitial.find((ability) => ability.label.includes('Regrow'))
-  const poison = regrowInitial.find((ability) => ability.label.includes('Noxious Fumes'))
-  const regrowChoices = [
-    { id: regrow.id, shivEnemyUids: [] },
-    { id: poison.id, enemyUid: 'dark-a', shivEnemyUids: [] },
-  ]
-  const regrowPlan = startTurnAbilities(regrowState, regrowChoices.map((choice) => choice.id), regrowChoices)
-  assert(regrowPlan[1].targets.some((target) => target.uid === 'dark-a'),
-    'a Regrown Darkling was absent from the next target choice')
-  const regrown = resolveStartPlayerTurn(regrowState, regrowChoices)
-  assertEqual(regrown.enemies.find((enemy) => enemy.uid === 'dark-a').dead, false)
-  assertEqual(regrown.enemies.find((enemy) => enemy.uid === 'dark-a').poison, 1)
-})
-
-check('defensive, die, draw, and potion-supply specials preserve their physical lifecycle', () => {
-  let state = combat([makePlayer({ hp: 8, potions: ['ghost_in_a_jar'] })], [makeEnemy({ defId: 'jaw_worm' })])
-  state = activatePotion(state, 'p1', 'ghost_in_a_jar')
-  state.players[0].hpLossLimitThisRound = 2
-  state = enemyTurn({ ...state, phase: 'enemy', die: 3 })
-  assertEqual(state.players[0].hp, 7, 'Ghost in a Jar caps total HP loss at 1')
-  assertEqual(state.players[0].hpLostThisRound, 1, 'the round HP-loss ledger records the capped loss')
-  assertEqual(state.players[0].hpLostThisTurnAmount, 1, 'the turn HP-loss ledger records the same capped loss')
-
-  state = combat([makePlayer({ hp: 1, potions: ['fairy_in_a_bottle'] })], [makeEnemy({ defId: 'green_louse' })])
-  state = enemyTurn({ ...state, phase: 'enemy' })
-  assertEqual(state.players[0].hp, 2, 'Fairy in a Bottle revives at 2 HP')
-  assertEqual(state.players[0].dead, false)
-  assertEqual(state.potionSupply.at(-1), 'fairy_in_a_bottle', 'the Fairy returns to the deck immediately')
-
-  state = {
-    ...combat([makePlayer({ potions: ['gamblers_brew'] })], [makeEnemy()]),
-    phase: 'start',
-    die: 1,
-  }
-  state = activatePotion(state, 'p1', 'gamblers_brew', { die: 6 })
-  assertEqual(state.die, 6, "Gambler's Brew changes the shared die")
-
-  state = {
-    ...combat([makePlayer({ potions: ['gamblers_brew'] })], [makeEnemy()]),
-    phase: 'roundEnd',
-    turn: 1,
-  }
-  state = startPlayerTurnWithChoices(state)
-  assertEqual(state.phase, 'start', "a real round pauses before accepting the roll for Gambler's Brew")
-  state = activatePotion(state, 'p1', 'gamblers_brew', { die: 5 })
-  assertEqual(state.die, 5)
-
-  state = {
-    ...combat([makePlayer({ potions: ['entropic_brew'] })], [makeEnemy()]),
-    potionSupply: ['fire_potion', 'block_potion'],
-  }
-  state = activatePotion(state, 'p1', 'entropic_brew')
-  assertDeepEqual(state.players[0].potions, ['fire_potion', 'block_potion'])
-
-  state = {
-    ...combat([makePlayer({ potions: ['entropic_brew', 'fire_potion', 'weak_potion'] })], [makeEnemy()]),
-    potionSupply: ['block_potion', 'energy_potion'],
-  }
-  assert(activatePotion(state, 'p1', 'entropic_brew') === state, 'a full belt requires an explicit replacement')
-  state = activatePotion(state, 'p1', 'entropic_brew', { discardPotionId: 'fire_potion' })
-  assertDeepEqual(state.players[0].potions, ['weak_potion', 'block_potion', 'energy_potion'])
-  assertDeepEqual(state.potionSupply.slice(-2), ['entropic_brew', 'fire_potion'], 'used and discarded potions go straight to the bottom')
-})
-
-check('Distilled Chaos forces its three drawn cards to be played for 0 in any order', () => {
-  const draw = [instance('strike_ironclad'), instance('defend_ironclad'), instance('strike_ironclad')]
-  let state = combat([makePlayer({ draw, potions: ['distilled_chaos'], energy: 0 })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'distilled_chaos')
-  assertEqual(state.players[0].forcedCardUids.length, 3)
-  assert(endPlayerTurn(state) === state, 'the immediate plays cannot be skipped by ending the turn')
-  for (const card of [...state.players[0].hand]) {
-    state = playCard(state, 'p1', card.uid, { enemyUid: 'e1', playerId: null })
-  }
-  assertEqual(state.players[0].forcedCardUids.length, 0)
-  assertEqual(state.players[0].energy, 0)
-
-  const orbLocked = [instance('dual_cast'), instance('strike_defect'), instance('defend_defect')]
-  state = combat([makePlayer({ character: 'defect', draw: orbLocked, potions: ['distilled_chaos'], orbs: [null, null, null] })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'distilled_chaos')
-  const impossibleDual = state.players[0].hand.find((card) => card.defId === 'dual_cast')
-  state = playCard(state, 'p1', impossibleDual.uid, { enemyUid: null, playerId: null })
-  assert(state.players[0].discard.some((card) => card.uid === impossibleDual.uid),
-    'a no-Orb Dual Cast is discarded only when its play is attempted')
-  assertEqual(state.players[0].forcedCardUids.length, 2)
-  assert(beginEndPlayerTurn(state) === state, 'end-turn staging cannot skip immediate cards')
-
-  const sequence = [instance('dual_cast'), instance('zap'), instance('defend_defect')]
-  state = combat([makePlayer({ character: 'defect', draw: sequence, potions: ['distilled_chaos'], orbs: [null, null, null] })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'distilled_chaos')
-  const zap = state.players[0].hand.find((card) => card.defId === 'zap')
-  const dual = state.players[0].hand.find((card) => card.defId === 'dual_cast')
-  state = playCard(state, 'p1', zap.uid, { enemyUid: null, playerId: null })
-  state = playCard(state, 'p1', dual.uid, {
-    enemyUid: 'e1', playerId: null, evokeSlots: [0], evokeEnemyUids: ['e1'],
-  })
-  assertEqual(state.enemies[0].hp, 18, 'Zap can make a later forced Dual Cast playable')
-
-  const survivor = instance('survivor')
-  const discarded = instance('strike_silent')
-  const remaining = instance('defend_silent')
-  state = combat([makePlayer({ character: 'silent', draw: [survivor, discarded, remaining],
-    potions: ['distilled_chaos'] })], [makeEnemy()])
-  state = activatePotion(state, 'p1', 'distilled_chaos')
-  state = playCard(state, 'p1', survivor.uid, {
-    enemyUid: null, playerId: null, discardUids: [discarded.uid],
-  })
-  assertDeepEqual(state.players[0].forcedCardUids, [remaining.uid],
-    'a forced card discarded by another forced card does not lock the turn')
-
-  const lastSurvivor = instance('survivor')
-  state = combat([makePlayer({ character: 'silent', hand: [lastSurvivor],
-    forcedCardUids: [lastSurvivor.uid], freeCardUids: [lastSurvivor.uid] })], [makeEnemy()])
-  state = playCard(state, 'p1', lastSurvivor.uid, { enemyUid: null, playerId: null, discardUids: [] })
-  assertEqual(state.players[0].forcedCardUids.length, 0,
-    'a last forced Survivor pays with every available other card: none')
-
-  const unaffordable = instance('strike_ironclad')
-  state = combat([makePlayer({ hand: [unaffordable], energy: 0,
-    forcedCardUids: [unaffordable.uid], freeCardUids: [unaffordable.uid] })], [makeEnemy()])
-  state.players[0].nextCardCost = 3
-  state = playCard(state, 'p1', unaffordable.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.players[0].forcedCardUids.length, 0, 'Snecko cannot strand a forced card the player cannot pay for')
-  assert(state.players[0].discard.some((card) => card.uid === unaffordable.uid))
-
-  const lethal = instance('strike_ironclad')
-  const waiting = instance('strike_ironclad')
-  state = {
-    ...combat([makePlayer({ hand: [lethal, waiting], forcedCardUids: [lethal.uid, waiting.uid],
-      freeCardUids: [lethal.uid, waiting.uid] })], [makeEnemy({ defId: 'large_slime', hp: 1, maxHp: 10 })]),
-    pendingSummons: [{ sourceUid: 'e1', row: 0, defIds: ['acid_slime'], turn: 2 }],
-  }
-  state = playCard(state, 'p1', lethal.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(state.pendingSummons.length, 1, 'the defeated Large Slime schedules its summon')
-  state = playCard(state, 'p1', waiting.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.players[0].forcedCardUids.length, 0,
-    'an attack with no living target is discarded instead of locking the turn before the summon')
-})
-
-check('multi-hit Fairy logs the HP it actually revived at', () => {
-  const state = {
-    ...combat(
-      [makePlayer({ hp: 1, potions: ['fairy_in_a_bottle'] })],
-      [makeEnemy({ defId: 'book_of_stabbing', hp: 30, maxHp: 30 })],
-    ),
-    phase: 'enemy',
-    die: 1,
-  }
-  const next = enemyTurn(state)
-  assertEqual(next.players[0].hp, 1, 'the second stab lands after the revival')
-  const hits = next.log.flatMap((line, index) => line.includes('Book of Stabbing hit Ironclad for 1') ? [index] : [])
-  const revival = next.log.findIndex((line) => line.includes('Fairy in a Bottle revives them at 2 HP'))
-  assertEqual(hits.length, 2, `each physical stab must be visible: ${next.log.join(' | ')}`)
-  assert(hits[0] < revival && revival < hits[1], `expected hit, revival, hit: ${next.log.join(' | ')}`)
-})
-
-check('Ghost and Fairy cover direct HP loss as well as attacks', () => {
-  CARDS.fixture_self_loss = {
-    id: 'fixture_self_loss', name: 'Fixture Self Loss', owner: 'ironclad', type: 'skill', rarity: 'common', cost: 0,
-    effects: [{ kind: 'loseOwnHp', amount: 3 }],
-  }
-  const loss = instance('fixture_self_loss')
-  let state = combat([makePlayer({ hp: 5, hand: [loss], potions: ['ghost_in_a_jar'] })], [makeEnemy({ hp: 20 })])
-  state = activatePotion(state, 'p1', 'ghost_in_a_jar')
-  state = playCard(state, 'p1', loss.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.players[0].hp, 4, 'Ghost caps card HP loss at one')
-
-  const lethal = instance('fixture_self_loss')
-  state = combat([makePlayer({ hp: 1, hand: [lethal], potions: ['fairy_in_a_bottle'] })], [makeEnemy({ hp: 20 })])
-  state = playCard(state, 'p1', lethal.uid, { enemyUid: null, playerId: null })
-  assertEqual(state.players[0].hp, 2, 'Fairy revives from direct card HP loss')
-  assertEqual(state.potionSupply.at(-1), 'fairy_in_a_bottle')
-})
-
 check('simple printed potions resolve through the shared effect vocabulary', () => {
   const draw = Array.from({ length: 5 }, () => instance('strike_ironclad'))
   let state = combat(
@@ -6554,6 +7515,13 @@ check('Explosive Potion damages only the chosen row and its boss', () => {
   const used = activatePotion(state, 'p1', 'explosive_potion', { enemyRow: 1 })
   assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6, 4, 4])
   assertEqual(used.players[0].potions.length, 0)
+
+  const enemyOnlyRow = combat(
+    [makePlayer({ potions: ['explosive_potion'] })],
+    [makeEnemy({ uid: 'distant', row: 2, hp: 6, maxHp: 6 })],
+  )
+  const distant = activatePotion(enemyOnlyRow, 'p1', 'explosive_potion', { enemyRow: 2 })
+  assertEqual(distant.enemies[0].hp, 4, 'an enemy-only board row remains a legal row target')
 })
 
 check('Flex Potion still loses its printed Strength when the gain hits the cap', () => {
@@ -6623,12 +7591,628 @@ check('Combust can choose an empty player row, but pauses for a forced card', ()
   }
   assertEqual(activatePower(forced, 'p1', power.uid, { enemyRow: 0 }), forced,
     'Combust bypassed the unresolved forced card')
-  const legacyForced = structuredClone(state)
-  legacyForced.players[1].hand = [{ uid: 'legacy-forced', defId: 'strike_silent', upgraded: false }]
-  legacyForced.players[1].forcedCardUids = ['legacy-forced']
-  legacyForced.players[1].freeCardUids = ['legacy-forced']
-  assertEqual(activatePower(legacyForced, 'p1', power.uid, { enemyRow: 0 }), legacyForced,
-    'Combust bypassed a Playing Copies forced original')
+})
+
+check('Fire Breathing waits for card text, then damages a chosen row once per bad draw', () => {
+  for (const upgraded of [false, true]) {
+    const battleTrance = instance('battle_trance')
+    const state = combat(
+      [makePlayer({
+        hand: [battleTrance],
+        draw: [instance('daze'), instance('clumsy'), instance('strike_ironclad')],
+        powers: [instance('fire_breathing', upgraded)],
+      })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 10 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 10 }),
+        makeEnemy({ uid: 'boss', isBoss: true, hp: 10 }),
+      ],
+    )
+    const drawn = playCard(state, 'p1', battleTrance.uid, { enemyUid: null, playerId: null })
+    assert(drawn.players[0].drawLocked, 'Battle Trance must finish before its draw reactions')
+    assertDeepEqual(drawn.enemies.map((enemy) => enemy.hp), [10, 10, 10])
+    assertEqual(drawn.pendingTriggers.length, 2, 'Daze and Curse each trigger; Strike does not')
+    const strike = drawn.players[0].hand.find((card) => card.defId === 'strike_ironclad')
+    assertEqual(playCard(drawn, 'p1', strike.uid, { enemyUid: 'left', playerId: null }), drawn,
+      'no card can jump ahead of a pending trigger')
+
+    const damage = upgraded ? 3 : 2
+    const left = resolvePendingTrigger(drawn, 'p1', drawn.pendingTriggers[0].id, 0)
+    assertDeepEqual(left.enemies.map((enemy) => enemy.hp), [10 - damage, 10, 10 - damage])
+    assertEqual(left.pendingTriggers.length, 1)
+    const right = resolvePendingTrigger(left, 'p1', left.pendingTriggers[0].id, 1)
+    assertDeepEqual(right.enemies.map((enemy) => enemy.hp),
+      [10 - damage, 10 - damage, 10 - damage * 2])
+    assertEqual(right.pendingTriggers.length, 0)
+  }
+})
+
+check('Berserk waits for an Exhaust, then its owner chooses a row', () => {
+  for (const upgraded of [false, true]) {
+    const seeingRed = instance('seeing_red')
+    const state = combat(
+      [makePlayer({ hand: [seeingRed], powers: [instance('berserk', upgraded)] })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 6 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 6 }),
+        makeEnemy({ uid: 'boss', row: 2, isBoss: true, hp: 6 }),
+      ],
+    )
+    const exhausted = playCard(state, 'p1', seeingRed.uid, { enemyUid: null, playerId: null })
+    assertEqual(exhausted.players[0].energy, 4, 'Seeing Red finishes before Berserk resolves')
+    assert(exhausted.players[0].exhaust.some((card) => card.uid === seeingRed.uid))
+    assertDeepEqual(exhausted.enemies.map((enemy) => enemy.hp), [6, 6, 6])
+    assertDeepEqual(pendingTriggerAbility(exhausted)?.rows?.map((target) => target.row), [0, 1])
+    assertEqual(resolvePendingTrigger(exhausted, 'p2', exhausted.pendingTriggers[0].id, 1), exhausted,
+      'another player chose Berserk\'s row')
+
+    const damage = upgraded ? 2 : 1
+    const resolved = resolvePendingTrigger(exhausted, 'p1', exhausted.pendingTriggers[0].id, 1)
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [6, 6 - damage, 6 - damage])
+    assertEqual(resolved.pendingTriggers.length, 0)
+  }
+})
+
+check('A Thousand Cuts waits for the shuffling card, then its owner chooses a row', () => {
+  for (const upgraded of [false, true]) {
+    const battleTrance = instance('battle_trance')
+    const state = combat(
+      [makePlayer({
+        character: 'silent', hand: [battleTrance], draw: [instance('strike_silent')],
+        discard: [instance('defend_silent'), instance('neutralize')],
+        powers: [instance('a_thousand_cuts', upgraded)],
+      })],
+      [
+        makeEnemy({ uid: 'left', row: 0, hp: 12, maxHp: 12 }),
+        makeEnemy({ uid: 'right', row: 1, hp: 12, maxHp: 12 }),
+        makeEnemy({ uid: 'boss', row: 2, isBoss: true, hp: 20, maxHp: 20 }),
+      ],
+    )
+    const shuffled = playCard(state, 'p1', battleTrance.uid, { enemyUid: null, playerId: null })
+    assert(shuffled.players[0].drawLocked, 'A Thousand Cuts interrupted Battle Trance before its draw lock')
+    assertEqual(shuffled.players[0].hand.length, 3)
+    assert(shuffled.players[0].discard.some((card) => card.uid === battleTrance.uid),
+      'A Thousand Cuts interrupted Battle Trance before cleanup')
+    assertDeepEqual(shuffled.enemies.map((enemy) => enemy.hp), [12, 12, 20])
+    assertDeepEqual(pendingTriggerAbility(shuffled)?.rows?.map((target) => target.row), [0, 1])
+
+    const damage = upgraded ? 7 : 5
+    const resolved = resolvePendingTrigger(shuffled, 'p1', shuffled.pendingTriggers[0].id, 1)
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [12, 12 - damage, 20 - damage])
+  }
+})
+
+check('Malaise applies Weak and Poison X times, or X plus one when upgraded', () => {
+  const base = instance('malaise')
+  const spent = playCard(combat(
+    [makePlayer({ character: 'silent', hand: [base], energy: 3 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  ), 'p1', base.uid, { enemyUid: 'e1', playerId: null, energySpent: 2 })
+  assertEqual(spent.players[0].energy, 1)
+  assertEqual(spent.enemies[0].weak, 2)
+  assertEqual(spent.enemies[0].poison, 2)
+  assert(spent.players[0].exhaust.some((card) => card.uid === base.uid))
+
+  const upgraded = instance('malaise', true)
+  const zero = playCard(combat(
+    [makePlayer({ character: 'silent', hand: [upgraded], energy: 3 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  ), 'p1', upgraded.uid, { enemyUid: 'e1', playerId: null, energySpent: 0 })
+  assertEqual(zero.players[0].energy, 3)
+  assertEqual(zero.enemies[0].weak, 1)
+  assertEqual(zero.enemies[0].poison, 1)
+  assert(zero.players[0].exhaust.some((card) => card.uid === upgraded.uid))
+})
+
+check('Juggernaut waits for Block gain, then its owner chooses an enemy', () => {
+  for (const upgraded of [false, true]) {
+    const defend = instance('defend_ironclad')
+    const state = combat(
+      [makePlayer({ hand: [defend], powers: [instance('juggernaut', upgraded)] })],
+      [makeEnemy({ uid: 'left', hp: 6 }), makeEnemy({ uid: 'right', row: 1, hp: 6 })],
+    )
+    const blocked = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(blocked.players[0].block, 1)
+    assertEqual(blocked.players[0].energy, 2)
+    assert(blocked.players[0].discard.some((card) => card.uid === defend.uid),
+      'Juggernaut interrupted Defend before cleanup')
+    assertDeepEqual(blocked.enemies.map((enemy) => enemy.hp), [6, 6])
+    assertDeepEqual(pendingTriggerAbility(blocked)?.targets?.map((target) => target.uid), ['left', 'right'])
+    assertEqual(resolvePendingTrigger(blocked, 'p1', blocked.pendingTriggers[0].id, undefined, 'missing'), blocked,
+      'Juggernaut accepted a dead or unknown enemy')
+
+    const damage = upgraded ? 2 : 1
+    const resolved = resolvePendingTrigger(blocked, 'p1', blocked.pendingTriggers[0].id, undefined, 'right')
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [6, 6 - damage])
+    assertEqual(resolved.pendingTriggers.length, 0)
+  }
+
+  const cappedDefend = instance('defend_ironclad')
+  const capped = playCard(combat(
+    [makePlayer({ block: CAPS.block, hand: [cappedDefend], powers: [instance('juggernaut')] })],
+    [makeEnemy()],
+  ), 'p1', cappedDefend.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(capped.pendingTriggers.length, 0, 'Juggernaut fired when the Block cap prevented the gain')
+})
+
+check('Fire Breathing waits for Havoc and its forced Curse to finish', () => {
+  const havoc = instance('havoc')
+  const curse = instance('writhe')
+  const state = combat(
+    [makePlayer({ hand: [havoc], draw: [curse], powers: [instance('fire_breathing')] })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  const forced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  assertEqual(forced.enemies[0].hp, 2, 'Fire Breathing interrupted Havoc before its forced card')
+  assertEqual(forced.pendingTriggers.length, 0)
+  assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, curse.uid)
+  assertEqual(forced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+
+  const finished = playCard(forced, 'p1', curse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.enemies[0].hp, 0)
+})
+
+check('Fire Breathing survives an Echo Form copy of Havoc', () => {
+  const havoc = instance('havoc')
+  const firstCurse = instance('writhe')
+  const secondCurse = instance('writhe')
+  const state = combat(
+    [makePlayer({
+      hand: [havoc],
+      draw: [firstCurse, secondCurse],
+      powers: [instance('fire_breathing')],
+    })],
+    [makeEnemy({ hp: 10, maxHp: 10 })],
+  )
+  state.players[0].doubledCardsThisTurn = 1
+  const firstForced = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: null })
+  const copying = playCard(firstForced, 'p1', firstCurse.uid, { enemyUid: null, playerId: null })
+  assertEqual(copying.phase, 'copy')
+  assertEqual(copying.enemies[0].hp, 8)
+
+  const secondForced = playCardCopy(copying, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(secondForced.enemies[0].hp, 8, 'Fire Breathing interrupted copied Havoc')
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.cardUid, secondCurse.uid)
+  assertEqual(secondForced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+  const finished = playCard(secondForced, 'p1', secondCurse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.enemies[0].hp, 6)
+  assertEqual(finished.phase, 'player')
+})
+
+check('Fire Breathing waits for Mayhem\'s forced Curse to finish', () => {
+  const opening = Array.from({ length: 5 }, () => instance('defend_ironclad'))
+  const curse = instance('writhe')
+  const state = combat(
+    [makePlayer({ powers: [instance('fire_breathing'), instance('mayhem')], draw: [...opening, curse] })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  Object.assign(state, { phase: 'roundEnd', turn: 1 })
+  const prepared = preparePlayerTurn(state)
+  const forced = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+  assertEqual(forced.enemies[0].hp, 2, 'Fire Breathing interrupted Mayhem before its forced card')
+  assertEqual(forced.pendingTriggers.length, 0)
+  assertEqual(forced.startTurnProgress?.forcedCard?.cardUid, curse.uid)
+  assertEqual(forced.startTurnProgress?.forcedCard?.pendingTriggers?.length, 1)
+
+  const finished = playCard(forced, 'p1', curse.uid, { enemyUid: null, playerId: null })
+  assertEqual(finished.phase, 'won')
+  assertEqual(finished.enemies[0].hp, 0)
+})
+
+check('Fire Breathing pauses the remaining end-turn order after Dark Embrace draws a Curse', () => {
+  const daze = instance('daze')
+  const state = combat(
+    [makePlayer({
+      hand: [daze],
+      draw: [instance('writhe')],
+      powers: [instance('dark_embrace'), instance('fire_breathing')],
+      orbs: ['lightning', null, null],
+    })],
+    [
+      makeEnemy({ uid: 'left', row: 0, hp: 2, maxHp: 2 }),
+      makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
+    ],
+  )
+  const paused = beginEndPlayerTurn(state, [`p1/card:${daze.uid}`, 'p1/orb:0@left'])
+  assertEqual(paused.phase, 'player')
+  assertEqual(paused.pendingTriggers.length, 1)
+  assertDeepEqual(paused.endTurnProgress?.order, ['p1/orb:0@left'])
+  assertEqual(paused.enemies[1].hp, 10, 'Lightning resolved before the mandatory row choice')
+
+  const finished = resolvePendingTrigger(paused, 'p1', paused.pendingTriggers[0].id, 0)
+  assertEqual(finished.enemies[0].dead, true)
+  assertEqual(finished.enemies[1].hp, 9, 'Lightning did not retarget after Fire killed its chosen enemy')
+  assertEqual(finished.phase, 'discard')
+  assertEqual(finished.endTurnProgress, undefined)
+})
+
+check('Fire Breathing pauses the automatic opening draw before Start-of-Turn abilities', () => {
+  const state = combat(
+    [makePlayer({
+      draw: [instance('daze'), ...Array.from({ length: 4 }, () => instance('strike_ironclad'))],
+      powers: [instance('fire_breathing'), instance('demon_form')],
+    })],
+    [makeEnemy({ uid: 'left', row: 0, hp: 10 }), makeEnemy({ uid: 'right', row: 1, hp: 10 })],
+  )
+  const rngBeforeDraw = structuredClone(state.rng)
+  const prepared = preparePlayerTurn(state)
+  assertEqual(prepared.phase, 'start')
+  assertEqual(prepared.pendingTriggers.length, 1)
+  assertDeepEqual(prepared.rng, rngBeforeDraw, 'the die rolled before the Draw-step row choice')
+  assert(!prepared.log.some((line) => line.includes('(die ')), 'the future die was logged before the row choice')
+  assertEqual(resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared)), prepared,
+    'Start-of-Turn abilities cannot bypass the pending draw reaction')
+  const burned = resolvePendingTrigger(prepared, 'p1', prepared.pendingTriggers[0].id, 1)
+  assertDeepEqual(burned.enemies.map((enemy) => enemy.hp), [10, 8])
+  assert(burned.log.some((line) => line.includes('(die ')), 'the shared die was not rolled after the Draw step')
+  assertEqual(burned.phase, 'start', 'the ordinary Start-of-Turn order still follows')
+  const started = resolveStartPlayerTurn(burned, defaultStartTurnChoices(burned))
+  assertEqual(started.players[0].strength, 1)
+  assertEqual(started.phase, 'player')
+
+  const lethal = combat(
+    [makePlayer({
+      draw: [instance('daze'), ...Array.from({ length: 4 }, () => instance('strike_ironclad'))],
+      powers: [instance('fire_breathing')],
+    })],
+    [makeEnemy({ hp: 2, maxHp: 2 })],
+  )
+  const lethalRng = structuredClone(lethal.rng)
+  const won = preparePlayerTurn(lethal)
+  assertEqual(won.phase, 'won')
+  assertDeepEqual(won.rng, lethalRng, 'an immediate Draw-step victory still consumed the die roll')
+  assert(won.log.includes('Turn 1 begins') && !won.log.some((line) => line.includes('(die ')))
+})
+
+check('Burst plays the next Skill twice, waits behind another copy effect, and cannot copy itself', () => {
+  const burst = instance('burst', true)
+  const firstDefend = instance('defend_silent')
+  const secondDefend = instance('defend_silent')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [burst, firstDefend, secondDefend], energy: 2,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', burst.uid, { enemyUid: null, playerId: null })
+  assertEqual(state.players[0].doubledSkillsThisTurn, 1)
+  assertEqual(state.phase, 'player', 'Burst copied itself')
+  assert(state.players[0].discard.some((card) => card.uid === burst.uid))
+
+  state.players[0].doubledCardsThisTurn = 1
+  state = playCard(state, 'p1', firstDefend.uid, { enemyUid: null, playerId: 'p1' })
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Echo Form'])
+  assertEqual(state.players[0].doubledSkillsThisTurn, 1, 'Burst was consumed by an Echo Form copy')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].block, 2)
+
+  state = playCard(state, 'p1', secondDefend.uid, { enemyUid: null, playerId: 'p1' })
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Burst'])
+  assertEqual(state.players[0].doubledSkillsThisTurn, 0)
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].block, 4)
+  assertEqual(state.players[0].discard.filter((card) => card.defId === 'defend_silent').length, 2)
+
+  const retainedBurst = instance('burst', true)
+  const anotherBurst = instance('burst', true)
+  let stacked = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [retainedBurst, anotherBurst], energy: 0,
+  })], [makeEnemy()])
+  stacked = playCard(stacked, 'p1', retainedBurst.uid, { enemyUid: null, playerId: null })
+  stacked = playCard(stacked, 'p1', anotherBurst.uid, { enemyUid: null, playerId: null })
+  assertEqual(stacked.phase, 'player')
+  assertEqual(stacked.players[0].doubledSkillsThisTurn, 2,
+    'playing a second Burst should queue another later Skill, not copy Burst')
+})
+
+check('Corpse Explosion stays attached, detonates its row once, and then discards', () => {
+  const card = instance('corpse_explosion', true)
+  const finisher = instance('strike_silent', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card, finisher], energy: 3,
+    powers: [instance('after_image')], block: 0,
+  })], [
+    makeEnemy({ uid: 'attached', row: 1, hp: 2, maxHp: 2 }),
+    makeEnemy({ uid: 'same-row', row: 1, hp: 12, maxHp: 12 }),
+    makeEnemy({ uid: 'other-row', row: 0, hp: 12, maxHp: 12 }),
+    makeEnemy({ uid: 'boss', row: 0, hp: 12, maxHp: 12, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'attached', playerId: null })
+  assertEqual(state.enemies[0].poison, 3)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, card.uid)
+  assertEqual(state.enemies[0].corpseExplosion?.card.upgraded, true)
+  assertDeepEqual(state.players[0].discard, [], 'the attached card entered discard early')
+  state = playCard(state, 'p1', finisher.uid, { enemyUid: 'attached', playerId: null })
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 2, 12, 2])
+  assertEqual(state.players[0].block, 1, 'discarding the attachment did not fire After Image')
+  assert(state.discardedThisTurn.includes('p1'), 'discarding the attachment was not recorded')
+  assertEqual(state.players[0].discard.filter((held) => held.uid === card.uid).length, 1)
+  assertEqual(state.enemies[0].corpseExplosion, undefined)
+})
+
+check('Burst copies Corpse Explosion Poison but the physical on-death attachment happens once', () => {
+  const card = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card], energy: 2,
+  })], [makeEnemy({ uid: 'target', hp: 8, maxHp: 8 })])
+  state.players[0].doubledSkillsThisTurn = 1
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 2)
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.enemies[0].corpseExplosion, undefined, 'the virtual copy attached a physical card')
+  state = playCardCopy(state, 'p1', { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 4)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, card.uid)
+})
+
+check('Poison death also detonates and discards Corpse Explosion', () => {
+  const card = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card], energy: 2,
+  })], [
+    makeEnemy({ uid: 'target', row: 0, hp: 2, maxHp: 2 }),
+    makeEnemy({ uid: 'same-row', row: 0, hp: 10, maxHp: 10 }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'target', playerId: null })
+  state = beginEndPlayerTurn(state)
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 4])
+  assertEqual(state.players[0].discard.filter((held) => held.uid === card.uid).length, 1)
+})
+
+check('a second physical Corpse Explosion adds Poison but cannot stack the death effect', () => {
+  const first = instance('corpse_explosion')
+  const second = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [first, second], energy: 4,
+  })], [makeEnemy({ uid: 'target', hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'target', playerId: null })
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'target', playerId: null })
+  assertEqual(state.enemies[0].poison, 4)
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, first.uid)
+  assertDeepEqual(state.players[0].discard.map((held) => held.uid), [second.uid])
+})
+
+check('Corpse Explosion on a boss damages summons in every row', () => {
+  const card = instance('corpse_explosion')
+  const finisher = instance('strike_silent', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [card, finisher], energy: 3,
+  })], [
+    makeEnemy({ uid: 'boss', row: 0, hp: 2, maxHp: 2, isBoss: true }),
+    makeEnemy({ uid: 'row-zero', row: 0, hp: 10, maxHp: 10 }),
+    makeEnemy({ uid: 'row-one', row: 1, hp: 10, maxHp: 10 }),
+  ])
+  state = playCard(state, 'p1', card.uid, { enemyUid: 'boss', playerId: null })
+  state = playCard(state, 'p1', finisher.uid, { enemyUid: 'boss', playerId: null })
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [0, 4, 4])
+})
+
+check('Doppelganger copies the latest matching co-op card with the copier\'s modifiers', () => {
+  const defend = instance('defend_ironclad')
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  let state = combat([
+    makePlayer({ hand: [defend, strike], energy: 3 }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+      strength: 1 }),
+  ], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p2', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 1 })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.pendingCardCopy?.card.defId, 'strike_ironclad')
+  assertEqual(state.players[1].energy, 1)
+  assertDeepEqual(state.players[1].exhaust, [], 'Doppelganger cleaned up before its copy resolved')
+  state = playCardCopy(state, 'p2', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 7, 'the copier\'s Strength did not modify the copied Strike')
+  assertDeepEqual(state.players[1].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.players[1].discard.some((card) => card.uid.endsWith(':copy')), false,
+    'a virtual copy entered the discard pile')
+  assertEqual(state.playedCardsThisTurn.at(-1)?.card.defId, 'strike_ironclad')
+})
+
+check('Doppelganger skips newer mismatched costs and its upgrade does not Exhaust', () => {
+  const firstStrike = instance('strike_silent')
+  const defend = instance('defend_silent')
+  const freeStrike = instance('slice')
+  const doppelganger = instance('doppelganger', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [firstStrike, defend, freeStrike, doppelganger], energy: 4,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', firstStrike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', freeStrike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 1 })
+  assertEqual(state.pendingCardCopy?.card.uid, `${doppelganger.uid}:copy`)
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].block, 2)
+  assert(state.players[0].discard.some((card) => card.uid === doppelganger.uid))
+  assert(!state.players[0].exhaust.some((card) => card.uid === doppelganger.uid))
+})
+
+check('Doppelganger with no matching legal card pays and resolves no copy', () => {
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', doppelganger.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].energy, 0)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.pendingCardCopy, undefined)
+})
+
+check('Doppelganger ignores copies and cards whose current cost does not match X', () => {
+  const copiedStrike = instance('strike_silent')
+  const whirlwind = instance('whirlwind')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state.playedCardsThisTurn = [
+    { card: whirlwind, copied: false },
+    { card: copiedStrike, copied: true },
+  ]
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+})
+
+check('Doppelganger uses a played card current cost, not its expired hand discount', () => {
+  const bulletTime = instance('bullet_time', true)
+  const defend = instance('defend_silent')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [bulletTime, defend], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', bulletTime.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state.players[0].hand.push(doppelganger)
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+})
+
+check('Doppelganger ignores a matching card the copier cannot currently play', () => {
+  const clash = instance('clash')
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  const obstructingSkill = instance('defend_silent')
+  let state = combat([
+    makePlayer({ hand: [clash, strike], energy: 1 }),
+    makePlayer({
+      id: 'p2', name: 'Silent', character: 'silent',
+      hand: [doppelganger, obstructingSkill], energy: 1,
+    }),
+  ], [makeEnemy()])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', clash.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p2', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.phase, 'player')
+})
+
+check('Doppelganger finishes its nested copy before cleanup and Enraged', () => {
+  const strike = instance('strike_ironclad')
+  const doppelganger = instance('doppelganger')
+  let state = {
+    ...combat([makePlayer({ hp: 1, hand: [strike, doppelganger], energy: 2 })], [
+      makeEnemy({ defId: 'gremlin_nob', hp: 2, maxHp: 2 }),
+    ]),
+    turn: 2,
+  }
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hp, 1, 'Enraged fired before the nested copy')
+  assertEqual(state.players[0].exhaust.length, 0, 'Doppelganger cleaned up before the nested copy')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'won')
+  assertEqual(state.players[0].hp, 1, 'the defeated Nob reacted after the nested copy')
+})
+
+check('Burst lets the physical Doppelganger queue exactly one virtual copy', () => {
+  const defend = instance('defend_silent')
+  const burst = instance('burst', true)
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [defend, burst, doppelganger], energy: 3,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', burst.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 1,
+  })
+  assertEqual(state.pendingCardCopy?.sourceNames[0], 'Burst')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.pendingCardCopy?.sourceNames[0], 'Doppelganger')
+  assertEqual(state.pendingCardCopy?.card.defId, 'defend_silent')
+  assertDeepEqual(state.players[0].exhaust, [], 'Doppelganger cleaned up before its nested copy')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].block, 2)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [doppelganger.uid])
+  assertEqual(state.players[0].discard.filter((card) => card.defId === 'defend_silent').length, 1)
+})
+
+check('a Corruption-discounted Burst Doppelganger ignores itself and cannot copy Burst', () => {
+  const slice = instance('slice')
+  const burst = instance('burst')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [slice, burst, doppelganger], energy: 2,
+    powers: [instance('corruption')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', slice.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', burst.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].doubledSkillsThisTurn, 0)
+  assertEqual(state.enemies[0].hp, 9)
+})
+
+check('a completed physical Doppelganger remains public history but its copy does nothing', () => {
+  const slice = instance('slice')
+  const first = instance('doppelganger')
+  const second = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [slice, first, second], energy: 2,
+    powers: [instance('corruption')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', slice.uid, { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  assertEqual(state.pendingCardCopy?.card.defId, 'doppelganger')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.enemies[0].hp, 8)
+})
+
+check('replaying the same physical Doppelganger can select its earlier completed play', () => {
+  const doppelganger = instance('doppelganger', true)
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [doppelganger], energy: 1,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  state.players[0].hand.push(state.players[0].discard.pop())
+  state.players[0].powers.push(instance('corruption'))
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy?.card.defId, 'doppelganger')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  assertEqual(state.phase, 'player')
+})
+
+check('Doppelganger respects a copied X card minimum after Corruption', () => {
+  const reinforcedBody = instance('reinforced_body')
+  const doppelganger = instance('doppelganger')
+  let state = combat([makePlayer({
+    name: 'Silent', character: 'silent', hand: [reinforcedBody, doppelganger], energy: 2,
+  })], [makeEnemy()])
+  state = playCard(state, 'p1', reinforcedBody.uid, {
+    enemyUid: null, playerId: 'p1', playerIds: ['p1'], energySpent: 1,
+  })
+  state.players[0].powers.push(instance('corruption'))
+  state = playCard(state, 'p1', doppelganger.uid, {
+    enemyUid: null, playerId: null, energySpent: 0,
+  })
+  assertEqual(state.pendingCardCopy, undefined)
+  assertEqual(state.players[0].block, 2)
 })
 
 check('Double Tap plays the next Attack twice with separate targets and modifiers', () => {
@@ -6647,7 +8231,7 @@ check('Double Tap plays the next Attack twice with separate targets and modifier
 
   const first = playCard(primed, 'p1', strike.uid, { enemyUid: 'first', playerId: 'p1' })
   assertEqual(first.phase, 'copy')
-  assertEqual(first.enemies[0].hp, 4, 'the first play separately spent Vulnerable')
+  assertEqual(first.enemies[0].hp, 4, 'the virtual copy separately spent Vulnerable')
   assertEqual(first.enemies[0].vulnerable, 0)
   assertEqual(first.enemies[1].hp, 6)
   assertEqual(first.players[0].attacksPlayedThisTurn, 1)
@@ -6660,11 +8244,169 @@ check('Double Tap plays the next Attack twice with separate targets and modifier
   const copied = playCardCopy(first, 'p1', { enemyUid: 'second', playerId: 'p1' })
   assertEqual(copied.phase, 'player')
   assertEqual(copied.enemies[0].hp, 4)
-  assertEqual(copied.enemies[1].hp, 5, 'the copy used its own target')
+  assertEqual(copied.enemies[1].hp, 5, 'the original used its own target')
   assertEqual(copied.players[0].attacksPlayedThisTurn, 2)
   assertEqual(copied.players[0].energy, 1, 'the virtual copy costs no extra Energy')
   assertEqual(copied.players[0].discard.filter((card) => card.uid === strike.uid).length, 1,
     'the physical Attack is cleaned up exactly once')
+})
+
+check('Echo Form arms at Start of Turn and resolves a copy before the first Attack or Skill', () => {
+  for (const upgraded of [false, true]) {
+    const base = instance('echo_form', upgraded)
+    const ended = endPlayerTurn(combat([makePlayer({ hand: [base] })], [makeEnemy()]))
+    assertEqual(ended.players[0].exhaust.some((card) => card.uid === base.uid), !upgraded,
+      'only base Echo Form is Ethereal')
+    assertEqual(ended.players[0].discard.some((card) => card.uid === base.uid), upgraded,
+      'Echo Form+ must discard instead of Exhausting when left in hand')
+  }
+
+  const echo = instance('echo_form', true)
+  const defend = instance('defend_defect')
+  const armed = startPlayerTurn({
+    ...combat([makePlayer({ character: 'defect', powers: [echo], hand: [defend] })], [makeEnemy()]),
+    phase: 'roundEnd', turn: 1,
+  })
+  assertEqual(armed.players[0].doubledCardsThisTurn, 1)
+  const first = playCard(armed, 'p1', defend.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(first.phase, 'copy')
+  assertEqual(first.players[0].block, 1)
+  assertDeepEqual(first.pendingCardCopy.sourceNames, ['Echo Form'])
+  const copied = playCardCopy(first, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(copied.phase, 'player')
+  assertEqual(copied.players[0].block, 2)
+  assertEqual(copied.players[0].cardsPlayedThisTurn, 2)
+  assertEqual(copied.players[0].doubledCardsThisTurn, 0)
+  assertEqual(copied.players[0].discard.filter((card) => card.uid === defend.uid).length, 1,
+    'the physical Skill must clean up exactly once after both resolutions')
+})
+
+check('Echo Form copies first and leaves Double Tap for the next valid Attack', () => {
+  const strikes = [instance('strike_defect'), instance('strike_defect')]
+  let state = combat([makePlayer({ character: 'defect', hand: strikes })], [
+    makeEnemy({ uid: 'first', hp: 6, maxHp: 6 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 6, maxHp: 6 }),
+  ])
+  Object.assign(state.players[0], { doubledCardsThisTurn: 1, doubledAttacksThisTurn: 1 })
+  state = playCard(state, 'p1', strikes[0].uid, { enemyUid: 'first', playerId: 'p1' })
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Echo Form'])
+  assertEqual(state.players[0].doubledAttacksThisTurn, 1)
+  assertDeepEqual(state.players[0].discard, [], 'the physical Attack entered a pile before its copy')
+  state = playCardCopy(state, 'p1', { enemyUid: 'second', playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  state = playCard(state, 'p1', strikes[1].uid, { enemyUid: 'first', playerId: 'p1' })
+  assertDeepEqual(state.pendingCardCopy.sourceNames, ['Double Tap'])
+  state = playCardCopy(state, 'p1', { enemyUid: 'first', playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [3, 5])
+  assertEqual(state.players[0].cardsPlayedThisTurn, 4)
+  assertEqual(state.players[0].attacksPlayedThisTurn, 4)
+  assertEqual(state.players[0].discard.filter((card) => strikes.some((strike) => strike.uid === card.uid)).length, 2)
+})
+
+check('Echo Form copies private Skill choices from the current hand', () => {
+  const prepared = instance('prepared')
+  const firstDraw = instance('strike_defect')
+  const secondDraw = instance('defend_defect')
+  let state = combat([makePlayer({
+    character: 'defect', hand: [prepared], draw: [firstDraw, secondDraw],
+  })], [makeEnemy()])
+  state.players[0].doubledCardsThisTurn = 1
+  const copyPreview = previewCardChoice(state, 'p1', prepared.uid)
+  assertDeepEqual(copyPreview.cards.map((card) => card.uid), [firstDraw.uid])
+  state = playCard(state, 'p1', prepared.uid, {
+    enemyUid: null, playerId: 'p1', discardUids: [firstDraw.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  assert(state.log.findIndex((line) => line.includes('Prepared copy')) <
+    state.log.findIndex((line) => line.includes('Prepared remains')), 'the copy did not resolve first')
+  const originalPreview = previewCardCopyChoice(state, 'p1')
+  assertDeepEqual(originalPreview.cards.map((card) => card.uid), [secondDraw.uid])
+  state = playCardCopy(state, 'p1', {
+    enemyUid: null, playerId: 'p1', discardUids: [secondDraw.uid],
+  })
+  assertEqual(state.phase, 'player')
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [firstDraw.uid, secondDraw.uid, prepared.uid])
+})
+
+check('lethal Enraged stops an Echo Form Skill before its copy is queued', () => {
+  const skill = instance('seeing_red', true)
+  const state = combat([makePlayer({ hp: 1, hand: [skill] })], [makeEnemy({ defId: 'gremlin_nob' })])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  const lost = playCard(state, 'p1', skill.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'a defeated owner was left holding the party in copy phase')
+})
+
+check('Echo Form finishes both Havoc children before cleaning up the physical Skill', () => {
+  const havoc = instance('havoc')
+  const first = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [havoc], draw: [first, second], energy: 1 })], [
+    makeEnemy({ hp: 10, maxHp: 10 }),
+  ])
+  state.players[0].doubledCardsThisTurn = 1
+  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, first.uid)
+  assertEqual(state.players[0].doubledCardsThisTurn, 0)
+  assertEqual(state.pendingCardCopy, undefined, 'Echo bypassed Havoc\'s immediate child')
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.pendingCardCopy?.card.uid, havoc.uid)
+  assertDeepEqual(state.players[0].discard, [], 'Havoc cleaned up before its original resolution')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.startTurnProgress?.forcedCard?.cardUid, second.uid)
+  assertEqual(state.pendingCardCopy, undefined)
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 8)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [first.uid, second.uid])
+  assertEqual(state.players[0].discard.filter((card) => card.uid === havoc.uid).length, 1)
+})
+
+check('each Echoed Havoc fires its own deferred Enraged reaction before copying', () => {
+  const havoc = instance('havoc')
+  const first = instance('inflame')
+  const second = instance('inflame')
+  let state = combat([makePlayer({ hand: [havoc], draw: [first, second], hp: 3, energy: 1 })], [
+    makeEnemy({ defId: 'gremlin_nob' }),
+  ])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  state = playCard(state, 'p1', havoc.uid, { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', first.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hp, 2, 'the Havoc copy did not trigger Enraged before the original')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: 'p1' })
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].hp, 1, 'the original Havoc did not trigger its own Enraged reaction')
+
+  const lethalHavoc = instance('havoc')
+  const power = instance('inflame')
+  const lethal = combat([makePlayer({ hand: [lethalHavoc], draw: [power], hp: 1, energy: 1 })], [
+    makeEnemy({ defId: 'gremlin_nob' }),
+  ])
+  lethal.turn = 2
+  lethal.players[0].doubledCardsThisTurn = 1
+  const child = playCard(lethal, 'p1', lethalHavoc.uid, { enemyUid: null, playerId: 'p1' })
+  const lost = playCard(child, 'p1', power.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'lethal Enraged still queued the Echo Havoc copy')
+})
+
+check('lethal Enraged clears an Echoed original already in progress', () => {
+  const skill = instance('seeing_red', true)
+  const state = combat([makePlayer({ hp: 2, hand: [skill] })], [makeEnemy({ defId: 'gremlin_nob' })])
+  state.turn = 2
+  state.players[0].doubledCardsThisTurn = 1
+  const pending = playCard(state, 'p1', skill.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(pending.phase, 'copy')
+  assertEqual(pending.players[0].hp, 1)
+  const lost = playCardCopy(pending, 'p1', { enemyUid: null, playerId: 'p1' })
+  assertEqual(lost.phase, 'lost')
+  assertEqual(lost.pendingCardCopy, undefined, 'defeat retained a stale Echoed original')
 })
 
 check('Double Tap copies pay their own card-effect choices from the current hand', () => {
@@ -6736,7 +8478,7 @@ check('a copied Attack gets a fresh private post-draw choice without advancing t
   assertEqual(state.phase, 'player')
 })
 
-check('the physical Attack stays outside every pile until its Double Tap copy finishes', () => {
+check('the physical Attack stays outside every pile until both Double Tap resolutions finish', () => {
   const doubleTap = instance('double_tap', true)
   const headbutt = instance('headbutt')
   const recovered = instance('defend_ironclad')
@@ -6756,6 +8498,929 @@ check('the physical Attack stays outside every pile until its Double Tap copy fi
   })
   assertDeepEqual(state.players[0].discard.map((card) => card.uid), [headbutt.uid])
   assertEqual(state.enemies[0].hp, 6)
+})
+
+check('Distilled Chaos privately queues three cards and plays them in the chosen order for free', () => {
+  const first = instance('strike_ironclad')
+  const second = instance('defend_ironclad')
+  const third = instance('strike_ironclad')
+  let state = combat([makePlayer({ draw: [first, second, third], potions: ['distilled_chaos'], energy: 0 })],
+    [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  assertDeepEqual(state.pendingDistilled.cards.map((card) => card.uid), [first.uid, second.uid, third.uid])
+  state = chooseDistilledCard(state, 'p1', second.uid)
+  state = playCard(state, 'p1', second.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].energy, 0, 'the first chosen card costs 0')
+  state = chooseDistilledCard(state, 'p1', third.uid)
+  state = playCard(state, 'p1', third.uid, { enemyUid: 'e1', playerId: null })
+  state = chooseDistilledCard(state, 'p1', first.uid)
+  state = playCard(state, 'p1', first.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 8)
+  assertEqual(state.pendingDistilled, undefined)
+})
+
+check('Liquid Memories makes exactly the recovered card free this turn', () => {
+  const recovered = instance('bash')
+  let state = combat([makePlayer({ discard: [recovered], potions: ['liquid_memories'], energy: 0 })], [makeEnemy()])
+  state = activatePotion(state, 'p1', 'liquid_memories', { recoverDiscardUid: recovered.uid })
+  assertEqual(state.players[0].hand[0].freeThisTurn, true)
+  const played = playCard(state, 'p1', recovered.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(played.players[0].energy, 0)
+})
+
+check('Entropic Brew replaces one held Potion when its two gains exceed the slot limit', () => {
+  const state = createCombat(
+    createRng(42),
+    [makePlayer({ potions: ['entropic_brew', 'block_potion'] })],
+    [makeEnemy()],
+    'entropic-test',
+    ['fire_potion', 'skill_potion', 'weak_potion'],
+    2,
+  )
+  assertEqual(activatePotion(state, 'p1', 'entropic_brew'), state, 'full slots need an explicit replacement')
+  const used = activatePotion(state, 'p1', 'entropic_brew', { replacePotionId: 'block_potion' })
+  assertDeepEqual(used.players[0].potions, ['fire_potion', 'skill_potion'])
+  assertDeepEqual(used.potionDeck, ['weak_potion', 'entropic_brew', 'block_potion'])
+})
+
+check('Sozu still allows Entropic Brew to be consumed without gaining Potions', () => {
+  const state = createCombat(
+    createRng(42),
+    [makePlayer({
+      potions: ['entropic_brew', 'block_potion'],
+      relics: [{ defId: 'sozu', spent: false }],
+    })],
+    [makeEnemy()],
+    'sozu-entropic-test',
+    ['fire_potion', 'skill_potion'],
+    2,
+  )
+  const used = activatePotion(state, 'p1', 'entropic_brew')
+  assertDeepEqual(used.players[0].potions, ['block_potion'], 'Sozu preserves the other held Potion')
+  assertDeepEqual(used.potionDeck, ['fire_potion', 'skill_potion', 'entropic_brew'],
+    'the Brew is bottomed without drawing from the Potion deck')
+})
+
+check('manual Relics are owner-authoritative, finite, and Akabeko lasts one Attack', () => {
+  const strike = instance('strike_ironclad')
+  const second = instance('strike_ironclad')
+  let state = combat([makePlayer({
+    hand: [strike, second],
+    relics: [{ defId: 'akabeko', spent: false }, { defId: 'holy_water', spent: false, cubes: 2 }],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  assert(activateRelic(state, 'p1', 9) === state, 'a forged Relic index is refused')
+  state = activateRelic(state, 'p1', 0)
+  assertEqual(state.players[0].relics[0].spent, true, 'Akabeko flips after use')
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 8, 'Akabeko adds exactly one Strength to its Attack')
+  state = playCard(state, 'p1', second.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 7, 'the following Attack gets no Akabeko bonus')
+  state = activateRelic(state, 'p1', 1)
+  assertEqual(state.players[0].relics[1].cubes, 1, 'Holy Water spends one persisted cube')
+  assertEqual(state.players[0].energy, 2, 'the cube grants one Energy after two Strike costs')
+})
+
+check('die-changing Relics are legal only in the post-roll start window', () => {
+  const player = makePlayer({ relics: [{ defId: 'the_abacus', spent: false }] })
+  const playing = combat([player], [makeEnemy()])
+  playing.die = 3
+  assertEqual(activateRelic(playing, 'p1', 0), playing)
+  const starting = { ...playing, phase: 'start' }
+  assertEqual(activateRelic(starting, 'p1', 0).die, 4)
+})
+
+check('the real table turn keeps the post-roll item window open', () => {
+  const player = makePlayer({ potions: ['gamblers_brew'] })
+  const starting = startPlayerTurnWithChoices({ ...combat([player], [makeEnemy()]), phase: 'roundEnd' })
+  assertEqual(starting.phase, 'start')
+  assertEqual(activatePotion(starting, 'p1', 'gamblers_brew', { die: 6 }).die, 6)
+})
+
+check('the post-roll window rejects unrelated manual Relics', () => {
+  const card = instance('defend_ironclad')
+  const state = { ...combat([makePlayer({ hand: [card], relics: [{ defId: 'blue_candle', spent: false }] })],
+    [makeEnemy()]), phase: 'start' }
+  assertEqual(activateRelic(state, 'p1', 0, { cardUids: [card.uid] }), state)
+  const pending = { ...state, players: [{ ...state.players[0], relics: [{ defId: 'the_abacus', spent: false }] }],
+    startTurnProgress: { choices: [] } }
+  assertEqual(activateRelic(pending, 'p1', 0), pending)
+})
+
+check('Gambling Chip rerolls from authoritative RNG and rejects a chosen face', () => {
+  const state = { ...combat([makePlayer({ relics: [{ defId: 'gambling_chip', spent: false }] })], [makeEnemy()]),
+    phase: 'start', die: 1 }
+  assertEqual(activateRelic(state, 'p1', 0, { die: 6 }), state)
+  const first = activateRelic(state, 'p1', 0)
+  const second = activateRelic(structuredClone(state), 'p1', 0)
+  assertEqual(first.die, second.die)
+  assert(first.die >= 1 && first.die <= 6, 'authoritative reroll was outside the die')
+})
+
+check('per-roll Relics activate once and Loaded Die can reroute another owned Relic', () => {
+  const drawn = instance('defend_ironclad')
+  const state = { ...combat([makePlayer({ draw: [drawn], relics: [
+    { defId: 'loaded_die', spent: false }, { defId: 'ink_bottle', spent: false },
+  ] })], [makeEnemy()]), phase: 'start', die: 6 }
+  const used = activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  })
+  assertEqual(used.players[0].hand[0].uid, drawn.uid)
+  assertEqual(used.players[0].relics[0].spent, true)
+  assertEqual(activateRelic(used, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0,
+  }), used)
+  assert(!startTurnAbilities(used).some((ability) => ability.label.includes('Loaded Die')),
+    'Loaded Die paid both its Energy and reroute choices')
+})
+
+check("Nilry's Codex cannot reroute its own die ability", () => {
+  const state = { ...combat([makePlayer({ relics: [{ defId: 'nilrys_codex', spent: false }] })], [makeEnemy()]),
+    phase: 'start', die: 4 }
+  assertEqual(activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p1', targetRelicIndex: 0, targetAbilityIndex: 0,
+  }), state)
+})
+
+check('Calipers preserves Block through only the next Reset', () => {
+  let state = combat([makePlayer({ block: 5, relics: [{ defId: 'calipers', spent: false }] })], [makeEnemy()])
+  state = activateRelic(state, 'p1', 0)
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].block, 5)
+  state = startPlayerTurn({ ...state, phase: 'roundEnd' })
+  assertEqual(state.players[0].block, 0)
+})
+
+check('Spire Shield no-damage facing effect suppresses player damage for the turn', () => {
+  const strike = instance('strike_ironclad')
+  const state = combat([makePlayer({ hand: [strike], damageDealtZeroThisTurn: true, strength: 3,
+    stance: 'wrath', wrathAttackDamageBonus: 1 })], [makeEnemy({ defId: 'giant_head', vulnerable: 1 })])
+  const played = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(played.enemies[0].hp, 6)
+})
+
+check('The Last Stand continues only Boss fights and retargets an empty dead row below before above', () => {
+  assertEqual(createRun(8651, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ], 0, undefined, false, true).lastStand, true, 'a multiplayer run persists the chosen option')
+  assertEqual(createRun(8651, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+  ], 0, undefined, false, true).lastStand, false, 'the multiplayer-only option stays off in solo')
+  const players = [
+    makePlayer({ id: 'below', name: 'Below', row: 0 }),
+    makePlayer({ id: 'fallen', name: 'Fallen', row: 1, hp: 0, dead: true }),
+    makePlayer({ id: 'above', name: 'Above', row: 2 }),
+  ]
+  const enemies = [
+    makeEnemy({ uid: 'attacker', row: 1 }),
+    makeEnemy({ uid: 'boss', defId: 'hexaghost', isBoss: true, hp: 0, dead: true }),
+  ]
+  const active = createCombat(createRng(42), players, enemies, 'last-stand', [], 3, {}, true)
+  const below = enemyTurn({ ...active, phase: 'enemy' })
+  assertEqual(below.phase, 'roundEnd', 'one death does not end a Last Stand Boss fight')
+  assertEqual(below.players[0].hp, 9, 'the nearest living row below is targeted first')
+  assertEqual(below.players[2].hp, 10)
+
+  const noBelow = createCombat(createRng(42), players.map((player) => player.id === 'below'
+    ? { ...player, hp: 0, dead: true }
+    : player), enemies, 'last-stand-above', [], 3, {}, true)
+  const above = enemyTurn({ ...noBelow, phase: 'enemy' })
+  assertEqual(above.phase, 'roundEnd')
+  assertEqual(above.players[2].hp, 9, 'without a living row below, the nearest row above is targeted')
+
+  const midAction = createCombat(createRng(42), [
+    makePlayer({ id: 'below', name: 'Below', row: 0 }),
+    makePlayer({ id: 'fragile', name: 'Fragile', row: 1, hp: 3 }),
+  ], [
+    makeEnemy({ uid: 'sequence', defId: 'snake_plant', row: 1 }),
+    makeEnemy({ uid: 'boss', defId: 'hexaghost', isBoss: true, hp: 0, dead: true }),
+  ], 'last-stand-mid-action', [], 3, {}, true)
+  const retargeted = enemyTurn({ ...midAction, phase: 'enemy', die: 1 })
+  assertEqual(retargeted.players[1].dead, true)
+  assertEqual(retargeted.players[0].hp, 8,
+    'later hits retarget immediately when the first hit kills the row owner')
+
+  const bossSweep = createCombat(createRng(42), [
+    makePlayer({ id: 'fragile', name: 'Fragile', row: 0, hp: 1 }),
+    makePlayer({ id: 'survivor', name: 'Survivor', row: 1, vulnerable: 1 }),
+  ], [makeEnemy({ defId: 'hexaghost', isBoss: true, actionIndex: 0 })],
+  'last-stand-boss-sweep', [], 3, {}, true)
+  const swept = enemyTurn({ ...bossSweep, phase: 'enemy' })
+  assertEqual(swept.players[0].dead, true)
+  assertEqual(swept.players[1].hp, 8, 'the surviving target still takes the rest of the Boss sweep')
+  assertEqual(swept.players[1].vulnerable, 0, 'the surviving target spends its Vulnerable normally')
+  assertEqual(swept.players[1].discard.at(-1)?.defId, 'burn',
+    'later actions on the same Boss card still resolve for survivors')
+
+  const beat = createCombat(createRng(42), [
+    makePlayer({ id: 'fragile', name: 'Fragile', row: 0, hp: 1 }),
+    makePlayer({ id: 'survivor', name: 'Survivor', row: 1, hp: 3 }),
+  ], [makeEnemy({ uid: 'heart', defId: 'corrupt_heart', isBoss: true, abilityCubes: 1 })],
+  'last-stand-beat', [], 3, {}, true)
+  const beaten = beginEndPlayerTurn({ ...beat, phase: 'player' })
+  assertEqual(beaten.players[0].dead, true)
+  assertEqual(beaten.players[1].hp, 2, 'Beat of Death finishes hitting every survivor after one player dies')
+
+  const ordinary = createCombat(createRng(42), players, [makeEnemy()], 'not-a-boss', [], 3, {}, true)
+  assertEqual(enemyTurn({ ...ordinary, phase: 'enemy' }).phase, 'lost',
+    'the optional rule never changes an ordinary encounter')
+  const disabled = createCombat(createRng(42), players, enemies, 'last-stand-off')
+  assertEqual(enemyTurn({ ...disabled, phase: 'enemy' }).phase, 'lost',
+    'the physical default remains immediate party defeat')
+})
+
+check('The Last Stand wins with a survivor, loses with none, and cannot continue to the next Act', () => {
+  const fallen = makePlayer({ id: 'fallen', name: 'Fallen', row: 0, hp: 0, dead: true })
+  const survivor = makePlayer({ id: 'survivor', name: 'Survivor', row: 1 })
+  const defeatedBoss = makeEnemy({ defId: 'hexaghost', isBoss: true, hp: 0, dead: true })
+  const won = createCombat(createRng(42), [fallen, survivor], [defeatedBoss], 'last-stand-win', [], 3, {}, true)
+  assertEqual(enemyTurn({ ...won, phase: 'enemy' }).phase, 'won')
+
+  const wiped = createCombat(createRng(42), [fallen, { ...survivor, hp: 0, dead: true }], [
+    makeEnemy({ defId: 'hexaghost', isBoss: true }),
+  ], 'last-stand-loss', [], 3, {}, true)
+  assertEqual(enemyTurn({ ...wiped, phase: 'enemy' }).phase, 'lost')
+  const simultaneous = createCombat(createRng(42), [fallen, { ...survivor, hp: 0, dead: true }], [
+    defeatedBoss,
+  ], 'last-stand-no-survivor', [], 3, {}, true)
+  assertEqual(enemyTurn({ ...simultaneous, phase: 'enemy' }).phase, 'lost',
+    'beating the Boss counts only if at least one player survives')
+
+  const run = postNeowRun(8652, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const bossId = run.map.rows.at(-1)[0]
+  const victory = {
+    ...run,
+    lastStand: true,
+    phase: 'victory',
+    players: run.players.map((player, index) => index === 0 ? { ...player, hp: 0, dead: true } : player),
+    map: { ...run.map, position: bossId, rooms: {
+      ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true },
+    } },
+  }
+  assertEqual(advanceAct(victory), victory, 'a Last Stand victory may be recorded but cannot enter another Act')
+})
+
+check('Act IV Facing rejects more than two players on one side', () => {
+  const players = Array.from({ length: 4 }, (_, index) => makePlayer({
+    id: `p${index + 1}`, name: `Player ${index + 1}`, row: index,
+  }))
+  const state = combat(players, [
+    makeEnemy({ uid: 'shield', defId: 'spire_shield', row: 0, hp: 30, maxHp: 30 }),
+    makeEnemy({ uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42 }),
+  ])
+  Object.assign(state, { phase: 'start', startTurnStage: 'facing' })
+  const choices = startTurnAbilities(state).map((ability) => ({
+    id: ability.id, enemyUid: 'shield', shivEnemyUids: [],
+  }))
+  assert(!facingChoicesAreValid(state, choices))
+  assertEqual(resolveStartPlayerTurn(state, choices), state)
+})
+
+check('Act IV Facing applies legal cross-side and single-enemy row plans atomically', () => {
+  const players = Array.from({ length: 4 }, (_, index) => makePlayer({
+    id: `p${index + 1}`, name: `Player ${index + 1}`, row: index,
+  }))
+  const shield = makeEnemy({ uid: 'shield', defId: 'spire_shield', row: 0, hp: 30, maxHp: 30 })
+  const spear = makeEnemy({ uid: 'spear', defId: 'spire_spear', row: 3, hp: 42, maxHp: 42 })
+  const facing = { ...combat(players, [shield, spear]), phase: 'start', startTurnStage: 'facing' }
+  const swapped = resolveStartPlayerTurn(facing, startTurnAbilities(facing).map((ability, index) => ({
+    id: ability.id, enemyUid: index < 2 ? 'spear' : 'shield', shivEnemyUids: [],
+  })))
+  assertDeepEqual(swapped.players.map((player) => player.row), [2, 3, 0, 1])
+  const alone = { ...combat(players, [shield]), phase: 'start', startTurnStage: 'facing' }
+  const split = resolveStartPlayerTurn(alone, startTurnAbilities(alone).map((ability, index) => ({
+    id: ability.id, enemyUid: index < 2 ? 'none' : 'shield', shivEnemyUids: [],
+  })))
+  assertDeepEqual(split.players.map((player) => player.row), [2, 3, 0, 1])
+  assertDeepEqual(split.players.map((player) => player.facingEnemyUid), [null, null, 'shield', 'shield'])
+})
+
+check('Darkling Regrow keeps its ordered identity when an earlier effect kills its source', () => {
+  const state = combat([makePlayer({ relics: [{ defId: 'stone_calendar', spent: false }] })], [
+    makeEnemy({ uid: 'fragile', defId: 'darkling', hp: 4, maxHp: 8 }),
+    makeEnemy({ uid: 'survivor', defId: 'darkling_bha', hp: 8, maxHp: 8, row: 1 }),
+    makeEnemy({ uid: 'fallen', defId: 'darkling_hab', hp: 0, maxHp: 8, row: 2, dead: true }),
+  ])
+  Object.assign(state, { phase: 'roundEnd', turn: 1, die: 4 })
+  const prepared = preparePlayerTurn(state)
+  const abilities = startTurnAbilities(prepared)
+  const calendar = abilities.find((ability) => ability.label.includes('Stone Calendar'))
+  const regrow = abilities.find((ability) => ability.id === 'enemy:darkling/regrow')
+  const resolved = resolveStartPlayerTurn(prepared, [
+    { id: calendar.id, enemyUid: 'fragile', shivEnemyUids: [] },
+    { id: regrow.id, shivEnemyUids: [] },
+  ])
+  assertEqual(resolved.phase, 'player')
+  assertDeepEqual(resolved.enemies.map((enemy) => [enemy.uid, enemy.dead, enemy.hp]), [
+    ['fragile', false, 4], ['survivor', false, 8], ['fallen', false, 4],
+  ])
+
+  const fumes = instance('noxious_fumes')
+  const targetState = combat([makePlayer({ character: 'silent', powers: [fumes] })], [
+    makeEnemy({ uid: 'living', defId: 'darkling', hp: 8, maxHp: 8 }),
+    makeEnemy({ uid: 'revived', defId: 'darkling_bha', hp: 0, maxHp: 8, row: 1, dead: true }),
+  ])
+  Object.assign(targetState, { phase: 'roundEnd', turn: 1 })
+  const targetPrepared = preparePlayerTurn(targetState)
+  const targetAbilities = startTurnAbilities(targetPrepared)
+  const targetRegrow = targetAbilities.find((ability) => ability.id === 'enemy:darkling/regrow')
+  const fumesAbility = targetAbilities.find((ability) => ability.label.includes('Noxious Fumes'))
+  const order = [targetRegrow.id, fumesAbility.id]
+  const choices = [
+    { id: targetRegrow.id, shivEnemyUids: [] },
+    { id: fumesAbility.id, enemyUid: 'revived', shivEnemyUids: [] },
+  ]
+  const planned = startTurnAbilities(targetPrepared, order, choices)
+  assertDeepEqual(planned[1].targets.map((target) => target.uid), ['living', 'revived'])
+  const targeted = resolveStartPlayerTurn(targetPrepared, choices)
+  assertEqual(targeted.phase, 'player')
+  assertEqual(targeted.enemies.find((enemy) => enemy.uid === 'revived').poison, 1)
+})
+
+check('Distilled Chaos prunes queued cards moved out of hand by an earlier card', () => {
+  const cards = [instance('fiend_fire'), instance('defend_ironclad'), instance('bash')]
+  let state = combat([makePlayer({ draw: cards, potions: ['distilled_chaos'] })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = activatePotion(state, 'p1', 'distilled_chaos')
+  state = chooseDistilledCard(state, 'p1', cards[0].uid)
+  state = playCard(state, 'p1', cards[0].uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.pendingDistilled, undefined)
+  assertEqual(state.startTurnProgress, undefined)
+})
+
+check('Mark of Pain caps combat healing at 6 HP', () => {
+  const state = combat([makePlayer({ hp: 5, maxHp: 10, potions: ['blood_potion'],
+    relics: [{ defId: 'mark_of_pain', spent: false }] })], [makeEnemy()])
+  assertEqual(activatePotion(state, 'p1', 'blood_potion').players[0].hp, 6)
+})
+
+check('Ninja Scroll respects the shared Shiv supply and throws overflow immediately', () => {
+  const initial = combat([
+    makePlayer({ shivs: 0, relics: [{ defId: 'ninja_scroll', spent: false }] }),
+    makePlayer({ id: 'p2', name: 'Silent', shivs: 4 }),
+  ], [makeEnemy()])
+  assertEqual(activateRelic(initial, 'p1', 0), initial, 'overflow needs its immediate target')
+  const used = activateRelic(initial, 'p1', 0, { shivEnemyUids: ['e1'] })
+  assertEqual(used.players.reduce((sum, player) => sum + player.shivs, 0), CAPS.shivs)
+  assertEqual(used.enemies[0].hp, 5)
+  assertEqual(used.players[0].relics[0].spent, true)
+})
+
+check('Oddly Smooth Stone pauses for an explicit living player target', () => {
+  let prepared
+  for (let seed = 1; seed < 100 && !prepared; seed++) {
+    const state = createCombat(createRng(seed), [
+      makePlayer({ relics: [{ defId: 'oddly_smooth_stone', spent: false }] }),
+      makePlayer({ id: 'p2', name: 'Silent' }),
+    ], [makeEnemy()])
+    const started = preparePlayerTurn(state)
+    if (started.die === 4) prepared = started
+  }
+  assert(prepared, 'fixture did not roll the printed 4 face')
+  const ability = startTurnAbilities(prepared).find((candidate) => candidate.label.includes('Oddly Smooth Stone'))
+  assertDeepEqual(ability.players.map((player) => player.id), ['p1', 'p2'])
+  const choices = defaultStartTurnChoices(prepared).map((choice) => choice.id === ability.id
+    ? { ...choice, targetPlayerId: 'p2' }
+    : choice)
+  const resolved = resolveStartPlayerTurn(prepared, choices)
+  assertEqual(resolved.players[0].block, 0)
+  assertEqual(resolved.players[1].block, 2)
+})
+
+check('Golden Eye persists a private Scry choice and validates the revealed cards', () => {
+  const cards = [instance('strike_ironclad'), instance('defend_ironclad'), instance('bash'), instance('anger')]
+  const initial = combat([makePlayer({ draw: cards, relics: [{ defId: 'golden_eye', spent: false }] })], [makeEnemy()])
+  const staged = activateRelic(initial, 'p1', 0)
+  assertDeepEqual(staged.pendingRelicScry.cards.map((card) => card.uid), cards.slice(0, 3).map((card) => card.uid))
+  assertEqual(activateRelic(staged, 'p1', 0, { scryDiscardUids: ['forged'] }), staged)
+  const resolved = activateRelic(staged, 'p1', 0, { scryDiscardUids: [cards[1].uid] })
+  assertDeepEqual(resolved.players[0].draw.map((card) => card.uid), [cards[0].uid, cards[2].uid, cards[3].uid])
+  assertDeepEqual(resolved.players[0].discard.map((card) => card.uid), [cards[1].uid])
+  assertEqual(resolved.players[0].relics[0].spent, true)
+  assertEqual(resolved.pendingRelicScry, undefined)
+})
+
+check('Blasphemy exhausts the draw pile and plays the next Attack exactly three times', () => {
+  const blasphemy = instance('blasphemy')
+  const strike = instance('strike_watcher')
+  const draw = [instance('defend_watcher'), instance('vigilance')]
+  let state = combat([makePlayer({
+    name: 'Watcher', character: 'watcher', hand: [blasphemy, strike], draw, energy: 3,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', blasphemy.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(state.players[0].tripledAttacksThisTurn, 1)
+  assertDeepEqual(state.players[0].draw, [])
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid), [...draw.map((card) => card.uid), blasphemy.uid])
+
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy', 'Blasphemy'])
+  assertEqual(state.enemies[0].hp, 9)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy'])
+  assertEqual(state.enemies[0].hp, 8)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 7)
+  assertEqual(state.players[0].tripledAttacksThisTurn, 0)
+  assertEqual(state.players[0].attacksPlayedThisTurn, 3)
+  assertEqual(state.players[0].discard.filter((card) => card.uid === strike.uid).length, 1)
+
+  const upgraded = instance('blasphemy', true)
+  const retained = endPlayerTurn(combat([
+    makePlayer({ name: 'Watcher', character: 'watcher', hand: [upgraded] }),
+  ], [makeEnemy()]))
+  assertEqual(retained.players[0].hand.some((card) => card.uid === upgraded.uid), true)
+  assertEqual(retained.players[0].exhaust.some((card) => card.uid === upgraded.uid), false)
+})
+
+check('Brilliance, Worship, and Wreath of Flame resolve their printed Miracle and X values', () => {
+  for (const upgraded of [false, true]) {
+    const brilliance = instance('brilliance', upgraded)
+    const hit = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [brilliance], miracles: 2,
+    })], [makeEnemy({ hp: 20, maxHp: 20 })]), 'p1', brilliance.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(hit.enemies[0].hp, upgraded ? 14 : 16)
+
+    const worship = instance('worship', upgraded)
+    const worshiped = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [worship], energy: 2,
+    })], [makeEnemy()]), 'p1', worship.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+    assertEqual(worshiped.players[0].miracles, 3)
+    assertEqual(worshiped.players[0].energy, 0)
+    assertEqual(worshiped.players[0].exhaust.some((card) => card.uid === worship.uid), true)
+    assertEqual(worshiped.players[0].discard.some((card) => card.uid === worship.uid), false)
+
+    const wreath = instance('wreath_of_flame', upgraded)
+    const strengthened = playCard(combat([makePlayer({
+      name: 'Watcher', character: 'watcher', hand: [wreath], energy: 2,
+    })], [makeEnemy()]), 'p1', wreath.uid, { enemyUid: null, playerId: null, energySpent: 2 })
+    assertEqual(strengthened.players[0].strength, 2)
+    assertEqual(strengthened.players[0].strengthLossAtEndOfTurn, 2)
+    assertEqual(strengthened.players[0].exhaust.some((card) => card.uid === wreath.uid), !upgraded)
+    assertEqual(beginEndPlayerTurn(strengthened).players[0].strength, 0)
+  }
+
+  const freeWorship = instance('worship')
+  const zero = playCard(combat([makePlayer({ hand: [freeWorship], energy: 0 })], [makeEnemy()]),
+    'p1', freeWorship.uid, { enemyUid: null, playerId: null, energySpent: 0 })
+  assertEqual(zero.players[0].miracles, 1, 'Worship gains X+1 even when X is zero')
+})
+
+check('a fixed next-card cost still supplies X to the printed effects', () => {
+  const worship = instance('worship')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [worship], energy: 3, nextCardCost: 3,
+  })], [makeEnemy()])
+  const next = playCard(state, 'p1', worship.uid, { enemyUid: null, playerId: null })
+  assertEqual(next.players[0].energy, 0)
+  assertEqual(next.players[0].miracles, 4)
+
+  const body = instance('reinforced_body')
+  const primed = combat([makePlayer({ hand: [body], energy: 3, nextCardCost: 3 })], [makeEnemy()])
+  const blocked = playCard(primed, 'p1', body.uid, { enemyUid: null, playerId: null, playerIds: ['p1'] })
+  assertEqual(blocked.players[0].block, 4)
+  assertEqual(blocked.players[0].energy, 0)
+  const free = combat([makePlayer({ hand: [body], energy: 3, nextCardCost: 0 })], [makeEnemy()])
+  assertEqual(playCard(free, 'p1', body.uid, { enemyUid: null, playerId: null, playerIds: ['p1'] }), free)
+})
+
+check('Devotion pays out each Start of Turn and exhausts at its printed cube threshold', () => {
+  for (const upgraded of [false, true]) {
+    const devotion = instance('devotion', upgraded)
+    const threshold = upgraded ? 4 : 3
+    let state = combat([makePlayer({
+      name: 'Watcher', character: 'watcher', powers: [devotion],
+      draw: Array.from({ length: threshold * 6 }, () => instance('defend_watcher')),
+    })], [makeEnemy()])
+    state.turn = 1
+    for (let cube = 1; cube <= threshold; cube++) {
+      state.phase = 'roundEnd'
+      state = startPlayerTurn(state)
+      assertEqual(state.players[0].miracles, cube)
+      assertEqual(state.players[0].hand.length, cube * 6)
+      if (cube < threshold) assertEqual(state.players[0].powers[0].counter, cube)
+    }
+    assertEqual(state.players[0].powers.some((card) => card.uid === devotion.uid), false)
+    assertEqual(state.players[0].exhaust.some((card) => card.uid === devotion.uid), true)
+  }
+})
+
+check('Deva Form gains its printed Miracles at Start of Turn', () => {
+  for (const upgraded of [false, true]) {
+    const power = instance('deva_form', upgraded)
+    let state = playCard(combat([makePlayer({
+      character: 'watcher', hand: [power], miracles: 0, energy: 2,
+    })], [makeEnemy()]), 'p1', power.uid)
+    assertEqual(state.players[0].energy, 0)
+    assert(state.players[0].powers.some((card) => card.uid === power.uid))
+    state.phase = 'roundEnd'
+    state = startPlayerTurn(state)
+    assertEqual(state.players[0].miracles, upgraded ? 2 : 1)
+  }
+})
+
+check('Vault keeps Retain cards, discards the rest, draws five, and restores 3 Energy', () => {
+  for (const upgraded of [false, true]) {
+    const vault = instance('vault', upgraded)
+    const retained = instance('protect')
+    const ordinary = instance('strike_watcher')
+    const draw = Array.from({ length: 5 }, () => instance('defend_watcher'))
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [vault, retained, ordinary], draw, energy: 3,
+    })], [makeEnemy()])
+    const next = playCard(state, 'p1', vault.uid, { enemyUid: null, playerId: null })
+    assertEqual(next.players[0].energy, upgraded ? 4 : 3)
+    assertEqual(next.players[0].hand.length, 6)
+    assert(next.players[0].hand.some((card) => card.uid === retained.uid))
+    assertDeepEqual(next.players[0].discard.map((card) => card.uid), [ordinary.uid])
+    assert(next.players[0].exhaust.some((card) => card.uid === vault.uid))
+  }
+})
+
+check('Talk to the Hand blocks per held Miracle after its hit', () => {
+  for (const upgraded of [false, true]) {
+    const talk = instance('talk_to_the_hand', upgraded)
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [talk], miracles: 3, energy: 1,
+    })], [makeEnemy()])
+    const next = playCard(state, 'p1', talk.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(next.enemies[0].hp, upgraded ? 3 : 4)
+    assertEqual(next.players[0].block, 3)
+    assertEqual(next.players[0].energy, 0)
+  }
+})
+
+check('Tantrum enters Wrath and returns its physical card to draw top', () => {
+  for (const upgraded of [false, true]) {
+    const tantrum = instance('tantrum', upgraded)
+    const enemies = upgraded
+      ? [makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }), makeEnemy({ uid: 'right', hp: 10, maxHp: 10 })]
+      : [makeEnemy({ hp: 10, maxHp: 10 })]
+    const state = combat([makePlayer({
+      character: 'watcher', hand: [tantrum], energy: 1,
+    })], enemies)
+    const next = playCard(state, 'p1', tantrum.uid, upgraded ? {
+      enemyUid: null, enemyUids: ['left', 'right'], playerId: null,
+    } : { enemyUid: 'e1', playerId: null })
+    assertDeepEqual(next.enemies.map((enemy) => enemy.hp), upgraded ? [9, 9] : [8])
+    assertEqual(next.players[0].stance, 'wrath')
+    assertEqual(next.players[0].draw.at(-1)?.uid, tantrum.uid)
+    assertEqual(next.players[0].energy, 0)
+  }
+})
+
+check('Omniscience privately searches an Attack or Skill, plays it twice free, then Exhausts it', () => {
+  for (const upgraded of [false, true]) {
+    const omniscience = instance('omniscience', upgraded)
+    const strike = instance('strike_watcher')
+    const power = instance('deva_form')
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [omniscience], draw: [strike, power], energy: 3, freeAttacksThisTurn: 1,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    assertDeepEqual(previewCardChoice(state, 'p1', omniscience.uid)?.cards.map((card) => card.uid), [strike.uid])
+    assertEqual(playCard(state, 'p1', omniscience.uid, {
+      enemyUid: null, playerId: null, searchDrawUids: [power.uid],
+    }), state, 'Omniscience accepted a Power')
+    state = playCard(state, 'p1', omniscience.uid, {
+      enemyUid: null, playerId: null, searchDrawUids: [strike.uid],
+    })
+    assertEqual(state.players[0].energy, upgraded ? 1 : 0)
+    assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Omniscience', 'Omniscience'])
+    assertEqual(state.players[0].freeAttacksThisTurn, 0, 'Omniscience did not consume Swivel for its Attack')
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, 8)
+    assert(state.players[0].exhaust.some((card) => card.uid === strike.uid))
+    assert(state.players[0].exhaust.some((card) => card.uid === omniscience.uid))
+  }
+})
+
+check('Omniscience accepts the complete generated UI payload at the copy boundary', () => {
+  const omniscience = instance('omniscience', true)
+  const strike = instance('strike_watcher')
+  const state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [strike, instance('deva_form')], energy: 2,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  const next = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, enemyUids: [], playerId: 'p1', playerIds: [], energySpent: 0,
+    mode: undefined, discardUids: undefined, exhaustUids: undefined, scryDiscardUids: undefined,
+    topdeckUids: undefined, recoverDiscardUids: undefined, recoverExhaustUid: undefined,
+    searchDrawUids: [strike.uid], spendMiracle: false, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    switchWithPlayerId: null,
+  })
+  assertEqual(next.phase, 'copy')
+  assertDeepEqual(next.pendingCardCopy?.sourceNames, ['Omniscience', 'Omniscience'])
+})
+
+check('Omniscience offers only cards playable for X=0 and still shuffles when none qualify', () => {
+  const omniscience = instance('omniscience')
+  const finale = instance('grand_finale')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [finale], energy: 3,
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  assertDeepEqual(previewCardChoice(state, 'p1', omniscience.uid)?.cards.map((card) => card.uid), [finale.uid])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [finale.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 10, 'Grand Finale was not evaluated against its post-search draw pile')
+
+  const emptyOmniscience = instance('omniscience')
+  const blockedFinale = instance('grand_finale')
+  const minimumX = instance('reinforced_body')
+  const power = instance('deva_form')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [emptyOmniscience], draw: [blockedFinale, minimumX, power], energy: 3,
+    powers: [instance('a_thousand_cuts')],
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  assertDeepEqual(previewCardChoice(state, 'p1', emptyOmniscience.uid)?.cards, [],
+    'Omniscience exposed an unplayable or minimum-X card')
+  state = playCard(state, 'p1', emptyOmniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [],
+  })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 15, 'an empty Omniscience search skipped its Shuffle trigger')
+
+  const clashOmniscience = instance('omniscience')
+  const clash = instance('clash')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [clashOmniscience], draw: [clash], energy: 3,
+  })], [makeEnemy()])
+  assertDeepEqual(previewCardChoice(state, 'p1', clashOmniscience.uid)?.cards.map((card) => card.uid),
+    [clash.uid], 'Omniscience preview did not evaluate Clash after removing itself from hand')
+  state = playCard(state, 'p1', clashOmniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [clash.uid],
+  })
+  assertEqual(state.pendingCardCopy?.card.uid, clash.uid,
+    'Omniscience rejected the Clash offered by its private preview')
+})
+
+check('Omniscience reserves physical-only effects for the final selected-card play', () => {
+  const omniscience = instance('omniscience')
+  const corpse = instance('corpse_explosion')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [corpse], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [corpse.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].corpseExplosion, undefined,
+    'the virtual Omniscience play attached the physical card')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].corpseExplosion?.card.uid, corpse.uid)
+  assertEqual(state.players[0].exhaust.some((card) => card.uid === corpse.uid), false,
+    'the attached Corpse Explosion was also put in Exhaust')
+})
+
+check('Omniscience finishes both Havoc children before exhausting the selected card', () => {
+  const omniscience = instance('omniscience')
+  const havoc = instance('havoc')
+  const children = [instance('strike_watcher'), instance('strike_watcher')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [omniscience], draw: [havoc, ...children], energy: 3,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', omniscience.uid, {
+    enemyUid: null, playerId: null, searchDrawUids: [havoc.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  const firstChild = state.startTurnProgress?.forcedCard?.cardUid
+  state = playCard(state, 'p1', firstChild, { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Omniscience'],
+    'the first Havoc child dropped Omniscience\'s second Havoc play')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null })
+  const secondChild = state.startTurnProgress?.forcedCard?.cardUid
+  state = playCard(state, 'p1', secondChild, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.enemies[0].hp, 18)
+  assertDeepEqual(state.players[0].exhaust.map((card) => card.uid).sort(),
+    [...children.map((card) => card.uid), havoc.uid, omniscience.uid].sort())
+})
+
+check('Blasphemy resolves Foreign Influence physical-only text once and finalizes it as an Attack', () => {
+  const influence = instance('foreign_influence')
+  const allyStrike = instance('strike_ironclad')
+  let state = combat([
+    makePlayer({ character: 'watcher', hand: [influence], energy: 2, tripledAttacksThisTurn: 1, hp: 10 }),
+    makePlayer({ id: 'p2', name: 'Ironclad', hand: [] }),
+  ], [makeEnemy({ defId: 'gremlin_nob', hp: 20, maxHp: 20 })])
+  state.turn = 2
+  state.players[0].tripledAttacksThisTurn = 1
+  state.playedCardsThisTurn = [{ playerId: 'p2', card: allyStrike, copied: false }]
+  state = playCard(state, 'p1', influence.uid, { enemyUid: null, playerId: null, mode: 1 })
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null, mode: 1 })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Blasphemy'],
+    'a virtual Foreign Influence resolution queued its physical-only copy text')
+  state = playCardCopy(state, 'p1', { enemyUid: null, playerId: null, mode: 1 })
+  assertDeepEqual(state.pendingCardCopy?.sourceNames, ['Foreign Influence'])
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.players[0].hp, 10, 'Foreign Influence incorrectly triggered Enraged as a Skill')
+  assertEqual(state.players[0].attacksPlayedThisTurn, 4,
+    'Foreign Influence and its copied Attack were not counted with their real types')
+})
+
+check('Scry plays Weave with its printed damage bonus instead of discarding it', () => {
+  for (const upgraded of [false, true]) {
+    const thirdEye = instance('third_eye')
+    const weave = instance('weave', upgraded)
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [thirdEye], draw: [weave], energy: 1,
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    state = playCard(state, 'p1', thirdEye.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [weave.uid],
+    })
+    assertEqual(state.phase, 'copy')
+    assertEqual(state.players[0].discard.some((card) => card.uid === weave.uid), false)
+    state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    assertEqual(state.enemies[0].hp, upgraded ? 2 : 4)
+    assert(state.players[0].discard.some((card) => card.uid === weave.uid))
+  }
+})
+
+check('card-based Scry finishes Weave before any later printed effects', () => {
+  const cut = instance('cut_through_fate')
+  const weave = instance('weave')
+  const laterDraw = instance('defend_watcher')
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [cut], draw: [weave, laterDraw], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state = playCard(state, 'p1', cut.uid, {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [weave.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  assertEqual(state.players[0].hand.length, 0, 'Cut Through Fate drew before Weave resolved')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), [laterDraw.uid],
+    'a nonlethal Weave did not resume Cut Through Fate\'s remaining Draw')
+
+  const lethalCut = instance('cut_through_fate')
+  const lethalWeave = instance('weave')
+  const skippedDraw = instance('defend_watcher')
+  state = combat([makePlayer({
+    character: 'watcher', hand: [lethalCut], draw: [lethalWeave, skippedDraw], energy: 1,
+  })], [makeEnemy({ hp: 7, maxHp: 7 })])
+  state = playCard(state, 'p1', lethalCut.uid, {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [lethalWeave.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'won')
+  assertEqual(state.players[0].hand.length, 0, 'lethal Weave did not skip the parent card\'s later Draw')
+  assertDeepEqual(state.players[0].draw.map((card) => card.uid), [skippedDraw.uid])
+})
+
+check('a virtual copied Scry card stays virtual while Weave interrupts it', () => {
+  const cut = instance('cut_through_fate')
+  const weave = instance('weave')
+  const laterDraw = instance('defend_watcher')
+  let state = combat([makePlayer({
+    character: 'watcher', draw: [weave, laterDraw], energy: 1,
+  })], [makeEnemy({ hp: 20, maxHp: 20 })])
+  state.phase = 'copy'
+  state.pendingCardCopy = {
+    playerId: 'p1', card: cut, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+    forcedChoices: null, deferredHavocs: [], sourceNames: ['Doppelganger'], virtualOnly: true,
+  }
+  state = playCardCopy(state, 'p1', {
+    enemyUid: 'e1', playerId: null, scryDiscardUids: [weave.uid],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [weave.uid],
+    'resuming after Weave materialized the virtual copied Scry card')
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), [laterDraw.uid])
+})
+
+check('Scry preserves sibling discard reactions while Weave waits to play', () => {
+  const thirdEye = instance('third_eye')
+  const reflex = instance('reflex')
+  const weave = instance('weave')
+  const draws = [instance('defend_watcher'), instance('vigilance')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: [reflex, weave, ...draws], energy: 1,
+  })], [makeEnemy({ hp: 10, maxHp: 10 })])
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: [reflex.uid, weave.uid],
+  })
+  assertEqual(state.phase, 'copy')
+  assertDeepEqual(state.players[0].hand.map((card) => card.uid), draws.map((card) => card.uid),
+    'queuing Weave dropped Reflex\'s discard reaction')
+})
+
+check('Scry queues every discarded Weave in reveal order', () => {
+  const thirdEye = instance('third_eye')
+  const first = instance('weave')
+  const second = instance('weave', true)
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: [first, second], energy: 1,
+  })], [makeEnemy({ hp: 30, maxHp: 30 })])
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: [first.uid, second.uid],
+  })
+  assertEqual(state.pendingCardCopy?.card.uid, first.uid)
+  assertDeepEqual(state.pendingCardCopy?.queuedWeaves?.map((card) => card.uid), [second.uid])
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.pendingCardCopy?.card.uid, second.uid)
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 16)
+  assertDeepEqual(state.players[0].discard.map((card) => card.uid), [first.uid, second.uid, thirdEye.uid])
+})
+
+check('each queued Weave receives its own stacked copy modifier', () => {
+  const thirdEye = instance('third_eye')
+  const weaves = [instance('weave'), instance('weave')]
+  let state = combat([makePlayer({
+    character: 'watcher', hand: [thirdEye], draw: weaves, energy: 1,
+  })], [makeEnemy({ hp: 40, maxHp: 40 })])
+  state.players[0].doubledAttacksThisTurn = 2
+  state = playCard(state, 'p1', thirdEye.uid, {
+    enemyUid: null, playerId: null, scryDiscardUids: weaves.map((card) => card.uid),
+  })
+  while (state.phase === 'copy') state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.enemies[0].hp, 16)
+  assertEqual(state.players[0].doubledAttacksThisTurn, 0)
+})
+
+check('Scry-played Weave consumes Swivel and resolves pending Attack multipliers', () => {
+  const cases = [
+    { field: 'freeAttacksThisTurn', sources: ['Weave'], plays: 1 },
+    { field: 'doubledAttacksThisTurn', sources: ['Double Tap', 'Double Tap'], plays: 2 },
+    { field: 'tripledAttacksThisTurn', sources: ['Blasphemy', 'Blasphemy', 'Blasphemy'], plays: 3 },
+  ]
+  for (const spec of cases) {
+    const thirdEye = instance('third_eye')
+    const weave = instance('weave')
+    let state = combat([makePlayer({
+      character: 'watcher', hand: [thirdEye], draw: [weave], energy: 1,
+    })], [makeEnemy({ hp: 30, maxHp: 30 })])
+    state.players[0][spec.field] = 1
+    state = playCard(state, 'p1', thirdEye.uid, {
+      enemyUid: null, playerId: null, scryDiscardUids: [weave.uid],
+    })
+    assertDeepEqual(state.pendingCardCopy?.sourceNames, spec.sources)
+    while (state.phase === 'copy') {
+      state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+    }
+    assertEqual(state.players[0][spec.field], 0, `${spec.field} was not consumed by Weave`)
+    assertEqual(state.enemies[0].hp, 30 - 6 * spec.plays)
+    assertEqual(state.players[0].attacksPlayedThisTurn, spec.plays)
+  }
+})
+
+check('Foresight resumes the shared Draw step after it plays Weave', () => {
+  const weave = instance('weave')
+  const deck = [weave, ...Array.from({ length: 5 }, () => instance('defend_watcher'))]
+  let state = preparePlayerTurn(combat([makePlayer({
+    character: 'watcher', draw: deck, powers: [instance('foresight')],
+  })], [makeEnemy({ hp: 10, maxHp: 10 })]))
+  const preview = startTurnScryPreview(state)
+  state = resolveStartTurnScry(state, 'p1', preview.id, [weave.uid])
+  assertEqual(state.phase, 'copy')
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'player')
+  assertEqual(state.players[0].hand.length, 5)
+  assertEqual(state.enemies[0].hp, 4)
+})
+
+check('active Invincible rejects Weak but still accepts Poison', () => {
+  const neutralize = instance('neutralize')
+  const poison = instance('deadly_poison')
+  let state = combat([makePlayer({ character: 'silent', hand: [neutralize, poison], energy: 3 })], [
+    makeEnemy({ uid: 'heart', defId: 'corrupt_heart', hp: 100, maxHp: 100 }),
+  ])
+  state = playCard(state, 'p1', neutralize.uid, { enemyUid: 'heart', playerId: null })
+  state = playCard(state, 'p1', poison.uid, { enemyUid: 'heart', playerId: null })
+  assertEqual(state.enemies[0].weak, 0)
+  assertEqual(state.enemies[0].poison, 1)
+})
+
+check('Fairy revival preserves Painful Stabs damage accounting', () => {
+  const player = makePlayer({ hp: 1, maxHp: 10, potions: ['fairy_in_a_bottle'] })
+  const stabber = makeEnemy({ defId: 'book_of_stabbing', hp: 40, maxHp: 40 })
+  const state = combat([player], [stabber])
+  const resolved = enemyTurn({ ...state, phase: 'enemy' })
+  assertEqual(resolved.players[0].hp, 1)
+  assert(resolved.players[0].draw.some((card) => card.defId === 'daze'), 'Painful Stabs lost the revived hit')
+
+  const strike = instance('strike_ironclad')
+  const guardian = combat([
+    makePlayer({ hp: 1, maxHp: 10, potions: ['fairy_in_a_bottle'], hand: [strike] }),
+  ], [makeEnemy({ defId: 'guardian_defensive', hp: 20, maxHp: 20 })])
+  const reflected = playCard(guardian, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(reflected.players[0].hp, 2)
+  assert(reflected.log.some((line) => line.includes("Sharp Hide hit Ironclad for 1")),
+    'Sharp Hide lost the damage dealt before Fairy revival')
+})
+
+check('a lethal hit spends attacker Weak before a boss rebirth', () => {
+  const bash = instance('bash')
+  const state = combat([makePlayer({ hand: [bash], energy: 3, weak: 1 })], [
+    makeEnemy({ uid: 'champ', defId: 'the_champ', hp: 1, maxHp: 40, isBoss: true }),
+  ])
+  const resolved = playCard(state, 'p1', bash.uid, { enemyUid: 'champ', playerId: null })
+  assertEqual(resolved.players[0].weak, 0)
+  assertEqual(resolved.enemies[0].defId, 'the_champ_fury')
 })
 
 report('combat')

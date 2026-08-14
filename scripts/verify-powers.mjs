@@ -11,6 +11,7 @@ import {
   enemyTurn,
   playCard,
   preparePlayerTurn,
+  previewCardChoice,
   resolveStartPlayerTurn,
   startPlayerTurn,
   startTurnAbilities,
@@ -269,6 +270,25 @@ check('Evolve draws once for every Status drawn, including chained Status cards'
     'drawing a non-Status card must not fire Evolve')
 })
 
+check('draw reactions wait until the card finishes and stay out of its private choice preview', () => {
+  const dagger = instance('dagger_throw')
+  const held = instance('bash')
+  const daze = instance('daze')
+  const chained = instance('strike_ironclad')
+  const state = combat(
+    [player({ hand: [dagger, held], draw: [daze, chained], powers: [instance('evolve')] })],
+    [enemy()],
+  )
+  const preview = previewCardChoice(state, 'p1', dagger.uid)
+  assertDeepEqual(preview.cards.map((card) => card.uid), [held.uid, daze.uid],
+    'Evolve drew into the Dagger Throw discard choice before the card finished')
+  const next = playCard(state, 'p1', dagger.uid, {
+    enemyUid: 'e1', playerId: null, discardUids: [held.uid],
+  })
+  assertDeepEqual(next.players[0].hand.map((card) => card.uid), [daze.uid, chained.uid])
+  assert(next.players[0].discard.some((card) => card.uid === held.uid))
+})
+
 // Defend+ blocks an ALLY. The ally is the one who gained Block, so the ally's
 // Power is the one that should react.
 check('a Block Power fires for whoever received the Block', () => {
@@ -440,7 +460,7 @@ check('a stance trigger narrows to that stance, or matches any', () => {
 check('every Power declares exactly one resolution model', () => {
   for (const def of Object.values(CARDS)) {
     if (def.type !== 'power') continue
-    const persistent = def.corruptSkills === true || def.retainBlock === true
+    const persistent = def.persistent === true || def.corruptSkills === true || def.retainBlock === true
     assert(
       [def.trigger !== undefined, def.resolvesOnPlay === true, def.activeAbility === true, persistent]
         .filter(Boolean).length === 1,
@@ -455,7 +475,7 @@ check('no non-Power card carries a trigger', () => {
     assert(
       def.trigger === undefined && def.resolvesOnPlay !== true &&
         def.activeAbility !== true &&
-        def.corruptSkills !== true && def.retainBlock !== true,
+        def.persistent !== true && def.corruptSkills !== true && def.retainBlock !== true,
       `${def.id} is a ${def.type} with Power-only resolution metadata`,
     )
   }

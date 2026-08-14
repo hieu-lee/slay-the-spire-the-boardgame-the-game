@@ -326,13 +326,46 @@ check('the not-implemented list states the real card count', () => {
   assertEqual(Number(colorlessClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless').length)
   assertEqual(Number(colorlessClaimed[2]), colorlessPrinted.size)
 
-  const untranscribed = notes.match(/other (\d+) have not been transcribed/)
-  assert(untranscribed !== null, 'the list should state how many player cards remain untranscribed')
+  const goldenClaimed = notes.match(/other (\d+) are implemented Golden Ticket rewards/)
+  assert(goldenClaimed !== null, 'the list should account for physical Golden Ticket faces')
+  const goldenTickets = [...printed].filter((entry) => entry.includes(':Golden Ticket')).length
   assertEqual(
-    Number(untranscribed[1]),
-    printed.size - live - DEFERRED_CARDS.length,
-    'the untranscribed count should exclude both live and explicitly deferred cards',
+    Number(goldenClaimed[1]),
+    goldenTickets,
+    'the Golden Ticket count should match the physical inventory',
   )
+  assertEqual(live + goldenTickets, printed.size, 'ordinary definitions plus Golden Tickets should cover every face')
+})
+
+check('the live character roster matches every non-Golden physical face', () => {
+  const characterIds = new Map([
+    ['Ironclad', 'ironclad'], ['Silent', 'silent'], ['Defect', 'defect'], ['Watcher', 'watcher'],
+  ])
+  const normalize = (deck, name) => {
+    if (name === 'Strike' || name === 'Defend') return `${name.toLowerCase()}_${characterIds.get(deck)}`
+    if (deck === 'Defect' && name === 'Dualcast') return 'dual_cast'
+    if (deck === 'Defect' && name === 'Claw (Retail)') return 'claw'
+    if (deck === 'Defect' && name === 'Claw (Collectors Ed. Pack)') return 'claw_claw_pack'
+    return name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  }
+  const physical = new Set()
+  const golden = new Set()
+  const rows = readFileSync(join(repoRoot, 'data/raw/player-cards.csv'), 'utf8')
+  for (const line of rows.split('\n').slice(1)) {
+    const cells = line.split('","').map((cell) => cell.replace(/^"|"\r?$/g, ''))
+    if (!characterIds.has(cells[0]) || !cells[1]) continue
+    const key = `${characterIds.get(cells[0])}:${normalize(cells[0], cells[1])}`
+    if (cells[5] === 'Ticket') golden.add(key)
+    else physical.add(key)
+  }
+  const live = new Set(Object.values(CARDS)
+    .filter((def) => [...characterIds.values()].includes(def.owner))
+    .map((def) => `${def.owner}:${def.id}`))
+  const missing = [...physical].filter((key) => !live.has(key))
+  const unexpected = [...live].filter((key) => !physical.has(key) && !golden.has(key))
+  assertEqual(golden.size, 8, 'the physical roster should contain the eight separately scoped Golden Tickets')
+  assertEqual(missing.length, 0, `non-Golden faces missing from cards.ts: ${missing.join(', ')}`)
+  assertEqual(unexpected.length, 0, `cards.ts contains faces outside the physical roster: ${unexpected.join(', ')}`)
 })
 
 // DEFERRED_CARDS is a promise about what is NOT in the game. A promise nothing
@@ -406,8 +439,9 @@ check('no live card draws before exhausting from hand', () => {
 check('no condition reads a target that its reader was never handed', () => {
   const TARGET_READING = new Set(['targetPoisoned', 'targetFullHp'])
   const BOARD_READING = new Set([
-    'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'discardedThisTurn', 'stanceChangedThisTurn',
+    'hasShiv', 'discardTopCosts', 'dieShows', 'inStance', 'notInStance', 'discardedThisTurn', 'stanceChangedThisTurn',
     'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
+    'onlyAttackInHand',
     'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
     'handEmpty', 'drewSkill', 'retainedLastTurn',
   ])

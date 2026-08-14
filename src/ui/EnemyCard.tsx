@@ -1,4 +1,5 @@
-import { enemyImagePath } from '../game/assets.ts'
+import { cardDef } from '../game/cards.ts'
+import { cardImagePath, enemyImagePath, enemyUsesCombatArt } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
@@ -163,6 +164,9 @@ function describeEnemy(
   // something a screen reader conveys.
   parts.push(said ? `intends ${said}` : 'no intent')
   parts.push(...abilities)
+  if (enemy.corpseExplosion) {
+    parts.push(`Corpse Explosion attached, ${enemy.corpseExplosion.damage} row damage when defeated`)
+  }
 
   const tokens: [string, number][] = [
     ['Block', enemy.block],
@@ -314,9 +318,16 @@ export function EnemyCard({
         </span>
       ) : null}
 
+      {enemy.corpseExplosion ? (
+        <span className="enemy__attachment" title={`Corpse Explosion · ${enemy.corpseExplosion.damage} row damage on death`}>
+          <img src={cardImagePath(cardDef(enemy.corpseExplosion.card.defId), enemy.corpseExplosion.card.upgraded)} alt="" />
+          <span>Corpse Explosion · {enemy.corpseExplosion.damage}</span>
+        </span>
+      ) : null}
+
       <span className="enemy__portrait">
         <img
-          className={def.combatArt ? 'enemy__art--cutout' : 'enemy__art--portrait'}
+          className={enemyUsesCombatArt(def) ? 'enemy__art--cutout' : 'enemy__art--portrait'}
           src={enemyImagePath(def)}
           alt=""
           loading="lazy"

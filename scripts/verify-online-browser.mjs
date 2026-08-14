@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
+import { createCombat } from '../src/game/combat.ts'
+import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -62,10 +64,12 @@ async function enterOnline(page, name, character, code, localSeed, doubleSubmit 
   await page.goto(origin, { waitUntil: 'networkidle' })
   if (localSeed) {
     await page.getByLabel('Seed').fill(localSeed)
+    await page.getByLabel('Seed').press('Tab')
   }
   await page.getByRole('button', { name: 'Play online' }).click()
-  await page.getByLabel('Your name').fill(name)
-  await page.getByLabel('Character').selectOption(character)
+  const entry = page.locator('main.online-entry')
+  await entry.getByLabel('Your name').fill(name)
+  await entry.locator('select').selectOption(character)
   if (code) {
     await page.getByLabel('Room code').fill(code)
     await page.getByRole('button', { name: 'Join', exact: true }).click()
@@ -90,6 +94,34 @@ async function snapshot(page) {
   const body = await response.json()
   assert(response.ok, `snapshot failed ${response.status}: ${body.error}`)
   return body
+}
+
+async function roomAction(page, action) {
+  const saved = await credentials(page)
+  const response = await fetch(`${roomOrigin}/api/rooms/${saved.code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': saved.token },
+    body: JSON.stringify({ action }),
+  })
+  const body = await response.json()
+  assert(response.ok, `action failed ${response.status}: ${body.error}`)
+  return body
+}
+
+function contrastRatio(style) {
+  const luminance = (css) => (css.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [])
+    .map((channel) => channel / 255)
+    .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
+  const foreground = luminance(style.color)
+  const background = luminance(style.background)
+  return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
+}
+
+function bypassRoomNeow(room) {
+  room.run = { ...room.run, phase: 'map', neow: null }
+  room.version += 1
+  rooms.publishRoom(room.code)
 }
 
 try {
@@ -175,6 +207,7 @@ try {
   await enterOnline(a, 'Ann', 'ironclad', undefined, 'kept-local-run', true)
   const code = await a.locator('.online-lobby h1').textContent()
   assert(code, 'creator did not receive a room code')
+  rooms.store.rooms.get(code).campaignProgress.highestAscension = 13
   const healthAfterDoubleCreate = await fetch(`${roomOrigin}/api/health`).then((response) => response.json())
   await enterOnline(b, 'Bo', 'silent', code)
   await a.locator('.online-seat', { hasText: 'Bo' }).waitFor()
@@ -254,13 +287,40 @@ try {
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('3')
-  await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '3')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
+  await b.locator('.online-lobby').getByLabel('Ascension').waitFor()
+  await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '3')
   const sharedLobby = await snapshot(a)
   check('lobby leave and ascension are authoritative for the party', () => {
     assertEqual(sharedLobby.ascension, 3)
     assertEqual(sharedLobby.seats.length, 2)
   })
+  const hostLastStand = a.locator('.online-lobby').getByRole('checkbox', { name: 'Last Stand' })
+  const guestLastStand = b.locator('.online-lobby').getByRole('checkbox', { name: 'Last Stand' })
+  await hostLastStand.click()
+  await a.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === true)
+  await b.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === true)
+  const guestLastStandDisabled = await guestLastStand.isDisabled()
+  const guestCredentials = await credentials(b)
+  const forgedLastStand = await fetch(`${roomOrigin}/api/rooms/${code}/last-stand-rule`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': guestCredentials.token },
+    body: JSON.stringify({ enabled: false }),
+  })
+  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'Last Stand reconnect test'))
+  await a.locator('.connection--reconnecting').waitFor()
+  const hostLastStandDisabledDuringReconnect = await hostLastStand.isDisabled()
+  await a.locator('.connection--connected').waitFor()
+  const hostLastStandRestored = await hostLastStand.isChecked()
+  check('only the connected party leader controls Last Stand and reconnect restores it', () => {
+    assert(guestLastStandDisabled, 'a guest could edit the host-only Last Stand rule')
+    assertEqual(forgedLastStand.status, 409, 'the server accepted a guest Last Stand mutation')
+    assert(hostLastStandDisabledDuringReconnect, 'Last Stand stayed editable while reconnecting')
+    assert(hostLastStandRestored, 'the selected Last Stand rule disappeared after reconnect')
+  })
+  await hostLastStand.click()
+  await a.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === false)
+  await b.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === false)
   await a.setViewportSize({ width: 390, height: 844 })
   await a.screenshot({ path: join(outDir, '01b-mobile-lobby.png'), fullPage: true })
   const mobileWidth = await a.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
@@ -279,9 +339,9 @@ try {
     await mutationReleased
     await route.fulfill({ response })
   }, { times: 1 })
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('4')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
   await mutationStarted
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('5')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
   const replacementTabPromise = bContext.waitForEvent('page')
   await b.evaluate(() => window.open(location.href, '_blank'))
   const replacementTab = await replacementTabPromise
@@ -292,8 +352,8 @@ try {
   await b.locator('.online-entry').waitFor()
   await b.getByRole('button', { name: `Resume ${code}` }).click()
   await b.locator('.online-lobby').waitFor()
-  await b.locator('.online-lobby').getByLabel('Ascension').fill('6')
-  await a.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
+  await b.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+  await a.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
   releaseMutation()
   await b.waitForTimeout(300)
   const resumedCredentials = await credentials(b)
@@ -318,9 +378,9 @@ try {
     await queuedAscensionGate
     await route.fulfill({ response })
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('5')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
   await queuedAscensionStart
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('4')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
   await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
   await a.locator('.connection--reconnecting').waitFor()
   await a.locator('.connection--connected').waitFor()
@@ -332,10 +392,13 @@ try {
     assertEqual(queuedAscensionRequests, 1)
     assertEqual(afterQueuedReconnect.ascension, 5)
   })
-  await a.locator('.online-lobby').getByLabel('Ascension').fill('6')
-  await b.waitForFunction(() => document.querySelector('input[type="number"]')?.value === '6')
+  await a.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
+  await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
+  await a.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  const openingRoom = rooms.store.rooms.get(code)
+  bypassRoomNeow(openingRoom)
   await Promise.all([
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
@@ -408,7 +471,7 @@ try {
   assert(publishLockedFinale.ok, 'could not publish the locked Grand Finale fixture')
   const onlineFinale = b.getByRole('button', { name: /^Grand Finale,/ })
   await onlineFinale.waitFor()
-  const finaleLockedOnline = await onlineFinale.isDisabled()
+  const finaleLockedOnline = await onlineFinale.getAttribute('aria-disabled') === 'true'
   const hiddenDrawSnapshot = await snapshot(b)
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(boLive, { draw: [], miracles: 1 })
@@ -421,9 +484,9 @@ try {
   await b.waitForFunction(() => {
     const button = [...document.querySelectorAll('button')]
       .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
-    return button && !button.disabled
+    return button?.getAttribute('aria-disabled') === 'false'
   })
-  const finaleUnlockedOnline = await onlineFinale.isEnabled()
+  const finaleUnlockedOnline = await onlineFinale.getAttribute('aria-disabled') === 'false'
   await onlineFinale.click()
   await b.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -440,7 +503,7 @@ try {
   await b.waitForFunction(() => {
     const button = [...document.querySelectorAll('button')]
       .find((candidate) => candidate.getAttribute('aria-label')?.startsWith('Grand Finale,'))
-    return button?.disabled && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
+    return button?.getAttribute('aria-disabled') === 'true' && !document.querySelector('.prompt')?.textContent?.includes('Choose an enemy')
   })
   const finaleClearedAfterRefill = await b.locator('.enemy--targeted').count() === 0
   check('online Grand Finale uses the public draw count without revealing the pile', () => {
@@ -501,56 +564,6 @@ try {
     assertDeepEqual(onlineWhirlwind.enemies.map((enemy) => enemy.hp), [7, 7, 10, 7])
   })
   await a.screenshot({ path: join(outDir, '02-whirlwind-x-resolved.png'), fullPage: true })
-
-  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
-  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
-  const copiedSkewerUid = 'online-copy-original-skewer'
-  Object.assign(annLive, {
-    hand: [{ uid: copiedSkewerUid, defId: 'skewer', upgraded: true }],
-    discard: [], draw: [], exhaust: [], energy: 1, strength: 0, weak: 0,
-    forcedCardUids: [copiedSkewerUid], freeCardUids: [copiedSkewerUid],
-    copyOriginalUids: [copiedSkewerUid], copyOriginalPaidUids: [copiedSkewerUid],
-    copyOriginalEnergySpent: { [copiedSkewerUid]: 2 },
-  })
-  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
-  const copiedSkewerTarget = liveRoom.run.combat.enemies[0]
-  for (const enemy of liveRoom.run.combat.enemies) {
-    Object.assign(enemy, { hp: 10, maxHp: 10, block: 0, dead: enemy !== copiedSkewerTarget })
-  }
-  const publishCopiedSkewer = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
-    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
-  })
-  assert(publishCopiedSkewer.ok, 'could not publish the copied Skewer fixture')
-  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'copied X reconnect'))
-  await a.locator('.connection--reconnecting').waitFor()
-  await a.locator('.connection--connected').waitFor()
-  await a.locator('.combat[data-phase="player"]').waitFor()
-  await a.getByRole('button', { name: /^Skewer\+, cost 0,/ }).click()
-  await a.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
-  const copiedSkewerEnergyPrompts = await a.getByText('Choose Energy for Skewer+').count()
-  let submittedCopiedSkewer
-  await a.route(`**/api/rooms/${code}/action`, async (route) => {
-    submittedCopiedSkewer = route.request().postDataJSON()?.action
-    const response = await route.fetch()
-    await route.fulfill({ response })
-  }, { times: 1 })
-  await a.locator('.enemy--targeted').click()
-  for (let attempt = 0; attempt < 50 &&
-    liveRoom.run.combat.players.find((player) => player.name === 'Ann').forcedCardUids.length > 0; attempt += 1) {
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
-  }
-  const copiedSkewerActor = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
-  const copiedSkewerEnemy = liveRoom.run.combat.enemies.find((enemy) => enemy.uid === copiedSkewerTarget.uid)
-  check('reconnect preserves copied X requirements without charging the physical original again', () => {
-    assertEqual(copiedSkewerEnergyPrompts, 0)
-    assertEqual(submittedCopiedSkewer.energySpent, 0)
-    assertEqual(copiedSkewerEnemy.hp, 6)
-    assertEqual(copiedSkewerActor.energy, 1)
-    assertDeepEqual(copiedSkewerActor.forcedCardUids, [])
-  })
-  await a.screenshot({ path: join(outDir, '02g-copied-x-reconnected.png'), fullPage: true })
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const annBeforeTempest = structuredClone(annLive)
@@ -696,6 +709,96 @@ try {
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
     hand: [
+      { uid: 'online-fire-power', defId: 'fire_breathing', upgraded: true },
+      { uid: 'online-fire-trance', defId: 'battle_trance', upgraded: false },
+    ],
+    draw: [
+      { uid: 'online-fire-daze', defId: 'daze', upgraded: false },
+      { uid: 'online-fire-curse', defId: 'clumsy', upgraded: false },
+      { uid: 'online-fire-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    discard: [], exhaust: [],
+    powers: [{ uid: 'online-fire-combust', defId: 'combust', upgraded: true }],
+    energy: 3, drawLocked: false,
+  })
+  Object.assign(boLive, { miracles: 1, energy: 2 })
+  const fireTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  liveRoom.run.combat.pendingTriggers = []
+  liveRoom.run.combat.powerTriggersUsedThisTurn = []
+  liveRoom.run.combat.enemies = [
+    { ...fireTemplate, uid: 'online-fire-left', defId: 'cultist', row: 0, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+    { ...fireTemplate, uid: 'online-fire-right', defId: 'cultist', row: 1, isBoss: false,
+      hp: 10, maxHp: 10, block: 0, dead: false },
+  ]
+  const publishFireFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishFireFixture.ok, 'could not publish the online Fire Breathing fixture')
+  await a.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
+  await a.getByRole('button', { name: 'Use Combust+' }).click()
+  await a.getByText('Choose a row for Combust+').waitFor()
+  const fireOwnerCredentials = await credentials(a)
+  const competingFireDraw = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': fireOwnerCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'playCard', cardUid: 'online-fire-trance', preflight: true,
+    } }),
+  })
+  assert(competingFireDraw.ok, 'could not publish the same-seat Fire Breathing draw')
+  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor()
+  const staleFireTargets = await a.getByRole('button', { name: /^Target row/ }).count()
+  check('a mandatory online trigger clears stale staged targeting', () => {
+    assertEqual(staleFireTargets, 0)
+  })
+  await b.getByText('Waiting for Ann to resolve a triggered ability…').waitFor()
+  const foreignFireRows = await b.getByRole('button', { name: /^Resolve .*Fire Breathing/ }).count()
+  const boCredentials = await credentials(b)
+  const firstOnlineFireTriggerId = liveRoom.run.combat.pendingTriggers[0].id
+  const forgedFire = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': boCredentials.token },
+    body: JSON.stringify({ action: {
+      kind: 'resolveTrigger', triggerId: firstOnlineFireTriggerId,
+      enemyRow: 1, preflight: true,
+    } }),
+  })
+  let submittedFire
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedFire = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /Fire Breathing\+ in row 2$/ }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 1; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('online Fire Breathing keeps row choices private to its owner and server-authoritative', () => {
+    assertEqual(foreignFireRows, 0)
+    assertEqual(forgedFire.status, 409)
+    assertEqual(submittedFire.kind, 'resolveTrigger')
+    assertEqual(submittedFire.triggerId, firstOnlineFireTriggerId)
+    assertEqual(submittedFire.enemyRow, 1)
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
+  })
+  await a.getByRole('button', { name: /Fire Breathing\+ in row 1$/ }).click()
+  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
+  check('online Fire Breathing resolves every qualifying draw before play resumes', () => {
+    assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [7, 7])
+    assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').drawLocked)
+  })
+  await a.screenshot({ path: join(outDir, '02b-fire-breathing-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [
       { uid: 'online-double-tap', defId: 'double_tap', upgraded: true },
       { uid: 'online-double-strike', defId: 'strike_ironclad', upgraded: false },
     ],
@@ -718,12 +821,43 @@ try {
     body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
   })
   assert(publishDoubleTapFixture.ok, 'could not publish the online Double Tap fixture')
-  await a.getByRole('button', { name: /^Double Tap\+,/ }).click()
-  await a.getByRole('button', { name: /^Strike,/ }).click()
-  await a.getByText('Choose an enemy').waitFor()
+  await a.locator('.hand').getByRole('button', { name: /^Double Tap\+,/ }).click()
+  await a.locator('.hand').getByRole('button', { name: /^Strike,/ }).click()
+  await a.getByText('Choose an enemy for Strike copy (Double Tap)').waitFor()
   await a.getByRole('button', { name: /^Cultist,/ }).click()
-  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
-  await b.getByRole('status').filter({ hasText: 'Ann is resolving a Double Tap copy' }).waitFor()
+  await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor()
+  await b.getByRole('status').filter({
+    hasText: 'Ann is resolving the original Strike after a Double Tap copy',
+  }).waitFor()
+  const pendingCopyLabels = await b.evaluate(async () => {
+    const { pendingCardCopyLabel } = await import('/src/ui/OnlineGame.tsx')
+    const pending = (sourceNames, card, virtualOnly = false) => ({
+      playerId: 'p1', card, energySpent: 0, resumePhase: 'player', forcedExhaust: false,
+      forcedChoices: null, deferredHavocs: [], sourceNames, virtualOnly,
+    })
+    return [
+      pendingCardCopyLabel(pending(
+        ['Foreign Influence'], { uid: 'foreign', defId: 'bash', upgraded: false }, true,
+      )),
+      pendingCardCopyLabel(pending(
+        ['Omniscience', 'Omniscience'], { uid: 'omni', defId: 'strike_watcher', upgraded: false },
+      )),
+      pendingCardCopyLabel(pending(
+        ['Blasphemy', 'Blasphemy'], { uid: 'blasphemy', defId: 'strike_watcher', upgraded: false },
+      )),
+      pendingCardCopyLabel(pending(
+        ['Weave'], { uid: 'weave', defId: 'weave', upgraded: false, scryDamageBonus: 5 },
+      )),
+    ]
+  })
+  check('online teammate copy labels identify each Watcher source and resolution stage', () => {
+    assertDeepEqual(pendingCopyLabels, [
+      'a Bash copy (Foreign Influence)',
+      'a Strike copy (Omniscience)',
+      'a Strike copy (Blasphemy)',
+      'Scry-played Weave',
+    ])
+  })
   const teammateLockedForCopy = await b.locator('.online-mutations').evaluate((table) => table.inert)
   await a.screenshot({ path: join(outDir, '02b-double-tap-copy-target.png'), fullPage: true })
   let failedCopyRefreshes = 0
@@ -738,13 +872,13 @@ try {
   })
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
   await a.getByRole('button', { name: /^Red Louse,/ }).click()
-  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor({ state: 'hidden' })
+  await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor({ state: 'hidden' })
   for (let attempt = 0; attempt < 50 && failedCopyRefreshes < 3; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   await a.waitForTimeout(0)
-  const staleUnknownCopyPrompt = await a.getByText('Choose an enemy for Strike Double Tap copy').count()
-  await a.getByText('Choose an enemy for Strike Double Tap copy').waitFor()
+  const staleUnknownCopyPrompt = await a.getByText('Choose an enemy for original Strike after Double Tap copy').count()
+  await a.getByText('Choose an enemy for original Strike after Double Tap copy').waitFor()
   await a.unroute(copyRoomPattern)
   const expectedCopyFailures = failures.splice(copyFailureStart)
   check('an unknown uncommitted Double Tap copy stays locked until an authoritative refresh', () => {
@@ -777,6 +911,99 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    character: 'defect',
+    hand: [{ uid: 'online-copy-multi-cast', defId: 'multi_cast', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, block: 0,
+    orbs: ['frost', 'frost', null], doubledCardsThisTurn: 1,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  const publishMultiCastCopy = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishMultiCastCopy.ok, 'could not publish the copied Multi-Cast fixture')
+  await a.getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
+  await a.getByText('Choose Energy for Multi-Cast').waitFor()
+  await a.getByRole('button', { name: 'Spend 2' }).click()
+  await a.getByRole('button', { name: /frost slot 1/i }).click()
+  await a.getByText('Choose Orb to evoke 1').waitFor()
+  let multiCastCopyRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const body = route.request().postDataJSON()
+    body.action.evokeSlots = []
+    body.action.evokeEnemyUids = []
+    const response = await route.fetch({ postData: JSON.stringify(body) })
+    multiCastCopyRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  for (let attempt = 0; attempt < 50 && multiCastCopyRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(multiCastCopyRefusalStatus, 409, 'the forged Multi-Cast copy did not reach refusal')
+  await a.getByText('Choose Orb to evoke 1').waitFor()
+  const multiCastCopyConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(multiCastCopyConflict >= 0, 'the refused Multi-Cast copy did not surface as an HTTP conflict')
+  failures.splice(multiCastCopyConflict, 1)
+  await a.getByRole('button', { name: /frost slot 2/i }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.phase !== 'player'; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('a refused X-cost Multi-Cast copy restores its authoritative Orb picker', () => {
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(ann.block, 4)
+    assertDeepEqual(ann.orbs, [null, null, null])
+    assertEqual(liveRoom.run.combat.pendingCardCopy, undefined)
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    character: 'defect',
+    hand: [{ uid: 'online-seek', defId: 'seek', upgraded: true }],
+    draw: [
+      { uid: 'online-seek-strike', defId: 'strike_defect', upgraded: false },
+      { uid: 'online-seek-defend', defId: 'defend_defect', upgraded: false },
+      { uid: 'online-seek-zap', defId: 'zap', upgraded: false },
+    ],
+    discard: [], exhaust: [], powers: [], energy: 0, doubledCardsThisTurn: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const publishSeek = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishSeek.ok, 'could not publish the online Seek fixture')
+  await a.getByRole('button', { name: /^Seek\+, cost 0,/ }).click()
+  const seekDialog = a.getByRole('dialog', { name: 'Choose 2 from your draw pile' })
+  await seekDialog.waitFor()
+  const teammateSeekDialog = await b.getByRole('dialog', { name: 'Choose 2 from your draw pile' }).count()
+  await seekDialog.getByRole('button', { name: /^Strike,/ }).click()
+  await seekDialog.getByRole('button', { name: /^Zap,/ }).click()
+  let submittedSeek
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    submittedSeek = route.request().postDataJSON()?.action
+    const response = await route.fetch()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await seekDialog.getByRole('button', { name: 'Put selected cards in hand and shuffle' }).click()
+  await seekDialog.waitFor({ state: 'hidden' })
+  check('online Seek keeps its draw search private and submits only chosen ids', () => {
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertEqual(teammateSeekDialog, 0)
+    assertDeepEqual(submittedSeek.searchDrawUids, ['online-seek-strike', 'online-seek-zap'])
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-seek-strike', 'online-seek-zap'])
+    assertDeepEqual(ann.draw.map((card) => card.uid), ['online-seek-defend'])
+    assert(ann.exhaust.some((card) => card.uid === 'online-seek'))
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [
       { uid: 'online-copy-preview-tap', defId: 'double_tap', upgraded: true },
       { uid: 'online-copy-preview-dagger', defId: 'dagger_throw', upgraded: false },
@@ -786,7 +1013,8 @@ try {
       { uid: 'online-copy-preview-first', defId: 'neutralize', upgraded: false },
       { uid: 'online-copy-preview-second', defId: 'survivor', upgraded: false },
     ],
-    discard: [], exhaust: [], energy: 3, doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
+    discard: [], exhaust: [], energy: 3, drawLocked: false,
+    doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
   })
   Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
   for (const enemy of liveRoom.run.combat.enemies) {
@@ -804,7 +1032,7 @@ try {
   const firstCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await firstCopyDiscard.getByRole('button', { name: /^Neutralize,/ }).click()
   await firstCopyDiscard.getByRole('button', { name: 'Discard selected card' }).click()
-  await a.getByText('Choose an enemy for Dagger Throw Double Tap copy').waitFor()
+  await a.getByText('Choose an enemy for original Dagger Throw after Double Tap copy').waitFor()
   await a.getByRole('button', { name: /^Red Louse,/ }).click()
   const repeatedCopyDiscard = a.getByRole('dialog', { name: 'Choose 1 to discard' })
   await repeatedCopyDiscard.getByRole('button', { name: /^Survivor,/ }).click()
@@ -859,7 +1087,7 @@ try {
   })
   assert(publishHeadbuttFixture.ok, 'could not publish the online Headbutt fixture')
   await a.getByRole('button', { name: /^Headbutt\+,/ }).click()
-  const onlineHeadbutt = a.getByRole('dialog', { name: 'Choose a card from your discard pile' })
+  const onlineHeadbutt = a.getByRole('dialog', { name: 'Choose 1 card from your discard pile' })
   await onlineHeadbutt.waitFor()
   await onlineHeadbutt.getByRole('button', { name: /^Bash,/ }).click()
   await onlineHeadbutt.getByRole('button', { name: 'Put selected card on top' }).click()
@@ -908,12 +1136,77 @@ try {
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(annLive, {
+    character: 'watcher', stance: 'wrath',
+    hand: [{ uid: 'online-meditate', defId: 'meditate', upgraded: true }],
+    discard: [
+      { uid: 'online-meditate-old-first', defId: 'perseverance', upgraded: false },
+      { uid: 'online-meditate-old-second', defId: 'windmill_strike', upgraded: false },
+    ],
+    draw: [], exhaust: [], powers: [], energy: 1, cardPlayLocked: false,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  const publishMeditateFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishMeditateFixture.ok, 'could not publish the online Meditate fixture')
+  await a.getByRole('button', { name: /^Meditate\+,/ }).click()
+  const onlineMeditate = a.getByRole('dialog', { name: 'Choose 2 cards from your discard pile' })
+  await onlineMeditate.waitFor()
+  await onlineMeditate.getByRole('button', { name: /^Perseverance,/ }).click()
+  await onlineMeditate.getByRole('button', { name: /^Windmill Strike,/ }).click()
+  const currentAnn = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  currentAnn.discard = [
+    { uid: 'online-meditate-new-first', defId: 'defend_watcher', upgraded: false },
+    { uid: 'online-meditate-new-second', defId: 'strike_watcher', upgraded: false },
+    { uid: 'online-meditate-left-behind', defId: 'empty_body', upgraded: false },
+  ]
+  liveRoom.version += 1
+  let meditateRefusalStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    meditateRefusalStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await onlineMeditate.getByRole('button', { name: 'Return selected cards to hand' }).click()
+  for (let attempt = 0; attempt < 50 && meditateRefusalStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(meditateRefusalStatus, 409, 'the stale Meditate did not reach the room refusal path')
+  await onlineMeditate.waitFor()
+  await onlineMeditate.getByText(/^0\/2 selected from discard/).waitFor()
+  const staleMeditateChoice = await onlineMeditate.getByRole('button', { name: /^Perseverance,/ }).count()
+  await onlineMeditate.getByRole('button', { name: /^Defend,/ }).click()
+  await onlineMeditate.getByRole('button', { name: /^Strike,/ }).click()
+  await onlineMeditate.getByRole('button', { name: 'Return selected cards to hand' }).click()
+  await onlineMeditate.waitFor({ state: 'hidden' })
+  const expectedMeditateConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedMeditateConflict >= 0, 'the refused Meditate did not surface as an HTTP conflict')
+  failures.splice(expectedMeditateConflict, 1)
+  const teammateAfterMeditate = await snapshot(b)
+  check('a refused Meditate+ restores both mandatory recoveries and keeps the new hand private', () => {
+    assertEqual(staleMeditateChoice, 0)
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assertDeepEqual(ann.hand.map((card) => card.uid),
+      ['online-meditate-new-first', 'online-meditate-new-second'])
+    assert(ann.hand.every((card) => card.retainThisTurn === true))
+    assert(ann.discard.some((card) => card.uid === 'online-meditate-left-behind'))
+    const teammateJson = JSON.stringify(teammateAfterMeditate)
+    assert(!teammateJson.includes('online-meditate-new-first') &&
+      !teammateJson.includes('online-meditate-new-second'),
+    'Meditate leaked recovered hand identities to a teammate')
+  })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
     hand: [{ uid: 'online-exhume', defId: 'exhume', upgraded: true }],
     exhaust: [
       { uid: 'online-exhume-defend', defId: 'defend_ironclad', upgraded: false },
       { uid: 'online-exhume-bash', defId: 'bash', upgraded: false },
     ],
-    energy: 0,
+    energy: 0, cardPlayLocked: false,
   })
   boLive.miracles = 1
   const publishExhumeFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
@@ -2195,11 +2488,6 @@ try {
     if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
   }
 
-  for (const player of liveRoom.run.combat.players) {
-    if (!player.hand.some((card) => card.defId.includes('strike') || card.defId === 'bash')) {
-      player.hand.push({ uid: `online-remote-strike-${player.id}`, defId: `strike_${player.character}`, upgraded: false })
-    }
-  }
   const energyBeforePotionDoubleClick = annAfterLiveResponseLoss.energy
   await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).evaluate((button) => {
     button.click()
@@ -2214,6 +2502,8 @@ try {
     assertDeepEqual(annAfterPotion.potions, [])
   })
 
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
+    .push({ uid: 'online-scroll-strike', defId: 'strike_silent', upgraded: false })
   const beforeRemoteAction = await snapshot(b)
   const beforeRemotePlayer = beforeRemoteAction.run.combat.players
     .find((player) => player.id === aView.you.playerId)
@@ -2258,7 +2548,7 @@ try {
     await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame))
     return board.scrollTop
   })
-  await b.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
+  await b.getByRole('button', { name: /^Strike,/ }).first().click()
   if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().click()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__log li')]
     .some((line) => /Bo played/.test(line.textContent ?? '')))
@@ -2273,7 +2563,12 @@ try {
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
   liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
     .push({ uid: 'online-order-shame', defId: 'shame', upgraded: false })
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').block = 1
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
+    .push({ uid: 'online-equilibrium-retain', defId: 'reinforced_body', upgraded: false })
+  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), {
+    block: 1,
+    retainCardsThisTurn: 1,
+  })
   liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
     .push({ uid: 'online-order-decay', defId: 'decay', upgraded: false })
   const aCredentials = await credentials(a)
@@ -2360,6 +2655,8 @@ try {
       `Decay log ${decay}, Shame log ${shame}: ${JSON.stringify(afterEndTurnRace.run.combat.log)}`)
   })
   const aDiscardTop = a.getByLabel('Top discard for Ann')
+  const retainReinforcedBody = a.getByRole('button', { name: /Retain Reinforced Body$/ })
+  await retainReinforcedBody.click()
   if (await aDiscardTop.count()) await aDiscardTop.selectOption({ index: 0 })
   const selectedDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''
   await a.getByRole('button', { name: /^Confirm Ann/ }).click()
@@ -2368,9 +2665,13 @@ try {
   await a.reload({ waitUntil: 'networkidle' })
   await a.locator('.app-shell--online .combat[data-phase="discard"]').waitFor()
   const restoredDiscardTop = await aDiscardTop.count() ? await aDiscardTop.inputValue() : ''
-  check('refresh restores this seat\'s private discard order', () => {
+  const restoredRetain = await retainReinforcedBody.getAttribute('aria-pressed')
+  check('refresh restores this seat\'s private discard and Retain choices', () => {
     assertEqual(savedDiscard.discardOrder?.at(-1) ?? '', selectedDiscardTop)
+    assert(!savedDiscard.discardOrder?.includes('online-equilibrium-retain'),
+      'the retained card was sent in the discard order')
     assertEqual(restoredDiscardTop, selectedDiscardTop)
+    assertEqual(restoredRetain, 'true')
   })
   await b.getByRole('button', { name: /^Confirm Bo/ }).click()
   await Promise.all([
@@ -2380,7 +2681,10 @@ try {
   const enemyTurn = await snapshot(a)
   const enemyTurnPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
   check('each seat independently confirms the shared end of turn', () => {
-    assert(enemyTurn.run.combat.players.every((player) => player.handCount === 0))
+    const ann = enemyTurn.run.combat.players.find((player) => player.id === enemyTurn.you.playerId)
+    const bo = enemyTurn.run.combat.players.find((player) => player.id !== enemyTurn.you.playerId)
+    assertDeepEqual(ann.hand.map((card) => card.uid), ['online-equilibrium-retain'])
+    assertEqual(bo.handCount, 0)
     assertEqual(enemyTurn.run.combat.phase, 'enemy')
   })
   check('face-up potion summaries remain visible outside the Player Turn', () => {
@@ -2449,6 +2753,162 @@ try {
   await b.close()
   b = recoveryTab
 
+  // Online item surfaces use the same server-owned state and survive a mobile
+  // reconnect. These fixtures publish through real room actions so both seats
+  // receive the exact redacted snapshots used in production.
+  const itemBaseline = structuredClone(liveRoom.run)
+  const annRun = liveRoom.run.players.find((player) => player.name === 'Ann')
+  liveRoom.run = {
+    ...liveRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
+      potion: false, relic: 'astrolabe', bossRelics: false }],
+  }
+  await roomAction(a, { kind: 'relicReward', choice: 'gain' })
+  const ownerGame = a.locator('.app-shell--online')
+  const teammateGame = b.locator('.app-shell--online')
+  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 390, height: 844 })))
+  const activeGames = [ownerGame, teammateGame]
+  await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
+  const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
+    game.locator('.map').evaluate((map) => {
+      const rooms = [...map.querySelectorAll('button')]
+      let focusable = 0
+      for (const room of rooms) {
+        room.focus()
+        if (document.activeElement === room) focusable++
+      }
+      return { inert: map.inert, focusable }
+    })))
+  const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
+  const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
+  await a.screenshot({ path: join(outDir, '08a-mobile-pending-relic.png'), fullPage: true })
+  const pendingOnMobile = (await snapshot(a)).pendingRelic?.relicId
+  check('pending Relic acquisition is exposed on the mobile owner surface', () => {
+    assertEqual(pendingOnMobile, 'astrolabe')
+    assert(ownerMapBlocked.inert, 'the active owner map was not inert')
+    assert(teammateMapBlocked.inert, 'the active teammate map was not inert')
+    assertEqual(ownerMapBlocked.focusable, 0, 'the owner map kept focusable progression controls')
+    assertEqual(teammateMapBlocked.focusable, 0, 'the teammate map kept focusable progression controls')
+    assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
+    assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
+  })
+  await b.reload({ waitUntil: 'domcontentloaded' })
+  await b.locator('.connection--connected').waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await teammateGame.locator('.map[inert]').waitFor()
+  const reconnectedMapBlocked = await teammateGame.locator('.map').evaluate((map) => {
+    const rooms = [...map.querySelectorAll('button')]
+    let focusable = 0
+    for (const room of rooms) {
+      room.focus()
+      if (document.activeElement === room) focusable++
+    }
+    return map.inert && focusable === 0
+  })
+  check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
+    assert(reconnectedMapBlocked)
+  })
+  const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Solo table' })
+  await teammateHeaderControl.focus()
+  const astrolabeChoices = ownerGame.locator('.campfire__deck button')
+  for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
+  await ownerGame.getByRole('button', { name: 'Resolve Relic' }).click()
+  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
+  await Promise.all(activeGames.map((game) => game.locator('.map:not([inert]) .room--reachable').first().waitFor()))
+  await a.waitForFunction(() => document.activeElement?.classList.contains('room--reachable'))
+  const ownerMapFocusRestored = await ownerGame.locator('.room--reachable').first()
+    .evaluate((room) => document.activeElement === room)
+  const teammateHeaderFocusPreserved = await teammateHeaderControl.evaluate((control) =>
+    document.activeElement === control)
+  const teammateMapFocusable = await teammateGame.locator('.room--reachable').first()
+    .evaluate((room) => !room.closest('.map')?.inert && room.tabIndex >= 0)
+  check('resolving a mandatory Relic restores map access without stealing teammate focus', () => {
+    assert(ownerMapFocusRestored)
+    assert(teammateMapFocusable)
+    assert(teammateHeaderFocusPreserved)
+  })
+
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
+      potion: null, relic: false, bossRelics: false }],
+  })
+  await roomAction(a, { kind: 'potionReward', choice: 'reveal' })
+  await a.locator('.reward-screen__potion').waitFor()
+  await b.locator('.reward-screen__potion').waitFor()
+  await a.locator('.reward-screen').evaluate(async (screen) => {
+    await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
+  })
+  const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
+  const mobilePotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
+    width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
+  }))
+  check('revealed Potion rewards are shared without foreign controls', () => {
+    assertEqual(foreignPotionGain, 0)
+    assert(mobilePotionLayout.scrollWidth <= mobilePotionLayout.width,
+      'the outside Potion controls overflow the mobile viewport')
+    assert(mobilePotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
+  })
+  await a.screenshot({ path: join(outDir, '08b-mobile-potion-replacement.png'), fullPage: true })
+  let skippedPotionStatus = 0
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    const response = await route.fetch()
+    skippedPotionStatus = response.status()
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.locator('.reward-screen__potion').getByRole('button', { name: 'Skip' }).click()
+  for (let attempt = 0; attempt < 50 && skippedPotionStatus === 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  assertEqual(skippedPotionStatus, 200, 'the revealed Potion skip was refused')
+  await a.locator('.reward-screen__potion').waitFor({ state: 'hidden' })
+
+  const annCards = liveRoom.run.players.find((player) => player.id === annRun.id)
+  annCards.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
+  annCards.rareRewards = ['bludgeon']
+  Object.assign(liveRoom.run, {
+    phase: 'reward', rewardDestination: 'map',
+    rewards: [{ playerId: annRun.id, cardReward: true, choices: null, upgraded: false,
+      potion: false, relic: false, bossRelics: false }],
+  })
+  await roomAction(a, { kind: 'cardReward', choice: 'reveal' })
+  const ticketBadge = a.getByText('Golden Ticket · Rare')
+  await ticketBadge.waitFor()
+  await b.getByText('Golden Ticket · Rare').waitFor()
+  await ticketBadge.scrollIntoViewIfNeeded()
+  const ticketBadgeVisible = await ticketBadge.evaluate((badge) => {
+    const box = badge.getBoundingClientRect()
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
+  })
+  check('Golden Ticket presentation is public after reveal', () => {
+    assert(ticketBadgeVisible, 'the mobile screenshot hides the Golden Ticket source badge')
+  })
+  await a.screenshot({ path: join(outDir, '08c-mobile-golden-ticket.png'), fullPage: true })
+
+  liveRoom.run = { ...itemBaseline, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
+    pendingBossDefId: 'time_eater' }
+  await roomAction(a, { kind: 'switchBetweenCombatRow', row: 1 })
+  await Promise.all([
+    a.getByRole('heading', { name: 'Another boss approaches' }).waitFor(),
+    b.getByRole('heading', { name: 'Another boss approaches' }).waitFor(),
+  ])
+  const hiddenReservedBoss = (await snapshot(b)).run.pendingBossDefId
+  check('A13 regroup is mobile, shared, and keeps the reserved boss hidden', () => {
+    assertEqual(hiddenReservedBoss, null)
+  })
+  await a.screenshot({ path: join(outDir, '08d-mobile-a13-regroup.png'), fullPage: true })
+  liveRoom.run = structuredClone(itemBaseline)
+  Object.assign(liveRoom.run.combat, {
+    phase: 'player', startTurnProgress: undefined, pendingTriggers: [],
+  })
+  const restoredAnn = liveRoom.run.combat.players.find((player) => player.id === annRun.id)
+  Object.assign(restoredAnn, { energy: 0, miracles: 1 })
+  await roomAction(a, { kind: 'spendMiracle' })
+  await a.setViewportSize({ width: 1440, height: 900 })
+  await a.locator('.app-shell--online .combat').waitFor()
+
   const abandonedCombat = liveRoom.run.combat
   const abandonedAnn = abandonedCombat.players.find((player) => player.name === 'Ann')
   const abandonedBo = abandonedCombat.players.find((player) => player.name === 'Bo')
@@ -2493,59 +2953,363 @@ try {
       .some((card) => card.uid === 'abandoned-acrobatics'))
   })
 
-  liveRoom.run = {
-    ...liveRoom.run,
-    phase: 'reward',
-    combat: null,
-    rewardDestination: 'map',
-    players: liveRoom.run.players.map((player) => player.name === 'Ann'
-      ? { ...player, potions: ['weak_potion'] }
-      : { ...player, potions: [] }),
-    rewards: [
-      { playerId: abandonedAnn.id, choices: [], upgraded: false, hasCard: false, hasPotion: true,
-        potionId: 'block_potion', hasRelic: false, relicChoices: null },
-      { playerId: abandonedBo.id, choices: null, upgraded: false, hasCard: true, hasPotion: true,
-        potionId: 'energy_potion', hasRelic: false, relicChoices: null },
-    ],
+  const fourContexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext({
+    viewport: { width: 390, height: 844 }, permissions: ['microphone'],
+  })))
+  await Promise.all(fourContexts.map((context) => context.addInitScript(() => {
+    const sockets = []
+    window.__ROOM_SOCKETS__ = sockets
+    window.WebSocket = new Proxy(window.WebSocket, {
+      construct(Target, args) {
+        const socket = new Target(...args)
+        sockets.push(socket)
+        return socket
+      },
+    })
+  })))
+  const fourPages = await Promise.all(fourContexts.map((context) => context.newPage()))
+  fourPages.forEach((page) => {
+    page.on('pageerror', (error) => failures.push(String(error)))
+    page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
+  })
+  await enterOnline(fourPages[0], 'Iris', 'ironclad')
+  const fourCode = await fourPages[0].locator('.online-lobby h1').textContent()
+  rooms.store.rooms.get(fourCode).campaignProgress.highestAscension = 13
+  for (const [index, character] of ['silent', 'defect', 'watcher'].entries()) {
+    await enterOnline(fourPages[index + 1], ['Sable', 'Cobalt', 'Violet'][index], character, fourCode)
   }
-  liveRoom.rewardChoices = undefined
-  const rewardCredentials = await credentials(b)
-  const publishRewardFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': rewardCredentials.token },
-    body: JSON.stringify({ action: { kind: 'cardReward', choice: 'reveal' } }),
+  await fourPages[0].locator('.online-seat').filter({ hasText: 'online' }).nth(3).waitFor()
+  for (const page of fourPages) await page.getByRole('button', { name: 'Join voice' }).click()
+  await Promise.all(fourPages.map((page) => page.locator('.voice__status', { hasText: 'Voice 3/3' }).waitFor()))
+  await Promise.all(fourPages.map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
+    .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 3)))
+  const fourVoiceTracks = await Promise.all(fourPages.map((page) => page.evaluate(() => [...document.querySelectorAll('audio')]
+    .filter((audio) => audio.srcObject?.getAudioTracks().length).length)))
+  await fourPages[0].screenshot({ path: join(outDir, '01b-four-player-voice-mobile.png'), fullPage: true })
+  await Promise.all(fourPages.map((page) => page.getByRole('button', { name: 'Leave voice' }).click()))
+  await Promise.all(fourPages.map((page) => page.getByRole('button', { name: 'Join voice' }).waitFor()))
+  const fourVoiceTracksAfterLeave = await Promise.all(fourPages.map((page) => page.locator('audio').count()))
+  check('four browsers establish and cleanly leave the full voice mesh', () => {
+    assertDeepEqual(fourVoiceTracks, [3, 3, 3, 3])
+    assertDeepEqual(fourVoiceTracksAfterLeave, [0, 0, 0, 0])
   })
-  assert(publishRewardFixture.ok, 'could not publish the sequential reward fixture')
-  const saveAnnReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': abandonedCredentials.token },
-    body: JSON.stringify({ action: { kind: 'cardReward', choice: {
-      card: null, potionRecipientId: abandonedAnn.id, discardPotionId: null, relicId: null,
-    } } }),
+  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')]
+    .find((label) => label.textContent?.includes('Ascension'))?.querySelectorAll('option').length === 14)
+  await fourPages[0].locator('.online-lobby').getByLabel('Ascension').selectOption('13')
+  await fourPages[0].getByRole('button', { name: 'Enter the Spire' }).click()
+  await fourPages[0].getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  const fourRoom = rooms.store.rooms.get(fourCode)
+  bypassRoomNeow(fourRoom)
+  await Promise.all(fourPages.map((page) => page.locator('.app-shell--online .map').waitFor()))
+  const iris = fourRoom.run.players.find((player) => player.name === 'Iris')
+  iris.potions = ['energy_potion', 'energy_potion', 'energy_potion']
+  Object.assign(fourRoom.run, {
+    phase: 'reward', combat: null, ascension: 0, rewardDestination: 'map',
+    rewards: [{ playerId: iris.id, cardReward: true, choices: null, upgraded: false,
+      potion: false, relic: false, bossRelics: false }],
   })
-  const saveBoReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': rewardCredentials.token },
-    body: JSON.stringify({ action: { kind: 'cardReward', choice: {
-      card: 0, potionRecipientId: abandonedBo.id, discardPotionId: null, relicId: null,
-    } } }),
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
+  const fourGive = fourPages[0].locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true })
+  const fullPotionBarHeight = await fourPages[0].locator('.outside-potions').evaluate((bar) =>
+    bar.getBoundingClientRect().height)
+  await fourGive.first().click()
+  const expandedDuplicateRows = await fourPages[0].locator('.outside-potions__targets').count()
+  const expandedDuplicateButtons = await fourGive.evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute('aria-expanded')))
+  const expandedTradeLayout = await fourPages[0].locator('.outside-potions').evaluate((bar) => ({
+    width: bar.clientWidth,
+    scrollWidth: bar.scrollWidth,
+    items: [...bar.querySelectorAll('.outside-potions__item, .outside-potions__targets')].map((item) => {
+      const box = item.getBoundingClientRect()
+      return { left: box.left, right: box.right }
+    }),
+    styles: [...bar.querySelectorAll('button:not(:disabled)')].map((button) => ({
+      label: button.textContent?.trim(),
+      color: getComputedStyle(button).color,
+      background: getComputedStyle(button).backgroundColor,
+    })),
+  }))
+  check('four-player mobile Potion trading keeps every target inside the viewport', () => {
+    assertEqual(expandedDuplicateRows, 1, 'duplicate Potions opened duplicate trade target groups')
+    assertDeepEqual(expandedDuplicateButtons, ['true', 'false', 'false'])
+    assert(fullPotionBarHeight < 160, 'a full three-Potion inventory stretched into the mobile stage')
+    assert(expandedTradeLayout.scrollWidth <= expandedTradeLayout.width)
+    assert(expandedTradeLayout.items.every((item) => item.left >= 0 && item.right <= 390),
+      `expanded Potion trade overflowed: ${JSON.stringify(expandedTradeLayout.items)}`)
+    assert(expandedTradeLayout.styles.every((style) => contrastRatio(style) >= 4.5),
+      `outside Potion action contrast failed: ${JSON.stringify(expandedTradeLayout.styles)}`)
   })
-  assert(saveAnnReward.ok && saveBoReward.ok, 'could not save every reward choice')
-  const collectAnnReward = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-room-token': abandonedCredentials.token },
-    body: JSON.stringify({ action: { kind: 'cardReward', choice: 'collect' } }),
+  await fourGive.first().click()
+  iris.potions = ['entropic_brew', 'entropic_brew', 'energy_potion']
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: null })
+  const brewUses = fourPages[0].locator('.outside-potions').getByRole('button', { name: 'Use Entropic Brew', exact: true })
+  await brewUses.first().click()
+  const duplicateBrewTargets = await fourPages[0].locator('.outside-potions__targets').count()
+  const expandedBrewButtons = await brewUses.evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute('aria-expanded')))
+  const brewReplacementStyles = await fourPages[0].locator('.outside-potions__targets button').evaluateAll((buttons) =>
+    buttons.map((button) => ({ label: button.textContent?.trim(), color: getComputedStyle(button).color,
+      background: getComputedStyle(button).backgroundColor })))
+  check('duplicate Entropic Brews open one replacement group', () => {
+    assertEqual(duplicateBrewTargets, 1)
+    assertDeepEqual(expandedBrewButtons, ['true', 'false'])
+    assert(brewReplacementStyles.every((style) => contrastRatio(style) >= 4.5),
+      `Potion replacement contrast failed: ${JSON.stringify(brewReplacementStyles)}`)
   })
-  assert(collectAnnReward.ok, 'could not collect the earlier potion first')
-  const replaceEarlierPotion = b.getByRole('button', { name: 'Replace Block Potion on Ann' })
-  await replaceEarlierPotion.waitFor()
-  const afterEarlierReward = await snapshot(b)
-  await b.screenshot({ path: join(outDir, '09-online-sequential-reward.png'), fullPage: true })
-  check('online reward picks update in party order without erasing the remaining private draft', () => {
-    assertEqual(afterEarlierReward.rewardChoice.potionRecipientId, abandonedBo.id)
-    assertDeepEqual(afterEarlierReward.run.players.find((player) => player.id === abandonedAnn.id).potions,
-      ['weak_potion', 'block_potion'])
+  await brewUses.first().click()
+  fourRoom.run.players.find((player) => player.id === iris.id).potions = ['entropic_brew']
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 0 })
+  await fourPages[0].waitForFunction(() =>
+    document.querySelectorAll('.outside-potions [aria-label="Use Entropic Brew"]').length === 1)
+  const immediateBrew = fourPages[0].locator('.outside-potions__item').first()
+    .getByRole('button', { name: 'Use Entropic Brew', exact: true })
+  const immediateBrewExpanded = await immediateBrew.getAttribute('aria-expanded')
+  check('an immediately usable Entropic Brew is not announced as a disclosure', () => {
+    assertEqual(fourRoom.run.players.find((player) => player.id === iris.id).potions.length, 1)
+    assertEqual(immediateBrewExpanded, null)
   })
+
+  const combatPlayers = fourRoom.run.players.map((player, index) => ({
+    ...player, row: index,
+    potions: player.id === iris.id ? ['entropic_brew', 'fire_potion', 'energy_potion'] : [],
+  }))
+  const enemy = (uid, defId, row, hp) => ({
+    uid, defId, row, hp, maxHp: hp, block: 0, strength: 0, vulnerable: 0, weak: 0,
+    poison: 0, actionIndex: 0, abilityUsed: false, dead: false, isBoss: false,
+  })
+  fourRoom.run = {
+    ...fourRoom.run, phase: 'combat', rewards: [], rewardDestination: null,
+    combat: createCombat(createRng(404), combatPlayers,
+      [enemy('combat-target', 'cultist', 2, 20)], 'online-brew', ['block_potion', 'skill_potion'], 3),
+  }
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await Promise.all(fourPages.map((page) => page.locator('.combat').waitFor()))
+  await fourPages[0].locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
+  const brewDialog = fourPages[0].getByRole('dialog', { name: 'Entropic Brew' })
+  await brewDialog.waitFor()
+  const onlineBrewSnapshot = await snapshot(fourPages[0])
+  const replacementStyle = await brewDialog.getByRole('button', { name: 'Replace Energy Potion' }).evaluate((button) => ({
+    color: getComputedStyle(button).color,
+    background: getComputedStyle(button).backgroundColor,
+  }))
+  await fourPages[0].keyboard.press('Escape')
+  await brewDialog.waitFor({ state: 'hidden' })
+  const afterBrewEscape = await snapshot(fourPages[0])
+  await fourPages[0].locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
+  await brewDialog.getByRole('button', { name: 'Cancel' }).click()
+  await brewDialog.waitFor({ state: 'hidden' })
+  const afterBrewCancel = await snapshot(fourPages[0])
+  await fourPages[0].locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
+  await brewDialog.waitFor()
+  await brewDialog.evaluate((dialog) => Promise.all(dialog.getAnimations().map((animation) => animation.finished)))
+  await fourPages[0].screenshot({ path: join(outDir, '09a-four-player-combat-potion-replacement.png'), fullPage: true })
+  await brewDialog.getByRole('button', { name: 'Replace Energy Potion' }).click()
+  await brewDialog.waitFor({ state: 'hidden' })
+  const afterOnlineBrew = await snapshot(fourPages[0])
+  check('online full-belt Entropic Brew exposes and resolves its replacement choice', () => {
+    assertEqual(onlineBrewSnapshot.run.combat.potionLimit, 3)
+    const originalPotions = onlineBrewSnapshot.run.combat.players.find((player) => player.id === iris.id).potions
+    assertDeepEqual(afterBrewEscape.run.combat.players.find((player) => player.id === iris.id).potions, originalPotions)
+    assertDeepEqual(afterBrewCancel.run.combat.players.find((player) => player.id === iris.id).potions, originalPotions)
+    const contrast = contrastRatio(replacementStyle)
+    assert(contrast >= 4.5, `Entropic Brew dialog contrast is only ${contrast.toFixed(2)}:1`)
+    const potions = afterOnlineBrew.run.combat.players.find((player) => player.id === iris.id).potions
+    assertEqual(potions.length, 3)
+    assert(!potions.includes('entropic_brew'))
+  })
+
+  const facingCombat = createCombat(createRng(405), combatPlayers, [
+    enemy('shield', 'spire_shield', 0, 30), enemy('spear', 'spire_spear', 3, 42),
+  ], 'online-facing')
+  facingCombat.enemies.find((candidate) => candidate.uid === 'shield').actionIndex = 2
+  Object.assign(facingCombat, { phase: 'start', turn: 1, startTurnStage: 'facing' })
+  fourRoom.run = { ...fourRoom.run, phase: 'combat', combat: facingCombat }
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+  const facingSnapshot = await snapshot(fourPages[1])
+  await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'Facing reconnect test'))
+  await fourPages[0].locator('.connection--connected').waitFor()
+  await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).click()
+  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Sable'))
+  await fourPages[0].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Cobalt'))
+  await fourPages[0].getByRole('button', { name: /^Spire Shield,/ }).click()
+  await fourPages[0].waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Violet'))
+  const facingCapacity = await fourPages[0].locator('.enemy').evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
+    card.getAttribute('aria-label')?.split(',')[0], card.matches(':disabled'),
+  ])))
+  await fourPages[0].getByRole('button', { name: /^Spire Spear,/ }).click()
+  await fourPages[0].screenshot({ path: join(outDir, '09c-four-player-online-facing.png'), fullPage: true })
+  await fourPages[0].getByRole('button', { name: 'Resolve start of turn' }).click()
+  await fourPages[0].waitForFunction(() => document.querySelector('.combat')?.dataset.phase === 'player')
+  const afterFacing = await snapshot(fourPages[0])
+  check('online Facing stays bounded and resolvable across coordinator reconnect', () => {
+    assertEqual(facingSnapshot.run.combat.startTurnStage, 'facing')
+    assertEqual(facingCapacity['Spire Shield'], true)
+    assertEqual(facingCapacity['Spire Spear'], false)
+    assertDeepEqual(afterFacing.run.combat.players.map((player) => player.facingEnemyUid),
+      ['shield', 'spear', 'shield', 'spear'])
+    assertDeepEqual(afterFacing.run.combat.players.map((player) => player.damageDealtZeroThisTurn),
+      [true, false, true, false])
+  })
+
+  const cobalt = fourRoom.run.combat.players.find((player) => player.name === 'Cobalt')
+  Object.assign(cobalt, {
+    hand: [{ uid: 'online-facing-multi-cast', defId: 'multi_cast', upgraded: false }],
+    discard: [], draw: [], exhaust: [], powers: [], energy: 2, orbs: ['lightning', null, null],
+  })
+  Object.assign(fourRoom.run.combat.enemies.find((candidate) => candidate.uid === 'shield'), {
+    hp: 1, maxHp: 1, block: 0, dead: false,
+  })
+  Object.assign(fourRoom.run.combat.enemies.find((candidate) => candidate.uid === 'spear'), {
+    hp: 0, block: 0, dead: true,
+  })
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[2].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'Facing damage reconnect test'))
+  await fourPages[2].locator('.connection--connected').waitFor()
+  await fourPages[2].getByRole('button', { name: /^Multi-Cast, cost X,/ }).click()
+  await fourPages[2].getByRole('button', { name: 'Spend 2' }).click()
+  await fourPages[2].getByRole('button', { name: /lightning slot 1/i }).click()
+  const zeroDamageTarget = fourPages[2].getByRole('button', { name: /^Spire Shield,/ })
+  await zeroDamageTarget.click()
+  await zeroDamageTarget.waitFor()
+  await zeroDamageTarget.click()
+  await fourPages[2].getByRole('button', { name: /^Multi-Cast, cost X,/ }).waitFor({ state: 'hidden' })
+  const afterZeroDamageMultiCast = await snapshot(fourPages[2])
+  check('online Facing zero-damage state survives reconnect and keeps every Multi-Cast target authoritative', () => {
+    const player = afterZeroDamageMultiCast.run.combat.players.find((candidate) => candidate.id === cobalt.id)
+    assertEqual(player.damageDealtZeroThisTurn, true)
+    assertDeepEqual(player.orbs, [null, null, null])
+    assert(player.discard.some((card) => card.uid === 'online-facing-multi-cast'))
+    assertEqual(afterZeroDamageMultiCast.run.combat.enemies.find((candidate) => candidate.uid === 'shield').hp, 1)
+  })
+
+  const rewardIris = fourRoom.run.players.find((player) => player.id === iris.id)
+  rewardIris.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
+  rewardIris.rareRewards = ['bludgeon']
+  fourRoom.run = {
+    ...fourRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
+    rewards: [{ playerId: rewardIris.id, cardReward: true, choices: null, upgraded: false,
+      potion: null, relic: null, bossRelics: false }],
+  }
+  fourRoom.rewardChoices = undefined
+  fourRoom.rewardConfirmed = undefined
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[0].getByRole('button', { name: 'Reveal Relic' }).waitFor()
+  await fourPages[0].getByRole('button', { name: 'Reveal Potion' }).waitFor()
+  const unrevealedRewardStyles = await fourPages[0].locator('.reward-screen__player > p > button:not(:disabled)')
+    .evaluateAll((buttons) => buttons.map((button) => ({
+      label: button.textContent?.trim(),
+      height: button.getBoundingClientRect().height,
+      color: getComputedStyle(button).color,
+      background: getComputedStyle(button).backgroundColor,
+    })))
+  check('unrevealed Relic and Potion actions retain readable touch-sized game styling', () => {
+    assert(unrevealedRewardStyles.length >= 4)
+    assert(unrevealedRewardStyles.every((style) => style.height >= 44),
+      `unrevealed reward action is too small: ${JSON.stringify(unrevealedRewardStyles)}`)
+    assert(unrevealedRewardStyles.every((style) => contrastRatio(style) >= 4.5),
+      `unrevealed reward action contrast failed: ${JSON.stringify(unrevealedRewardStyles)}`)
+  })
+  fourRoom.run.rewards[0].relic = 'astrolabe'
+  await roomAction(fourPages[0], { kind: 'potionReward', choice: 'reveal' })
+  await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
+  await fourPages[1].getByText('Golden Ticket · Rare').waitFor()
+  const fourSeatCount = await fourPages[0].locator('.setup .pip').evaluateAll((pips) =>
+    pips.filter((pip) => /[●○]/.test(pip.textContent ?? '')).length)
+  const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
+  const freshRewardChoice = (await snapshot(fourPages[0])).rewardChoice
+  check('the four-player Golden Ticket fixture starts genuinely undecided', () => {
+    assertEqual(freshRewardChoice, undefined)
+  })
+  const rewardActionStyles = await fourPages[0].locator('.reward-screen__relic button:not(:disabled), .reward-screen__potion button:not(:disabled)')
+    .evaluateAll((buttons) => buttons.map((button) => ({
+      label: button.textContent?.trim(),
+      height: button.getBoundingClientRect().height,
+      color: getComputedStyle(button).color,
+      background: getComputedStyle(button).backgroundColor,
+    })))
+  check('four-player Relic and Potion reward actions retain readable game styling', () => {
+    assert(rewardActionStyles.length > 0)
+    assert(rewardActionStyles.every((style) => style.height >= 44),
+      `reward action is too small: ${JSON.stringify(rewardActionStyles)}`)
+    assert(rewardActionStyles.every((style) => contrastRatio(style) >= 4.5),
+      `reward action contrast failed: ${JSON.stringify(rewardActionStyles)}`)
+  })
+  await fourPages[0].locator('.reward-screen__relic').scrollIntoViewIfNeeded()
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-mobile-revealed-items.png'), fullPage: true })
+  await fourPages[0].getByText('Golden Ticket · Rare').scrollIntoViewIfNeeded()
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-mobile-items.png'), fullPage: true })
+  await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
+  await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
+  await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
+  await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-mobile-pending-relic.png'), fullPage: true })
+  await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'item reconnect test'))
+  await fourPages[1].locator('.setup .pip', { hasText: 'Iris ○' }).waitFor()
+  await fourPages[0].reload({ waitUntil: 'domcontentloaded' })
+  await fourPages[0].locator('.connection--connected').waitFor()
+  const pendingAfterFourReconnect = (await snapshot(fourPages[0])).pendingRelic
+  check('four-player mobile item rewards settle deterministically across reconnect', () => {
+    assertEqual(fourSeatCount, 4)
+    assertEqual(teammatePotionControls, 0)
+    assertEqual(pendingAfterFourReconnect, null, 'disconnect did not settle the private Relic deterministically')
+  })
+  fourRoom.run = { ...fourRoom.run, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
+    pendingBossDefId: 'time_eater', rewards: [], rewardDestination: null,
+    players: fourRoom.run.players.map((player) => ({ ...player,
+      relics: player.relics.map((relic) => ({ ...relic, pending: undefined })) })) }
+  await roomAction(fourPages[0], { kind: 'switchBetweenCombatRow', row: 3 })
+  await Promise.all(fourPages.map((page) => page.getByRole('heading', { name: 'Another boss approaches' }).waitFor()))
+  const fourBossViews = await Promise.all(fourPages.map(snapshot))
+  check('four-player A13 regroup stays shared and hides the reserved boss', () => {
+    assertEqual(fourRoom.run.players.find((player) => player.id === iris.id).row, 3)
+    assert(fourBossViews.every((view) => view.run.pendingBossDefId === null), 'reserved boss leaked to a seat')
+  })
+  await fourPages[0].screenshot({ path: join(outDir, '10-four-player-mobile-a13.png'), fullPage: true })
+  fourRoom.run = {
+    ...fourRoom.run,
+    act: 1,
+    phase: 'victory',
+    combat: null,
+    lastStand: true,
+    pendingBossDefId: null,
+    roomState: null,
+    rewards: [],
+    players: fourRoom.run.players.map((player, index) => ({
+      ...player,
+      hp: index === 1 ? 0 : Math.max(1, player.hp),
+      dead: index === 1,
+      relics: player.relics.map((relic) => ({ ...relic, pending: undefined })),
+    })),
+    campaign: { ...fourRoom.run.campaign, finalized: false },
+  }
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[0].getByRole('heading', { name: 'Act 1 complete' }).waitFor()
+  const lastStandNotice = await fourPages[0].getByRole('status').filter({ hasText: 'cannot continue to the next Act' }).count()
+  const forbiddenNextAct = await fourPages[0].getByRole('button', { name: 'Climb to Act 2' }).count()
+  const recordLastStand = await fourPages[0].getByRole('button', { name: 'Stop and record result' }).count()
+  const terminalPotions = await fourPages[0].locator('.outside-potions').count()
+  const mobileTitle = await fourPages[0].getByRole('heading', { name: 'Slay the Spire' }).evaluate((heading) => {
+    const box = heading.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(heading)
+    return { width: box.width, textWidth: range.getBoundingClientRect().width }
+  })
+  check('a Last Stand boss win explains why the party must end instead of exposing the next Act', () => {
+    assertEqual(lastStandNotice, 1)
+    assertEqual(forbiddenNextAct, 0)
+    assertEqual(recordLastStand, 1)
+    assertEqual(terminalPotions, 0)
+    assert(mobileTitle.width >= 100 && mobileTitle.width + 1 >= mobileTitle.textWidth,
+      'the online header crushed the game title')
+  })
+  await fourPages[0].screenshot({ path: join(outDir, '11-last-stand-victory-mobile.png'), fullPage: true })
+  await Promise.all(fourContexts.map((context) => context.close()))
 
   check('the online flow has no browser errors', () => {
     assertEqual(failures.length, 0, failures.join('\n'))

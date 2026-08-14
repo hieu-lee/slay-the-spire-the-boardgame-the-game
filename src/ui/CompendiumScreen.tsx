@@ -4,6 +4,7 @@ import type { CardDef } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
 import { cardAccessibleName, cardPlayText } from './Card.tsx'
+import { CardFace } from './CardFace.tsx'
 
 type Pool = CardDef['owner'] | 'all'
 
@@ -43,7 +44,8 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
       return (pool === 'all' || card.owner === pool) &&
         (type === 'all' || face.type === type) &&
         (rarities.size === 0 || rarities.has(face.rarity)) &&
-        (cost === 'all' || (cost === '3+' ? typeof face.cost === 'number' && face.cost >= 3 : String(face.cost) === cost)) &&
+        (cost === 'all' || (!face.unplayable &&
+          (cost === '3+' ? typeof face.cost === 'number' && face.cost >= 3 : String(face.cost) === cost))) &&
         (!needle || face.name.toLocaleLowerCase().includes(needle))
     })
       .sort((a, b) => (ascending ? 1 : -1) * a.name.localeCompare(b.name))
@@ -125,9 +127,7 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
                     onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
                     onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 ) : null}
-                <span className="compendium-card__fallback"><strong>{face.name}</strong><small>{face.type} · {face.rarity}</small>
-                  {playText ? <span className="compendium-card__rules">{playText}</span> : null}
-                </span>
+                <CardFace def={face} rules={playText} />
               </button>
             )
           })}
@@ -146,9 +146,7 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
                     onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
                     onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 ) : null}
-                <span className="compendium-card__fallback"><strong>{selectedFace.name}</strong><small>{selectedFace.type} · {selectedFace.rarity}</small>
-                  <span className="compendium-card__rules">{cardPlayText(selectedFace)}</span>
-                </span>
+                <CardFace def={selectedFace} rules={cardPlayText(selectedFace)} />
               </span>
         </dialog>
       ) : null}

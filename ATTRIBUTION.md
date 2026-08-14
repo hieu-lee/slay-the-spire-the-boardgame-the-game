@@ -19,10 +19,11 @@ against the published rules.
 
 ## Artwork
 
-Card scans, icons, and refreshed source art remain gitignored and are fetched on demand:
+Publisher card scans and rulebook icons are fetched locally and remain gitignored.
+The repository also tracks the curated rulebook enemy portraits used at runtime:
 
 ```bash
-pnpm sync:assets     # cards, icons and enemy portraits
+pnpm sync:assets     # optional card faces, icons, and reference Act I enemy crops
 ```
 
 | What | Where it comes from |
@@ -30,25 +31,34 @@ pnpm sync:assets     # cards, icons and enemy portraits
 | Card, relic and potion scans | a third-party card browser at `https://rustywolf.github.io/sts/` |
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
-| Board backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
-| Combat status and Power pictograms | original OpenAI Imagegen fan illustrations created for this implementation |
+| Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
+| Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 
-The repository tracks 90 portraits extracted from the enemy cards. The sync scripts keep card
-scans and icons out of version control; enemy portrait refreshes overwrite the tracked bundle
-and should be reviewed before committing.
+The sync scripts keep card scans, rulebook icons, source-resolution working files, and
+unused enemy variants out of version control. The 82 committed runtime portraits are
+curated prebuilt crops; the enemy sync only regenerates eleven Act I reference crops
+that the game replaces with generated combat cutouts.
 
-`public/assets/backgrounds/` contains four original act-specific backdrops,
-`public/assets/combat/` contains the generated combat stage and transparent actor cutouts,
-and `public/assets/status-icons/` plus `public/assets/power-icons/` contain generated
-transparent HUD pictograms normalized to consistent visible bounds.
+`public/assets/card-art/` contains one committed, text-free generated illustration for
+each character card. These are original OpenAI Imagegen restorations visually grounded
+in the corresponding locally synced illustration window; the UI supplies its own frame,
+title and rules text. Base and upgraded faces reuse the same illustration.
+
+`public/assets/combat/` contains the generated Act I combat stage and transparent actor
+cutouts for four characters and eleven Act I enemies. These are original AI-generated fan
+illustrations made with OpenAI Imagegen for this implementation. The character silhouettes
+were visually grounded in the locally synced board-game starter-card scans. No generated
+asset contains a card scan, logo, or readable text.
+
+`public/assets/status-icons/` contains fourteen committed generated combat-status symbols,
+and `public/assets/power-icons/` contains twenty-eight committed generated Power symbols.
+Cards without a dedicated Power symbol use a generated generic status symbol.
+
 `public/assets/menu/` contains the generated title-screen spire and compendium archive backdrops.
 `public/assets/fonts/Kreon.ttf` is distributed under the bundled `Kreon-OFL.txt` license.
-These are original AI-generated fan illustrations made with OpenAI Imagegen for this
-implementation. The character silhouettes were visually grounded in the locally synced
-board-game starter-card scans; the combat stage extends the Act I background palette. No
-generated asset contains a card scan, logo, or readable text.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.
 

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice } from '../game/combat.ts'
+import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
-import type { CampfireChoice, CardRewardOffer, RewardDecision, RunPhase } from '../game/run.ts'
+import type { CampfireChoice, CardRewardOffer, PendingRelicPreview, RunPhase } from '../game/run.ts'
+import type { DailyModifierId, QuickSetupState, RunMetaOptions, RunMetaState } from '../game/meta.ts'
+import type { EventDecision, EventRoomState } from '../game/event-room.ts'
+import type { CourierOffer, MerchantState, RelicRewardState } from '../game/noncombat.ts'
+import type { CampaignProgress, SpireKeys } from '../game/campaign.ts'
+import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 
 const ACTIVE_KEY = 'sts-room-session'
@@ -30,21 +35,31 @@ export type VisiblePlayer = Omit<
 }
 
 export type VisibleCombat = {
+  combatId: string
+  lastStand: boolean
   turn: number
   die: number
   phase: CombatPhase
+  potionLimit: 2 | 3
   startTurnStage?: 'effects' | 'facing'
   players: VisiblePlayer[]
   enemies: Enemy[]
-  pendingSummons: { sourceUid: string; row: number; defIds: string[]; turn: number }[]
-  potionSupplyCount: number
   powerTriggersUsedThisTurn: string[]
+  pendingTriggers: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
+  nextTriggerId: number
   startTurnProgress?: {
     choices: StartTurnChoice[]
+    beforeDraw?: {
+      drewFrom: number
+      sources: { playerId: string; sourceId: string }[]
+      ordered: boolean
+    }
+    discard?: { playerId: string; sourceId: string; pendingTriggers: VisibleCombat['pendingTriggers'] }
     forcedCard?: {
       playerId: string
       cardUid: string | null
       sourceCardId: string
+      sourceLabel?: string
       exhaustNonPower: boolean
     }
   }
@@ -55,51 +70,121 @@ export type VisibleCombat = {
     resumePhase: 'start' | 'player'
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
-    deferredHavocs: { card: CardInstance; exhaust: boolean; virtual?: boolean }[]
+    deferredHavocs: {
+      card: CardInstance
+      exhaust: boolean
+      virtualOnly?: boolean
+      copySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience')[]
+      copyResumePhase?: 'start' | 'player'
+    }[]
+    deferredTriggers?: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
+    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
+    virtualOnly?: boolean
+    queuedWeaves?: CardInstance[]
   }
+  pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
+  pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
+  playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
+  pendingSummons: {
+    sourceUid: string
+    row: number
+    defIds: string[]
+    turn: number
+    timing?: 'startOfTurn' | 'endOfTurn'
+    direct?: boolean
+    isBoss?: boolean
+    strength?: number
+    strengthDefId?: string
+    strengthPerPower?: boolean
+  }[]
   log: string[]
 }
 
 export type VisibleRun = {
   ascension: number
+  chooseYourRelic: boolean
+  lastStand: boolean
+  meta: RunMetaState
+  setup: QuickSetupState | null
   act: number
   phase: RunPhase
+  neow: {
+    players: Record<string, {
+      card: NeowCard | undefined
+      redGoldPending: boolean
+      redRewardPending: boolean
+      redReward: NeowRewardOffer | null
+      blueOption: number | null
+      pendingEffect: import('../game/neow.ts').NeowImmediateReward | null
+      rewardKind: NeowRewardOffer['kind'] | null
+      reward: NeowRewardOffer | null
+      availableSources: import('../game/run.ts').RewardSource[]
+      done: boolean
+    } | null>
+  } | null
+  pendingBossDefId: string | null
   map: SpireMap
   log: string[]
   players: VisiblePlayer[]
   combat: VisibleCombat | null
   rewards: CardRewardOffer[]
+  roomState: MerchantState | RelicRewardState | EventRoomState | null
+  courier: { usedBy: string[]; offer: CourierOffer | null }
+  campaign: { runId: string; bossesDefeated: number; highestBossActDefeated: 0 | 1 | 2 | 3 | 4; keys: SpireKeys; finalized: boolean }
 }
 
 export type RoomSnapshot = {
   code: string
   phase: 'lobby' | 'run'
   ascension: number
+  chooseYourRelic: boolean
+  lastStand: boolean
+  metaOptions: { mode: 'standard' | 'daily' | 'custom'; modifiers: DailyModifierId[]; quickStartAct: 1 | 2 | 3 | 4 }
   version: number
   you: PublicSeat
   seats: PublicSeat[]
+  pendingRelic?: PendingRelicPreview | null
+  pendingRelicStatus?: { playerId: string; playerName: string; relicId: string } | null
   campfireChoice?: { choice: CampfireChoice; cardUid?: string }
   campfireDecided: string[]
-  rewardChoice?: RewardDecision | number | null
+  rewardChoice?: number | null
   rewardDecided: string[]
-  betweenCombatReady: string[]
+  rewardConfirmed: string[]
   endTurnDecided: string[]
   endTurnAbilities?: EndTurnAbility[]
   endTurnOrder?: string[]
   endTurnCoordinatorId?: string | null
   startTurnAbilities?: StartTurnAbility[]
   startTurnCoordinatorId?: string | null
+  startTurnScryAbilities?: StartTurnScryAbility[]
+  startTurnScry?: {
+    id: string
+    playerId: string
+    label: string
+    amount: number
+    cards: CardInstance[] | null
+  }
+  startTurnDiscard?: {
+    playerId: string
+    sourceId: string
+    label: string
+    cards: CardInstance[] | null
+  }
   discardOrder?: string[]
   cardPreview?: {
     cardUid: string
     copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck'
+    kind: 'discard' | 'scry' | 'topdeck' | 'search'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null
   }
   cardChoicePlayerId?: string
-  forcedCardPlayerId?: string
+  merchantPledges?: Record<string, { buyerId: string; section?: string; slot?: number; kind?: 'removal'; cardUid?: string; potionRecipientId?: string; discardPotionId?: string; payments: Record<string, number> }>
+  courierPledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> }
+  eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
+  eventCanSkip: boolean
+  campaignProgress: CampaignProgress
   run: VisibleRun | null
 }
 
@@ -200,6 +285,7 @@ export function useRoomSession() {
   const generation = useRef(0)
   const departed = useRef(false)
   const socket = useRef<WebSocket | null>(null)
+  const snapshotRef = useRef<RoomSnapshot | null>(null)
   const voiceListeners = useRef(new Set<(message: VoiceSignal) => void>())
   connectionRef.current = connection
 
@@ -216,6 +302,7 @@ export function useRoomSession() {
   }, [])
 
   const accept = useCallback((next: RoomSnapshot) => {
+    if (!snapshotRef.current || snapshotRef.current.code !== next.code || next.version >= snapshotRef.current.version) snapshotRef.current = next
     setSnapshot((current) => !current || current.code !== next.code || next.version >= current.version ? next : current)
   }, [])
 
@@ -454,7 +541,7 @@ export function useRoomSession() {
     generation: 0,
     pending: Promise.resolve(),
   })
-  const enqueue = useCallback((operation: string, body: object) => {
+  const enqueue = useCallback((operation: string, body: object | (() => object)) => {
     if (connectionRef.current !== 'connected') return Promise.resolve({ status: 'refused' } satisfies ActionOutcome)
     const actionGeneration = generation.current
     const actionConnectionEpoch = connectionEpoch.current
@@ -462,7 +549,7 @@ export function useRoomSession() {
       writes.current = { generation: actionGeneration, pending: Promise.resolve() }
     }
     const next = writes.current.pending.then(() => connectionRef.current === 'connected' && connectionEpoch.current === actionConnectionEpoch
-      ? post(operation, body, actionGeneration)
+      ? post(operation, typeof body === 'function' ? body() : body, actionGeneration)
       : { status: 'refused' } satisfies ActionOutcome)
     writes.current = { generation: actionGeneration, pending: next.catch(() => {}) }
     return next
@@ -500,6 +587,19 @@ export function useRoomSession() {
 
   const chooseCharacter = useCallback((character: CharacterId) => enqueue('character', { character }), [enqueue])
   const chooseAscension = useCallback((ascension: number) => enqueue('ascension', { ascension }), [enqueue])
+  const chooseRelicRule = useCallback((enabled: boolean) => enqueue('relic-rule', { enabled }), [enqueue])
+  const chooseLastStandRule = useCallback((enabled: boolean) => enqueue('last-stand-rule', { enabled }), [enqueue])
+  const chooseRunMeta = useCallback((options: Partial<RunMetaOptions>) => enqueue('run-meta', () => ({
+    ...snapshotRef.current?.metaOptions,
+    ...options,
+  })), [enqueue])
+  const chooseRunModifier = useCallback((id: DailyModifierId, enabled: boolean) => enqueue('run-meta', () => {
+    const current = snapshotRef.current?.metaOptions ?? { mode: 'custom', modifiers: [], quickStartAct: 1 }
+    return { ...current, modifiers: enabled
+      ? current.modifiers.includes(id) ? current.modifiers : [...current.modifiers, id]
+      : current.modifiers.filter((candidate) => candidate !== id) }
+  }), [enqueue])
+  const chooseAchievement = useCallback((id: string, completed: boolean) => enqueue('achievement', { id, completed }), [enqueue])
   const start = useCallback(() => enqueue('start', {}), [enqueue])
   const act = useCallback((action: object) => enqueue('action', { action }), [enqueue])
   const sendVoiceSignal = useCallback((to: string, signal: VoiceSignal['signal']) => {
@@ -535,6 +635,11 @@ export function useRoomSession() {
     forget,
     chooseCharacter,
     chooseAscension,
+    chooseRelicRule,
+    chooseLastStandRule,
+    chooseRunMeta,
+    chooseRunModifier,
+    chooseAchievement,
     start,
     act,
     sendVoiceSignal,

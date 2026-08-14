@@ -2,9 +2,9 @@
 // pass proved otherwise: forcing every die to show a 1, or filing every rare
 // card under the wrong directory, both went unnoticed.
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
-import { tierOf, cardImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { healthBand, strikeClass } from '../src/ui/board-signals.ts'
+import { healthBand, pendingUiSurvivesContext, strikeClass } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -69,6 +69,14 @@ check('the upgraded name suffix never leaks into the file name twice', () => {
   assertEqual((path.match(/\+/g) ?? []).length, 1, 'exactly one + marker')
 })
 
+check('repo-native card art is keyed by stable card ID, not printed face name', () => {
+  const base = cardArtPath(CARDS.bash)
+  const upgraded = cardArtPath(faceOf(CARDS.bash, true))
+  assertEqual(base, `${CARD_ART_ROOT}/ironclad/bash.webp`)
+  assertEqual(upgraded, base, 'base and upgrade share one text-free illustration')
+  assertEqual(cardArtPath(CARDS.strike_silent), `${CARD_ART_ROOT}/silent/strike_silent.webp`)
+})
+
 
 suite('board feedback helpers')
 
@@ -96,6 +104,13 @@ check('the flinch alternates so a repeated hit re-animates', () => {
     strikeClass('enemy', 1).startsWith('enemy--'),
     'the base name follows the element it is applied to',
   )
+})
+
+check('pending card UI survives only its owner copy transition', () => {
+  assertEqual(pendingUiSurvivesContext('copy', 'p1', 'p1'), true)
+  assertEqual(pendingUiSurvivesContext('copy', 'p1', 'p2'), false)
+  assertEqual(pendingUiSurvivesContext('copy', undefined, 'p1'), false)
+  assertEqual(pendingUiSurvivesContext('player', 'p1', 'p1'), false)
 })
 
 report('ui helpers')

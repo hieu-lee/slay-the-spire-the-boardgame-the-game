@@ -9,6 +9,7 @@ type TokenRowProps = {
   poison?: number
   shivs?: number
   miracles?: number
+  clawCubes?: number
 }
 
 type CountKey = keyof TokenRowProps
@@ -21,6 +22,7 @@ const TOKENS: { key: CountKey; icon: StatusIconName; label: string }[] = [
   { key: 'poison', icon: 'poison', label: 'Poison' },
   { key: 'shivs', icon: 'shiv', label: 'Shivs' },
   { key: 'miracles', icon: 'miracle', label: 'Miracles' },
+  { key: 'clawCubes', icon: 'attack', label: 'Claw cubes' },
 ]
 
 /** Shows public combat tokens beside HP. */
@@ -29,7 +31,7 @@ export function TokenRow(props: TokenRowProps) {
   if (present.length === 0) return null
 
   return (
-    <span className="tokens">
+    <span className="tokens" aria-hidden="true">
       {present.map(({ key, icon, label }) => (
         <span key={key} className={`token token--${key}`} title={`${label} ${props[key]}`}>
           {/* No hidden label: describeSeat and describeEnemy already carry the

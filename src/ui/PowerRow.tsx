@@ -7,11 +7,13 @@ import { cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
+import { CardFace } from './CardFace.tsx'
+import { cardRulesText } from './Card.tsx'
 
 type PowerRowProps = { powers: CardInstance[] }
 
-/** The enlarged card: which one, and where to put it. */
-type Zoom = { uid: string; src: string; x: number; y: number; pinned: boolean }
+/** The enlarged card or text fallback, and where to put it. */
+type Zoom = { uid: string; src: string; def: CardDef; description: string; x: number; y: number; pinned: boolean; loaded: boolean }
 
 const ZOOM_WIDTH = 190
 const ZOOM_HEIGHT = ZOOM_WIDTH * (4 / 3)
@@ -123,9 +125,8 @@ export function PowerRow({ powers }: PowerRowProps) {
    * board's scroll container, and at smaller viewports half the card was
    * being cut off at the board's edge.
    */
-  function place(target: HTMLElement, card: CardInstance, pinned: boolean) {
+  function place(target: HTMLElement, card: CardInstance, description: string, pinned: boolean) {
     const tile = target.getBoundingClientRect()
-    const def = faceOf(cardDef(card.defId), card.upgraded)
     const x = Math.min(Math.max(MARGIN, tile.left), window.innerWidth - ZOOM_WIDTH - MARGIN)
     // Prefer above the tile, the way a card held up over the table reads; drop
     // below when there is no room above.
@@ -139,7 +140,16 @@ export function PowerRow({ powers }: PowerRowProps) {
     // deliberately pinned theirs, which a passing hover must not destroy.
     if (!pinned && zoomIsPinnedElsewhere(close.current)) return
     claimTheOnlyZoom(close.current, pinned)
-    setZoom({ uid: card.uid, src: cardImagePath(def, card.upgraded), x, y, pinned })
+    setZoom({
+      uid: card.uid,
+      src: cardImagePath(cardDef(card.defId), card.upgraded),
+      def: faceOf(cardDef(card.defId), card.upgraded),
+      description,
+      x,
+      y,
+      pinned,
+      loaded: false,
+    })
   }
 
   return (
@@ -147,8 +157,16 @@ export function PowerRow({ powers }: PowerRowProps) {
       <ul className="powers" aria-label="Powers in play">
         {powers.map((card) => {
           const def = faceOf(cardDef(card.defId), card.upgraded)
-          const countdown = def.effects.find((effect) => effect.kind === 'countdownDamage')
-          const described = `${describePower(def)}${countdown ? `, ${card.counter ?? 0} of ${countdown.cubes} cubes` : ''}`
+          const countdown = def.effects.find((effect) =>
+            effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
+          const buffer = def.effects.find((effect) => effect.kind === 'preventHpLoss')
+          const conjure = def.effects.find((effect) => effect.kind === 'empowerStarterStrikes')
+          const counterLimit = countdown?.cubes ?? (buffer?.kind === 'preventHpLoss' && buffer.uses > 1
+            ? buffer.uses
+            : undefined)
+          const described = `${describePower(def)}${counterLimit
+            ? `, ${card.counter ?? 0} of ${counterLimit} cubes`
+            : conjure ? `, ${card.counter ?? 0} cubes` : ''}`
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
@@ -163,10 +181,10 @@ export function PowerRow({ powers }: PowerRowProps) {
                 // A pinned card belongs to the player, not to the pointer:
                 // drifting across a neighbour used to silently destroy the pin.
                 onMouseEnter={(event) => {
-                  if (!zoom?.pinned) place(event.currentTarget, card, false)
+                  if (!zoom?.pinned) place(event.currentTarget, card, described, false)
                 }}
                 onFocus={(event) => {
-                  if (!zoom?.pinned) place(event.currentTarget, card, false)
+                  if (!zoom?.pinned) place(event.currentTarget, card, described, false)
                 }}
                 onMouseLeave={() => setZoom((current) => (current?.pinned ? current : null))}
                 onBlur={() => setZoom((current) => (current?.pinned ? current : null))}
@@ -175,13 +193,13 @@ export function PowerRow({ powers }: PowerRowProps) {
                     releaseZoom(close.current)
                     setZoom(null)
                   } else {
-                    place(event.currentTarget, card, true)
+                    place(event.currentTarget, card, described, true)
                   }
                 }}
               >
                 <PowerGlyph def={def} />
-                {countdown ? (
-                  <span className="power__counter" aria-hidden="true">{card.counter ?? 0}/{countdown.cubes}</span>
+                {counterLimit ? (
+                  <span className="power__counter" aria-hidden="true">{card.counter ?? 0}/{counterLimit}</span>
                 ) : null}
               </button>
             </li>
@@ -192,13 +210,25 @@ export function PowerRow({ powers }: PowerRowProps) {
       {/* Into the body, so nothing on the board can clip it. */}
       {zoom
         ? createPortal(
-            <img
-              className="power__zoom"
-              src={zoom.src}
-              alt=""
-              aria-hidden="true"
+            <span
+              className={`power__zoom${zoom.loaded ? '' : ' power__zoom--fallback'}`}
+              role="tooltip"
               style={{ left: `${Math.round(zoom.x)}px`, top: `${Math.round(zoom.y)}px` }}
-            />,
+            >
+              <span className={zoom.loaded ? 'visually-hidden' : 'power__zoom-description'}>
+                {zoom.description}
+              </span>
+              <CardFace def={zoom.def} rules={cardRulesText(zoom.def)} className="power__zoom-card" />
+              <img
+                key={zoom.src}
+                className="power__zoom-image"
+                src={zoom.src}
+                alt=""
+                aria-hidden="true"
+                onLoad={() => setZoom((current) => current?.uid === zoom.uid ? { ...current, loaded: true } : current)}
+                style={{ visibility: zoom.loaded ? 'visible' : 'hidden' }}
+              />
+            </span>,
             document.body,
           )
         : null}
@@ -229,6 +259,14 @@ const EFFECT_GLYPHS: Partial<Record<Effect['kind'], PowerGlyphName>> = {
   applyVulnerable: 'vulnerable',
 }
 
+const POWER_ICONS = new Set([
+  'accuracy', 'after_image', 'apotheosis', 'barricade', 'capacitor', 'combust', 'consume',
+  'corruption', 'dark_embrace', 'defragment', 'demon_form', 'distraction', 'envenom', 'evolve',
+  'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
+  'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
+  'storm', 'the_bomb',
+])
+
 /** Pick the printed symbol that best describes what this persistent effect does. */
 export function powerGlyph(def: CardDef): PowerGlyphName {
   if (def.corruptSkills) return 'burn'
@@ -245,7 +283,7 @@ function PowerGlyph({ def }: { def: CardDef }) {
   return (
     <img
       className="icon icon--status"
-      src={`/assets/power-icons/${def.id}.png`}
+      src={POWER_ICONS.has(def.id) ? `/assets/power-icons/${def.id}.png` : statusIconPath(fallback)}
       width="22"
       height="22"
       alt=""
@@ -265,15 +303,19 @@ export function describePower(def: CardDef): string {
   if (def.retainBlock) return `${def.name}: keep leftover Block at the start of your turn, maximum 20`
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType
     ? `whenever you play a ${def.trigger.cardType} card`
-    : def.trigger?.kind === 'onDraw' && def.trigger.cardType
-      ? `whenever you draw a ${def.trigger.cardType} card`
+    : def.trigger?.kind === 'onDraw' && (def.trigger.cardType || def.trigger.cardTypes)
+      ? `whenever you draw a ${def.trigger.cardType ?? def.trigger.cardTypes!.join(' or ')} card`
+    : def.trigger?.kind === 'onEnterStance' && def.trigger.stance
+      ? `whenever you enter ${def.trigger.stance}`
     : def.trigger ? WHEN[def.trigger.kind] : undefined
-  const effectOwnsScope = def.effects.some((effect) => effect.kind === 'countdownDamage')
+  const effectOwnsScope = def.effects.some((effect) =>
+    effect.kind === 'countdownDamage' || effect.kind === 'countdownExhaust')
   const where = effectOwnsScope ? '' : def.target === 'allEnemies'
     ? ' to every enemy'
     : def.target === 'row' ? ' to one enemy row and any boss'
     : def.target === 'enemy' ? ' to one enemy' : ''
-  const effects = def.effects.map(describeEffect).filter(Boolean).join(', ')
+  const effects = [...(def.persistentEffects ?? []), ...def.effects]
+    .map(describeEffect).filter(Boolean).join(', ')
   if (!effects) return def.name
   const what = `${effects}${where}`
   if (def.activeAbility) return `${def.name}: ${what}, activate once per turn`
@@ -284,6 +326,7 @@ export function describePower(def: CardDef): string {
 
 const WHEN: Record<string, string> = {
   startOfCombat: 'at the start of combat',
+  beforeDraw: 'at the start of your turn, before you draw',
   startOfTurn: 'at the start of each turn',
   endOfTurn: 'at the end of each turn',
   endOfCombat: 'at the end of combat',
@@ -292,28 +335,34 @@ const WHEN: Record<string, string> = {
   onDiscard: 'whenever a card effect makes you discard one or more cards',
   onExhaust: 'whenever you exhaust a card',
   onDraw: 'whenever you draw a card',
-  onEnterStance: 'whenever you enter a stance',
+  onEnterStance: 'whenever you switch Stances',
   onScry: 'whenever you scry',
   onGainBlock: 'whenever you gain Block',
   onApplyPoison: 'when you put Poison on an enemy',
   onPutEnemyToken: 'whenever you put a token on an enemy',
-  onShuffle: 'whenever you shuffle',
+  onShuffle: 'whenever you shuffle your draw pile',
 }
 
 /**
  * A printed number, or a description of the one the board works out.
  *
- * `hit` and `block` amounts are no longer plain numbers, and a template literal
+ * `hit`, `block`, and `damage` amounts are no longer plain numbers, and a template literal
  * accepts an object without complaint — so the compiler stopped being able to
- * catch this and the row would have read "[object Object] Block". No Power
- * carries a computed amount today; this is here so that the first one to do so
- * reads as something rather than as a bug.
+ * catch this and the row would have read "[object Object] Block". Keep every
+ * computed Power amount readable rather than serializing its object shape.
  */
 function amountLabel(amount: Amount): string {
   if (typeof amount === 'number') return String(amount)
+  if (amount.per === 'energySpent' && !amount.bonus && !amount.targetTokens) {
+    const variable = (amount.scale ?? 1) === 1 ? 'X' : `${amount.scale}X`
+    return amount.base ? `${variable}+${amount.base}` : variable
+  }
   const parts = [String(amount.base)]
   if (amount.per) parts.push(`per ${amount.per}`)
-  if (amount.bonus) parts.push(`+${amount.bonus.plus} conditional`)
+  if (amount.bonus) {
+    const when = amount.bonus.when.kind === 'inStance' ? ` if you are in ${amount.bonus.when.stance}` : ' conditional'
+    parts.push(`+${amount.bonus.plus}${when}`)
+  }
   if (amount.targetTokens) parts.push(`per target ${amount.targetTokens.join(' and ')}`)
   return parts.join(' ')
 }
@@ -321,27 +370,47 @@ function amountLabel(amount: Amount): string {
 function describeEffect(effect: CardDef['effects'][number]): string {
   switch (effect.kind) {
     case 'block':
-      return `${amountLabel(effect.amount)} Block`
+      return `${amountLabel(effect.amount)} Block${effect.when?.kind === 'inStance' ? ` if you are in ${effect.when.stance}` : ''}`
     case 'gainStrength':
       return `${effect.amount} Strength`
     case 'draw':
-      return `draw ${effect.amount}`
+      return `draw ${effect.amount} ${effect.amount === 1 ? 'card' : 'cards'}`
+    case 'drawThenDiscard':
+      return `draw ${effect.amount} card then discard 1 card`
+    case 'scry':
+      return `Scry ${effect.amount}`
     case 'damage':
-      return `${effect.amount} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
+      return `${amountLabel(effect.amount)} damage${effect.when?.kind === 'handEmpty' ? ' if your hand is empty' : ''}`
     case 'hit':
       return `${amountLabel(effect.amount)} damage`
+    case 'hitChoices':
+      return `${amountLabel(effect.amount)} damage to ${effect.targets === 1
+        ? 'one enemy'
+        : `${effect.targets}${effect.distinct ? ' distinct' : ''} enemies`}`
     case 'gainEnergy':
       return `${effect.amount} Energy`
     case 'channel':
       return `channel ${effect.amount} ${effect.orb} Orb${effect.amount === 1 ? '' : 's'}`
     case 'gainShiv':
       return `${effect.amount} Shiv${effect.amount === 1 ? '' : 's'}`
+    case 'gainMiracle':
+      return `gain ${amountLabel(effect.amount)} Miracle${effect.amount === 1 ? '' : 's'}`
     case 'gainOrbSlots':
       return `gain ${effect.amount} Orb slots`
     case 'gainOrbEvokeBonus':
       return `Orb Evoke effects get +${effect.amount}`
+    case 'gainDarkOrbEvokeBonus':
+      return `Dark Orb Evoke effects get +${effect.amount}`
     case 'gainOrbEndTurnBonus':
       return `Orb end-of-turn effects get +${effect.amount}`
+    case 'gainLightningEndTurnBonus':
+      return `Lightning Orb end-of-turn effects get +${effect.amount}`
+    case 'lightningTargetsRow':
+      return 'Lightning damages every enemy in a chosen row, plus the boss'
+    case 'triggerOrbEndTurn':
+      return `trigger 1 Orb's end-of-turn ability ${effect.amount === 1 ? 'once' : `${effect.amount} times`}`
+    case 'gainWrathAttackDamageBonus':
+      return `Attacks deal +${effect.amount} damage while in Wrath`
     case 'gainShivDamageBonus':
       return `Shivs deal +${effect.amount} damage`
     case 'gainCardBlockBonus':
@@ -350,16 +419,28 @@ function describeEffect(effect: CardDef['effects'][number]): string {
       return `hits apply ${effect.amount} Poison`
     case 'upgradeStarterCards':
       return `starter Strikes deal +${effect.amount} damage and starter Defends gain +${effect.amount} Block`
+    case 'empowerStarterStrikes':
+      return `put ${amountLabel(effect.amount)} cubes here; starter Strikes deal +1 damage per cube`
     case 'countdownDamage':
       return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then Exhaust this Power`
+    case 'countdownExhaust':
+      return `place a cube; at ${effect.cubes} cubes Exhaust this Power`
+    case 'limitRoundHpLoss':
+      return `cannot lose more than ${effect.amount} HP per round`
+    case 'preventHpLoss':
+      return effect.uses === 1
+        ? 'prevent the next HP loss, then Exhaust this Power'
+        : `prevent the next ${effect.uses} HP losses, then Exhaust this Power`
+    case 'doubleNextAttackOrSkill':
+      return 'your next Attack or Skill this turn is played twice, with separate choices and modifiers'
     case 'drawAndPlayFree':
       return 'draw 1 card, immediately play it for 0 Energy; if it cannot be played, discard it'
     case 'heal':
       return `heal ${effect.amount}`
     case 'poison':
-      return `${effect.amount} Poison`
+      return `${amountLabel(effect.amount)} Poison`
     case 'applyWeak':
-      return `${effect.amount} Weak`
+      return `${amountLabel(effect.amount)} Weak`
     case 'applyVulnerable':
       return `${effect.amount} Vulnerable`
     default:

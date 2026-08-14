@@ -1,6 +1,7 @@
 // Pure helpers that decide how the board SIGNALS a change, kept out of the
 // component files so a plain Node check can import them — a .tsx module cannot
 // be loaded by the verify scripts, which is why these went untested for so long.
+import type { CombatState } from '../game/combat.ts'
 
 /**
  * Which band a health bar is in.
@@ -26,4 +27,12 @@ export function healthBand(hp: number, maxHp: number): 'healthy' | 'hurt' | 'cri
  */
 export function strikeClass(base: 'seat' | 'enemy', beat: number): string {
   return beat % 2 === 0 ? `${base}--struck` : `${base}--struck-alt`
+}
+
+export function pendingUiSurvivesContext(
+  phase: CombatState['phase'],
+  copyPlayerId: string | undefined,
+  viewerId: string,
+): boolean {
+  return phase === 'copy' && copyPlayerId === viewerId
 }

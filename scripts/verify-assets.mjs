@@ -2,24 +2,28 @@
 // every image path must be a safe, normalised browser path. A missing asset is
 // otherwise invisible until it renders as a broken box in a real game.
 //
-// Card scans, icons, and refreshed source art are not committed (see
-// ATTRIBUTION.md), so those synced groups may be absent in a fresh clone.
-// Bundled enemy, background, and combat art is always checked; a partial sync
-// is still a real problem and fails.
+// Publisher card scans and rulebook icons remain optional local syncs. The
+// curated legacy portraits and original generated artwork are committed and
+// required by the unconditional inventories below.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { inflateSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { cardImagePath, enemyImagePath, CARD_ASSET_ROOT } from '../src/game/assets.ts'
+import {
+  cardArtPath,
+  cardImagePath,
+  enemyImagePath,
+  enemyUsesCombatArt,
+  CARD_ART_ROOT,
+  CARD_ASSET_ROOT,
+} from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
 // checks for — so the check asserted its own side effect and could never fail.
 import { ENEMY_ART } from './lib/enemy-art.mjs'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const publicRoot = join(repoRoot, 'public')
@@ -28,75 +32,27 @@ const listing = (dir, extension) =>
   existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith(extension)) : []
 
 const cardRoot = join(publicRoot, 'assets/cards')
+const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
+const enemyRoot = join(publicRoot, 'assets/enemies')
+const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
+const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
+const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
-const enemyRoot = join(publicRoot, 'assets/enemies')
 const menuRoot = join(publicRoot, 'assets/menu')
 const fontRoot = join(publicRoot, 'assets/fonts')
 
 const cardFiles = listing(cardRoot, '.webp')
+const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
+const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
+  listing(join(cardArtRoot, owner), '.webp').map((file) => `${owner}/${file}`))
 const iconFiles = listing(iconRoot, '.png')
+const enemyFiles = listing(enemyRoot, '.webp')
+const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
+const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
-const enemyFiles = listing(enemyRoot, '.webp')
-
-function pngAlphaBounds(png, file) {
-  let offset = 8
-  const compressed = []
-  while (offset < png.length) {
-    const length = png.readUInt32BE(offset)
-    const type = png.subarray(offset + 4, offset + 8).toString()
-    if (type === 'IDAT') compressed.push(png.subarray(offset + 8, offset + 8 + length))
-    offset += length + 12
-    if (type === 'IEND') break
-  }
-  const width = png.readUInt32BE(16)
-  const height = png.readUInt32BE(20)
-  assertEqual(png[24], 8, `${file} bit depth`)
-  assertEqual(png[25], 6, `${file} color type`)
-  assertEqual(png[28], 0, `${file} must not be interlaced`)
-  const stride = width * 4
-  const pixels = inflateSync(Buffer.concat(compressed))
-  assertEqual(pixels.length, height * (stride + 1), `${file} decoded byte count`)
-  let previous = Buffer.alloc(stride)
-  let cursor = 0
-  let left = width
-  let top = height
-  let right = 0
-  let bottom = 0
-  const paeth = (a, b, c) => {
-    const p = a + b - c
-    const pa = Math.abs(p - a)
-    const pb = Math.abs(p - b)
-    const pc = Math.abs(p - c)
-    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
-  }
-  for (let y = 0; y < height; y += 1) {
-    const filter = pixels[cursor]
-    const row = Buffer.from(pixels.subarray(cursor + 1, cursor + stride + 1))
-    cursor += stride + 1
-    for (let x = 0; x < stride; x += 1) {
-      const a = x >= 4 ? row[x - 4] : 0
-      const b = previous[x]
-      const c = x >= 4 ? previous[x - 4] : 0
-      if (filter === 1) row[x] = (row[x] + a) & 0xff
-      else if (filter === 2) row[x] = (row[x] + b) & 0xff
-      else if (filter === 3) row[x] = (row[x] + Math.floor((a + b) / 2)) & 0xff
-      else if (filter === 4) row[x] = (row[x] + paeth(a, b, c)) & 0xff
-      else assertEqual(filter, 0, `${file} PNG filter`)
-    }
-    for (let x = 0; x < width; x += 1) {
-      if (row[x * 4 + 3] === 0) continue
-      left = Math.min(left, x)
-      top = Math.min(top, y)
-      right = Math.max(right, x + 1)
-      bottom = Math.max(bottom, y + 1)
-    }
-    previous = row
-  }
-  return { left, top, right, bottom }
-}
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -107,29 +63,53 @@ const REQUIRED_ICONS = [
   'boss', 'aoe', 'die1', 'die2', 'die3', 'die4', 'die5', 'die6',
 ]
 
-const REQUIRED_STATUS_ICONS = [
-  'attack', 'aoe', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb',
-  'poison', 'power', 'shiv', 'strength', 'vulnerable', 'weak',
-]
-
-const REQUIRED_COMBAT_ART = [
-  'stage-act-1.webp',
-  'characters/ironclad.webp',
-  'characters/silent.webp',
-  'characters/defect.webp',
-  'characters/watcher.webp',
-  'enemies/cultist.webp',
-  'enemies/acid_slime.webp',
-  'enemies/jaw_worm.webp',
-  'enemies/red_louse.webp',
-  'enemies/green_louse.webp',
-  'enemies/gremlin_nob.webp',
-  'enemies/lagavulin.webp',
-]
-
-const REQUIRED_BACKGROUNDS = [1, 2, 3, 4].map((act) => `boss-act-${act}.webp`)
-
 suite('assets')
+
+check('every character card has exactly one committed illustration', () => {
+  const expected = Object.values(CARDS)
+    .filter((def) => CARD_ART_OWNERS.includes(def.owner))
+    .map((def) => `${def.owner}/${def.id}.webp`)
+    .sort()
+  // The bundled inventory already contains the pending Watcher batch. Keep its
+  // assets through branch composition, while still rejecting unknown IDs.
+  const indexed = new Set(cardIndex
+    .filter((entry) => CARD_ART_OWNERS.some((owner) => entry.tier.startsWith(`${owner}/`)))
+    .map((entry) => {
+      const owner = entry.tier.split('/')[0]
+      const slug = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '')
+      const id = entry.name === 'Strike' ? `strike_${owner}` : entry.name === 'Defend' ? `defend_${owner}` : slug
+      return `${owner}/${id}.webp`
+    }))
+  assertDeepEqual(expected.filter((file) => !cardArtFiles.includes(file)), [], 'live card art missing')
+  assertDeepEqual(cardArtFiles.filter((file) => !indexed.has(file)), [], 'unknown bundled card art')
+  assertEqual(cardArtFiles.length, 251, 'complete four-character illustration inventory')
+})
+
+check('committed card illustrations decode at the audited size and budget', () => {
+  const files = cardArtFiles.map((file) => join(cardArtRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect committed card illustrations')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded illustration count')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').slice(-2).join('/')
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    return width === 748 && height === 420 ? [] : [`${file} is ${width}x${height}`]
+  })
+  assertDeepEqual(faults, [], 'illustration dimensions')
+  const sizes = files.map((file) => statSync(file).size)
+  assert(Math.max(...sizes) <= 60 * 1024, 'a committed illustration exceeds 60 KiB')
+  assert(sizes.reduce((sum, bytes) => sum + bytes, 0) < 7 * 1024 * 1024, 'illustrations exceed 7 MiB')
+})
+
+check('committed card illustration paths are stable across upgrades', () => {
+  for (const def of Object.values(CARDS).filter((card) => CARD_ART_OWNERS.includes(card.owner))) {
+    const path = cardArtPath(def)
+    assertEqual(path, `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`)
+    assertEqual(cardArtPath(faceOf(def, true)), path, `${def.id} upgrade reuses its illustration`)
+  }
+})
 
 /** Slugs the sync script actually produced, so we only demand art it can fetch. */
 const indexedKeys = new Set(
@@ -252,30 +232,11 @@ check('every icon the UI can render exists on disk', () => {
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
 })
 
-check('generated status and Power icon inventories are complete, transparent, and high-resolution', () => {
-  const powerIds = Object.values(CARDS).filter((def) => def.type === 'power').map((def) => def.id).sort()
-  const expectedStatus = REQUIRED_STATUS_ICONS.map((name) => `${name}.png`).sort()
-  const expectedPowers = powerIds.map((id) => `${id}.png`)
-  assertEqual(statusIconFiles.sort().join(','), expectedStatus.join(','), 'status icon inventory')
-  assertEqual(powerIconFiles.sort().join(','), expectedPowers.join(','), 'one distinct icon per Power')
-  const powerHashes = powerIconFiles.map((file) =>
-    createHash('sha256').update(readFileSync(join(powerIconRoot, file))).digest('hex'))
-  assertEqual(new Set(powerHashes).size, powerIconFiles.length, 'Power icons must not reuse artwork')
-  for (const [root, files] of [[statusIconRoot, statusIconFiles], [powerIconRoot, powerIconFiles]]) {
-    for (const file of files) {
-      const png = readFileSync(join(root, file))
-      assert(png.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
-      assertEqual(png.readUInt32BE(16), 256, `${file} width`)
-      assertEqual(png.readUInt32BE(20), 256, `${file} height`)
-      assertEqual(png[25], 6, `${file} must be RGBA, not an opaque RGB image`)
-      const bounds = pngAlphaBounds(png, file)
-      assertEqual(
-        [bounds.left, bounds.top, bounds.right, bounds.bottom].join(','),
-        '16,16,240,240',
-        `${file} visible artwork bounds`,
-      )
-    }
-  }
+// Publisher crops are an optional local sync. Keep its mapping honest without
+// making a clean clone depend on a portrait for every printed enemy variant.
+check('the optional enemy art table names only real enemies', () => {
+  const stray = Object.keys(ENEMY_ART).filter((defId) => !(defId in ENEMIES))
+  assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
 })
 
 check('the menu backgrounds and licensed UI font are bundled', () => {
@@ -287,60 +248,79 @@ check('the menu backgrounds and licensed UI font are bundled', () => {
   assert(license.includes('SIL OPEN FONT LICENSE Version 1.1'), 'Kreon OFL license is incomplete')
 })
 
-check('every committed battlefield asset exists, decodes, and cutouts stay transparent', () => {
-  const combatFiles = REQUIRED_COMBAT_ART.map((path) => join(publicRoot, 'assets/combat', path))
-  const backgroundFiles = REQUIRED_BACKGROUNDS.map((path) =>
-    join(publicRoot, 'assets/backgrounds', path))
-  const files = [...combatFiles, ...backgroundFiles]
-  const missing = files.filter((file) => !existsSync(file))
-  assert(missing.length === 0, `missing battlefield art: ${missing.join(', ')}`)
-  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
-  assert(result.status === 0, result.stderr || 'could not decode committed battlefield art')
-  const inspected = result.stdout.split(/^File: /m).slice(1)
-  assertEqual(inspected.length, files.length, 'webpinfo should inspect every battlefield asset')
-  const opaque = inspected.slice(1, combatFiles.length)
-    .filter((block) => !/\n  Alpha: 1\n/.test(block))
-    .map((block) => block.slice(0, block.indexOf('\n')))
-  assert(opaque.length === 0, `combat cutouts lost transparency: ${opaque.join(', ')}`)
-})
-
-// The table in sync-enemy-art.mjs drifted from ENEMIES once already, which is
-// how the Blue Slaver shipped as a black box: the sync ran clean because it
-// never knew the enemy existed. This runs even on a clone with no artwork.
-check('the enemy art table covers every enemy', () => {
-  const missing = Object.keys(ENEMIES).filter((defId) => !(defId in ENEMY_ART))
-  assert(missing.length === 0, `not in sync-enemy-art.mjs's ENEMY_ART: ${missing.join(', ')}`)
-  const stray = Object.keys(ENEMY_ART).filter((defId) => !(defId in ENEMIES))
-  assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
-})
-
-check('the complete bundled enemy portrait inventory exists and decodes', () => {
-  const tracked = spawnSync('git', ['ls-files', 'public/assets/enemies/*.webp'], {
+check('tracked legacy portraits exactly cover enemies without combat cutouts', () => {
+  const expected = [...new Set(Object.values(ENEMIES)
+    .filter((def) => !enemyUsesCombatArt(def))
+    .map((def) => `${def.artId ?? def.id}.webp`))].sort()
+  const tracked = spawnSync('git', ['ls-files', 'public/assets/enemies'], {
     cwd: repoRoot,
     encoding: 'utf8',
-  })
-  assert(tracked.status === 0, tracked.stderr || 'could not read the bundled enemy inventory')
-  const expected = tracked.stdout.trim().split('\n').filter(Boolean)
-    .map((file) => file.split('/').pop()).sort()
-  assertEqual(expected.length, 90, 'bundled enemy portrait inventory')
-  const missing = expected.filter((file) => !enemyFiles.includes(file))
-  assert(missing.length === 0, `missing bundled enemy portraits: ${missing.join(', ')}`)
-  const result = spawnSync('webpinfo', ['-summary', ...expected.map((file) => join(enemyRoot, file))], {
-    encoding: 'utf8',
-  })
-  assert(result.status === 0, result.stderr || 'could not decode bundled enemy portraits')
+  }).stdout.trim().split('\n').filter(Boolean).map((file) => file.split('/').pop()).sort()
+  assertDeepEqual(tracked, expected, 'tracked legacy portrait inventory')
 })
 
-// EnemyCard renders enemyImagePath(def). A missing file is served by
-// Vite's SPA fallback as 200 + HTML, so it renders as a black box rather than
-// a broken image — nothing in the running app complains about it.
-check('every enemy the game can spawn has a portrait', () => {
-  const missing = Object.values(ENEMIES).filter((def) =>
-    !existsSync(join(publicRoot, enemyImagePath(def).replace(/^\//, '')))).map((def) => def.id)
-  assert(
-    missing.length === 0,
-    `enemies with no portrait: ${missing.join(', ')}`,
-  )
+check('bundled combat cutouts map to an enemy definition', () => {
+  const used = new Set(Object.values(ENEMIES).map((def) => def.artId ?? def.id))
+  const strays = combatEnemyFiles.filter((file) => !used.has(file.slice(0, -5)))
+  assert(strays.length === 0, `combat cutouts with no enemy definition: ${strays.join(', ')}`)
+})
+
+check('every live enemy runtime image path exists', () => {
+  const missing = Object.values(ENEMIES).filter((def) => {
+    const relative = enemyImagePath(def).replace(/^\/assets\//, '')
+    return !existsSync(join(publicRoot, 'assets', relative))
+  }).map((def) => `${def.id}: ${enemyImagePath(def)}`)
+  assert(missing.length === 0, `missing runtime enemy images:\n    ${missing.join('\n    ')}`)
+})
+
+check('bundled combat cutouts are high-resolution images with transparency', () => {
+  const expectedCharacters = ['defect.webp', 'ironclad.webp', 'silent.webp', 'watcher.webp']
+  assertDeepEqual(combatCharacterFiles.sort(), expectedCharacters, 'combat character cutout inventory')
+  const files = [
+    ...combatEnemyFiles.map((file) => join(combatEnemyRoot, file)),
+    ...combatCharacterFiles.map((file) => join(combatCharacterRoot, file)),
+  ]
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect combat cutouts')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'webpinfo should inspect every combat cutout')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    const alpha = /Alpha:\s+1/.test(block)
+    return width >= 700 && height >= 400 && alpha ? [] : [`${file} is ${width}x${height}, alpha ${alpha}`]
+  })
+  assert(faults.length === 0, `invalid combat cutouts:\n    ${faults.join('\n    ')}`)
+})
+
+check('bundled stage and generated icon inventories are complete and decodable', () => {
+  const expectedStatus = [
+    'aoe', 'attack', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb', 'poison',
+    'power', 'shiv', 'strength', 'vulnerable', 'weak',
+  ].map((name) => `${name}.png`)
+  const expectedPowers = [
+    'accuracy', 'after_image', 'apotheosis', 'barricade', 'capacitor', 'combust', 'consume',
+    'corruption', 'dark_embrace', 'defragment', 'demon_form', 'distraction', 'envenom', 'evolve',
+    'feel_no_pain', 'footwork', 'fusion', 'heatsinks', 'infinite_blades', 'inflame',
+    'machine_learning', 'mayhem', 'metallicize', 'noxious_fumes', 'panache', 'sadistic_nature',
+    'storm', 'the_bomb',
+  ].map((name) => `${name}.png`)
+  assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
+  assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')
+  const stage = join(combatStageRoot, 'stage-act-1.webp')
+  assert(existsSync(stage), 'missing Act I combat stage')
+  const stageInfo = spawnSync('webpinfo', ['-summary', stage], { encoding: 'utf8' })
+  assert(stageInfo.status === 0 && /Width: 1672[\s\S]*Height: 940/.test(stageInfo.stdout),
+    stageInfo.stderr || 'the Act I stage is missing, corrupt, or the wrong size')
+  for (const file of [...statusIconFiles.map((name) => join(statusIconRoot, name)),
+    ...powerIconFiles.map((name) => join(powerIconRoot, name))]) {
+    const bytes = readFileSync(file)
+    assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
+    assert(bytes.readUInt32BE(16) === 256 && bytes.readUInt32BE(20) === 256,
+      `${file} is not 256x256`)
+    assert(bytes[25] === 6, `${file} is not an RGBA PNG`)
+  }
 })
 
 // Bytes are not pixels. Every broken conversion this pipeline can produce —
@@ -406,10 +386,28 @@ check('synced artwork is never truncated', () => {
   }
 })
 
+check('every artwork file fully decodes', () => {
+  for (const [dir, extension, count] of [
+    [cardRoot, 'webp', cardFiles.length],
+    [enemyRoot, 'webp', enemyFiles.length],
+    [combatEnemyRoot, 'webp', combatEnemyFiles.length],
+    [combatCharacterRoot, 'webp', combatCharacterFiles.length],
+    [combatStageRoot, 'webp', existsSync(join(combatStageRoot, 'stage-act-1.webp')) ? 1 : 0],
+    [iconRoot, 'png', iconFiles.length],
+    [statusIconRoot, 'png', statusIconFiles.length],
+    [powerIconRoot, 'png', powerIconFiles.length],
+  ]) {
+    if (count === 0) continue
+    const result = spawnSync('ffmpeg', [
+      '-v', 'error', '-pattern_type', 'glob', '-i', join(dir, `*.${extension}`), '-f', 'null', '-',
+    ], { encoding: 'utf8' })
+    assert(result.status === 0, result.stderr || `could not decode ${dir}/*.${extension}`)
+  }
+})
+
 const groups = [
   ['cards', cardFiles.length],
   ['icons', iconFiles.length],
-  ['enemy portraits', enemyFiles.length],
 ]
 for (const [name, count] of groups) {
   if (count === 0) console.log(`· ${name} not synced — run \`pnpm sync:assets\``)
