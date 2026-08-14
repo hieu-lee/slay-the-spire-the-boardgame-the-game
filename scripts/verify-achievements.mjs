@@ -1,7 +1,5 @@
 import {
   ACHIEVEMENTS,
-  normalizeAchievementIds,
-  setAchievementCompleted,
 } from '../src/game/achievements.ts'
 import { suite, check, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
@@ -26,27 +24,10 @@ check('the catalog exactly matches all 19 official v2.30 achievements', () => {
     { id: 'sapphire', name: 'Sapphire', text: 'Beat Act III with the Defect.' },
     { id: 'amethyst', name: 'Amethyst', text: 'Beat Act III with the Watcher.' },
     { id: 'my_lucky_day', name: 'My Lucky Day', text: 'Beat Act III with a Daily Climb.' },
-    { id: 'infinity', name: 'Infinity', text: 'Create an infinite card combo.', manual: true },
+    { id: 'infinity', name: 'Infinity', text: 'Create an infinite card combo.' },
     { id: 'who_needs_relics', name: 'Who Needs Relics?', text: 'Beat Act III with no relics or Boss relics (you can skip items).' },
   ])
   assertEqual(new Set(ACHIEVEMENTS.map(({ id }) => id)).size, 19)
-})
-
-check('persisted completion normalizes unknown, duplicate, and unordered values', () => {
-  assertDeepEqual(normalizeAchievementIds(null), [])
-  assertDeepEqual(normalizeAchievementIds({}), [])
-  assertDeepEqual(normalizeAchievementIds(['ruby', 'bogus', 'jaxxed', 'ruby', 7]), ['jaxxed', 'ruby'])
-})
-
-check('manual completion writes are immutable and idempotent', () => {
-  const saved = ['ruby']
-  const completed = setAchievementCompleted(saved, 'infinity', true)
-  assertDeepEqual(saved, ['ruby'])
-  assertDeepEqual(completed, ['ruby', 'infinity'])
-  assertDeepEqual(setAchievementCompleted(completed, 'infinity', true), completed)
-  const cleared = setAchievementCompleted(completed, 'infinity', false)
-  assertDeepEqual(cleared, ['ruby'])
-  assertDeepEqual(setAchievementCompleted(cleared, 'infinity', false), cleared)
 })
 
 report('achievements')

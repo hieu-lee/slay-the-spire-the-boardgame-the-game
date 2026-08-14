@@ -599,7 +599,6 @@ export function useRoomSession() {
       ? current.modifiers.includes(id) ? current.modifiers : [...current.modifiers, id]
       : current.modifiers.filter((candidate) => candidate !== id) }
   }), [enqueue])
-  const chooseAchievement = useCallback((id: string, completed: boolean) => enqueue('achievement', { id, completed }), [enqueue])
   const start = useCallback(() => enqueue('start', {}), [enqueue])
   const act = useCallback((action: object) => enqueue('action', { action }), [enqueue])
   const sendVoiceSignal = useCallback((to: string, signal: VoiceSignal['signal']) => {
@@ -639,7 +638,6 @@ export function useRoomSession() {
     chooseLastStandRule,
     chooseRunMeta,
     chooseRunModifier,
-    chooseAchievement,
     start,
     act,
     sendVoiceSignal,

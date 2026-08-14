@@ -11,7 +11,8 @@
 // Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign
 // presentation are composed from the separate noncombat implementation.
 // No scan-read cards are held back in `DEFERRED_CARDS`. Official optional run
-// modes, Quick Start/Catch Up data, and the achievement journal are live too.
+// modes and Quick Start/Catch Up data are live; achievements are a read-only
+// reference to the physical campaign sheet.
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 
@@ -205,7 +206,6 @@ export {
   isActIVUnlocked,
   isColorlessUnlocked,
   parseCampaignProgress,
-  setCampaignAchievement,
 } from './campaign.ts'
 export type { CampaignProgress, SpireKeys } from './campaign.ts'
 
@@ -219,8 +219,7 @@ export {
   rollDailyModifiers,
 } from './meta.ts'
 export type { DailyModifier, DailyModifierId, QuickSetupState, QuickStartAct, QuickStartStep, RunMetaOptions, RunMetaState, RunMode } from './meta.ts'
-export { ACHIEVEMENTS, normalizeAchievementIds, setAchievementCompleted } from './achievements.ts'
-export type { AchievementId } from './achievements.ts'
+export { ACHIEVEMENTS } from './achievements.ts'
 
 export { triggerMatches } from './triggers.ts'
 export type { Trigger, TriggerEvent } from './triggers.ts'

@@ -34,11 +34,12 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
+| Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 
 The sync scripts keep card scans, rulebook icons, source-resolution working files, and
-unused enemy variants out of version control. The 82 committed runtime portraits are
+unused enemy variants out of version control. The 80 committed runtime portraits are
 curated prebuilt crops; the enemy sync only regenerates eleven Act I reference crops
 that the game replaces with generated combat cutouts.
 
@@ -48,9 +49,9 @@ in the corresponding locally synced illustration window; the UI supplies its own
 title and rules text. Base and upgraded faces reuse the same illustration.
 
 `public/assets/combat/` contains the generated Act I combat stage and transparent actor
-cutouts for four characters and eleven Act I enemies. These are original AI-generated fan
+cutouts for four characters and twelve enemies. These are original AI-generated fan
 illustrations made with OpenAI Imagegen for this implementation. The character silhouettes
-were visually grounded in the locally synced board-game starter-card scans. No generated
+and Looter were visually grounded in the corresponding locally synced board-game art. No generated
 asset contains a card scan, logo, or readable text.
 
 `public/assets/status-icons/` contains fourteen committed generated combat-status symbols,

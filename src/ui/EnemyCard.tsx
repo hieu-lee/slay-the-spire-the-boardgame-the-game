@@ -8,6 +8,7 @@ import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand, strikeClass } from './board-signals.ts'
+import { revealDecodedImage } from './Card.tsx'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -320,7 +321,9 @@ export function EnemyCard({
 
       {enemy.corpseExplosion ? (
         <span className="enemy__attachment" title={`Corpse Explosion · ${enemy.corpseExplosion.damage} row damage on death`}>
-          <img src={cardImagePath(cardDef(enemy.corpseExplosion.card.defId), enemy.corpseExplosion.card.upgraded)} alt="" />
+          <img src={cardImagePath(cardDef(enemy.corpseExplosion.card.defId), enemy.corpseExplosion.card.upgraded)} alt=""
+            onLoad={(event) => revealDecodedImage(event.currentTarget)}
+            onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
           <span>Corpse Explosion · {enemy.corpseExplosion.damage}</span>
         </span>
       ) : null}

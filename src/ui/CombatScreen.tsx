@@ -77,6 +77,7 @@ type CombatScreenProps = {
   viewerId: string
   onChange?: (next: CombatState) => void
   onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
+  autoAdvance?: boolean
   drawCount?: number
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
@@ -516,6 +517,7 @@ export function CombatScreen({
   viewerId,
   onChange,
   onAction,
+  autoAdvance = true,
   drawCount,
   decidedPlayerIds,
   savedDiscardOrder,
@@ -536,6 +538,7 @@ export function CombatScreen({
   const [spendingShiv, setSpendingShiv] = useState(false)
   const [pendingPotion, setPendingPotion] = useState<string | null>(null)
   const [pendingPowerUid, setPendingPowerUid] = useState<string | null>(null)
+  const [autoAdvanceRetry, setAutoAdvanceRetry] = useState(0)
   const [potionShivEnemyUids, setPotionShivEnemyUids] = useState<string[]>([])
   const [potionOverflowRequired, setPotionOverflowRequired] = useState(0)
   const [potionCardUids, setPotionCardUids] = useState<string[]>([])
@@ -1018,7 +1021,6 @@ export function CombatScreen({
   const bosses = state.enemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = state.enemies.filter((enemy) => !enemy.isBoss)
   const stageGap = state.players.length >= 3 ? 8 : 10
-  const mobileStageGap = 8
   const stageLayoutKey = state.enemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
 
   // With a full party the board can outgrow the viewport. Rather than shrink
@@ -1077,14 +1079,12 @@ export function CombatScreen({
     }
     const releasePointer = () => requestAnimationFrame(() => { manualBoardScroll.current = false })
     board.addEventListener('wheel', armScroll, { passive: true })
-    board.addEventListener('touchmove', armScroll, { passive: true })
     board.addEventListener('pointerdown', armScrollbar)
     board.addEventListener('pointerup', releasePointer)
     board.addEventListener('keydown', armKeyboardScroll)
     board.addEventListener('scroll', inspectElsewhere, { passive: true })
     return () => {
       board.removeEventListener('wheel', armScroll)
-      board.removeEventListener('touchmove', armScroll)
       board.removeEventListener('pointerdown', armScrollbar)
       board.removeEventListener('pointerup', releasePointer)
       board.removeEventListener('keydown', armKeyboardScroll)
@@ -1092,10 +1092,8 @@ export function CombatScreen({
     }
   }, [viewerId])
 
-  // And again whenever the viewport changes shape. The scroll position is
-  // measured in pixels against the old layout, so rotating a phone or resizing
-  // a window left the player's own row — and the enemy they are fighting —
-  // scrolled off the board.
+  // And again whenever the desktop window changes shape. The scroll position
+  // is measured in pixels against the old layout.
   useEffect(() => {
     const reveal = () => {
       followViewerRow.current = true
@@ -1329,13 +1327,33 @@ export function CombatScreen({
     else onChange?.(resolveStartPlayerTurn(state, choices))
   }
 
-  function beginNextTurn() {
-    if (onAction) {
-      onAction({ kind: 'startTurn' })
-      return
-    }
-    onChange?.(startPlayerTurnWithChoices(state))
-  }
+  useEffect(() => {
+    if (!autoAdvance || state.phase !== 'enemy' && state.phase !== 'roundEnd') return undefined
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const shouldRetry = (outcome: ActionOutcome | void) => outcome && (
+        outcome.status === 'refused' || outcome.status === 'unknown' ||
+        outcome.status === 'reconciled' &&
+          outcome.snapshot?.run?.combat?.phase === state.phase &&
+          outcome.snapshot.run.combat.turn === state.turn
+      )
+      if (state.phase === 'enemy') {
+        if (onAction) {
+          const outcome = await onAction({ kind: 'resolveEnemies' })
+          if (!cancelled && shouldRetry(outcome)) {
+            setAutoAdvanceRetry((attempt) => attempt + 1)
+          }
+        }
+        else onChange?.(enemyTurn(state))
+      } else if (onAction) {
+        const outcome = await onAction({ kind: 'startTurn' })
+        if (!cancelled && shouldRetry(outcome)) {
+          setAutoAdvanceRetry((attempt) => attempt + 1)
+        }
+      } else onChange?.(startPlayerTurnWithChoices(state))
+    }, 450)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn])
 
   function moveEndTurnAbility(id: string, delta: -1 | 1) {
     const from = viewerEndTurnOrder.indexOf(id)
@@ -1932,6 +1950,10 @@ export function CombatScreen({
     }
 
     if (pending?.choiceCards) return
+
+    // Retargeting the hand replaces an unfinished target choice; it never
+    // commits the previously selected card.
+    if (pending && pending.card.uid !== card.uid) setPending(null)
 
     const def = faceOf(cardDef(card.defId), card.upgraded)
     if (cardNeedsChoicePreview(def, state, viewer!)) {
@@ -2544,27 +2566,6 @@ export function CombatScreen({
               </button>
             </>
           ) : null}
-          {state.phase === 'enemy' ? (
-            <button
-              type="button"
-              className="combat__end-turn"
-              onClick={() => onAction ? onAction({ kind: 'resolveEnemies' }) : onChange?.(enemyTurn(state))}
-            >
-              Resolve enemies
-            </button>
-          ) : null}
-          {/* The round has ended and the board is holding still so everyone can
-              read what the enemies did. This is the only way into the next
-              round; without it the combat simply stops after round one. */}
-          {state.phase === 'roundEnd' ? (
-            <button
-              type="button"
-              className="combat__end-turn"
-              onClick={beginNextTurn}
-            >
-              Start turn {state.turn + 1}
-            </button>
-          ) : null}
         </span>
       </header>
 
@@ -2666,26 +2667,6 @@ export function CombatScreen({
               Keep rows
             </button>
           ) : null}
-          {!pendingTrigger && !pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv &&
-            !pendingStartEvokeTarget && !pendingStartEvoke &&
-            (!pending?.choiceCards ||
-              (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust') &&
-              pending.choiceConfirmed) &&
-            !forcedCard ? <button
-            hidden={pending?.cardInHand === false}
-            type="button"
-            className="prompt__cancel"
-            onClick={() => {
-              setPending(null)
-              setPendingPowerUid(null)
-              setSpendingShiv(false)
-              setPendingPotion(null)
-              setPotionShivEnemyUids([])
-              setPotionOverflowRequired(0)
-            }}
-          >
-            Cancel
-          </button> : null}
         </div>
       ) : null}
 
@@ -2740,7 +2721,9 @@ export function CombatScreen({
       ) : null}
 
       {!forcedCard && !distilled && !relicScry && (state.phase === 'player' || state.phase === 'start') ? (
-        <section className="relic-actions" aria-label="Relic abilities">
+        <details className="relic-actions">
+          <summary>Relics</summary>
+          <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
@@ -2824,7 +2807,8 @@ export function CombatScreen({
               Use {def.name}{held.cubes !== undefined ? ` (${held.cubes})` : ''}
             </button>]
           })}
-        </section>
+          </section>
+        </details>
       ) : null}
 
       {relicScry ? (
@@ -2854,7 +2838,6 @@ export function CombatScreen({
               <div className="distilled-choice__cards">
                 {distilled.cards.map((card) => (
                   <Card key={card.uid} card={card} cost={0} playable
-                    actionLabel="Play"
                     onClick={() => onAction
                       ? void onAction({ kind: 'chooseDistilledCard', cardUid: card.uid })
                       : onChange?.(chooseDistilledCard(state, viewerId, card.uid))} />
@@ -2985,35 +2968,10 @@ export function CombatScreen({
         aria-label="Combat board"
         style={{
           '--stage-width': `${Math.max(48, (state.players.length + state.enemies.length) * stageGap + 4)}rem`,
-          '--stage-mobile-width': `${Math.max(22, (state.players.length + state.enemies.length) * mobileStageGap + 4)}rem`,
           '--stage-gap': `${stageGap}rem`,
-          '--stage-mobile-gap': `${mobileStageGap}rem`,
           '--stage-actor-width': `${state.players.length >= 3 ? 7.5 : 9}rem`,
         } as React.CSSProperties}
       >
-        <aside className="party-rail" aria-hidden="true">
-          {state.players.map((player) => (
-            <span className={player.id === viewerId ? 'party-rail__player party-rail__player--viewer' : 'party-rail__player'} key={player.id}>
-              <img src={`/assets/combat/characters/${player.character}.webp`} alt="" aria-hidden="true"
-                onError={(event) => { event.currentTarget.style.display = 'none' }} />
-              <span>
-                <strong>{player.name}</strong>
-                <small>{player.hp}/{player.maxHp}</small>
-                {player.id === viewerId ? (
-                  <TokenRow
-                    block={player.block}
-                    strength={player.strength}
-                    vulnerable={player.vulnerable}
-                    weak={player.weak}
-                    shivs={player.shivs}
-                    miracles={player.miracles}
-                    clawCubes={player.clawCubesGainedThisCombat}
-                  />
-                ) : null}
-              </span>
-            </span>
-          ))}
-        </aside>
         {bosses.length > 0 ? (
           <div className="board__bosses">
             {bosses.map((enemy, index) => (
@@ -3252,29 +3210,16 @@ export function CombatScreen({
         })}
       </div>
 
-      {/* The round-end pause exists so the table can read what just happened.
-          Without the combat log on screen the only trace of the Enemy Turn is
-          a hit-point number quietly changing. */}
       {state.log.length > 0 ? (
-        <ol className="combat__log" aria-label="Combat log" ref={logRef} tabIndex={0}>
-          {/* Newest first, reversed HERE rather than with `column-reverse`:
-              with the CSS trick the newest line is the last DOM child, so it
-              is the one the scroll box pushes out of view and `li:first-child`
-              highlights the oldest line instead.
-
-              The whole round, not a fixed tail. A four-player enemy turn runs
-              to fifteen lines, and a tail of ten dropped an entire "hit for 4"
-              without the box even overflowing to hint that anything was
-              missing. Scrolling is the only limiter. */}
-          {roundLog(state.log).map((line, i) => (
-            <li
-              key={`${state.log.length - i}-${line}`}
-              className={TURN_MARKER.test(line) ? 'combat__log-turn' : undefined}
-            >
-              {line}
-            </li>
-          ))}
-        </ol>
+        <details className="combat-log-drawer">
+          <summary>Battle log</summary>
+          <ol className="combat__log" aria-label="Combat log" ref={logRef} tabIndex={0}>
+            {roundLog(state.log).map((line, i) => (
+              <li key={`${state.log.length - i}-${line}`}
+                className={TURN_MARKER.test(line) ? 'combat__log-turn' : undefined}>{line}</li>
+            ))}
+          </ol>
+        </details>
       ) : null}
 
       <footer className="hand-area">
@@ -3316,13 +3261,14 @@ export function CombatScreen({
         {/* Fanned, the way a hand is actually held: each card tilted and
             lifted by its distance from the middle. The angle is set here
             because only the component knows how many cards there are. */}
-        <div className="hand-scroll"><div className="hand" data-count={viewer.hand.length}>
+        <div className="hand-scroll" onWheel={(event) => {
+          event.currentTarget.scrollLeft += event.deltaX || (event.shiftKey ? event.deltaY : 0)
+        }}><div className="hand" data-count={viewer.hand.length}>
           {viewer.hand.map((card, index) => (
             <Card
               key={card.uid}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
-              actionLabel="Play"
               cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer, card)}
               playable={
                 !usingCard &&
@@ -3348,7 +3294,6 @@ export function CombatScreen({
               onClick={onCardClick}
             />
           ))}
-          {viewer.hand.length === 0 ? <span className="muted">no cards in hand</span> : null}
         </div></div>
       </footer>
     </div>

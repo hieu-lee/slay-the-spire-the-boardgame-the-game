@@ -170,9 +170,7 @@ export function PowerRow({ powers }: PowerRowProps) {
           const showing = zoom?.uid === card.uid
           return (
             <li key={card.uid}>
-              {/* A button, not a bare tile: hover alone is unreachable on a
-                  touch screen and by keyboard, which left a player with four
-                  unidentifiable 34x22 blobs and no way to ask what they do. */}
+              {/* A button, not a bare tile, keeps every Power keyboard-accessible. */}
               <button
                 type="button"
                 className={['power', showing ? 'power--open' : ''].filter(Boolean).join(' ')}
@@ -225,7 +223,10 @@ export function PowerRow({ powers }: PowerRowProps) {
                 src={zoom.src}
                 alt=""
                 aria-hidden="true"
-                onLoad={() => setZoom((current) => current?.uid === zoom.uid ? { ...current, loaded: true } : current)}
+                onLoad={(event) => { void event.currentTarget.decode().then(
+                  () => setZoom((current) => current?.uid === zoom.uid ? { ...current, loaded: true } : current),
+                  () => setZoom((current) => current?.uid === zoom.uid ? { ...current, loaded: false } : current),
+                ) }}
                 style={{ visibility: zoom.loaded ? 'visible' : 'hidden' }}
               />
             </span>,

@@ -195,9 +195,6 @@ try {
   const selectedLastStand = await request(`/api/rooms/${code}/last-stand-rule`, {
     method: 'POST', token: a.token, body: { enabled: true },
   })
-  const invalidAchievement = await request(`/api/rooms/${code}/achievement`, {
-    method: 'POST', token: a.token, body: { id: 'forged-achievement', completed: true },
-  })
   const guestStart = await request(`/api/rooms/${code}/start`, {
     method: 'POST', token: joined[0].token, body: {},
   })
@@ -217,7 +214,6 @@ try {
     assertEqual(invalidLastStand.status, 409, 'a non-boolean Last Stand value crossed the authority boundary')
     assertEqual(selectedLastStand.status, 200)
     assertEqual(selectedLastStand.body.lastStand, true, 'the lobby did not publish The Last Stand')
-    assertEqual(invalidAchievement.status, 409, 'an invented achievement crossed the authority boundary')
     assertEqual(guestStart.status, 409, 'a connected guest started the run')
     assertEqual(started.status, 200)
     assertEqual(started.body.run.ascension, 0)

@@ -14,7 +14,6 @@ import {
   isActIVUnlocked,
   isColorlessUnlocked,
   parseCampaignProgress,
-  setCampaignAchievement,
   unlockedCharacterComponents,
 } from '../src/game/campaign.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
@@ -198,19 +197,9 @@ check('campaign persistence accepts only a complete bounded versioned shape', ()
   }
 })
 
-check('legacy campaign saves gain normalized achievement persistence', () => {
+check('legacy campaign saves discard obsolete achievement completion state', () => {
   const legacy = createCampaignProgress()
-  delete legacy.achievements
-  assertDeepEqual(parseCampaignProgress(legacy).achievements, [])
-  assertDeepEqual(parseCampaignProgress({ ...legacy, achievements: ['ruby', 'unknown', 'ruby', 'infinity'] }).achievements, ['ruby', 'infinity'])
-})
-
-check('the physical achievement checklist persists immutable idempotent updates', () => {
-  const start = createCampaignProgress()
-  const marked = setCampaignAchievement(start, 'ruby', true)
-  assertDeepEqual(marked.achievements, ['ruby'])
-  assertEqual(setCampaignAchievement(marked, 'ruby', true), marked, 'setting the same box twice should be idempotent')
-  assertDeepEqual(setCampaignAchievement(marked, 'ruby', false).achievements, [])
+  assertEqual('achievements' in parseCampaignProgress({ ...legacy, achievements: ['ruby'] }), false)
 })
 
 report('campaign')

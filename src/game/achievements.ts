@@ -17,27 +17,6 @@ export const ACHIEVEMENTS = [
   { id: 'sapphire', name: 'Sapphire', text: 'Beat Act III with the Defect.' },
   { id: 'amethyst', name: 'Amethyst', text: 'Beat Act III with the Watcher.' },
   { id: 'my_lucky_day', name: 'My Lucky Day', text: 'Beat Act III with a Daily Climb.' },
-  { id: 'infinity', name: 'Infinity', text: 'Create an infinite card combo.', manual: true },
+  { id: 'infinity', name: 'Infinity', text: 'Create an infinite card combo.' },
   { id: 'who_needs_relics', name: 'Who Needs Relics?', text: 'Beat Act III with no relics or Boss relics (you can skip items).' },
 ] as const
-
-export type AchievementId = (typeof ACHIEVEMENTS)[number]['id']
-
-const achievementIds: ReadonlySet<string> = new Set(ACHIEVEMENTS.map(({ id }) => id))
-const isAchievementId = (value: unknown): value is AchievementId =>
-  typeof value === 'string' && achievementIds.has(value)
-
-/** Normalize untrusted persisted data to a unique, deterministic set. */
-export function normalizeAchievementIds(value: unknown): AchievementId[] {
-  if (!Array.isArray(value)) return []
-  const saved = new Set(value.filter(isAchievementId))
-  return ACHIEVEMENTS.flatMap(({ id }) => saved.has(id) ? [id] : [])
-}
-
-/** Idempotently set a manually controlled achievement checkbox. */
-export function setAchievementCompleted(value: unknown, id: AchievementId, completed: boolean): AchievementId[] {
-  const saved = new Set(normalizeAchievementIds(value))
-  if (completed) saved.add(id)
-  else saved.delete(id)
-  return normalizeAchievementIds([...saved])
-}

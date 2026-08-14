@@ -3,8 +3,6 @@ import type { CombatState } from '../game/combat.ts'
 import {
   advanceAct,
   advanceQuickSetup,
-  ASCENSION_RULES,
-  beginCatchUp,
   canSkipEvent,
   chooseNeow,
   decideCourier,
@@ -52,7 +50,7 @@ import type { CharacterId } from '../game/types.ts'
 import { ROOM_LABEL } from '../game/run.ts'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { isActIVUnlocked } from '../game/campaign.ts'
-import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress, setCampaignAchievement } from '../game/campaign.ts'
+import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
@@ -133,8 +131,8 @@ export function App() {
 }
 
 function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => void; onOnline: () => void }) {
-  const [playerCount, setPlayerCount] = useState(2)
-  const [seedText, setSeedText] = useState('spire')
+  const [playerCount, setPlayerCount] = useState(1)
+  const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
   const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])
   const [chooseYourRelic, setChooseYourRelic] = useState(false)
@@ -142,8 +140,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   const [mode, setMode] = useState<RunMode>('standard')
   const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
-  const [catchUpCharacter, setCatchUpCharacter] = useState<CharacterId>('ironclad')
-  const [run, setRun] = useState<RunState>(() => newRun(2, 'spire'))
+  const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [achievements, setAchievements] = useState(false)
@@ -151,7 +148,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
 
   /** The settings the run in progress was actually built from. */
-  const [built, setBuilt] = useState({ count: 2, seed: 'spire', ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} as RunMetaOptions })
+  const [built, setBuilt] = useState({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} as RunMetaOptions })
 
   function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters, nextMeta: RunMetaOptions = metaOptions) {
     const nextCharacters = legalCharacters(selected)
@@ -168,28 +165,9 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
     setRun(newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta))
   }
 
-  /**
-   * Starts a new run, but never by accident.
-   *
-   * The seed field used to restart on BLUR, so any stray click out of it threw
-   * away the combat in progress — no change to the value required, no warning.
-   * Now it only acts on a real change, and asks first if a run is underway.
-   */
-  function restartIfWanted(count: number, seed: string, nextAscension: number, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters) {
-    const nextCharacters = legalCharacters(selected)
-    if (count === built.count && seed === built.seed && nextAscension === built.ascension && nextChooseYourRelic === built.chooseYourRelic && nextLastStand === built.lastStand &&
-      nextCharacters.every((character, seat) => character === built.characters[seat])) return
-    const underway = run.phase !== 'map' || run.map.position !== null
-    if (underway && !window.confirm('Start a new run? The one in progress will be lost.')) {
-      setPlayerCount(built.count)
-      setSeedText(built.seed)
-      setAscension(built.ascension)
-      setCharacters(built.characters)
-      setChooseYourRelic(built.chooseYourRelic)
-      setLastStand(built.lastStand)
-      return
-    }
-    restart(count, seed, nextAscension, nextChooseYourRelic, nextLastStand, nextCharacters)
+  function startFreshRun() {
+    if (!run.campaign.finalized && !window.confirm('Start a new run? The one in progress will be lost.')) return
+    restart(1, crypto.randomUUID(), ascension, false, false, characters, metaOptions)
   }
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
@@ -228,23 +206,6 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const allocatingCampaignMarks = run.campaign.finalized || run.campaignProgress.unspentMarks > 0
-  const catchUpCharacters = ROSTER.filter((candidate) => !run.players.some((player) => player.character === candidate.character))
-  const selectedCatchUp = catchUpCharacters.some((candidate) => candidate.character === catchUpCharacter)
-    ? catchUpCharacter
-    : catchUpCharacters[0]?.character
-
-  function addCatchUpPlayer() {
-    if (!selectedCatchUp) return
-    const id = Array.from({ length: 4 }, (_, index) => `p${index + 1}`).find((candidate) => !run.players.some((player) => player.id === candidate))
-    const hero = ROSTER.find((candidate) => candidate.character === selectedCatchUp)
-    if (!id || !hero) return
-    const nextCharacters = [...run.players.map((player) => player.character), selectedCatchUp]
-    setRun((current) => beginCatchUp(current, [{ id, name: hero.name, character: selectedCatchUp }]))
-    setPlayerCount(nextCharacters.length)
-    setCharacters(legalCharacters(nextCharacters))
-    setBuilt((current) => ({ ...current, count: nextCharacters.length, characters: legalCharacters(nextCharacters) }))
-  }
-
   function allocateCampaignMark(colorless: number, actIV: number) {
     setRun((current) => {
       const progress = allocateSharedMarks(current.campaignProgress, colorless, actIV)
@@ -255,23 +216,16 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
 
   if (!open) {
     if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
-    if (achievements) return <AchievementsScreen progress={run.campaignProgress}
-      onChange={(id, completed) => setRun((current) => ({ ...current, campaignProgress: setCampaignAchievement(current.campaignProgress, id, completed) }))}
-      onBack={() => setAchievements(false)} />
+    if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
-      playerCount={playerCount}
       characters={characters}
-      seed={seedText}
       ascension={ascension}
       maxAscension={run.campaignProgress.highestAscension}
-      chooseYourRelic={chooseYourRelic}
-      lastStand={lastStand}
       mode={mode}
       dailyModifiers={dailyModifiers}
       customModifierIds={customModifierIds}
       quickStartAct={quickStartAct}
       actIVUnlocked={isActIVUnlocked(run.campaignProgress)}
-      onPlayerCount={setPlayerCount}
       onCharacter={(seat, character) => setCharacters((current) => {
         const next = [...current]
         const previous = next[seat]
@@ -281,16 +235,16 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         next[seat] = character
         return next
       })}
-      onSeed={setSeedText}
       onAscension={setAscension}
-      onChooseYourRelic={setChooseYourRelic}
-      onLastStand={setLastStand}
       onMode={setMode}
       onCustomModifier={(id, enabled) => setCustomModifierIds((current) => enabled
         ? current.includes(id) ? current : [...current, id]
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
-      onStart={() => { restart(playerCount, seedText, ascension, chooseYourRelic, lastStand, characters, metaOptions); onOpen() }}
+      onStart={() => {
+        restart(1, seedText, ascension, false, false, characters, metaOptions)
+        onOpen()
+      }}
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
@@ -317,7 +271,9 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
             </>
           ) : null}
         </div>
-        <div className="setup">
+        <details className="game-settings">
+          <summary>Menu</summary>
+          <div className="setup">
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
             <ul>{run.meta.modifierIds.map((id) => {
@@ -325,39 +281,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
               return <li key={id}><strong>{modifier.name}</strong> — {modifier.rule}</li>
             })}</ul>
           </details> : null}
-          <label>
-            Players
-            <select
-              value={playerCount}
-              onChange={(event) => restartIfWanted(Number(event.target.value), seedText, ascension)}
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-          <details className="ascension-rules">
-            <summary>Ascension {ascension} modifiers</summary>
-            <ol>{ASCENSION_RULES.slice(1, ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
-          </details>
-          <label>
-            Seed
-            <input
-              value={seedText}
-              onChange={(event) => setSeedText(event.target.value)}
-              onBlur={() => restartIfWanted(playerCount, seedText, ascension)}
-            />
-          </label>
-          <label>
-            Ascension
-            <select value={ascension}
-              onChange={(event) => restartIfWanted(playerCount, seedText, Number(event.target.value))}>
-              {Array.from({ length: run.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}
-            </select>
-          </label>
-          <label>
+          {run.players.length > 1 ? <label>
             Seat
             <select value={viewerId} onChange={(event) => setViewerId(event.target.value)}>
               {run.players.map((player) => (
@@ -366,16 +290,13 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
                 </option>
               ))}
             </select>
-          </label>
-          {playerCount > 1 ? <>
-            <label>Choose Your Relic<input type="checkbox" checked={chooseYourRelic} onChange={(event) => restartIfWanted(playerCount, seedText, ascension, event.target.checked)} /></label>
-            <label>Last Stand<input type="checkbox" checked={lastStand} onChange={(event) => restartIfWanted(playerCount, seedText, ascension, chooseYourRelic, event.target.checked)} /></label>
-          </> : null}
-          <button type="button" onClick={() => restart(playerCount, seedText, ascension)}>
+          </label> : null}
+          <button type="button" onClick={startFreshRun}>
             New run
           </button>
           <button type="button" onClick={onOnline}>Play online</button>
-        </div>
+          </div>
+        </details>
       </header>
 
       {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
@@ -436,16 +357,6 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
               onClick={() => setRun((current) => enterRoom(current, room.id, viewerId))}>
               Ignore paths to {visibleMap(run).rooms[room.id]?.hidden ? 'unknown room' : room.kind}
             </button>)}
-          </section> : null}
-          {!pendingAcquisition && run.act >= 2 && run.map.position === null && catchUpCharacters.length > 0 ? <section className="room-screen catch-up-panel">
-            <h2>Catch Up</h2>
-            <p className="muted">Add a new player at this Act boundary. They resolve Neow and the official Quick Start column.</p>
-            <label>New character
-              <select value={selectedCatchUp} onChange={(event) => setCatchUpCharacter(event.target.value as CharacterId)}>
-                {catchUpCharacters.map((candidate) => <option key={candidate.character} value={candidate.character}>{candidate.name}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={addCatchUpPlayer}>Add player</button>
           </section> : null}
         </>
       ) : null}
@@ -542,13 +453,12 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => restart(playerCount, seedText, Math.min(ascension, run.campaignProgress.highestAscension))}>Begin next run →</button> : null}</div></section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => restart(playerCount, crypto.randomUUID(), Math.min(ascension, run.campaignProgress.highestAscension))}>Begin next run →</button> : null}</div></section> : null}
 
-      <aside className="log" aria-label="Run log">
-        {run.log.slice(-6).map((line, i) => (
-          <p key={`${i}-${line}`}>{line}</p>
-        ))}
-      </aside>
+      {run.phase !== 'combat' ? <details className="log">
+        <summary>Run log</summary>
+        {run.log.slice(-6).map((line, i) => <p key={`${i}-${line}`}>{line}</p>)}
+      </details> : null}
     </main>
   )
 }

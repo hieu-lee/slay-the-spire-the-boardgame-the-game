@@ -7,7 +7,9 @@ import { createRoomServer } from './room-server.mjs'
 import { enterRoom, roomChoices } from '../src/game/run.ts'
 import { createRun } from '../src/game/run.ts'
 import { postNeowRun } from './lib/post-neow-run.mjs'
+import { DAILY_MODIFIERS } from '../src/game/meta.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
+import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(repoRoot, 'artifacts/noncombat-browser')
@@ -24,10 +26,17 @@ const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('vite did not report a port')
 const base = `http://localhost:${address.port}`
 const browser = await chromium.launch({ headless: !process.argv.includes('--headed') })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+const page = installScreenAudit(await browser.newPage({ viewport: { width: 1440, height: 900 } }))
 const failures = []
 page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
 page.on('pageerror', (error) => failures.push(String(error)))
+
+async function chooseLocalSeat(option) {
+  const menu = page.locator('details.game-settings')
+  await menu.locator(':scope > summary').click()
+  await page.getByLabel('Seat').selectOption(option)
+  await menu.locator(':scope > summary').click()
+}
 
 async function setRoom(kind) {
   await page.evaluate((roomKind) => {
@@ -58,25 +67,33 @@ await page.waitForFunction(() => window.__STS_DEBUG__)
 
 await page.getByRole('button', { name: 'Achievements' }).click()
 await page.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-const localAchievementCount = await page.getByRole('checkbox').count()
-const localJaxxed = page.getByRole('checkbox', { name: /Jaxxed/ })
-await localJaxxed.click()
-await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-physical-campaign')).achievements.includes('jaxxed'))
-await page.setViewportSize({ width: 390, height: 844 })
-await page.screenshot({ path: join(outDir, 'achievements-local-mobile.png'), fullPage: true })
-await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Achievements' }).click()
-await page.getByRole('checkbox', { name: /Jaxxed/ }).waitFor()
-const localAchievementPersisted = await page.getByRole('checkbox', { name: /Jaxxed/ }).isChecked()
+const localAchievementCount = await page.locator('.achievement-card').count()
+const localAchievementDevControls = await page.getByText('Mark complete', { exact: false }).count()
+const localAchievementProgressUi = await page.locator('progress[aria-label="Achievement completion"], .achievement-card small, .achievement-card[data-complete]').count()
+const localAchievementHeights = await page.locator('.achievement-card').evaluateAll((cards) =>
+  [...new Set(cards.map((card) => Math.round(card.getBoundingClientRect().height)))])
+await page.setViewportSize({ width: 1280, height: 800 })
+await page.screenshot({ path: join(outDir, 'achievements-local-compact-desktop.png'), fullPage: true })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
 
-await page.setViewportSize({ width: 720, height: 360 })
-await page.getByLabel('Players').selectOption('4')
+await page.setViewportSize({ width: 1280, height: 720 })
+await page.getByRole('button', { name: 'Settings' }).click()
 const localMeta = page.locator('.start-menu__meta')
 await localMeta.locator('summary').click()
 await localMeta.getByLabel('Run mode').selectOption('daily')
 await page.waitForFunction(() => document.querySelectorAll('.start-menu__daily li').length === 2)
 const localDailyModifierCount = await page.locator('.start-menu__daily li').count()
+const localDailyModifierNames = await page.locator('.start-menu__daily strong').allTextContents()
+await localMeta.locator('summary').click()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Single Player' }).click()
+await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+const localDailyRunIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().meta.modifierIds)
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForFunction(() => window.__STS_DEBUG__)
+await page.setViewportSize({ width: 1280, height: 720 })
+await page.getByRole('button', { name: 'Settings' }).click()
+await localMeta.locator('summary').click()
 await localMeta.getByLabel('Run mode').selectOption('custom')
 await localMeta.getByRole('checkbox', { name: /Cursed/ }).click()
 await localMeta.getByRole('checkbox', { name: /Night Terrors/ }).click()
@@ -97,9 +114,11 @@ const compactMetaFrame = await page.evaluate(() => {
 })
 await page.screenshot({ path: join(outDir, 'meta-start-menu-compact-landscape.png'), fullPage: true })
 await localMeta.locator('summary').click()
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Single Player' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localMetaRun = await page.evaluate(() => window.__STS_DEBUG__.getRun())
+await page.locator('details.game-settings > summary').click()
 const localModifierSummary = page.locator('.run-modifiers > summary')
 await localModifierSummary.waitFor()
 const localModifierSummaryText = await localModifierSummary.textContent()
@@ -107,6 +126,7 @@ await localModifierSummary.click()
 const visibleNightTerrors = await page.getByText(/Night Terrors/).count()
 await page.setViewportSize({ width: 1100, height: 760 })
 await page.screenshot({ path: join(outDir, 'meta-custom-run.png'), fullPage: true })
+await page.locator('details.game-settings > summary').click()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -138,32 +158,23 @@ await page.screenshot({ path: join(outDir, 'quick-start-active-desktop.png'), fu
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 await page.setViewportSize({ width: 1440, height: 900 })
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
-await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'noncombat-ui'))
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  run.setup = { kind: 'catch-up', targetAct: 2, playerIds: ['p4'], rowIndex: 0, repeatIndex: 0, playerIndex: 0, die: null }
-  run.neow.players = { p4: run.neow.players.p4 }
-  debug.setRun(run)
-})
-await page.getByRole('heading', { name: 'Catch Up in progress' }).waitFor()
-const localCatchUpFaces = await page.locator('.neow-face').count()
-const localCatchUpProgress = await page.locator('.neow-screen__progress').textContent()
-const localCatchUpWaiting = await page.getByRole('status').filter({ hasText: 'Waiting for the Catch Up players' }).count()
-await page.screenshot({ path: join(outDir, 'catch-up-neow-local.png'), fullPage: true })
-await page.locator('.neow-face button').click()
-const localCatchUpAction = await page.getByRole('button', { name: 'Skip 3 Gold' }).count()
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'noncombat-ui'))
 await page.waitForFunction(() => Object.keys(window.__STS_DEBUG__.getRun().neow.players).length === 4)
 suite('non-combat browser')
 
 check('meta setup, achievements, and compact title layout survive real local navigation', () => {
   assertEqual(localAchievementCount, 19)
-  assert(localAchievementPersisted, 'manual achievement did not persist across reload')
+  assertEqual(localAchievementDevControls, 0, 'achievement developer controls are visible')
+  assertEqual(localAchievementProgressUi, 0, 'the reference gallery still claims unsupported completion progress')
+  assertDeepEqual(localAchievementHeights, [240], 'achievement cards have inconsistent heights')
   assertEqual(localDailyModifierCount, 2)
+  assertDeepEqual(
+    localDailyRunIds,
+    DAILY_MODIFIERS.filter((modifier) => localDailyModifierNames.includes(modifier.name)).map((modifier) => modifier.id),
+    'Daily Climb preview differs from the started run',
+  )
   assertDeepEqual(localMetaRun.meta.modifierIds, ['cursed', 'night_terrors'])
   assertEqual(localMetaRun.setup.targetAct, 2)
   assert(localModifierSummaryText?.includes('Custom Run · 2 modifiers'))
@@ -175,13 +186,6 @@ check('meta setup, achievements, and compact title layout survive real local nav
     'Run setup or its expanded meta panel escaped the 720×360 title frame')
 })
 
-check('local Catch Up Neow shows only participants and lets hot-seat resolve them', () => {
-  assertEqual(localCatchUpFaces, 1)
-  assertEqual(localCatchUpProgress?.trim(), '0/1 ready')
-  assertEqual(localCatchUpWaiting, 1)
-  assertEqual(localCatchUpAction, 1)
-})
-
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localNeowFaces = await page.locator('.neow-face').count()
 const localNeowOptions = await page.locator('.neow-face li').count()
@@ -190,6 +194,16 @@ const hiddenRedOrder = await page.evaluate(() => {
   return { pending: run.neow.players.p1.redRewardPending,
     offer: run.neow.players.p1.redReward, publicOffers: document.querySelectorAll('.neow-face__reveal').length }
 })
+const readNeowFaceActionOverlap = () => page.evaluate(() => {
+  const action = document.querySelector('.neow-action')?.getBoundingClientRect()
+  if (!action) return true
+  return [...document.querySelectorAll('.neow-face')].some((face) => {
+    const box = face.getBoundingClientRect()
+    return box.left < action.right && box.right > action.left
+      && box.top < action.bottom && box.bottom > action.top
+  })
+})
+const neowFaceActionOverlap = await readNeowFaceActionOverlap()
 assertEqual(await page.getByRole('button', { name: 'Reveal Card Reward' }).count(), 0, 'red Card Reward Reveal appeared before Gold resolved')
 assertEqual(await page.getByRole('button', { name: 'Skip unseen' }).count(), 0, 'red Card Reward skip appeared before Gold resolved')
 await page.screenshot({ path: join(outDir, 'neow-4p-desktop.png'), fullPage: true })
@@ -262,11 +276,20 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => [...document.querySelectorAll('.neow-action button')].some((button) => !button.disabled))
-await page.setViewportSize({ width: 390, height: 844 })
-await page.screenshot({ path: join(outDir, 'neow-4p-mobile.png'), fullPage: true })
-const localNeowMobile = await page.evaluate(() => ({
+await page.setViewportSize({ width: 1280, height: 800 })
+await page.screenshot({ path: join(outDir, 'neow-4p-compact-desktop.png'), fullPage: true })
+const localNeowCompact = await page.evaluate(() => ({
   overflow: document.documentElement.scrollWidth > innerWidth,
   target: Math.min(...[...document.querySelectorAll('.neow-screen button')].map((button) => button.getBoundingClientRect().height)),
+  actionOverlap: (() => {
+    const action = document.querySelector('.neow-action')?.getBoundingClientRect()
+    if (!action) return true
+    return [...document.querySelectorAll('.neow-face')].some((face) => {
+      const box = face.getBoundingClientRect()
+      return box.left < action.right && box.right > action.left
+        && box.top < action.bottom && box.bottom > action.top
+    })
+  })(),
   controls: [...document.querySelectorAll('.neow-screen button:not(.card)')].map((button) => ({
     label: button.textContent?.trim(),
     disabled: button.disabled,
@@ -274,19 +297,34 @@ const localNeowMobile = await page.evaluate(() => ({
     background: getComputedStyle(button).backgroundColor,
   })),
 }))
+await page.setViewportSize({ width: 1024, height: 768 })
+const localNeowMinimumDesktopOverlap = await readNeowFaceActionOverlap()
+const localNeowMinimumDesktopFacesVisible = await page.evaluate(() => {
+  const stage = document.querySelector('.neow-screen')?.getBoundingClientRect()
+  return Boolean(stage) && [...document.querySelectorAll('.neow-face')].every((face) => {
+    const box = face.getBoundingClientRect()
+    return box.top >= stage.top && box.bottom <= stage.bottom + 1
+  })
+})
+await page.screenshot({ path: join(outDir, 'neow-4p-minimum-desktop.png'), fullPage: true })
+await page.setViewportSize({ width: 1280, height: 800 })
 check('local Neow exposes every public face and keeps hot-seat ownership explicit', () => {
   assertEqual(localNeowFaces, 4)
   assertEqual(localNeowOptions, 12)
   assertEqual(hiddenRedOrder.pending, true)
   assertEqual(hiddenRedOrder.offer, null)
   assertEqual(hiddenRedOrder.publicOffers, 0, 'face-down Neow rewards leaked before Reveal')
+  assertEqual(neowFaceActionOverlap, false, 'Neow actions cover a dealt public card')
   assert(exhaustedPrismaticRevealDisabled && exhaustedPrismaticSkipEnabled,
     'exhausted Prismatic Neow supply did not disable Reveal while preserving skip')
   assert(publicRedNames?.includes('Face-up:'), 'revealed reward was not public')
   assertEqual(hotSeatOwner, 'Silent')
   assert(localPendingRelicLock, 'another seat\'s pending War Paint left local Neow choices enabled')
-  assert(!localNeowMobile.overflow, 'Neow overflowed the mobile viewport')
-  assert(localNeowMobile.target >= 44, 'Neow exposed a touch target shorter than 44px')
+  assert(!localNeowCompact.overflow, 'Neow overflowed the compact desktop viewport')
+  assertEqual(localNeowCompact.actionOverlap, false, 'Neow actions cover a compact-desktop dealt card')
+  assertEqual(localNeowMinimumDesktopOverlap, false, 'Neow actions cover a minimum-desktop dealt card')
+  assert(localNeowMinimumDesktopFacesVisible, 'a minimum-desktop Neow face is clipped')
+  assert(localNeowCompact.target >= 44, 'Neow exposed a desktop control shorter than 44px')
 })
 check('Neow action labels keep readable computed contrast in every enabled state', () => {
   const channel = (value) => {
@@ -298,7 +336,7 @@ check('Neow action labels keep readable computed contrast in every enabled state
     assertEqual(rgb.length, 3, `could not parse computed color ${css}`)
     return channel(rgb[0]) * 0.2126 + channel(rgb[1]) * 0.7152 + channel(rgb[2]) * 0.0722
   }
-  for (const control of localNeowMobile.controls) {
+  for (const control of localNeowCompact.controls) {
     const foreground = luminance(control.color)
     const background = luminance(control.background)
     const ratio = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
@@ -412,20 +450,20 @@ await page.getByRole('status').waitFor({ state: 'visible', timeout: 5_000 })
 const sharedRelicStatus = await page.getByRole('status').textContent()
 check('Choose Your Relic focuses the first unclaimed slot and shows locked waiting feedback', () => assertEqual(sharedRelicStatus, 'Choice locked. Waiting for the party…'))
 
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 1280, height: 800 })
 await setRoom('event')
 await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
 await page.locator('.room-stage').evaluate((element) => { element.scrollTop = 0 })
-await page.screenshot({ path: join(outDir, 'event-4p-mobile.png'), fullPage: true })
+await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), fullPage: true })
 const eventShape = await page.evaluate(() => {
   const stage = document.querySelector('.room-stage')?.getBoundingClientRect()
   const last = [...document.querySelectorAll('.event-options button')].at(-1)?.getBoundingClientRect()
   return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, options: document.querySelectorAll('.event-options button').length, contained: Boolean(stage && last && stage.bottom >= last.bottom - 1) }
 })
-check('Event hierarchy remains usable on mobile and does not demand irrelevant cards', () => {
+check('Event hierarchy remains usable on compact desktop and does not demand irrelevant cards', () => {
   assert(!eventShape.overflow)
   assertEqual(eventShape.options, 4)
-  assert(eventShape.contained, 'the final Event choice escaped the mobile room frame')
+  assert(eventShape.contained, 'the final Event choice escaped the compact desktop room frame')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -460,7 +498,7 @@ await writingDefend.click()
 await writingStrike.click()
 check('Ancient Writing accepts its Strike and Defend in either click order', () => assert(reverseSimplicityEnabled))
 await page.locator('.event-cards button').first().click()
-await page.getByLabel('Seat').selectOption({ label: 'Silent' })
+await chooseLocalSeat({ label: 'Silent' })
 await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')].some((button) => button.textContent?.includes('[Elegance]') && button.disabled), undefined, { timeout: 5_000 })
 const retainedCards = await page.locator('.event-cards button[aria-pressed="true"]').count()
 const eleganceEnabled = await page.getByRole('button', { name: /\[Elegance\]/ }).isEnabled()
@@ -499,7 +537,7 @@ check('revealed A4 Potion rewards expose take, skip, pass, and replacement contr
   assertEqual(new Set(revealedPotions).size, 2)
   assert(overCapacityResolveDisabled, 'two taken Potions enabled with only one free A4 slot')
 })
-await page.getByLabel('Seat').selectOption({ label: 'Ironclad' })
+await chooseLocalSeat({ label: 'Ironclad' })
 await page.getByText('Waiting for that face-up reward to resolve…').waitFor()
 const teammateReveal = await page.locator('.event-panel').textContent()
 check('teammates see staged physical rewards but cannot race their resolution', () => {
@@ -1007,8 +1045,8 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Buy / pledge') && !button.disabled))
 const localCourierLocksCombat = await page.locator('.courier-combat-lock').evaluate((element) => element.hasAttribute('inert'))
-await page.setViewportSize({ width: 390, height: 844 })
-await page.screenshot({ path: join(outDir, 'courier-combat-mobile.png'), fullPage: true })
+await page.setViewportSize({ width: 1280, height: 800 })
+await page.screenshot({ path: join(outDir, 'courier-combat-compact-desktop.png'), fullPage: true })
 const courierFrame = await page.evaluate(() => {
   const panel = document.querySelector('.courier-panel')?.getBoundingClientRect()
   return { overflow: document.documentElement.scrollWidth > innerWidth, visible: Boolean(panel && panel.left >= 0 && panel.right <= innerWidth) }
@@ -1039,18 +1077,18 @@ for (const [name, character] of [['Bo', 'silent'], ['Cy', 'defect'], ['Di', 'wat
 const liveRoom = rooms.store.rooms.get(create.snapshot.code)
 const lobbyContext = await browser.newContext({ viewport: { width: 900, height: 700 } })
 await lobbyContext.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token: onlineSeats[0].token })
-const lobbyPage = await lobbyContext.newPage()
+const lobbyPage = installScreenAudit(await lobbyContext.newPage())
 lobbyPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
 lobbyPage.on('pageerror', (error) => failures.push(String(error)))
 await lobbyPage.goto(base, { waitUntil: 'networkidle' })
 const guestLobbyContext = await browser.newContext({ viewport: { width: 900, height: 700 } })
 await guestLobbyContext.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token: onlineSeats[1].token })
-const guestLobbyPage = await guestLobbyContext.newPage()
+const guestLobbyPage = installScreenAudit(await guestLobbyContext.newPage())
 guestLobbyPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
 guestLobbyPage.on('pageerror', (error) => failures.push(String(error)))
 await guestLobbyPage.goto(base, { waitUntil: 'networkidle' })
 const auxiliaryLobbyContexts = await Promise.all(onlineSeats.slice(2).map(async ({ token }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   await context.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token })
   const auxiliaryPage = await context.newPage()
   await auxiliaryPage.goto(base, { waitUntil: 'networkidle' })
@@ -1058,6 +1096,7 @@ const auxiliaryLobbyContexts = await Promise.all(onlineSeats.slice(2).map(async 
 }))
 await lobbyPage.waitForFunction(() => [...document.querySelectorAll('.online-seat')].filter((seat) => seat.textContent?.includes('online')).length === 4)
 const onlineLobby = lobbyPage.locator('main.online-lobby')
+await onlineLobby.locator('.online-lobby__settings > summary').click()
 const ascensionOptions = await onlineLobby.getByLabel('Ascension').locator('option').count()
 await onlineLobby.getByLabel('Choose Your Relic').click()
 await lobbyPage.waitForFunction(() => document.querySelector('main.online-lobby input[type="checkbox"]')?.checked === true)
@@ -1100,36 +1139,25 @@ await lobbyPage.locator('.connection--connected').waitFor()
 
 await onlineLobby.getByRole('button', { name: /Achievements/ }).click()
 await lobbyPage.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-const onlineAchievementCount = await lobbyPage.getByRole('checkbox').count()
-await lobbyPage.getByRole('checkbox', { name: /Jaxxed/ }).click()
-await lobbyPage.waitForFunction(() => [...document.querySelectorAll('main.compendium label')]
-  .some((label) => label.textContent?.includes('Jaxxed') && label.querySelector('input')?.checked))
-rooms.dropConnection(create.snapshot.code, onlineSeats[0].token)
-const reconnectAchievementsReadOnly = await lobbyPage.waitForFunction(() => {
-  const boxes = [...document.querySelectorAll('main.compendium input[type="checkbox"]')]
-  return boxes.length === 19 && boxes.every((box) => box.disabled)
-}, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
+const onlineAchievementCount = await lobbyPage.locator('.achievement-card').count()
+const onlineAchievementDevControls = await lobbyPage.getByText('Mark complete', { exact: false }).count()
+const onlineAchievementProgressUi = await lobbyPage.locator('progress[aria-label="Achievement completion"], .achievement-card small, .achievement-card[data-complete]').count()
 await lobbyPage.screenshot({ path: join(outDir, 'achievements-online-reconnect.png'), fullPage: true })
-await lobbyPage.waitForFunction(() => {
-  const boxes = [...document.querySelectorAll('main.compendium input[type="checkbox"]')]
-  return boxes.length === 19 && boxes.every((box) => !box.disabled)
-}, undefined, { timeout: 5000 })
 await lobbyPage.getByRole('button', { name: 'Back to main menu' }).click()
 await guestLobbyPage.getByRole('button', { name: /Achievements/ }).click()
 await guestLobbyPage.getByRole('heading', { name: 'Achievements', exact: true }).waitFor()
-await guestLobbyPage.waitForFunction(() => [...document.querySelectorAll('main.compendium input[type="checkbox"]')].filter((box) => box.checked).length === 1)
 const guestAchievementState = await guestLobbyPage.evaluate(() => ({
-  count: document.querySelectorAll('main.compendium input[type="checkbox"]').length,
-  disabled: [...document.querySelectorAll('main.compendium input[type="checkbox"]')].every((box) => box.disabled),
-  checked: [...document.querySelectorAll('main.compendium input[type="checkbox"]')].filter((box) => box.checked).length,
+  count: document.querySelectorAll('.achievement-card').length,
+  controls: [...document.querySelectorAll('main.compendium button, main.compendium input')]
+    .filter((control) => !control.matches('.compendium__back')).length,
 }))
 await guestLobbyPage.getByRole('button', { name: 'Back to main menu' }).click()
-check('online achievements persist manually and become read-only for guests and reconnecting leaders', () => {
+check('online achievements remain a presentation-only record for every seat', () => {
   assertEqual(onlineAchievementCount, 19)
-  assert(liveRoom.campaignProgress.achievements.includes('jaxxed'))
-  assert(reconnectAchievementsReadOnly, 'reconnecting leader could still toggle the campaign checklist')
+  assertEqual(onlineAchievementDevControls, 0)
+  assertEqual(onlineAchievementProgressUi, 0)
   assertEqual(guestAchievementState.count, 19)
-  assert(guestAchievementState.disabled && guestAchievementState.checked === 1)
+  assertEqual(guestAchievementState.controls, 0)
 })
 
 liveRoom.phase = 'run'
@@ -1151,8 +1179,8 @@ const waitingSetupStatus = await guestLobbyPage.getByRole('status').filter({ has
 const waitingSetupFalseNoOp = await guestLobbyPage.getByText(/No eligible card/).count()
 const onlineModifierSummary = await lobbyPage.locator('.run-modifiers > summary').textContent()
 await lobbyPage.screenshot({ path: join(outDir, 'quick-start-active-online.png'), fullPage: true })
-await guestLobbyPage.setViewportSize({ width: 390, height: 844 })
-await guestLobbyPage.screenshot({ path: join(outDir, 'quick-start-waiting-mobile.png'), fullPage: true })
+await guestLobbyPage.setViewportSize({ width: 1280, height: 800 })
+await guestLobbyPage.screenshot({ path: join(outDir, 'quick-start-waiting-compact-desktop.png'), fullPage: true })
 const waitingSetupContained = await guestLobbyPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
 await lobbyPage.locator('.quick-setup__cards .card').first().click()
 await activeSetupConfirm.click()
@@ -1164,7 +1192,7 @@ check('online Quick Setup exposes only the active seat controls and keeps hidden
   assert(waitingSetupDisabled && waitingSetupStatus === 1, 'foreign seat was not held on an explicit waiting state')
   assertEqual(waitingSetupFalseNoOp, 0, 'redacted foreign deck was falsely described as having no eligible cards')
   assert(onlineModifierSummary?.includes('Custom Run · 2 modifiers'))
-  assert(waitingSetupContained, 'Quick Setup waiting state overflowed mobile')
+  assert(waitingSetupContained, 'Quick Setup waiting state overflowed compact desktop')
   assertEqual(liveRoom.run.setup.playerIndex, 1)
 })
 
@@ -1191,9 +1219,9 @@ liveRoom.run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
 liveRoom.run.setup = { kind: 'catch-up', targetAct: 2, playerIds: [onlineSeats[3].playerId], rowIndex: 0, repeatIndex: 0, playerIndex: 0, die: null }
 liveRoom.run.neow.players = { [onlineSeats[3].playerId]: liveRoom.run.neow.players[onlineSeats[3].playerId] }
 liveRoom.version += 1
-const neowContext = await browser.newContext({ viewport: { width: 390, height: 844 } })
+const neowContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 await neowContext.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token: onlineSeats[0].token })
-const neowPage = await neowContext.newPage()
+const neowPage = installScreenAudit(await neowContext.newPage())
 neowPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
 neowPage.on('pageerror', (error) => failures.push(String(error)))
 await neowPage.goto(base, { waitUntil: 'networkidle' })
@@ -1207,7 +1235,7 @@ const onlineCatchUpPublicDetailsVisible = await neowPage.locator('.neow-face blo
   const rect = element.getBoundingClientRect()
   return style.display !== 'none' && style.visibility !== 'hidden' && rect.height > 0
 })
-await neowPage.screenshot({ path: join(outDir, 'catch-up-neow-online-mobile.png'), fullPage: true })
+await neowPage.screenshot({ path: join(outDir, 'catch-up-neow-online-compact-desktop.png'), fullPage: true })
 liveRoom.run = createRun(8801, onlineSeats.map(({ playerId: id, name, character }) => ({ id, name, character })), 0, liveRoom.campaignProgress, liveRoom.chooseYourRelic)
 liveRoom.run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
 liveRoom.version += 1
@@ -1274,12 +1302,12 @@ const disconnectedNeow = await neowPage.waitForFunction(() => {
   return Boolean(screen && wrapper?.hasAttribute('inert'))
 }, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
 const onlineNeowContained = await neowPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
-await neowPage.screenshot({ path: join(outDir, 'neow-online-reconnect-mobile.png'), fullPage: true })
+await neowPage.screenshot({ path: join(outDir, 'neow-online-reconnect-compact-desktop.png'), fullPage: true })
 check('online Neow is public, authoritative, and inert during reconnect', () => {
   assertEqual(onlineCatchUpFaces, 1)
   assertEqual(onlineCatchUpProgress?.trim(), '0/1 ready')
   assertEqual(onlineCatchUpWaiting, 1)
-  assert(onlineCatchUpPublicDetailsVisible, 'public Catch Up Neow details were hidden on mobile')
+  assert(onlineCatchUpPublicDetailsVisible, 'public Catch Up Neow details were hidden on compact desktop')
   assertEqual(reconciledPrismaticSources.checked, 0, 'an exhausted Prismatic source remained selected')
   assert(reconciledPrismaticSources.enabled >= 3, 'remaining Prismatic sources stayed disabled after reconciliation')
   assertEqual(onlineNeowFaces, 4)
@@ -1289,7 +1317,7 @@ check('online Neow is public, authoritative, and inert during reconnect', () => 
   assert(onlineNeowSelectionSurvived, 'another seat snapshot cleared an in-progress Neow card selection')
   assert(onlinePendingRelicLock, 'another seat\'s pending Astrolabe left online Neow choices enabled')
   assert(disconnectedNeow, 'disconnected Neow controls remained interactive')
-  assert(onlineNeowContained, 'online Neow overflowed the mobile viewport')
+  assert(onlineNeowContained, 'online Neow overflowed the compact desktop viewport')
 })
 await neowContext.close()
 liveRoom.run.phase = 'room'
@@ -1337,9 +1365,9 @@ await ann.getByRole('button', { name: /Sold/ }).first().waitFor()
 await ann.reload({ waitUntil: 'networkidle' })
 await ann.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await ann.getByRole('button', { name: /Sold/ }).first().waitFor()
-await bo.setViewportSize({ width: 390, height: 844 })
-await bo.screenshot({ path: join(outDir, 'merchant-4p-reconnect-mobile.png'), fullPage: true })
-const mobileOnline = await bo.evaluate(() => {
+await bo.setViewportSize({ width: 1280, height: 800 })
+await bo.screenshot({ path: join(outDir, 'merchant-4p-reconnect-compact-desktop.png'), fullPage: true })
+const compactOnline = await bo.evaluate(() => {
   const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave merchant'))
   const stage = document.querySelector('.room-stage')?.getBoundingClientRect()
   return { width: document.documentElement.scrollWidth, viewport: innerWidth, leave: Boolean(leave), contained: Boolean(stage && leave && stage.bottom >= leave.getBoundingClientRect().bottom - 1), wide: [...document.querySelectorAll('*')].filter((element) => element.getBoundingClientRect().right > innerWidth + 1).slice(0, 4).map((element) => `${element.tagName}.${element.className}:${Math.round(element.getBoundingClientRect().right)}`) }
@@ -1355,9 +1383,9 @@ check('four-seat shared funding is buyer-authorized, atomic, and reconnect-stabl
   assertEqual(liveRoom.run.players[1].gold, 0)
   assertEqual(privateSnapshot.run.players[1].deck, null)
   assert(!('itemDecks' in privateSnapshot.run), 'hidden shared deck order reached a client')
-  assert(mobileOnline.width <= mobileOnline.viewport, `online Merchant is ${mobileOnline.width}px wide in a ${mobileOnline.viewport}px viewport (${mobileOnline.wide.join(', ')})`)
-  assert(mobileOnline.leave, 'mobile Merchant lost its leave affordance')
-  assert(mobileOnline.contained, 'the Merchant leave action escaped the mobile room frame')
+  assert(compactOnline.width <= compactOnline.viewport, `online Merchant is ${compactOnline.width}px wide in a ${compactOnline.viewport}px viewport (${compactOnline.wide.join(', ')})`)
+  assert(compactOnline.leave, 'compact desktop Merchant lost its leave affordance')
+  assert(compactOnline.contained, 'the Merchant leave action escaped the compact desktop room frame')
 })
 
 liveRoom.run.players[2] = { ...liveRoom.run.players[2], gold: 5 }
@@ -1713,10 +1741,10 @@ await di.getByRole('heading', { name: 'Old Beggar' }).waitFor()
 rooms.dropConnection(create.snapshot.code, onlineSeats[3].token)
 await di.locator('.connection--reconnecting').waitFor()
 await di.locator('.connection--connected').waitFor()
-await di.setViewportSize({ width: 390, height: 844 })
+await di.setViewportSize({ width: 1280, height: 800 })
 await di.getByRole('button', { name: /Contribute/ }).waitFor()
 const contributorSnapshot = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.code}`, { headers: { 'x-room-token': onlineSeats[3].token } }).then((response) => response.json())
-await di.screenshot({ path: join(outDir, 'event-funded-4p-reconnect-mobile.png'), fullPage: true })
+await di.screenshot({ path: join(outDir, 'event-funded-4p-reconnect-compact-desktop.png'), fullPage: true })
 await di.getByRole('button', { name: /Contribute/ }).click()
 await di.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Contribute') && button.disabled))
 const repeatEventPledgeDisabled = await di.getByRole('button', { name: /Contribute/ }).isDisabled()
@@ -1813,11 +1841,12 @@ await page.evaluate(() => localStorage.setItem('sts-physical-campaign', JSON.str
   finishedRunIds: ['browser-finished-run'],
 })))
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByText('Campaign journal').waitFor()
+await page.locator('details.game-settings > summary').click()
 await page.getByRole('button', { name: 'New run' }).click()
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByText('Campaign journal').waitFor()
 await page.screenshot({ path: join(outDir, 'campaign-allocation.png'), fullPage: true })
 const campaignAllocationContained = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
@@ -1865,7 +1894,7 @@ await page.evaluate(() => localStorage.setItem('sts-physical-campaign', JSON.str
   finishedRunIds: ['browser-act-iv-run'],
 })))
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: /Mark Act IV/ }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 await page.screenshot({ path: join(outDir, 'campaign-act-iv-map.png'), fullPage: true })

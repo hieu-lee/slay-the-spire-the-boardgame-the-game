@@ -64,7 +64,7 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
               {offer.transformReward ? mine ? <div className="reward-screen__transform">
                 <strong>Transform a card</strong>
                 <div className="reward-screen__cards">{(player.deck ?? []).filter((card) => cardDef(card.defId).owner !== 'curse').map((card) =>
-                  <Card key={card.uid} card={card} playable actionLabel="Transform"
+                  <Card key={card.uid} card={card} playable
                     onClick={() => onAction({ kind: 'transformReward', cardUid: card.uid })} />)}</div>
                 <button className="reward-screen__skip" type="button" onClick={() => onAction({ kind: 'transformReward', cardUid: null })}>Skip Transform</button>
               </div> : <span className="muted">{player.name} is choosing a card to Transform.</span> : null}

@@ -4,7 +4,6 @@ import { WebSocketServer } from 'ws'
 import {
   apply,
   chooseAscension,
-  chooseAchievement,
   chooseCharacter,
   chooseLastStandRule,
   chooseRunMeta,
@@ -251,7 +250,7 @@ export function createRoomServer({
           throw error
         }
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|relic-rule|last-stand-rule|run-meta|achievement|start|action|voice-ice))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|leave|character|ascension|relic-rule|last-stand-rule|run-meta|start|action|voice-ice))?$/)
       if (!match) return send(response, 404, { error: 'Not found' })
       const room = roomOrThrow(match[1])
       const operation = match[2]
@@ -303,7 +302,6 @@ export function createRoomServer({
       else if (operation === 'relic-rule') snapshot = chooseRelicRule(room, token, body.enabled)
       else if (operation === 'last-stand-rule') snapshot = chooseLastStandRule(room, token, body.enabled)
       else if (operation === 'run-meta') snapshot = chooseRunMeta(room, token, body)
-      else if (operation === 'achievement') snapshot = chooseAchievement(room, token, body.id, body.completed)
       else if (operation === 'ascension') {
         if (!Number.isInteger(body.ascension) || body.ascension < 0 || body.ascension > 13) {
           return send(response, 400, { error: 'Ascension must be an integer from 0 to 13' })

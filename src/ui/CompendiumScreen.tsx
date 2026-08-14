@@ -3,7 +3,7 @@ import { CARDS, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { cardImagePath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
-import { cardAccessibleName, cardPlayText } from './Card.tsx'
+import { cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
 
 type Pool = CardDef['owner'] | 'all'
@@ -124,7 +124,7 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
                 aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
                 {card.owner !== 'status' ? (
                   <img src={cardImagePath(face, showUpgrade)} alt="" loading="lazy"
-                    onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
+                    onLoad={(event) => revealDecodedImage(event.currentTarget)}
                     onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 ) : null}
                 <CardFace def={face} rules={playText} />
@@ -143,7 +143,7 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
           <span className="compendium__detail-card">
                 {selected?.owner !== 'status' ? (
                   <img src={cardImagePath(selectedFace, upgraded && Boolean(selected?.upgrade))} alt=""
-                    onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
+                    onLoad={(event) => revealDecodedImage(event.currentTarget)}
                     onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 ) : null}
                 <CardFace def={selectedFace} rules={cardPlayText(selectedFace)} />

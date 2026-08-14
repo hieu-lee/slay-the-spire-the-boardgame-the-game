@@ -1,6 +1,4 @@
 import type { CharacterId } from './types.ts'
-import { normalizeAchievementIds, setAchievementCompleted } from './achievements.ts'
-import type { AchievementId } from './achievements.ts'
 
 export type CampaignComponent =
   | { readonly kind: 'card'; readonly cardId: string; readonly name: string; readonly copies: number }
@@ -70,7 +68,6 @@ export type CampaignProgress = {
   highestAscension: number
   nextRunNumber: number
   finishedRunIds: string[]
-  achievements: AchievementId[]
 }
 
 export type MarkAllocation = {
@@ -99,7 +96,6 @@ export function createCampaignProgress(): CampaignProgress {
     highestAscension: 0,
     nextRunNumber: 0,
     finishedRunIds: [],
-    achievements: [],
   }
 }
 
@@ -108,7 +104,6 @@ export function parseCampaignProgress(value: unknown, fallback = createCampaignP
     ...fallback,
     characters: { ...fallback.characters },
     finishedRunIds: [...fallback.finishedRunIds],
-    achievements: normalizeAchievementIds(fallback.achievements),
   })
   if (!value || typeof value !== 'object' || Array.isArray(value)) return safeFallback()
   const saved = value as Partial<CampaignProgress>
@@ -124,16 +119,7 @@ export function parseCampaignProgress(value: unknown, fallback = createCampaignP
     version: 1,
     characters: { ironclad: characters.ironclad!, silent: characters.silent!, defect: characters.defect!, watcher: characters.watcher! },
     colorless: saved.colorless!, actIV: saved.actIV!, unspentMarks: saved.unspentMarks!, highestAscension: saved.highestAscension!, nextRunNumber: saved.nextRunNumber!, finishedRunIds: [...saved.finishedRunIds],
-    achievements: normalizeAchievementIds(saved.achievements),
   }
-}
-
-/** The physical achievement sheet is a player-controlled checkbox journal. */
-export function setCampaignAchievement(progress: CampaignProgress, id: AchievementId, completed: boolean): CampaignProgress {
-  const achievements = setAchievementCompleted(progress.achievements, id, completed)
-  return achievements.length === progress.achievements.length && achievements.every((id, index) => id === progress.achievements[index])
-    ? progress
-    : { ...progress, achievements }
 }
 
 export function characterUnlockLevel(progress: CampaignProgress, character: CharacterId): 0 | 1 | 2 | 3 {

@@ -270,8 +270,8 @@ enter stances via the Shard.
 - **Catch Up:** up to four total players may join only at the start of an Act. Only newcomers
   resolve the Catch Up table and visit its Merchant; they earn campaign marks only for Bosses
   defeated after joining.
-- **Achievements:** the nineteen printed challenges are a physical campaign checklist. Players
-  mark them manually; the game does not infer hidden or table-history achievements.
+- **Achievements:** the game provides a read-only reference for the nineteen printed challenges;
+  use the physical achievement sheet to record them.
 
 Daily/Custom modifiers apply at every matching reward boundary, including Neow and Events.
 Prismatic Shard reserves one physical card from each of three chosen reward decks before a

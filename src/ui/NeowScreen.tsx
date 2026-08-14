@@ -7,9 +7,9 @@ import type { PotionRewardDecision, RewardSource } from '../game/run.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
-import { Icon, IconValue } from './Icon.tsx'
+import { IconValue } from './Icon.tsx'
 
-type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
+type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'character' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
   deck: CardInstance[] | null
 }
 type NeowUiProgress = Omit<NeowPlayerState, 'cardId' | 'rewardQueue'> & {
@@ -40,6 +40,12 @@ function offerNames(offer: NeowRewardOffer | null): string[] {
   if (offer.kind === 'potion') return offer.choices.map((id) => potionDef(id).name)
   if (offer.kind === 'relic') return offer.choices.map((id) => relicDef(id).name)
   return offer.choices.map((id) => cardDef(id).name)
+}
+
+function offerTitle(offer: NeowRewardOffer): string {
+  if (offer.kind === 'potion') return 'Choose a Potion'
+  if (offer.kind === 'relic') return 'Choose a Relic'
+  return 'Choose a Card'
 }
 
 function selectableCards(player: NeowUiPlayer, effect: NeowImmediateReward | null) {
@@ -147,10 +153,10 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
   return <section className="neow-screen" aria-labelledby="neow-title">
+    <img className="neow-screen__neow" src="/assets/neow/neow.webp" alt="Neow" />
+    <img className="neow-screen__hero" src={`/assets/combat/characters/${viewer.character}.webp`} alt={viewer.name} />
     <header className="neow-screen__header">
-      <span className="neow-screen__sigil" aria-hidden="true">◉</span>
-      <div><span className="neow-screen__eyebrow">Before the first encounter</span><h2 id="neow-title">Neow’s Blessing</h2>
-        <p>Claim the red reward, then choose one blue blessing.</p></div>
+      <h2 id="neow-title">Neow’s Blessing</h2>
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>
     </header>
 
@@ -159,7 +165,7 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
         const state = progress[player.id]
         const face = state?.card ?? (state?.cardId ? neowCard(state.cardId) : undefined)
         const revealed = offerNames(state?.redReward ?? state?.reward ?? null)
-        return <article key={player.id} className={`neow-face${player.id === viewerId ? ' neow-face--active' : ''}${state?.done ? ' neow-face--done' : ''}`}>
+        return <article key={player.id} className={`neow-face${participants.length === 1 ? ' neow-face--solo' : ''}${player.id === viewerId ? ' neow-face--active' : ''}${state?.done ? ' neow-face--done' : ''}`}>
           <div className="neow-face__owner"><strong>{player.name}</strong><span>{state?.done ? 'Ready' : state?.redGoldPending || state?.redRewardPending || state?.redReward ? 'Red reward' : state?.blueOption !== null ? 'Resolving' : 'Choosing'}</span></div>
           <blockquote>“{face?.text ?? '…'}”</blockquote>
           <div className="neow-face__red"><IconValue name="gold" value={3} size={18} /> + Card Reward</div>
@@ -173,10 +179,9 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
     {!viewerParticipates ? <section className="neow-action" aria-labelledby="neow-action-title">
       <h3 id="neow-action-title">Catch Up in progress</h3>
       <p className="neow-action__waiting" role="status">Waiting for the Catch Up players to finish Neow’s Blessing.</p>
-    </section> : <section className="neow-action" aria-labelledby="neow-action-title">
+    </section> : <section className={`neow-action${currentOffer ? ' neow-action--offer' : ''}`} aria-labelledby="neow-action-title">
       <div className="neow-action__owner">
-        <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? 'Blessing complete' : activeProgress.redGoldPending ? 'Resolve 3 Gold reward' : currentOffer ? 'Resolve face-up reward' : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? 'Choose a blessing' : 'Resolving blessing'}</h3>
-        <span>HP {viewer.hp}/{viewer.maxHp} · <Icon name="gold" size={18} /> {viewer.gold}</span>
+        <span>{viewer.name}</span><h3 id="neow-action-title">{viewerProgress.done ? 'Blessing complete' : activeProgress.redGoldPending ? 'Take or skip 3 Gold' : currentOffer ? offerTitle(currentOffer) : effect ? `Resolve ${effectLabel}` : unrevealedStage ? `${unrevealedKind} is face down` : blueReady ? 'Choose a blessing' : 'Resolving blessing'}</h3>
       </div>
       {viewerProgress.done ? <p className="neow-action__waiting" role="status">Waiting for the rest of the party.</p> : null}
       {activeProgress.redGoldPending ? <div className="neow-unrevealed"><p><strong>3 Gold</strong><span>Gain or independently skip this reward.</span></p><div className="neow-offer__actions"><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, true)}>Gain 3 Gold</button><button type="button" disabled={!enabled} onClick={() => onGold(viewer.id, false)}>Skip 3 Gold</button></div></div> : null}

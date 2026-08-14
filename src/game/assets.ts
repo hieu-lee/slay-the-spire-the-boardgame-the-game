@@ -59,7 +59,7 @@ export function cardArtPath(def: CardDef): string {
 
 const COMBAT_ENEMY_ART = new Set([
   'acid_slime', 'blue_slaver', 'cultist', 'fungi_beast', 'green_louse',
-  'gremlin_nob', 'jaw_worm', 'lagavulin', 'red_louse', 'small_slime', 'spike_slime',
+  'gremlin_nob', 'jaw_worm', 'lagavulin', 'looter', 'red_louse', 'small_slime', 'spike_slime',
 ])
 
 export function enemyUsesCombatArt(def: EnemyDef): boolean {

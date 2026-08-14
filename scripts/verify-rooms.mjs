@@ -10,7 +10,6 @@ import {
   UID_LIMIT,
   apply,
   chooseAscension,
-  chooseAchievement,
   chooseCharacter,
   chooseLastStandRule,
   chooseRunMeta,
@@ -7763,21 +7762,6 @@ check('only the newcomer funds, buys, and closes the Catch Up Merchant', () => {
   apply(room, newcomer.token, { kind: 'merchantFinish' })
   assertEqual(room.run.phase, 'map')
   assertEqual(room.run.setup, null)
-})
-
-check('the party leader owns the persistent achievement journal', () => {
-  const { room, a, b } = twoSeatRoom()
-  room.phase = 'lobby'
-  room.run = null
-  chooseAchievement(room, a.token, 'ruby', true)
-  assertDeepEqual(snapshotFor(room, b.token).campaignProgress.achievements, ['ruby'])
-  let denied
-  try { chooseAchievement(room, b.token, 'infinity', true) } catch (error) { denied = error }
-  assertEqual(denied?.name, 'RoomError')
-  denied = undefined
-  try { chooseAchievement(room, a.token, 'forged-achievement', true) } catch (error) { denied = error }
-  assertEqual(denied?.name, 'RoomError')
-  assertDeepEqual(room.campaignProgress.achievements, ['ruby'])
 })
 
 report('co-op rooms')

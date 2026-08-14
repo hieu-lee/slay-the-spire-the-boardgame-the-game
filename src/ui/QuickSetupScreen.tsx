@@ -93,7 +93,6 @@ export function QuickSetupScreen({ setup, players, currentStep, enabled = true, 
               card={card}
               playable={enabled}
               selected={selectedUid === card.uid}
-              actionLabel="Select"
               onClick={() => setSelectedUid((current) => current === card.uid ? null : card.uid)}
             />)}
           </div>

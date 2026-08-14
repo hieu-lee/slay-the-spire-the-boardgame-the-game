@@ -26,7 +26,7 @@ repository; the copyrighted source images are not shipped with the game.
   red ribbon away from the primary choices.
 - Keep keyboard focus visible and ordered: reward choices, item actions, then
   confirm/skip. Enter/Space activates and Escape backs out where backing out is
-  legal. Touch targets remain at least 44px.
+  legal. Interactive targets remain at least 44px.
 - In co-op, show every seat's progress without exposing another player's hidden
   choices. Reconnect restores the exact revealed offer, focused action, and
   pending replacement/trade state from server-authoritative run data.

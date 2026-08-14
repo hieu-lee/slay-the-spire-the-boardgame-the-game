@@ -515,7 +515,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   looter_hard: {
-    id: 'looter_hard', name: 'Looter', hpByPlayers: [10, 10, 10, 10],
+    id: 'looter_hard', name: 'Looter', artId: 'looter', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 2 }], once: true },
       { actions: [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }], once: true },

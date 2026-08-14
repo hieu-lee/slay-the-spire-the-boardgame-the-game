@@ -1,27 +1,19 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 
 type StartMenuProps = {
-  playerCount: number
   characters: readonly CharacterId[]
-  seed: string
   ascension: number
   maxAscension: number
-  chooseYourRelic: boolean
-  lastStand: boolean
   mode: RunMode
   dailyModifiers: readonly DailyModifier[]
   customModifierIds: readonly DailyModifierId[]
   quickStartAct: 1 | 2 | 3 | 4
   actIVUnlocked: boolean
-  onPlayerCount: (count: number) => void
   onCharacter: (seat: number, character: CharacterId) => void
-  onSeed: (seed: string) => void
   onAscension: (ascension: number) => void
-  onChooseYourRelic: (enabled: boolean) => void
-  onLastStand: (enabled: boolean) => void
   onMode: (mode: RunMode) => void
   onCustomModifier: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartAct: (act: 1 | 2 | 3 | 4) => void
@@ -39,24 +31,16 @@ const HEROES: { id: CharacterId; name: string }[] = [
 ]
 
 export function StartMenu({
-  playerCount,
   characters,
-  seed,
   ascension,
   maxAscension,
-  chooseYourRelic,
-  lastStand,
   mode,
   dailyModifiers,
   customModifierIds,
   quickStartAct,
   actIVUnlocked,
-  onPlayerCount,
   onCharacter,
-  onSeed,
   onAscension,
-  onChooseYourRelic,
-  onLastStand,
   onMode,
   onCustomModifier,
   onQuickStartAct,
@@ -65,7 +49,8 @@ export function StartMenu({
   onCompendium,
   onAchievements,
 }: StartMenuProps) {
-  const [selection, setSelection] = useState('Play')
+  const [selection, setSelection] = useState('Single Player')
+  const settingsDialog = useRef<HTMLDialogElement>(null)
   return (
     <main className="start-menu">
       <div className="start-menu__profile" aria-label="Current profile">
@@ -80,47 +65,27 @@ export function StartMenu({
       </section>
 
       <nav className="start-menu__nav" aria-label="Main menu">
-        <button type="button" aria-label="Play" data-selected={selection === 'Play'}
-          onFocus={() => setSelection('Play')} onMouseEnter={() => setSelection('Play')} onClick={onStart}>Play</button>
+        <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
+          onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')} onClick={onStart}>Single Player</button>
         <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
           onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
         <button type="button" aria-label="Achievements" data-selected={selection === 'Achievements'}
           onFocus={() => setSelection('Achievements')} onMouseEnter={() => setSelection('Achievements')} onClick={onAchievements}>Achievements</button>
+        <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
+          onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
+          onClick={() => settingsDialog.current?.showModal()}>Settings</button>
       </nav>
 
-      <section className="start-menu__setup" aria-label="Run setup">
-        <label>
-          Party
-          <select aria-label="Players" value={playerCount}
-            onChange={(event) => onPlayerCount(Number(event.target.value))}>
-            {[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count}</option>)}
-          </select>
-        </label>
-        <label>
-          Seed
-          <input value={seed} onChange={(event) => onSeed(event.target.value)} />
-        </label>
+      <dialog ref={settingsDialog} className="start-menu__setup" aria-labelledby="start-menu-settings-title">
+        <header><h2 id="start-menu-settings-title">Settings</h2><button type="button" onClick={() => settingsDialog.current?.close()}>Close</button></header>
         <label>
           Ascension
           <select aria-label="Ascension" value={ascension} onChange={(event) => onAscension(Number(event.target.value))}>
             {Array.from({ length: maxAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}
           </select>
         </label>
-        <fieldset className="start-menu__rules">
-          <legend>Optional rules</legend>
-          <label>
-            <input type="checkbox" disabled={playerCount < 2} checked={playerCount > 1 && chooseYourRelic}
-              onChange={(event) => onChooseYourRelic(event.target.checked)} />
-            Choose Your Relic
-          </label>
-          <label>
-            <input type="checkbox" disabled={playerCount < 2} checked={playerCount > 1 && lastStand}
-              onChange={(event) => onLastStand(event.target.checked)} />
-            Last Stand
-          </label>
-        </fieldset>
         <MetaRunOptions
           mode={mode}
           dailyModifiers={dailyModifiers}
@@ -133,7 +98,7 @@ export function StartMenu({
         />
         <fieldset className="start-menu__party">
           <legend>Characters</legend>
-          {characters.slice(0, playerCount).map((character, seat) => {
+          {characters.slice(0, 1).map((character, seat) => {
             const hero = HEROES.find((candidate) => candidate.id === character) ?? HEROES[0]!
             return <label key={seat} title={`Player ${seat + 1}: ${hero.name}`}>
               <img src={`/assets/combat/characters/${hero.id}.webp`} alt="" />
@@ -145,7 +110,7 @@ export function StartMenu({
             </label>
           })}
         </fieldset>
-      </section>
+      </dialog>
       <p className="start-menu__version">v0.1 · unofficial fan project</p>
     </main>
   )

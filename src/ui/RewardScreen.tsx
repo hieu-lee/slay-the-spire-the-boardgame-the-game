@@ -67,7 +67,7 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
               {offer.transformReward ? <div className="reward-screen__transform">
                 <strong>Transform a card</strong>
                 <div className="reward-screen__cards">{player.deck.filter((card) => cardDef(card.defId).owner !== 'curse').map((card) =>
-                  <Card key={card.uid} card={card} playable actionLabel="Transform" onClick={() => onTransform(player.id, card.uid)} />)}</div>
+                  <Card key={card.uid} card={card} playable onClick={() => onTransform(player.id, card.uid)} />)}</div>
                 <button className="reward-screen__skip" type="button" onClick={() => onTransform(player.id, null)}>Skip Transform</button>
               </div> : null}
               {!offer.cardReward ? null : <>

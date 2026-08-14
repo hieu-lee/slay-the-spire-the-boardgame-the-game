@@ -18,7 +18,6 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   CAPS,
-  ACHIEVEMENTS,
   abandonCardCopy,
   abandonForcedCard,
   activatePower,
@@ -111,7 +110,6 @@ import {
   parseCampaignProgress,
   allocateSharedMarks,
   normalizeModifierIds,
-  setCampaignAchievement,
 } from '../../src/game/state.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
@@ -390,19 +388,6 @@ export function chooseRunMeta(room, seatToken, options) {
   if (!['standard', 'daily', 'custom'].includes(mode) || ![1, 2, 3, 4].includes(quickStartAct)) fail('Choose a valid run mode and starting Act')
   if (quickStartAct === 4 && room.campaignProgress.actIV < 5) fail('Act IV Quick Start is not unlocked')
   room.metaOptions = { mode, modifiers: mode === 'custom' ? normalizeModifierIds(options.modifiers) : [], quickStartAct }
-  room.version += 1
-  return snapshotFor(room, seatToken)
-}
-
-export function chooseAchievement(room, seatToken, id, completed) {
-  const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
-  if (room.phase !== 'lobby') fail('Achievements may be edited from the lobby')
-  if (seat !== room.seats[0]) fail('Only the party leader may edit the campaign journal')
-  if (typeof completed !== 'boolean') fail('Achievement completion must be on or off')
-  if (!ACHIEVEMENTS.some((achievement) => achievement.id === id)) fail('Unknown achievement')
-  const next = setCampaignAchievement(room.campaignProgress, id, completed)
-  if (next === room.campaignProgress) return snapshotFor(room, seatToken)
-  room.campaignProgress = next
   room.version += 1
   return snapshotFor(room, seatToken)
 }
@@ -2271,7 +2256,6 @@ export function snapshotFor(room, seatToken) {
       highestAscension: room.campaignProgress.highestAscension,
       nextRunNumber: room.campaignProgress.nextRunNumber ?? 0,
       finishedRunIds: [...(room.campaignProgress.finishedRunIds ?? [])],
-      achievements: [...(room.campaignProgress.achievements ?? [])],
     },
     seats: room.seats.map(seatPublic),
     pendingRelic: viewerId && run ? pendingRelicPreview(run, viewerId) : null,

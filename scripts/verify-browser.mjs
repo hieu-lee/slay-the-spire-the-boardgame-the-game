@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
+import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
@@ -39,7 +40,7 @@ if (!address || typeof address === 'string') throw new Error('vite did not repor
 const base = `http://localhost:${address.port}`
 
 const browser = await chromium.launch({ headless: !headed })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+const page = installScreenAudit(await browser.newPage({ viewport: { width: 1440, height: 900 } }))
 page.setDefaultTimeout(10_000)
 page.setDefaultNavigationTimeout(30_000)
 
@@ -118,19 +119,39 @@ async function waitForPowerZoom() {
   })
 }
 
+async function chooseSeat(playerId) {
+  const menu = page.locator('details.game-settings')
+  if (!(await menu.evaluate((details) => details.open))) await menu.locator(':scope > summary').click()
+  const selector = page.getByLabel('Seat')
+  if (await selector.count()) await selector.selectOption(playerId)
+  await menu.locator(':scope > summary').click()
+}
+
 async function confirmDiscard(player) {
-  await page.getByLabel('Seat').selectOption(player.id)
+  await chooseSeat(player.id)
   const name = player.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   await page.getByRole('button', { name: new RegExp(`^Confirm ${name}`) }).click()
 }
 
 async function confirmAllDiscards() {
-  const selectedSeat = await page.getByLabel('Seat').inputValue()
   const state = await readState()
+  const selectedSeat = state.players.find((player) => !player.dead)?.id ?? 'p1'
   for (const player of state.players.filter((candidate) => !candidate.dead)) {
     await confirmDiscard(player)
   }
-  await page.getByLabel('Seat').selectOption(selectedSeat)
+  await chooseSeat(selectedSeat)
+}
+
+async function waitForAutomaticTurn(turn) {
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await page.waitForFunction((expected) => {
+    const state = window.__STS_DEBUG__.getState()
+    return state.turn >= expected && !['enemy', 'roundEnd'].includes(state.phase)
+  }, turn)
+}
+
+async function waitForAutomaticEnemyResolution() {
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'enemy')
 }
 
 async function endTurn() {
@@ -171,17 +192,22 @@ const reloadedMenuCampaign = await page.evaluate(() => ({
   draftRunId: window.__STS_DEBUG__.getRun().campaign.runId,
 }))
 await shot('00-title-menu')
+const singlePlayerLabel = await page.getByRole('button', { name: 'Single Player' }).textContent()
+const setupHidden = await page.locator('.start-menu__setup').isHidden()
+await page.getByRole('button', { name: 'Settings' }).click()
+const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
+const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
+await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => button.focus())
+const settingsKeepsFocus = await settingsDialog.evaluate((dialog) => dialog.contains(document.activeElement))
 const localAscensions = await page.getByLabel('Ascension').locator('option').evaluateAll((options) =>
   options.map((option) => option.value))
 const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
-await page.getByLabel('Players').selectOption('4')
-const fourPlayerCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
-await page.getByLabel('Players').selectOption('1')
-const soloOptionalRules = await Promise.all([
-  page.getByRole('checkbox', { name: 'Choose Your Relic' }).isDisabled(),
-  page.getByRole('checkbox', { name: 'Last Stand' }).isDisabled(),
-])
-await page.getByLabel('Players').selectOption('2')
+const setupHasDevControls = await page.locator('.start-menu__setup').getByText(/Party|Seed|Choose Your Relic|Last Stand/).count()
+await shot('00-title-settings')
+await page.keyboard.press('Escape')
+await settingsDialog.waitFor({ state: 'hidden' })
+const settingsDismissedWithEscape = await settingsDialog.isHidden()
+await page.getByRole('button', { name: 'Single Player' }).hover()
 const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
   const box = menu.getBoundingClientRect()
   const title = menu.querySelector('.start-menu__title')?.getBoundingClientRect()
@@ -209,49 +235,26 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assert(titleMenu.titleBottom !== undefined && titleMenu.editionTop !== undefined &&
     titleMenu.editionTop >= titleMenu.titleBottom + 8,
   `the board-game subtitle clips the title: ${titleMenu.titleBottom} / ${titleMenu.editionTop}`)
-  for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav, setup: titleMenu.setup })) {
+  for (const [name, box] of Object.entries({ title: titleMenu.title, nav: titleMenu.nav })) {
     assert(box && box.left >= titleMenu.box.left - 1 && box.right <= titleMenu.box.right + 1 &&
       box.top >= titleMenu.box.top - 1 && box.bottom <= titleMenu.box.bottom + 1,
     `${name} leaves the title viewport: ${JSON.stringify(box)}`)
   }
-  assertDeepEqual(menuSelection.selected, ['Play'])
+  assertDeepEqual(menuSelection.selected, ['Single Player'])
   assert(!menuSelection.marker.includes('☞'), `the menu still uses the cheap finger marker: ${menuSelection.marker}`)
+  assertEqual(singlePlayerLabel?.trim(), 'Single Player')
+  assert(setupHidden, 'run settings should not occupy the title screen')
   assertDeepEqual(localAscensions, ['0'], 'a fresh campaign offered locked Ascension levels')
-  assertEqual(localCharacterSeats, 2, 'local setup did not expose one character choice per active seat')
-  assertEqual(fourPlayerCharacterSeats, 4, 'a four-player local party cannot choose every seat')
-  assertDeepEqual(soloOptionalRules, [true, true], 'multiplayer-only optional rules stayed enabled in solo')
+  assertEqual(localCharacterSeats, 1, 'single-player settings exposed extra seats')
+  assertEqual(setupHasDevControls, 0, 'developer setup controls leaked into settings')
+  assert(settingsIsModal, 'settings did not open in the browser top layer')
+  assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
+  assert(settingsDismissedWithEscape, 'Escape did not close settings')
   assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
   assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
   assertEqual(freshMenuCampaign.draftRunId, 'campaign-1')
   assertEqual(reloadedMenuCampaign.draftRunId, 'campaign-1')
 })
-
-await page.setViewportSize({ width: 720, height: 360 })
-const landscapeMenu = await page.locator('.start-menu').evaluate((menu) => {
-  const viewport = menu.getBoundingClientRect()
-  const box = (selector) => {
-    const rect = menu.querySelector(selector)?.getBoundingClientRect()
-    return rect && { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
-  }
-  return {
-    viewport: { left: viewport.left, top: viewport.top, right: viewport.right, bottom: viewport.bottom },
-    title: box('.start-menu__title'), nav: box('.start-menu__nav'), setup: box('.start-menu__setup'),
-  }
-})
-check('the title menu remains separated and reachable in short landscape', () => {
-  const { viewport, title, nav, setup } = landscapeMenu
-  assert(viewport && title && nav && setup, `short landscape regions are missing: ${JSON.stringify(landscapeMenu)}`)
-  assert(title.bottom <= nav.top || title.left >= nav.right || title.right <= nav.left,
-    `title overlaps navigation: ${JSON.stringify(landscapeMenu)}`)
-  assert(nav.bottom <= setup.top || nav.left >= setup.right || nav.right <= setup.left,
-    `navigation overlaps setup: ${JSON.stringify(landscapeMenu)}`)
-  for (const [name, box] of Object.entries({ title, nav, setup })) {
-    assert(box.left >= viewport.left && box.top >= viewport.top && box.right <= viewport.right && box.bottom <= viewport.bottom,
-      `${name} leaves short landscape: ${JSON.stringify(box)}`)
-  }
-})
-await shot('00-title-menu-landscape')
-await page.setViewportSize({ width: 1440, height: 900 })
 
 await page.getByRole('button', { name: 'Compendium' }).click()
 await page.locator('.compendium').waitFor()
@@ -344,8 +347,8 @@ check('the compendium filters the real card catalog and opens card detail', () =
   assert(dazeLabel?.includes('unplayable') && dazeLabel.includes('ethereal'), dazeLabel)
   assert(slimedLabel?.includes('cost 1'), slimedLabel)
 })
-await page.setViewportSize({ width: 390, height: 844 })
-const mobileCompendium = await page.locator('.compendium').evaluate((root) => {
+await page.setViewportSize({ width: 1280, height: 800 })
+const compactCompendium = await page.locator('.compendium').evaluate((root) => {
   const viewport = root.getBoundingClientRect()
   const filters = root.querySelector('.compendium__filters')?.getBoundingClientRect()
   const library = root.querySelector('.compendium__library')?.getBoundingClientRect()
@@ -377,7 +380,7 @@ const mobileCompendium = await page.locator('.compendium').evaluate((root) => {
     })(),
   }
 })
-const mobileTitleOverflow = await page.locator('.compendium-card .card-face__title').first().evaluate(async (title) => {
+const compactTitleOverflow = await page.locator('.compendium-card .card-face__title').first().evaluate(async (title) => {
   const { CARDS: definitions, faceOf } = await import('/src/game/cards.ts')
   const original = title.textContent
   const clipped = []
@@ -393,54 +396,76 @@ const mobileTitleOverflow = await page.locator('.compendium-card .card-face__tit
   title.textContent = original
   return clipped
 })
-await shot('00c-compendium-mobile')
-check('the compendium remains usable on a phone-sized viewport', () => {
-  assert(mobileCompendium.filters && mobileCompendium.library,
-    `mobile compendium columns are missing: ${JSON.stringify(mobileCompendium)}`)
-  assert(mobileCompendium.filters.left >= mobileCompendium.viewport.left - 1 &&
-    mobileCompendium.library.right <= mobileCompendium.viewport.right + 1,
-  `mobile compendium leaves the viewport: ${JSON.stringify(mobileCompendium)}`)
-  assert((mobileCompendium.cardWidth ?? 0) >= 100,
-    `mobile cards became unreadably small: ${mobileCompendium.cardWidth}`)
-  assertEqual(mobileCompendium.wrappedLabels, 0, 'mobile rarity labels should not wrap')
-  assert(mobileCompendium.checkboxTargets.every((target) => target.height >= 24),
-    `mobile rarity targets are too short: ${JSON.stringify(mobileCompendium.checkboxTargets)}`)
-  assert(mobileCompendium.checkboxTargets.slice(1).every((target, index) =>
-    target.center - mobileCompendium.checkboxTargets[index].center >= 24),
-  `mobile rarity targets are too tightly spaced: ${JSON.stringify(mobileCompendium.checkboxTargets)}`)
-  assertDeepEqual(mobileTitleOverflow, [], 'mobile compendium title clipping')
-  assert(mobileCompendium.backBeforeSearch, 'Back must precede Search in keyboard and source order')
-  assert(mobileCompendium.back && mobileCompendium.back.top < mobileCompendium.viewport.bottom &&
-    mobileCompendium.back.bottom <= mobileCompendium.viewport.bottom + 1,
-  `mobile back control is not initially reachable: ${JSON.stringify(mobileCompendium)}`)
-  assert(mobileCompendium.sort && mobileCompendium.upgrade &&
-    mobileCompendium.back.bottom <= mobileCompendium.sort.top + 1 &&
-    mobileCompendium.back.bottom <= mobileCompendium.upgrade.top + 1 &&
-    mobileCompendium.sort.bottom <= mobileCompendium.upgrade.top + 1,
-  `mobile compendium controls overlap: ${JSON.stringify(mobileCompendium)}`)
+await shot('00c-compendium-compact-desktop')
+check('the compendium remains usable on a minimum desktop viewport', () => {
+  assert(compactCompendium.filters && compactCompendium.library,
+    `compact desktop compendium columns are missing: ${JSON.stringify(compactCompendium)}`)
+  assert(compactCompendium.filters.left >= compactCompendium.viewport.left - 1 &&
+    compactCompendium.library.right <= compactCompendium.viewport.right + 1,
+  `compact desktop compendium leaves the viewport: ${JSON.stringify(compactCompendium)}`)
+  assert((compactCompendium.cardWidth ?? 0) >= 100,
+    `compact desktop cards became unreadably small: ${compactCompendium.cardWidth}`)
+  assertEqual(compactCompendium.wrappedLabels, 0, 'compact desktop rarity labels should not wrap')
+  assert(compactCompendium.checkboxTargets.every((target) => target.height >= 24),
+    `compact desktop rarity targets are too short: ${JSON.stringify(compactCompendium.checkboxTargets)}`)
+  assert(compactCompendium.checkboxTargets.slice(1).every((target, index) =>
+    target.center - compactCompendium.checkboxTargets[index].center >= 24),
+  `compact desktop rarity targets are too tightly spaced: ${JSON.stringify(compactCompendium.checkboxTargets)}`)
+  assertDeepEqual(compactTitleOverflow, [], 'compact desktop compendium title clipping')
+  assert(compactCompendium.backBeforeSearch, 'Back must precede Search in keyboard and source order')
+  assert(compactCompendium.back && compactCompendium.back.top < compactCompendium.viewport.bottom &&
+    compactCompendium.back.bottom <= compactCompendium.viewport.bottom + 1,
+  `compact desktop back control is not initially reachable: ${JSON.stringify(compactCompendium)}`)
+  assert(compactCompendium.sort && compactCompendium.upgrade &&
+    compactCompendium.back.bottom <= compactCompendium.sort.top + 1 &&
+    compactCompendium.back.bottom <= compactCompendium.upgrade.top + 1 &&
+    compactCompendium.sort.bottom <= compactCompendium.upgrade.top + 1,
+  `compact desktop compendium controls overlap: ${JSON.stringify(compactCompendium)}`)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
+await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByLabel('Player 1 character').selectOption('watcher')
-await page.getByLabel('Player 2 character').selectOption('defect')
-await page.getByRole('checkbox', { name: 'Last Stand' }).check()
-await page.getByRole('button', { name: 'Play', exact: true }).click()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Single Player' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const configuredLocalRun = await readRun()
-check('local setup applies Last Stand to the run', () => {
-  assertEqual(configuredLocalRun.lastStand, true)
-  assertDeepEqual(configuredLocalRun.players.map((player) => player.character), ['watcher', 'defect'])
+check('single-player setup starts exactly one selected character', () => {
+  assertEqual(configuredLocalRun.lastStand, false)
+  assertDeepEqual(configuredLocalRun.players.map((player) => player.character), ['watcher'])
 })
 const openingNeowFaces = await page.locator('.neow-face').count()
+await page.waitForFunction(() => {
+  const image = document.querySelector('.neow-screen__neow')
+  return image instanceof HTMLImageElement && image.complete && image.naturalWidth === 1659
+})
+const openingNeowArtVisible = await page.locator('.neow-screen__neow').isVisible()
 await shot('00a-neow-opening')
-check('a new local run deals one public Neow face per seat', () => assertEqual(openingNeowFaces, 2))
+check('a new local run presents Neow and deals one public face per seat', () => {
+  assert(openingNeowArtVisible, 'the supplied Neow asset is not visible')
+  assertEqual(openingNeowFaces, 1)
+})
+await page.getByRole('button', { name: 'Skip 3 Gold' }).click()
+await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
+await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+const neowRewardCards = await page.locator('.neow-action--offer .card').evaluateAll((cards) => cards.map((card) => {
+  const box = card.getBoundingClientRect()
+  return { top: box.top, bottom: box.bottom, visible: box.top >= 0 && box.bottom <= innerHeight }
+}))
+const staleNeowRewardLabel = await page.getByText('Resolve face-up reward', { exact: true }).count()
+await shot('00b-neow-card-reward')
+check('Neow shows complete face-up reward cards on the desktop stage', () => {
+  assertEqual(neowRewardCards.length, 3)
+  assert(neowRewardCards.some((card) => card.visible), `no complete reward card is visible: ${JSON.stringify(neowRewardCards)}`)
+  assertEqual(staleNeowRewardLabel, 0)
+})
 await bypassNeow()
 await page.locator('.map').waitFor()
 
 const firstLocalRun = await readRun()
 const selectedLocalParty = firstLocalRun.players.map((player) => player.character)
 check('local setup starts an arbitrary legal character party', () => {
-  assertDeepEqual(selectedLocalParty, ['watcher', 'defect'])
+  assertDeepEqual(selectedLocalParty, ['watcher'])
   assertEqual(firstLocalRun.campaign.runId, 'campaign-1', 'the first played local run skipped its campaign number')
 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'spire'))
@@ -471,6 +496,78 @@ check('the first room is an encounter and starts a combat', () => {
   assert(booted.die >= 1 && booted.die <= 6, `die should be 1-6, got ${booted.die}`)
 })
 
+const activeRun = await readRun()
+const activeRunId = activeRun.campaign.runId
+let newRunPrompt = ''
+page.once('dialog', async (dialog) => {
+  newRunPrompt = dialog.message()
+  await dialog.dismiss()
+})
+const gameMenu = page.locator('details.game-settings')
+await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'New run' }).click()
+if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
+const runAfterCancelledRestart = await readRun()
+check('New run confirms before discarding an active run', () => {
+  assertEqual(newRunPrompt, 'Start a new run? The one in progress will be lost.')
+  assertEqual(runAfterCancelledRestart.campaign.runId, activeRunId)
+  assertEqual(runAfterCancelledRestart.phase, 'combat')
+})
+
+let boundaryRunPrompt = ''
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run, { act: 2, phase: 'map', combat: null })
+  run.map.position = null
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const localCatchUpPanel = await page.getByRole('heading', { name: 'Catch Up' }).count()
+page.once('dialog', async (dialog) => {
+  boundaryRunPrompt = dialog.message()
+  await dialog.dismiss()
+})
+await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'New run' }).click()
+const boundaryRunAfterCancelledRestart = await readRun()
+if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), activeRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
+check('New run confirms before discarding an Act-boundary run', () => {
+  assertEqual(boundaryRunPrompt, 'Start a new run? The one in progress will be lost.')
+  assertEqual(boundaryRunAfterCancelledRestart.campaign.runId, activeRunId)
+  assertEqual(boundaryRunAfterCancelledRestart.phase, 'map')
+  assertEqual(localCatchUpPanel, 0, 'Single Player exposed a local add-player path')
+})
+
+const combatAppearanceRun = await readRun()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.enemies[0], { defId: 'looter', hp: 9, maxHp: 9, dead: false })
+  Object.assign(run.combat.players[0], { block: 1, strength: 1 })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/looter.webp"]')?.naturalWidth === 1254)
+const combatAppearance = await page.evaluate(() => {
+  const image = document.querySelector('.enemy__art--cutout[src$="/looter.webp"]')
+  const strip = document.querySelector('.row__seat .seat__status-strip')
+  const bar = strip?.parentElement?.querySelector('.seat > .bar')
+  const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  return {
+    naturalWidth: image?.naturalWidth ?? 0,
+    naturalHeight: image?.naturalHeight ?? 0,
+    statusOverlapsHp: strip && bar ? overlap(strip.getBoundingClientRect(), bar.getBoundingClientRect()) : true,
+  }
+})
+await shot('02b-looter-cutout-and-status')
+check('Looter uses a transparent full-body cutout and character status clears HP', () => {
+  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [1254, 1254])
+  assertEqual(combatAppearance.statusOverlapsHp, false)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
 // Play a card by clicking it and then clicking an enemy, the way a player does.
 // Rows render highest-first, so the first enemy on screen is NOT enemies[0];
 // the assertion compares total enemy HP instead of guessing which one was hit.
@@ -482,70 +579,52 @@ const totalEnemyHp = (state) => state.enemies.reduce((sum, enemy) => sum + enemy
 const attackIndex = beforePlay.players[0].hand.findIndex((card) => card.defId.startsWith('strike'))
 assert(attackIndex >= 0, 'expected at least one Strike in the opening hand')
 const attackCard = page.locator('.hand .card').nth(attackIndex)
-await page.setViewportSize({ width: 900, height: 620 })
+await page.setViewportSize({ width: 1440, height: 900 })
+const cardTransformBeforeHover = await attackCard.evaluate((card) => getComputedStyle(card).transform)
 await attackCard.hover()
-const cardInspection = await page.locator('.card__inspection').evaluate((zoom) => {
-  const box = zoom.getBoundingClientRect()
-  const rules = zoom.querySelector('.card-face__rules')
+await attackCard.focus()
+const compactCardChrome = await attackCard.evaluate((card) => {
+  const cost = card.querySelector('.card-face__cost')
   return {
-    fontSize: rules ? Number.parseFloat(getComputedStyle(rules).fontSize) : 0,
-    text: rules?.textContent ?? '',
-    inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+    inspectionCount: document.querySelectorAll('.card__inspection').length,
+    duplicateCostCount: card.querySelectorAll('.card__cost').length,
+    nativeCost: cost?.textContent ?? '',
+    nativeCostVisible: cost ? getComputedStyle(cost).display !== 'none' : false,
+    transform: getComputedStyle(card).transform,
   }
 })
-check('hovering or focusing a native card opens a readable unclipped inspection face', () => {
-  assert(cardInspection.inViewport, 'the inspection face escaped the viewport')
-  assert(cardInspection.fontSize >= 13, `inspection rules are too small: ${cardInspection.fontSize}px`)
-  assert(cardInspection.text.length > 0, 'inspection rules are missing')
+check('hovering or focusing a card keeps it compact with one native cost', () => {
+  assertEqual(compactCardChrome.inspectionCount, 0, 'hover/focus inspection count')
+  assertEqual(compactCardChrome.duplicateCostCount, 0, 'duplicate overlay cost count')
+  assert(compactCardChrome.nativeCostVisible, 'native card-face cost is hidden')
+  assertEqual(compactCardChrome.nativeCost, '1', 'native card-face cost')
+  assertEqual(compactCardChrome.transform, cardTransformBeforeHover, 'hover/focus moved the card')
 })
-await shot('02a-card-inspection-desktop')
+await shot('02a-card-hover-desktop')
 await page.mouse.move(0, 0)
-await page.waitForFunction(() => !document.querySelector('.card__inspection'))
 
-// Touch has no hover. The first tap inspects without playing; the second tap
-// plays, matching how a physical card is picked up and then committed.
-const touchTap = (card) => card.evaluate((button) => {
-  button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
-  button.click()
-})
-await page.setViewportSize({ width: 390, height: 844 })
-await touchTap(attackCard)
-const afterInspectTap = await readState()
-const mobileInspection = await page.getByRole('dialog', { name: /^Inspect / }).evaluate((zoom) => {
-  const box = zoom.getBoundingClientRect()
-  return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
-})
-check('the first touch tap inspects a card without playing it', () => {
-  assertEqual(afterInspectTap.players[0].hand.length, beforePlay.players[0].hand.length)
-  assert(mobileInspection, 'the touch inspection face escaped the mobile viewport')
-})
-assertEqual(await page.getByRole('dialog', { name: /^Inspect / }).count(), 1, 'touch inspection dialog')
-await shot('02b-card-inspection-mobile')
-await page.getByRole('button', { name: 'Close' }).click()
-await page.mouse.move(0, 0)
-await page.waitForFunction(() => !document.querySelector('.card__inspection'))
-const afterDismissTap = await readState()
-check('closing touch inspection consumes the tap without playing or clicking through', () => {
-  assertEqual(afterDismissTap.players[0].hand.length, beforePlay.players[0].hand.length)
-  assertEqual(afterDismissTap.phase, beforePlay.phase)
-})
-await touchTap(attackCard)
-const inspectorFocus = await page.evaluate(() => ({
-  inDialog: document.activeElement?.closest('dialog.card__inspection-dialog') !== null,
-  backgroundInert: document.querySelector('.card__inspection-dialog')?.matches(':modal') ?? false,
-  color: getComputedStyle(document.querySelector('.card__inspection-actions button')).color,
+const retargetIndices = beforePlay.players[0].hand.flatMap((card, index) =>
+  card.defId.startsWith('strike') ? [index] : []).slice(0, 2)
+assertEqual(retargetIndices.length, 2, 'retarget fixture needs two attacks')
+const boardTopBeforeTarget = await page.locator('.board').evaluate((board) => board.getBoundingClientRect().top)
+await page.locator('.hand .card').nth(retargetIndices[0]).click()
+await page.locator('.hand .card').nth(retargetIndices[1]).click()
+const retargeted = await readState()
+const retargetUi = await page.locator('.combat').evaluate((combat) => ({
+  selected: [...combat.querySelectorAll('.hand .card')].map((card) => card.classList.contains('card--selected')),
+  promptPosition: getComputedStyle(combat.querySelector('.prompt')).position,
+  boardTop: combat.querySelector('.board').getBoundingClientRect().top,
 }))
-await page.keyboard.press('Tab')
-await page.keyboard.press('Tab')
-const focusStayedInDialog = await page.evaluate(() => document.activeElement?.closest('dialog.card__inspection-dialog') !== null)
-check('the touch inspector is a focus-containing native modal', () => {
-  assert(inspectorFocus.inDialog, 'focus did not move into the inspector')
-  assert(inspectorFocus.backgroundInert, 'the inspector is not in the native modal top layer')
-  assertEqual(inspectorFocus.color, 'rgb(236, 229, 216)', 'inspector action foreground')
-  assert(focusStayedInDialog, 'Tab escaped the inspector')
+check('choosing another attack retargets without playing the previous card or moving the board', () => {
+  assertEqual(retargeted.players[0].hand.length, beforePlay.players[0].hand.length)
+  assertEqual(retargeted.log.length, beforePlay.log.length)
+  assertEqual(retargetUi.selected[retargetIndices[0]], false)
+  assertEqual(retargetUi.selected[retargetIndices[1]], true)
+  assertEqual(retargetUi.promptPosition, 'absolute')
+  assertEqual(retargetUi.boardTop, boardTopBeforeTarget)
 })
-await page.getByRole('button', { name: 'Play', exact: true }).click()
-await page.setViewportSize({ width: 1440, height: 900 })
+await page.locator('.hand .card').nth(retargetIndices[1]).click()
+await attackCard.click()
 await page.locator('.enemy').first().click()
 const afterPlay = await readState()
 
@@ -568,43 +647,15 @@ await page.evaluate(() => {
 })
 const disabledCard = page.locator('.hand .card[aria-disabled="true"]').first()
 await disabledCard.focus()
-const disabledKeyboardInspection = await page.locator('.card__inspection').count()
-await page.keyboard.press('Escape')
-await touchTap(disabledCard)
-const beforeDisabledDismiss = await readState()
-await page.getByRole('button', { name: 'Close' }).click()
-await page.waitForFunction((card) => document.activeElement === card, await disabledCard.elementHandle())
-const focusRestored = await disabledCard.evaluate((card) => document.activeElement === card)
-const afterDisabledDismiss = await readState()
-check('an unplayable card remains inspectable by keyboard and touch without executing', () => {
-  assertEqual(disabledKeyboardInspection, 1, 'keyboard inspection for an unplayable card')
-  assertEqual(afterDisabledDismiss.players[0].hand.length, beforeDisabledDismiss.players[0].hand.length)
-  assertEqual(afterDisabledDismiss.players[0].energy, 0)
-  assert(focusRestored, 'closing inspection did not restore focus to the card')
+const beforeDisabledClick = await readState()
+await page.keyboard.press('Enter')
+await disabledCard.evaluate((card) => card.click())
+const afterDisabledClick = await readState()
+check('an unplayable card cannot execute', () => {
+  assertEqual(afterDisabledClick.players[0].hand.length, beforeDisabledClick.players[0].hand.length)
+  assertEqual(afterDisabledClick.players[0].energy, 0)
+  assertEqual(afterDisabledClick.log.length, beforeDisabledClick.log.length)
 })
-
-await page.setViewportSize({ width: 720, height: 360 })
-await touchTap(disabledCard)
-const shortInspector = await page.getByRole('dialog', { name: /^Inspect / }).evaluate((modal) => {
-  const card = modal.querySelector('.card__inspection')?.getBoundingClientRect()
-  const actions = modal.querySelector('.card__inspection-actions')?.getBoundingClientRect()
-  return card && actions ? card.top >= 0 && actions.bottom <= innerHeight : false
-})
-check('the touch inspector and its actions fit a short landscape viewport', () => {
-  assert(shortInspector, 'the inspector controls are clipped at 720x360')
-})
-await page.getByRole('button', { name: 'Close' }).click()
-await page.setViewportSize({ width: 1440, height: 900 })
-
-await page.setViewportSize({ width: 390, height: 844 })
-await touchTap(disabledCard)
-await page.mouse.click(5, 5)
-await page.waitForFunction((card) => document.activeElement === card, await disabledCard.elementHandle())
-const backdropFocusRestored = await disabledCard.evaluate((card) => document.activeElement === card)
-check('backdrop dismissal restores focus without clicking through', () => {
-  assert(backdropFocusRestored, 'backdrop dismissal did not restore focus to the card')
-})
-await page.setViewportSize({ width: 1440, height: 900 })
 
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
@@ -661,7 +712,6 @@ const nativeFaceOverflow = []
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 900, height: 620 },
-  { width: 390, height: 844 },
 ]) {
   await page.setViewportSize(viewport)
   nativeFaceOverflow.push(await page.locator('.hand .card-face').first().evaluate(
@@ -691,7 +741,7 @@ for (const viewport of [
     viewport,
   ))
 }
-check('every base and upgraded character face fits at desktop, short-height, and mobile sizes', () => {
+check('every base and upgraded character face fits at desktop sizes', () => {
   for (const probe of nativeFaceOverflow) {
     assertEqual(probe.lineClamp, '2')
     assertDeepEqual(probe.clippedTitles, [], `title clipping at ${probe.size.width}x${probe.size.height}`)
@@ -717,20 +767,20 @@ if (discardPlayers.length > 1) {
   })
 }
 for (const player of discardPlayers.slice(1)) await confirmDiscard(player)
-await page.getByLabel('Seat').selectOption(discardPlayers[0].id)
+await chooseSeat(discardPlayers[0].id)
 const afterEnd = await readState()
 check('ending the turn discards the hand and hands over to the enemies', () => {
   assertEqual(afterEnd.players[0].hand.length, 0, 'the hand is discarded')
-  assertEqual(afterEnd.phase, 'enemy', 'the Enemy Turn follows')
+  assert(['enemy', 'roundEnd', 'start', 'player', 'lost'].includes(afterEnd.phase), 'the Enemy Turn follows')
 })
 await shot('04-enemy-phase')
 
-await page.getByRole('button', { name: 'Resolve enemies' }).click()
+if (afterEnd.phase === 'enemy') await waitForAutomaticEnemyResolution()
 const afterEnemies = await readState()
-check('resolving enemies ends the round and holds the board', () => {
+check('enemies resolve automatically and the next round continues', () => {
   assert(
-    afterEnemies.phase === 'roundEnd' || afterEnemies.phase === 'lost',
-    `expected the round to end or the party to fall, got ${afterEnemies.phase}`,
+    ['roundEnd', 'start', 'player', 'lost'].includes(afterEnemies.phase),
+    `expected the round to continue or the party to fall, got ${afterEnemies.phase}`,
   )
 })
 await shot('05-after-enemy-turn')
@@ -738,8 +788,8 @@ await shot('05-after-enemy-turn')
 // The whole reason a combat is worth playing is that it lasts more than one
 // round. This suite used to stop at the click above, which is exactly why the
 // game shipped unplayable past round 1: nothing on screen started turn 2.
-if (afterEnemies.phase === 'roundEnd') {
-  await page.getByRole('button', { name: /Start turn 2/ }).click()
+if (afterEnemies.phase !== 'lost') {
+  await waitForAutomaticTurn(2)
   const secondRound = await readState()
   check('a second round can actually be started and played', () => {
     assertEqual(secondRound.phase, 'player', 'the next Player Turn begins')
@@ -777,11 +827,11 @@ async function playOutCombat(limit = 60) {
     if (state.phase === 'won' || state.phase === 'lost') return state
 
     if (state.phase === 'roundEnd') {
-      await page.getByRole('button', { name: /^Start turn/ }).click()
+      await waitForAutomaticTurn(state.turn + 1)
       continue
     }
     if (state.phase === 'enemy') {
-      await page.getByRole('button', { name: 'Resolve enemies' }).click()
+      await waitForAutomaticEnemyResolution()
       continue
     }
 
@@ -798,7 +848,7 @@ async function playOutCombat(limit = 60) {
       if (wantsTarget > 0) {
         const enemy = page.locator('.enemy:not([disabled])').first()
         if (await enemy.count()) await enemy.click()
-        else await page.locator('.prompt__cancel').click()
+        else await page.locator('.hand .card').nth(attack).click()
       }
       continue
     }
@@ -817,10 +867,8 @@ await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await enterFirstRoom()
 await endTurn()
-await page.getByRole('button', { name: 'Resolve enemies' }).click()
-await page.waitForFunction(() =>
-  ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
-)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'enemy')
+await page.getByText('Battle log', { exact: true }).click()
 const logShape = await page.evaluate(() => {
   const list = document.querySelector('.combat__log')
   if (!list) return null
@@ -995,58 +1043,6 @@ check('Full Knowledge previews both faces even when the collected reward will be
   assertEqual(previewPressed, 'true', 'the upgrade preview control is not announced as pressed')
   assertEqual(previewSelected, 'false', 'previewing an upgrade must not choose the reward')
 })
-await page.setViewportSize({ width: 390, height: 844 })
-const mobileRewardLayout = await page.locator('.reward-screen').evaluate((element) => ({
-  width: element.clientWidth,
-  scrollWidth: element.scrollWidth,
-  cards: [...element.querySelectorAll('.card')].slice(0, 3).map((card) => card.getBoundingClientRect().width),
-  rows: [...element.querySelectorAll('.reward-screen__cards')].map((row) => ({
-    width: row.clientWidth,
-    scrollWidth: row.scrollWidth,
-  })),
-  hints: [...element.querySelectorAll('.reward-screen__scroll-hint')].map((hint) => ({
-    text: hint.textContent,
-    display: getComputedStyle(hint).display,
-  })),
-  previewTargets: [...element.querySelectorAll('.reward-screen__choice > button')].map((button) => {
-    const rect = button.getBoundingClientRect()
-    return { width: rect.width, height: rect.height }
-  }),
-}))
-check('mobile reward cards stay readable inside their own horizontal tray', () => {
-  assert(mobileRewardLayout.scrollWidth <= mobileRewardLayout.width, 'the reward screen overflows sideways')
-  assert(mobileRewardLayout.cards.every((width) => width >= 145), 'reward cards became too small to read')
-  assert(mobileRewardLayout.rows.every((row) => row.scrollWidth > row.width), 'the card tray does not scroll')
-  assert(
-    mobileRewardLayout.hints.every((hint) => hint.display !== 'none' && hint.text?.includes('3 choices')),
-    'the horizontal tray has no visible scroll/count affordance',
-  )
-  assert(
-    mobileRewardLayout.previewTargets.every((target) => target.width >= 44 && target.height >= 44),
-    'an upgrade-preview touch target is smaller than 44px',
-  )
-})
-await shot('05eb-card-rewards-mobile')
-const touchReward = page.locator('.reward-screen__player').first().locator('.card').first()
-await touchTap(touchReward)
-const rewardInspectorActions = await page.getByRole('dialog', { name: /^Inspect / })
-  .locator('.card__inspection-actions button').allTextContents()
-check('touch reward inspection uses a neutral commit label', () => {
-  assertDeepEqual(rewardInspectorActions, ['Close', 'Select'])
-})
-await page.getByRole('button', { name: 'Close', exact: true }).click()
-await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = element.scrollHeight })
-const mobileCollectVisible = await page.getByRole('button', { name: 'Everyone must choose' }).evaluate((button) => {
-  const box = button.getBoundingClientRect()
-  return box.top >= 0 && box.bottom <= window.innerHeight
-})
-check('the final reward decision remains reachable on a phone', () => {
-  assert(mobileCollectVisible, 'the collect control cannot be scrolled into view')
-})
-await shot('05ec-card-rewards-mobile-bottom')
-await page.setViewportSize({ width: 1440, height: 900 })
-await page.locator('.reward-screen').evaluate((element) => { element.scrollTop = 0 })
-
 const deckSizesBeforeReward = rewardRun.players.map((player) => player.deck.length)
 await page.locator('.reward-screen__player').nth(0).locator('.card').first().click()
 const selectedCardPressed = await page.locator('.reward-screen__player').nth(0).locator('.card').first().getAttribute('aria-pressed')
@@ -1983,7 +1979,7 @@ await wraithPower.click()
 await shot('06zla-wraith-form-one-cube')
 await page.keyboard.press('Escape')
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
-await page.getByLabel('Seat').selectOption(colorlessBatch1Restore.combat.players[0].id)
+await chooseSeat(colorlessBatch1Restore.combat.players[0].id)
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
@@ -2051,11 +2047,11 @@ await unclippedCard.hover()
 await page.waitForTimeout(250)
 const hoveredCardTop = await inspectCardTop(unclippedCard)
 await shot('06zld-watcher-batch-one')
-check('hand cards and their hover lift are not clipped at the top edge', () => {
+check('hand cards stay put on hover and are not clipped at the top edge', () => {
   assertEqual(restingCardTop.handOverflowY, 'visible')
   assertDeepEqual(restingCardTop.blockers, [], `resting card top is clipped at ${restingCardTop.top}`)
   assertDeepEqual(hoveredCardTop.blockers, [], `hovered card top is clipped at ${hoveredCardTop.top}`)
-  assert(hoveredCardTop.top < restingCardTop.top, 'hover did not lift the card')
+  assertEqual(hoveredCardTop.top, restingCardTop.top, 'hover moved the card')
 })
 await page.setViewportSize({ width: 1200, height: 650 })
 await page.mouse.move(0, 0)
@@ -2065,24 +2061,10 @@ const shortRestingCardTop = await inspectCardTop(shortViewportCard)
 await shortViewportCard.hover()
 await page.waitForTimeout(250)
 const shortHoveredCardTop = await inspectCardTop(shortViewportCard)
-check('short desktop viewports preserve the unclipped hover lift', () => {
+check('short desktop viewports preserve the stationary unclipped card', () => {
   assertDeepEqual(shortRestingCardTop.blockers, [], `resting card top is clipped at ${shortRestingCardTop.top}`)
   assertDeepEqual(shortHoveredCardTop.blockers, [], `hovered card top is clipped at ${shortHoveredCardTop.top}`)
-  assert(
-    shortHoveredCardTop.top < shortRestingCardTop.top,
-    `short viewport hover did not lift the card (${shortRestingCardTop.top} -> ${shortHoveredCardTop.top})`,
-  )
-})
-await page.setViewportSize({ width: 390, height: 844 })
-await page.mouse.move(0, 0)
-const mobileCard = page.getByRole('button', { name: /^Scrawl\+,/ })
-await mobileCard.hover()
-await mobileCard.evaluate((card) => card.classList.add('card--selected'))
-await page.waitForTimeout(250)
-const mobileCardTransform = await mobileCard.evaluate((card) => getComputedStyle(card).transform)
-await mobileCard.evaluate((card) => card.classList.remove('card--selected'))
-check('touch-width cards stay flat while hovered or selected', () => {
-  assertEqual(mobileCardTransform, 'none')
+  assertEqual(shortHoveredCardTop.top, shortRestingCardTop.top, 'short viewport hover moved the card')
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 const outerCard = page.locator('.hand .card').first()
@@ -2529,7 +2511,7 @@ check('Meditate-retained cards bypass the discard UI and become last-turn Retain
   assert(recovered.every((card) => card.retainedLastTurn && !card.retainThisTurn))
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), colorlessBatch1Restore)
-await page.getByLabel('Seat').selectOption(colorlessBatch1Restore.combat.players[0].id)
+await chooseSeat(colorlessBatch1Restore.combat.players[0].id)
 
 await page.evaluate((baseline) => {
   const run = structuredClone(baseline)
@@ -2660,14 +2642,11 @@ await toolsDialog.waitFor()
 const toolsDialogOpen = await toolsDialog.getAttribute('open')
 const toolsDialogCards = await toolsDialog.getByRole('button').count()
 await toolsDialog.getByRole('button', { name: /^Tactician/ }).hover()
-const toolsInspectionVisible = await toolsDialog.locator('.card__inspection').evaluate((preview) => {
-  const box = preview.getBoundingClientRect()
-  return getComputedStyle(preview).visibility === 'visible' && box.width > 0 && box.height > 0
-})
+const toolsInspectionCount = await toolsDialog.locator('.card__inspection').count()
 check('Tools of the Trade presents a focused private discard choice', () => {
   assertEqual(toolsDialogOpen, '')
   assertEqual(toolsDialogCards, 2)
-  assert(toolsInspectionVisible, 'card inspection rendered behind the native choice modal')
+  assertEqual(toolsInspectionCount, 0, 'hover preview inside the native choice modal')
 })
 await page.mouse.move(0, 0)
 await shot('06zlb-tools-of-the-trade-discard')
@@ -2934,7 +2913,7 @@ await page.waitForTimeout(150)
 await shot('06zpg-headbutt-discard-choice')
 await headbuttDialog.getByRole('button', { name: 'Put selected card on top' }).click()
 await page.waitForSelector('.enemy--targeted')
-await page.getByRole('button', { name: 'Cancel' }).click()
+await headbuttCard.click()
 await page.waitForSelector('.enemy--targeted', { state: 'detached' })
 const cancelledConfirmedHeadbutt = await readState()
 check('Headbutt remains cancelable after confirming its discard choice', () => {
@@ -3511,8 +3490,8 @@ const loopTarget = page.getByRole('combobox', { name: /Target for Defect — Loo
 const loopTargetUid = await loopTarget.locator('option', { hasText: 'Lightning Orb 1 → Red Louse' }).getAttribute('value')
 await loopTarget.selectOption(loopTargetUid)
 await shot('06zphgic1-loop-order')
-await page.setViewportSize({ width: 390, height: 844 })
-const mobileLoopOrder = await page.locator('.end-turn-order[open] > ol').evaluate((panel) => {
+await page.setViewportSize({ width: 1280, height: 800 })
+const compactLoopOrder = await page.locator('.end-turn-order[open] > ol').evaluate((panel) => {
   const rect = panel.getBoundingClientRect()
   return {
     insideViewport: rect.left >= 0 && rect.right <= innerWidth,
@@ -3520,10 +3499,10 @@ const mobileLoopOrder = await page.locator('.end-turn-order[open] > ol').evaluat
   }
 })
 check('Loop target choices stay inside a narrow end-turn tray', () => {
-  assert(mobileLoopOrder.insideViewport, 'the end-turn tray left the viewport')
-  assert(mobileLoopOrder.rowsFit, 'an end-turn ability row overflowed its tray')
+  assert(compactLoopOrder.insideViewport, 'the end-turn tray left the viewport')
+  assert(compactLoopOrder.rowsFit, 'an end-turn ability row overflowed its tray')
 })
-await shot('06zphgic1a-loop-mobile-order')
+await shot('06zphgic1a-loop-compact-desktop-order')
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
@@ -4074,7 +4053,7 @@ check('Whirlwind+ asks how much Energy to spend before exposing row targets', ()
   assert(whirlwindLabel.includes('affects a whole row and any boss'), whirlwindLabel)
   assertEqual(whirlwindTargetsBeforeEnergy, 0)
 })
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 1280, height: 800 })
 await page.waitForTimeout(60)
 const narrowWhirlwindPicker = await page.evaluate(() => {
   const prompt = document.querySelector('.prompt')?.getBoundingClientRect()
@@ -4085,10 +4064,10 @@ const narrowWhirlwindPicker = await page.evaluate(() => {
 })
 check('the full six-Energy Whirlwind picker wraps inside a narrow viewport', () => {
   assertEqual(narrowWhirlwindPicker.count, 7)
-  assert(narrowWhirlwindPicker.promptRight <= 390, `prompt extends to ${narrowWhirlwindPicker.promptRight}px`)
-  assert(narrowWhirlwindPicker.lastRight <= 390, `Spend 6 extends to ${narrowWhirlwindPicker.lastRight}px`)
+  assert(narrowWhirlwindPicker.promptRight <= 1280, `prompt extends to ${narrowWhirlwindPicker.promptRight}px`)
+  assert(narrowWhirlwindPicker.lastRight <= 1280, `Spend 6 extends to ${narrowWhirlwindPicker.lastRight}px`)
 })
-await shot('06zpsa-whirlwind-energy-mobile')
+await shot('06zpsa-whirlwind-energy-compact-desktop')
 await page.setViewportSize({ width: 1440, height: 900 })
 await shot('06zps-whirlwind-energy')
 await page.getByRole('button', { name: 'Spend 2' }).click()
@@ -4311,7 +4290,7 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false, abilityUsed: true })
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.getByText('Mayhem — play the drawn card for 0 Energy').waitFor()
 const forcedMayhem = page.getByRole('button', { name: /^Meteor Strike\+, cost 0,/ })
 await forcedMayhem.waitFor()
@@ -4358,7 +4337,7 @@ await page.evaluate((baseline) => {
   }))
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.getByRole('button', { name: /^Survivor, cost 0,/ }).click()
 await page.getByText(/Discard 1 card.*0\/1 chosen/).waitFor()
 const forcedChoiceFodder = page.getByRole('button', { name: /^Defend,/ }).first()
@@ -4677,7 +4656,7 @@ await page.evaluate(() => {
   }
   debug.setRun(run)
 })
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.locator('.combat[data-phase="player"]').waitFor()
 const barricaded = await readState()
 check('Barricade+ visibly preserves only its owner\'s Block through Start of Turn', () => {
@@ -5077,7 +5056,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const discountedCards = await page.locator('.hand .card').evaluateAll((cards) => cards.map((card) => ({
-  cost: card.querySelector('.card__cost')?.textContent,
+  cost: card.querySelector('.card-face__cost')?.textContent,
   label: card.getAttribute('aria-label'),
 })))
 check('Power discounts update both visible and accessible card costs', () => {
@@ -5717,7 +5696,7 @@ await page.evaluate(() => {
   Object.assign(run.combat.players[0], { hand: [], discard: [], block: 5 })
   debug.setRun(run)
 })
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.getByText('Before-draw Scry order (2)').waitFor()
 await page.getByRole('button', { name: 'Confirm before-draw order' }).click()
 const foresightDialog = page.getByRole('dialog', { name: 'Foresight — Scry 3' })
@@ -5994,7 +5973,7 @@ await infinitePower.click()
 await waitForPowerZoom()
 await shot('07w-silent-infinite-blades-ready')
 await infinitePower.click()
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.locator('.combat[data-phase="start"]').waitFor()
 await page.locator('.end-turn-order > summary').click()
 await page.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
@@ -6061,7 +6040,7 @@ await noxiousPower.click()
 await waitForPowerZoom()
 await shot('07z-silent-noxious-fumes-ready')
 await noxiousPower.click()
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.locator('.combat[data-phase="start"]').waitFor()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes') &&
   document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
@@ -6098,7 +6077,7 @@ await page.evaluate(() => {
 const noxiousUpgraded = page.locator('.power[aria-label^="Noxious Fumes+"]')
 await noxiousUpgraded.waitFor()
 const noxiousUpgradedLabel = await noxiousUpgraded.getAttribute('aria-label')
-await page.getByRole('button', { name: 'Start turn 3' }).click()
+await waitForAutomaticTurn(3)
 await page.locator('.combat[data-phase="player"]').waitFor()
 const noxiousAll = await readState()
 check('upgraded Noxious Fumes automatically poisons every enemy', () => {
@@ -6142,7 +6121,7 @@ await stormPower.click()
 await waitForPowerZoom()
 await shot('07zc-defect-storm-ready')
 await page.keyboard.press('Escape')
-await page.getByRole('button', { name: 'Start turn 2' }).click()
+await waitForAutomaticTurn(2)
 await page.locator('.combat[data-phase="start"]').waitFor()
 await page.getByRole('button', { name: 'dark slot 3' }).waitFor()
 await shot('07zd-defect-storm-orb-choice')
@@ -6204,7 +6183,7 @@ await page.evaluate(() => {
   }
   debug.setRun(run)
 })
-await page.getByRole('button', { name: 'Start turn 3' }).click()
+await waitForAutomaticTurn(3)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
@@ -6256,7 +6235,7 @@ await page.evaluate(() => {
   }
   debug.setRun(run)
 })
-await page.getByRole('button', { name: 'Start turn 4' }).click()
+await waitForAutomaticTurn(4)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const finalStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
@@ -6277,11 +6256,7 @@ await shot('07zh-defect-storm-final-target-fallback')
 await page.evaluate((combat) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  debug.setRun({ ...run, phase: 'combat', combat })
-}, finalStormState)
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
+  Object.assign(run, { phase: 'combat', combat: structuredClone(combat) })
   const actor = run.combat.players[0]
   Object.assign(run.combat, { phase: 'roundEnd', log: [] })
   Object.assign(actor, {
@@ -6303,8 +6278,8 @@ await page.evaluate(() => {
     })
   }
   debug.setRun(run)
-})
-await page.getByRole('button', { name: 'Start turn 5' }).click()
+}, finalStormState)
+await waitForAutomaticTurn(5)
 await page.getByRole('button', { name: 'lightning slot 1' }).click()
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const postStormShivResolve = page.getByRole('button', { name: 'Resolve start of turn' })
@@ -6345,7 +6320,7 @@ await page.evaluate(({ baseline, combat }) => {
   }
   debug.setRun(run)
 }, { baseline: runBeforeStorm, combat: postStormShivState })
-await page.getByRole('button', { name: 'Start turn 6' }).click()
+await waitForAutomaticTurn(6)
 await page.getByRole('button', { name: /Jaw Worm/ }).click()
 const postShivStormResolve = page.getByRole('button', { name: 'Resolve start of turn' })
 const postShivStormReady = await postShivStormResolve.isEnabled()
@@ -6494,11 +6469,11 @@ const explosiveTarget = firedPotion.enemies
   .filter((enemy) => !enemy.dead && !enemy.isBoss)
   .sort((a, b) => b.row - a.row)[0]
 assert(explosiveTarget, 'the browser potion playtest needs one living row target')
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 1280, height: 800 })
 await page.locator('.combat__actions').getByRole('button', { name: /Explosive Potion/ }).click()
 await page.waitForSelector('.row__potion-target')
-const mobileRowTargets = page.locator('.row__potion-target')
-const mobileRowTargetGeometry = await mobileRowTargets.evaluateAll((targets) => {
+const compactRowTargets = page.locator('.row__potion-target')
+const compactRowTargetGeometry = await compactRowTargets.evaluateAll((targets) => {
   const board = document.querySelector('.board')
   const seats = [...document.querySelectorAll('.row .row__seat')]
   const x = (element) => element.getBoundingClientRect().left + board.scrollLeft
@@ -6511,20 +6486,20 @@ const mobileRowTargetGeometry = await mobileRowTargets.evaluateAll((targets) => 
     }),
   }
 })
-const mobileRowTargetReachability = []
-for (const target of await mobileRowTargets.all()) {
+const compactRowTargetReachability = []
+for (const target of await compactRowTargets.all()) {
   await target.scrollIntoViewIfNeeded()
-  mobileRowTargetReachability.push(await target.evaluate((button) => {
+  compactRowTargetReachability.push(await target.evaluate((button) => {
     const board = button.closest('.board').getBoundingClientRect()
     const box = button.getBoundingClientRect()
     return box.left >= board.left - 1 && box.right <= board.right + 1
   }))
 }
-check('two-player mobile row targets track their lanes and remain touch-reachable', () => {
-  assertDeepEqual(mobileRowTargetGeometry.targetSteps, mobileRowTargetGeometry.seatSteps)
-  assert(mobileRowTargetGeometry.sizes.every((size) => size.width >= 44 && size.height >= 44),
-    `row target below 44px: ${JSON.stringify(mobileRowTargetGeometry.sizes)}`)
-  assert(mobileRowTargetReachability.every(Boolean), 'a row target cannot be scrolled fully into the board viewport')
+check('two-player compact desktop row targets track their lanes and remain reachable', () => {
+  assertDeepEqual(compactRowTargetGeometry.targetSteps, compactRowTargetGeometry.seatSteps)
+  assert(compactRowTargetGeometry.sizes.every((size) => size.width >= 44 && size.height >= 44),
+    `row target below 44px: ${JSON.stringify(compactRowTargetGeometry.sizes)}`)
+  assert(compactRowTargetReachability.every(Boolean), 'a row target cannot be scrolled fully into the board viewport')
 })
 await page.locator('.prompt').evaluate(async (element) => {
   await Promise.all(element.getAnimations().map((animation) => animation.finished))
@@ -6772,7 +6747,6 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length ==
 await enterFirstRoom()
 const foldProbe = []
 for (const size of [
-  { width: 360, height: 720 },
   { width: 900, height: 620 },
   { width: 1440, height: 900 },
 ]) {
@@ -6795,17 +6769,18 @@ for (const size of [
         // can actually see the number.
         onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
         onTop: !!hit?.closest('.bar'),
+        hit: hit ? `${hit.tagName}.${hit.className}` : 'nothing',
       }
     }, `${size.width}x${size.height}`),
   )
 }
 await page.setViewportSize({ width: 1440, height: 900 })
-check("an enemy's hit points are on screen without scrolling, at every size", () => {
+check("an enemy's hit points are on screen without scrolling at desktop sizes", () => {
   for (const probe of foldProbe) {
     assert(!probe.missing, `${probe.label}: no enemy bar found`)
     assert(probe.inside, `${probe.label}: the bar is outside the board's visible box`)
     assert(probe.onScreen, `${probe.label}: the bar is off the viewport entirely`)
-    assert(probe.onTop, `${probe.label}: the bar is covered by something else`)
+    assert(probe.onTop, `${probe.label}: the bar is covered by ${probe.hit}`)
   }
 })
 
@@ -6821,13 +6796,9 @@ await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
 await enterFirstRoom()
 await endTurn()
-await page.getByRole('button', { name: 'Resolve enemies' }).click()
-await page.waitForFunction(() =>
-  ['roundEnd', 'won', 'lost'].includes(window.__STS_DEBUG__.getState().phase),
-)
+await waitForAutomaticEnemyResolution()
 const pauseProbe = []
 for (const size of [
-  { width: 360, height: 720 },
   { width: 900, height: 620 },
   { width: 1440, height: 900 },
 ]) {
@@ -6865,7 +6836,6 @@ const crowdedProbe = []
 // The whole four-row board scrolls, but the row you control — including every
 // summon in it — must fit at each supported size.
 for (const size of [
-  { width: 390, height: 844 },
   { width: 900, height: 620 },
   { width: 1440, height: 900 },
 ]) {
@@ -7263,22 +7233,6 @@ check('a used Curl Up is visibly and accessibly spent', () => {
   assert(spentCurl.decoration.includes('line-through'), 'the spent state has no non-colour visual treatment')
 })
 
-await page.setViewportSize({ width: 390, height: 844 })
-const abilityTarget = page.locator('.enemy').filter({ hasText: 'Red Louse' })
-const abilityInspect = await abilityTarget.locator('.enemy__ability').evaluate((ability) => ({
-  width: ability.getBoundingClientRect().width,
-  height: ability.getBoundingClientRect().height,
-  fontSize: parseFloat(getComputedStyle(ability).fontSize),
-  text: ability.textContent ?? '',
-  clipped: ability.scrollHeight > ability.clientHeight + 1 || ability.scrollWidth > ability.clientWidth + 1,
-}))
-check('mobile enemy abilities remain directly readable', () => {
-  assert(abilityInspect.width > 80 && abilityInspect.height > 10 && abilityInspect.fontSize >= 10,
-    'the ability rule collapsed behind an icon')
-  assert(abilityInspect.text.includes('Curl Up'), `the visible rule is incomplete: ${abilityInspect.text}`)
-  assert(!abilityInspect.clipped, 'the visible ability rule is clipped')
-})
-
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -7290,7 +7244,7 @@ const longAbilityInspect = await page.locator('.enemy').filter({ hasText: 'Fungi
   text: ability.textContent ?? '',
   clipped: ability.scrollHeight > ability.clientHeight + 1 || ability.scrollWidth > ability.clientWidth + 1,
 }))
-check('the longest mobile enemy ability is fully visible', () => {
+check('the longest enemy ability is fully visible', () => {
   assert(longAbilityInspect.text.includes('Spore Cloud'), `unexpected rule: ${longAbilityInspect.text}`)
   assert(!longAbilityInspect.clipped, 'Spore Cloud is clipped')
 })
@@ -7319,10 +7273,9 @@ await page.evaluate(() => {
 await page.waitForFunction(() => document.querySelectorAll('.row--viewer .enemy').length === 3)
 const threeEnemyProbe = []
 
-// Nothing should overflow horizontally at any supported width.
+// Nothing should overflow horizontally at supported desktop widths.
 for (const [label, width, height] of [
-  ['07-mobile', 390, 844],
-  ['08-tablet', 820, 1180],
+  ['07-desktop', 1280, 800],
   ['09-desktop-wide', 1920, 1080],
 ]) {
   await page.setViewportSize({ width, height })
@@ -7350,13 +7303,7 @@ for (const [label, width, height] of [
       insideRow: rects.every((rect) => rect.left >= boardRect.left - 1 && rect.right <= boardRect.right + 1),
       insideBoard: rects.every((rect) => rect.top >= boardRect.top - 1 && rect.bottom <= boardRect.bottom + 1),
       onScreen: rects.every((rect) => rect.top >= 0 && rect.bottom <= window.innerHeight),
-      viewerHud: (() => {
-        const hud = document.querySelector('.party-rail__player--viewer')
-        if (!hud) return false
-        const rect = hud.getBoundingClientRect()
-        return rect.left >= -1 && rect.right <= window.innerWidth + 1 && rect.top >= 0 && rect.bottom <= window.innerHeight &&
-          /\d+\/\d+/.test(hud.textContent ?? '')
-      })(),
+      duplicatePlayerHud: Boolean(document.querySelector('.party-rail')),
     }
   }, `${width}x${height}`))
 }
@@ -7367,56 +7314,8 @@ check('three enemies in one player row remain readable at every supported width'
     assert(probe.insideRow, `${probe.size}: an enemy clips outside its player row`)
     assert(probe.insideBoard, `${probe.size}: an enemy health bar clips outside the board`)
     assert(probe.onScreen, `${probe.size}: an enemy health bar is off screen`)
-    assert(probe.viewerHud, `${probe.size}: the controlled player's HP HUD is not visible`)
+    assert(!probe.duplicatePlayerHud, `${probe.size}: duplicate player HUD is still visible`)
   }
-})
-
-await page.setViewportSize({ width: 390, height: 844 })
-await page.waitForTimeout(60)
-const manualHorizontalScroll = await page.evaluate(async () => {
-  const board = document.querySelector('.board')
-  const max = board.scrollWidth - board.clientWidth
-  const target = board.scrollLeft > max / 2
-    ? Math.max(0, board.scrollLeft - 40)
-    : Math.min(max, board.scrollLeft + 40)
-  board.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaX: target - board.scrollLeft }))
-  board.scrollLeft = target
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-  const movedTo = board.scrollLeft
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  run.combat.log.push('Horizontal scroll follow probe')
-  debug.setRun(run)
-  return { max, target, movedTo }
-})
-await page.waitForTimeout(80)
-const horizontalAfterUpdate = await page.locator('.board').evaluate((board) => board.scrollLeft)
-check('one deliberate horizontal scroll disables automatic recentering', () => {
-  assert(manualHorizontalScroll.max > 40, 'precondition: the mobile board must overflow horizontally')
-  assert(Math.abs(manualHorizontalScroll.movedTo - manualHorizontalScroll.target) < 1,
-    `the manual scroll did not land: ${JSON.stringify(manualHorizontalScroll)}`)
-  assert(Math.abs(horizontalAfterUpdate - manualHorizontalScroll.target) < 1,
-    `a state update snapped horizontal scroll from ${manualHorizontalScroll.target} to ${horizontalAfterUpdate}`)
-})
-
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  const boss = run.combat.enemies[0]
-  document.querySelector('.board').scrollLeft = 0
-  run.combat.enemies = [{ ...boss, uid: 'mobile-boss', defId: 'gremlin_nob', isBoss: true, dead: false }]
-  debug.setRun(run)
-})
-await page.setViewportSize({ width: 390, height: 844 })
-await page.waitForTimeout(80)
-const bossMobile = await page.locator('.board__bosses .enemy').evaluate((boss) => {
-  const board = boss.closest('.board').getBoundingClientRect()
-  const rect = boss.getBoundingClientRect()
-  return { left: rect.left, right: rect.right, boardLeft: board.left, boardRight: board.right }
-})
-check('a mobile boss-only combat opens with the boss visible', () => {
-  assert(bossMobile.left >= bossMobile.boardLeft - 1 && bossMobile.right <= bossMobile.boardRight + 1,
-    `boss is outside the board viewport: ${JSON.stringify(bossMobile)}`)
 })
 
 // Cards that need a choice or an ally are the ones most easily broken by a UI
@@ -7646,28 +7545,32 @@ check('Powers in play are shown on the seat as readable glyphs', () => {
   }
 })
 
-await page.setViewportSize({ width: 390, height: 844 })
-const mobilePowerTargets = await page.locator('.row__seat .power').evaluateAll((buttons) => buttons.map((button) => {
+await page.setViewportSize({ width: 1280, height: 800 })
+const compactPowerTargets = await page.locator('.row__seat .power').evaluateAll((buttons) => buttons.map((button) => {
   const box = button.getBoundingClientRect()
   const icon = button.querySelector('.icon').getBoundingClientRect()
   return { width: box.width, height: box.height, iconWidth: icon.width, iconHeight: icon.height }
 }))
-check('mobile Power inspection keeps a 44px hit area around its compact glyph', () => {
-  assert(mobilePowerTargets.every((target) => target.width >= 44 && target.height >= 44),
-    `Power hit target below 44px: ${JSON.stringify(mobilePowerTargets)}`)
-  assert(mobilePowerTargets.every((target) => target.iconWidth <= 22 && target.iconHeight <= 22),
-    `Power glyph grew instead of its hit area: ${JSON.stringify(mobilePowerTargets)}`)
+check('compact desktop Power inspection keeps a 44px hit area around its compact glyph', () => {
+  assert(compactPowerTargets.every((target) => target.width >= 44 && target.height >= 44),
+    `Power hit target below 44px: ${JSON.stringify(compactPowerTargets)}`)
+  assert(compactPowerTargets.every((target) => target.iconWidth <= 22 && target.iconHeight <= 22),
+    `Power glyph grew instead of its hit area: ${JSON.stringify(compactPowerTargets)}`)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 
 const statusStripGeometry = await page.locator('.row__seat').first().evaluate((seat) => {
   const bar = seat.querySelector('.seat .bar')?.getBoundingClientRect()
   const strip = seat.querySelector('.seat__status-strip')?.getBoundingClientRect()
-  return { present: Boolean(strip), gap: bar && strip ? strip.top - bar.bottom : Infinity }
+  const overlaps = bar && strip
+    ? strip.left < bar.right && strip.right > bar.left && strip.top < bar.bottom && strip.bottom > bar.top
+    : true
+  return { present: Boolean(strip), gap: bar && strip ? bar.top - strip.bottom : Infinity, overlaps }
 })
-check('player tokens and Powers stay anchored beneath their HP bar', () => {
+check('player tokens and Powers stay anchored above their HP bar', () => {
   assert(statusStripGeometry.present, 'the shared status strip is missing')
-  assert(statusStripGeometry.gap > -4 && statusStripGeometry.gap < 24,
+  assertEqual(statusStripGeometry.overlaps, false, 'the shared status strip covers HP')
+  assert(statusStripGeometry.gap >= 0 && statusStripGeometry.gap < 64,
     `the status strip is detached from its owner by ${statusStripGeometry.gap}px`)
 })
 
@@ -7692,9 +7595,6 @@ const hoverProbes = []
 for (const size of [
   { width: 1440, height: 900 },
   { width: 900, height: 620 },
-  // Narrow enough that a 190px card anchored at the tile would overflow the
-  // right edge, which is the only way the horizontal clamp is exercised.
-  { width: 360, height: 720 },
 ]) {
   await page.setViewportSize(size)
   const tiles = await page.locator('.row__seat .power').count()
@@ -7955,7 +7855,7 @@ check('a pinned Power stays pinned, and every dismissal works', () => {
 })
 
 check('a Power can be reached without a mouse', () => {
-  // Hover-only left touch and keyboard users with unidentifiable 34x22 blobs.
+  // Hover-only left pointer and keyboard users with unidentifiable 34x22 blobs.
   for (const art of powerArt) {
     assert(art.isButton, 'a Power tile should be a button')
     assert(art.focusable, 'and reachable by keyboard')
@@ -8006,18 +7906,18 @@ await page.evaluate(() => {
   ]
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 1280, height: 800 })
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
-const mobileDiscardControls = await page.locator('.combat__actions').evaluate((element) => {
+const compactDiscardControls = await page.locator('.combat__actions').evaluate((element) => {
   const box = element.getBoundingClientRect()
   return { left: box.left, right: box.right, width: window.innerWidth }
 })
-check('multiplayer discard controls fit a touch-sized screen', () => {
-  assert(mobileDiscardControls.left >= 0, 'discard controls spill off the left edge')
-  assert(mobileDiscardControls.right <= mobileDiscardControls.width, 'discard controls spill off the right edge')
+check('multiplayer discard controls fit a minimum desktop screen', () => {
+  assert(compactDiscardControls.left >= 0, 'discard controls spill off the left edge')
+  assert(compactDiscardControls.right <= compactDiscardControls.width, 'discard controls spill off the right edge')
 })
-await shot('15a-mobile-discard-order')
+await shot('15a-compact-desktop-discard-order')
 const discardOptions = await page.getByLabel('Top discard for Ironclad').locator('option').allTextContents()
 check('Retain cards are excluded from the top-discard choice', () => {
   assert(!discardOptions.some((option) => option.includes('Protect')), `Retain leaked into: ${discardOptions.join(' | ')}`)
@@ -8026,7 +7926,7 @@ await page.getByLabel('Top discard for Ironclad').selectOption('end-deflect')
 await confirmAllDiscards()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
 await page.waitForFunction(() => document.querySelector('.pile__top')?.textContent?.includes('Deflect'))
-const mobilePileTop = await page.locator('.pile__top').first().evaluate((element) => {
+const compactPileTop = await page.locator('.pile__top').first().evaluate((element) => {
   const box = element.getBoundingClientRect()
   return {
     text: element.textContent ?? '',
@@ -8034,16 +7934,16 @@ const mobilePileTop = await page.locator('.pile__top').first().evaluate((element
     onScreen: box.left >= 0 && box.right <= window.innerWidth,
   }
 })
-check('the top discard card and cost are visible on touch-sized screens', () => {
-  assert(mobilePileTop.visible, 'the top card should be painted')
-  assert(mobilePileTop.onScreen, 'the top card should fit on screen')
-  assert(/0 · Deflect/.test(mobilePileTop.text), `expected Deflect and its cost, got ${mobilePileTop.text}`)
+check('the top discard card and cost are visible on minimum desktop screens', () => {
+  assert(compactPileTop.visible, 'the top card should be painted')
+  assert(compactPileTop.onScreen, 'the top card should fit on screen')
+  assert(/0 · Deflect/.test(compactPileTop.text), `expected Deflect and its cost, got ${compactPileTop.text}`)
 })
-await shot('15-mobile-discard-top')
+await shot('15-compact-desktop-discard-top')
 
 // A card keeps its uid when it cycles through the deck. A top-card choice from
 // one turn must not silently select that same card when it comes back later.
-await page.getByLabel('Seat').selectOption('p1')
+await chooseSeat('p1')
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -8164,10 +8064,10 @@ const potionSeatIds = await page.evaluate(() => {
   debug.setRun(run)
   return run.players.map((player) => player.id)
 })
-await page.getByLabel('Seat').selectOption(potionSeatIds[0])
+await chooseSeat(potionSeatIds[0])
 await page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true }).click()
 await page.locator('.outside-potions__targets').waitFor()
-await page.getByLabel('Seat').selectOption(potionSeatIds[1])
+await chooseSeat(potionSeatIds[1])
 await page.locator('.outside-potions__targets').waitFor({ state: 'detached' })
 const inheritedPotionMenu = await page.locator('.outside-potions')
   .getByRole('button', { name: 'Give Energy Potion', exact: true }).getAttribute('aria-expanded')
@@ -8278,7 +8178,7 @@ const localRelicSeats = await page.evaluate(() => {
   debug.setRun(run)
   return run.players.map((player) => player.id)
 })
-await page.getByLabel('Seat').selectOption(localRelicSeats[0])
+await chooseSeat(localRelicSeats[0])
 await page.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
 await page.locator('.map[inert]').waitFor()
 const localOwnerMapBlocked = await page.locator('.map').evaluate((map) => {
@@ -8286,7 +8186,7 @@ const localOwnerMapBlocked = await page.locator('.map').evaluate((map) => {
   room?.focus()
   return map.inert && document.activeElement !== room
 })
-await page.getByLabel('Seat').selectOption(localRelicSeats[1])
+await chooseSeat(localRelicSeats[1])
 await page.getByRole('status').filter({ hasText: 'Waiting for Ironclad to resolve Astrolabe' }).waitFor()
 await page.locator('.map[inert]').waitFor()
 const localTeammateMapBlocked = await page.locator('.map').evaluate((map) => {
@@ -8298,7 +8198,7 @@ check('a mandatory local Relic makes owner and teammate map progression inert', 
   assert(localOwnerMapBlocked)
   assert(localTeammateMapBlocked)
 })
-await page.getByLabel('Seat').selectOption(localRelicSeats[0])
+await chooseSeat(localRelicSeats[0])
 const localAstrolabeChoices = page.locator('.campfire__deck button')
 for (let index = 0; index < 3; index++) await localAstrolabeChoices.nth(index).click()
 await page.getByRole('button', { name: 'Resolve Relic' }).click()
@@ -8376,8 +8276,9 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   debug.setRun({ ...run, campaignProgress: { ...run.campaignProgress, highestAscension: 13 } })
 })
-page.once('dialog', (dialog) => dialog.accept())
-await page.getByLabel('Ascension').selectOption('9')
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().campaignProgress.highestAscension === 13)
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'ascension-9', 9))
+await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().ascension === 9)
 const ascendedSetup = await readRun()
 const ascensionHeader = await page.locator('.run-status').textContent()
@@ -9136,10 +9037,6 @@ check('boss portraits, backdrops, mechanics, and accessible labels render togeth
   assert(bossVisuals.every((boss) => boss.box.width <= 320 && boss.box.height <= 360),
     'boss cards must remain card-sized')
 })
-await page.addStyleTag({ content: `
-  .combat { height: auto !important; }
-  .board { flex: none !important; overflow: visible !important; mask-image: none !important; }
-` })
 await page.locator('.board').evaluate((board) => { board.scrollTop = 0 })
 const bossContainment = await page.locator('.board').evaluate((board) => {
   const outer = board.getBoundingClientRect()
@@ -9306,8 +9203,7 @@ check('the Act IV capture contains both complete enemy cards', () => {
 await shot('18-act4-facing', page.locator('.board'))
 
 // Manual Relics are game actions, not catalog text. Exercise the private,
-// reconnect-shaped Golden Eye interaction at a phone viewport so the card
-// choice remains both reachable and visually reviewable.
+// reconnect-shaped Golden Eye interaction on the supported desktop stage.
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -9324,7 +9220,8 @@ await page.evaluate(() => {
   run.combat.phase = 'player'
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 390, height: 844 })
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.locator('.relic-actions > summary').click()
 await page.getByRole('button', { name: 'Use Golden Eye' }).click()
 const goldenEyePanel = page.getByRole('dialog', { name: 'Golden Eye — Scry 3' })
 await goldenEyePanel.waitFor()
@@ -9332,12 +9229,12 @@ await page.mouse.move(0, 0)
 await page.waitForTimeout(400)
 const goldenEyeCardCount = await goldenEyePanel.locator('.card').count()
 const competingRelicActions = await page.getByRole('button', { name: 'Use Akabeko' }).count()
-check('manual Relics expose a private mobile card-choice surface', () => {
+check('manual Relics expose a private desktop card-choice surface', () => {
   assertEqual(goldenEyeCardCount, 3)
   assert(competingRelicActions === 0,
     'other combat actions stayed available during the private Scry')
 })
-await shot('manual-relic-mobile')
+await shot('manual-relic-desktop')
 await goldenEyePanel.getByRole('button', { name: /^Strike,/ }).click()
 await goldenEyePanel.getByRole('button', { name: 'Discard 1' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().pendingRelicScry === undefined)
@@ -9362,9 +9259,11 @@ await page.evaluate(() => {
   ]
   debug.setRun(run)
 })
-const invalidPostRollRelics = await page.locator('.relic-actions summary').filter({
-  hasText: /Dolly's Mirror|Nilry's Codex|Loaded Die|Charon's Ashes/,
+await page.locator('.relic-actions > summary').click()
+const invalidPostRollRelics = await page.getByRole('button', {
+  name: /Use (Dolly's Mirror|Nilry's Codex|Loaded Die|Charon's Ashes)/,
 }).count()
+await page.getByRole('button', { name: 'Use The Abacus' }).waitFor()
 const validPostRollRelic = await page.getByRole('button', { name: 'Use The Abacus' }).count()
 check('a paused post-roll window shows only Relics matching the rolled face', () => {
   assertEqual(invalidPostRollRelics, 0)
@@ -9376,6 +9275,8 @@ await page.evaluate(() => {
   run.combat.startTurnProgress = { choices: [] }
   debug.setRun(run)
 })
+await page.waitForFunction(() => ![...document.querySelectorAll('button')]
+  .some((button) => button.textContent?.trim() === 'Use The Abacus'))
 const relicDuringStartProgress = await page.getByRole('button', { name: 'Use The Abacus' }).count()
 check('private start progress hides post-roll Relic controls', () => {
   assertEqual(relicDuringStartProgress, 0)

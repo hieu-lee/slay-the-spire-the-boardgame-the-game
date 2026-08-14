@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
-import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
@@ -22,9 +20,15 @@ type CardProps = {
   picked?: boolean
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
-  /** Commit label in the touch inspector. Non-play surfaces keep the neutral default. */
-  actionLabel?: string
   onClick?: (card: CardInstance) => void
+}
+
+/** Show an optional publisher scan only after Chromium can decode its pixels. */
+export function revealDecodedImage(image: HTMLImageElement) {
+  void image.decode().then(
+    () => { image.style.visibility = 'visible' },
+    () => { image.style.visibility = 'hidden' },
+  )
 }
 
 /**
@@ -345,42 +349,9 @@ export function Card({
   selected = false,
   picked = false,
   fan = 0,
-  actionLabel = 'Select',
   onClick,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
-  const [inspection, setInspection] = useState<'preview' | 'pinned' | null>(null)
-  const cardButton = useRef<HTMLButtonElement>(null)
-  const dialog = useRef<HTMLDialogElement>(null)
-  const suppressNextFocusPreview = useRef(false)
-  const touchStartedOpen = useRef(false)
-  const lastPointerType = useRef('')
-  const showInspection = () => setInspection('preview')
-  const hidePreview = () => setInspection((open) => open === 'preview' ? null : open)
-  const previewHost = cardButton.current?.closest<HTMLDialogElement>('dialog[open]') ?? document.body
-  useEffect(() => {
-    if (inspection !== 'pinned' || !dialog.current) return undefined
-    const modal = dialog.current
-    modal.showModal()
-    modal.querySelector<HTMLButtonElement>('button')?.focus()
-    const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return
-      const controls = [...modal.querySelectorAll<HTMLElement>('button')]
-      if (controls.length === 0) return
-      const edge = event.shiftKey ? controls[0] : controls.at(-1)
-      if (document.activeElement === edge) {
-        event.preventDefault()
-        controls[event.shiftKey ? controls.length - 1 : 0]?.focus()
-      }
-    }
-    modal.addEventListener('keydown', trapFocus)
-    return () => {
-      modal.removeEventListener('keydown', trapFocus)
-      if (modal.open) modal.close()
-      suppressNextFocusPreview.current = true
-      cardButton.current?.focus()
-    }
-  }, [inspection])
   const className = [
     'card',
     playable ? '' : 'card--unplayable',
@@ -391,9 +362,7 @@ export function Card({
     .join(' ')
 
   return (
-    <>
     <button
-      ref={cardButton}
       type="button"
       className={className}
       style={{
@@ -405,34 +374,11 @@ export function Card({
         '--fan-lift': `${Math.abs(fan) * 14}px`,
       } as React.CSSProperties}
       aria-disabled={!playable}
-      onMouseEnter={showInspection}
-      onMouseLeave={hidePreview}
-      onFocus={() => {
-        if (suppressNextFocusPreview.current) suppressNextFocusPreview.current = false
-        else showInspection()
-      }}
-      onBlur={hidePreview}
-      onKeyDown={(event) => {
-        lastPointerType.current = 'keyboard'
-        if (event.key === 'Escape') setInspection(null)
-      }}
-      onPointerDown={(event) => {
-        lastPointerType.current = event.pointerType
-        touchStartedOpen.current = inspection !== null
-      }}
       onClick={(event) => {
         if (!playable) {
           event.preventDefault()
-          setInspection(lastPointerType.current === 'touch' ? 'pinned' : 'preview')
           return
         }
-        // A first touch opens a pinned inspector. It has explicit Close and
-        // commit actions, so dismissing it never hits the board underneath.
-        if (lastPointerType.current === 'touch' && !touchStartedOpen.current) {
-          setInspection('pinned')
-          return
-        }
-        setInspection(null)
         onClick?.(card)
       }}
       aria-label={cardAccessibleName(def, cost)}
@@ -444,7 +390,7 @@ export function Card({
         src={cardImagePath(def, card.upgraded)}
         alt=""
         loading="lazy"
-        onLoad={(event) => { event.currentTarget.style.visibility = 'visible' }}
+        onLoad={(event) => revealDecodedImage(event.currentTarget)}
         onError={(event) => {
           // Not every card has a scan in the source set (Daze, for one). Fall
           // back to the card frame rather than showing a broken image.
@@ -460,50 +406,6 @@ export function Card({
           <Icon name="aoe" size={18} />
         </span>
       ) : null}
-      <span className="card__cost" aria-hidden="true">
-        {costLabel(def, cost)}
-      </span>
     </button>
-    {inspection === 'preview'
-      ? createPortal(
-          <span className="card__inspection" role="tooltip">
-            <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
-          </span>,
-          previewHost,
-        )
-      : inspection === 'pinned'
-        ? createPortal(
-            <dialog
-              ref={dialog}
-              className="card__inspection-dialog"
-              aria-label={`Inspect ${def.name}`}
-              onCancel={() => { suppressNextFocusPreview.current = true; setInspection(null) }}
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  suppressNextFocusPreview.current = true
-                  setInspection(null)
-                }
-              }}
-            >
-              <span
-                className="card__inspection card__inspection--pinned"
-              >
-                <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
-              <span className="card__inspection-actions">
-                <button type="button" onClick={() => { suppressNextFocusPreview.current = true; setInspection(null) }}>Close</button>
-                {playable ? <button type="button" onClick={() => {
-                  setInspection(null)
-                  const source = cardButton.current
-                  if (source?.isConnected && source.getAttribute('aria-disabled') !== 'true' && !source.closest('[inert]')) {
-                    onClick?.(card)
-                  }
-                }}>{actionLabel}</button> : null}
-              </span>
-              </span>
-            </dialog>,
-            document.body,
-          )
-        : null}
-    </>
   )
 }

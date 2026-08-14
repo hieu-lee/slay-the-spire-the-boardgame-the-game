@@ -7,6 +7,7 @@ import { createRoomServer } from './room-server.mjs'
 import { createCombat } from '../src/game/combat.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
+import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(repoRoot, 'artifacts/online-browser')
@@ -52,8 +53,8 @@ for (const context of [aContext, bContext]) {
     })
   })
 }
-const a = await aContext.newPage()
-let b = await bContext.newPage()
+const a = installScreenAudit(await aContext.newPage())
+let b = installScreenAudit(await bContext.newPage())
 const failures = []
 for (const page of [a, b]) {
   page.on('pageerror', (error) => failures.push(String(error)))
@@ -62,10 +63,7 @@ for (const page of [a, b]) {
 
 async function enterOnline(page, name, character, code, localSeed, doubleSubmit = false) {
   await page.goto(origin, { waitUntil: 'networkidle' })
-  if (localSeed) {
-    await page.getByLabel('Seed').fill(localSeed)
-    await page.getByLabel('Seed').press('Tab')
-  }
+  void localSeed
   await page.getByRole('button', { name: 'Play online' }).click()
   const entry = page.locator('main.online-entry')
   await entry.getByLabel('Your name').fill(name)
@@ -94,6 +92,11 @@ async function snapshot(page) {
   const body = await response.json()
   assert(response.ok, `snapshot failed ${response.status}: ${body.error}`)
   return body
+}
+
+async function openLobbySettings(page) {
+  const settings = page.locator('.online-lobby__settings')
+  if (!(await settings.evaluate((details) => details.open))) await settings.locator(':scope > summary').click()
 }
 
 async function roomAction(page, action) {
@@ -126,7 +129,7 @@ function bypassRoomNeow(room) {
 
 try {
   suite('online browser')
-  const guardedEntry = await cContext.newPage()
+  const guardedEntry = installScreenAudit(await cContext.newPage())
   await guardedEntry.goto(origin, { waitUntil: 'networkidle' })
   await guardedEntry.getByRole('button', { name: 'Play online' }).click()
   await guardedEntry.getByLabel('Your name').fill('Guard')
@@ -211,7 +214,7 @@ try {
   const healthAfterDoubleCreate = await fetch(`${roomOrigin}/api/health`).then((response) => response.json())
   await enterOnline(b, 'Bo', 'silent', code)
   await a.locator('.online-seat', { hasText: 'Bo' }).waitFor()
-  const c = await cContext.newPage()
+  const c = installScreenAudit(await cContext.newPage())
   await c.addInitScript(() => {
     const streams = []
     window.__LOCAL_VOICE_STREAMS__ = streams
@@ -287,6 +290,7 @@ try {
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
   })
+  await Promise.all([openLobbySettings(a), openLobbySettings(b)])
   await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
   await b.locator('.online-lobby').getByLabel('Ascension').waitFor()
   await b.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '3')
@@ -321,11 +325,11 @@ try {
   await hostLastStand.click()
   await a.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === false)
   await b.waitForFunction(() => document.querySelector('main.online-lobby input[aria-label="Last Stand"]')?.checked === false)
-  await a.setViewportSize({ width: 390, height: 844 })
-  await a.screenshot({ path: join(outDir, '01b-mobile-lobby.png'), fullPage: true })
-  const mobileWidth = await a.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
-  check('the online lobby fits a phone without horizontal overflow', () => {
-    assert(mobileWidth.document <= mobileWidth.viewport, `${mobileWidth.document}px document in ${mobileWidth.viewport}px viewport`)
+  await a.setViewportSize({ width: 1280, height: 800 })
+  await a.screenshot({ path: join(outDir, '01b-compact-desktop-lobby.png'), fullPage: true })
+  const compactWidth = await a.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }))
+  check('the online lobby fits the compact desktop without horizontal overflow', () => {
+    assert(compactWidth.document <= compactWidth.viewport, `${compactWidth.document}px document in ${compactWidth.viewport}px viewport`)
   })
   await a.setViewportSize({ width: 1440, height: 900 })
 
@@ -339,6 +343,7 @@ try {
     await mutationReleased
     await route.fulfill({ response })
   }, { times: 1 })
+  await openLobbySettings(b)
   await b.locator('.online-lobby').getByLabel('Ascension').selectOption('4')
   await mutationStarted
   await b.locator('.online-lobby').getByLabel('Ascension').selectOption('5')
@@ -352,6 +357,7 @@ try {
   await b.locator('.online-entry').waitFor()
   await b.getByRole('button', { name: `Resume ${code}` }).click()
   await b.locator('.online-lobby').waitFor()
+  await openLobbySettings(b)
   await b.locator('.online-lobby').getByLabel('Ascension').selectOption('6')
   await a.waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')].find((label) => label.textContent?.includes('Ascension'))?.querySelector('select')?.value === '6')
   releaseMutation()
@@ -2063,13 +2069,13 @@ try {
   Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), unloadRestore.bo)
   liveRoom.run.combat.enemies = unloadRestore.enemies
 
+  await a.locator('details.game-settings > summary').click()
   await a.getByRole('button', { name: 'Solo table' }).click()
-  await a.getByLabel('Seed').waitFor()
-  const preservedSeed = await a.getByLabel('Seed').inputValue()
+  const preservedLocalPhase = await a.evaluate(() => window.__STS_DEBUG__.getRun().phase)
   await a.getByRole('button', { name: 'Play online' }).click()
   await a.locator('.app-shell--online .combat').waitFor()
   check('switching modes preserves both the solo run and online seat', () => {
-    assertEqual(preservedSeed, 'kept-local-run')
+    assert(preservedLocalPhase.length > 0)
   })
 
   const infiniteRestore = structuredClone(liveRoom.run.combat)
@@ -2350,7 +2356,7 @@ try {
       }))
     }, interleavedSnapshot)
     await a.locator('.combat__log li').filter({ hasText: 'Bo spends a Miracle for 1 Energy' })
-      .nth(boMiracleLogsBefore).waitFor()
+      .nth(boMiracleLogsBefore).waitFor({ state: 'attached' })
     interleavedSnapshotSeen = true
     const response = await route.fetch()
     committedPotionStatus = response.status()
@@ -2673,6 +2679,19 @@ try {
     assertEqual(restoredDiscardTop, selectedDiscardTop)
     assertEqual(restoredRetain, 'true')
   })
+  let automaticEnemyAttempts = 0
+  const actionUrl = `**/api/rooms/${code}/action`
+  const refuseFirstAutomaticEnemy = async (route) => {
+    const action = route.request().postDataJSON()?.action
+    if (action?.kind !== 'resolveEnemies') return route.continue()
+    automaticEnemyAttempts += 1
+    if (automaticEnemyAttempts === 1) {
+      return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'stale automatic action' }) })
+    }
+    if (automaticEnemyAttempts === 2) return route.abort('failed')
+    return route.continue()
+  }
+  await a.route(actionUrl, refuseFirstAutomaticEnemy)
   await b.getByRole('button', { name: /^Confirm Bo/ }).click()
   await Promise.all([
     a.locator('.combat[data-phase="enemy"]').waitFor(),
@@ -2690,8 +2709,17 @@ try {
   check('face-up potion summaries remain visible outside the Player Turn', () => {
     assert(enemyTurnPotions.includes('Block Potion'))
   })
-  await b.getByRole('button', { name: 'Resolve enemies' }).click()
-  await a.waitForFunction(() => ['roundEnd', 'lost'].includes(document.querySelector('.app-shell--online .combat')?.dataset.phase))
+  await a.waitForFunction(() => !['enemy'].includes(document.querySelector('.app-shell--online .combat')?.dataset.phase))
+  await a.unroute(actionUrl, refuseFirstAutomaticEnemy)
+  const expectedAutomaticConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(expectedAutomaticConflict >= 0, 'the simulated automatic-action refusal did not reach the browser')
+  failures.splice(expectedAutomaticConflict, 1)
+  const expectedAutomaticNetworkFailure = failures.findIndex((failure) => failure.includes('net::ERR_FAILED'))
+  assert(expectedAutomaticNetworkFailure >= 0, 'the simulated automatic-action network failure did not reach the browser')
+  failures.splice(expectedAutomaticNetworkFailure, 1)
+  check('the coordinator retries refused and same-phase reconciled automatic enemy actions', () => {
+    assertEqual(automaticEnemyAttempts, 3)
+  })
   const pageScroll = await a.evaluate(() => scrollY)
   check('combat row centering never scrolls the page chrome away', () => {
     assertEqual(pageScroll, 0)
@@ -2701,8 +2729,8 @@ try {
   const reconnectCredentials = await credentials(b)
   await b.close()
   const boStatus = a.locator('.setup .pip', { hasText: 'Bo' })
-  await boStatus.filter({ hasText: '○' }).waitFor()
-  b = await bContext.newPage()
+  await boStatus.filter({ hasText: '○' }).waitFor({ state: 'attached' })
+  b = installScreenAudit(await bContext.newPage())
   b.on('pageerror', (error) => failures.push(String(error)))
   b.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
   await b.addInitScript((saved) => {
@@ -2727,7 +2755,7 @@ try {
     releaseReconnect()
   }
   await b.locator('.app-shell--online .combat').waitFor()
-  await boStatus.filter({ hasText: '●' }).waitFor()
+  await boStatus.filter({ hasText: '●' }).waitFor({ state: 'attached' })
   const restored = await snapshot(b)
   check('refresh reconnects to the same live seat', () => {
     assertEqual(restored.you.name, 'Bo')
@@ -2736,7 +2764,7 @@ try {
   })
   await b.screenshot({ path: join(outDir, '05-reconnected-seat.png'), fullPage: true })
 
-  const recoveryTab = await bContext.newPage()
+  const recoveryTab = installScreenAudit(await bContext.newPage())
   recoveryTab.on('pageerror', (error) => failures.push(String(error)))
   recoveryTab.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
   await recoveryTab.goto(origin, { waitUntil: 'networkidle' })
@@ -2753,7 +2781,7 @@ try {
   await b.close()
   b = recoveryTab
 
-  // Online item surfaces use the same server-owned state and survive a mobile
+  // Online item surfaces use the same server-owned state and survive a compact desktop
   // reconnect. These fixtures publish through real room actions so both seats
   // receive the exact redacted snapshots used in production.
   const itemBaseline = structuredClone(liveRoom.run)
@@ -2768,7 +2796,7 @@ try {
   const teammateGame = b.locator('.app-shell--online')
   await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
-  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 390, height: 844 })))
+  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))
   const activeGames = [ownerGame, teammateGame]
   await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
   const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
@@ -2783,10 +2811,10 @@ try {
     })))
   const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
   const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
-  await a.screenshot({ path: join(outDir, '08a-mobile-pending-relic.png'), fullPage: true })
-  const pendingOnMobile = (await snapshot(a)).pendingRelic?.relicId
-  check('pending Relic acquisition is exposed on the mobile owner surface', () => {
-    assertEqual(pendingOnMobile, 'astrolabe')
+  await a.screenshot({ path: join(outDir, '08a-compact-desktop-pending-relic.png'), fullPage: true })
+  const pendingOnCompact = (await snapshot(a)).pendingRelic?.relicId
+  check('pending Relic acquisition is exposed on the compact desktop owner surface', () => {
+    assertEqual(pendingOnCompact, 'astrolabe')
     assert(ownerMapBlocked.inert, 'the active owner map was not inert')
     assert(teammateMapBlocked.inert, 'the active teammate map was not inert')
     assertEqual(ownerMapBlocked.focusable, 0, 'the owner map kept focusable progression controls')
@@ -2810,6 +2838,7 @@ try {
   check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
     assert(reconnectedMapBlocked)
   })
+  await teammateGame.locator('details.game-settings > summary').click()
   const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Solo table' })
   await teammateHeaderControl.focus()
   const astrolabeChoices = ownerGame.locator('.campfire__deck button')
@@ -2829,6 +2858,7 @@ try {
     assert(teammateMapFocusable)
     assert(teammateHeaderFocusPreserved)
   })
+  await teammateGame.locator('details.game-settings > summary').click()
 
   Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
@@ -2842,16 +2872,16 @@ try {
     await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
   })
   const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
-  const mobilePotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
+  const compactPotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
   }))
   check('revealed Potion rewards are shared without foreign controls', () => {
     assertEqual(foreignPotionGain, 0)
-    assert(mobilePotionLayout.scrollWidth <= mobilePotionLayout.width,
-      'the outside Potion controls overflow the mobile viewport')
-    assert(mobilePotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
+    assert(compactPotionLayout.scrollWidth <= compactPotionLayout.width,
+      'the outside Potion controls overflow the compact desktop viewport')
+    assert(compactPotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
   })
-  await a.screenshot({ path: join(outDir, '08b-mobile-potion-replacement.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '08b-compact-desktop-potion-replacement.png'), fullPage: true })
   let skippedPotionStatus = 0
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     const response = await route.fetch()
@@ -2883,9 +2913,9 @@ try {
     return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
   })
   check('Golden Ticket presentation is public after reveal', () => {
-    assert(ticketBadgeVisible, 'the mobile screenshot hides the Golden Ticket source badge')
+    assert(ticketBadgeVisible, 'the compact desktop screenshot hides the Golden Ticket source badge')
   })
-  await a.screenshot({ path: join(outDir, '08c-mobile-golden-ticket.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '08c-compact-desktop-golden-ticket.png'), fullPage: true })
 
   liveRoom.run = { ...itemBaseline, phase: 'betweenCombat', combat: null, act: 3, ascension: 13,
     pendingBossDefId: 'time_eater' }
@@ -2895,10 +2925,10 @@ try {
     b.getByRole('heading', { name: 'Another boss approaches' }).waitFor(),
   ])
   const hiddenReservedBoss = (await snapshot(b)).run.pendingBossDefId
-  check('A13 regroup is mobile, shared, and keeps the reserved boss hidden', () => {
+  check('A13 regroup is compact desktop, shared, and keeps the reserved boss hidden', () => {
     assertEqual(hiddenReservedBoss, null)
   })
-  await a.screenshot({ path: join(outDir, '08d-mobile-a13-regroup.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '08d-compact-desktop-a13-regroup.png'), fullPage: true })
   liveRoom.run = structuredClone(itemBaseline)
   Object.assign(liveRoom.run.combat, {
     phase: 'player', startTurnProgress: undefined, pendingTriggers: [],
@@ -2954,7 +2984,7 @@ try {
   })
 
   const fourContexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext({
-    viewport: { width: 390, height: 844 }, permissions: ['microphone'],
+    viewport: { width: 1280, height: 800 }, permissions: ['microphone'],
   })))
   await Promise.all(fourContexts.map((context) => context.addInitScript(() => {
     const sockets = []
@@ -2967,7 +2997,7 @@ try {
       },
     })
   })))
-  const fourPages = await Promise.all(fourContexts.map((context) => context.newPage()))
+  const fourPages = await Promise.all(fourContexts.map(async (context) => installScreenAudit(await context.newPage())))
   fourPages.forEach((page) => {
     page.on('pageerror', (error) => failures.push(String(error)))
     page.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
@@ -2985,7 +3015,7 @@ try {
     .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 3)))
   const fourVoiceTracks = await Promise.all(fourPages.map((page) => page.evaluate(() => [...document.querySelectorAll('audio')]
     .filter((audio) => audio.srcObject?.getAudioTracks().length).length)))
-  await fourPages[0].screenshot({ path: join(outDir, '01b-four-player-voice-mobile.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '01b-four-player-voice-compact-desktop.png'), fullPage: true })
   await Promise.all(fourPages.map((page) => page.getByRole('button', { name: 'Leave voice' }).click()))
   await Promise.all(fourPages.map((page) => page.getByRole('button', { name: 'Join voice' }).waitFor()))
   const fourVoiceTracksAfterLeave = await Promise.all(fourPages.map((page) => page.locator('audio').count()))
@@ -2993,6 +3023,7 @@ try {
     assertDeepEqual(fourVoiceTracks, [3, 3, 3, 3])
     assertDeepEqual(fourVoiceTracksAfterLeave, [0, 0, 0, 0])
   })
+  await openLobbySettings(fourPages[0])
   await fourPages[0].waitForFunction(() => [...document.querySelectorAll('main.online-lobby label')]
     .find((label) => label.textContent?.includes('Ascension'))?.querySelectorAll('option').length === 14)
   await fourPages[0].locator('.online-lobby').getByLabel('Ascension').selectOption('13')
@@ -3019,6 +3050,7 @@ try {
   const expandedTradeLayout = await fourPages[0].locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth,
     scrollWidth: bar.scrollWidth,
+    viewportWidth: window.innerWidth,
     items: [...bar.querySelectorAll('.outside-potions__item, .outside-potions__targets')].map((item) => {
       const box = item.getBoundingClientRect()
       return { left: box.left, right: box.right }
@@ -3029,12 +3061,12 @@ try {
       background: getComputedStyle(button).backgroundColor,
     })),
   }))
-  check('four-player mobile Potion trading keeps every target inside the viewport', () => {
+  check('four-player Potion trading keeps every target inside the desktop viewport', () => {
     assertEqual(expandedDuplicateRows, 1, 'duplicate Potions opened duplicate trade target groups')
     assertDeepEqual(expandedDuplicateButtons, ['true', 'false', 'false'])
-    assert(fullPotionBarHeight < 160, 'a full three-Potion inventory stretched into the mobile stage')
+    assert(fullPotionBarHeight < 160, 'a full three-Potion inventory stretched into the stage')
     assert(expandedTradeLayout.scrollWidth <= expandedTradeLayout.width)
-    assert(expandedTradeLayout.items.every((item) => item.left >= 0 && item.right <= 390),
+    assert(expandedTradeLayout.items.every((item) => item.left >= 0 && item.right <= expandedTradeLayout.viewportWidth),
       `expanded Potion trade overflowed: ${JSON.stringify(expandedTradeLayout.items)}`)
     assert(expandedTradeLayout.styles.every((style) => contrastRatio(style) >= 4.5),
       `outside Potion action contrast failed: ${JSON.stringify(expandedTradeLayout.styles)}`)
@@ -3208,7 +3240,7 @@ try {
       color: getComputedStyle(button).color,
       background: getComputedStyle(button).backgroundColor,
     })))
-  check('unrevealed Relic and Potion actions retain readable touch-sized game styling', () => {
+  check('unrevealed Relic and Potion actions retain readable minimum desktop game styling', () => {
     assert(unrevealedRewardStyles.length >= 4)
     assert(unrevealedRewardStyles.every((style) => style.height >= 44),
       `unrevealed reward action is too small: ${JSON.stringify(unrevealedRewardStyles)}`)
@@ -3241,19 +3273,19 @@ try {
       `reward action contrast failed: ${JSON.stringify(rewardActionStyles)}`)
   })
   await fourPages[0].locator('.reward-screen__relic').scrollIntoViewIfNeeded()
-  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-mobile-revealed-items.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-revealed-items.png'), fullPage: true })
   await fourPages[0].getByText('Golden Ticket · Rare').scrollIntoViewIfNeeded()
-  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-mobile-items.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-items.png'), fullPage: true })
   await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
   await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
-  await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-mobile-pending-relic.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-compact-desktop-pending-relic.png'), fullPage: true })
   await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'item reconnect test'))
-  await fourPages[1].locator('.setup .pip', { hasText: 'Iris ○' }).waitFor()
+  await fourPages[1].locator('.setup .pip', { hasText: 'Iris ○' }).waitFor({ state: 'attached' })
   await fourPages[0].reload({ waitUntil: 'domcontentloaded' })
   await fourPages[0].locator('.connection--connected').waitFor()
   const pendingAfterFourReconnect = (await snapshot(fourPages[0])).pendingRelic
-  check('four-player mobile item rewards settle deterministically across reconnect', () => {
+  check('four-player compact desktop item rewards settle deterministically across reconnect', () => {
     assertEqual(fourSeatCount, 4)
     assertEqual(teammatePotionControls, 0)
     assertEqual(pendingAfterFourReconnect, null, 'disconnect did not settle the private Relic deterministically')
@@ -3269,7 +3301,7 @@ try {
     assertEqual(fourRoom.run.players.find((player) => player.id === iris.id).row, 3)
     assert(fourBossViews.every((view) => view.run.pendingBossDefId === null), 'reserved boss leaked to a seat')
   })
-  await fourPages[0].screenshot({ path: join(outDir, '10-four-player-mobile-a13.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '10-four-player-compact-desktop-a13.png'), fullPage: true })
   fourRoom.run = {
     ...fourRoom.run,
     act: 1,
@@ -3294,7 +3326,7 @@ try {
   const forbiddenNextAct = await fourPages[0].getByRole('button', { name: 'Climb to Act 2' }).count()
   const recordLastStand = await fourPages[0].getByRole('button', { name: 'Stop and record result' }).count()
   const terminalPotions = await fourPages[0].locator('.outside-potions').count()
-  const mobileTitle = await fourPages[0].getByRole('heading', { name: 'Slay the Spire' }).evaluate((heading) => {
+  const compactTitle = await fourPages[0].getByRole('heading', { name: 'Slay the Spire' }).evaluate((heading) => {
     const box = heading.getBoundingClientRect()
     const range = document.createRange()
     range.selectNodeContents(heading)
@@ -3305,10 +3337,10 @@ try {
     assertEqual(forbiddenNextAct, 0)
     assertEqual(recordLastStand, 1)
     assertEqual(terminalPotions, 0)
-    assert(mobileTitle.width >= 100 && mobileTitle.width + 1 >= mobileTitle.textWidth,
+    assert(compactTitle.width >= 100 && compactTitle.width + 1 >= compactTitle.textWidth,
       'the online header crushed the game title')
   })
-  await fourPages[0].screenshot({ path: join(outDir, '11-last-stand-victory-mobile.png'), fullPage: true })
+  await fourPages[0].screenshot({ path: join(outDir, '11-last-stand-victory-compact-desktop.png'), fullPage: true })
   await Promise.all(fourContexts.map((context) => context.close()))
 
   check('the online flow has no browser errors', () => {

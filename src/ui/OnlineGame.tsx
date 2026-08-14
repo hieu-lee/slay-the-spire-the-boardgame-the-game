@@ -212,10 +212,7 @@ export function OnlineGame({ onLocal }: Props) {
     const connected = room.connection === 'connected'
     const partyLeader = snapshot.seats[0]
     const isPartyLeader = partyLeader?.playerId === snapshot.you.playerId
-    if (achievementsOpen) return <AchievementsScreen progress={snapshot.campaignProgress}
-      onChange={(id, completed) => room.chooseAchievement(id, completed)}
-      readOnly={!connected || !isPartyLeader}
-      onBack={() => setAchievementsOpen(false)} />
+    if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
       <main className="online-lobby">
         <header>
@@ -227,7 +224,7 @@ export function OnlineGame({ onLocal }: Props) {
           <h1>{snapshot.code}</h1>
           <button type="button" onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>Copy room code</button>
           <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
-          <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements · {snapshot.campaignProgress.achievements.length}/19</button>
+          <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements</button>
           <div className="online-lobby__seats">
             {Array.from({ length: 4 }, (_, index) => <Seat key={index} seat={snapshot.seats[index]} />)}
           </div>
@@ -237,33 +234,36 @@ export function OnlineGame({ onLocal }: Props) {
               {CHARACTERS.map(([id, label]) => <option key={id} value={id} disabled={taken.has(id)}>{label}</option>)}
             </select>
           </label>
-          <label>
-            Ascension
-            <select disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>{Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}</select>
-          </label>
-          <details className="ascension-rules">
-            <summary>Ascension {snapshot.ascension} modifiers</summary>
-            <ol>{ASCENSION_RULES.slice(1, snapshot.ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
+          <details className="online-lobby__settings">
+            <summary>Settings</summary>
+            <label>
+              Ascension
+              <select disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>{Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}</select>
+            </label>
+            <details className="ascension-rules">
+              <summary>Ascension {snapshot.ascension} modifiers</summary>
+              <ol>{ASCENSION_RULES.slice(1, snapshot.ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
+            </details>
+            {snapshot.seats.length > 1 ? <label>Choose Your Relic<input type="checkbox" disabled={!connected} checked={snapshot.chooseYourRelic} onChange={(event) => room.chooseRelicRule(event.target.checked)} /></label> : null}
+            {snapshot.seats.length > 1 ? <label>Last Stand
+              <input type="checkbox" aria-label="Last Stand" disabled={!connected || !isPartyLeader}
+                checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
+              {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
+            </label> : null}
+            <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
+              <legend>Official run setup</legend>
+              <MetaRunOptions
+                mode={snapshot.metaOptions.mode}
+                dailyModifiers={[]}
+                customModifierIds={snapshot.metaOptions.modifiers}
+                quickStartAct={snapshot.metaOptions.quickStartAct}
+                actIVUnlocked={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES}
+                onModeChange={(mode) => room.chooseRunMeta({ mode })}
+                onCustomModifierChange={room.chooseRunModifier}
+                onQuickStartActChange={(quickStartAct) => room.chooseRunMeta({ quickStartAct })}
+              />
+            </fieldset>
           </details>
-          {snapshot.seats.length > 1 ? <label>Choose Your Relic<input type="checkbox" disabled={!connected} checked={snapshot.chooseYourRelic} onChange={(event) => room.chooseRelicRule(event.target.checked)} /></label> : null}
-          {snapshot.seats.length > 1 ? <label>Last Stand
-            <input type="checkbox" aria-label="Last Stand" disabled={!connected || !isPartyLeader}
-              checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
-            {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
-          </label> : null}
-          <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
-            <legend>Official run setup</legend>
-            <MetaRunOptions
-              mode={snapshot.metaOptions.mode}
-              dailyModifiers={[]}
-              customModifierIds={snapshot.metaOptions.modifiers}
-              quickStartAct={snapshot.metaOptions.quickStartAct}
-              actIVUnlocked={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES}
-              onModeChange={(mode) => room.chooseRunMeta({ mode })}
-              onCustomModifierChange={room.chooseRunModifier}
-              onQuickStartActChange={(quickStartAct) => room.chooseRunMeta({ quickStartAct })}
-            />
-          </fieldset>
           <button type="button" disabled={!connected || !ready || !isPartyLeader} onClick={room.start}>
             {connected && ready ? 'Enter the Spire' : 'Waiting for every seat to connect'}
           </button>
@@ -321,7 +321,9 @@ export function OnlineGame({ onLocal }: Props) {
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
         </div>
-        <div className="setup">
+        <details className="game-settings">
+          <summary>Party</summary>
+          <div className="setup">
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
             <ul>{run.meta.modifierIds.map((id) => {
@@ -332,7 +334,8 @@ export function OnlineGame({ onLocal }: Props) {
           {snapshot.seats.map((seat) => <span className="pip" key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
           <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
           <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
-        </div>
+          </div>
+        </details>
       </header>
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
@@ -377,6 +380,8 @@ export function OnlineGame({ onLocal }: Props) {
           cardPreview={snapshot.cardPreview}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}
+          autoAdvance={room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
+            !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
       ) : null}
@@ -502,9 +507,10 @@ export function OnlineGame({ onLocal }: Props) {
 
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
-      <aside className="log" aria-label="Run log">
+      {run.phase !== 'combat' ? <details className="log">
+        <summary>Run log</summary>
         {run.log.slice(-6).map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}
-      </aside>
+      </details> : null}
       </div>
     </main>
   )
