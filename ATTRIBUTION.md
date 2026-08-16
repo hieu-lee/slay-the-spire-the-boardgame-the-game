@@ -37,6 +37,7 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
+| UI, card and combat sound effects | `80 CC0 RPG SFX` by rubberduck, released under CC0 on OpenGameArt |
 
 The sync scripts keep card scans, rulebook icons, source-resolution working files, and
 unused enemy variants out of version control. Runtime enemy artwork is the committed
@@ -61,6 +62,11 @@ Cards without a dedicated Power symbol use a generated generic status symbol.
 
 `public/assets/menu/` contains the generated title-screen spire and compendium archive backdrops.
 `public/assets/fonts/Kreon.ttf` is distributed under the bundled `Kreon-OFL.txt` license.
+
+`public/assets/sfx/` contains renamed, unmodified sounds from
+<https://opengameart.org/content/80-cc0-rpg-sfx> (`wood_01`, `book_01`,
+`blade_01`, `spell_01`, and `creature_hurt_01`). The pack is
+released under CC0 1.0.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.
 

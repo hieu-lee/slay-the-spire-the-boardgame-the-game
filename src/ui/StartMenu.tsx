@@ -21,6 +21,8 @@ type StartMenuProps = {
   onOnline: () => void
   onCompendium: () => void
   onAchievements: () => void
+  sfxEnabled: boolean
+  onToggleSfx: () => void
 }
 
 const HEROES: { id: CharacterId; name: string }[] = [
@@ -48,6 +50,8 @@ export function StartMenu({
   onOnline,
   onCompendium,
   onAchievements,
+  sfxEnabled,
+  onToggleSfx,
 }: StartMenuProps) {
   const [selection, setSelection] = useState('Single Player')
   const settingsDialog = useRef<HTMLDialogElement>(null)
@@ -96,6 +100,9 @@ export function StartMenu({
           onCustomModifierChange={onCustomModifier}
           onQuickStartActChange={onQuickStartAct}
         />
+        <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
+          Sound effects {sfxEnabled ? 'on' : 'off'}
+        </button>
         <fieldset className="start-menu__party">
           <legend>Characters</legend>
           {characters.slice(0, 1).map((character, seat) => {

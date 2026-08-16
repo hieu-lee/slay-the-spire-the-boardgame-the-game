@@ -74,6 +74,7 @@ import { useCardMorphs } from './useCardMorphs.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
+import { installSoundEffects, SFX_STORAGE_KEY } from './sfx.ts'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -125,17 +126,30 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 export function App() {
   const [online, setOnline] = useState(hasRoomSession)
   const [localOpen, setLocalOpen] = useState(false)
+  const [sfxEnabled, setSfxEnabled] = useState(() => localStorage.getItem(SFX_STORAGE_KEY) !== 'off')
+  useEffect(() => sfxEnabled ? installSoundEffects() : undefined, [sfxEnabled])
+  const toggleSfx = () => setSfxEnabled((enabled) => {
+    localStorage.setItem(SFX_STORAGE_KEY, enabled ? 'off' : 'on')
+    return !enabled
+  })
   return (
     <>
       <div className="game-mode" hidden={online}>
-        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onOnline={() => setOnline(true)} />
+        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onOnline={() => setOnline(true)}
+          sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} />
       </div>
-      {online ? <OnlineGame onLocal={() => setOnline(false)} /> : null}
+      {online ? <OnlineGame onLocal={() => setOnline(false)} sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} /> : null}
     </>
   )
 }
 
-function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => void; onOnline: () => void }) {
+function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
+  open: boolean
+  onOpen: () => void
+  onOnline: () => void
+  sfxEnabled: boolean
+  onToggleSfx: () => void
+}) {
   const [playerCount, setPlayerCount] = useState(1)
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
@@ -271,6 +285,8 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
+      sfxEnabled={sfxEnabled}
+      onToggleSfx={onToggleSfx}
     />
   }
 
@@ -321,6 +337,9 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
             New run
           </button>
           <button type="button" onClick={onOnline}>Play online</button>
+          <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
+            Sound effects {sfxEnabled ? 'on' : 'off'}
+          </button>
           </div>
         </details>
       </header>

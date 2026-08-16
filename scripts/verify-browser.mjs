@@ -61,6 +61,14 @@ page.on('response', (response) => {
   }
 })
 
+await page.addInitScript(() => {
+  window.__SFX_PLAYS__ = []
+  HTMLMediaElement.prototype.play = function play() {
+    window.__SFX_PLAYS__.push(new URL(this.src).pathname)
+    return Promise.resolve()
+  }
+})
+
 const shots = []
 async function shot(label) {
   // Screenshots are the artefact a human reviews, so they must show the app as
@@ -200,6 +208,13 @@ const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
 await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => button.focus())
 const settingsKeepsFocus = await settingsDialog.evaluate((dialog) => dialog.contains(document.activeElement))
+const sfxToggle = settingsDialog.getByRole('button', { name: 'Sound effects on' })
+const sfxStartsEnabled = await sfxToggle.getAttribute('aria-pressed')
+await sfxToggle.click()
+const sfxCanMute = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
+await settingsDialog.getByRole('button', { name: 'Sound effects off' }).click()
+const sfxCanRestore = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
+const menuSounds = await page.evaluate(() => window.__SFX_PLAYS__)
 const localAscensions = await page.getByLabel('Ascension').locator('option').evaluateAll((options) =>
   options.map((option) => option.value))
 const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
@@ -251,6 +266,10 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
   assert(settingsDismissedWithEscape, 'Escape did not close settings')
+  assertEqual(sfxStartsEnabled, 'true', 'sound effects should default on')
+  assertEqual(sfxCanMute, 'off', 'sound preference did not mute')
+  assertEqual(sfxCanRestore, 'on', 'sound preference did not restore')
+  assert(menuSounds.includes('/assets/sfx/ui.ogg'), 'menu clicks did not play the UI sound')
   assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
   assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
   assertEqual(freshMenuCampaign.draftRunId, 'campaign-1')

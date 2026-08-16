@@ -41,6 +41,7 @@ const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
 const menuRoot = join(publicRoot, 'assets/menu')
 const fontRoot = join(publicRoot, 'assets/fonts')
+const sfxRoot = join(publicRoot, 'assets/sfx')
 
 const cardFiles = listing(cardRoot, '.webp')
 const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
@@ -63,6 +64,20 @@ const REQUIRED_ICONS = [
 ]
 
 suite('assets')
+
+check('sound effects are complete, compact, and decodable', () => {
+  const expected = ['attack.ogg', 'card.ogg', 'enemy-hit.ogg', 'magic.ogg', 'ui.ogg']
+  assertDeepEqual(listing(sfxRoot, '.ogg').sort(), expected)
+  const files = expected.map((file) => join(sfxRoot, file))
+  for (const file of files) {
+    const result = spawnSync('ffprobe', [
+      '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file,
+    ], { encoding: 'utf8' })
+    assert(result.status === 0 && Number(result.stdout) > 0, result.stderr || `${file} did not decode`)
+  }
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 128 * 1024,
+    'sound effects exceed 128 KiB')
+})
 
 check('every character card has exactly one committed illustration', () => {
   const expected = Object.values(CARDS)
