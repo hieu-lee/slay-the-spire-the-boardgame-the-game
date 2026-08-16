@@ -6,6 +6,7 @@ import {
   activatePotion,
   activateRelic,
   beginEndPlayerTurn,
+  STALE_END_TURN_ORDER,
   cardEnemyChoiceCount,
   cardIsPlayable,
   cardModeIsAvailable,
@@ -553,6 +554,7 @@ export function CombatScreen({
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
   const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
   const [endTurnError, setEndTurnError] = useState('')
+  const [endTurnOrderOpen, setEndTurnOrderOpen] = useState(false)
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
   const [startTurnScryOrder, setStartTurnScryOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
@@ -699,6 +701,19 @@ export function CombatScreen({
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
   }, [orderingStage])
+
+  // Only the coordinator can act on the order, so only they are shown it
+  // unasked: everyone else keeps the battle log this panel would cover — and
+  // keeps a panel they opened themselves, so this only ever opens.
+  useEffect(() => {
+    if (orderingStage && viewerId === endTurnCoordinatorId) setEndTurnOrderOpen(true)
+  }, [orderingStage, viewerId, endTurnCoordinatorId])
+
+  // The panel is a per-turn tray: leaving the player phase closes it again so
+  // the next turn starts from the collapsed default.
+  useEffect(() => {
+    if (state.phase !== 'player') setEndTurnOrderOpen(false)
+  }, [state.phase])
 
   // A private reveal is room state, not transient component state: restore it
   // after a reconnect so the player must finish the card they already saw.
@@ -1434,11 +1449,26 @@ export function CombatScreen({
     if (state.phase === 'player') {
       const order: EndTurnOrder = viewerEndTurnOrder
       if (orderingStage) {
-        if (viewer.id === endTurnCoordinatorId) onAction?.({ kind: 'resolveEndTurn', abilityOrder: order })
+        if (viewer.id === endTurnCoordinatorId) {
+          // A refusal is normally fixed inside the order list, so reopen it even
+          // if the coordinator collapsed it while the party was ordering. One
+          // that lands after the turn moved on must not pry a later turn's tray
+          // open, so this has to still be the same turn.
+          const turn = state.turn
+          const reopen = (outcome: ActionOutcome | void) => {
+            if (outcome?.status === 'refused' &&
+              stateRef.current.phase === 'player' && stateRef.current.turn === turn) setEndTurnOrderOpen(true)
+          }
+          void Promise.resolve(onAction?.({ kind: 'resolveEndTurn', abilityOrder: order }))
+            .then(reopen, () => {})
+        }
       } else if (onAction) onAction({ kind: 'endTurn' })
       else {
         const next = beginEndPlayerTurn(state, order)
-        if (next === state) setEndTurnError('Choose a living target for every Lightning Orb, then try again.')
+        if (next === state) {
+          setEndTurnError(STALE_END_TURN_ORDER)
+          setEndTurnOrderOpen(true)
+        }
         else {
           setEndTurnError('')
           onChange?.(next)
@@ -2491,9 +2521,13 @@ export function CombatScreen({
               ) : null}
               {state.phase === 'player' && !forcedCard && !distilled && (abilities.length > 1 ||
                 abilities.some((ability) => (ability.targets?.length ?? 0) > 1)) ? (
-                <details className="end-turn-order">
+                <details className="end-turn-order" open={endTurnOrderOpen}
+                  onToggle={(event) => setEndTurnOrderOpen(event.currentTarget.open)}>
                   <summary>End-turn order ({abilities.length})</summary>
-                  <ol>
+                  {/* Every order list scrolls once a party fills it, and their
+                      controls are disabled for seats that may not reorder: keep
+                      them reachable by keyboard the way the combat log is. */}
+                  <ol aria-label="End-turn order" tabIndex={0}>
                     {viewerEndTurnOrder.map((choice, index) => {
                       const ability = abilities.find((candidate) => candidate.id === endTurnChoiceId(choice))!
                       return (
@@ -2538,7 +2572,7 @@ export function CombatScreen({
             <>
               <details className="end-turn-order" open>
                 <summary>Before-draw Scry order ({orderedStartTurnScries.length})</summary>
-                <ol>
+                <ol aria-label="Before-draw Scry order" tabIndex={0}>
                   {orderedStartTurnScries.map((ability, index) => (
                     <li key={ability.id}>
                       <span>{ability.label} — Scry {ability.amount}</span>
@@ -2562,7 +2596,7 @@ export function CombatScreen({
             <>
               <details className="end-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
-                <ol>
+                <ol aria-label="Start-of-turn order" tabIndex={0}>
                   {orderedStartAbilities.map((ability, index) => {
                     const targetChosen = ability.targets
                       ? startTurnEnemyTargets[ability.id] !== undefined

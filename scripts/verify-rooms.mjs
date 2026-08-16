@@ -24,7 +24,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, REBUILT_END_TURN_ORDER, ROOM_LABEL, STALE_END_TURN_ORDER, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
@@ -1219,6 +1219,90 @@ check('one Lightning Orb still pauses online when its enemy target is a choice',
   })
   assertEqual(firstEnemy.hp, room.run.combat.enemies[0].hp)
   assertEqual(room.run.combat.enemies[1].hp, secondHp - 1)
+})
+
+check('a stale end-turn order tells the coordinator how to recover', () => {
+  const { room, a, b } = twoSeatRoom()
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  second.orbs = ['lightning', null, null]
+  const [, secondEnemy] = room.run.combat.enemies
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
+  // The chosen target dies after the party locked the order in.
+  Object.assign(secondEnemy, { hp: 0, dead: true })
+  let stale = null
+  try {
+    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${secondEnemy.uid}`] })
+  } catch (error) {
+    stale = error
+  }
+  assertEqual(stale?.message, REBUILT_END_TURN_ORDER,
+    'the online rejection names the fix and where to make it')
+  const republished = snapshotFor(room, a.token).endTurnAbilities
+  assert(republished?.length > 0, 'the rejection dropped the ordering stage')
+  assert(republished.every((ability) => !ability.targets?.some((target) => target.uid === secondEnemy.uid)),
+    'the dead target survived the republished abilities')
+  const freshOrb = republished[0]
+  assert(freshOrb.id !== orbId, 'the republished list reused the superseded ability id')
+  let superseded = null
+  try {
+    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${freshOrb.targets[0].uid}`] })
+  } catch (error) {
+    superseded = error
+  }
+  assertEqual(superseded?.message, 'End-turn order must contain each ability exactly once with valid targets',
+    'an order held from before the republish still resolved')
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: [`${freshOrb.id}@${freshOrb.targets[0].uid}`],
+  })
+  assertEqual(room.run.combat.phase, 'discard', 'the party could not recover from the stale order')
+})
+
+check('a refused plan keeps the party arrangement when the abilities are still live', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  room.run.combat.players.find((player) => player.id === b.playerId).orbs = ['lightning', 'lightning', null]
+  const [firstEnemy] = room.run.combat.enemies
+  firstEnemy.hp = 1
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const published = snapshotFor(room, a.token)
+  const versionBefore = room.version
+  let refused = null
+  try {
+    // The first Orb kills the enemy the second one is aimed at: the plan is
+    // stale, the published abilities are not.
+    apply(room, a.token, {
+      kind: 'resolveEndTurn',
+      abilityOrder: published.endTurnAbilities.map((ability) => `${ability.id}@${firstEnemy.uid}`),
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.message, STALE_END_TURN_ORDER)
+  assertEqual(room.version, versionBefore, 'a refusal the party can fix in place still bumped the room')
+  assertDeepEqual(snapshotFor(room, a.token).endTurnAbilities, published.endTurnAbilities,
+    'the party lost its arrangement to a refusal it could have fixed in place')
+})
+
+check('a stale end-turn order with nothing left to choose just resolves', () => {
+  const { room, a, b } = twoSeatRoom()
+  const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  second.orbs = ['lightning', null, null]
+  const [firstEnemy, secondEnemy] = room.run.combat.enemies
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
+  // Every target but one dies, so the republished Orb has no choice to offer.
+  for (const enemy of room.run.combat.enemies) {
+    if (enemy.uid !== firstEnemy.uid) Object.assign(enemy, { hp: 0, dead: true })
+  }
+  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${secondEnemy.uid}`] })
+  assertEqual(room.run.combat.phase, 'discard', 'the forced Orb did not end the turn')
 })
 
 check('Loop Orb choices are public, authoritative, and reject forged targets online', () => {

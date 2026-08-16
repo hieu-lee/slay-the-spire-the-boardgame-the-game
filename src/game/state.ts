@@ -65,6 +65,8 @@ export {
   activatePotion,
   activateRelic,
   beginEndPlayerTurn,
+  REBUILT_END_TURN_ORDER,
+  STALE_END_TURN_ORDER,
   cardEnemyChoiceCount,
   cardNeedsChoicePreview,
   cardNeedsEnemy,

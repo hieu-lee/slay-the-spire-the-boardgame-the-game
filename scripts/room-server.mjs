@@ -187,9 +187,10 @@ export function createRoomServer({
     return room
   }
 
-  function publish(room) {
+  function publish(room, skipToken) {
     for (const [socket, client] of sockets) {
       if (client.code !== room.code || socket.readyState !== 1) continue
+      if (skipToken !== undefined && client.token === skipToken) continue
       if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
         socket.terminate()
         continue
@@ -219,7 +220,24 @@ export function createRoomServer({
     }
   }
 
+  // A refused action can still have changed the room — endTurn resolves an
+  // abandoned card preview before failing, resolveEndTurn republishes a stale
+  // ability list — so both transports reconcile what the throw left behind.
+  // Reporting the refusal matters more, so this never throws on its own.
+  // Callers pass the refused seat's token when that client learns of the refusal
+  // out of band (the HTTP 4xx): a snapshot frame would clear the error banner
+  // holding the recovery copy, and that client refetches for itself anyway.
+  const reconcileRefusal = (room, version, actorToken) => {
+    if (!room || room.version === version) return
+    try {
+      touch(room)
+      queueSave()
+      publish(room, actorToken)
+    } catch {}
+  }
+
   const server = createHttpServer(async (request, response) => {
+    let acted = null
     try {
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
@@ -298,6 +316,7 @@ export function createRoomServer({
       if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
       let changed = true
       let snapshot = null
+      acted = { room, version: room.version, token }
       if (operation === 'character') snapshot = chooseCharacter(room, token, body.character)
       else if (operation === 'relic-rule') snapshot = chooseRelicRule(room, token, body.enabled)
       else if (operation === 'last-stand-rule') snapshot = chooseLastStandRule(room, token, body.enabled)
@@ -343,11 +362,16 @@ export function createRoomServer({
         queueSave()
         publish(room)
       }
+      // Accepted: whatever happens while answering is not a refusal to reconcile.
+      acted = null
       return send(response, 200, snapshot)
     } catch (error) {
       send(response, error.status ?? (error.name === 'RoomError' ? 409 : 500), {
         error: error instanceof Error ? error.message : 'Server error',
       })
+      // Answered first: a room this far gone must not also cost the caller its
+      // response, and this handler has no outer catch.
+      if (acted) reconcileRefusal(acted.room, acted.version, acted.token)
     }
   })
 
@@ -426,11 +450,20 @@ export function createRoomServer({
           return
         }
         if (message.type === 'action') {
-          const result = apply(room, client.token, message.action)
-          if (result.changed) {
-            touch(room)
-            queueSave()
-            publish(room)
+          // The catch below sends the error frame on this same socket, so it
+          // lands after the snapshot and the refusal still reads: no seat is
+          // skipped here, and a socket client has no other way to catch up.
+          const versionBefore = room.version
+          try {
+            const result = apply(room, client.token, message.action)
+            if (result.changed) {
+              touch(room)
+              queueSave()
+              publish(room)
+            }
+          } catch (error) {
+            reconcileRefusal(room, versionBefore)
+            throw error
           }
         } else if (message.type === 'voice') {
           if (!message.signal || typeof message.signal !== 'object' || Array.isArray(message.signal)) {

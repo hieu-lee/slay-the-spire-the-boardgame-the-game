@@ -11,6 +11,7 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
+import { STALE_END_TURN_ORDER } from '../src/game/combat.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
@@ -1027,7 +1028,7 @@ await page.evaluate(() => {
     window.__ENEMY_REPORTS__.push(region.textContent.trim())
   }).observe(region, { childList: true, characterData: true, subtree: true })
 })
-// Two turns, each blurred to <body> while the End turn button is unmounted.
+// Two turns, each blurring the focused control while End turn is unmounted.
 // That blur is the point: `endTurn()` routes through the seat menu and parks
 // focus on a <summary> which SURVIVES the round, and the effect is supposed to
 // leave that alone — so asserting against it tested nothing. The real bug is a
@@ -1039,10 +1040,38 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
   const before = await readState()
   assert(before && !['won', 'lost'].includes(before.phase),
     `the fight ended before enemy turn ${enemyTurn + 1}; this block needs a live combat`)
+  // The blur has to land while the button is gone, and the enemy round can be
+  // over before a Playwright round-trip observes it — so the page watches for
+  // that frame itself instead of being asked about it afterwards.
+  await page.evaluate(() => {
+    window.__BLURRED_WITHOUT_END_TURN__ = false
+    // Each round owns its watcher: a previous one still looping would launder
+    // this round's miss into a pass.
+    const generation = (window.__BLUR_WATCH_GENERATION__ = (window.__BLUR_WATCH_GENERATION__ ?? 0) + 1)
+    let sawEnemy = false
+    const watch = () => {
+      if (window.__BLUR_WATCH_GENERATION__ !== generation) return
+      const enemyRound = ['enemy', 'roundEnd'].includes(window.__STS_DEBUG__.getState().phase)
+      sawEnemy ||= enemyRound
+      if (sawEnemy && !enemyRound) return
+      if (enemyRound && !document.querySelector('.combat__end-turn') &&
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement !== document.body && document.activeElement !== document.documentElement) {
+        document.activeElement.blur()
+        window.__BLURRED_WITHOUT_END_TURN__ = true
+      }
+      requestAnimationFrame(watch)
+    }
+    watch()
+  })
   await endTurn()
-  await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
-  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
-  await waitForAutomaticTurn(await page.evaluate(() => window.__STS_DEBUG__.getState().turn + 1))
+  // Anchored to the turn this iteration started on: reading the live turn here
+  // waits for one MORE turn whenever the enemy already finished its own.
+  await waitForAutomaticTurn(before.turn + 1)
+  assert(await page.evaluate(() => window.__BLURRED_WITHOUT_END_TURN__),
+    `enemy turn ${enemyTurn + 1} never blurred a focused control while End turn was gone; ` +
+    'the round passed between frames, the button survived it, or nothing held focus — ' +
+    'either way the restore below tests nothing')
 }
 const enemyTurnReports = await page.evaluate(() => window.__ENEMY_REPORTS__ ?? [])
 // `waitForAutomaticTurn` polls the store, but the focus restore is a React
@@ -8187,7 +8216,7 @@ check('the player can order end-of-turn abilities before committing', () => {
 })
 await shot('15bb-end-turn-order')
 await page.getByRole('button', { name: 'End turn' }).click()
-await page.getByRole('alert').filter({ hasText: 'living target' }).waitFor()
+await page.getByRole('alert').filter({ hasText: STALE_END_TURN_ORDER }).waitFor()
 const rejectedOrbPlan = await readState()
 check('a stale Lightning target keeps the whole end-turn plan editable', () => {
   assertEqual(rejectedOrbPlan.phase, 'player')

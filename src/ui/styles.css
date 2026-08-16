@@ -1961,6 +1961,14 @@ button:disabled {
   z-index: 20;
   right: 0;
   min-width: min(30rem, calc(100vw - 2rem));
+  /* These trays open unasked — the party ordering stage opens the end-turn one,
+     the before-draw Scry list is always open — and a four-seat party fills them:
+     cap the list so it scrolls instead of growing without bound, with a
+     scrollbar that matches the panel rather than the OS. */
+  max-height: min(60vh, 27rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color-scheme: dark;
   margin: 0.25rem 0 0;
   padding: 0.45rem;
   list-style: none;
@@ -1989,7 +1997,6 @@ button:disabled {
 .end-turn-order li select {
   width: min(14rem, 42vw);
   padding: 0.1rem 0.35rem;
-  color-scheme: dark;
   font: inherit;
 }
 

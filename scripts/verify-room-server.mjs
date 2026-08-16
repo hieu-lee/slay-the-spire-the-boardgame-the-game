@@ -2,6 +2,7 @@ import WebSocket from 'ws'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRoomServer } from './room-server.mjs'
+import { REBUILT_END_TURN_ORDER } from '../src/game/combat.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('room server')
@@ -40,7 +41,10 @@ async function request(path, { method = 'GET', token, body } = {}) {
 
 function nextMessage(socket, type, accept = () => true) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${type}`)), 3000)
+    const timer = setTimeout(() => {
+      socket.off('message', receive)
+      reject(new Error(`timed out waiting for ${type}`))
+    }, 3000)
     function receive(raw) {
       const message = JSON.parse(raw.toString())
       if (message.type !== type || !accept(message)) return
@@ -299,6 +303,72 @@ try {
     const bViewOfB = seenB.snapshot.run.combat.players.find((player) => player.id === joined[0].playerId)
     assertEqual(aViewOfB.hand, null, 'Ann cannot read Bo\'s hand')
     assert(Array.isArray(bViewOfB.hand), 'Bo receives Bo\'s own hand')
+  })
+
+  // A refusal that still changed the room has to reach the rest of the party —
+  // and must NOT reach the refused seat, whose snapshot frame would wipe the
+  // recovery message the refusal just put on its screen.
+  const liveRoom = service.store.rooms.get(code)
+  // Straight to the player phase with two Orbs to order: the ordering stage is
+  // what this checks, not the way in.
+  Object.assign(liveRoom.run.combat, { phase: 'player' })
+  liveRoom.run.combat.players.find((player) => player.id === a.playerId).orbs = ['lightning', 'lightning', null]
+  for (const seat of [a, ...joined]) {
+    await request(`/api/rooms/${code}/action`, {
+      method: 'POST', token: seat.token, body: { action: { kind: 'endTurn' } },
+    })
+  }
+  const staged = await request(`/api/rooms/${code}`, { token: a.token })
+  const stagedOrder = staged.body.endTurnOrder
+  const orbTargetUid = stagedOrder.find((choice) => choice.includes('@'))?.split('@')[1]
+  assert(orbTargetUid, `no targeted ability was published: ${JSON.stringify(stagedOrder)}`)
+  Object.assign(liveRoom.run.combat.enemies.find((enemy) => enemy.uid === orbTargetUid), { hp: 0, dead: true })
+  const teammateRepublish = nextMessage(bLive.socket, 'snapshot')
+  const actorSnapshot = nextMessage(aLive.socket, 'snapshot')
+    .then(() => 'snapshot', () => 'silent')
+  const staleResolve = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'resolveEndTurn', abilityOrder: stagedOrder } },
+  })
+  const teammateSaw = await teammateRepublish
+  const actorHeard = await actorSnapshot
+  check('a refused end-turn republish reaches the party but spares the refused seat', () => {
+    assertEqual(staleResolve.status, 409)
+    assert(teammateSaw.snapshot.endTurnAbilities.every((ability) =>
+      !(ability.targets ?? []).some((target) => target.uid === orbTargetUid)),
+      'the teammate kept the dead target')
+    assertEqual(actorHeard, 'silent',
+      'the refused seat was sent a snapshot, which clears the error it just showed')
+  })
+
+  // The socket carries the same reconciliation, minus the skip: its error frame
+  // follows the snapshot on one socket, and a socket client cannot refetch.
+  const rebuiltOrder = (await request(`/api/rooms/${code}`, { token: a.token })).body.endTurnOrder
+  Object.assign(liveRoom.run.combat.enemies.find((enemy) => !enemy.dead), { hp: 0, dead: true })
+  const socketFrames = []
+  const recordFrames = (raw) => socketFrames.push(JSON.parse(raw.toString()).type)
+  aLive.socket.on('message', recordFrames)
+  const socketSnapshot = nextMessage(aLive.socket, 'snapshot')
+  const socketRefusal = nextMessage(aLive.socket, 'error')
+  aLive.socket.send(JSON.stringify({
+    type: 'action', action: { kind: 'resolveEndTurn', abilityOrder: rebuiltOrder },
+  }))
+  const [socketSaw, socketHeard] = await Promise.all([socketSnapshot, socketRefusal])
+  aLive.socket.off('message', recordFrames)
+  check('a socket refusal still hands the room back to the seat that sent it', () => {
+    assert(socketSaw.snapshot.endTurnAbilities, 'the socket seat never saw the rebuilt order')
+    assertEqual(socketHeard.error, REBUILT_END_TURN_ORDER)
+    assertEqual(socketFrames.join(), 'snapshot,error',
+      `the refusal must not be overwritten by the snapshot that follows it: ${socketFrames.join()}`)
+  })
+
+  // Release the published stage: while one is live every other action is refused.
+  const resolvedStage = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'resolveEndTurn', abilityOrder: (await request(`/api/rooms/${code}`, { token: a.token })).body.endTurnOrder } },
+  })
+  check('the ordering stage is released for the checks that follow', () => {
+    assertEqual(resolvedStage.status, 200)
   })
 
   const invalidVoice = nextMessage(aLive.socket, 'error')

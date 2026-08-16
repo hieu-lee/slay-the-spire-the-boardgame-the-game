@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
-import { createCombat } from '../src/game/combat.ts'
+import { REBUILT_END_TURN_ORDER, createCombat } from '../src/game/combat.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
@@ -2636,6 +2636,7 @@ try {
   await a.locator('.enemy:not([disabled])').nth(1).click()
   await endTurnConflictFinished
   await a.getByRole('alert').waitFor()
+  liveRoom.run.combat.players.find((player) => player.name === 'Ann').orbs = ['lightning', null, null]
   for (const token of [aCredentials.token, bCredentials.token]) {
     const response = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
       method: 'POST',
@@ -2649,15 +2650,72 @@ try {
   publishedEndTurnOrder = coordinatorStage.endTurnOrder
   decayAbilityId = boStage.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
   teammateOrderButtonDisabled = await b.getByRole('button', { name: 'Waiting for end-turn order' }).isDisabled()
+  const teammateOrderOpen = await b.locator('.end-turn-order[open]').count()
   const teammateArrows = b.locator('.end-turn-order li button')
   teammateReorderControlsDisabled = await teammateArrows.evaluateAll((buttons) =>
     buttons.length > 0 && buttons.every((button) => button.disabled))
-  await a.locator('.end-turn-order > summary').click()
+  // The ordering stage opens the disclosure itself: the coordinator must not
+  // have to find a collapsed panel to fix a rejected order.
+  await a.locator('.end-turn-order[open]').waitFor({ timeout: 5000 }).catch(() => {})
+  const coordinatorOrderOpen = await a.locator('.end-turn-order[open]').count()
   coordinatorAbilityLabels = await a.locator('.end-turn-order li span').allTextContents()
   for (let index = publishedEndTurnOrder.indexOf(decayAbilityId); index > 0; index -= 1) {
     await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
   }
   await a.screenshot({ path: join(outDir, '03-party-end-turn-order.png'), fullPage: true })
+  // The orb's chosen target dies while the party is still ordering: the
+  // coordinator must be told what to fix, with the order list already open.
+  const orbChoice = publishedEndTurnOrder.find((choice) => choice.includes('@'))
+  assert(orbChoice, `no targeted end-turn ability was published: ${JSON.stringify(publishedEndTurnOrder)}`)
+  const orbTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.uid === orbChoice.split('@')[1])
+  assert(orbTarget, `the published target is not an enemy: ${orbChoice}`)
+  Object.assign(orbTarget, { hp: 0, dead: true })
+  // A coordinator who collapsed the tray must still be pointed back into it.
+  await a.locator('.end-turn-order > summary').click()
+  const collapsedBeforeStale = await a.locator('.end-turn-order[open]').count()
+  const failuresBeforeStale = failures.length
+  await a.getByRole('button', { name: 'Resolve end turn' }).click()
+  // The earlier conflict left its own banner, so wait for this refusal's copy
+  // rather than for any banner; the check below still pins the exact text.
+  const staleError = a.locator('.online-error', { hasText: REBUILT_END_TURN_ORDER })
+  await staleError.waitFor()
+  await a.locator('.end-turn-order[open]').waitFor({ timeout: 5000 }).catch(() => {})
+  const staleEndTurnError = await staleError.innerText()
+  const staleOrderOpen = await a.locator('.end-turn-order[open]').count()
+  const staleTargets = await a.getByRole('combobox', { name: /Lightning Orb/ })
+    .locator('option').evaluateAll((options) => options.map((option) => option.value))
+  // The refusal is broadcast, so the teammate's own list must lose the dead
+  // target too — read it from page B, which never refetches on A's rejection.
+  await b.waitForFunction((uid) => {
+    const options = [...document.querySelectorAll('.end-turn-order option')]
+    return options.length > 0 && !options.some((option) => option.value === uid)
+  }, orbTarget.uid, { timeout: 5000 }).catch(() => {})
+  const teammateTargets = await b.locator('.end-turn-order option')
+    .evaluateAll((options) => options.map((option) => option.value))
+  await a.screenshot({ path: join(outDir, '03b-stale-end-turn-order.png'), fullPage: true })
+  check('a stale online end-turn order reopens the list and offers living targets', () => {
+    assertEqual(collapsedBeforeStale, 0, 'the coordinator could not collapse the order list')
+    assertEqual(staleEndTurnError, REBUILT_END_TURN_ORDER)
+    assertEqual(staleOrderOpen, 1, 'the rejected order left the coordinator with a collapsed list')
+    assert(staleTargets.length > 0 && !staleTargets.includes(orbTarget.uid),
+      `the dead target survived the republished list: ${JSON.stringify(staleTargets)}`)
+    assert(teammateTargets.length > 0 && !teammateTargets.includes(orbTarget.uid),
+      `the teammate kept the dead target: ${JSON.stringify(teammateTargets)}`)
+  })
+  const staleConflict = failures.slice(failuresBeforeStale)
+    .findIndex((failure) => failure.includes('409 (Conflict)'))
+  assert(staleConflict >= 0, 'the stale end-turn order was not rejected')
+  failures.splice(failuresBeforeStale + staleConflict, 1)
+  // The republished order is fresh, and its public ids carry the version that
+  // published them, so Decay has to be found by label again before moving up.
+  // Decay is Bo's own card, so only Bo's snapshot spells the label out.
+  const republishedDecayId = (await snapshot(b)).endTurnAbilities
+    .find((ability) => ability.label.includes('Decay'))?.id
+  assert(republishedDecayId, 'Decay left the republished abilities')
+  const republishedEndTurnOrder = (await snapshot(a)).endTurnOrder
+  for (let index = republishedEndTurnOrder.indexOf(republishedDecayId); index > 0; index -= 1) {
+    await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
+  }
   await a.getByRole('button', { name: 'Resolve end turn' }).click()
   await Promise.all([
     a.locator('.combat[data-phase="discard"]').waitFor(),
@@ -2688,6 +2746,8 @@ try {
     assert(publishedEndTurnOrder.includes(decayAbilityId), JSON.stringify(publishedEndTurnOrder))
     assert(publishedEndTurnOrder.every((id) => !id.includes('card:') && !id.includes('online-order')),
       `private card UIDs leaked through ${JSON.stringify(publishedEndTurnOrder)}`)
+    assertEqual(coordinatorOrderOpen, 1, 'the ordering stage left the end-turn order collapsed')
+    assertEqual(teammateOrderOpen, 0, 'the order list opened itself for a seat that cannot use it')
     assert(teammateOrderButtonDisabled, 'the non-coordinator end-turn button remained enabled')
     assert(teammateReorderControlsDisabled, 'the non-coordinator could change an order they cannot submit')
     assert(coordinatorAbilityLabels.filter((label) => label.startsWith('Bo — '))

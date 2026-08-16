@@ -488,7 +488,9 @@ export function useRoomSession() {
     setCredentials(next)
   }, [])
 
-  const post = useCallback(async (operation: string, body: object, actionGeneration: number) => {
+  const post = useCallback(async (
+    operation: string, body: object, actionGeneration: number,
+  ): Promise<ActionOutcome> => {
     if (!credentials || generation.current !== actionGeneration) return { status: 'unknown' } satisfies ActionOutcome
     try {
       const next = await json(await fetch(`/api/rooms/${credentials.code}/${operation}`, {
@@ -525,8 +527,12 @@ export function useRoomSession() {
               snapshot: latest,
             } satisfies ActionOutcome
           } catch {
-            // A 4xx mutation response proves refusal even if its refresh fails.
+            // A 4xx mutation response proves refusal even if its refresh fails —
+            // but a refusal can still have changed the room, and the server sends
+            // that change to the other seats only, so keep reconciling in the
+            // background rather than leaving this client on a stale snapshot.
             if (cause instanceof RequestError && cause.status >= 400 && cause.status < 500) {
+              reconcileUnknown(refreshAttempt, actionGeneration, credentials)
               return { status: 'refused' } satisfies ActionOutcome
             }
           }

@@ -35,6 +35,8 @@ import {
   cardShivChoiceCount,
   canSkipEvent,
   beginEndPlayerTurn,
+  REBUILT_END_TURN_ORDER,
+  STALE_END_TURN_ORDER,
   beginCatchUp,
   chooseEndTurnTarget,
   chooseDistilledCard,
@@ -930,11 +932,8 @@ export function apply(room, seatToken, action) {
   }
   // Any accepted combat action can change a hand, including an ally's. Orders
   // collected before that action are stale, so everyone confirms again.
-  room.endTurnOrders = undefined
+  clearEndTurnOrdering(room)
   room.endTurnReady = undefined
-  room.endTurnAbilities = undefined
-  room.endTurnOrder = undefined
-  room.endTurnPublicIds = undefined
   // Campfire choices belong to the room they were made in. Left behind, a
   // choice from one campfire silently resolves the NEXT one for a player who
   // was never asked.
@@ -1369,7 +1368,11 @@ function settleEndTurn(room) {
   } else {
     room.endTurnAbilities = abilities
     room.endTurnOrder = order
-    room.endTurnPublicIds = Object.fromEntries(abilities.map((ability, index) => [`a${index + 1}`, ability.id]))
+    // Stamped with the version that published them: a republished stage renames
+    // every ability, so an order composed against the old list cannot validate
+    // against the new one and resolve abilities nobody chose.
+    room.endTurnPublicIds = Object.fromEntries(abilities.map((ability, index) =>
+      [`v${room.version}a${index + 1}`, ability.id]))
   }
   room.endTurnOrders = undefined
   return null
@@ -1411,6 +1414,16 @@ function resolveAbandonedPreviews(room) {
   return true
 }
 
+/** Drops a published ability-ordering stage, along with the per-seat discard
+ *  orders kept in `endTurnOrders`. Seat readiness is left for the caller: the
+ *  rebuild path re-derives the stage from it, the others clear it. */
+function clearEndTurnOrdering(room) {
+  room.endTurnAbilities = undefined
+  room.endTurnOrder = undefined
+  room.endTurnPublicIds = undefined
+  room.endTurnOrders = undefined
+}
+
 function endTurnCoordinator(room) {
   const alive = new Set(room.run?.combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
   return room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
@@ -1437,14 +1450,48 @@ function resolveEndTurn(room, seat, action, seatToken) {
     fail('End-turn order must contain each ability exactly once with valid targets')
   }
   const next = beginEndPlayerTurn(combat, order)
-  if (next === combat) fail('End-turn order is stale')
+  if (next === combat) {
+    // The published abilities are still the live ones, so the plan is what the
+    // engine refused — two Orbs aimed at an enemy the first one kills. Keep the
+    // stage: the party's arrangement survives and only the target changes.
+    const live = endTurnAbilities(combat)
+    const targetUids = (ability) => (ability.targets ?? []).map((target) => target.uid).join()
+    // The engine's other refusals cannot reach here: apply rejects a pending
+    // trigger and a forced card above this dispatch, and a phase that moved on
+    // empties the live list, which the comparison below then fails. So a match
+    // means the plan and only the plan.
+    if (live.length === room.endTurnAbilities.length && live.every((ability, index) =>
+      ability.id === room.endTurnAbilities[index].id &&
+      targetUids(ability) === targetUids(room.endTurnAbilities[index]))) {
+      fail(STALE_END_TURN_ORDER)
+    }
+    // Otherwise the frozen list stopped matching the battle. Combat is meant to
+    // be frozen while a stage is published, but the handlers dispatched before
+    // that guard — Courier, rewards, campfire — return early and can hand out an
+    // end-of-turn relic, so this is reachable. A plain rejection would brick the
+    // room — nothing else ever releases the stage, so every later action would
+    // fail too — hence the republish, which also re-targets the list. The
+    // mutation survives the throw (it is the room) and the server broadcasts the
+    // bumped version to the rest of the party.
+    clearEndTurnOrdering(room)
+    // Bumped first so the republished abilities are stamped with a version the
+    // superseded list never carried.
+    room.version += 1
+    settleEndTurn(room)
+    // Nothing left to order: either a single forced ability that settleEndTurn
+    // has already ended the turn with, or a combat that had moved on anyway.
+    if (room.run?.combat?.phase !== 'player') return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    // settleEndTurn can decline to republish — a seat that reconnected mid-order
+    // has not confirmed yet — and then there is no list to send anyone back to.
+    if (!room.endTurnAbilities) fail('The battle moved on before the order resolved. The party ends the turn again.')
+    // Not the solo copy: the party's arrangement is gone with the old list, so
+    // there is nothing to re-aim — the order has to be set again.
+    fail(REBUILT_END_TURN_ORDER)
+  }
   room.run = { ...room.run, combat: next }
   settleForcedCards(room)
   room.endTurnReady = undefined
-  room.endTurnAbilities = undefined
-  room.endTurnOrder = undefined
-  room.endTurnPublicIds = undefined
-  room.endTurnOrders = undefined
+  clearEndTurnOrdering(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }

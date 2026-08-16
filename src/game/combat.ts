@@ -4994,6 +4994,21 @@ function continueEndPlayerTurn(
   return settle(next)
 }
 
+/**
+ * Shown when an end-of-turn order cannot resolve against a list that still
+ * matches the battle — solo and online alike, so the two paths cannot drift into
+ * different recovery advice. The cause is always an ability aimed at something
+ * an earlier ability kills, so the fix is re-aiming it, not picking a target
+ * that looks alive right now.
+ */
+export const STALE_END_TURN_ORDER =
+  'An end-of-turn ability is aimed at an enemy an earlier one kills. Re-aim or reorder it under "End-turn order", then try again.'
+
+/** Shown online when the battle moved under a published order, which the room
+ *  then rebuilds: the arrangement is gone, so the advice is different. */
+export const REBUILT_END_TURN_ORDER =
+  'The battle changed while the party was ordering. The end-of-turn order was rebuilt — set it again under "End-turn order".'
+
 /** Resolves end-of-turn effects in each player's chosen order, then asks for discards. */
 export function beginEndPlayerTurn(
   state: CombatState,
