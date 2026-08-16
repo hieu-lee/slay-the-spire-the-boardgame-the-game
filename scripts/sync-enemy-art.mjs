@@ -1,8 +1,8 @@
-// Extracts enemy portraits from the enemy card scans embedded in the rulebook.
+// Extracts optional Act I reference crops from enemy cards in the rulebook.
 //
 // The board game's enemy cards carry the creature art in a window across the
-// top of the card. Cropping that window gives a portrait per enemy, which is
-// what makes the board read as a game rather than a spreadsheet of hit points.
+// top of the card. These local crops are source references; the runtime uses
+// committed transparent cutouts under public/assets/combat/enemies.
 //
 // Pinned by content hash for the same reason as sync-icons.mjs: a rulebook
 // revision that reorders its images must not silently remap the art.

@@ -2,8 +2,8 @@
 // every image path must be a safe, normalised browser path. A missing asset is
 // otherwise invisible until it renders as a broken box in a real game.
 //
-// Publisher card scans and rulebook icons remain optional local syncs. The
-// curated legacy portraits and original generated artwork are committed and
+// Publisher card scans, rulebook icons, and reference crops remain optional
+// local syncs. Runtime illustrations and combat cutouts are committed and
 // required by the unconditional inventories below.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -14,7 +14,6 @@ import {
   cardArtPath,
   cardImagePath,
   enemyImagePath,
-  enemyUsesCombatArt,
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
 } from '../src/game/assets.ts'
@@ -248,21 +247,20 @@ check('the menu backgrounds and licensed UI font are bundled', () => {
   assert(license.includes('SIL OPEN FONT LICENSE Version 1.1'), 'Kreon OFL license is incomplete')
 })
 
-check('tracked legacy portraits exactly cover enemies without combat cutouts', () => {
+check('every enemy has exactly one canonical combat cutout', () => {
   const expected = [...new Set(Object.values(ENEMIES)
-    .filter((def) => !enemyUsesCombatArt(def))
     .map((def) => `${def.artId ?? def.id}.webp`))].sort()
-  const tracked = spawnSync('git', ['ls-files', 'public/assets/enemies'], {
+  assertDeepEqual(combatEnemyFiles.sort(), expected, 'combat enemy cutout inventory')
+  const trackedCombat = spawnSync('git', ['ls-files', 'public/assets/combat/enemies'], {
     cwd: repoRoot,
     encoding: 'utf8',
   }).stdout.trim().split('\n').filter(Boolean).map((file) => file.split('/').pop()).sort()
-  assertDeepEqual(tracked, expected, 'tracked legacy portrait inventory')
-})
-
-check('bundled combat cutouts map to an enemy definition', () => {
-  const used = new Set(Object.values(ENEMIES).map((def) => def.artId ?? def.id))
-  const strays = combatEnemyFiles.filter((file) => !used.has(file.slice(0, -5)))
-  assert(strays.length === 0, `combat cutouts with no enemy definition: ${strays.join(', ')}`)
+  assertDeepEqual(trackedCombat, expected, 'tracked combat enemy cutout inventory')
+  const legacy = spawnSync('git', ['ls-files', 'public/assets/enemies'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).stdout.trim().split('\n').filter(Boolean).map((file) => file.split('/').pop()).sort()
+  assertDeepEqual(legacy, [], 'tracked legacy portrait inventory')
 })
 
 check('every live enemy runtime image path exists', () => {
@@ -289,9 +287,35 @@ check('bundled combat cutouts are high-resolution images with transparency', () 
     const width = Number(block.match(/  Width: (\d+)/)?.[1])
     const height = Number(block.match(/  Height: (\d+)/)?.[1])
     const alpha = /Alpha:\s+1/.test(block)
-    return width >= 700 && height >= 400 && alpha ? [] : [`${file} is ${width}x${height}, alpha ${alpha}`]
+    const resolution = Math.min(width, height) >= 400 && Math.max(width, height) >= 700
+    return resolution && alpha ? [] : [`${file} is ${width}x${height}, alpha ${alpha}`]
   })
   assert(faults.length === 0, `invalid combat cutouts:\n    ${faults.join('\n    ')}`)
+
+  const probe = `
+import sys, json
+from PIL import Image
+faults = []
+for name in sys.argv[1:]:
+    im = Image.open(name).convert("RGBA")
+    alpha = im.getchannel("A")
+    w, h = im.size
+    corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
+               alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
+    label = name.rsplit("/", 1)[-1]
+    bbox = alpha.point(lambda value: 255 if value >= 16 else 0).getbbox()
+    if max(corners) > 8:
+        faults.append(f"{label}: corners are opaque {corners}")
+    elif sum(1 for value in alpha.getdata() if value < 16) / (w * h) < 0.05:
+        faults.append(f"{label}: less than 5% of its canvas is transparent")
+    elif bbox is None or min(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 400 or max(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 700:
+        faults.append(f"{label}: visible art is undersized ({bbox})")
+print(json.dumps(faults))
+`
+  const pixelResult = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
+  assert(pixelResult.status === 0, pixelResult.stderr || 'combat cutout pixel audit requires python3 + Pillow')
+  const pixelFaults = JSON.parse(pixelResult.stdout.trim().split('\n').pop())
+  assert(pixelFaults.length === 0, `combat cutouts have opaque backgrounds:\n    ${pixelFaults.join('\n    ')}`)
 })
 
 check('bundled stage and generated icon inventories are complete and decodable', () => {

@@ -19,8 +19,8 @@ against the published rules.
 
 ## Artwork
 
-Publisher card scans and rulebook icons are fetched locally and remain gitignored.
-The repository also tracks the curated rulebook enemy portraits used at runtime:
+Publisher card scans, rulebook icons, and eleven Act I reference crops are fetched locally
+and remain gitignored:
 
 ```bash
 pnpm sync:assets     # optional card faces, icons, and reference Act I enemy crops
@@ -30,7 +30,7 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | --- | --- |
 | Card, relic and potion scans | a third-party card browser at `https://rustywolf.github.io/sts/` |
 | Keyword and token icons | images embedded in the official rulebook PDF |
-| Enemy portraits | the enemy card scans embedded in the same PDF, cropped to the art window |
+| Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
@@ -39,9 +39,9 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 
 The sync scripts keep card scans, rulebook icons, source-resolution working files, and
-unused enemy variants out of version control. The 80 committed runtime portraits are
-curated prebuilt crops; the enemy sync only regenerates eleven Act I reference crops
-that the game replaces with generated combat cutouts.
+unused enemy variants out of version control. Runtime enemy artwork is the committed
+transparent combat-cutout inventory; the enemy sync only regenerates eleven optional
+Act I reference crops.
 
 `public/assets/card-art/` contains one committed, text-free generated illustration for
 each character card. These are original OpenAI Imagegen restorations visually grounded
@@ -49,10 +49,11 @@ in the corresponding locally synced illustration window; the UI supplies its own
 title and rules text. Base and upgraded faces reuse the same illustration.
 
 `public/assets/combat/` contains the generated Act I combat stage and transparent actor
-cutouts for four characters and twelve enemies. These are original AI-generated fan
-illustrations made with OpenAI Imagegen for this implementation. The character silhouettes
-and Looter were visually grounded in the corresponding locally synced board-game art. No generated
-asset contains a card scan, logo, or readable text.
+cutouts for four characters and all 61 canonical enemy designs. These are original
+AI-generated fan illustrations made with OpenAI Imagegen for this implementation. The
+new enemy batch was visually grounded in complete enemy cards from the official Slay the
+Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.
+No generated asset contains a card scan, logo, or readable text.
 
 `public/assets/status-icons/` contains fourteen committed generated combat-status symbols,
 and `public/assets/power-icons/` contains twenty-eight committed generated Power symbols.

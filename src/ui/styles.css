@@ -2015,8 +2015,6 @@ button:disabled {
 .enemy__portrait {
   position: relative;
   display: block;
-  /* The extracted art window is ~1.60 wide-to-tall. Matching it means
-     object-fit has essentially nothing to crop, so no creature loses its feet. */
   aspect-ratio: 16 / 10;
   background: #0e0c0a;
   overflow: hidden;
@@ -3629,16 +3627,6 @@ button:disabled {
   object-fit: contain;
   object-position: center bottom;
   mix-blend-mode: normal;
-  mask-image: none;
-  transform-origin: center bottom;
-}
-
-.enemy__portrait > .enemy__art--portrait,
-.enemy--boss .enemy__portrait > .enemy__art--portrait {
-  z-index: 1;
-  object-fit: contain;
-  object-position: center bottom;
-  mix-blend-mode: screen;
   mask-image: none;
   transform-origin: center bottom;
 }

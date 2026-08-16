@@ -27,9 +27,8 @@ src/**/*.d.ts
 /*.webp
 artifacts/
 
-# Publisher card scans, rulebook icons, and extra enemy crops stay local.
-# The curated enemy portraits already tracked under public/assets/enemies remain
-# part of clean clones; generated combat art is bundled under public/assets/combat.
+# Publisher card scans, rulebook icons, and enemy reference crops stay local.
+# Runtime enemy cutouts are bundled under public/assets/combat.
 public/assets/cards/
 public/assets/cards-hd/
 public/assets/icons/

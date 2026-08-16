@@ -314,7 +314,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   spike_slime_dv2: {
-    id: 'spike_slime_dv2', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    id: 'spike_slime_dv2', name: 'Spike Slime', artId: 'spike_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
       [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
@@ -323,7 +323,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   spike_slime_v2d: {
-    id: 'spike_slime_v2d', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    id: 'spike_slime_v2d', name: 'Spike Slime', artId: 'spike_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 1 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
       [{ kind: 'attack', amount: 2 }],
@@ -332,7 +332,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   spike_slime_2dv: {
-    id: 'spike_slime_2dv', name: 'Spike Slime', hpByPlayers: [5, 5, 5, 5],
+    id: 'spike_slime_2dv', name: 'Spike Slime', artId: 'spike_slime', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }],
       [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 1 }],
@@ -425,7 +425,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   large_slime_summon_w4s: {
-    id: 'large_slime_summon_w4s', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    id: 'large_slime_summon_w4s', name: 'Large Slime', artId: 'large_slime', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 2 }],
       [{ kind: 'attack', amount: 4 }],
@@ -434,7 +434,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   large_slime_summon_4sw: {
-    id: 'large_slime_summon_4sw', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    id: 'large_slime_summon_4sw', name: 'Large Slime', artId: 'large_slime', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 4 }],
       [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2 }],
@@ -443,7 +443,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   large_slime_summon_sw4: {
-    id: 'large_slime_summon_sw4', name: 'Large Slime', hpByPlayers: [10, 10, 10, 10],
+    id: 'large_slime_summon_sw4', name: 'Large Slime', artId: 'large_slime', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }, { kind: 'status', card: 'slimed', amount: 2 }],
       [{ kind: 'attack', amount: 1 }, { kind: 'applyWeak', amount: 2 }],
@@ -487,7 +487,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   chosen_14: {
-    id: 'chosen_14', name: 'Chosen', hpByPlayers: [14, 14, 14, 14],
+    id: 'chosen_14', name: 'Chosen', artId: 'chosen', hpByPlayers: [14, 14, 14, 14],
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }], once: true },
       { actions: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 2 }] },
@@ -496,7 +496,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   chosen_16: {
-    id: 'chosen_16', name: 'Chosen', hpByPlayers: [16, 16, 16, 16],
+    id: 'chosen_16', name: 'Chosen', artId: 'chosen', hpByPlayers: [16, 16, 16, 16],
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }], once: true },
       { actions: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 2 }] },
@@ -524,7 +524,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   centurion_b3: {
-    id: 'centurion_b3', name: 'Centurion', hpByPlayers: [15, 15, 15, 15],
+    id: 'centurion_b3', name: 'Centurion', artId: 'centurion', hpByPlayers: [15, 15, 15, 15],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
       2: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
@@ -535,7 +535,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   centurion_3b: {
-    id: 'centurion_3b', name: 'Centurion', hpByPlayers: [15, 15, 15, 15],
+    id: 'centurion_3b', name: 'Centurion', artId: 'centurion', hpByPlayers: [15, 15, 15, 15],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
       4: [{ kind: 'blockNamed', defId: 'mystic', amount: 3 }],
@@ -555,7 +555,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   mystic_2sh: {
-    id: 'mystic_2sh', name: 'Mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
+    id: 'mystic_2sh', name: 'Mystic', artId: 'mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
       [{ kind: 'strengthenAllEnemies', amount: 1 }],
@@ -564,7 +564,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   byrd_encounter: {
-    id: 'byrd_encounter', name: 'Byrd', hpByPlayers: [5, 5, 5, 5],
+    id: 'byrd_encounter', name: 'Byrd', artId: 'byrd', hpByPlayers: [5, 5, 5, 5],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 1, times: 2 }],
       [{ kind: 'gainStrength', amount: 1 }],
@@ -574,7 +574,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   byrd_s13: {
-    id: 'byrd_s13', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    id: 'byrd_s13', name: 'Byrd', artId: 'byrd', hpByPlayers: [4, 4, 4, 4],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 1, times: 2 }],
@@ -584,7 +584,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   byrd_s31: {
-    id: 'byrd_s31', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    id: 'byrd_s31', name: 'Byrd', artId: 'byrd', hpByPlayers: [4, 4, 4, 4],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 3 }],
@@ -594,7 +594,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   byrd_31s: {
-    id: 'byrd_31s', name: 'Byrd', hpByPlayers: [4, 4, 4, 4],
+    id: 'byrd_31s', name: 'Byrd', artId: 'byrd', hpByPlayers: [4, 4, 4, 4],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 1, times: 2 }],
@@ -628,7 +628,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   fungi_beast_a7: {
-    id: 'fungi_beast_a7', name: 'Fungi Beast', hpByPlayers: [6, 6, 6, 6],
+    id: 'fungi_beast_a7', name: 'Fungi Beast', artId: 'fungi_beast', hpByPlayers: [6, 6, 6, 6],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 2 }],
@@ -658,7 +658,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   blue_slaver_wd3: {
-    id: 'blue_slaver_wd3', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'blue_slaver_wd3', name: 'Blue Slaver', artId: 'blue_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
@@ -667,7 +667,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   blue_slaver_w3d: {
-    id: 'blue_slaver_w3d', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'blue_slaver_w3d', name: 'Blue Slaver', artId: 'blue_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
       [{ kind: 'attack', amount: 3 }],
@@ -676,7 +676,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   blue_slaver_dw3: {
-    id: 'blue_slaver_dw3', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'blue_slaver_dw3', name: 'Blue Slaver', artId: 'blue_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
@@ -685,7 +685,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   blue_slaver_3wd: {
-    id: 'blue_slaver_3wd', name: 'Blue Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'blue_slaver_3wd', name: 'Blue Slaver', artId: 'blue_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
@@ -694,7 +694,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_slaver_3vd: {
-    id: 'red_slaver_3vd', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'red_slaver_3vd', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
@@ -703,7 +703,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_slaver_3dv: {
-    id: 'red_slaver_3dv', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'red_slaver_3dv', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
@@ -712,7 +712,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_slaver_v3d: {
-    id: 'red_slaver_v3d', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'red_slaver_v3d', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
       [{ kind: 'attack', amount: 3 }],
@@ -721,7 +721,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   red_slaver_dv3: {
-    id: 'red_slaver_dv3', name: 'Red Slaver', hpByPlayers: [10, 10, 10, 10],
+    id: 'red_slaver_dv3', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
@@ -788,7 +788,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
 
   // Act III encounters and their finite Summons deck variants.
   jaw_worm_act3: {
-    id: 'jaw_worm_act3', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
+    id: 'jaw_worm_act3', name: 'Jaw Worm', artId: 'jaw_worm', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
@@ -797,7 +797,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   jaw_worm_summon: {
-    id: 'jaw_worm_summon', name: 'Jaw Worm', hpByPlayers: [10, 10, 10, 10],
+    id: 'jaw_worm_summon', name: 'Jaw Worm', artId: 'jaw_worm', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 4 }],
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
@@ -834,7 +834,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   repulsor_summon: {
-    id: 'repulsor_summon', name: 'Repulsor', hpByPlayers: [7, 7, 7, 7],
+    id: 'repulsor_summon', name: 'Repulsor', artId: 'repulsor', hpByPlayers: [7, 7, 7, 7],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
       4: [{ kind: 'attack', amount: 1 }, { kind: 'daze', amount: 2 }],
@@ -853,7 +853,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   exploder_summon: {
-    id: 'exploder_summon', name: 'Exploder', hpByPlayers: [8, 8, 8, 8],
+    id: 'exploder_summon', name: 'Exploder', artId: 'exploder', hpByPlayers: [8, 8, 8, 8],
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 3 }], once: true },
       { actions: [{ kind: 'idle' }], once: true },
@@ -862,7 +862,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   orb_walker_3ws: {
-    id: 'orb_walker_3ws', name: 'Orb Walker', hpByPlayers: [22, 22, 22, 22],
+    id: 'orb_walker_3ws', name: 'Orb Walker', artId: 'orb_walker', hpByPlayers: [22, 22, 22, 22],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
       2: [{ kind: 'attack', amount: 3 }, { kind: 'daze', amount: 1 }, { kind: 'gainStrength', amount: 1 }],
@@ -874,7 +874,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   orb_walker_2s: {
-    id: 'orb_walker_2s', name: 'Orb Walker', hpByPlayers: [22, 22, 22, 22],
+    id: 'orb_walker_2s', name: 'Orb Walker', artId: 'orb_walker', hpByPlayers: [22, 22, 22, 22],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
       2: [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 2 }],
@@ -936,7 +936,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   darkling_bha: {
-    id: 'darkling_bha', name: 'Darkling', hpByPlayers: [8, 8, 8, 8],
+    id: 'darkling_bha', name: 'Darkling', artId: 'darkling', hpByPlayers: [8, 8, 8, 8],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 3 }, { kind: 'healSelf', amount: 2 }],
@@ -946,7 +946,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   darkling_hab: {
-    id: 'darkling_hab', name: 'Darkling', hpByPlayers: [8, 8, 8, 8],
+    id: 'darkling_hab', name: 'Darkling', artId: 'darkling', hpByPlayers: [8, 8, 8, 8],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }, { kind: 'healSelf', amount: 2 }],
       [{ kind: 'attack', amount: 2, times: 2 }],
@@ -956,7 +956,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   spiker_add: {
-    id: 'spiker_add', name: 'Spiker', hpByPlayers: [10, 10, 10, 10],
+    id: 'spiker_add', name: 'Spiker', artId: 'spiker', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'addAbilityCube', amount: 1 }], 2: [{ kind: 'addAbilityCube', amount: 1 }], 3: [{ kind: 'addAbilityCube', amount: 1 }],
       4: [{ kind: 'attack', amount: 2 }], 5: [{ kind: 'attack', amount: 2 }], 6: [{ kind: 'attack', amount: 2 }],
@@ -965,7 +965,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   spiker_attack: {
-    id: 'spiker_attack', name: 'Spiker', hpByPlayers: [10, 10, 10, 10],
+    id: 'spiker_attack', name: 'Spiker', artId: 'spiker', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 2 }], 2: [{ kind: 'attack', amount: 2 }], 3: [{ kind: 'attack', amount: 2 }],
       4: [{ kind: 'addAbilityCube', amount: 1 }], 5: [{ kind: 'addAbilityCube', amount: 1 }], 6: [{ kind: 'addAbilityCube', amount: 1 }],
@@ -1059,6 +1059,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   sentry_a: {
     id: 'sentry_a',
     name: 'Sentry A',
+    artId: 'sentry',
     hpByPlayers: [7, 7, 7, 7],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'daze', amount: 1 }], 2: [{ kind: 'daze', amount: 1 }], 3: [{ kind: 'daze', amount: 1 }],
@@ -1069,6 +1070,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   sentry_b: {
     id: 'sentry_b',
     name: 'Sentry B',
+    artId: 'sentry',
     hpByPlayers: [8, 8, 8, 8],
     pattern: { kind: 'die', byRoll: {
       1: [{ kind: 'attack', amount: 3 }], 2: [{ kind: 'attack', amount: 3 }], 3: [{ kind: 'attack', amount: 3 }],
@@ -1079,6 +1081,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   sentries: {
     id: 'sentries',
     name: 'Sentries',
+    artId: 'sentry',
     elite: true,
     hpByPlayers: [7, 7, 7, 7],
     pattern: {

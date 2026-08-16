@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { cardImagePath, enemyImagePath, enemyUsesCombatArt } from '../game/assets.ts'
+import { cardImagePath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 import type { Enemy } from '../game/types.ts'
@@ -330,13 +330,12 @@ export function EnemyCard({
 
       <span className="enemy__portrait">
         <img
-          className={enemyUsesCombatArt(def) ? 'enemy__art--cutout' : 'enemy__art--portrait'}
+          className="enemy__art--cutout"
           src={enemyImagePath(def)}
           alt=""
           loading="lazy"
           onError={(event) => {
-            // Not every enemy has art extracted yet; fall back to the panel
-            // background rather than showing a broken image.
+            // Keep combat usable if a bundled image fails to load.
             event.currentTarget.style.display = 'none'
           }}
         />

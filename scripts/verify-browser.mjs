@@ -610,13 +610,13 @@ const combatAppearanceRun = await readRun()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  Object.assign(run.combat.enemies[0], { defId: 'looter', hp: 9, maxHp: 9, dead: false })
+  Object.assign(run.combat.enemies[0], { defId: 'sentry_a', hp: 7, maxHp: 7, dead: false })
   Object.assign(run.combat.players[0], { block: 1, strength: 1 })
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/looter.webp"]')?.naturalWidth === 1254)
+await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')?.naturalWidth === 1024)
 const combatAppearance = await page.evaluate(() => {
-  const image = document.querySelector('.enemy__art--cutout[src$="/looter.webp"]')
+  const image = document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')
   const strip = document.querySelector('.row__seat .seat__status-strip')
   const bar = strip?.parentElement?.querySelector('.seat > .bar')
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
@@ -626,9 +626,9 @@ const combatAppearance = await page.evaluate(() => {
     statusOverlapsHp: strip && bar ? overlap(strip.getBoundingClientRect(), bar.getBoundingClientRect()) : true,
   }
 })
-await shot('02b-looter-cutout-and-status')
-check('Looter uses a transparent full-body cutout and character status clears HP', () => {
-  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [1254, 1254])
+await shot('02b-sentry-cutout-and-status')
+check('Sentry uses a transparent full-body cutout and character status clears HP', () => {
+  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [1024, 1536])
   assertEqual(combatAppearance.statusOverlapsHp, false)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)

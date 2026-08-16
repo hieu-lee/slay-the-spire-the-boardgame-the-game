@@ -57,16 +57,7 @@ export function cardArtPath(def: CardDef): string {
   return `${CARD_ART_ROOT}/${def.owner}/${def.id}.webp`
 }
 
-const COMBAT_ENEMY_ART = new Set([
-  'acid_slime', 'blue_slaver', 'cultist', 'fungi_beast', 'green_louse',
-  'gremlin_nob', 'jaw_worm', 'lagavulin', 'looter', 'red_louse', 'small_slime', 'spike_slime',
-])
-
-export function enemyUsesCombatArt(def: EnemyDef): boolean {
-  return COMBAT_ENEMY_ART.has(def.artId ?? def.id)
-}
-
 export function enemyImagePath(def: EnemyDef): string {
   const artId = def.artId ?? def.id
-  return `/assets/${enemyUsesCombatArt(def) ? 'combat/enemies' : 'enemies'}/${artId}.webp`
+  return `/assets/combat/enemies/${artId}.webp`
 }
