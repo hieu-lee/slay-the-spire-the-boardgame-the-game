@@ -57,7 +57,8 @@ import { MapScreen } from './MapScreen.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { relicDef } from '../game/relics.ts'
-import { Icon, IconValue } from './Icon.tsx'
+import { IconValue } from './Icon.tsx'
+import { RelicBar } from './RelicChip.tsx'
 import { OnlineGame } from './OnlineGame.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
@@ -67,6 +68,10 @@ import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
 import { AchievementsScreen } from './AchievementsScreen.tsx'
+import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
+import { RunSummary, summarySeat } from './RunSummary.tsx'
+import { useCardMorphs } from './useCardMorphs.ts'
+import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
 
@@ -188,7 +193,19 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
     setAscension((current) => Math.min(current, run.campaignProgress.highestAscension))
   }, [run.campaignProgress.highestAscension])
 
-  useEffect(() => localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run))), [open, run.campaignProgress, run.campaign.finalized])
+  // Guarded, like the read at `savedCampaign`. `setItem` throws on a full quota
+  // and on blocked storage (Chrome's "block all cookies", enterprise policy, a
+  // shared-origin dev host at the 5MB cap) — and thrown from a mount effect with
+  // no error boundary above it, React unmounts the root and the whole app goes
+  // white. Losing the campaign journal is a bad outcome; losing the game is a
+  // worse one.
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)))
+    } catch {
+      // Storage is unavailable; the run continues in memory.
+    }
+  }, [open, run.campaignProgress, run.campaign.finalized])
 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
@@ -201,6 +218,12 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   }, [run.combat])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
+  // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
+  // because it watches the deck rather than each of those call sites.
+  const morph = useCardMorphs(viewer?.deck, run.campaign.runId, run.phase)
+  // The map is regenerated per act, so this counts the CURRENT act's climb, not
+  // the run's. The summary labels it "Rooms this act" to match.
+  const roomsCleared = Object.values(run.map.rooms).filter((room) => room.visited).length
   const pendingAcquisition = hasPendingRelicAcquisition(run)
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
@@ -252,7 +275,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
   }
 
   return (
-    <main className={`app-shell${run.phase === 'combat' ? ' app-shell--combat' : ''}`}>
+    <main className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">
@@ -260,14 +283,17 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
           {viewer ? (
             <>
+              {/* HP rides the header on every screen, not only in combat. It is
+                  the number the whole run is steered by — whether to take the
+                  elite, whether to rest or upgrade — and the digital game pins
+                  it top-left everywhere for exactly that reason. */}
+              <span className="pip pip--hp" role="img" aria-label={`Health ${viewer.hp} of ${viewer.maxHp}`}>
+                {viewer.hp}/{viewer.maxHp}
+              </span>
               <span className="pip" title="Gold">
                 <IconValue name="gold" value={viewer.gold} size={20} />
               </span>
-              {viewer.relics.map((relic) => (
-                <span className="pip" key={relic.defId} title={relic.defId}>
-                  <Icon name="relic" size={20} />
-                </span>
-              ))}
+              <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} />
             </>
           ) : null}
         </div>
@@ -433,6 +459,8 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
       {!allocatingCampaignMarks && run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} />
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -449,16 +477,30 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
       {!allocatingCampaignMarks && run.phase === 'defeat' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2 className="room-screen__defeat">The party has fallen</h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} />
           {!run.campaign.finalized ? <button type="button" onClick={() => setRun((current) => finishRun(current))}>Record campaign result</button> : null}
         </section>
       ) : null}
 
       {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => restart(playerCount, crypto.randomUUID(), Math.min(ascension, run.campaignProgress.highestAscension))}>Begin next run →</button> : null}</div></section> : null}
 
-      {run.phase !== 'combat' ? <details className="log">
+      {/* Not on Neow: it is a full-bleed painted scene with seat cards in the
+          bottom-left and Skip keys in the bottom-right, so the fixed log tab
+          covers content in either corner and there is no scroller to move it
+          clear. The log is supplementary and is on every other screen. */}
+      {run.phase !== 'combat' && run.phase !== 'neow' ? <details className="log">
         <summary>Run log</summary>
         {run.log.slice(-6).map((line, i) => <p key={`${i}-${line}`}>{line}</p>)}
       </details> : null}
+      {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
+      {/* `aria-live` rather than `role="status"`: the run already has status
+          regions ("Choice locked. Waiting for the party…"), and a second one
+          would both compete with them and make `getByRole('status')` ambiguous
+          for the suites. A bare live region announces without claiming a role.
+          Rendered always, empty when idle, because a live region has to exist
+          before its text changes for the change to be announced. */}
+      <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
   )
 }

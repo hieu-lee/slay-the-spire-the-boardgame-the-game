@@ -48,7 +48,12 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
           const blocked = restBlocked && (hammer || upgradable.length === 0)
           const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
           return (
-            <div className="campfire__player" key={player.id}>
+            /* Grouped and named, so a screen reader announces whose keys these
+               are. With four seats the tab ring was "Rest, Smith, Rest, Smith,
+               Rest, Smith…" with nothing to tell them apart. Same treatment the
+               merchant shelves use. */
+            <div className="campfire__player" key={player.id}
+              role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
               <span className="campfire__name">
                 {player.name} · {player.hp}/{player.maxHp}
               </span>

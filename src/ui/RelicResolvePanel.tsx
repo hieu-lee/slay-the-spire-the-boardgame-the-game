@@ -23,6 +23,8 @@ export function RelicResolvePanel({ pending, deck, onResolve }: Props) {
   const rewardReady = (pending.rewardChoices ?? []).every((_choice, index) => rewards[index] !== undefined)
   return <section className="room-screen">
     <h2>Resolve {relicDef(pending.relicId).name}</h2>
+    {/* The panel asks the player to pick cards for an effect it never stated. */}
+    <p className="room-item-text">{relicDef(pending.relicId).text}</p>
     {count > 0 ? <div className="campfire__deck">{eligible.map((card) => <button type="button" key={card.uid}
       aria-pressed={cards.includes(card.uid)} onClick={() => setCards((current) => current.includes(card.uid)
         ? current.filter((uid) => uid !== card.uid)

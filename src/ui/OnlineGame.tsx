@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { cardDef } from '../game/cards.ts'
+import { cardDef, faceOf } from '../game/cards.ts'
 import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
@@ -15,6 +15,11 @@ import { MapScreen } from './MapScreen.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { RelicBar } from './RelicChip.tsx'
+import { RunSummary } from './RunSummary.tsx'
+import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
+import { useCardMorphs } from './useCardMorphs.ts'
+import type { SummarySeat } from './RunSummary.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
@@ -42,6 +47,28 @@ function playerForUi(player: VisiblePlayer): Player {
     hand: player.hand ?? [],
     cardRewards: [],
     rareRewards: [],
+  }
+}
+
+/**
+ * A seat for the end-of-run summary.
+ *
+ * `deck` is left undefined rather than defaulted to `[]`: the server sends only
+ * the local seat's deck, and an empty array would render every teammate as
+ * "0 cards" with no build — a confident lie. Undefined makes the summary omit
+ * those lines for seats it cannot see.
+ */
+function onlineSummarySeat(player: VisiblePlayer): SummarySeat {
+  return {
+    id: player.id,
+    name: player.name,
+    character: player.character,
+    hp: player.hp,
+    maxHp: player.maxHp,
+    gold: player.gold,
+    dead: player.dead,
+    relics: player.relics,
+    deck: player.deck ?? undefined,
   }
 }
 
@@ -149,15 +176,32 @@ export function OnlineGame({ onLocal }: Props) {
     return () => clearTimeout(timer)
   }, [room.act, room.connection, snapshot?.run?.combat?.phase])
 
+  // MUST stay above the early returns below — this component bails out for the
+  // reconnecting and entry screens, and a hook called after those would run on
+  // some renders and not others.
+  //
+  // The server sends the local seat's own deck (`deck: mine ? player.deck : null`
+  // in rooms.mjs) and nulls every other seat's, so the same deck diff the local
+  // shell uses works here, for the viewer only — the one player whose upgrade
+  // this client should be animating.
+  const morph = useCardMorphs(
+    snapshot?.run?.players.find((seat) => seat.id === snapshot.you.playerId)?.deck ?? undefined,
+    snapshot?.run?.campaign.runId,
+    snapshot?.run?.phase,
+  )
+
   if (!snapshot && room.activeCode) {
     return (
-      <main className="online-entry online-reconnecting">
+      <main className="online-entry online-reconnecting sts-scope">
         <button type="button" className="online-entry__back" onClick={() => { room.forget(); onLocal() }}>← Solo table</button>
         <section className="online-entry__panel">
           <span className="online-entry__eyebrow">Party room {room.activeCode}</span>
           <h1>Reconnecting</h1>
           <p>Your seat is preserved. The table will return when the connection does.</p>
-          <span className={`connection connection--${room.connection}`}>{room.connection}</span>
+          {/* Labelled, because on this screen the chip's raw value is the same
+              word as the heading directly above it — "Reconnecting" printed
+              twice, 40px apart, with nothing between. */}
+          <span className={`connection connection--${room.connection}`}>Link: {room.connection}</span>
           {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
         </section>
       </main>
@@ -166,7 +210,7 @@ export function OnlineGame({ onLocal }: Props) {
 
   if (!snapshot) {
     return (
-      <main className="online-entry">
+      <main className="online-entry sts-scope">
         <button type="button" className="online-entry__back" disabled={room.entering} onClick={() => { room.forget(); onLocal() }}>← Solo table</button>
         <section className="online-entry__panel">
           <span className="online-entry__eyebrow">Co-op expedition</span>
@@ -214,7 +258,7 @@ export function OnlineGame({ onLocal }: Props) {
     const isPartyLeader = partyLeader?.playerId === snapshot.you.playerId
     if (achievementsOpen) return <AchievementsScreen onBack={() => setAchievementsOpen(false)} />
     return (
-      <main className="online-lobby">
+      <main className="online-lobby sts-scope">
         <header>
           <button type="button" onClick={async () => { voice.stop(); if (await room.leave()) onLocal() }}>← Leave room</button>
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
@@ -240,7 +284,10 @@ export function OnlineGame({ onLocal }: Props) {
               Ascension
               <select disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>{Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}</select>
             </label>
-            <details className="ascension-rules">
+            {/* `run-modifiers` is what carries the disclosure's styling; the
+                bare `ascension-rules` class has no rules of its own, so this
+                summary rendered as clickable plain text. */}
+            <details className="ascension-rules run-modifiers">
               <summary>Ascension {snapshot.ascension} modifiers</summary>
               <ol>{ASCENSION_RULES.slice(1, snapshot.ascension + 1).map((rule) => <li key={rule}>{rule}</li>)}</ol>
             </details>
@@ -276,6 +323,7 @@ export function OnlineGame({ onLocal }: Props) {
   const run = snapshot.run
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const roomsCleared = Object.values(run.map.rooms).filter((mapRoom) => mapRoom.visited).length
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
   const foreignCardCopy = foreignCardChoice && run.combat?.pendingCardCopy?.playerId === cardChoiceSeat?.playerId
@@ -311,7 +359,7 @@ export function OnlineGame({ onLocal }: Props) {
   } satisfies CombatState : null
 
   return (
-    <main className={`app-shell app-shell--online${run.phase === 'combat' ? ' app-shell--combat' : ''}`}>
+    <main className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">
@@ -319,7 +367,10 @@ export function OnlineGame({ onLocal }: Props) {
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
           <span className="pip">Act {run.act}</span>
           {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
+          {/* See App.tsx: HP belongs in the header on every screen, not only in combat. */}
+          {viewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${viewer.hp} of ${viewer.maxHp}`}>{viewer.hp}/{viewer.maxHp}</span> : null}
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
+          {viewer ? <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} /> : null}
         </div>
         <details className="game-settings">
           <summary>Party</summary>
@@ -417,7 +468,19 @@ export function OnlineGame({ onLocal }: Props) {
             ? `Waiting for ${snapshot.pendingRelicStatus.playerName} to resolve ${relicDef(snapshot.pendingRelicStatus.relicId).name}.`
             : undefined}
         onGold={(_playerId, gain) => room.act({ kind: 'neow', stage: 'redGold', gain })}
-        onReveal={(_playerId, _stage, sources) => room.act({ kind: 'neow', stage: 'reveal', sources })}
+        onReveal={(_playerId, _stage, sources) => {
+          // `NeowScreen` reports "no prismatic choice" as an empty array, which
+          // is what the local engine wants — `revealNeowReward` defaults
+          // `sources` to `[]`. The wire contract is narrower: the server takes
+          // the key absent or exactly 3 sources, and rejected `[]` with a 409
+          // "Choose a valid Neow reveal", so Reveal was enabled, did nothing on
+          // click, and Skip unseen was the only way past Neow online.
+          //
+          // Translated at the boundary between the two contracts rather than in
+          // NeowScreen, which is shared with the local shell and whose array the
+          // engine reads directly.
+          room.act({ kind: 'neow', stage: 'reveal', sources: sources.length ? sources : undefined })
+        }}
         onReward={(_playerId, choice, stage) => room.act({ kind: 'neow', stage, choice })}
         onEffect={(_playerId, gain, decision) => room.act({ kind: 'neow', stage: 'effect', gain, cardUids: decision.cardUids ?? [] })}
         onChoose={(_playerId, optionIndex, decision) => room.act({
@@ -493,6 +556,8 @@ export function OnlineGame({ onLocal }: Props) {
       {run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} />
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -503,15 +568,34 @@ export function OnlineGame({ onLocal }: Props) {
             onClick={() => room.act({ kind: 'finishRun' })}>Stop and record result</button>
         </section>
       ) : null}
-      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
+      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><RunSummary act={run.act} roomsCleared={roomsCleared} ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} /><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
 
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
-      {run.phase !== 'combat' ? <details className="log">
+      {/* Not on Neow: it is a full-bleed painted scene with seat cards in the
+          bottom-left and Skip keys in the bottom-right, so the fixed log tab
+          covers content in either corner and there is no scroller to move it
+          clear. The log is supplementary and is on every other screen. */}
+      {run.phase !== 'combat' && run.phase !== 'neow' ? <details className="log">
         <summary>Run log</summary>
         {run.log.slice(-6).map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}
       </details> : null}
       </div>
+      {/* OUTSIDE `.online-mutations`, which carries `inert` whenever another seat
+          holds a card choice, a pending trigger or a discard. `inert` takes its
+          subtree out of the accessibility tree, so an `aria-live` region nested
+          in it never announces — and the whole reason this text lives apart from
+          `CardMorph` is that the visual is deliberately `aria-hidden` + `inert`
+          while the sentence has to survive. The local shell already had them
+          under `<main>`; this matches it. Both are positioned out of flow, so
+          moving them changes no layout.
+
+          See the local shell for why the announcement is `aria-live` and not a
+          second `role="status"`. The overlay is deliberately NOT keyed — see
+          CardMorph, which keys its inner stage instead so the veil survives a
+          queue. */}
+      {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
+      <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
   )
 }

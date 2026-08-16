@@ -75,6 +75,9 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     const limit = potionLimit
     return <div className="neow-offer neow-offer--potion">
       <h3>{potionId ? potionDef(potionId).name : 'Empty Potion supply'}</h3>
+      {/* The relic offer twenty lines down prints its text; this one did not, so
+          the first potion of the run was the one item in the game accepted blind. */}
+      {potionId ? <p className="room-item-text">{potionDef(potionId).text}</p> : null}
       {potionId ? <>
         <button type="button" disabled={!enabled || blocked || player.potions.length >= limit}
           onClick={() => onResolve({ kind: 'gain' })}>Take Potion</button>
@@ -95,7 +98,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     const relicId = offer.choices[0]
     return <div className="neow-offer neow-offer--relic">
       <h3>{relicId ? relicDef(relicId).name : 'Empty Relic supply'}</h3>
-      {relicId ? <p>{relicDef(relicId).text}</p> : null}
+      {relicId ? <p className="room-item-text">{relicDef(relicId).text}</p> : null}
       <div className="neow-offer__actions">
         {relicId ? <button type="button" disabled={!enabled} onClick={() => onResolve(0)}>Take Relic</button> : null}
         <button type="button" disabled={!enabled} onClick={() => onResolve(null)}>Skip Relic</button>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type React from 'react'
 import type { Room, SpireMap } from '../game/map.ts'
 import { Icon } from './Icon.tsx'
 import type { IconName } from './icons.ts'
@@ -31,6 +32,49 @@ const ROOM_LABEL: Record<Room['kind'], string> = {
 }
 
 type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
+
+/**
+ * A room's hand-placed wobble, in px.
+ *
+ * The digital game displaces every map node from its grid slot, and that
+ * irregularity is most of why its Spire reads as a place instead of as an org
+ * chart. Derived from the room id rather than from a random source so a room
+ * does not jump when the map re-renders — and so the Playwright suite still
+ * finds it where it left it.
+ *
+ * The id ends in the column number, so sibling ids differ only in their last
+ * character or two. A plain `hash * 31` accumulator leaves that difference in
+ * the LOW bits, and reading the offset out of the high bits then handed every
+ * node in a row the same displacement — the map slid whole rows sideways
+ * instead of scattering nodes. The avalanche step below spreads a one-character
+ * difference across the whole word before any bits are sliced off.
+ *
+ * The range is far tighter than the client's ±27/±37, and deliberately not
+ * square. Measured in the running app: ordinary nodes are 52px across (the boss
+ * is 74px and alone in its row), siblings in a row sit 78px apart, but
+ * vertically adjacent rows are only 60px apart — 8px of headroom. Two nodes
+ * moving ±10 each would close that to 40px and overlap, which is not just ugly:
+ * `.room--reachable` is clicked by the Playwright suites, and an overlapping
+ * node steals the hit. So X gets the room it has (±8) and Y is held to ±3.
+ * The BOUND, not a measurement: vertically adjacent nodes share a 60px row
+ * pitch, so the worst case is 60 - 3 - 3 = 54px between 52px nodes, and the
+ * 74px boss row is 71 - 6 = 65px against 63px. Both clear by ~2px. A given seed
+ * usually measures looser than that (57px was one sample); widen either range
+ * only against this arithmetic, never against a sample.
+ */
+function jitter(id: string): { x: number; y: number } {
+  let hash = 0
+  for (let index = 0; index < id.length; index += 1) hash = (Math.imul(hash, 31) + id.charCodeAt(index)) | 0
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x2c1b3c6d)
+  hash ^= hash >>> 12
+  hash = Math.imul(hash, 0x297a2d39)
+  hash ^= hash >>> 15
+  const mixed = hash >>> 0
+  // Two independent slices: the same word reused for both axes would tie the
+  // horizontal and vertical wobble together and lay the nodes along a diagonal.
+  return { x: (mixed % 17) - 8, y: ((mixed >>> 16) % 7) - 3 }
+}
 
 /**
  * The Spire, boss at the top. Paths are drawn from measured element positions
@@ -132,6 +176,7 @@ export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenP
               const isHere = map.position === id
               const canGo = reachable.has(id)
               const label = room.hidden ? 'Unknown room' : ROOM_LABEL[room.kind]
+              const wobble = jitter(id)
               return (
                 <button
                   type="button"
@@ -162,6 +207,7 @@ export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenP
                     .join(', ')}
                   aria-current={isHere ? 'location' : undefined}
                   title={label}
+                  style={{ '--jitter-x': `${wobble.x}px`, '--jitter-y': `${wobble.y}px` } as React.CSSProperties}
                 >
                   {/* Icon only. The name is in the accessible label and in the
                       tooltip; printing it under every node turned the Spire

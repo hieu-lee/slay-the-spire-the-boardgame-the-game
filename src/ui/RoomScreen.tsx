@@ -10,6 +10,8 @@ import type {
   TreasureDecision,
 } from "../game/noncombat.ts";
 import { courierCost } from "../game/noncombat.ts";
+import { relicOptionLabel } from "./RelicChip.tsx";
+import { Card } from "./Card.tsx";
 import type { Player } from "../game/types.ts";
 import type { EventEffect } from "../game/events.ts";
 import type { RewardSource } from "../game/run.ts";
@@ -130,7 +132,7 @@ export function CourierPanel({ players, viewerId, ascension, usedBy, offer, pled
   const potionBlocked = offer.kind === 'potion' && hasSozu(owner);
   const potionFull = offer.kind === 'potion' && owner.potions.length >= (ascension >= 4 ? 2 : 3);
   const canFund = !viewer.dead && !potionBlocked && cost !== null && (pledge ? contribution > 0 : (!online || viewer.id === owner.id) && partyCanAfford) && (!online || viewer.id === owner.id || Boolean(pledge)) && (!potionFull || Boolean(pledge?.discardPotionId ?? discardPotionId));
-  return <aside className="courier-panel" aria-label="The Courier offer"><strong>The Courier · {offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</strong><span>{potionBlocked ? 'Sozu prevents gaining Potions' : cost === null ? 'Cannot be bought' : `◉ ${cost}${funded ? ` · ${remaining} remaining` : ''}`}</span>{potionFull && !potionBlocked && viewer.id === owner.id && !pledge ? <label>Replace Potion<select value={discardPotionId} onChange={(event) => setDiscardPotionId(event.target.value)}><option value="">Choose one</option>{owner.potions.map((id, index) => <option key={`${id}-${index}`} value={id}>{potionDef(id).name}</option>)}</select></label> : null}<button type="button" disabled={!canFund} onClick={() => onResolve('buy', payments, pledge?.discardPotionId ?? (discardPotionId || undefined))}>Buy / pledge ◉ {contribution}</button>{viewer.id === owner.id ? <button type="button" onClick={() => onResolve('discard')}>Discard offer</button> : null}</aside>;
+  return <aside className="courier-panel" aria-label="The Courier offer"><strong>The Courier · {offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</strong><span className="room-item-text">{offer.kind === 'relic' ? relicDef(offer.id).text : potionDef(offer.id).text}</span><span>{potionBlocked ? 'Sozu prevents gaining Potions' : cost === null ? 'Cannot be bought' : `◉ ${cost}${funded ? ` · ${remaining} remaining` : ''}`}</span>{potionFull && !potionBlocked && viewer.id === owner.id && !pledge ? <label>Replace Potion<select value={discardPotionId} onChange={(event) => setDiscardPotionId(event.target.value)}><option value="">Choose one</option>{owner.potions.map((id, index) => <option key={`${id}-${index}`} value={id}>{potionDef(id).name}</option>)}</select></label> : null}<button type="button" disabled={!canFund} onClick={() => onResolve('buy', payments, pledge?.discardPotionId ?? (discardPotionId || undefined))}>Buy / pledge ◉ {contribution}</button>{viewer.id === owner.id ? <button type="button" onClick={() => onResolve('discard')}>Discard offer</button> : null}</aside>;
 }
 
 export function RoomScreen(props: Props) {
@@ -255,6 +257,10 @@ function MerchantScreen({
               >
                 <span className="room-item-icon">◆</span>
                 <strong>{id ? relicDef(id).name : "Sold"}</strong>
+                {/* A shopper cannot price a relic they cannot read. The reward
+                    and treasure screens already printed this; the shelf did
+                    not, so buying here was a name-only guess. */}
+                {id ? <span className="room-item-text">{relicDef(id).text}</span> : null}
                 <Price value={id ? cost : null} />
                 {slot === 0 && id ? <small>Sale −1</small> : null}
                 {funding && funding.remaining < cost! ? (
@@ -291,6 +297,7 @@ function MerchantScreen({
               >
                 <span className="room-item-icon">●</span>
                 <strong>{id ? potionDef(id).name : "Sold"}</strong>
+                {id ? <span className="room-item-text">{potionDef(id).text}</span> : null}
                 <Price value={cost} />
                 {id && buyerHasSozu ? <small>Blocked by Sozu</small> : null}
               </button>
@@ -309,24 +316,38 @@ function MerchantScreen({
                   ? 3
                   : 6;
             const funding = pledge(buyer.id, "card", slot, cost);
+            // The shop shows the card itself, the way the reward screen two
+            // rooms over already does — a name and a rarity word is not enough
+            // to price a card against. `Card` renders its own <button>, so the
+            // price sits beside it rather than the whole tile being one.
+            const blocked = !id || !canPledge(funding) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key]);
             return (
-              <button
-                key={slot}
-                type="button"
-                disabled={!id || !canPledge(funding) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key])}
-                onClick={() =>
-                  onPurchase({
-                    buyerId: buyer.id,
-                    section: "card",
-                    slot,
-                    payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                  })
-                }
-              >
-                <strong>{card?.name ?? "Sold"}</strong>
-                <small>{card?.rarity}</small>
+              // Grouped and labelled with the gold PRICE, which used to live
+              // inside the tile's own <button>. `Card` is the button now, and
+              // its accessible name covers the card itself — name, type, rules,
+              // energy cost — but nothing on it says what the shop charges. The
+              // name repeats in the group label so the group has an identifying
+              // one; the price is the part that would otherwise be lost.
+              <div className="merchant-card" key={slot} role="group"
+                aria-label={id ? `${card?.name ?? 'Card'}, ${cost} Gold` : 'Sold'}>
+                {id ? (
+                  <Card
+                    card={{ uid: `merchant-card-${buyer.id}-${slot}`, defId: id, upgraded: false }}
+                    playable={!blocked}
+                    onClick={() =>
+                      onPurchase({
+                        buyerId: buyer.id,
+                        section: "card",
+                        slot,
+                        payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
+                      })
+                    }
+                  />
+                ) : (
+                  <p className="merchant-card__sold">Sold</p>
+                )}
                 <Price value={id ? cost : null} />
-              </button>
+              </div>
             );
           })}
         </div>
@@ -340,23 +361,30 @@ function MerchantScreen({
               const card = id ? CARDS[id] : undefined;
               const cost = card?.rarity === "uncommon" ? 3 : 6;
               const funding = pledge(buyer.id, "colorless", slot, cost);
+              // Same treatment as the card shelf above.
+              const blocked = !id || !canPledge(funding) || sharedReserved("colorless", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key]);
               return (
-                <button
-                  key={slot}
-                  type="button"
-                  disabled={!id || !canPledge(funding) || sharedReserved("colorless", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key])}
-                  onClick={() =>
-                    onPurchase({
-                      buyerId: buyer.id,
-                      section: "colorless",
-                      slot,
-                      payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                    })
-                  }
-                >
-                  <strong>{card?.name ?? "Sold"}</strong>
+                // Same reason as the card shelf above.
+                <div className="merchant-card" key={slot} role="group"
+                  aria-label={id ? `${card?.name ?? 'Card'}, ${cost} Gold` : 'Sold'}>
+                  {id ? (
+                    <Card
+                      card={{ uid: `merchant-colorless-${buyer.id}-${slot}`, defId: id, upgraded: false }}
+                      playable={!blocked}
+                      onClick={() =>
+                        onPurchase({
+                          buyerId: buyer.id,
+                          section: "colorless",
+                          slot,
+                          payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
+                        })
+                      }
+                    />
+                  ) : (
+                    <p className="merchant-card__sold">Sold</p>
+                  )}
                   <Price value={id ? cost : null} />
-                </button>
+                </div>
               );
             })}
           </div>
@@ -453,10 +481,10 @@ function RelicRoomScreen({
             : ""}
         </p>
       </div>
-      {room.sharedOffers ? <div className="treasure-shared" aria-label="Shared relic choices">{room.sharedOffers.map((id, index) => <button ref={index === firstSharedOffer ? firstAction : undefined} type="button" disabled={!id || decided !== undefined || Object.values(room.decisions).includes(index)} key={`${id}-${index}`} onClick={() => onRelic(player.id, index)}><span>✦</span><strong>{id ? relicDef(id).name : "Taken"}</strong><p>{id ? relicDef(id).text : ""}</p></button>)}</div> : <div className="treasure-relic">
+      {room.sharedOffers ? <div className="treasure-shared" aria-label="Shared relic choices">{room.sharedOffers.map((id, index) => <button ref={index === firstSharedOffer ? firstAction : undefined} type="button" disabled={!id || decided !== undefined || Object.values(room.decisions).includes(index)} key={`${id}-${index}`} onClick={() => onRelic(player.id, index)}><span>✦</span><strong>{id ? relicDef(id).name : "Taken"}</strong>{/* A <span>, not the <p> its siblings use: this one is inside a <button>, whose content model is phrasing only. The prose still folds into the button's accessible name, which is the point of putting it there. */}<span className="room-item-text">{id ? relicDef(id).text : ""}</span></button>)}</div> : <div className="treasure-relic">
         <span>✦</span>
         <strong>{relic ? relicDef(relic).name : "No relic remains"}</strong>
-        <p>{relic ? relicDef(relic).text : ""}</p>
+        <p className="room-item-text">{relic ? relicDef(relic).text : ""}</p>
       </div>}
       <div className="treasure-actions">
         {!room.sharedOffers ? <button
@@ -609,6 +637,18 @@ function EventScreen({
       effect.tag === "trade-relic" ||
       effect.filter?.includes("Relic"),
   );
+  // Only the events that pay out by the relic's cost print it in the picker.
+  // Mirrors how event-room.ts resolves `relic-cost`, so the number on the option
+  // is the gold the player will actually receive.
+  //
+  // ponytail: card-scoped, like `needsRelic` above — `effects` is every option's
+  // effects, not the chosen one's. The Moai Head is the only card in the game
+  // that pays by relic cost, and its other option touches no relic, so the two
+  // cannot disagree today. A card offering "lose a relic for gold" alongside a
+  // plain "lose a relic" would need this narrowed to the selected option.
+  const paysRelicCost = effects.some(
+    (effect) => effect.tag === "gain-gold" && effect.amount === "relic-cost",
+  );
   const needsPotion = effects.some(
     (effect) => effect.tag === "lose-potion" || effect.filter?.includes("Potion"),
   );
@@ -681,7 +721,7 @@ function EventScreen({
       </div>
       {isTarget ? <>
         <label>Your {pendingTrade.kind}<select value={pendingTrade.kind === "card" ? cards[0] ?? "" : relicId} onChange={(event) => pendingTrade.kind === "card" ? setCards([event.target.value]) : setRelicId(event.target.value)}><option value="">Choose one</option>
-          {pendingTrade.kind === "card" ? player.deck.filter((card) => card.defId !== "ascenders_bane").map((card) => <option key={card.uid} value={card.uid}>{CARDS[card.defId]?.name}</option>) : player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicDef(relic.defId).name}</option>)}</select></label>
+          {pendingTrade.kind === "card" ? player.deck.filter((card) => card.defId !== "ascenders_bane").map((card) => <option key={card.uid} value={card.uid}>{CARDS[card.defId]?.name}</option>) : player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicOptionLabel(relic.defId)}</option>)}</select></label>
         <div className="event-options"><button type="button" disabled={pendingTrade.kind === "card" ? !cards[0] : !relicId} onClick={() => submit(["accept_trade"])}>Complete exchange</button><button type="button" onClick={() => submit(["reject_trade"])}>Decline</button></div>
       </> : <p role="status">Exchange pending…</p>}
     </div></section>;
@@ -721,12 +761,12 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards"><legend>Locked Event cards</legend>{selectableCards.map((card) => <button type="button" disabled={Boolean(pending?.cardUids)} aria-pressed={effectiveCards.includes(card.uid)} key={card.uid} onClick={() => toggle(card.uid)}>{CARDS[card.defId]?.name}{card.upgraded ? "+" : ""}</button>)}</fieldset> : null}{pendingRelic ? <label>Your relic<select disabled={Boolean(pending?.relicIds)} value={effectiveRelic} onChange={(event) => setRelicId(event.target.value)}><option value="">Choose one</option>{player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicDef(relic.defId).name}</option>)}</select></label> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards"><legend>Locked Event cards</legend>{selectableCards.map((card) => <button type="button" disabled={Boolean(pending?.cardUids)} aria-pressed={effectiveCards.includes(card.uid)} key={card.uid} onClick={() => toggle(card.uid)}>{CARDS[card.defId]?.name}{card.upgraded ? "+" : ""}</button>)}</fieldset> : null}{pendingRelic ? <label>Your relic<select disabled={Boolean(pending?.relicIds)} value={effectiveRelic} onChange={(event) => setRelicId(event.target.value)}><option value="">Choose one</option>{player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicOptionLabel(relic.defId)}</option>)}</select></label> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
       const takeBlocked = offer.kind === 'potion' && (!recipient || hasSozu(recipient));
-      return <fieldset key={`${offer.kind}-${offer.id}-${index}`}><legend>{offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</legend><button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'take' : choice))}>Take</button><button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'skip' : choice))}>Skip</button>{offer.kind === 'potion' ? <><label>Pass to<select aria-label="Pass to" value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < (ascension >= 4 ? 2 : 3)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>{!hasSozu(player) ? <label>Replace<select aria-label="Replace" value={potionReplacementIds[at] ?? ''} onChange={(event) => setPotionReplacementIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value || null : id))}><option value="">None</option>{player.potions.map((id, heldIndex) => <option key={`${id}-${heldIndex}`} value={id}>{potionDef(id).name}</option>)}</select></label> : null}</> : null}</fieldset>;
+      return <fieldset key={`${offer.kind}-${offer.id}-${index}`}><legend>{offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</legend><p className="room-item-text">{offer.kind === 'relic' ? relicDef(offer.id).text : potionDef(offer.id).text}</p><button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'take' : choice))}>Take</button><button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'skip' : choice))}>Skip</button>{offer.kind === 'potion' ? <><label>Pass to<select aria-label="Pass to" value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < (ascension >= 4 ? 2 : 3)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>{!hasSozu(player) ? <label>Replace<select aria-label="Replace" value={potionReplacementIds[at] ?? ''} onChange={(event) => setPotionReplacementIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value || null : id))}><option value="">None</option>{player.potions.map((id, heldIndex) => <option key={`${id}-${heldIndex}`} value={id}>{potionDef(id).name}</option>)}</select></label> : null}</> : null}</fieldset>;
     })}</div><button type="button" className="room-proceed" disabled={rewardItemChoices.some((choice) => !choice) || !potionChoicesLegal || effectiveCards.length < pendingCards || (pendingRelic && !effectiveRelic) || (pendingTarget && !effectiveTarget)} onClick={() => submit(pending?.optionIds ?? [])}>Resolve rewards →</button></div></section>;
   }
   const stagedBy = [...Object.keys(room.itemOffers ?? {}), ...Object.keys(room.rewardOffers ?? {})].find((id) => id !== player.id);
@@ -879,7 +919,7 @@ function EventScreen({
                 <option value="">None</option>
                 {player.relics.map((relic) => (
                   <option key={relic.defId} value={relic.defId}>
-                    {relicDef(relic.defId).name}
+                    {relicOptionLabel(relic.defId, paysRelicCost)}
                   </option>
                 ))}
               </select>

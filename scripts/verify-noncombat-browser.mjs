@@ -1302,6 +1302,38 @@ const disconnectedNeow = await neowPage.waitForFunction(() => {
   return Boolean(screen && wrapper?.hasAttribute('inert'))
 }, undefined, { timeout: 5000 }).then((handle) => handle.jsonValue())
 const onlineNeowContained = await neowPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+// The reconnect banner displaces the scene out of the shell's positional `1fr`
+// row, so this is where the `.neow-screen` height rules are load-bearing. What
+// is asserted is REACHABILITY, not the absence of page scroll: `.neow-screen` is
+// `overflow: hidden` with no scroller inside it, so any rule that caps the scene
+// to the viewport does not shrink the dealt faces, it clips them away with no
+// gesture that brings them back. An earlier pass here capped it and hid two of
+// the four faces outright at 375x667. Page scroll is the acceptable outcome;
+// an unreachable face is not, per styles.css:54.
+const neowFloorScroll = []
+for (const size of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 375, height: 667 }]) {
+  await neowPage.setViewportSize(size)
+  await neowPage.waitForFunction(() => Boolean(document.querySelector('.online-banner')))
+  neowFloorScroll.push({
+    size: `${size.width}x${size.height}`,
+    ...await neowPage.evaluate(() => {
+      const scene = document.querySelector('.neow-screen').getBoundingClientRect()
+      const faces = [...document.querySelectorAll('.neow-face')]
+      return {
+        faces: faces.length,
+        // Clipped by the scene's own `overflow: hidden` — scrolling cannot help.
+        clipped: faces.filter((face) => face.getBoundingClientRect().bottom > scene.bottom + 1).length,
+        // Below the document's scrollable extent — scrolling cannot help either.
+        unreachable: faces.filter((face) =>
+          face.getBoundingClientRect().bottom + scrollY > document.documentElement.scrollHeight + 1).length,
+      }
+    }),
+  })
+}
+// Back to the size the screenshot below is framed for, and wait for the scene to
+// re-expand so the capture is not taken mid-reflow.
+await neowPage.setViewportSize({ width: 1280, height: 800 })
+await neowPage.waitForFunction(() => (document.querySelector('.neow-screen')?.getBoundingClientRect().height ?? 0) > 500)
 await neowPage.screenshot({ path: join(outDir, 'neow-online-reconnect-compact-desktop.png'), fullPage: true })
 check('online Neow is public, authoritative, and inert during reconnect', () => {
   assertEqual(onlineCatchUpFaces, 1)
@@ -1318,6 +1350,11 @@ check('online Neow is public, authoritative, and inert during reconnect', () => 
   assert(onlinePendingRelicLock, 'another seat\'s pending Astrolabe left online Neow choices enabled')
   assert(disconnectedNeow, 'disconnected Neow controls remained interactive')
   assert(onlineNeowContained, 'online Neow overflowed the compact desktop viewport')
+  for (const sample of neowFloorScroll) {
+    assertEqual(sample.faces, 4, `online Neow dealt ${sample.faces} faces at ${sample.size}`)
+    assert(sample.clipped === 0, `${sample.clipped} of ${sample.faces} Neow faces were clipped away by the scene at ${sample.size}`)
+    assert(sample.unreachable === 0, `${sample.unreachable} of ${sample.faces} Neow faces sat past the scrollable extent at ${sample.size}`)
+  }
 })
 await neowContext.close()
 liveRoom.run.phase = 'room'

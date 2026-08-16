@@ -37,7 +37,17 @@
 }
 
 .quick-setup__advance:focus-visible { outline: 3px solid #fff2a8; outline-offset: 3px; }
-.quick-setup__advance:disabled { opacity: .48; }
+/* Not `opacity`: dimming the whole key composites its dark ink over the gold
+   plate and lands at 1.70:1. Grey the plate instead, using chrome.css's own
+   disabled-key values so the two match rather than merely rhyme. */
+.quick-setup__advance:disabled {
+  border-color: #5e4520;
+  color: #9dc0c0;
+  /* Split, not a `background` shorthand: the shorthand zeroes background-color
+     to transparent, which is the trap chrome.css documents for its key plate. */
+  background-color: #26303a;
+  background-image: linear-gradient(#26303a, #161c22);
+}
 
 .room--hidden { color: #a9a2b5; border-color: #5e596b; background: radial-gradient(circle, #302d39, #17151d); }
 
@@ -294,7 +304,11 @@
   --bg-panel: #1e1a15;
   --bg-raised: #272119;
   --edge: #3a3229;
-  --gold: #d7a94b;
+  /* The digital client's GOLD_COLOR. This file and chrome.css each grew their
+     own gold, and the two landed on the same elements through different rules —
+     six different values for one idea. There is now one gold; chrome.css's
+     --sts-gold is an alias of it. */
+  --gold: #efc851;
   --blood: #a3232b;
   --hp: #b5322f;
   --block: #4b93c4;
@@ -585,7 +599,7 @@ button:disabled {
 .start-menu__setup select,
 .start-menu__setup input { min-height: 2rem; border: 1px solid #655339; border-radius: 0.2rem; background: #181a18; color: #f2e8d3; padding: 0.3rem 0.45rem; }
 .start-menu__setup input { width: 8rem; }
-.start-menu__setup input[type='checkbox'] { width: 2rem; min-height: 2rem; margin: 0; accent-color: var(--gold); }
+.start-menu__setup input[type='checkbox'] { width: 2rem; min-height: 2rem; margin: 0; }
 
 .start-menu__meta { position: relative; align-self: center; color: #d9c796; font-size: .65rem; text-transform: uppercase; }
 .start-menu__meta > summary { min-height: 2rem; display: flex; align-items: center; padding: .3rem .55rem; border: 1px solid #655339; border-radius: .2rem; background: #181a18; color: #f2e8d3; cursor: pointer; }
@@ -686,7 +700,6 @@ button:disabled {
 .compendium__segments button[aria-pressed='true'] { color: #261c0d; background: #e9c455; }
 .compendium__sort { margin: 0.2rem 0; }
 .compendium__upgrade { padding: 0.65rem 0.15rem; color: #f3d66d; }
-.compendium input { accent-color: #d8ad46; }
 
 .compendium__library { min-width: 0; min-height: 0; padding: 1.1rem 2rem 2rem; overflow: auto; background: linear-gradient(rgb(8 7 9 / 0.15), rgb(8 7 9 / 0.58)); }
 .compendium__library header { position: sticky; z-index: 3; top: -1.1rem; display: flex; align-items: baseline; justify-content: space-between; margin: -1.1rem -2rem 1rem; padding: 1rem 2rem 0.7rem; background: linear-gradient(rgb(8 7 9 / 0.95), rgb(8 7 9 / 0.72)); }
@@ -872,7 +885,7 @@ button:disabled {
 }
 
 .connection--connected {
-  color: #7fb879;
+  color: #a4d79e;
 }
 
 .combat-error,
@@ -1968,13 +1981,14 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* The one select that keeps its own FONT: this row lists a target per orb and
+   has to stay dense, so `font: inherit` holds it at the list's 0.72rem rather
+   than the 1rem chrome.css pins everywhere else. Only that is bespoke — border,
+   radius, plate and the 46px height floor are all left to chrome.css so it
+   still looks like every other dropdown in the game. */
 .end-turn-order li select {
   width: min(14rem, 42vw);
   padding: 0.1rem 0.35rem;
-  border: 1px solid var(--edge);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  color: var(--ink);
   color-scheme: dark;
   font: inherit;
 }
@@ -2378,11 +2392,6 @@ button:disabled {
     inset 0 2px 4px rgb(255 236 200 / 0.1),
     inset 0 -3px 6px rgb(0 0 0 / 0.5),
     0 0 14px rgb(214 176 96 / 0.45);
-  animation: targetable 1.8s ease-in-out infinite;
-}
-
-.room--reachable:hover {
-  transform: translateY(-3px) scale(1.06);
 }
 
 /* Already climbed: still on the map, plainly behind you. */
@@ -2683,7 +2692,7 @@ button:disabled {
   background:
     radial-gradient(circle at 50% 12%, rgb(205 151 56 / 18%), transparent 38%),
     linear-gradient(180deg, #1d1811, #100e0b);
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   animation: reward-reveal 180ms ease-out;
 }
 
@@ -2777,18 +2786,19 @@ button:disabled {
   color: var(--gold);
 }
 
-.reward-screen .reward-screen__skip {
-  border-color: #a84237;
-  color: #ffd4cb;
-  background: #461b1a linear-gradient(180deg, #762d28, #461b1a);
-  min-height: 46px;
-}
-
-.reward-screen .reward-screen__collect {
-  min-height: 48px;
-  color: #e8fbff;
-  border-color: #55b8cc;
-  background: linear-gradient(180deg, #246b7b, #143d49);
+/* Skip and Collect do opposite things on a screen where a misclick costs a
+   card, so they are colour-coded. Only these VARIABLES live here — chrome.css
+   owns the rules that paint them, because its generic key plate would otherwise
+   win. Change a colour here; do not add a rule here expecting it to land. */
+.reward-screen {
+  --skip-edge: #a84237;
+  --skip-ink: #ffd4cb;
+  --skip-plate: #461b1a;
+  --skip-plate-lit: #8a352f;
+  --collect-edge: #55b8cc;
+  --collect-ink: #e8fbff;
+  --collect-plate: #143d49;
+  --collect-plate-lit: #2b7c8f;
 }
 
 .reward-screen__rare {
@@ -2841,11 +2851,6 @@ button:disabled {
   color: #a99d87;
   background: #241f1a;
   opacity: 0.72;
-}
-
-.between-combat button,
-.between-combat select {
-  min-height: 44px;
 }
 
 .outside-potions {
@@ -2994,7 +2999,6 @@ button:disabled {
     radial-gradient(circle at 50% 5%, rgba(207, 153, 73, .24), transparent 38%),
     linear-gradient(145deg, #281b19 0%, #0b1115 66%, #050607 100%);
   border: 2px solid #6c4a31;
-  border-radius: 20px;
   box-shadow: inset 0 0 70px #000b, 0 24px 70px #0008;
 }
 
@@ -3081,14 +3085,13 @@ button:disabled {
   transform: translateY(-2px);
 }
 
-.merchant-board button:disabled { opacity: .48; cursor: not-allowed; }
+.merchant-board button:disabled { cursor: not-allowed; }
 .merchant-board button strong, .merchant-board button small, .merchant-board button span { display: block; }
 .room-item-icon { color: #f5bb50; font-size: 2rem; }
 .room-price { margin-top: .45rem; color: #ffd269; font-weight: 800; }
 .merchant-removal { grid-column: 1 / -1; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding: 1rem; background: #1d2727aa; border-radius: 8px; }
 .merchant-removal h3 { margin: 0 auto 0 0; }
-.merchant-removal select { min-height: 42px; max-width: 280px; }
-.merchant-removal button { min-height: 42px; }
+.merchant-removal select { max-width: 280px; }
 .merchant-pledges { max-width: 1100px; margin: .8rem auto 0; padding: .8rem; background: #10181ed9; border: 1px solid #846839; border-radius: 8px; }
 .merchant-pledges h3 { margin: 0 0 .5rem; }
 .merchant-pledges button { margin-right: .5rem; padding: .55rem .8rem; color: #fff1c4; background: #263638; border: 1px solid #d2ad5b; border-radius: 5px; }
@@ -3128,11 +3131,10 @@ button:disabled {
 .event-options button strong, .event-options button span { display: block; }
 .event-options button strong { color: #f4cf71; font: 700 1.1rem Georgia, serif; }
 .event-cards { display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: 1rem; border-color: #706458; }
-.event-cards button { min-height: 42px; }
 .event-cards button[aria-pressed='true'] { color: #17120b; background: #f4cf71; }
 .event-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0 0 1rem; }
 .event-selectors label { display: grid; gap: .25rem; color: #d6c8b1; font-size: .78rem; }
-.event-selectors select, .event-selectors input { min-width: 0; min-height: 40px; color: #f4ead6; background: #131d21; border: 1px solid #6f7775; }
+.event-selectors select, .event-selectors input { min-width: 0; }
 .campaign-end { max-width: 760px; margin: 2rem auto; padding: clamp(1.2rem, 4vw, 2.5rem); text-align: center; color: #eee2c4; background: radial-gradient(circle at top, #5b3a2577, transparent 65%), #11191d; border: 2px solid #997244; border-radius: 8px 24px; box-shadow: 0 18px 55px #0009; }
 .campaign-end > span { color: #dfb05d; font-size: .72rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
 .campaign-end h2 { margin: .25rem; font: 700 clamp(2rem, 7vw, 4rem) Georgia, serif; }
@@ -3366,7 +3368,7 @@ button:disabled {
   min-height: 3rem;
   border: 2px solid #b99b5d !important;
   clip-path: polygon(9% 0, 91% 0, 100% 24%, 100% 76%, 91% 100%, 9% 100%, 0 76%, 0 24%);
-  font-family: Georgia, 'Times New Roman', serif !important;
+  font-family: 'Kreon', Georgia, serif !important;
   font-size: 1rem;
   font-weight: 700;
   text-shadow: 0 2px 2px #000;

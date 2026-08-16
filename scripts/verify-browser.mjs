@@ -380,6 +380,28 @@ const compactCompendium = await page.locator('.compendium').evaluate((root) => {
     })(),
   }
 })
+// Its clip-path is an arrow whose top and bottom edges are inset 8% of its
+// height, so the shared -4px inset ring fell outside the polygon and painted
+// nothing. Pinned because the corrected rule ALSO shipped once with no effect —
+// it was written at a specificity that lost to the list it replaced.
+// The rule is `:focus-visible`-only, and that pseudo-class needs KEYBOARD
+// modality — a bare programmatic `.focus()` reports `outline-offset: 0px`.
+await page.keyboard.press('Shift')
+await page.locator('.compendium__back').focus()
+const compendiumBackRing = await page.evaluate(() => {
+  const back = document.querySelector('.compendium__back')
+  if (!back) return null
+  const style = getComputedStyle(back)
+  return { offset: style.outlineOffset, width: style.outlineWidth, matched: back.matches(':focus-visible') }
+})
+await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+check('the compendium back arrow keeps a focus ring inside its clip', () => {
+  assert(compendiumBackRing !== null, 'no .compendium__back to measure')
+  assert(compendiumBackRing.matched, 'the back arrow did not match :focus-visible when focused')
+  assertEqual(compendiumBackRing.offset, '-10px', 'the -4px shared inset falls outside this arrow')
+  assertEqual(compendiumBackRing.width, '3px')
+})
+
 const compactTitleOverflow = await page.locator('.compendium-card .card-face__title').first().evaluate(async (title) => {
   const { CARDS: definitions, faceOf } = await import('/src/game/cards.ts')
   const original = title.textContent
@@ -461,6 +483,48 @@ check('Neow shows complete face-up reward cards on the desktop stage', () => {
 })
 await bypassNeow()
 await page.locator('.map').waitFor()
+
+// Two cards upgraded in ONE engine step queue two morphs, and effects that do
+// that tend to produce identical sentences — Whetstone upgrades a starter Strike
+// and another Attack, Astrolabe three cards. A live region announces on DOM
+// MUTATION, so the second identical sentence is only heard if the region blanks
+// between them. Recording every mutation, empty ones included, is what pins that;
+// counting only non-empty text passes even when the repeat is silent.
+await page.evaluate(() => {
+  window.__MORPH_SPOKEN__ = []
+  const region = [...document.querySelectorAll('p.visually-hidden[aria-live="polite"]')]
+    .find((node) => !node.classList.contains('combat__enemy-report'))
+  if (!region) return
+  window.__MORPH_REGION__ = region
+  new MutationObserver(() => window.__MORPH_SPOKEN__.push(region.textContent.trim()))
+    .observe(region, { childList: true, characterData: true, subtree: true })
+})
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  let upgraded = 0
+  run.players[0].deck = run.players[0].deck.map((card) => {
+    if (!card.upgraded && upgraded < 2) { upgraded += 1; return { ...card, upgraded: true } }
+    return card
+  })
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.waitForFunction(() => (window.__MORPH_SPOKEN__ ?? []).filter(Boolean).length >= 2, null,
+  { timeout: 12000 }).catch(() => {})
+const morphSpoken = await page.evaluate(() => ({
+  sequence: window.__MORPH_SPOKEN__ ?? [],
+  regionStillAttached: window.__MORPH_REGION__?.isConnected === true,
+}))
+check('two identical card upgrades are each announced', () => {
+  const spoken = morphSpoken.sequence.filter(Boolean)
+  assert(spoken.length >= 2, `expected an announcement per upgrade, got ${JSON.stringify(morphSpoken.sequence)}`)
+  assertEqual(spoken[0], spoken[1], 'this check is only meaningful when both sentences match')
+  assert(morphSpoken.sequence.indexOf('') > -1,
+    `the region never blanked, so the repeat is silent: ${JSON.stringify(morphSpoken.sequence)}`)
+  // Blanking, not re-keying: a live region that is removed and re-added is not
+  // reliably announced at all, so the node must survive.
+  assert(morphSpoken.regionStillAttached, 'the live region node was replaced rather than blanked')
+})
+await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
 
 const firstLocalRun = await readRun()
 const selectedLocalParty = firstLocalRun.players.map((player) => player.character)
@@ -868,6 +932,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length ==
 await enterFirstRoom()
 await endTurn()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'enemy')
+
 await page.getByText('Battle log', { exact: true }).click()
 const logShape = await page.evaluate(() => {
   const list = document.querySelector('.combat__log')
@@ -938,6 +1003,105 @@ check('the newest line is rendered first and fully visible', () => {
     `the newest line "${logShape.engineNewest}" is clipped or scrolled out of its box`,
   )
 })
+
+// Driven AFTER the log assertions on purpose: these end extra turns, which
+// changes the round the log checks above measure.
+//
+// The battle log lives in a collapsed <details>, so what the enemy did reaches a
+// screen reader only through the live region. TWO enemy turns are driven: a live
+// region announces on DOM MUTATION, so an earlier version that re-set the same
+// string went silent from the second identical turn, and a one-turn check stays
+// green against exactly that. The observer counts mutations rather than reading
+// final text, so a repeat with identical wording still registers.
+await page.evaluate(() => {
+  window.__ENEMY_REPORTS__ = []
+  const region = document.querySelector('.combat__enemy-report')
+  if (!region) return
+  // EVERY mutation, empty ones included. Recording only non-empty text cannot
+  // catch the bug this guards: a live region announces on mutation, so the
+  // failure is "same string set twice, no mutation, silence" — and two turns
+  // that happen to differ still mutate twice without the fix. The clear-to-""
+  // between reports is the thing that makes a REPEAT audible, so that is what
+  // gets asserted.
+  new MutationObserver(() => {
+    window.__ENEMY_REPORTS__.push(region.textContent.trim())
+  }).observe(region, { childList: true, characterData: true, subtree: true })
+})
+// Two turns, each blurred to <body> while the End turn button is unmounted.
+// That blur is the point: `endTurn()` routes through the seat menu and parks
+// focus on a <summary> which SURVIVES the round, and the effect is supposed to
+// leave that alone — so asserting against it tested nothing. The real bug is a
+// keyboard player holding End turn when it is destroyed and rebuilt.
+for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
+  // Asserted rather than assumed: if the fight ends inside this loop the waits
+  // below can never be satisfied, and the round reports a 30s Playwright
+  // timeout instead of naming what went wrong.
+  const before = await readState()
+  assert(before && !['won', 'lost'].includes(before.phase),
+    `the fight ended before enemy turn ${enemyTurn + 1}; this block needs a live combat`)
+  await endTurn()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+  await waitForAutomaticTurn(await page.evaluate(() => window.__STS_DEBUG__.getState().turn + 1))
+}
+const enemyTurnReports = await page.evaluate(() => window.__ENEMY_REPORTS__ ?? [])
+// `waitForAutomaticTurn` polls the store, but the focus restore is a React
+// effect that runs after commit — waiting on the DOM removes that race rather
+// than relying on two Playwright round-trips of slack.
+await page.waitForFunction(() => document.activeElement?.classList?.contains('combat__end-turn'))
+  .catch(() => {})
+const endTurnFocus = await page.evaluate(() => ({
+  phase: window.__STS_DEBUG__.getState().phase,
+  onEndTurn: document.activeElement?.classList?.contains('combat__end-turn') ?? false,
+  active: document.activeElement?.className || document.activeElement?.tagName || '<body>',
+}))
+check('every enemy turn reaches the live region, including a repeat', () => {
+  const spoken = enemyTurnReports.filter(Boolean)
+  assert(spoken.length >= 2,
+    `expected one announcement per enemy turn, got ${JSON.stringify(enemyTurnReports)}`)
+  // Between the two reports the region must have gone empty. Without that a
+  // second identical enemy turn re-sets the same string, React bails on
+  // Object.is, no mutation fires, and the player hears nothing.
+  const firstReport = enemyTurnReports.indexOf(spoken[0])
+  const secondReport = enemyTurnReports.indexOf(spoken[1], firstReport + 1)
+  assert(enemyTurnReports.slice(firstReport + 1, secondReport).some((entry) => entry === ''),
+    `the region was never cleared between turns: ${JSON.stringify(enemyTurnReports)}`)
+})
+check("focus returns to End turn once the board is the player's again", () => {
+  assertEqual(endTurnFocus.phase, 'player')
+  assert(endTurnFocus.onEndTurn, `focus landed on ${endTurnFocus.active}`)
+})
+// Pin the GUARD, not just the restore. The effect keys on the phase it came
+// FROM; ungated it also fires on `start -> player`, parking focus on End turn
+// the instant the player resolves their start of turn, where the next Space or
+// Enter ends the turn they just began — with no ring, because that path is
+// mouse-driven. Deleting the guard leaves the check above green, so this drives
+// the transition the guard exists to refuse.
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.combat.phase = 'start'
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'start')
+await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.combat.phase = 'player'
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const focusAfterStartOfTurn = await page.evaluate(() =>
+  document.activeElement?.className || document.activeElement?.tagName || '<body>')
+check('resolving a start of turn does not hand focus to End turn', () => {
+  assert(!String(focusAfterStartOfTurn).includes('combat__end-turn'),
+    `focus was stolen to ${focusAfterStartOfTurn} on start -> player`)
+})
+
+// Hand focus back. This block deliberately parks it on End turn, and leaving it
+// there changes where a later Tab walk starts — the fanned-card checks measure
+// scroll after a Shift+Tab/Tab pair and pick up 5px of drift from it.
+await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+
 check('the newest line is visibly emphasised, not just positioned', () => {
   assert(logShape.olderColour, 'need a non-divider older line to compare against')
   assert(
@@ -8224,6 +8388,18 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
+// Four seats offering "Rest" and "Smith" are indistinguishable in a tab ring
+// without a per-seat name.
+const campfireSeatNames = await page.evaluate(() => [...document.querySelectorAll('.campfire__player')]
+  .map((seat) => ({ role: seat.getAttribute('role'), label: seat.getAttribute('aria-label') })))
+check('each campfire seat is named for the player it belongs to', () => {
+  assert(campfireSeatNames.length > 1, 'expected more than one seat')
+  assert(campfireSeatNames.every((seat) => seat.role === 'group' && /\d+ of \d+ HP$/.test(seat.label ?? '')),
+    `seats not individually named: ${JSON.stringify(campfireSeatNames)}`)
+  assertEqual(new Set(campfireSeatNames.map((seat) => seat.label)).size, campfireSeatNames.length,
+    'two seats share a name')
+})
+
 const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
 check('a campfire will not let the party leave until everyone has chosen', () => {
   assert(leaveLockedBefore, 'the leave button must be disabled while a choice is outstanding')
@@ -9316,6 +9492,54 @@ check('a local Last Stand boss win has a clear terminal continuation state', () 
   assertEqual(localTerminalPotions, 0)
 })
 await shot('20-last-stand-victory')
+
+// The LOCAL shell's Neow scene keeps its full-bleed at every width.
+//
+// Only the bleed, deliberately. A clipping assertion was written here first and
+// removed: the local table is ONE seat (see the `.neow-screen` comment in
+// chrome.css for why that is a product invariant), one face renders as
+// `.neow-face--solo` — absolutely positioned, ~90px tall, bottom ~234px into the
+// scene — and the scene floors at 42rem in BOTH sheets. Two independent probes
+// could not make a solo face clip: not by deleting the whole `.sts-scope
+// .neow-screen` rule, not by zeroing both min-heights, only by injecting a
+// synthetic `height: 200px` that no regression of this rule can produce. An
+// assertion that cannot fail is worse than no assertion, because it reads as
+// coverage. The multi-face clipping surface is real but belongs to the ONLINE
+// shell, and `verify-noncombat-browser.mjs` measures it there at three phone
+// widths with the reconnect banner up.
+//
+// A below-the-fold REACHABILITY assertion was considered here too and rejected
+// for a separate reason worth recording, because the case looks compelling: at
+// 375x667 both Neow action keys sit below the fold, and at 320x568 both are off
+// screen entirely, so page scroll is the only way out of the phase. That is
+// fine — but it cannot be pinned from inside the page. Chrome still scrolls a
+// viewport that a regression has clipped, and Playwright runs
+// `scrollIntoViewIfNeeded` before every click, so the automation reaches
+// controls a human might not. Such an assertion passes either way and would
+// certify a reachability property it never tested.
+const localNeowBleed = []
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'neow-reach'))
+await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+for (const size of [{ width: 375, height: 667 }, { width: 320, height: 568 }, { width: 1280, height: 800 }]) {
+  await page.setViewportSize(size)
+  await page.waitForFunction(() => document.querySelectorAll('.neow-face').length === 1)
+  localNeowBleed.push({
+    size: `${size.width}x${size.height}`,
+    ...await page.evaluate(() => ({
+      faces: document.querySelectorAll('.neow-face').length,
+      // `width: 100vw` plus the negative inline margin, against the shell's
+      // 1400px cap and 1rem gutter. Dropping either letterboxes the scene.
+      bled: Math.round(document.querySelector('.neow-screen').getBoundingClientRect().width) >= innerWidth,
+    })),
+  })
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+check('the local Neow scene keeps its full-bleed at every width', () => {
+  for (const sample of localNeowBleed) {
+    assertEqual(sample.faces, 1, `local Neow dealt ${sample.faces} faces at ${sample.size}`)
+    assert(sample.bled, `the local Neow scene lost its full-bleed width at ${sample.size}`)
+  }
+})
 
 writeFileSync(
   join(outDir, 'summary.json'),

@@ -403,6 +403,44 @@ try {
 
   await a.getByRole('button', { name: 'Enter the Spire' }).click()
   await a.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+
+  // Reveal a Neow reward through the real online UI. Every other Neow test in
+  // this suite calls bypassRoomNeow, which is how this shipped broken: the
+  // client posted `sources: []` for any seat that is not choosing prismatic
+  // decks, the server takes only an absent key or exactly 3, and the 409 left
+  // the Reveal key looking enabled while doing nothing — Skip unseen was the
+  // only way out of Neow online.
+  const neowActionFailures = []
+  const recordNeowFailure = (response) => {
+    if (response.url().includes('/action') && !response.ok()) neowActionFailures.push(response.status())
+  }
+  a.on('response', recordNeowFailure)
+  const neowSeat = (await snapshot(a)).you.playerId
+  const neowGold = a.getByRole('button', { name: /^Skip 3 Gold$/ })
+  if (await neowGold.isVisible().catch(() => false)) {
+    await neowGold.click()
+    await a.waitForTimeout(150)
+  }
+  const neowReveal = a.getByRole('button', { name: /^Reveal / })
+  await neowReveal.waitFor()
+  await neowReveal.click()
+  // Poll the SERVER for a revealed reward rather than waiting on a button. The
+  // Neow screen always has a "Skip …" key on it, so any DOM wait loose enough
+  // to match the revealed state also matches the broken one and passes either
+  // way — `reward`/`redReward` turning non-null is the state only a 200 can
+  // produce.
+  let neowRevealed = null
+  for (let attempt = 0; attempt < 20 && !neowRevealed; attempt += 1) {
+    const progress = (await snapshot(a)).run.neow?.players?.[neowSeat]
+    if (progress?.reward || progress?.redReward) neowRevealed = progress
+    else await a.waitForTimeout(100)
+  }
+  a.off('response', recordNeowFailure)
+  check('an online Neow reward can actually be revealed', () => {
+    assertEqual(neowActionFailures.length, 0, `Neow actions were rejected: ${neowActionFailures.join(', ')}`)
+    assert(Boolean(neowRevealed), 'clicking Reveal never produced a revealed Neow reward')
+  })
+
   const openingRoom = rooms.store.rooms.get(code)
   bypassRoomNeow(openingRoom)
   await Promise.all([

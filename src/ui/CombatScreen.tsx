@@ -1015,6 +1015,62 @@ export function CombatScreen({
   // Newest-first means a scrolled log stays where the player left it, so a new
   // line lands above the visible area and is never seen.
   const logRef = useRef<HTMLOListElement | null>(null)
+  const endTurnRef = useRef<HTMLButtonElement | null>(null)
+  // The battle log records what the enemy did, but it lives in a collapsed
+  // <details> with no live region, so a screen-reader player was never told —
+  // they had to go and look. Announce the lines added while the board was the
+  // enemy's, once, when it hands back. Not the player's own turn: those lines
+  // are the direct result of their own keypress and announcing them would be
+  // chatter. A reactive trigger the player resolves DURING the enemy phase does
+  // land in this report — the UI for those is not phase-gated — which reads as
+  // useful context rather than noise.
+  const enemyTurnMark = useRef<number | null>(null)
+  const [enemyReport, setEnemyReport] = useState('')
+
+  useEffect(() => {
+    if (state.phase === 'enemy') {
+      if (enemyTurnMark.current === null) {
+        enemyTurnMark.current = state.log.length
+        // Cleared on the way IN, not just written on the way out. A live region
+        // announces on DOM mutation, and two enemy turns often produce a
+        // byte-identical line — "Cultist gained 1 Strength" every single turn —
+        // so re-setting the same string is an `Object.is` bail, no mutation, and
+        // silence from the second turn onward. Emptying it first guarantees the
+        // text really changes when the report lands.
+        setEnemyReport('')
+      }
+      return
+    }
+    if (enemyTurnMark.current === null) return
+    const added = state.log.slice(enemyTurnMark.current)
+    enemyTurnMark.current = null
+    if (added.length > 0) setEnemyReport(added.join('. '))
+  }, [state.phase, state.log])
+
+  // Focus is dropped to <body> when the enemy's turn replaces the board, so a
+  // keyboard player restarted their Tab walk from the page header every round.
+  // Put them back on End turn — only when focus is genuinely nowhere, so this
+  // can never steal it from something they deliberately moved to.
+  //
+  // Gated on where the phase came FROM, not just on arriving at `player`.
+  // `start -> player` also lands here: clicking "Resolve start of turn" unmounts
+  // that button, focus falls to <body>, and an ungated restore parked it on End
+  // turn — the most destructive key on the screen — where the next Space or
+  // Enter would end the turn the player had only just started. With a pointer
+  // there is no focus ring, so nothing warns them. `copy -> resumePhase` is the
+  // same shape.
+  const phaseBefore = useRef(state.phase)
+  useEffect(() => {
+    const cameFromEnemyTurn = phaseBefore.current === 'enemy' || phaseBefore.current === 'roundEnd'
+    phaseBefore.current = state.phase
+    if (!cameFromEnemyTurn) return
+    if (state.phase !== 'player') return
+    if (document.activeElement && document.activeElement !== document.body) return
+    // `preventScroll`, because this is RESTORING focus the board took away, not
+    // navigating to it. Without it the browser scrolls End turn into view and
+    // drags the hand scroller with it — which the fanned-card checks catch.
+    endTurnRef.current?.focus({ preventScroll: true })
+  }, [state.phase])
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = 0
   }, [state.log.length])
@@ -2466,7 +2522,7 @@ export function CombatScreen({
                 </details>
               ) : null}
               {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
-              {!forcedCard && !distilled ? <button type="button" className="combat__end-turn" onClick={finishTurn}
+              {!forcedCard && !distilled ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
                 disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) ||
                   (orderingStage && viewer.id !== endTurnCoordinatorId)}>
                 {state.phase === 'discard'
@@ -2741,7 +2797,7 @@ export function CombatScreen({
             if (held.defId === 'gambling_chip') return [<button type="button" key={relicIndex}
               onClick={() => useRelic(relicIndex)}>Reroll with {def.name}</button>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
-              <summary>{def.name}</summary>
+              <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               {viewer.hand.map((card) => <button type="button" key={card.uid}
                 aria-pressed={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
                   current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) :
@@ -2752,7 +2808,7 @@ export function CombatScreen({
                 Activate
               </button>
             </details>]
-            if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary>
+            if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               {viewer.hand.map((card) => <button type="button" key={card.uid}
                 aria-pressed={relicCardUids[0] === card.uid} onClick={() => setRelicCardUids([card.uid])}>
                 {cardDef(card.defId).name}
@@ -2767,7 +2823,7 @@ export function CombatScreen({
               const overflow = overflowShivCount(state, 2)
               if (overflow === 0) return [<button type="button" key={relicIndex}
                 onClick={() => useRelic(relicIndex)}>Use {def.name}</button>]
-              return [<details key={relicIndex}><summary>{def.name}</summary>
+              return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 <p>Choose {overflow} immediate Shiv target{overflow === 1 ? '' : 's'}.</p>
                 {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
                   onClick={() => setRelicShivEnemyUids((current) => current.length < overflow
@@ -2784,7 +2840,7 @@ export function CombatScreen({
             }
             if (reroute) {
               const face = held.defId === 'dollys_mirror' ? 1 : held.defId === 'nilrys_codex' ? 2 : null
-              return [<details key={relicIndex}><summary>{def.name}</summary>
+              return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 {state.players.flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
                   relicAbilities(relicDef(target.defId)).flatMap((ability, targetAbilityIndex) => {
                     if (ability.trigger.kind !== 'dieRelic' || face !== null && !ability.trigger.faces.includes(face) ||
@@ -3210,6 +3266,7 @@ export function CombatScreen({
         })}
       </div>
 
+      <p className="visually-hidden combat__enemy-report" aria-live="polite">{enemyReport}</p>
       {state.log.length > 0 ? (
         <details className="combat-log-drawer">
           <summary>Battle log</summary>

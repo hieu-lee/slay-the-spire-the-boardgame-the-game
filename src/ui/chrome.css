@@ -1,0 +1,2550 @@
+/* ---------------------------------------------------------------------------
+   Game chrome.
+   ---------------------------------------------------------------------------
+   styles.css dresses the BOARD — cards, enemies, the combat stage — and it does
+   that well. What surrounded the board was still a web page: hairline borders,
+   uniform 4px radii, native <details> triangles, native <select> arrows.
+
+   This file is the frame around the board, and its values are the digital
+   game's own. The palette below is decoded from the shipped client's
+   Settings.java colour constants; the tooltip geometry is TipHelper.java's; the
+   type sizes are FontHelper.java's, expressed as a fraction of the 1920x1080
+   design resolution the game lays out against.
+
+   Four things do most of the work of reading as a game rather than as a page,
+   and they are the reason for most of what follows:
+
+     1. every glyph carries a baked STROKE plus a HARD, unblurred offset shadow
+     2. panels are chamfered, never uniformly rounded
+     3. selection is a corner reticle and a gold text swap, not a border colour
+     4. nothing that matters is perfectly still
+
+   Loaded after styles.css, so plain-selector rules here win ties on purpose.
+   ------------------------------------------------------------------------ */
+
+:root {
+  /* --- exact client constants (Settings.java, decoded from RGBA8888) --- */
+  --cream: #fff6e2;        /* CREAM_COLOR — default body text */
+  --tip-body: #fff8df;     /* TipHelper.BASE_COLOR */
+  --light-yellow: #ffeda7; /* LIGHT_YELLOW_COLOR */
+  /* One gold, defined in styles.css as --gold. Kept as an alias rather than a
+     second literal so the two stylesheets cannot drift apart again. */
+  --sts-gold: var(--gold);
+  --red-text: #ff6563;
+  --blue-text: #87ceeb;
+
+  /* Bronze ramp. The trim is not one gold: it is a lit top edge, a body and a
+     shadowed bottom edge, which is what actually reads as struck metal. */
+  --trim-lit: #d9b45b;
+  --trim: #8c6b33;
+  --trim-dim: #5e4520;
+
+  /* Grounds. There is no pure black anywhere: everything warm-shifts. */
+  --slate: #2f424e;
+  --slate-lit: #47606f;
+  --slate-dim: #17212b;    /* AVAILABLE_COLOR, the map node outline */
+  --leather: #1a1210;
+  --leather-lit: #2b1f1a;
+
+  /* The client draws its drop shadow by stamping the sprite a second time in
+     25% black at a fixed offset. It is hard-edged. Blurring it is the single
+     most common way a copy of this look goes wrong. */
+  --hard-shadow: 6px 8px 0 rgb(0 0 0 / 0.25);
+  --hard-shadow-lg: 9px 14px 0 rgb(0 0 0 / 0.25);
+
+  /* Panels are chamfered, not radiused. One clip-path, reused. */
+  --chamfer: 10px;
+
+  /* The hit-target floor for the keys, disclosures and form controls this file
+     dresses. Two pre-existing controls sit below it and are left alone: the
+     `.run-modifiers` caption-summary, and the start menu's own settings inputs.
+     46px, not 44: scripts/verify-online-browser.mjs measures the RENDERED rect,
+     and an ancestor transform on the reward screen shrinks it ~2%, so a rule of
+     exactly 44 lands at 43.1 and fails. Named once because the run log's
+     backdrop offset is derived from it — hard-coding both let them drift. */
+  --key-min-height: 46px;
+
+  /* LERP_SPEED 7 per frame with a half-pixel snap ~= 140ms on this curve. */
+  --motion-lerp: 140ms;
+  --ease-lerp: cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* The full-bleed bands below (the HUD, the map, the campfire) size themselves
+   with `100vw` so they reach the window edge rather than stopping at the
+   shell's 1400px column. `100vw` counts the classic scrollbar gutter, though,
+   so on Windows and Linux each of them overhangs the page by ~15px the moment
+   it scrolls — and the screen audit cannot see it, because `innerWidth` counts
+   the gutter too. Clipping the axis costs nothing and makes the overhang
+   impossible. `clip`, not `hidden`: `hidden` would make this a scroll
+   container and break every `position: fixed` and `sticky` descendant. */
+html { overflow-x: clip; }
+
+/* Kreon is already a wide slab face; the client adds no tracking to it, and
+   adding some is what makes a fan copy read as a "fantasy web page". */
+.sts-scope { letter-spacing: 0; }
+
+/* ---------- primitives ---------- */
+
+/* The chamfer. Cutting the corners is what stops a slab reading as a <div>;
+   the client's panels are painted sprites with notched silhouettes, and this is
+   the cheapest honest approximation of one. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end,
+.game-settings > .setup,
+.relic-actions > section,
+.relic-tip {
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0,
+    100% var(--chamfer), 100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%,
+    0 calc(100% - var(--chamfer)), 0 var(--chamfer)
+  );
+}
+
+/* The panel ground: warm leather with a lit top edge, a bronze inner rule, and
+   a faint woven texture so no area is ever a flat fill. The texture is an
+   inline SVG turbulence rather than a file — one round trip saved, and it
+   scales with the element instead of tiling at a fixed pixel size. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end {
+  padding: clamp(1.1rem, 3vw, 2rem);
+  border: 0;
+  background:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, rgb(217 180 91 / 0.16), transparent 30%),
+    linear-gradient(180deg, var(--leather-lit), var(--leather) 62%, #120c0a);
+  background-blend-mode: overlay, normal, normal;
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 3px 0 rgb(217 180 91 / 0.22),
+    inset 0 0 3rem rgb(0 0 0 / 0.6);
+  color: var(--cream);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+/* ---------- keys ---------- */
+
+/* Which buttons are keys.
+   Cards, enemies, map rooms and the other pictorial buttons all carry a class
+   of their own; the plumbing buttons — "New run", "Rest +3 HP", "Take" — carry
+   none. Selecting on the ABSENCE of a class is what lets one rule dress every
+   plain control on every screen without listing them, and without ever reaching
+   a card. Classed buttons that DO want the skin are listed below by name.
+
+   `[class='']` is not redundant: this codebase writes conditional classes as
+   `className={chosen ? 'is-chosen' : ''}`, and React renders that empty string
+   as a real `class=""` attribute — so `:not([class])` skips every one of those
+   buttons. That is what left the campfire's Rest and Smith keys undressed. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back
+) {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--key-min-height);
+  padding: 0.42rem 1.05rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+  color: var(--cream);
+  /* The colour is set twice on purpose. A `background` shorthand carrying only
+     a gradient leaves `background-color` transparent, and the desktop styling
+     audit in scripts/verify-online-browser.mjs reads `background-color` to
+     compute a contrast ratio — against a transparent value it cannot. The flat
+     colour is also the fallback if the gradient ever fails to paint. */
+  background-color: var(--slate);
+  background-image: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 -2px 0 rgb(0 0 0 / 0.45),
+    inset 0 0 0 1px rgb(0 0 0 / 0.4);
+  filter: drop-shadow(var(--hard-shadow));
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+  cursor: pointer;
+  transition:
+    color var(--motion-lerp) var(--ease-lerp),
+    filter var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp);
+}
+
+/* The client's hover affordance for a row of text is the text turning gold and
+   the row stretching slightly MORE vertically than horizontally. Both of those
+   are here; neither is a background swap. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back
+):hover:not(:disabled) {
+  /* --light-yellow, not --sts-gold: gold on this slate plate measures 4.12:1
+     at the top of the glyph band. Same warm hover family, clears 4.5:1. */
+  color: var(--light-yellow);
+  transform: scale(1.03, 1.09);
+  filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
+}
+
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back
+):active:not(:disabled) {
+  transform: translateY(2px) scale(1, 1);
+  filter: none;
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.6);
+}
+
+/* Claimed and unavailable things tint to a desaturated teal in the client
+   rather than simply dimming, which keeps them legible on a dark ground. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back
+):disabled {
+  /* The client tints unavailable things toward a desaturated teal rather than
+     just dimming them. Its own constant, rgb(102,153,153), is a multiply tint
+     over art; used directly as TEXT on this plate it lands near 2.4:1, so the
+     same hue is taken lighter to clear 4.5:1.
+
+     `opacity: 1` is load-bearing. Dimming a disabled key composites its text
+     over whatever is behind the panel, which turned a computed 6.85:1 into
+     2.68:1 as rendered on the shop shelf — the online spectator's default view,
+     since every tile is disabled for a seat that is not the one shopping. That
+     shop rule is deleted now, but `.reward-screen__relic/__potion
+     button:disabled` still sets `opacity: .72` and still loses to this block,
+     so the reset stays. The teal plate already carries the disabled
+     affordance; the dimming only destroyed contrast. */
+  opacity: 1;
+  color: #9dc0c0;
+  background-color: #26303a;
+  background-image: linear-gradient(180deg, #26303a, #161c22);
+  filter: none;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+/* The one action that advances the run is the one gold thing on the screen.
+
+   Every selector here has to OUT-SPECIFY the key block above, not merely tie
+   it. `:is()` takes the specificity of its most specific argument, so that
+   whole block scores (0,2,1) — the weight of `.sts-scope button:not([class])`
+   — for every argument it holds, `.is-chosen` among them. A bare
+   `.sts-scope .is-chosen` scored (0,2,0) and lost outright: a chosen campfire
+   option rendered pixel-identical to an unchosen one. `:not(:disabled)` is
+   what carries this past the tie, and it is honest rather than a specificity
+   hack — a disabled option should not advertise itself as the chosen one. */
+.sts-scope button:not([class])[aria-pressed='true']:not(:disabled),
+.sts-scope button[class=''][aria-pressed='true']:not(:disabled),
+.sts-scope button.is-chosen:not(:disabled) {
+  color: #2a1c07;
+  background-color: var(--trim-lit);
+  background-image: linear-gradient(180deg, #ffe9a8, var(--trim-lit) 42%, #a97e2c);
+  border-color: #4a3110;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.sts-scope button.is-chosen:hover:not(:disabled),
+.sts-scope button:not([class])[aria-pressed='true']:hover:not(:disabled) { color: #2a1c07; }
+
+/* The universal "this one is selected" motif: four L-shaped corner brackets,
+   the sprite the client stamps on every hovered reward row and picked card.
+
+   Drawn INSIDE the border box. The chamfer `clip-path` on the button clips its
+   own pseudo-elements too, so the outset version of this (`inset: -5px`) was
+   painted and then thrown away — leaving nothing but the plate to distinguish
+   a chosen option. Anything that has to be visible on a clipped element has to
+   live within the clip. */
+.sts-scope button:not([class])[aria-pressed='true']::after,
+.sts-scope button[class=''][aria-pressed='true']::after,
+.sts-scope button.is-chosen:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background:
+    linear-gradient(#2a1c07, #2a1c07) 0 0 / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 0 / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 0 / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 0 / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 100% / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 100% / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 100% / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 100% / 2px 12px no-repeat;
+  pointer-events: none;
+}
+
+.sts-scope button:not([class])[aria-pressed='true'],
+.sts-scope button[class=''][aria-pressed='true'],
+.sts-scope button.is-chosen:not(:disabled) { position: relative; }
+
+/* A `.muted` sub-label is `--ink-dim`, which was chosen against this codebase's
+   near-black page ground. On the key's much lighter slate plate it measures
+   3.99:1 over the top half of its own glyph band. The keys carry the sub-label
+   on "Rest +3 HP" and "Smith upgrade" — the two words that say what the button
+   actually does — so it is lifted to a tint that clears 4.5:1 across the whole
+   gradient. It still reads as secondary through size and weight. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back
+) .muted { color: #dfd5c2; }
+
+/* Gold keys carry dark text, so the muted sub-label inside one has to darken
+   with it or it disappears into the plate. */
+.sts-scope button.is-chosen:not(:disabled) .muted,
+.sts-scope button:not([class])[aria-pressed='true'] .muted,
+.sts-scope button[class=''][aria-pressed='true'] .muted { color: #2a1c07; }
+
+/* An `outline` paints OUTSIDE the border box, and the chamfer `clip-path` on
+   these keys clips it away entirely — so keyboard focus became invisible on
+   every plain button in the shell, silently, because the suites only assert
+   that something matches `:focus-visible`. Pulling the ring inside the box with
+   a negative offset puts it back within the clip. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  /* These three carry their own `clip-path` in styles.css and were missed when
+     this list was written, so the global 2px ring was clipped away entirely and
+     keyboard focus was invisible on the two biggest keys in the game — "Leave
+     merchant" and "End turn" — and on the compendium's back arrow. Broken at
+     HEAD too; fixed here because it is the exact bug this block exists for.
+
+     `.room-proceed` is an ARROW, not a chamfer — its concave left notch and
+     right point mean the inset ring reads as a top and bottom bar rather than a
+     closed rectangle. Visible, which is the requirement, but not the same shape
+     the chamfered keys get. The compendium's own back arrow needs a different
+     offset again and has its own rule at the end of this file. */
+  .sts-scope .room-proceed,
+  .sts-scope .combat__end-turn
+):focus-visible,
+.game-settings > summary:focus-visible,
+.relic-actions > summary:focus-visible,
+.log > summary:focus-visible,
+.combat-log-drawer > summary:focus-visible,
+.online-lobby__settings > summary:focus-visible,
+.start-menu__meta > summary:focus-visible {
+  outline: 3px solid var(--sts-gold);
+  outline-offset: -4px;
+}
+
+/* Native form controls keep their platform skin no matter the border you give
+   them; `appearance: none` plus a drawn chevron is the only way off it.
+   These two are NOT scoped to `.sts-scope`. A platform select arrow and a
+   system-blue checkbox are the loudest "this is a web page" signals in the
+   build, and nothing here has a bespoke alternative to protect — so they are
+   dressed everywhere. The compendium in particular renders before a run exists
+   and so never gets the scope class. (The online lobby and entry screens DO
+   carry it now — this change added it — but these rules predate that and are
+   still deliberately global.) */
+select,
+input[type='search'],
+input:is(:not([type]), [type='text']) {
+  appearance: none;
+  /* Matches the key floor. At 2.1rem this rule was SHRINKING the online entry
+     screen's name and room-code inputs, which styles.css had at 38.8px — the
+     two primary controls of the multiplayer entry point, on a screen no suite
+     measures. */
+  min-height: var(--key-min-height);
+  /* A `select` sizes to its widest option and never wraps, so an option that
+     carries a relic's printed text can push the control past its panel. Capping
+     it makes the control truncate instead of overflowing. The dropped-open list
+     takes the control's width in Chromium and Firefox, so a long option is
+     ellipsized there too — the relic's full text is still reachable from the
+     HUD chip's tooltip, which is why that tooltip carries the same prose. */
+  max-width: 100%;
+  padding: 0.3rem 2rem 0.3rem 0.6rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  color: var(--cream);
+  background-color: #1c1712;
+  background-image: linear-gradient(180deg, #241d17, #14100d);
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.6);
+  font-family: 'Kreon', Georgia, serif;
+}
+
+/* The chevron rides its own, more specific rule.
+   `appearance: none` above is declared nowhere else, so it always lands and the
+   native arrow always goes. The replacement arrow, though, was painted through
+   the `background` SHORTHAND on a bare `select`, and styles.css rules that set
+   their own `background` wiped it — leaving a dropdown with no arrow at all,
+   worse than the native control it replaced.
+
+   This change deleted most of those. What is left: `.online-entry select` /
+   `.online-lobby select` (styles.css, one block) merely TIE this rule and lose
+   on load order, and `.end-turn-order li select` is (0,1,2) and genuinely
+   out-specifies it — which is the only reason the extra arm below is needed. */
+select:not([multiple]),
+.end-turn-order li select {
+  /* The gutter belongs with the chevron: `.end-turn-order li select` sets its
+     own padding at a specificity that beats the base rule above, so without
+     this its option text runs underneath the arrow. */
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 48%, var(--trim-lit) 48% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 48%, var(--trim-lit) 48% 56%, transparent 56%),
+    linear-gradient(180deg, #241d17, #14100d);
+  background-repeat: no-repeat;
+  background-position: right 0.85rem top 55%, right 0.45rem top 55%, 0 0;
+  background-size: 0.42rem 0.42rem, 0.42rem 0.42rem, auto;
+}
+
+input[type='search'],
+input:is(:not([type]), [type='text']) { padding-right: 0.6rem; }
+
+/* styles.css skins `.online-entry select` / `.online-lobby select` at (0,1,1),
+   which beats the bare `select` above — so on the entry screen the Character
+   picker kept a 4.8px radius and a lighter plate while the text input beside it
+   was square and dark. Two treatments, one panel. The font size is pinned too:
+   those inputs use `font: inherit`, so one picked up its label's 0.8rem and its
+   neighbour the panel's 1rem, leaving them 3.2px apart and the smaller one
+   under the 16px threshold that makes iOS zoom on focus.
+
+   Combat's `.end-turn-order li select` deliberately keeps its own FONT SIZE: it
+   is `(0,1,2)` and wins on `font`, which holds the dense turn-order list at
+   0.72rem. Its height is not bespoke — the base `select` rule still gives it
+   the 46px floor. That row is desktop-only, so the zoom threshold does not
+   apply to it. */
+.end-turn-order li select { font-family: 'Kreon', Georgia, serif; }
+
+.sts-scope select,
+.sts-scope input[type='search'],
+.sts-scope input:is(:not([type]), [type='text']) {
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  /* `color` belongs here too. Without it styles.css kept `--ink` on the select
+     while the input next to it took `--cream` from the base rule — the same
+     "two treatments, one panel" split this block exists to close. */
+  color: var(--cream);
+  background-color: #1c1712;
+  font-size: 1rem;
+}
+
+select option { background: #14100d; color: var(--cream); }
+
+/* `appearance: none` strips the platform's disabled skin along with everything
+   else, and the rules above then pin an opaque plate and cream text — so a
+   disabled control rendered pixel-identical to a live one. The lobby disables
+   its ascension and character pickers whenever the socket drops, which made a
+   dead dropdown look fully interactive.
+
+   The select arm must restate ALL THREE background layers. `background-size`,
+   `-position` and `-repeat` are still the chevron rule's three-value lists, so
+   a single-layer `background-image` here left the plate painted at 6.7x6.7px in
+   the arrow's slot, deleted the arrow, and let the control fall back to a
+   LIGHTER colour from styles.css — the exact inverse of the intent. */
+input:disabled {
+  color: #9dc0c0;
+  background-image: linear-gradient(180deg, #1b1713, #100d0b);
+  cursor: not-allowed;
+}
+
+select:disabled {
+  color: #9dc0c0;
+  background-color: #17130f;
+  background-image:
+    linear-gradient(45deg, transparent 48%, #6f6152 48% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 48%, #6f6152 48% 56%, transparent 56%),
+    linear-gradient(180deg, #1b1713, #100d0b);
+  cursor: not-allowed;
+}
+
+/* A struck plate with a drawn tick, which is what the client's OPTION_TOGGLE
+   is. The tick is drawn with two gradient strokes so there is no glyph to fall
+   back badly. The box itself is 1.15rem — its label is the real hit target,
+   and inside a grid label (`.event-selectors`) that comes to roughly 37px
+   rather than the 46px floor this file holds elsewhere. */
+input[type='checkbox'] {
+  appearance: none;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0 0.15rem;
+  border: 1px solid var(--trim-dim);
+  background: linear-gradient(180deg, #241d17, #14100d);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.6);
+  cursor: pointer;
+}
+
+/* The tick is sized in PERCENTAGES of the box, not in rem. This rule is global
+   and the box is not one size everywhere — the start menu's settings dialog
+   gives its checkboxes 2rem against the 1.15rem here — and rem strokes drew a
+   small, off-centre tick in the larger box. */
+input[type='checkbox']:checked {
+  border-color: var(--trim-lit);
+  background:
+    /* A tick is a SHORT stroke falling to the right, meeting a LONG stroke
+       rising to the right, joined at one bottom-left vertex.
+       A `45deg` gradient bands perpendicular to its own axis, so it draws a "\"
+       stroke; `-45deg` draws a "/". The first version had those the wrong way
+       round — long "\" plus short "/" — and sized the two boxes so they crossed
+       mid-stroke instead of meeting end to end. That is a cross, not a tick: the
+       universal "off" mark sitting on the control that means "on".
+       Short arm first, then the long one, then the plate. */
+    linear-gradient(45deg, transparent 40%, #2a1c07 40% 62%, transparent 62%) no-repeat 18% 58% / 30% 32%,
+    linear-gradient(-45deg, transparent 44%, #2a1c07 44% 60%, transparent 60%) no-repeat 76% 32% / 46% 50%,
+    linear-gradient(180deg, #ffe9a8, var(--trim-lit) 45%, #a97e2c);
+}
+
+input[type='checkbox']:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.7); }
+input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outline-offset: 2px; }
+
+/* A legend that wraps is laid out on the fieldset's top border, so its second
+   line lands inside the box and the border cuts through the text. Giving it the
+   full width forces the whole label above the frame. styles.css already does
+   this for `.neow-source-choice`; the event fieldsets had no equivalent. */
+/* Named rather than a blanket `fieldset > legend`: Neow's fieldsets set their
+   own legend colours and a broad rule silently repainted them. The item-offer
+   fieldsets sit one level deeper inside `.event-cards`, hence the second arm.
+
+   The full width is what forces a wrapping legend clear of the frame, and it
+   erases the top border across itself as a side effect. Three of these four
+   carry only the UA's `2px groove`, so losing it costs nothing on framed
+   screens that supply their own edges. `.event-cards` DOES have an authored
+   border, and a round spent trying to keep it: given an intrinsic width the
+   border came back, but then ran between the lines of every legend that wraps —
+   at 360px that is all of them, and at any width it includes the two
+   52-character Prismatic Shard legends. Hiding it behind a solid ground only
+   swapped that for a warm patch that cannot match `.room-stage`'s gradient at
+   more than one point. One consistent trade beats two competing hacks: the top
+   border goes, and every legend reads at every width. */
+.sts-scope .event-cards > legend,
+.sts-scope .event-cards fieldset > legend,
+.sts-scope .reward-screen__sources > legend,
+.sts-scope .online-lobby__meta > legend { width: 100%; color: var(--light-yellow); }
+
+/* Headings: one carved gold voice across every framed screen, not five. */
+.sts-scope h2 {
+  margin: 0;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  font-weight: 700;
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55);
+}
+
+.sts-scope h3 {
+  margin: 0;
+  color: var(--light-yellow);
+  font-size: 1rem;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}
+
+/* ---------- tooltips ---------- */
+
+/* TipHelper's geometry, to the pixel: a 320px box, 280px of body wrap, a 23px
+   gold header and a 22px cream body, under a hard (+9,+14) 25%-black stamp.
+   Kept in CSS rather than in a portal component because the chip renders one of
+   these per relic in the HUD strip and they all have to open at the same place
+   without any of them measuring coordinates. (Shop and reward relics do not use
+   this tooltip at all — they print `.room-item-text` inline, where there is room
+   for the prose.) */
+.relic-tip {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 0.75rem);
+  display: grid;
+  gap: 0.15rem;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  padding: 0.7rem 22px 0.8rem;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  color: var(--tip-body);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.86rem;
+  line-height: 1.42;
+  text-align: left;
+  transform: translate(0, -0.3rem);
+  opacity: 0;
+  visibility: hidden;
+  /* NOT `none`. WCAG 1.4.13 requires hover-triggered content to stay open while
+     the pointer is on it, and this tooltip is 320px of text a magnifier user
+     has to track across. The tooltip is a DOM child of the chip, so the pointer
+     entering it keeps `.relic-chip:hover` true and the tooltip stays up. While
+     hidden it is `visibility: hidden`, which already blocks hit-testing, so
+     this costs nothing when the tooltip is not showing.
+
+     The measured cost when it IS showing: the 320x88 box covers the potion
+     belt's second `Give`, and a pointer that walked down from the chip lands on
+     the tooltip instead of that button. Below the 47.99rem breakpoint the box
+     spans the status row instead, so the covered strip is wider still — the
+     Menu key falls under it there. Accepted rather than reverted, because
+     `pointer-events: none` fails 1.4.13 outright and whatever is underneath
+     stays reachable three ways — Escape (from any input modality, and from
+     either trigger, see RelicChip.tsx), or approaching from the side or below
+     rather than through the chip. */
+  pointer-events: auto;
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp),
+    visibility var(--motion-lerp);
+}
+
+.relic-chip:hover > .relic-tip,
+.relic-chip:focus-within > .relic-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, 0);
+}
+
+/* The other half of WCAG 1.4.13: dismissible. The tooltip overlaps the potion
+   belt below it and — because it takes pointer events, above — swallows clicks
+   aimed at it, so a player who only wanted to know what a relic does must be
+   able to put it away without moving the pointer or losing their place in the
+   tab order. `Escape` sets this attribute from a document-level listener (see
+   RelicChip.tsx, which explains why it cannot live on the chip), and it wins
+   over both trigger rules above by coming later at equal specificity. */
+.relic-chip[data-tip-dismissed='true'] > .relic-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Only one relic explains itself at a time. Focus and hover are independent, so
+   clicking a chip and then hovering its neighbour matches BOTH trigger rules —
+   and since every tooltip is anchored to the bar rather than to its own chip
+   (`left: 0` below, one shared `z-index`), the two 320px panels land on the
+   same rect and render as two sentences printed over each other.
+
+   The pointer is the more immediate intent, so when a chip is hovered it wins.
+
+   `:has(.relic-chip:hover)` rather than a bare `.relic-bar:hover`: the bar's
+   box includes its padding, the gaps between chips, and the square corners
+   outside each round chip, and in all of those the pointer hovers the BAR while
+   no chip matches `:hover` — so `:not(:hover)` matched every chip and hid every
+   tooltip. That silently swallowed keyboard-raised tooltips whenever the mouse
+   happened to be resting over the strip: the chip would light up on Tab with no
+   panel and no cue why.
+
+   At (0,6,0) this outranks the (0,3,0) triggers. It can co-match the dismissed
+   rule above on a chip that is focused-but-not-hovered, which is harmless —
+   both declare the same two properties. */
+.relic-bar:has(.relic-chip:hover) .relic-chip:not(:hover) > .relic-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Where the strip's tooltip goes.
+
+   A 320px box centred on a 34px chip hangs off the left edge of the window for
+   the first relic and off the right edge for the fifteenth, and CSS alone
+   cannot flip it — nothing here can measure the window.
+
+   So the box is anchored to the BAR rather than to the chip: `.relic-bar` owns
+   the positioning context and every tip opens at the bar's own left edge,
+   under the whole strip. That keeps one opening point for any relic count, and
+   the client itself drops relic tooltips below the bar rather than beside each
+   relic. The chip therefore must NOT be `position: relative`, or it would
+   capture the tip back.
+
+   Wide windows only — see the breakpoint below for what happens when the bar's
+   left edge is too far in for a 320px box to follow it. */
+.relic-bar { position: relative; }
+.relic-bar .relic-tip { left: 0; }
+
+/* Below roughly 768px the 320px box no longer fits to the right of the bar's
+   left edge, which sits ~215px into the HUD, so it ran past the window: at
+   380px, 155px of it. Nothing scrolled — `html { overflow-x: clip }` above sees
+   to that — which is exactly why it mattered: the overhang was silently CUT
+   rather than reachable, and the tooltip lost the end of its own sentence.
+   `max-width: calc(100vw - 2rem)` never engaged, because the box is narrower
+   than that cap; the cap bounds the width, not where the box ends up.
+
+   The fix hands the positioning context up to the status row and lets the box
+   fill it, so `top: 100%` means "under the whole HUD line" instead of "under
+   the bar". `.run-status` is a shrink-to-fit flex item, so this is the width of
+   the pips rather than of the header — narrower than 320px on a small window,
+   which is the point.
+
+   `position: fixed` was tried first and rejected: `fixed` cannot see the bar,
+   so the box fell to its static position over the header — at 600px it covered
+   the title and gold outright. */
+@media (max-width: 47.99rem) {
+  .run-status { position: relative; }
+  .relic-bar { position: static; }
+
+  /* `left: 0` is already set above; only the right edge and the sizing change. */
+  .relic-bar .relic-tip {
+    right: 0;
+    width: auto;
+    max-width: none;
+  }
+
+}
+
+.relic-tip__name {
+  color: var(--sts-gold);
+  font-size: 1.05rem;
+  font-weight: 400;
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.6);
+}
+
+.relic-tip__pool { color: #9b8a6a; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.relic-tip__text { color: var(--tip-body); }
+.relic-tip__rule { color: var(--blue-text); font-style: italic; }
+.relic-tip__note { color: var(--sts-gold); }
+
+/* ---------- relic bar ---------- */
+
+/* The client's relic strip: a row of 64px painted glyphs on a 72px pitch, each
+   with a dark contour sprite behind it so it pops off the bar. */
+.relic-bar {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.15rem 0.35rem;
+  background: rgb(0 0 0 / 0.28);
+  box-shadow: inset 0 0 0 1px rgb(217 180 91 / 0.14);
+}
+
+/* A late run holds a dozen-plus relics, and the header is one flex row: an
+   un-wrapping strip of them would shove the Menu key off the window.
+   The bar wraps to a second line instead of scrolling — a scroll container
+   would compute `overflow-y` to `auto` as well and clip every tooltip, which
+   is the one thing this bar exists to show. */
+.run-status { flex-wrap: wrap; min-width: 0; }
+
+.run-status > .relic-bar {
+  flex-wrap: wrap;
+  min-width: 0;
+  row-gap: 0.2rem;
+}
+
+.relic-bar > .relic-chip { flex: none; }
+
+/* The chip must establish NO containing block of its own: its tooltip anchors
+   to `.relic-bar` so that a chip near the right end of a long strip cannot
+   push its 320px box off the window. `position: relative` is the obvious way
+   to break that — but so is `transform`, and so are the `translate`/`scale`
+   longhands. A hover lift written here re-anchored the tooltip to the chip and
+   hung 136px of it off a 1024px window, complete with a horizontal scrollbar.
+   The lift therefore moves the ICON inside the chip; the chip itself never
+   transforms. */
+.relic-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #4a3a27, #241a12 70%);
+  box-shadow:
+    inset 0 0 0 1px rgb(217 180 91 / 0.45),
+    inset 0 -2px 4px rgb(0 0 0 / 0.6),
+    0 0 0 2px rgb(0 0 0 / 0.33);
+  cursor: help;
+  transition: box-shadow var(--motion-lerp) var(--ease-lerp);
+}
+
+.relic-chip > .icon {
+  transition: transform var(--motion-lerp) var(--ease-lerp);
+}
+
+.relic-chip:hover > .icon,
+.relic-chip:focus-within > .icon {
+  transform: translateY(-2px) scale(1.1);
+}
+
+.relic-chip:hover,
+.relic-chip:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--trim-lit),
+    0 0 0 2px rgb(0 0 0 / 0.33),
+    0 0 0.9rem rgb(255 230 102 / 0.6);
+}
+
+/* A face-down once-per-combat relic. Greyed rather than hidden: the player
+   still needs to know they own it.
+
+   Nothing here may go on the CHIP itself. `filter` and `transform` would make
+   it a containing block and re-anchor its tooltip away from the bar; `opacity`
+   is just as bad for a different reason — the tooltip is a child, so group
+   opacity fades it too, and the one relic whose tooltip carries a
+   state-critical line ("already used") would be the one rendered at 62%.
+   So the icon is greyed and the plate is darkened, each on its own. */
+.relic-chip--spent > .icon { filter: grayscale(0.85) brightness(0.6); }
+
+.relic-chip--spent {
+  background: radial-gradient(circle at 38% 30%, #2e261d, #17110c 70%);
+  box-shadow:
+    inset 0 0 0 1px rgb(217 180 91 / 0.18),
+    inset 0 -2px 4px rgb(0 0 0 / 0.6),
+    0 0 0 2px rgb(0 0 0 / 0.33);
+}
+.relic-chip .icon { width: 1.375rem; height: 1.375rem; }
+
+/* Printed relic/potion prose, wherever an item is offered. Same voice as the
+   tooltip body, so the shelf and the tooltip agree. */
+.room-item-text {
+  display: block;
+  max-width: 22rem;
+  margin: 0;
+  color: var(--tip-body);
+  font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.55);
+  text-wrap: pretty;
+}
+
+/* ---------- the run header ---------- */
+
+/* TopPanel: a full-width slab, a bronze rule along its bottom edge, and a soft
+   dark gradient falling into the play area beneath it. */
+.app-shell__header {
+  position: relative;
+  z-index: 40;
+  align-items: center;
+  min-height: 3.6rem;
+  padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(71 96 111 / 0.96), rgb(23 33 43 / 0.98)),
+    var(--slate);
+  box-shadow:
+    inset 0 1px 0 rgb(217 180 91 / 0.22),
+    inset 0 -3px 0 var(--trim),
+    0 6px 18px rgb(0 0 0 / 0.45);
+}
+
+/* The header spans the window even when the shell is a centred column, so the
+   HUD reads as the game's frame instead of as a card floating on a page. */
+.app-shell {
+  position: relative;
+  padding-top: 0;
+}
+
+/* The room screens sat on flat near-black. A lit floor under them costs one
+   pseudo-element and stops every framed panel from looking like it is hanging
+   in a void. Screens that paint their own stage (map, campfire, combat) cover
+   this, so it only shows where nothing else does. */
+.app-shell:not(.app-shell--combat)::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 108%, rgb(122 74 34 / 0.3), transparent 72%),
+    radial-gradient(ellipse 90% 60% at 50% -12%, rgb(58 44 34 / 0.55), transparent 68%);
+  pointer-events: none;
+}
+
+.app-shell > .app-shell__header {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-bottom: 0.75rem;
+}
+
+/* styles.css gives the combat HUD its own taller slab and a GEORGIA h1, at a
+   higher specificity than the rule above — so the header changed typeface the
+   instant a fight started, which is the "two people built this" tell. The
+   combat bar keeps its own geometry; only the type and the bronze rule are
+   brought back in line. */
+.app-shell--combat > .app-shell__header {
+  box-shadow:
+    inset 0 1px 0 rgb(217 180 91 / 0.22),
+    inset 0 -3px 0 var(--trim),
+    0 6px 18px rgb(0 0 0 / 0.45);
+}
+
+/* Kreon is the game's only typeface. The entry and lobby headings were set in
+   Georgia by styles.css, so the multiplayer front door greeted the player in a
+   different serif from the one the whole run is set in. */
+.sts-scope.online-entry h1,
+.sts-scope.online-lobby h1 { font-family: 'Kreon', Georgia, serif; }
+
+.app-shell h1,
+.app-shell--combat > .app-shell__header h1 {
+  font-family: 'Kreon', Georgia, serif;
+  font-size: clamp(0.95rem, 1.5vw, 1.25rem);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--cream);
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55);
+}
+
+.run-status { gap: 0.7rem; font-size: 0.9rem; color: var(--cream); }
+
+/* Act and Ascension read as struck plates rather than as loose grey words. */
+.run-status > .pip:not(.pip--energy) {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.16rem 0.6rem;
+  background: rgb(0 0 0 / 0.3);
+  box-shadow: inset 0 0 0 1px rgb(217 180 91 / 0.2);
+  color: var(--cream);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}
+
+.run-status .icon-value__number { color: var(--sts-gold); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55); }
+
+/* ---------- disclosures: menu, relic actions, logs ---------- */
+
+/* Native <details> paints its own triangle in the platform's colour and font.
+   Removing the marker is what lets the summary become a key. */
+.game-settings > summary,
+.relic-actions > summary,
+.relic-actions details > summary,
+.end-turn-order > summary,
+.log > summary,
+.run-modifiers > summary,
+.online-lobby__settings > summary,
+.combat-log-drawer > summary,
+.start-menu__meta > summary {
+  list-style: none;
+}
+
+.game-settings > summary::-webkit-details-marker,
+.relic-actions > summary::-webkit-details-marker,
+.relic-actions details > summary::-webkit-details-marker,
+.end-turn-order > summary::-webkit-details-marker,
+.log > summary::-webkit-details-marker,
+.run-modifiers > summary::-webkit-details-marker,
+.online-lobby__settings > summary::-webkit-details-marker,
+.combat-log-drawer > summary::-webkit-details-marker,
+.start-menu__meta > summary::-webkit-details-marker {
+  display: none;
+}
+
+.game-settings > summary,
+.relic-actions > summary,
+.log > summary,
+.online-lobby__settings > summary,
+.start-menu__meta > summary,
+.combat-log-drawer > summary {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: var(--key-min-height);
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+  color: var(--cream);
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 -2px 0 rgb(0 0 0 / 0.45),
+    inset 0 0 0 1px rgb(0 0 0 / 0.4);
+  filter: drop-shadow(var(--hard-shadow));
+  font-family: 'Kreon', Georgia, serif;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+  cursor: pointer;
+  transition: color var(--motion-lerp) var(--ease-lerp), filter var(--motion-lerp) var(--ease-lerp);
+}
+
+/* The client tints its top-bar icon buttons cyan on hover, but `--blue-text` on
+   this slate plate measures 4.39:1 once the hover's own `brightness(1.15)`
+   lifts the plate under it — the identical trap this file already documents for
+   gold a few hundred lines up. `--light-yellow` clears it, and the open state
+   is unmistakable from the panel itself rather than from a second hue. */
+.game-settings > summary:hover,
+.relic-actions > summary:hover,
+.log > summary:hover,
+.online-lobby__settings > summary:hover,
+.combat-log-drawer > summary:hover,
+.start-menu__meta > summary:hover {
+  color: var(--light-yellow);
+  filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
+}
+
+.game-settings[open] > summary,
+.relic-actions[open] > summary,
+.online-lobby__settings[open] > summary,
+.start-menu__meta[open] > summary,
+.combat-log-drawer[open] > summary,
+.log[open] > summary { color: var(--light-yellow); }
+
+/* A drawn glyph in front of each disclosure. Cheaper than an icon font, and it
+   never falls back to a multiplication sign the way ⚔ does.
+
+   Every one of these carries the ` / ''` alt text. Generated content counts
+   toward the accessible name, so without it the menu announces as "trigram for
+   heaven Menu" and the log as "rotated floral heart bullet Run log". The empty
+   alt marks the glyph decorative and drops it from the name. Browsers that do
+   not know the syntax ignore the whole declaration, which leaves them exactly
+   where they were before this line — no glyph is a smaller loss than a
+   mispronounced one. */
+.game-settings > summary::before,
+.online-lobby__settings > summary::before { content: '☰' / ''; font-size: 1.05rem; }
+
+/* Inherits 0.65rem uppercase from `.start-menu__meta`; the key sets its own. */
+.start-menu__meta > summary { font-size: 0.8rem; letter-spacing: 0.08em; }
+.relic-actions > summary::before { content: '◆' / ''; }
+.log > summary::before { content: '❧' / ''; font-size: 1rem; }
+
+/* The menu popover is a column of full-width keys, not a row of loose inputs. */
+.game-settings > .setup {
+  display: grid;
+  gap: 0.55rem;
+  top: calc(100% + 0.6rem);
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.9rem;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 26%),
+    linear-gradient(180deg, var(--leather-lit), var(--leather) 62%, #120c0a);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  font-size: 0.9rem;
+  color: var(--cream);
+}
+
+.game-settings > .setup > label {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: stretch;
+  color: var(--light-yellow);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.game-settings > .setup > button { width: 100%; }
+
+/* .run-modifiers had no stylesheet rules at all — raw browser chrome sitting
+   inside an otherwise dressed panel. */
+.run-modifiers {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--trim-dim);
+  background: rgb(0 0 0 / 0.35);
+}
+
+.run-modifiers > summary {
+  color: var(--light-yellow);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.run-modifiers > summary::before { content: '◈ ' / ''; color: var(--trim-lit); }
+.run-modifiers :is(ul, ol) { display: grid; gap: 0.3rem; margin: 0.5rem 0 0; padding-left: 1rem; }
+.run-modifiers li { color: var(--cream); font-size: 0.8rem; }
+.run-modifiers strong { color: var(--sts-gold); }
+
+/* ---------- the run log ---------- */
+
+/* It used to be a full-width black slab pinned to the bottom edge. Now it is a
+   closed tab that grows into a framed scroll.
+
+   It also moved to the bottom-LEFT. The bottom-right belongs to three things
+   that are all more urgent than a log — the Courier's offer, the "Leave
+   merchant →" arrow, and Neow's Skip key — and it was landing on top of them.
+
+   The bottom-left is not free everywhere either: the reward screen reserves it
+   with `padding-bottom` below, and Neow — a full-bleed scene with content in
+   BOTH bottom corners and no scroller to move it clear — simply does not render
+   the log at all (App.tsx / OnlineGame.tsx). There is no empty corner; each
+   screen either makes room or opts out. */
+.log {
+  right: auto;
+  left: 1rem;
+  bottom: 1rem;
+  width: auto;
+  max-width: min(30rem, calc(100vw - 2rem));
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: visible;
+  text-align: left;
+}
+
+.log[open] {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: start;
+}
+
+.log > summary { text-align: left; }
+
+.log[open]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  /* Clears the summary tab above it: the tab's own height plus this
+     element's row gap. Derived from both, not guessed. */
+  inset: calc(var(--key-min-height) + 0.45rem) 0 0;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+.log p {
+  max-width: 100%;
+  margin: 0;
+  padding: 0.2rem 0.8rem;
+  color: #b9ad93;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.log p:first-of-type { padding-top: 0.7rem; }
+
+/* The newest line is the one the player is actually looking for. */
+.log p:last-of-type { padding-bottom: 0.7rem; color: var(--cream); }
+
+/* An opened log grows upward from its own corner, so whatever else claims that
+   corner would cover the newest lines — the ones the player opened it to read.
+   It wins while open, because it is only ever open on purpose. */
+.log[open] { z-index: 31; }
+
+/* ---------- the battle log ---------- */
+
+/* Combat's own log was the last raw <details> on the board: a browser triangle
+   and a translucent black rectangle bolted to the top-right of the stage. It
+   becomes the same tab-and-scroll the run log is, so the two logs read as one
+   idea seen twice rather than as two different widgets. */
+.combat-log-drawer {
+  display: grid;
+  justify-items: end;
+  gap: 0.4rem;
+  width: auto;
+  max-width: min(28rem, 42vw);
+  background: none;
+}
+
+/* The plate itself comes from the shared disclosure-key rule above — this was
+   a third hand-copy of it, so a palette edit there silently missed the combat
+   drawer. Only what differs from the others stays here. */
+.combat-log-drawer > summary { text-align: left; }
+.combat-log-drawer > summary::before { content: '❧' / ''; font-size: 1rem; }
+
+.combat-log-drawer > .combat__log {
+  max-height: 7rem;
+  padding: 0.6rem 0.8rem;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  color: #b9ad93;
+  text-align: left;
+}
+
+/* ---------- combat relic actions ---------- */
+
+.relic-actions > section {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  left: 0;
+  display: grid;
+  gap: 0.4rem;
+  width: max-content;
+  min-width: 13rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.75rem;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+.relic-actions > section:empty { display: none; }
+
+/* The per-relic sub-disclosures inside the panel. styles.css gives these a 1px
+   box with `border-radius: 5px`, which put a rounded web card inside a chamfered
+   frame and left the native triangle showing — the exact "ugly dropdown" this
+   pass exists to remove. They become a hairline-ruled group instead: the panel
+   is already the frame, so each relic only needs separating from the last. */
+.relic-actions > section > details {
+  padding: 0.4rem 0 0;
+  border: 0;
+  border-top: 1px solid rgb(217 180 91 / 0.14);
+  border-radius: 0;
+}
+
+.relic-actions > section > details:first-of-type { padding-top: 0; border-top: 0; }
+
+.relic-actions > section > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: var(--key-min-height);
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+/* Its own glyph, since the native marker is gone. Rotates when open, the way
+   the panel's own key does. `/ ''` keeps it out of the accessible name. */
+.relic-actions > section > details > summary::before {
+  content: '▸' / '';
+  color: var(--trim-lit);
+  font-size: 0.8rem;
+  transition: transform var(--motion-lerp) var(--ease-lerp);
+}
+
+.relic-actions > section > details[open] > summary::before { transform: rotate(90deg); }
+
+/* The end-turn-order disclosures get the same glyph. Their native marker is
+   removed alongside the others, and a summary with no marker and no replacement
+   is a control with nothing saying it opens — two of the three render closed.
+   `inline-block` because this summary is not a flex container, and a transform
+   does not apply to an inline box. */
+.end-turn-order > summary::before {
+  content: '▸' / '';
+  display: inline-block;
+  margin-right: 0.35rem;
+  color: var(--trim-lit);
+  font-size: 0.8rem;
+  transition: transform var(--motion-lerp) var(--ease-lerp);
+}
+
+.end-turn-order[open] > summary::before { transform: rotate(90deg); }
+
+/* The printed text under each relic's name, so a player choosing a target can
+   read what the relic does without leaving the panel to hover the HUD chip. */
+.relic-actions > section > details > .room-item-text { margin: 0 0 0.4rem; }
+
+/* ---------- framed screens ---------- */
+
+/* Every non-combat screen used to be loose text on the page background. They
+   now sit on one slab, so the run reads as a board rather than as a form. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end {
+  flex: 0 1 auto;
+  align-self: center;
+  justify-self: center;
+  width: min(52rem, calc(100% - 2rem));
+  margin: auto;
+}
+
+.sts-scope .room-screen__defeat {
+  color: var(--red-text) !important;
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.6) !important;
+}
+
+/* ---------- the campfire ---------- */
+
+/* A rest site was a heading and two small keys stranded in the top eighth of an
+   empty black window. It is a place in the digital game — a lit fire in a dark
+   room — so it gets the stage art, a warm firelight wash from below, and its
+   content centred in the space it actually has. */
+.sts-scope .campfire {
+  position: relative;
+  isolation: isolate;
+  /* `safe center` for the same reason `.map` uses it: styles.css makes this a
+     column flex box with `overflow-y: auto` in the shell's `1fr` row, and
+     centring a SCROLLER strands its excess above the scroll origin, which
+     `scrollTop` cannot reach. It bites harder here than on the map — a party of
+     three or four with two seats mid-Smith overflows easily, and the stranded
+     top is the first seat's Rest/Smith keys. With `Leave` disabled until every
+     seat has settled, that seat could not choose and the screen was a dead end.
+     styles.css declares no `justify-content` here, so a browser without `safe`
+     falls back to flex-start, which is the safe end of the trade. */
+  justify-content: safe center;
+  width: 100vw;
+  margin: -1.25rem calc(50% - 50vw) 0;
+  padding: 2rem 1rem 2.5rem;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 96%, rgb(226 120 42 / 0.3), transparent 70%),
+    linear-gradient(180deg, rgb(8 6 5 / 0.92), rgb(10 7 6 / 0.86) 55%, rgb(5 4 3 / 0.94)),
+    url('/assets/combat/stage-act-1.webp') center 35% / cover no-repeat;
+  box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
+}
+
+/* The fire itself: the campfire heading's flame icon, given a slow flicker so
+   the screen is never completely still. */
+.sts-scope .campfire h2 .icon {
+  filter: drop-shadow(0 0 1.2rem rgb(255 150 50 / 0.8));
+  animation: campfire-flicker 2.4s ease-in-out infinite;
+}
+
+@keyframes campfire-flicker {
+  0%, 100% { opacity: 0.86; transform: scale(1); }
+  40% { opacity: 1; transform: scale(1.09); }
+  70% { opacity: 0.92; transform: scale(0.98); }
+}
+
+.sts-scope .campfire__player {
+  padding: 1rem 1.1rem;
+  background: linear-gradient(180deg, rgb(43 31 26 / 0.88), rgb(21 16 12 / 0.92));
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.65),
+    inset 0 2px 0 rgb(217 180 91 / 0.22);
+  filter: drop-shadow(var(--hard-shadow));
+}
+
+.sts-scope .campfire__name { color: var(--light-yellow); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6); }
+
+/* Rest and Smith are the decision of the screen; they get the size to say so. */
+.sts-scope .campfire__choices button {
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 9rem;
+  min-height: 4.2rem;
+}
+
+/* ---------- room stages ---------- */
+
+/* The shop, treasure and event stages were the last screens carrying a plain
+   20px radius and a Georgia headline. Kreon is the game's only typeface — a
+   second serif in the same window is the tell that two people built this. */
+.sts-scope .room-stage {
+  border: 0;
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0,
+    100% var(--chamfer), 100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%,
+    0 calc(100% - var(--chamfer)), 0 var(--chamfer)
+  );
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 3px 0 rgb(217 180 91 / 0.2),
+    inset 0 0 70px rgb(0 0 0 / 0.7);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+/* `.sts-scope h2` already wins for the two headings, so only these two need
+   naming. */
+.sts-scope .treasure-relic strong,
+.sts-scope .event-options button strong {
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.sts-scope .room-banner > span,
+.sts-scope .campaign-end > span {
+  color: var(--light-yellow);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6);
+}
+
+.sts-scope .room-banner h2 {
+  color: var(--cream);
+  text-shadow: 3px 3px 0 rgb(48 20 13 / 0.9), 0 0 1.4rem rgb(226 151 65 / 0.45);
+}
+
+/* Event options are text on parchment until you point at one, which is how the
+   client keeps a wall of choices from reading as a wall of buttons. */
+.sts-scope .event-options button {
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: stretch;
+  min-height: 70px;
+  padding: 0.7rem 0.9rem;
+  background-color: rgb(35 47 56 / 0.34);
+  background-image: linear-gradient(180deg, rgb(71 96 111 / 0.28), rgb(23 33 43 / 0.4));
+  text-align: left;
+}
+
+.sts-scope .event-options button:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+}
+
+.sts-scope .event-options button strong { color: var(--sts-gold); }
+
+/* The title is pinned gold above, so the key's generic hover lift to
+   --light-yellow never reached it — and the same hover lightens the plate,
+   leaving gold-on-lit-slate at 4.31:1. Lift the title with everything else. */
+.sts-scope .event-options button:hover:not(:disabled) strong { color: var(--light-yellow); }
+
+/* ---------- the proceed arrow ---------- */
+
+/* `.room-proceed` is already a bespoke arrow-shaped plate (styles.css) that
+   right-aligns itself with `margin-left: auto` on a BLOCK box. It is
+   deliberately not a key: making it one replaced `display: block` with
+   `inline-flex`, and an auto margin cannot align an inline-level box, so the
+   button fell to the left edge — where its `position: sticky` floated it over
+   the shop's own labels. It only needed the palette, not the shape. */
+.sts-scope .room-proceed {
+  border-color: var(--trim-lit);
+  background: linear-gradient(90deg, #5e2418, #a8442a);
+  color: var(--cream);
+  font-family: 'Kreon', Georgia, serif;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
+}
+
+.sts-scope .room-proceed:hover:not(:disabled) { color: var(--light-yellow); filter: brightness(1.14); }
+
+/* ---------- treasure ---------- */
+
+/* The treasure room was rendered in teal and magenta — the only two hues in the
+   build that appear nowhere else in the game. A relic in its chest is bronze on
+   dark, like every other relic. */
+.sts-scope .treasure-relic {
+  padding: 2.4rem 2rem;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(239 200 81 / 0.22), transparent 62%),
+    radial-gradient(circle at 50% 45%, rgb(59 44 26 / 0.95), rgb(16 12 9 / 0.9) 66%, transparent 70%);
+}
+
+.sts-scope .treasure-relic > span,
+.sts-scope .treasure-shared button > span {
+  color: var(--sts-gold);
+  text-shadow: 0 0 1.6rem rgb(239 200 81 / 0.75);
+}
+
+.sts-scope .treasure-relic strong { color: var(--cream); text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55); }
+.sts-scope .treasure-relic p { color: var(--tip-body); }
+
+.sts-scope .treasure-shared button {
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  background-color: var(--slate);
+  background-image:
+    radial-gradient(circle at 50% 34%, rgb(239 200 81 / 0.16), transparent 60%),
+    linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+}
+
+/* ---------- the Courier ---------- */
+
+/* The panel is a nowrap flex row capped at 42rem, already carrying a title, a
+   cost, an optional Replace select and two buttons. Adding the offer's printed
+   text made a sixth item, so every child shrank toward min-content and the
+   prose — the widest, so the biggest shrink share — collapsed into a column one
+   word wide. The panel is fixed to the bottom edge and grows UPWARD, so it ate
+   the board. The prose gets its own full-width line instead. */
+.courier-panel {
+  flex-wrap: wrap;
+  /* Narrower than the 42rem styles.css allows: at full width the prose row
+     pushed the panel to 661px, which reached across the board and covered both
+     the End turn key and three cards of the hand. */
+  max-width: min(30rem, calc(100vw - 2rem));
+}
+
+/* Clear of the End turn key, which is fixed to the same corner and occupies
+   the 4.5rem-7.5rem band (styles.css: `bottom: 4.5rem`, `min-height: 3rem`).
+   Anything below 7.5rem here puts the offer straight through the one control
+   the player needs on their turn.
+
+   It still crosses a couple of hand cards at 1024px, and that is left alone:
+   App.tsx marks the whole board `inert` while an offer is open, so nothing
+   underneath is interactive and the panel IS the decision. Only the End turn
+   collision mattered, because that key is what the panel was hiding. */
+.app-shell--combat .courier-panel { bottom: 8rem; }
+
+.courier-panel > .room-item-text {
+  flex: 1 0 100%;
+  max-width: 100%;
+}
+
+/* ---------- reward screen ---------- */
+
+/* The run log chip is fixed to the bottom-left, and the reward screen is its
+   own scroll container — so scrolled to the bottom at 1024px its Collect key
+   ran under the chip. The chip does not steal the click, but a button with a
+   tab sitting on it reads as broken. Reserve the corner. */
+.sts-scope .reward-screen { padding-bottom: 4.25rem; }
+
+/* ---------- reward screen: skip vs collect ---------- */
+
+/* Skip is red and Collect is cyan in styles.css, and those two buttons do
+   opposite things on a screen where a misclick costs a card. Pulling them into
+   the generic key list gave them the key's geometry — which they want — but
+   also its grey slate plate, which made them identical. `:is()` scores by its
+   most specific argument, so the key block at (0,2,1) beat the original
+   `.reward-screen .reward-screen__skip` at (0,2,0) on every declaration.
+   The colour coding comes back here, on top of the key shape. */
+.sts-scope .reward-screen .reward-screen__skip {
+  border-color: var(--skip-edge);
+  color: var(--skip-ink);
+  background-color: var(--skip-plate);
+  background-image: linear-gradient(180deg, var(--skip-plate-lit), var(--skip-plate));
+}
+
+/* `:not(.is-chosen)` is load-bearing, not decoration: these rules out-specify
+   the gold "chosen" plate, so without it a skip that was already chosen fell
+   back to red the moment it was hovered or focused and stopped reading as
+   selected at all. */
+.sts-scope .reward-screen .reward-screen__skip:not(.is-chosen):hover:not(:disabled),
+.sts-scope .reward-screen .reward-screen__skip:not(.is-chosen):focus-visible {
+  border-color: var(--skip-edge);
+  background-color: var(--skip-plate);
+  background-image: linear-gradient(180deg, var(--skip-plate-lit), var(--skip-plate));
+}
+
+.sts-scope .reward-screen .reward-screen__collect {
+  border-color: var(--collect-edge);
+  color: var(--collect-ink);
+  background-color: var(--collect-plate);
+  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
+}
+
+.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):hover:not(:disabled),
+.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):focus-visible {
+  border-color: var(--collect-edge);
+  background-color: var(--collect-plate);
+  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
+}
+
+/* ---------- the potion belt ---------- */
+
+/* A held potion is a component on the table, not a row of the page.
+
+   The belt auto-places into `.app-shell`'s `1fr` row (styles.css
+   `grid-template-rows: auto 1fr auto`), which is the wrong row for it: it took
+   the free space that belongs to the screen below, stretching to 455px on a
+   roomy screen and collapsing to 16px on a busy one. Four attempts to paper
+   over that from the belt's own box all failed — `align-self: start` rendered
+   it outside a collapsed track so its buttons stopped taking clicks, a
+   `min-height` stole 62px from the room stage and pushed the last Event choice
+   out of its frame, a `max-height` capped the box but not the track and left up
+   to 393px of dead ground, and paint-only left the label sliced in half
+   wherever the track collapsed.
+
+   A fifth attempt — `:has(> .outside-potions) { grid-template-rows: auto auto
+   1fr auto }`, sizing the belt to content and giving the screen the 1fr — is
+   the structurally right shape and measures perfectly on the map and campfire,
+   but it reproduces the `min-height` regression exactly: the 62px it hands the
+   belt comes out of the room stage, and scripts/verify-noncombat-browser.mjs
+   catches the last Event choice leaving its frame at 1280x800. Reverted.
+
+   So the belt keeps styles.css's stretched box and this rule only constrains
+   the PAINT: the plate and its bronze rule are drawn as a fixed 62px band at
+   the top, so a tall box still reads as a strip.
+
+   Two measured limitations, both accepted, both consequences of the stolen row
+   rather than of this rule:
+   - Where the track collapses (merchant/event/reward at compact desktop) the
+     box is ~16px and the strip is clipped mid-glyph. Content stays reachable by
+     scrolling inside it and every button still takes a click — verified.
+   - Where the track is roomy the opposite happens. At 1440x900 on
+     `betweenCombat`, holding one potion makes the box 538px tall with only its
+     top 62px painted as the band, and pushes the framed panel from a centred
+     341-617 down to 608-884, against the bottom edge. The `align-self: center`
+     on the framed screens is defeated exactly when a potion is held.
+
+   Fixing either properly needs the shell to reserve the belt's row without
+   taking it from the room stage — a layout change beyond this diff, and one
+   that five attempts above show is not a one-liner. */
+.sts-scope .outside-potions {
+  gap: 0.6rem;
+  /* A fallback only, and NOT what currently keeps the belt in its band —
+     every direct child sets `align-self: stretch` below, and `align-self`
+     always defeats the container's `align-items`, so this line renders nothing
+     today. It is kept for any future child that does not opt in. Do not read it
+     as permission to drop the `align-self`/`max-height` pair: that pair is what
+     stops the row's content falling out of a collapsed box. */
+  align-items: start;
+  /* Bleeds like the HUD above it; the shell's gutter showed as soon as this
+     rule started painting a bronze rule and a distinct ground. The belt always
+     follows the header, so it closes the same 20px (grid gap + the header's
+     margin) that the map and campfire bands do. */
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  margin-top: -1.25rem;
+  padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+  /* `top 60px` resolves against the padding box, so a border here would push
+     the rule 1px inside a taller box and leave a sliver below it. */
+  border-block: 0;
+  background:
+    linear-gradient(rgb(217 180 91 / 0.22), rgb(217 180 91 / 0.22)) top / 100% 1px no-repeat,
+    linear-gradient(rgb(140 107 51 / 0.55), rgb(140 107 51 / 0.55)) top 60px left / 100% 2px no-repeat,
+    linear-gradient(180deg, rgb(43 31 26 / 0.92), rgb(24 17 14 / 0.94)) top / 100% 62px no-repeat,
+    /* the page's ground under the rest of a stretched box, so the leftover
+       track reads as background rather than as a hole above the band below */
+    linear-gradient(rgb(14 11 9 / 0.96), rgb(14 11 9 / 0.96));
+}
+
+/* The bare "Potions" label is a direct flex child with no wrapper of its own,
+   so `align-items: start` alone left it riding above the buttons' centre line.
+   Centre it against the row WITHOUT a height floor: a `min-height` here forced
+   the whole row's content past the bottom of a collapsed box (measured: content
+   at y=116 in a box ending at y=82), which hid the belt outright at 1440 on the
+   merchant and reward screens — far worse than the clipping it tidied.
+
+   The potion items need the same clamp for the same reason. Without it their
+   children sat centred in a 46px box starting 8px above a 20px clip, so on the
+   merchant every potion NAME and every button LABEL rendered zero visible
+   pixels while the word "Potions" survived — the limitation noted above was
+   "clipped mid-glyph" in theory and "nothing at all" in practice. */
+.sts-scope .outside-potions > strong,
+.sts-scope .outside-potions > .outside-potions__item {
+  align-self: stretch;
+  max-height: var(--key-min-height);
+}
+
+.sts-scope .outside-potions > strong {
+  display: flex;
+  align-items: center;
+}
+
+
+/* ---------- item tiles: shop shelves, treasure, event offers ---------- */
+
+/* These are not keys, they are plaques: an icon, a name, its printed prose and
+   a price, stacked. The key rule above centres its children in a row, which
+   would lay all four out side by side — so the tiles opt back into a column and
+   grow to fit the prose that this change added to them. */
+.sts-scope :is(.merchant-board, .treasure-shared) button:not(.merchant-removal button) {
+  flex-direction: column;
+  /* Top-aligned, not centred: the added prose gives neighbouring tiles
+     different content heights, and centring each one independently left the
+     names in a shelf row sitting at different heights from each other. */
+  justify-content: flex-start;
+  gap: 0.3rem;
+  min-height: 88px;
+  padding: 0.7rem 0.8rem;
+  text-align: center;
+}
+
+/* Event card pickers name a single card and nothing else, so they keep the
+   key's default height and just take a tighter gutter. */
+.sts-scope .event-cards button { padding: 0.4rem 0.8rem; }
+
+.sts-scope :is(.merchant-board, .treasure-shared) button .room-item-text {
+  max-width: 100%;
+  color: rgb(255 248 223 / 0.82);
+  font-size: 0.74rem;
+  text-wrap: balance;
+  /* Restated, not inherited. The treasure prose is a direct-child `<span>` (a
+     `<p>` is invalid inside a `<button>`), which makes it match the
+     `button > span` rule above — written for the 2.5rem `✦` glyph and carrying
+     a 25.6px gold halo. That rule is (0,2,2) and beats `.room-item-text`'s own
+     (0,1,0) shadow, so without this line the offer text renders 0.74rem cream
+     inside a bloom meant for a single large icon. This block is (0,3,1). */
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.55);
+}
+
+/* A hovered plaque turns its text gold and stretches, the same affordance the
+   keys use — the price stays gold-on-gold-safe by keeping its own colour. */
+.sts-scope .merchant-board button:hover:not(:disabled) .room-price { color: var(--light-yellow); }
+
+/* styles.css draws a hover outline at `outline-offset: 3px` on these tiles.
+   An outline paints outside the border box and the chamfer clips it, so it was
+   being painted and thrown away on every hover — the same trap the focus ring
+   hit. Pulled inside the clip so the affordance actually shows.
+
+   NOT on the card tiles. A `Card` has no chamfer (`clip-path: none`), so it
+   never needed the inset — and it fills itself with absolutely positioned art
+   at `z-index: 1`, which paints OVER a ring pulled inside the border box. A
+   shop card that was hovered and keyboard-focused at once therefore had its
+   focus ring drawn and then buried under its own artwork: computed
+   `solid 3px gold`, zero pixels of it visible. */
+.sts-scope :is(.merchant-board, .event-options) button:hover:not(.card) {
+  outline-offset: -4px;
+}
+
+.room-item-icon { color: var(--sts-gold); text-shadow: 0 0 0.8rem rgb(239 200 81 / 0.45); }
+.room-price { color: var(--sts-gold); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55); }
+
+/* No red-price rule here. The client reddens a price the party cannot AFFORD,
+   but `:disabled` on these tiles also covers sold out, Sozu-blocked, and
+   "you are not the seat shopping right now" — so keying off it painted every
+   price in another player's shop red. Affordability is not knowable from CSS;
+   it would have to come from the component. */
+
+/* These bands bleed past the shell's bottom padding unless an in-flow panel
+   follows them — on the map a Wing Boots chooser can, and an unconditional pull
+   would drag the painted band up underneath it.
+   NOT `:last-child`: the run log is rendered last in the DOM on every
+   non-combat phase, so `:last-child` matched nothing and the bleed never
+   happened at all. The log is `position: fixed` and takes no space, so what
+   matters is whether a laid-out `.room-screen` follows. */
+/* How far the band pulls back depends on WHAT PRECEDES IT, not on whether a
+   potion belt exists — an earlier version keyed on `.outside-potions + .map`
+   and silently mis-pulled by 12px whenever a relic-resolve panel rendered
+   between the two (App.tsx does render one during the map phase).
+
+   Local grid shell: every row gap is 8px, so any band that follows another row
+   needs -0.5rem. Only a band sitting directly under the HEADER also has to
+   cancel the header's own 12px `margin-bottom`, for -1.25rem.
+   Below: a band in the middle track has the 8px gap plus the shell's 16px
+   padding under it (-1.5rem); a band that is the LAST track has only the
+   padding (-1rem).
+   Online: `.online-mutations` is a gapless flex column, so a band inside it
+   already touches whatever is above (0), while below it the shell's trailing
+   gap is still there (-1.5rem).
+
+   All of these tie on specificity and resolve by SOURCE ORDER — keep the
+   header-adjacent and online rules after the general ones. */
+.sts-scope .map,
+.sts-scope .campfire { margin-top: -0.5rem; margin-bottom: -1rem; }
+
+.sts-scope .app-shell__header + .map,
+.sts-scope .app-shell__header + .campfire { margin-top: -1.25rem; margin-bottom: -1.5rem; }
+
+.app-shell--online .map,
+.app-shell--online .campfire { margin-bottom: -1.5rem; }
+
+/* Inside `.online-mutations` (a gapless flex column) a band that follows the
+   belt already touches it; one that is FIRST still has the header's 20px above
+   it — which is the common case, not a rare one: right after Neow, whenever
+   nobody holds a potion, and whenever a pending relic suppresses the belt. */
+.app-shell--online .outside-potions + .map,
+.app-shell--online .outside-potions + .campfire { margin-top: 0; }
+
+.app-shell--online .online-mutations > .map:first-child,
+.app-shell--online .online-mutations > .campfire:first-child { margin-top: -1.25rem; }
+
+/* A band with an in-flow panel after it must not bleed past the shell's
+   padding, or it is dragged up underneath that panel. The run log does not
+   count — it is `position: fixed` and occupies no row. */
+.sts-scope .map:has(~ .room-screen),
+.sts-scope .campfire:has(~ .room-screen) { margin-bottom: 0; }
+
+/* ---------- the map ---------- */
+
+/* The climb used to be a column of circles on an empty page, with the whole
+   lower half of the window unused. It is now a place: painted rock behind it,
+   the column centred in the space it has, and the party's route worn into the
+   ground rather than ruled onto it. */
+.map {
+  position: relative;
+  isolation: isolate;
+  /* `safe center`, not plain `center`. styles.css makes this a column flex box
+     with `overflow-y: auto`, and centring a SCROLLER puts its excess above the
+     scroll origin, where no scroll can reach it: at 1280x560 the top 47px of the
+     Spire sat under the opaque header with the boss node sliced and "Enter the
+     Spire" gone, and `scrollTop = -9999` could not bring it back. `safe` centres
+     while the content fits and falls back to flex-start the moment it does not,
+     so the whole climb stays reachable on a short window. */
+  justify-content: safe center;
+  /* Full-bleed, like the HUD above it. The shell is a centred 1400px column,
+     which left the painted rock sitting in a black picture frame — the one
+     thing that most made the climb read as a widget on a page. */
+  width: 100vw;
+  margin: -1.25rem calc(50% - 50vw) 0;
+  padding: 1.5rem 0 2rem;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgb(10 8 7 / 0.55), rgb(8 6 5 / 0.88) 62%, rgb(4 3 3 / 0.97)),
+    url('/assets/menu/title-spire.webp') center 28% / cover no-repeat;
+  box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
+}
+
+.map__hint {
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6);
+}
+
+/* The hand-placed wobble, applied from the per-room custom properties set in
+   MapScreen. Paths are measured from the DOM after layout, so they follow the
+   nodes to their displaced positions on their own. */
+.map .room {
+  translate: var(--jitter-x, 0) var(--jitter-y, 0);
+}
+
+/* Hovering a reachable node lifts it; the translate above must survive that, so
+   the lift goes through `scale`/`transform` and never through `translate`. */
+.map .room--reachable:hover { transform: translateY(-3px) scale(1.08); }
+
+/* A worn trail of dots, not a drawn line. This is the map's signature and the
+   single most recognisable thing on the screen. */
+.map__path {
+  stroke: rgb(176 150 112 / 0.65);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 17;
+}
+
+.map__path--live {
+  stroke: var(--sts-gold);
+  stroke-width: 6;
+  stroke-dasharray: 0 17;
+  filter: drop-shadow(0 0 6px rgb(239 200 81 / 0.7));
+  animation: map-trail 1.6s linear infinite;
+}
+
+/* The trail crawls toward the room it leads to, which reads as "this way". */
+@keyframes map-trail {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -17; }
+}
+
+/* The client rings the party's current node with a ring that turns forever. */
+.map .room--here::after {
+  content: '';
+  position: absolute;
+  inset: -11px;
+  border: 2px dashed rgb(255 246 226 / 0.55);
+  border-radius: 50%;
+  animation: map-ring 9s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes map-ring {
+  to { rotate: 360deg; }
+}
+
+/* Reachable nodes breathe in opacity AND size together, on the client's own
+   ~5 rad/s cosine. A pulse in one channel alone reads as a CSS effect.
+
+   The glow is a pseudo-element so the loop can animate `opacity` alone.
+   Animating `box-shadow` on the node itself is not compositable, and this runs
+   forever on every reachable node — it would repaint the map every frame for
+   the whole time the player is deciding where to go. */
+.map .room--reachable {
+  border-color: var(--sts-gold);
+  animation: map-breathe 1.26s ease-in-out infinite;
+}
+
+.map .room--reachable::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 14px 3px rgb(239 200 81 / 0.55);
+  animation: map-glow 1.26s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes map-breathe {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+@keyframes map-glow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Every key this file introduced, plus the map's hover lift. Listed out
+     rather than using a blanket `.sts-scope button`, which would also reach the
+     hand — its per-card fan rotation lives in `transform` and is layout, not
+     decoration. These two lists are the key list verbatim; keep them so. */
+  .relic-chip:hover > .icon,
+  .relic-chip:focus-within > .icon,
+  .map .room--reachable:hover,
+  :is(
+    .sts-scope button:not([class]),
+    .sts-scope button[class=''],
+    .sts-scope .is-chosen,
+    .sts-scope .reward-screen__skip,
+    .sts-scope .reward-screen__collect,
+    .sts-scope .neow-offer__skip,
+    .sts-scope .campfire__leave,
+    .sts-scope .prompt__cancel,
+    .sts-scope .online-entry__back
+  ):hover:not(:disabled),
+  :is(
+    .sts-scope button:not([class]),
+    .sts-scope button[class=''],
+    .sts-scope .is-chosen,
+    .sts-scope .reward-screen__skip,
+    .sts-scope .reward-screen__collect,
+    .sts-scope .neow-offer__skip,
+    .sts-scope .campfire__leave,
+    .sts-scope .prompt__cancel,
+    .sts-scope .online-entry__back
+  ):active:not(:disabled) { transform: none; }
+
+  /* styles.css zeroes every animation DURATION under this query
+     (`animation-duration: .01ms !important`). For a finite animation that is
+     effectively "skip to the end", but every animation this file adds is
+     `infinite` — and an infinite loop at 0.01ms advances ~1600 iterations per
+     frame, so it samples an arbitrary phase each frame and STROBES. That is
+     the precise thing this media query exists to prevent, so they are stopped
+     outright rather than sped up. */
+  .map .room--here::after,
+  .map .room--reachable,
+  .map .room--reachable::before,
+  .sts-scope .campfire h2 .icon { animation: none; }
+
+  /* The crawling trail is the same trap seen from the other side: frozen at an
+     arbitrary dashoffset it can land mid-gap and leave the live path invisible.
+     Pin it to a phase that actually draws. */
+  .map__path--live { animation: none; stroke-dashoffset: 0; }
+}
+
+/* ---------- forced colours ---------- */
+
+/* High-contrast mode strips background-image, background-color and box-shadow
+   from every plate in this file, but it does NOT touch `filter`. That left the
+   hard drop shadow of a now-transparent panel painting as a detached grey slab
+   offset 6/8px — under the relic tooltip it read as redaction bars struck
+   through the text, and the same ghosts trailed Menu, Run log, the merchant
+   headings and Leave merchant.
+
+   Zeroing the two tokens is the whole fix: all twelve consumers spend them
+   inside `drop-shadow()`, so one override reaches every one and any future one.
+   `0 0 0 transparent` is used rather than `filter: none` on a list of selectors
+   because two of those twelve also carry `brightness(1.15)`, and the spent
+   relic chip's `grayscale()` is the ONLY cue left distinguishing it once the
+   plate is stripped — a blanket filter reset would erase both. */
+@media (forced-colors: active) {
+  :root {
+    --hard-shadow: 0 0 0 transparent;
+    --hard-shadow-lg: 0 0 0 transparent;
+  }
+
+  /* Hand the native controls back. High contrast forces `background-image` to
+     `none` — gradients included — but leaves `appearance: none` alone, so a
+     drawn mark simply disappears while the control that would have drawn it
+     natively stays suppressed. For a checkbox that means CHECKED and UNCHECKED
+     render identically: the tick is a gradient, and the `:checked` border is
+     forced to the same system colour as the unchecked one. State conveyed by
+     nothing at all (WCAG 1.4.1). The `<select>` chevron is drawn the same way
+     and vanishes with it. `appearance: auto` restores both. */
+  input[type='checkbox'],
+  select {
+    appearance: auto;
+  }
+
+  /* The chosen-key reticle is eight gradient layers and its plate colour is
+     forced flat, so selection had no visual cue either. A system-coloured ring
+     is the one thing high contrast is guaranteed to paint. */
+  .sts-scope .is-chosen,
+  .sts-scope [aria-pressed='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  /* An element gets ONE outline, and the shared focus rule above is (0,3,1) —
+     so focusing a chosen key replaced its selection ring with the focus ring,
+     which forced colours remap to CanvasText. Focused-and-chosen then looked
+     exactly like focused-and-unchosen, losing the state on the keyboard path
+     this block exists to serve. A doubled ring at (0,3,1), later in the file,
+     reads as both at once. */
+  .sts-scope button.is-chosen:focus-visible,
+  .sts-scope button[aria-pressed='true']:focus-visible {
+    /* 5px double, not 4px: at 4px this drew two hairlines and the CHOSEN key
+       read lighter than an unchosen focused one at solid 3px — the selected
+       option looking less emphasised than the unselected. 5px puts more ink
+       down than the plain ring while staying inside the 7px chamfer. */
+    outline: 5px double Highlight;
+    outline-offset: -5px;
+  }
+
+  /* The compendium renders outside `.sts-scope`, so the ring above never reached
+     its filter buttons. Their pressed cues are `color`/`border-color`/
+     `background` — all forced flat — plus `box-shadow` glows and a `filter`
+     applied to a gradient, both of which forced colours drops. Measured
+     byte-identical pressed vs unpressed: 0 of 10608 pixels on Card Type, 0 of
+     4340 on Cost.
+     Scoped to the `.compendium__filters` aside rather than to one group,
+     because all three live there and fixing only `__pools` left the identical
+     bug two rows below it. The sort toggle matches too and is unharmed — its
+     state is carried by its own glyph. */
+  .compendium__filters [aria-pressed='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  /* The companion the `.sts-scope` pair above already has, and the reason it
+     needs one: an element gets ONE outline, and this rule at (0,2,0) beats the
+     global `:focus-visible` at (0,1,0) — so the SELECTED button in each group
+     rendered byte-identically focused and unfocused. Tabbing a filter group
+     showed a ring on three of four buttons and nothing on the fourth. */
+  .compendium__filters [aria-pressed='true']:focus-visible {
+    outline: 5px double Highlight;
+    outline-offset: -5px;
+  }
+}
+
+/* ---------- the header HP pip ---------- */
+
+/* The run's health, pinned beside gold on every screen. Red ink on the plate
+   the other pips already provide — layout, gap and alignment all come from
+   `.run-status > .pip:not(.pip--energy)` above, so only the ink is set here.
+
+   `tabular-nums` so the pip does not reflow the header every time HP changes.
+
+   The heart lives in `::before` to keep it out of the markup, not out of the
+   accessible name: `role="img"` on the span means the `aria-label` replaces the
+   whole subtree, so no descendant contributes either way. The `/ ''` is kept
+   only so the glyph stays decorative if that role is ever dropped.
+
+   Both selectors are needed to win the cascade: this ties
+   `.run-status > .pip:not(.pip--energy)` at (0,3,0) and takes it on source
+   order. Without `.sts-scope` it is (0,2,0) and loses outright — the HP then
+   renders cream, indistinguishable from the rest of the header. */
+.sts-scope .run-status > .pip--hp {
+  color: var(--red-text);
+  font-family: 'Kreon', Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.sts-scope .run-status > .pip--hp::before {
+  content: '♥' / '';
+  color: #c0403a;
+  font-size: 0.95em;
+}
+
+/* ---------- the merchant's card shelf ---------- */
+
+/* The shop sells cards, so it shows cards. `RoomScreen` now renders a real
+   `Card` per slot instead of a name-and-rarity plaque, which is what the reward
+   screen one room over has always done — buying blind off two words was the
+   complaint. */
+.sts-scope .merchant-cards {
+  /* Smaller than a reward card: the shop shows three of these ABOVE the card
+     removal row, and at the reward screen's size that row fell below the fold.
+     Rules text stays legible at this width — checked on Sentinel, the wordiest
+     card in the starter pool. */
+  --card-width: clamp(92px, 11vh, 116px);
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-width), max-content));
+  align-items: start;
+  gap: 0.9rem;
+}
+
+.sts-scope .merchant-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+/* styles.css dresses every `.merchant-board button` as a teal plate, and the
+   shop-tile rule above re-dresses it. A card face IS the button here, so both
+   have to come back off — otherwise the art sits inside a shop tile and reads
+   as a plaque again.
+
+   The `:not(.merchant-removal button)` is carried over deliberately, not copied
+   by accident: it is what the tile rule above uses, and `:not()` takes its
+   argument's specificity, so that rule is (0,3,2). Without matching it here
+   this reset is (0,3,1) and LOSES on `padding` and `min-height` regardless of
+   source order. `* { box-sizing: border-box }` IS set (styles.css), so the
+   button's own box held — but `.card-face` is `position: absolute; inset: 0`,
+   which resolves against the PADDING box, so the 0.7rem/0.8rem padding shrank
+   the face inside it by 1.6rem x 1.4rem, broke its aspect ratio, and left the
+   "Sold" plate visibly smaller than a real card beside it. */
+/* A shop card the seat cannot buy must STAY greyed out under the pointer.
+   styles.css dresses `.merchant-board button:hover:not(:disabled)` with a gold
+   outline, +18% brightness and a 2px lift — written when the tile was a real
+   `<button disabled>`, which that `:not()` excluded. `Card` uses `aria-disabled`
+   instead (deliberately, so the tile stays focusable), so the rule now matches
+   an unaffordable card and un-greys it the moment it is hovered: it reads as
+   buyable and is not. Worst online, where every tile is blocked for any seat
+   that is not the one shopping.
+
+   All FOUR of that rule's properties have to come back off, not just the two
+   that dim the card: its `outline: 3px solid #f2c451` is this file's own "you
+   can act on this" affordance, so leaving it meant a card that stayed grey but
+   still lit a gold ring under the pointer.
+
+   `:not(:focus-visible)` is load-bearing, not decoration. Hover and keyboard
+   focus are not exclusive — Tab onto the shelf with the pointer parked over a
+   tile and a card is both. Without the exclusion this rule's (0,5,0) beat every
+   ring that could paint it and left a focused control with NO focus indicator
+   (WCAG 2.4.7). Worst online, where every tile is unplayable for a seat that is
+   not the one shopping, so the whole shelf loses its ring. */
+.sts-scope .merchant-board .merchant-card .card--unplayable:hover:not(:focus-visible) {
+  outline: none;
+}
+
+.sts-scope .merchant-board .merchant-card .card--unplayable:hover,
+.sts-scope .merchant-board .merchant-card .card--unplayable:focus-visible {
+  filter: grayscale(0.7) brightness(0.6);
+  transform: none;
+}
+
+/* styles.css sets `display: block` on every span/strong inside a merchant
+   button — fine for the old text plaque, but it now reaches into the card face
+   and flattens its grid, its clamped title and its centred rules. Normally
+   invisible behind `.card__art`, so it only shows while the scan is loading, if
+   one fails to decode, or the day a sellable card ships without art. Restated
+   here rather than weakening the styles.css rule, which the plaques still use. */
+.sts-scope .merchant-card .card-face,
+.sts-scope .merchant-card .card-face__cost,
+.sts-scope .merchant-card .card-face__rules { display: grid; }
+.sts-scope .merchant-card .card-face__title { display: -webkit-box; }
+
+/* `.card__aoe` is a child of the card BUTTON, not of `.card-face`, so it needs
+   its own arm — and unlike the face it is NOT hidden behind the art: it sits at
+   `z-index: 2`, above the scan, on all 17 row-target cards (Cleave among them).
+   Flattened to a block, its 18px symbol dropped onto the baseline and out of
+   the bottom of its 22px disc, on every one of them, always. */
+.sts-scope .merchant-card .card__aoe { display: grid; place-items: center; }
+
+.sts-scope .merchant-board .merchant-card button:not(.merchant-removal button) {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.sts-scope .merchant-card__sold {
+  display: grid;
+  place-items: center;
+  width: var(--card-width);
+  min-height: calc(var(--card-width) * var(--card-ratio, 1.395));
+  margin: 0;
+  color: #9dc0c0;
+  background: linear-gradient(#26303a, #161c22);
+  box-shadow: inset 0 0 0 2px #5e4520;
+  font-family: 'Kreon', Georgia, serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---------- Neow, full-bleed ---------- */
+
+/* Neow is the first thing a run shows and the client plays it as a full screen,
+   not as a panel on a page. The shell's 1400px cap and its 1rem gutter left a
+   36px letterbox down both sides and a strip under the whale, so the scene read
+   as a widget rather than as a place.
+
+   Horizontally it bleeds the way the potion belt does: 100vw with a negative
+   inline margin cancelling the shell's centring. Vertically the shell drops its
+   own bottom padding and row gap for this phase only, so the `1fr` row runs to
+   the window edge and the `100%` term of the scene's `min-height` fills it.
+   (Negative block margins were tried first: they let following content overlap
+   but do not grow the box, so 32px of shell padding stayed visible under the
+   whale.) The scene's own rule below carries the rest, including the one case
+   `100%` cannot cover; read it before changing either. */
+.app-shell--neow {
+  padding-bottom: 0;
+  gap: 0;
+}
+
+.sts-scope .neow-screen {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  /* THE SCENE MUST BE ABLE TO OUTGROW ITS BOX. `.neow-screen` is `overflow:
+     hidden` (styles.css:71) with no scroller inside it, so anything that gives
+     it a definite height does not scale the table down, it CLIPS it: measured at
+     375x667, two of the four dealt blessing faces were cut off with no gesture
+     that revealed them — against styles.css:54's stated intent that every dealt
+     face stays visible while the active seat resolves. Page scroll is the
+     accepted trade; scrolling to see the table beats not seeing it.
+
+     `flex-shrink: 0` is what allows that, and only the ONLINE shell needs it:
+     `.online-mutations` is a flex column, so the scene's height is its main
+     size. It asked for its content (993px of dealt faces at 320x568), shrank
+     toward the parent, and `min-height` halted the squeeze at 672px — the
+     min-height was never the height there, it was the SHRINK FLOOR, which is
+     why retuning it (5rem, 12rem, 13rem, 14rem) moved the clipping around
+     without ever fixing it.
+
+     The LOCAL shell needs nothing equivalent, even though `.app-shell` is a grid
+     where `flex-shrink` is inert — but the reason is a PRODUCT invariant, not a
+     CSS one, so it is worth stating precisely. `restart` has three real-UI call
+     sites: App.tsx:175 and :268 hard-code a count of 1, and :486 passes
+     `playerCount`, which only `restart` itself ever writes (App.tsx:162). Nothing
+     in the UI raises it, StartMenu renders `characters.slice(0, 1)`, and no
+     RunState is ever restored from storage (only CampaignProgress is persisted).
+     `run.ts`'s `beginCatchUp` does grow a party in place, and real players DO
+     reach it — the room server calls it whenever a seat joins or rejoins a room
+     already in progress. It is irrelevant here for a structural reason rather
+     than a reachability one: it only ever grows a run the SERVER owns, and a
+     server-owned run renders in the online shell. The local run is built by
+     `restart` and nothing else ever touches its party. So
+     the local table is one face and never outgrows its row, and a four-face local
+     table is reachable only through the `__STS_DEBUG__.reset` test hook.
+
+     IF A PARTY-SIZE CONTROL IS EVER WIRED UP, this rule needs the grid-shell
+     equivalent of `flex-shrink: 0` and the local suite needs the multi-face
+     coverage the online one has. An
+     `align-self: start` was added here for that synthetic state and removed
+     again: measured across 13 viewports it changed nothing in the product, and
+     with the min-height neutralised it COLLAPSES the scene (85px at 375x667)
+     rather than growing it, because the whale and hero are absolutely
+     positioned and the in-flow content is short.
+
+     The `min-height` is a floor for when the table is SHORT, never a cap:
+     - `42rem` restates styles.css:60's collapse floor. This rule overrides that
+       declaration outright, so dropping the restatement drops the floor.
+     - `100%` fills the shell's `1fr` row without measuring the header.
+     - `calc(100dvh - 5rem)` is the fallback for the BANNER states — the online
+       reconnect banner and the error alert — where the positional `1fr` goes to
+       the banner and the scene sits in an `auto` row whose height is
+       content-derived, so `100%` has no definite containing block and resolves
+       to 0. Without this term the scene shrank to its content and was pushed to
+       the page bottom: measured 1315px of unpainted page ABOVE it at 1440x2000,
+       and the same shape at 1440x1400, 1024x1366 and 1280x800.
+       Not the RelicResolvePanel state, despite that also displacing the scene —
+       there `100%` still resolves and this term is inert at 6 of 7 sizes.
+       It can only ever overshoot into page scroll, which is the accepted
+       outcome here; the overshoot is the 5rem-vs-real-header slack, 31px. */
+  flex-shrink: 0;
+  min-height: max(42rem, 100%, calc(100dvh - 5rem));
+}
+
+/* ---------- a card becoming another card ---------- */
+
+/* Full-bleed, above everything, and inert: `pointer-events: none` because this
+   plays while the player is mid-action and a 2-second curtain that ate clicks
+   would feel like a freeze rather than a flourish. The run underneath keeps
+   working; this is only the camera cutting to it. */
+.card-morph {
+  position: fixed;
+  z-index: 900;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* `align-content` too, not just `place-items`. `place-items` centres each item
+     WITHIN its row; it does not size the rows, and `align-content` defaults to
+     stretch — so the two auto rows split all the free height between them and
+     the gap below is swamped. Measured before this line: 281px between card and
+     caption at 1440x900 and 820px at 1440x2000, with the card stranded at a
+     third of the height. The caption read as an unrelated label rather than as
+     part of the same object. */
+  align-content: center;
+  gap: 1.4rem;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.85));
+  animation: card-morph-veil 260ms var(--ease-lerp) both;
+}
+
+.card-morph__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* Both faces occupy one cell so the new card grows out of the old one's
+     footprint instead of appearing beside it. */
+  grid-template-areas: 'face';
+}
+
+/* `Card` is passed `playable={false}` here, which earns it `.card--unplayable`
+   and with it `grayscale(0.7) brightness(0.6)`. That is right for a card you
+   cannot play and wrong for the only moment the card IS the screen — the
+   upgraded face was landing centre-stage on a near-black veil, desaturated and
+   at 60% brightness. Worse under reduced motion, which skips straight to that
+   frame and shows nothing else. styles.css already makes exactly this exception
+   for `.campfire__preview`; the morph is the same situation. */
+.card-morph .card--unplayable { filter: none; }
+
+.card-morph__slot {
+  grid-area: face;
+  /* Above the burst. Both are in the same grid cell, and the flash reads as
+     light coming from BEHIND the card. */
+  z-index: 1;
+  /* Roughly twice a hand card. This is the one moment the card is the subject
+     of the screen rather than one of eight things on it. */
+  --card-width: clamp(150px, 26vh, 250px);
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform 320ms var(--ease-lerp),
+    filter 320ms var(--ease-lerp);
+}
+
+/* The old card holds, then blows out white and shrinks away. */
+.card-morph__slot--from { opacity: 1; transform: scale(1); }
+.card-morph--burn .card-morph__slot--from { opacity: 0; transform: scale(0.82); filter: brightness(3.2) saturate(0); }
+.card-morph--new .card-morph__slot--from { opacity: 0; transform: scale(0.82); }
+
+/* The new one lands from slightly larger, the way a stamp comes down. It is
+   already half-present during the burn: cutting the old card to nothing and
+   only THEN bringing the new one in left a beat with neither on screen, which
+   read as the animation having broken rather than as a transition. */
+.card-morph__slot--to { opacity: 0; transform: scale(1.22); }
+.card-morph--burn .card-morph__slot--to { opacity: 0.45; transform: scale(1.12); }
+.card-morph--new .card-morph__slot--to { opacity: 1; transform: scale(1); }
+
+/* The flash between them. Gold for an upgrade, blue-white for a transform,
+   because a transform is a different card rather than a better one. */
+.card-morph__burst {
+  position: absolute;
+  grid-area: face;
+  width: 30rem;
+  height: 30rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--morph-flare, rgb(255 214 122 / 0.95)) 0%, rgb(255 214 122 / 0.25) 38%, transparent 68%);
+  opacity: 0;
+  transform: scale(0.35);
+}
+
+.card-morph--transform { --morph-flare: rgb(178 226 255 / 0.95); }
+
+.card-morph--burn .card-morph__burst { animation: card-morph-burst 520ms var(--ease-lerp) both; }
+
+.card-morph__caption {
+  margin: 0;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 1.5rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.65);
+  opacity: 0;
+  transition: opacity var(--motion-lerp) var(--ease-lerp);
+}
+
+.card-morph--transform .card-morph__caption { color: var(--blue-text); }
+.card-morph--new .card-morph__caption { opacity: 1; }
+
+@keyframes card-morph-veil { from { opacity: 0 } to { opacity: 1 } }
+
+@keyframes card-morph-burst {
+  0% { opacity: 0; transform: scale(0.35); }
+  45% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+/* Reduced motion: the component already skips straight to the result, so the
+   only thing left to disarm is the veil's fade and the residual transitions —
+   the outcome still shows, it just does not move. */
+@media (prefers-reduced-motion: reduce) {
+  .card-morph { animation: none; }
+  .card-morph__slot,
+  .card-morph__caption { transition: none; }
+  .card-morph__burst { animation: none; opacity: 0; }
+}
+
+/* ---------- the end-of-run reckoning ---------- */
+
+.sts-scope .run-summary {
+  display: grid;
+  gap: 1.1rem;
+  width: min(60rem, 100%);
+  margin-inline: auto;
+  text-align: left;
+}
+
+/* The three numbers that describe the climb, as a row of plaques. */
+.sts-scope .run-summary__tallies {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.sts-scope .run-summary__tallies > div {
+  display: grid;
+  gap: 0.1rem;
+  justify-items: center;
+  min-width: 7rem;
+  padding: 0.5rem 0.9rem;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 2px 0 rgb(217 180 91 / 0.22);
+}
+
+.sts-scope .run-summary__tallies dt {
+  color: #9b8a6a;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sts-scope .run-summary__tallies dd {
+  margin: 0;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
+}
+
+.sts-scope .run-summary__seats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sts-scope .run-summary__seat {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  padding: 0.75rem 0.9rem;
+  background: linear-gradient(180deg, rgb(43 31 26 / 0.92), rgb(21 16 12 / 0.94));
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 2px 0 rgb(217 180 91 / 0.22);
+}
+
+/* A fallen seat is dimmed but never hidden — who died is part of the record. */
+.sts-scope .run-summary__seat--dead { box-shadow: inset 0 0 0 2px #5e2a26, inset 0 2px 0 rgb(192 64 58 / 0.3); }
+
+.sts-scope .run-summary__seat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.sts-scope .run-summary__seat-head strong { color: var(--light-yellow); font-size: 1.05rem; }
+.sts-scope .run-summary__character { color: #9b8a6a; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.sts-scope .run-summary__fallen { color: var(--red-text); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; }
+
+.sts-scope .run-summary__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--cream);
+  font-family: 'Kreon', Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.sts-scope .run-summary__hp { color: var(--red-text); }
+.sts-scope .run-summary__deck-size { color: #9dc0c0; }
+
+/* The build in one line: what the deck doubled down on. */
+.sts-scope .run-summary__deck {
+  margin: 0;
+  color: var(--tip-body);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* The bar anchors its tooltips to itself, and here it sits inside a card in a
+   grid — without this the tip would open against whatever is positioned above.
+   `justify-self: start` keeps it the width of its chips: stretched across the
+   seat card, its plate read as an empty text field with three tokens in it.
+
+   It must also WRAP. The wrap in the HUD is scoped to `.run-status > .relic-bar`,
+   so this bar inherited `nowrap` and a late-run seat ran its chips straight out
+   of the card: measured +164px past the card at 10 relics, painting under the
+   next seat, and in the online shell at 1024 it scrolled the page sideways for
+   real (`scrollTo(9999,0)` landed at 154). `max-width: 100%` is what actually
+   bounds it — `justify-self` alone leaves it free to size to content. */
+.sts-scope .run-summary__seat .relic-bar {
+  position: relative;
+  justify-self: start;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+/* Open the tip ABOVE the chip here. Every other bar has room below it; this one
+   sits directly over the screen's only action ("Record campaign result"), and a
+   320px panel with `pointer-events: auto` on the primary CTA is a worse trade
+   than the one made for the potion belt.
+
+   Measured ceiling: below roughly 570px of viewport HEIGHT, with the seat cards
+   scrolled to the top, the flipped tip clips the top edge (at 1280x560 its top
+   is -19 and the relic name is sheared; 1280x580 is the boundary). Accepted —
+   that is under any real desktop window, and the alternative is covering the
+   only button on the screen at every size.
+
+   That number was measured against the BAR. Below 47.99rem the tip is anchored
+   to the seat card instead (see the block at the end of this file), which sits
+   60-90px higher, so it shears sooner there. Same trade, smaller window. */
+.sts-scope .run-summary__seat .relic-tip {
+  top: auto;
+  bottom: calc(100% + 0.75rem);
+}
+
+/* An unaffordable card is `aria-disabled`, not `disabled`, so it stays
+   focusable — the same choice the map nodes make. The pointer should still say
+   it does nothing. */
+.sts-scope .merchant-card .card--unplayable { cursor: not-allowed; }
+
+/* The summary's tooltips on a narrow window.
+
+   This block sits AFTER the `.run-summary__seat .relic-bar` rules on purpose:
+   those are (0,3,0), so an override inside the earlier narrow-viewport block
+   loses the cascade at equal weight no matter what it declares.
+
+   Two things go wrong at small widths otherwise. The general narrow rule sizes
+   the tip with `width: auto` against its containing block, which here is the
+   BAR — about three chips — turning 320px of prose into a ~600px column that,
+   flipped upward, runs off the top of the page. Pinning it back to 320px fixes
+   that but reintroduces the other: the bar sits ~64px into the seat card, so a
+   320px box overhangs the window below ~384px. Tooltips are laid out even while
+   `visibility: hidden`, so that overhang scrolled the whole page sideways on the
+   run's final screen with nothing hovered.
+
+   Anchoring to the seat CARD instead solves both: the card spans the panel, so
+   the tip takes the card's width — never wider than the window, never collapsed
+   to three chips.
+
+   Moving the containing block is the ONLY thing this block needs to do. The
+   `left: 0` comes from `.relic-bar .relic-tip` above and the `right: 0;
+   width: auto; max-width: none` from the general narrow rule, which matches
+   this tip too; restating them here was four dead declarations. */
+@media (max-width: 47.99rem) {
+  .sts-scope .run-summary__seat { position: relative; }
+  .sts-scope .run-summary .run-summary__seat .relic-bar { position: static; }
+}
+
+/* ---------- the online entry, on a narrow window ---------- */
+
+/* `.online-entry` / `.online-lobby` are `display: grid; place-items: center`,
+   whose single implicit column is an AUTO track — it sizes to the panel's
+   max-content, not to the window. So the panel's own `width: min(42rem, 100%)`
+   resolves 100% against a track that is already too wide, and the panel spills:
+   at 360px it measured 373px wide with the page really scrolling 29px sideways
+   (`html { overflow-x: clip }` does not save a grid track that overflows its
+   own container).
+
+   Pre-existing, but this pass made it worse — dressing these screens in
+   `.sts-scope` gave their keys the 1.05rem side padding, which widened "Create
+   room" 69->77 and "Join" 54->62 and roughly doubled the overhang. Bounding the
+   track is the fix for both halves: `minmax(0, …)` lets it shrink, and the
+   panel's existing `min()` then does what it always meant to. */
+.sts-scope:is(.online-entry, .online-lobby) {
+  grid-template-columns: minmax(0, auto);
+}
+
+/* And the join row wraps. It is `nowrap` in styles.css, so a room-code field
+   plus a key could not fit a 360px panel however narrow the track became — the
+   last 4px of overhang after the track fix was this row refusing to break. */
+.sts-scope .online-entry__actions { flex-wrap: wrap; }
+
+/* Neow's own offers use the shared item voice. The potion offer is a
+   `flex-wrap: wrap` row (styles.css), so the prose sits beside the name with
+   the keys pushed right by `.neow-offer__skip`'s `margin-left: auto` — which
+   reads well and needs no line break. This WIDENS the shared measure rather
+   than adding one — `.room-item-text` already caps at 22rem — because Neow's
+   row is far wider than a shop tile and 22rem broke short potion text onto two
+   lines for no reason. A wrap-forcing `flex: 0 0 100%` was tried and does
+   nothing here anyway: `max-width` caps the flex base before it can push
+   anything onto a new line. */
+.sts-scope .neow-offer .room-item-text {
+  max-width: 34rem;
+}
+
+/* The compendium's back arrow, which renders outside `.sts-scope` and so is not
+   in the list above — and could not simply join it, because its clip needs a
+   different offset.
+
+   Its polygon insets the top and bottom edges by 8% of its height: ~5.5px at
+   the 4.3rem min-height. A ring at `-4px` sits 1-4px from each edge, i.e.
+   OUTSIDE that inset, so both horizontal bars were clipped and the indicator
+   collapsed to a single left bar (measured: 177 of 201 changed pixels on the
+   left quarter). `-10px` clears the inset with room to spare. It needs the
+   `main` in the selector to reach (0,3,1) and beat the shared list — a bare
+   `.compendium__back:focus-visible` is (0,2,0) and silently lost, which is how
+   the first attempt at this shipped with no effect. */
+main.compendium .compendium__back:focus-visible {
+  outline: 3px solid var(--sts-gold);
+  outline-offset: -10px;
+}

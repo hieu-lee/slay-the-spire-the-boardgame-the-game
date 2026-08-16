@@ -42,20 +42,21 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
               {offer.relic === null ? <p><button type="button" onClick={() => onRelic(player.id, 'reveal')}>Reveal Relic</button>{' '}
                 <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip Relic unseen</button></p>
                 : typeof offer.relic === 'string' ? <div className="reward-screen__relic"><strong>{relicDef(offer.relic).name}</strong>
-                  <span>{relicDef(offer.relic).text}</span><button type="button" onClick={() => onRelic(player.id, 'gain')}>Gain Relic</button>
+                  <span className="room-item-text">{relicDef(offer.relic).text}</span><button type="button" onClick={() => onRelic(player.id, 'gain')}>Gain Relic</button>
                   <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip</button></div> : null}
               {Array.isArray(offer.bossRelics) ? <div className="reward-screen__relic"><strong>Choose a boss Relic</strong>
                 {offer.bossRelics.map((id) => <button type="button" key={id} onClick={() => onBossRelic(player.id, id)}>{relicDef(id).name} — {relicDef(id).text}</button>)}
                 <button className="reward-screen__skip" type="button" onClick={() => onBossRelic(player.id, null)}>Skip</button></div> : null}
               {offer.potion === null ? (
                 <p><button type="button" onClick={() => onRevealPotion(player.id)}>Reveal Potion</button>{' '}
-                  <button type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip Potion unseen</button></p>
+                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip Potion unseen</button></p>
               ) : typeof offer.potion === 'string' ? (
                 <div className="reward-screen__potion">
                   <strong>{potionDef(offer.potion).name}</strong>
+                  <span className="room-item-text">{potionDef(offer.potion).text}</span>
                   <button type="button" disabled={player.potions.length >= potionLimit || player.relics.some((relic) => relic.defId === 'sozu')}
                     onClick={() => onPotion(player.id, { kind: 'gain' })}>Gain</button>
-                  <button type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip</button>
+                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip</button>
                   {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
                     disabled={player.relics.some((relic) => relic.defId === 'sozu')}
                     onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}>Replace {potionDef(held).name}</button>)}
