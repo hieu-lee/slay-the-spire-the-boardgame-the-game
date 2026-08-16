@@ -2832,21 +2832,17 @@ export function CombatScreen({
               onClick={() => useRelic(relicIndex)}>Reroll with {def.name}</button>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
               <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-              {viewer.hand.map((card) => <button type="button" key={card.uid}
-                aria-pressed={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
+              <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
+                selected={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
                   current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) :
-                    held.defId === 'blue_candle' && current.length >= 2 ? current : [...current, card.uid])}>
-                {relicCardUids.includes(card.uid) ? '✓ ' : ''}{cardDef(card.defId).name}
-              </button>)}
+                    held.defId === 'blue_candle' && current.length >= 2 ? current : [...current, card.uid])} />)}</div>
               <button type="button" onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
                 Activate
               </button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-              {viewer.hand.map((card) => <button type="button" key={card.uid}
-                aria-pressed={relicCardUids[0] === card.uid} onClick={() => setRelicCardUids([card.uid])}>
-                {cardDef(card.defId).name}
-              </button>)}
+              <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
+                selected={relicCardUids[0] === card.uid} onClick={() => setRelicCardUids([card.uid])} />)}</div>
               {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
                 disabled={relicCardUids.length !== 1}
                 onClick={() => useRelic(relicIndex, { cardUids: relicCardUids, enemyUid: enemy.uid })}>

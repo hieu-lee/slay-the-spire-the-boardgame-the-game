@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { cardDef } from '../game/cards.ts'
 import { pendingRelicEligibleCards } from '../game/run.ts'
 import type { PendingRelicPreview } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
 import type { CardInstance } from '../game/types.ts'
+import { Card } from './Card.tsx'
 
 type Props = {
   pending: PendingRelicPreview
@@ -25,17 +25,16 @@ export function RelicResolvePanel({ pending, deck, onResolve }: Props) {
     <h2>Resolve {relicDef(pending.relicId).name}</h2>
     {/* The panel asks the player to pick cards for an effect it never stated. */}
     <p className="room-item-text">{relicDef(pending.relicId).text}</p>
-    {count > 0 ? <div className="campfire__deck">{eligible.map((card) => <button type="button" key={card.uid}
-      aria-pressed={cards.includes(card.uid)} onClick={() => setCards((current) => current.includes(card.uid)
+    {count > 0 ? <div className="campfire__deck">{eligible.map((card) => <Card key={card.uid} card={card}
+      selected={cards.includes(card.uid)} onClick={() => setCards((current) => current.includes(card.uid)
         ? current.filter((uid) => uid !== card.uid)
-        : current.length < count ? [...current, card.uid] : current)}>
-      {cards.includes(card.uid) ? '✓ ' : ''}{cardDef(card.defId).name}{card.upgraded ? '+' : ''}
-    </button>)}</div> : null}
+        : current.length < count ? [...current, card.uid] : current)} />)}</div> : null}
     {(pending.rewardChoices ?? []).map((choices, reward) => <div key={reward} className="campfire__deck">
-      {choices.map((defId, index) => <button type="button" key={`${reward}-${index}`}
-        aria-pressed={rewards[reward] === index} onClick={() => setRewards((current) => {
+      {choices.map((defId, index) => <Card key={`${reward}-${index}`}
+        card={{ uid: `relic-reward-${reward}-${index}`, defId, upgraded: false }}
+        selected={rewards[reward] === index} onClick={() => setRewards((current) => {
           const next = [...current]; next[reward] = index; return next
-        })}>{rewards[reward] === index ? '✓ ' : ''}{cardDef(defId).name}</button>)}
+        })} />)}
       <button type="button" aria-pressed={rewards[reward] === -1} onClick={() => setRewards((current) => {
         const next = [...current]; next[reward] = -1; return next
       })}>{rewards[reward] === -1 ? '✓ ' : ''}Skip reward</button>
