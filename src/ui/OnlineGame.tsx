@@ -486,6 +486,7 @@ export function OnlineGame({ onLocal }: Props) {
         onChoose={(_playerId, optionIndex, decision) => room.act({
           kind: 'neow', stage: 'option', optionIndex, cardUids: decision.cardUids ?? [],
         })}
+        onArmCardGain={morph.armGain}
       /> : null}
       {run.phase === 'setup' && run.setup && !pendingAcquisition ? <QuickSetupScreen
         setup={run.setup}
@@ -545,6 +546,7 @@ export function OnlineGame({ onLocal }: Props) {
           eventForwardRooms={Object.values(run.map.rooms).filter((candidate) => candidate.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((candidate) => ({ id: candidate.id, label: `Floor ${candidate.row + 1} · ${ROOM_LABEL[candidate.kind]}` }))}
           eventPledge={snapshot.eventPledge}
           onCancelEventPayment={() => room.act({ kind: 'eventCancel' })}
+          onArmCardGain={morph.armGain}
         />
       ) : null}
       {run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (

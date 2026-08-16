@@ -24,6 +24,12 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * fired on a plain add would put a bogus animation over a reward screen, which
  * is worse than missing one, so it errs toward silence.
  *
+ * Gains are the one plain-add shape this DOES surface, and only when the
+ * caller explicitly arms it (`gainArmed`): a card that was never shown to the
+ * player before it landed in their deck — Neow's random Rare, an event's
+ * random card reward. A reward screen's pick was already shown as a `Card`
+ * before the player chose it, so those adds stay silent unless armed.
+ *
  * ponytail: one shape it cannot tell apart is the Exchange event's `trade-card`
  * (event-room.ts), which also drops one uid and adds one. From the viewer's own
  * deck that IS a card leaving and a card arriving, so the animation is right and
@@ -32,7 +38,11 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * or more cards at once (Empty Cage, a 2-card transform) are missed entirely,
  * which is the intended direction to fail in.
  */
-export function diffDeckMorphs(before: readonly CardInstance[], after: readonly CardInstance[]): CardMorphRequest[] {
+export function diffDeckMorphs(
+  before: readonly CardInstance[],
+  after: readonly CardInstance[],
+  gainArmed = false,
+): CardMorphRequest[] {
   const previous = new Map(before.map((card) => [card.uid, card]))
   const current = new Map(after.map((card) => [card.uid, card]))
 
@@ -55,8 +65,11 @@ export function diffDeckMorphs(before: readonly CardInstance[], after: readonly 
       key: `transform-${gone[0]!.uid}-${arrived[0]!.uid}`,
     }]
     : []
+  const gains = gainArmed && transforms.length === 0
+    ? arrived.map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
+    : []
 
-  return [...upgrades, ...transforms]
+  return [...upgrades, ...transforms, ...gains]
 }
 
 /**
@@ -93,13 +106,14 @@ export function planMorphs(
   after: readonly CardInstance[] | undefined,
   runChanged: boolean,
   phaseChanged: boolean,
+  gainArmed = false,
 ): MorphPlan {
   if (runChanged) return { baseline: after ?? null, mode: 'replace', morphs: [] }
   if (!after) return { baseline: null, mode: 'idle', morphs: [] }
   // No baseline yet: this deck is the baseline. Without it, mounting mid-run —
   // a reload, or restoring a save — would replay every upgrade already carried.
   if (!before) return { baseline: after, mode: 'idle', morphs: [] }
-  const morphs = diffDeckMorphs(before, after)
+  const morphs = diffDeckMorphs(before, after, gainArmed)
   if (phaseChanged) return { baseline: after, mode: 'replace', morphs }
   return { baseline: after, mode: morphs.length > 0 ? 'append' : 'idle', morphs }
 }
@@ -114,19 +128,28 @@ export function useCardMorphs(
   deck: readonly CardInstance[] | undefined,
   runId?: string,
   phase?: string,
-): { current: CardMorphRequest | null; dismiss: () => void } {
+): { current: CardMorphRequest | null; dismiss: () => void; armGain: () => void } {
   const previous = useRef<readonly CardInstance[] | null>(null)
   const previousRun = useRef(runId)
   const previousPhase = useRef(phase)
   const [queue, setQueue] = useState<CardMorphRequest[]>([])
+  // Set right before an action that may silently add a random card (Neow's
+  // random Rare, an event's random card reward), consumed by the very next
+  // deck diff so it cannot leak onto a later, unrelated add. If that action
+  // turns out to be rejected by the engine (deck reference unchanged), the
+  // flag stays armed for whatever the next real deck change is — the same
+  // narrow-inference trade-off the diff above already accepts elsewhere.
+  const gainArmed = useRef(false)
 
   useEffect(() => {
     const runChanged = previousRun.current !== runId
     const phaseChanged = previousPhase.current !== phase
     previousRun.current = runId
     previousPhase.current = phase
+    const armed = gainArmed.current
+    gainArmed.current = false
 
-    const plan = planMorphs(previous.current, deck, runChanged, phaseChanged)
+    const plan = planMorphs(previous.current, deck, runChanged, phaseChanged, armed)
     previous.current = plan.baseline
     if (plan.mode === 'replace') setQueue(plan.morphs)
     else if (plan.mode === 'append') setQueue((pending) => [...pending, ...plan.morphs])
@@ -140,6 +163,7 @@ export function useCardMorphs(
   // "burn" — for as long as the player kept clicking. The functional updater
   // means there is nothing to close over.
   const dismiss = useCallback(() => setQueue((pending) => pending.slice(1)), [])
+  const armGain = useCallback(() => { gainArmed.current = true }, [])
 
-  return { current: queue[0] ?? null, dismiss }
+  return { current: queue[0] ?? null, dismiss, armGain }
 }

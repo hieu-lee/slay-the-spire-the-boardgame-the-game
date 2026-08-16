@@ -364,6 +364,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
         onReward={(playerId, choice) => setRun((current) => resolveNeowReward(current, playerId, choice))}
         onEffect={(playerId, gain, decision) => setRun((current) => resolveNeowEffect(current, playerId, gain, decision))}
         onChoose={(playerId, optionIndex, decision) => setRun((current) => chooseNeow(current, playerId, optionIndex, decision))}
+        onArmCardGain={morph.armGain}
       /> : null}
 
       {!allocatingCampaignMarks && run.phase === 'setup' && run.setup && !pendingAcquisition ? <QuickSetupScreen
@@ -444,6 +445,7 @@ function LocalGame({ open, onOpen, onOnline }: { open: boolean; onOpen: () => vo
           onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
           sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
           eventForwardRooms={Object.values(visibleMap(run).rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${room.hidden ? 'Unknown' : ROOM_LABEL[room.kind]}` }))}
+          onArmCardGain={morph.armGain}
         />
       ) : null}
 

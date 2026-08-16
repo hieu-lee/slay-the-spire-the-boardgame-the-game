@@ -3067,7 +3067,7 @@ button:disabled {
 
 .merchant-shelf h3, .merchant-cards h3 { grid-column: 1 / -1; margin: 0; color: #f2dda9; }
 
-.merchant-board button, .event-options button, .event-cards button, .treasure-actions button {
+.merchant-board button, .event-options button, .treasure-actions button {
   min-height: 88px;
   padding: .7rem;
   color: #f7eddb;
@@ -3082,7 +3082,7 @@ button:disabled {
 .merchant-board button:focus-visible,
 .event-options button:hover:not(:disabled),
 .event-options button:focus-visible,
-.event-cards button:focus-visible,
+.event-cards button:focus-visible:not(.card),
 .treasure-actions button:focus-visible {
   outline: 3px solid #f2c451;
   outline-offset: 3px;
@@ -3136,7 +3136,16 @@ button:disabled {
 .event-options button strong, .event-options button span { display: block; }
 .event-options button strong { color: #f4cf71; font: 700 1.1rem Georgia, serif; }
 .event-cards { display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: 1rem; border-color: #706458; }
-.event-cards button[aria-pressed='true'] { color: #17120b; background: #f4cf71; }
+.event-cards button:not(.card) { min-height: 88px; padding: .7rem; color: #f7eddb; background: linear-gradient(#313e40, #172328); border: 2px solid #708489; border-radius: 7px; box-shadow: 0 5px 0 #0b1012; cursor: pointer; }
+.event-cards button[aria-pressed='true']:not(.card) { color: #17120b; background: #f4cf71; }
+
+/* `.event-cards--deck` is a picker built from the WHOLE deck (Big Fish asks
+   for a starter Strike out of ten-plus cards), unlike a `.event-cards` reward
+   offer's two or three printed choices. Smaller than the default hand-sized
+   card and height-capped with its own scroll, the same way the hand and the
+   log are — without either, a big enough deck pushed the event's own option
+   buttons off a compact desktop window. */
+.event-cards--deck { --card-width: clamp(64px, 9vh, 92px); max-height: 9rem; overflow-y: auto; align-content: flex-start; }
 .event-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0 0 1rem; }
 .event-selectors label { display: grid; gap: .25rem; color: #d6c8b1; font-size: .78rem; }
 .event-selectors select, .event-selectors input { min-width: 0; }

@@ -33,6 +33,8 @@ type Props = {
   onReward: (playerId: string, choice: number | null | PotionRewardDecision, stage: 'red' | 'reward') => void
   onEffect: (playerId: string, gain: boolean, decision: NeowDecision) => void
   onChoose: (playerId: string, optionIndex: number, decision: NeowDecision) => void
+  /** Arms the next deck change to play as a reveal, for a card gained without ever being shown (a random Rare). */
+  onArmCardGain?: () => void
 }
 
 function offerNames(offer: NeowRewardOffer | null): string[] {
@@ -124,7 +126,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
   </div>
 }
 
-export function NeowScreen({ players, progress, viewerId, potionLimit, enabled = true, disabledMessage, onViewer, onGold, onReveal, onReward, onEffect, onChoose }: Props) {
+export function NeowScreen({ players, progress, viewerId, potionLimit, enabled = true, disabledMessage, onViewer, onGold, onReveal, onReward, onEffect, onChoose, onArmCardGain }: Props) {
   const participants = players.filter((player) => progress[player.id])
   const viewerParticipates = participants.some((player) => player.id === viewerId)
   const viewer = participants.find((player) => player.id === viewerId) ?? participants[0]
@@ -222,7 +224,10 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
             ? current.filter((uid) => uid !== candidate.uid)
             : current.length < selection.count ? [...current, candidate.uid] : current)} />)}</div> : null}
         <button type="button" disabled={!enabled || selectedCards.length !== selection.count}
-          onClick={() => onEffect(viewer.id, true, { cardUids: selectedCards })}>Gain reward</button>
+          onClick={() => {
+            if (effect.kind === 'randomRare') onArmCardGain?.()
+            onEffect(viewer.id, true, { cardUids: selectedCards })
+          }}>Gain reward</button>
         <button type="button" disabled={!enabled} onClick={() => onEffect(viewer.id, false, {})}>Skip reward</button>
       </fieldset> : null}
       {!enabled && !viewerProgress.done ? <p className="neow-action__waiting" role="status">

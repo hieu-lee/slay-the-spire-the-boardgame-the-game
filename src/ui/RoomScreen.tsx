@@ -38,6 +38,8 @@ type Props = {
   onCancelEventPayment?: () => void;
   eventCanSkip?: boolean;
   onSkipEvent?: (playerId: string) => void;
+  /** Arms the next deck change to play as a reveal, for a card gained without ever being shown (a random card/rare reward). */
+  onArmCardGain?: () => void;
 };
 
 type PropsPledgeMap = Record<
@@ -530,6 +532,7 @@ function EventScreen({
   onCancelEventPayment,
   eventCanSkip = false,
   onSkipEvent,
+  onArmCardGain,
 }: Props & { room: Extract<Props["room"], { kind: "event" }> }) {
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
@@ -767,7 +770,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <label>Your relic<select disabled={Boolean(pending?.relicIds)} value={effectiveRelic} onChange={(event) => setRelicId(event.target.value)}><option value="">Choose one</option>{player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicOptionLabel(relic.defId)}</option>)}</select></label> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <label>Your relic<select disabled={Boolean(pending?.relicIds)} value={effectiveRelic} onChange={(event) => setRelicId(event.target.value)}><option value="">Choose one</option>{player.relics.map((relic) => <option key={relic.defId} value={relic.defId}>{relicOptionLabel(relic.defId)}</option>)}</select></label> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -862,7 +865,7 @@ function EventScreen({
           ))}
         </div>
         {maximumCards > 0 ? (
-          <fieldset className="event-cards">
+          <fieldset className="event-cards event-cards--deck">
             <legend>Choose cards as required by your option</legend>
             {selectableCards.map((card) => (
               <Card
@@ -981,6 +984,12 @@ function EventScreen({
               (effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source !== "colorless") && !effect.random,
             );
             const prismaticRare = choiceEffects.some((effect) => effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source === "rare");
+            // ponytail: `choiceEffects` only expands a `roll-d6` branch once `pendingDie` is
+            // set, which happens AFTER this option is clicked — so a random card/rare reward
+            // nested inside a die-roll outcome would never arm the gain reveal. No event does
+            // that today (grep `random: true` in events.ts); if one ever does, arm from the
+            // roll's own resolution instead of here.
+            const grantsRandomCard = choiceEffects.some((effect) => (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true);
             return (
               <button
                 type="button"
@@ -1000,17 +1009,20 @@ function EventScreen({
                   (room.card.id === "secret_portal" && !roomId) ||
                   cards.length !== requiredCards || cardsInvalid
                 }
-                onClick={() =>
-                  knowing
-                    ? setSelectedOptions((current) =>
-                        current.includes(choice.id)
-                          ? current.filter((id) => id !== choice.id)
-                          : current.length < 2
-                            ? [...current, choice.id]
-                            : current,
-                      )
-                    : submit([choice.id], prismaticRare ? rareRewardSources : rewardSources)
-                }
+                onClick={() => {
+                  if (knowing) {
+                    setSelectedOptions((current) =>
+                      current.includes(choice.id)
+                        ? current.filter((id) => id !== choice.id)
+                        : current.length < 2
+                          ? [...current, choice.id]
+                          : current,
+                    );
+                    return;
+                  }
+                  if (grantsRandomCard) onArmCardGain?.();
+                  submit([choice.id], prismaticRare ? rareRewardSources : rewardSources);
+                }}
               >
                 <strong>[{choice.label}]</strong>
                 <span>{choice.description}</span>
@@ -1024,7 +1036,10 @@ function EventScreen({
             className="room-proceed"
             disabled={selectedOptions.length < 1 || selectedOptions.length > 2 ||
               selectedPrismaticReward && (selectedPrismaticRare ? rareRewardSources.length !== 3 : rewardSources.length !== 3)}
-            onClick={() => submit(selectedOptions, selectedPrismaticRare ? rareRewardSources : rewardSources)}
+            onClick={() => {
+              if (selectedChoiceEffects.some((effect) => (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();
+              submit(selectedOptions, selectedPrismaticRare ? rareRewardSources : rewardSources);
+            }}
           >
             Confirm chosen questions →
           </button>

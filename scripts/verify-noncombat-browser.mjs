@@ -387,7 +387,7 @@ await page.evaluate(() => {
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   debug.setRun(run)
 })
-await page.getByLabel('Card to remove').selectOption({ index: 1 })
+await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 const brokePartyControlsDisabled = await page.waitForFunction(() => {
   const buttons = [...document.querySelectorAll('button')]
   return buttons.some((button) => button.textContent?.includes('Anchor') && button.disabled) &&
@@ -417,7 +417,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const localDeckSize = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck.length)
-await page.getByLabel('Card to remove').selectOption({ index: 1 })
+await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 await page.getByRole('button', { name: /Remove/ }).click()
 await page.waitForFunction((size) => window.__STS_DEBUG__.getRun().players[0].deck.length === size - 1, localDeckSize)
 const removalPayerGold = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[1].gold)
@@ -1479,16 +1479,26 @@ check('Merchant clears a replacement after that Potion leaves the buyer inventor
   assert(consecutivePotionEnabled)
 })
 
-const pendingRemovalUid = liveRoom.run.players[0].deck.find((card) => card.defId !== 'ascenders_bane').uid
-liveRoom.merchantPledges = { [`remove/${onlineSeats[0].playerId}`]: { kind: 'removal', buyerId: onlineSeats[0].playerId, cardUid: pendingRemovalUid, payments: { [onlineSeats[0].playerId]: 1 } } }
+const removableDeck = liveRoom.run.players[0].deck.filter((card) => card.defId !== 'ascenders_bane')
+// A fresh deck is several duplicate-named Strikes and Defends, so identifying
+// the restored pick by its accessible name alone cannot tell "the pledged
+// UID" apart from "a different card that merely shares its name". The picker
+// renders `removableDeck` in this exact order (RoomScreen.tsx's own filter),
+// so position is the uid-specific assertion here.
+const pendingRemovalIndex = 1
+const pendingRemovalCard = removableDeck[pendingRemovalIndex]
+liveRoom.merchantPledges = { [`remove/${onlineSeats[0].playerId}`]: { kind: 'removal', buyerId: onlineSeats[0].playerId, cardUid: pendingRemovalCard.uid, payments: { [onlineSeats[0].playerId]: 1 } } }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
 await ann.locator('.connection--connected').waitFor()
-const restoredRemovalUid = await ann.getByLabel('Card to remove').inputValue()
-const restoredRemovalLocked = await ann.getByLabel('Card to remove').isDisabled()
+const removalGroup = ann.getByRole('group', { name: 'Card to remove' })
+const restoredRemovalSelectedCount = await removalGroup.getByRole('button', { pressed: true }).count()
+const restoredRemovalPledgedPressed = await removalGroup.getByRole('button').nth(pendingRemovalIndex).getAttribute('aria-pressed')
+const restoredRemovalLocked = await removalGroup.getByRole('button').nth(pendingRemovalIndex).getAttribute('aria-disabled')
 check('Merchant reconnect restores and locks the removal owner’s authorized card', () => {
-  assertEqual(restoredRemovalUid, pendingRemovalUid)
-  assert(restoredRemovalLocked)
+  assertEqual(restoredRemovalSelectedCount, 1, 'exactly one card is marked selected')
+  assertEqual(restoredRemovalPledgedPressed, 'true', 'the SPECIFIC pledged card (by position, not just by name) is the one selected')
+  assertEqual(restoredRemovalLocked, 'true')
 })
 liveRoom.merchantPledges = undefined
 liveRoom.version += 1

@@ -46,6 +46,31 @@ check('gaining a card is not a transform', () => {
   assertEqual(diffDeckMorphs(base, [...base, card('c9', 'anger')]).length, 0)
 })
 
+check('an armed gain surfaces the arrived card, with no source to burn from', () => {
+  const found = diffDeckMorphs(base, [...base, card('c9', 'anger')], true)
+  assertEqual(found.length, 1)
+  assertEqual(found[0].kind, 'gain')
+  assertEqual(found[0].from, null)
+  assertEqual(found[0].to.uid, 'c9')
+})
+
+check('arming does not turn a real transform into a gain', () => {
+  // Whichever inference wins, only one request should come out of a single
+  // one-out-one-in diff.
+  const after = [card('c2', 'strike'), card('c3', 'defend'), card('c9', 'anger')]
+  const found = diffDeckMorphs(base, after, true)
+  assertEqual(found.length, 1)
+  assertEqual(found[0].kind, 'transform')
+})
+
+check('arming a two-card gain queues both', () => {
+  // Embrace Madness adds two random card rewards in one step.
+  const after = [...base, card('c9', 'anger'), card('c10', 'cleave')]
+  const found = diffDeckMorphs(base, after, true)
+  assertEqual(found.length, 2)
+  assert(found.every((entry) => entry.kind === 'gain'))
+})
+
 check('removing a card is not a transform', () => {
   assertEqual(diffDeckMorphs(base, base.slice(1)).length, 0)
 })
@@ -209,6 +234,21 @@ check('losing the deck clears the baseline without touching the queue', () => {
   const plan = planMorphs(plain, undefined, false, false)
   assertEqual(plan.mode, 'idle')
   assertEqual(plan.baseline, null)
+})
+
+check('an armed plain add appends as a gain', () => {
+  const gained = [...plain, card('c9', 'anger')]
+  const plan = planMorphs(plain, gained, false, false, true)
+  assertEqual(plan.mode, 'append')
+  assertEqual(plan.morphs.length, 1)
+  assertEqual(plan.morphs[0].kind, 'gain')
+})
+
+check('an unarmed plain add stays silent', () => {
+  const gained = [...plain, card('c9', 'anger')]
+  const plan = planMorphs(plain, gained, false, false)
+  assertEqual(plan.mode, 'idle')
+  assertEqual(plan.morphs.length, 0)
 })
 
 report('run presentation')

@@ -21,9 +21,10 @@ const BURN = 520
 const HOLD_NEW = 900
 
 export type CardMorphRequest = {
-  /** Distinguishes the two verbs in the caption and the burst's colour. */
-  kind: 'upgrade' | 'transform'
-  from: CardInstance
+  /** Distinguishes the verb in the caption and the burst's colour. */
+  kind: 'upgrade' | 'transform' | 'gain'
+  /** Null for `gain`: a random reward or blessing card comes from nowhere, not from another card. */
+  from: CardInstance | null
   to: CardInstance
   /** Same uid across a run's worth of morphs would collide in the queue. */
   key: string
@@ -75,7 +76,7 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
     // lives for the length of the queue; only the stage below is keyed.
   }, [request.key, onDone])
 
-  const verb = request.kind === 'upgrade' ? 'Upgraded' : 'Transformed'
+  const verb = request.kind === 'upgrade' ? 'Upgraded' : request.kind === 'transform' ? 'Transformed' : 'Gained'
   return (
     // `inert` as well as `aria-hidden`: `Card` renders a real <button>, and an
     // aria-hidden subtree containing a focusable control is the classic
@@ -85,9 +86,13 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
       {/* Keyed so each card's own transitions start from the top even though
           the veil around them persists across the queue. */}
       <div className="card-morph__stage" key={request.key}>
-        <div className="card-morph__slot card-morph__slot--from">
-          <Card card={request.from} playable={false} />
-        </div>
+        {/* A `gain` has no source card — the burst still fires, but it flares
+            out of nothing rather than out of a card blowing away. */}
+        {request.from ? (
+          <div className="card-morph__slot card-morph__slot--from">
+            <Card card={request.from} playable={false} />
+          </div>
+        ) : null}
         <div className="card-morph__slot card-morph__slot--to">
           <Card card={request.to} playable={false} />
         </div>
@@ -115,8 +120,10 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
  */
 function cardMorphAnnouncement(request: CardMorphRequest, name: (card: CardInstance) => string) {
   return request.kind === 'upgrade'
-    ? `${name(request.from)} upgraded to ${name(request.to)}.`
-    : `${name(request.from)} transformed into ${name(request.to)}.`
+    ? `${name(request.from!)} upgraded to ${name(request.to)}.`
+    : request.kind === 'transform'
+      ? `${name(request.from!)} transformed into ${name(request.to)}.`
+      : `Gained ${name(request.to)}.`
 }
 
 /**
