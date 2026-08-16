@@ -37,7 +37,11 @@ const CHARACTERS = [
   ['watcher', 'Watcher'],
 ] as const
 
-type Props = { onLocal: () => void }
+type Props = {
+  onLocal: () => void
+  sfxEnabled: boolean
+  onToggleSfx: () => void
+}
 
 function playerForUi(player: VisiblePlayer): Player {
   return {
@@ -152,7 +156,7 @@ function VoiceControls({ voice, seats, connected }: {
   )
 }
 
-export function OnlineGame({ onLocal }: Props) {
+export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const room = useRoomSession()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
@@ -297,6 +301,9 @@ export function OnlineGame({ onLocal }: Props) {
                 checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
               {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
             </label> : null}
+            <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
+              Sound effects {sfxEnabled ? 'on' : 'off'}
+            </button>
             <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
               <legend>Official run setup</legend>
               <MetaRunOptions
@@ -384,6 +391,9 @@ export function OnlineGame({ onLocal }: Props) {
           </details> : null}
           {snapshot.seats.map((seat) => <span className="pip" key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
           <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
+          <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
+            Sound effects {sfxEnabled ? 'on' : 'off'}
+          </button>
           <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
           </div>
         </details>

@@ -595,6 +595,14 @@ button:disabled {
   background: linear-gradient(#3a3224, #1d1a15);
 }
 
+.start-menu__setup > .sfx-toggle {
+  min-height: 2rem;
+  border: 1px solid #8c6a2c;
+  border-radius: .2rem;
+  color: #f4dfaa;
+  background: linear-gradient(#3a3224, #1d1a15);
+}
+
 .start-menu__setup label { display: grid; gap: 0.2rem; color: #d9c796; font-size: 0.65rem; text-transform: uppercase; }
 .start-menu__setup select,
 .start-menu__setup input { min-height: 2rem; border: 1px solid #655339; border-radius: 0.2rem; background: #181a18; color: #f2e8d3; padding: 0.3rem 0.45rem; }

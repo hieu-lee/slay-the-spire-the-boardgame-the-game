@@ -268,6 +268,7 @@ export function EnemyCard({
     <button
       type="button"
       className={className}
+      data-sfx="enemy"
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,

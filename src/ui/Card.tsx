@@ -365,6 +365,7 @@ export function Card({
     <button
       type="button"
       className={className}
+      data-sfx={def.type === 'attack' ? 'attack' : def.type === 'power' ? 'magic' : 'card'}
       style={{
         // Tilt with distance from the middle, and drop the outer cards a
         // little so the row reads as an arc rather than a shelf.
