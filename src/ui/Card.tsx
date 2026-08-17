@@ -399,8 +399,8 @@ export function Card({
         loading="lazy"
         onLoad={(event) => revealDecodedImage(event.currentTarget)}
         onError={(event) => {
-          // Not every card has a scan in the source set (Daze, for one). Fall
-          // back to the card frame rather than showing a broken image.
+          // Some source-set cards have no scan. Fall back to the card frame
+          // rather than showing a broken image.
           event.currentTarget.style.visibility = 'hidden'
         }}
       />
