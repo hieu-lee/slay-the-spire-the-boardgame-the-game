@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import { relicDef } from '../game/relics.ts'
 import type { RelicDef } from '../game/relics.ts'
 import type { RelicInstance } from '../game/types.ts'
-import { Icon } from './Icon.tsx'
+import { relicIconPath } from '../game/assets.ts'
 
 /**
  * How each relic pool reads on the token. All five, not just the three the
@@ -174,7 +174,7 @@ function RelicChip({ relic }: { relic: RelicInstance }) {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       aria-label={[`${def.name}.`, `${rarity}.`, def.text, distinctRule(def), note].filter(Boolean).join(' ')}>
-      <Icon name="relic" size={22} />
+      <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
       <RelicTooltip id={relic.defId} note={note} />
     </span>
   )

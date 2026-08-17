@@ -348,6 +348,10 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
+          autoAdvance={!run.courier.offer}
+          courierAvailable={!run.courier.usedBy.includes(viewerId) &&
+            run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
+          mutationsEnabled={!run.courier.offer}
           onChange={(next: CombatState) => setRun((current) => ({ ...current, combat: next }))}
         /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}

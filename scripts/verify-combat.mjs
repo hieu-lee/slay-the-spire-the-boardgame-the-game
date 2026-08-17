@@ -40,6 +40,7 @@ import {
   startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
+  startTurnNeedsChoice,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
@@ -8519,6 +8520,29 @@ check('Distilled Chaos privately queues three cards and plays them in the chosen
   assertEqual(state.pendingDistilled, undefined)
 })
 
+check('Distilled Chaos excludes cards removed by immediate draw reactions', () => {
+  const slimed = instance('slimed')
+  const state = combat([
+    makePlayer({ draw: [slimed], potions: ['distilled_chaos'], energy: 1 }),
+  ], [makeEnemy({ defId: 'awakened_one_phase_2', isBoss: true })])
+  const used = activatePotion(state, 'p1', 'distilled_chaos')
+  assertEqual(used.pendingDistilled, undefined)
+  assertDeepEqual(used.players[0].hand, [])
+  assertEqual(used.players[0].energy, 0)
+  assert(used.log.some((line) => line.includes('Exhausts Slimed to Void')))
+})
+
+check('Distilled Chaos settles combat won by an immediate draw reaction', () => {
+  const slimed = instance('slimed')
+  const fireBreathing = instance('fire_breathing')
+  const state = combat([
+    makePlayer({ draw: [slimed], powers: [fireBreathing], potions: ['distilled_chaos'], energy: 0 }),
+  ], [makeEnemy({ hp: 1, maxHp: 1 })])
+  const used = activatePotion(state, 'p1', 'distilled_chaos')
+  assertEqual(used.phase, 'won')
+  assertEqual(used.pendingDistilled, undefined)
+})
+
 check('Liquid Memories makes exactly the recovered card free this turn', () => {
   const recovered = instance('bash')
   let state = combat([makePlayer({ discard: [recovered], potions: ['liquid_memories'], energy: 0 })], [makeEnemy()])
@@ -8638,6 +8662,17 @@ check("Nilry's Codex cannot reroute its own die ability", () => {
     phase: 'start', die: 4 }
   assertEqual(activateRelic(state, 'p1', 0, {
     targetRelicPlayerId: 'p1', targetRelicIndex: 0, targetAbilityIndex: 0,
+  }), state)
+})
+
+check('reroute Relics ignore fallen teammates in Last Stand', () => {
+  const state = { ...combat([
+    makePlayer({ relics: [{ defId: 'loaded_die', spent: false }] }),
+    makePlayer({ id: 'p2', name: 'Silent', dead: true, relics: [{ defId: 'ink_bottle', spent: false }] }),
+  ], [makeEnemy()]), phase: 'start', die: 6 }
+  assertEqual(startTurnNeedsChoice(state), false)
+  assertEqual(activateRelic(state, 'p1', 0, {
+    targetRelicPlayerId: 'p2', targetRelicIndex: 0, targetAbilityIndex: 0,
   }), state)
 })
 

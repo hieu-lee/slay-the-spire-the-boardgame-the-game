@@ -5,7 +5,7 @@
 // over a reward screen, or none where a card really did change.
 import { diffDeckMorphs, planMorphs } from '../src/ui/useCardMorphs.ts'
 import { deckHighlights } from '../src/ui/run-summary-data.ts'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('run presentation')
 
@@ -71,8 +71,17 @@ check('arming a two-card gain queues both', () => {
   assert(found.every((entry) => entry.kind === 'gain'))
 })
 
-check('removing a card is not a transform', () => {
-  assertEqual(diffDeckMorphs(base, base.slice(1)).length, 0)
+check('removing cards queues each departed face without inventing a replacement', () => {
+  const found = diffDeckMorphs(base, base.slice(2))
+  assertEqual(found.length, 2)
+  assert(found.every((entry) => entry.kind === 'remove' && entry.to === null))
+  assertEqual(found.map((entry) => entry.from.uid).join(','), 'c1,c2')
+})
+
+check('removing one card while upgrading another queues both animations', () => {
+  const found = diffDeckMorphs(base, [card('c1', 'strike', true), card('c3', 'defend')])
+  assertDeepEqual(found.map((entry) => entry.kind), ['upgrade', 'remove'])
+  assertEqual(found[1].from.uid, 'c2')
 })
 
 check('a multi-card swap is ignored rather than guessed at', () => {

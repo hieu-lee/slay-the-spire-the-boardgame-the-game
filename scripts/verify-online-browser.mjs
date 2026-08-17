@@ -44,6 +44,11 @@ for (const context of [aContext, bContext]) {
   await context.addInitScript(() => {
     const sockets = []
     window.__ROOM_SOCKETS__ = sockets
+    window.__SFX_PLAYS__ = []
+    HTMLMediaElement.prototype.play = function play() {
+      window.__SFX_PLAYS__.push(new URL(this.src).pathname)
+      return Promise.resolve()
+    }
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
         const socket = new Target(...args)
@@ -491,15 +496,19 @@ try {
   // Hold authentication after the reconnect GET has completed, then kill an
   // enemy before the first WebSocket snapshot. Both catch-up snapshots are
   // restoration, not live hits, even though the mounted board stays present.
+  liveRoom.run.combat.enemies[0].weak = 0
+  rooms.publishRoom(code)
+  await a.waitForFunction(() => !document.querySelector('.enemy')?.getAttribute('aria-label')?.includes('Weak'))
   const restoredEnemy = structuredClone(liveRoom.run.combat.enemies[0])
   await a.evaluate(() => {
+    window.__SFX_PLAYS__ = []
     window.__HOLD_ROOM_AUTH__ = true
     window.__RELEASE_ROOM_AUTH__ = undefined
     window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'death animation reconnect test')
   })
   await a.locator('.connection--reconnecting').waitFor()
   await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
-  Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true })
+  Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true, weak: 1 })
   rooms.publishRoom(code)
   await b.locator('.enemy--dead').first().waitFor()
   await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
@@ -510,9 +519,12 @@ try {
     falling: enemy.classList.contains('enemy--falling'),
     animation: getComputedStyle(enemy.querySelector('.enemy__portrait')).animationName,
   }))
-  check('a retained online combat does not replay deaths learned during reconnect', () => {
+  const reconnectWeakSounds = await a.evaluate(() => window.__SFX_PLAYS__
+    .filter((path) => path === '/assets/sfx/weak.ogg').length)
+  check('a retained online combat does not replay effects learned during reconnect', () => {
     assertEqual(reconnectDeathMotion.falling, false)
     assertEqual(reconnectDeathMotion.animation, 'none')
+    assertEqual(reconnectWeakSounds, 0)
   })
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)
   rooms.publishRoom(code)
@@ -1040,6 +1052,115 @@ try {
     assertEqual(liveRoom.run.combat.players.find((player) => player.name === 'Ann').attacksPlayedThisTurn, 2)
   })
   await a.screenshot({ path: join(outDir, '02c-double-tap-resolved.png'), fullPage: true })
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    character: 'ironclad',
+    hand: [{ uid: 'online-havoc-race', defId: 'havoc', upgraded: true }],
+    draw: [{ uid: 'online-havoc-race-defend', defId: 'defend_ironclad', upgraded: false }],
+    discard: [], exhaust: [], powers: [], energy: 0, drawLocked: false, cardPlayLocked: false,
+    cardsPlayedThisTurn: 0, attacksPlayedThisTurn: 0,
+  })
+  Object.assign(boLive, { ...boBeforeFinale, miracles: 1, energy: 2 })
+  Object.assign(liveRoom.run.combat, {
+    phase: 'player', startTurnProgress: undefined, pendingCardCopy: undefined, pendingTriggers: [],
+  })
+  const havocRaceEnemies = structuredClone(liveRoom.run.combat.enemies)
+  liveRoom.run.combat.enemies = [{ ...liveRoom.run.combat.enemies[0], uid: 'online-havoc-race-target',
+    hp: 6, maxHp: 6, block: 0, weak: 0, vulnerable: 0, poison: 0, dead: false }]
+  const publishHavocRace = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishHavocRace.ok, 'could not publish the online Havoc race fixture')
+  let havocRequestStartedWhileLocked = false
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    await a.waitForFunction(() => document.querySelector('.hand [aria-label^="Havoc+,"]')
+      ?.getAttribute('aria-disabled') === 'true')
+    havocRequestStartedWhileLocked = true
+    const response = await route.fetch()
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500))
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await a.getByRole('button', { name: /^Havoc\+, cost 0,/ }).click()
+  for (let attempt = 0; attempt < 50 && !liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    .exhaust.some((card) => card.uid === 'online-havoc-race-defend'); attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('online Havoc stages its forced card after the originating request unlocks', () => {
+    const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+    assert(havocRequestStartedWhileLocked, 'the Havoc request started before the card action locked')
+    assert(ann.exhaust.some((card) => card.uid === 'online-havoc-race-defend'),
+      `forced Defend did not exhaust: ${JSON.stringify(ann)}`)
+    assertEqual(liveRoom.run.combat.startTurnProgress, undefined, 'forced progress remained')
+  })
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-refused-forced-defend', defId: 'defend_ironclad', upgraded: false }],
+    discard: [], draw: [], exhaust: [], energy: 0,
+  })
+  liveRoom.run.combat.startTurnProgress = { choices: [], forcedCard: {
+    playerId: annLive.id, cardUid: 'online-refused-forced-defend', sourceCardId: 'havoc', exhaustNonPower: true,
+  } }
+  let refusedForcedAttempts = 0
+  const refusedForcedFailureStart = failures.length
+  const refusedForcedRoute = async (route) => {
+    refusedForcedAttempts += 1
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'test refusal' }) })
+  }
+  await a.route(`**/api/rooms/${code}/action`, refusedForcedRoute)
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.waitForFunction(() => document.querySelector('.hand [aria-label^="Defend,"]'))
+  await a.waitForTimeout(750)
+  const refusedForcedConflict = failures.findIndex((failure, index) =>
+    index >= refusedForcedFailureStart && failure.includes('409 (Conflict)'))
+  await a.unroute(`**/api/rooms/${code}/action`, refusedForcedRoute)
+  await a.getByRole('button', { name: /^Defend, cost 0,/ }).click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.startTurnProgress?.forcedCard; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  check('a refused forced-card auto-stage attempts once and remains manually retryable', () => {
+    assertEqual(refusedForcedAttempts, 1)
+    assert(refusedForcedConflict >= refusedForcedFailureStart, 'the forced-card refusal did not surface as a conflict')
+    assertEqual(liveRoom.run.combat.startTurnProgress?.forcedCard, undefined)
+    assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust
+      .some((card) => card.uid === 'online-refused-forced-defend'))
+  })
+  failures.splice(refusedForcedConflict, 1)
+
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-reconnect-forced-defend', defId: 'defend_ironclad', upgraded: false }],
+    discard: [], draw: [], exhaust: [], energy: 0,
+  })
+  liveRoom.run.combat.startTurnProgress = { choices: [], forcedCard: {
+    playerId: annLive.id, cardUid: 'online-reconnect-forced-defend', sourceCardId: 'havoc', exhaustNonPower: true,
+  } }
+  const reconnectForcedFailureStart = failures.length
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'forced card reconnect'))
+    await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'test disconnect' }) })
+  }, { times: 1 })
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('.connection--reconnecting').waitFor()
+  await a.locator('.connection--connected').waitFor()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.startTurnProgress?.forcedCard; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const reconnectForcedConflict = failures.findIndex((failure, index) =>
+    index >= reconnectForcedFailureStart && failure.includes('409 (Conflict)'))
+  check('a forced-card auto-stage retries after reconnect', () => {
+    assert(reconnectForcedConflict >= reconnectForcedFailureStart, 'the disconnect fixture did not refuse its first attempt')
+    assertEqual(liveRoom.run.combat.startTurnProgress?.forcedCard, undefined)
+    assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').exhaust
+      .some((card) => card.uid === 'online-reconnect-forced-defend'))
+  })
+  if (reconnectForcedConflict >= reconnectForcedFailureStart) failures.splice(reconnectForcedConflict, 1)
+  liveRoom.run.combat.enemies = havocRaceEnemies
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -2205,6 +2326,41 @@ try {
     assert(preservedLocalPhase.length > 0)
   })
 
+  const charonRestore = structuredClone(liveRoom.run.combat)
+  const annBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const boBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, {
+    phase: 'start', die: 1, startTurnProgress: undefined, pendingTriggers: [], pendingRelicScry: undefined,
+  })
+  Object.assign(annBeforeCharon, { hand: [], relics: [], potions: [], powers: [] })
+  Object.assign(boBeforeCharon, {
+    hand: [{ uid: 'online-charon-card', defId: 'strike_ironclad', upgraded: false }],
+    relics: [{ defId: 'charons_ashes', spent: false }], potions: [], powers: [],
+  })
+  for (const enemy of liveRoom.run.combat.enemies) enemy.pendingDefId = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.combat[data-phase="start"]').waitFor(),
+    b.locator('.combat[data-phase="start"]').waitFor(),
+  ])
+  await b.getByText("Charon's Ashes", { exact: true }).waitFor()
+  await a.waitForTimeout(500)
+  const hiddenCharonSnapshot = await snapshot(a)
+  const hiddenCharonOwner = hiddenCharonSnapshot.run.combat.players.find((player) => player.name === 'Bo')
+  check('the coordinator preserves a teammate Charon window without seeing their hand', () => {
+    assertEqual(hiddenCharonOwner.hand, null)
+    assertEqual(hiddenCharonOwner.handCount, 1)
+    assertEqual(hiddenCharonSnapshot.run.combat.phase, 'start')
+  })
+  liveRoom.run.combat = charonRestore
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.combat[data-phase="player"]').waitFor(),
+    b.locator('.combat[data-phase="player"]').waitFor(),
+  ])
+
   const infiniteRestore = structuredClone(liveRoom.run.combat)
   const annBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   const boBeforeInfinite = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -3059,11 +3215,14 @@ try {
     await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
   })
   const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
+  const onlinePotionCardLoaded = await a.locator('.reward-screen__potion .item-card-image')
+    .evaluateAll((images) => images.length > 0 && images.every((image) => image.naturalWidth > 0))
   const compactPotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
   }))
   check('revealed Potion rewards are shared without foreign controls', () => {
     assertEqual(foreignPotionGain, 0)
+    assert(onlinePotionCardLoaded, 'the revealed Potion omitted its physical card artwork')
     assert(compactPotionLayout.scrollWidth <= compactPotionLayout.width,
       'the outside Potion controls overflow the compact desktop viewport')
     assert(compactPotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
@@ -3266,12 +3425,18 @@ try {
   const duplicateBrewTargets = await fourPages[0].locator('.outside-potions__targets').count()
   const expandedBrewButtons = await brewUses.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute('aria-expanded')))
+  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('.outside-potions__targets .item-card-image')]
+    .every((image) => image.complete && image.naturalWidth > 0))
   const brewReplacementStyles = await fourPages[0].locator('.outside-potions__targets button').evaluateAll((buttons) =>
     buttons.map((button) => ({ label: button.textContent?.trim(), color: getComputedStyle(button).color,
       background: getComputedStyle(button).backgroundColor })))
+  const brewReplacementCards = await fourPages[0].locator('.outside-potions__targets .item-card-image')
+    .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+  await fourPages[0].screenshot({ path: join(outDir, '09-outside-potion-replacement.png'), fullPage: true })
   check('duplicate Entropic Brews open one replacement group', () => {
     assertEqual(duplicateBrewTargets, 1)
     assertDeepEqual(expandedBrewButtons, ['true', 'false'])
+    assertDeepEqual(brewReplacementCards, [true])
     assert(brewReplacementStyles.every((style) => contrastRatio(style) >= 4.5),
       `Potion replacement contrast failed: ${JSON.stringify(brewReplacementStyles)}`)
   })
@@ -3312,6 +3477,11 @@ try {
     color: getComputedStyle(button).color,
     background: getComputedStyle(button).backgroundColor,
   }))
+  await brewDialog.locator('.item-icon-image').first().waitFor()
+  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('[aria-labelledby="entropic-choice-title"] .item-icon-image')]
+    .every((image) => image.complete && image.naturalWidth > 0))
+  const combatReplacementIcons = await brewDialog.locator('.item-icon-image')
+    .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   await fourPages[0].keyboard.press('Escape')
   await brewDialog.waitFor({ state: 'hidden' })
   const afterBrewEscape = await snapshot(fourPages[0])
@@ -3333,6 +3503,7 @@ try {
     assertDeepEqual(afterBrewCancel.run.combat.players.find((player) => player.id === iris.id).potions, originalPotions)
     const contrast = contrastRatio(replacementStyle)
     assert(contrast >= 4.5, `Entropic Brew dialog contrast is only ${contrast.toFixed(2)}:1`)
+    assertDeepEqual(combatReplacementIcons, [true, true])
     const potions = afterOnlineBrew.run.combat.players.find((player) => player.id === iris.id).potions
     assertEqual(potions.length, 3)
     assert(!potions.includes('entropic_brew'))
@@ -3407,6 +3578,7 @@ try {
   })
 
   const rewardIris = fourRoom.run.players.find((player) => player.id === iris.id)
+  rewardIris.potions = ['weak_potion']
   rewardIris.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
   rewardIris.rareRewards = ['bludgeon']
   fourRoom.run = {
@@ -3441,9 +3613,15 @@ try {
   const fourSeatCount = await fourPages[0].locator('.setup .pip').evaluateAll((pips) =>
     pips.filter((pip) => /[●○]/.test(pip.textContent ?? '')).length)
   const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
+  const revealedItemImages = await fourPages[0].locator('.reward-screen__relic > .item-card-image, .reward-screen__potion > .item-card-image')
+    .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+  const heldPotionCards = await fourPages[0].locator('.reward-screen__potion button .item-card-image')
+    .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   const freshRewardChoice = (await snapshot(fourPages[0])).rewardChoice
   check('the four-player Golden Ticket fixture starts genuinely undecided', () => {
     assertEqual(freshRewardChoice, undefined)
+    assertDeepEqual(revealedItemImages, [true, true])
+    assertDeepEqual(heldPotionCards, [true])
   })
   const rewardActionStyles = await fourPages[0].locator('.reward-screen__relic button:not(:disabled), .reward-screen__potion button:not(:disabled)')
     .evaluateAll((buttons) => buttons.map((button) => ({

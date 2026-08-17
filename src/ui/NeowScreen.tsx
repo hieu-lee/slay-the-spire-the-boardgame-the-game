@@ -8,6 +8,7 @@ import { potionDef, relicDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { IconValue } from './Icon.tsx'
+import { ItemImage } from './ItemImage.tsx'
 
 type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'character' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
   deck: CardInstance[] | null
@@ -77,6 +78,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     const limit = potionLimit
     return <div className="neow-offer neow-offer--potion">
       <h3>{potionId ? potionDef(potionId).name : 'Empty Potion supply'}</h3>
+      {potionId ? <ItemImage kind="potion" id={potionId} card /> : null}
       {/* The relic offer twenty lines down prints its text; this one did not, so
           the first potion of the run was the one item in the game accepted blind. */}
       {potionId ? <p className="room-item-text">{potionDef(potionId).text}</p> : null}
@@ -85,7 +87,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
           onClick={() => onResolve({ kind: 'gain' })}>Take Potion</button>
         {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
           disabled={!enabled || blocked} onClick={() => onResolve({ kind: 'replace', potionId: held })}>
-          Replace {potionDef(held).name}
+          <ItemImage kind="potion" id={held} card /> Replace {potionDef(held).name}
         </button>)}
         {players.filter((candidate) => candidate.id !== player.id && !candidate.relics.some((relic) => relic.defId === 'sozu') && candidate.potions.length < limit)
           .map((candidate) => <button type="button" key={candidate.id} disabled={!enabled}
@@ -100,6 +102,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     const relicId = offer.choices[0]
     return <div className="neow-offer neow-offer--relic">
       <h3>{relicId ? relicDef(relicId).name : 'Empty Relic supply'}</h3>
+      {relicId ? <ItemImage kind="relic" id={relicId} card /> : null}
       {relicId ? <p className="room-item-text">{relicDef(relicId).text}</p> : null}
       <div className="neow-offer__actions">
         {relicId ? <button type="button" disabled={!enabled} onClick={() => onResolve(0)}>Take Relic</button> : null}

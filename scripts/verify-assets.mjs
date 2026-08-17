@@ -18,6 +18,7 @@ import {
   CARD_ASSET_ROOT,
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
+import { POTIONS, RELICS } from '../src/game/relics.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
 // checks for — so the check asserted its own side effect and could never fail.
@@ -40,6 +41,8 @@ const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
+const relicIconRoot = join(publicRoot, 'assets/relic-icons')
+const potionIconRoot = join(publicRoot, 'assets/potion-icons')
 const menuRoot = join(publicRoot, 'assets/menu')
 const fontRoot = join(publicRoot, 'assets/fonts')
 const sfxRoot = join(publicRoot, 'assets/sfx')
@@ -55,6 +58,8 @@ const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
+const relicIconFiles = listing(relicIconRoot, '.png')
+const potionIconFiles = listing(potionIconRoot, '.png')
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -68,7 +73,7 @@ const REQUIRED_ICONS = [
 suite('assets')
 
 check('sound effects are complete, compact, and decodable', () => {
-  const expected = ['attack.ogg', 'card.ogg', 'enemy-hit.ogg', 'magic.ogg', 'ui.ogg']
+  const expected = ['attack.ogg', 'card.ogg', 'enemy-hit.ogg', 'magic.ogg', 'ui.ogg', 'weak.ogg']
   assertDeepEqual(listing(sfxRoot, '.ogg').sort(), expected)
   const files = expected.map((file) => join(sfxRoot, file))
   for (const file of files) {
@@ -77,8 +82,8 @@ check('sound effects are complete, compact, and decodable', () => {
     ], { encoding: 'utf8' })
     assert(result.status === 0 && Number(result.stdout) > 0, result.stderr || `${file} did not decode`)
   }
-  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 128 * 1024,
-    'sound effects exceed 128 KiB')
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 160 * 1024,
+    'sound effects exceed 160 KiB')
 })
 
 check('every character card has exactly one committed illustration', () => {
@@ -393,19 +398,48 @@ check('bundled stage and generated icon inventories are complete and decodable',
   ].map((name) => `${name}.png`)
   assertDeepEqual(statusIconFiles.sort(), expectedStatus, 'status icon inventory')
   assertDeepEqual(powerIconFiles.sort(), expectedPowers, 'Power icon inventory')
+  assertDeepEqual(relicIconFiles.sort(), Object.keys(RELICS).map((id) => `${id}.png`).sort(),
+    'relic icon inventory')
+  assertDeepEqual(potionIconFiles.sort(), Object.keys(POTIONS).map((id) => `${id}.png`).sort(),
+    'potion icon inventory')
   const stage = join(combatStageRoot, 'stage-act-1.webp')
   assert(existsSync(stage), 'missing Act I combat stage')
   const stageInfo = spawnSync('webpinfo', ['-summary', stage], { encoding: 'utf8' })
   assert(stageInfo.status === 0 && /Width: 1672[\s\S]*Height: 940/.test(stageInfo.stdout),
     stageInfo.stderr || 'the Act I stage is missing, corrupt, or the wrong size')
   for (const file of [...statusIconFiles.map((name) => join(statusIconRoot, name)),
-    ...powerIconFiles.map((name) => join(powerIconRoot, name))]) {
+    ...powerIconFiles.map((name) => join(powerIconRoot, name)),
+    ...relicIconFiles.map((name) => join(relicIconRoot, name)),
+    ...potionIconFiles.map((name) => join(potionIconRoot, name))]) {
     const bytes = readFileSync(file)
     assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
     assert(bytes.readUInt32BE(16) === 256 && bytes.readUInt32BE(20) === 256,
       `${file} is not 256x256`)
     assert(bytes[25] === 6, `${file} is not an RGBA PNG`)
   }
+})
+
+check('generated status, relic, and potion icons have transparent backgrounds', () => {
+  const files = [statusIconRoot, relicIconRoot, potionIconRoot].flatMap((dir) =>
+    listing(dir, '.png').map((name) => join(dir, name)))
+  const probe = `
+import sys, json
+from PIL import Image
+faults = []
+for name in sys.argv[1:]:
+    alpha = Image.open(name).convert("RGBA").getchannel("A")
+    w, h = alpha.size
+    corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
+               alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
+    visible = sum(1 for value in alpha.getdata() if value > 32) / (w * h)
+    if max(corners) > 8 or visible < 0.01:
+        faults.append(f"{name}: corners={corners}, visible={visible:.3f}")
+print(json.dumps(faults))
+`
+  const result = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'generated icon audit requires python3 + Pillow')
+  const faults = JSON.parse(result.stdout.trim().split('\n').pop())
+  assertDeepEqual(faults, [], 'generated icons need transparent corners and visible art')
 })
 
 // Bytes are not pixels. Every broken conversion this pipeline can produce —
@@ -482,6 +516,8 @@ check('every artwork file fully decodes', () => {
     [iconRoot, 'png', iconFiles.length],
     [statusIconRoot, 'png', statusIconFiles.length],
     [powerIconRoot, 'png', powerIconFiles.length],
+    [relicIconRoot, 'png', relicIconFiles.length],
+    [potionIconRoot, 'png', potionIconFiles.length],
   ]) {
     if (count === 0) continue
     const result = spawnSync('ffmpeg', [

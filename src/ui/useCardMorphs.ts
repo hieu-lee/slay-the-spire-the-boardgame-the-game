@@ -24,6 +24,9 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * fired on a plain add would put a bogus animation over a reward screen, which
  * is worse than missing one, so it errs toward silence.
  *
+ * Plain removals surface every departed card. They cannot be confused with a
+ * transform because that shape also has an arrival.
+ *
  * Gains are the one plain-add shape this DOES surface, and only when the
  * caller explicitly arms it (`gainArmed`): a card that was never shown to the
  * player before it landed in their deck — Neow's random Rare, an event's
@@ -34,9 +37,8 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * (event-room.ts), which also drops one uid and adds one. From the viewer's own
  * deck that IS a card leaving and a card arriving, so the animation is right and
  * only the caption's verb is wrong. Distinguishing them needs the engine to say
- * which it did; not worth a field for one event's wording. Effects that move two
- * or more cards at once (Empty Cage, a 2-card transform) are missed entirely,
- * which is the intended direction to fail in.
+ * which it did; not worth a field for one event's wording. Multi-card transforms
+ * are missed when they also add replacements; pure removals still queue normally.
  */
 export function diffDeckMorphs(
   before: readonly CardInstance[],
@@ -65,11 +67,14 @@ export function diffDeckMorphs(
       key: `transform-${gone[0]!.uid}-${arrived[0]!.uid}`,
     }]
     : []
+  const removals = arrived.length === 0
+    ? gone.map((card) => ({ kind: 'remove' as const, from: card, to: null, key: `remove-${card.uid}` }))
+    : []
   const gains = gainArmed && transforms.length === 0
     ? arrived.map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
     : []
 
-  return [...upgrades, ...transforms, ...gains]
+  return [...upgrades, ...transforms, ...removals, ...gains]
 }
 
 /**

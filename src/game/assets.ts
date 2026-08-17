@@ -5,6 +5,7 @@
 // scripts/verify-assets.mjs proves every card resolves to a file that exists.
 import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
+import type { PotionDef, RelicDef } from './relics.ts'
 
 /** Where the sync script writes, and where the client reads from. */
 export const CARD_ASSET_ROOT = '/assets/cards'
@@ -22,6 +23,19 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 }
+
+export function relicCardImagePath(def: RelicDef): string {
+  const name = def.id === 'ring_of_serpent' ? 'ring-of-the-serpent' : slugify(def.name)
+  return `${CARD_ASSET_ROOT}/relics__${def.pool === 'boss' ? 'boss__' : ''}${name}.webp`
+}
+
+export function potionCardImagePath(def: PotionDef): string {
+  const name = def.id === 'gamblers_brew' ? 'gambler-s-potion' : slugify(def.name)
+  return `${CARD_ASSET_ROOT}/potions__${name}.webp`
+}
+
+export const relicIconPath = (id: string) => `/assets/relic-icons/${id}.png`
+export const potionIconPath = (id: string) => `/assets/potion-icons/${id}.png`
 
 /**
  * The tier directory a card's scan lives in. Player cards are filed by rarity:

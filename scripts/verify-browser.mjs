@@ -558,6 +558,23 @@ check('two identical card upgrades are each announced', () => {
   assert(morphSpoken.regionStillAttached, 'the live region node was replaced rather than blanked')
 })
 await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.players[0].deck = run.players[0].deck.slice(1)
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.locator('.card-morph--remove').waitFor()
+const removalMorph = await page.locator('.card-morph--remove').evaluate((overlay) => ({
+  caption: overlay.querySelector('.card-morph__caption')?.textContent,
+  hasOldCard: Boolean(overlay.querySelector('.card-morph__slot--from .card')),
+  hasReplacement: Boolean(overlay.querySelector('.card-morph__slot--to .card')),
+}))
+check('removing a card burns away the old face without inventing a replacement', () => {
+  assertEqual(removalMorph.caption, 'Removed')
+  assert(removalMorph.hasOldCard, 'the removed card face never appeared')
+  assertEqual(removalMorph.hasReplacement, false)
+})
+await page.waitForFunction(() => !document.querySelector('.card-morph')).catch(() => {})
 
 const firstLocalRun = await readRun()
 const selectedLocalParty = firstLocalRun.players.map((player) => player.character)
@@ -665,6 +682,184 @@ check('Sentry uses a transparent full-body cutout and character status clears HP
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
+const weakPlaysBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.enemies[0].weak = 1
+  next.combat.players[0].weak = 0
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/weak.ogg'), weakPlaysBefore)
+const swappedWeakPlaysBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const next = structuredClone(debug.getRun())
+  next.combat.enemies[0].weak = 0
+  next.combat.players[0].weak = 1
+  debug.setRun(next)
+})
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/weak.ogg'), swappedWeakPlaysBefore)
+check('gaining Weak plays the dedicated effect sound even when another actor spends Weak', () => {
+  assert(true)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat, {
+    phase: 'start', startTurnProgress: undefined, pendingTriggers: [], pendingRelicScry: undefined,
+  })
+  Object.assign(next.combat.players[0], { relics: [], powers: [] })
+  for (const enemy of next.combat.enemies) enemy.pendingDefId = undefined
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+check('a start phase with no choice resolves without a confirmation click', () => assert(true))
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat, {
+    phase: 'start', startTurnProgress: undefined, pendingTriggers: [], pendingRelicScry: undefined, die: 3,
+  })
+  Object.assign(next.combat.players[0], {
+    energy: 0, relics: [{ defId: 'the_abacus', spent: false },
+      { defId: 'happy_flower', spent: false }], potions: [], powers: [],
+  })
+  next.combat.players = next.combat.players.slice(0, 1)
+  for (const enemy of next.combat.enemies) enemy.pendingDefId = undefined
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use The Abacus' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const deterministicPostRollEnergy = await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].energy)
+check('spending the last optional post-roll item auto-resolves one deterministic ability', () => {
+  assertEqual(deterministicPostRollEnergy, 1)
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat, {
+    phase: 'start', startTurnProgress: undefined, pendingTriggers: [], pendingRelicScry: undefined, die: 6,
+  })
+  Object.assign(next.combat.players[0], {
+    hand: [{ uid: 'targetless-reroute-strike', defId: 'strike_ironclad', upgraded: false }],
+    energy: 1, relics: [{ defId: 'loaded_die', spent: false }], potions: [], powers: [],
+  })
+  next.combat.players = next.combat.players.slice(0, 1)
+  for (const enemy of next.combat.enemies) enemy.pendingDefId = undefined
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+check('a post-roll reroute Relic with no eligible target does not pause start of turn', () => assert(true))
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', startTurnProgress: undefined, pendingTriggers: [], pendingDistilled: undefined,
+  })
+  Object.assign(player, {
+    hand: [], energy: 0, shivs: 0, miracles: 0, potions: [],
+    powers: [{ uid: 'auto-end-metallicize', defId: 'metallicize', upgraded: false },
+      { uid: 'auto-end-like-water', defId: 'like_water', upgraded: false }], relics: [],
+    strengthLossAtEndOfTurn: 0, stance: 'neutral', orbs: player.orbs.map(() => null),
+  })
+  next.combat.players = next.combat.players.slice(0, 1)
+  next.combat.enemies = next.combat.enemies.slice(0, 1)
+  for (const enemy of next.combat.enemies) enemy.poison = 0
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForTimeout(650)
+const orderedAutoEndPhase = await page.evaluate(() => window.__STS_DEBUG__.getState().phase)
+const orderedAutoEndChoices = await page.locator('.end-turn-order').getByText('End-turn order (2)').count()
+check('local solo keeps meaningful end-turn ordering manual', () => {
+  assertEqual(orderedAutoEndPhase, 'player')
+  assertEqual(orderedAutoEndChoices, 1)
+})
+await page.evaluate((baseline) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  Object.assign(run.combat, {
+    phase: 'player', turn: run.combat.turn + 1, startTurnProgress: undefined,
+    pendingTriggers: [], pendingDistilled: undefined,
+  })
+  Object.assign(player, {
+    hand: [], energy: 0, shivs: 0, miracles: 0, potions: [], powers: [], relics: [],
+    strengthLossAtEndOfTurn: 0, stance: 'neutral', orbs: player.orbs.map(() => null),
+  })
+  run.combat.players = run.combat.players.slice(0, 1)
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  for (const enemy of run.combat.enemies) enemy.poison = 0
+  debug.setRun(run)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].powers.length === 0)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
+check('local solo automatically ends a turn with no legal action', () => assert(true))
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: run.combat.turn + 2, startTurnProgress: undefined,
+    pendingTriggers: [], pendingDistilled: undefined })
+  Object.assign(player, { hand: [], energy: 10, shivs: 0, miracles: 1, potions: [], powers: [], relics: [],
+    strengthLossAtEndOfTurn: 0, stance: 'neutral', orbs: player.orbs.map(() => null) })
+  run.combat.players = [player]
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  window.__STS_DEBUG__.setRun(run)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
+check('an unusable max-Energy Miracle does not block local solo auto-end', () => assert(true))
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: run.combat.turn + 3, startTurnProgress: undefined,
+    pendingTriggers: [], pendingDistilled: undefined })
+  Object.assign(player, { hand: [], energy: 0, shivs: 0, miracles: 1, potions: [], powers: [],
+    relics: [{ defId: 'ice_cream', spent: false }], strengthLossAtEndOfTurn: 0,
+    stance: 'neutral', orbs: player.orbs.map(() => null) })
+  run.combat.players = [player]
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  window.__STS_DEBUG__.setRun(run)
+}, combatAppearanceRun)
+await page.waitForTimeout(650)
+const iceCreamMiraclePhase = await page.evaluate(() => window.__STS_DEBUG__.getState().phase)
+await page.getByRole('button', { name: 'Use Miracle (+1 Energy)' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 1)
+check('Ice Cream keeps a bankable Miracle action open before local auto-end', () => {
+  assertEqual(iceCreamMiraclePhase, 'player')
+})
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: run.combat.turn + 4, startTurnProgress: undefined,
+    pendingTriggers: [], pendingDistilled: undefined })
+  Object.assign(player, { hand: [], discard: [], energy: 0, shivs: 0, miracles: 0,
+    potions: ['liquid_memories'], powers: [], relics: [], strengthLossAtEndOfTurn: 0,
+    stance: 'neutral', orbs: player.orbs.map(() => null) })
+  run.combat.players = [player]
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  window.__STS_DEBUG__.setRun(run)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
+check('an empty-discard Liquid Memories does not block local solo auto-end', () => assert(true))
+await page.evaluate((baseline) => {
+  const run = structuredClone(baseline)
+  const player = run.combat.players[0]
+  Object.assign(run.combat, { phase: 'player', turn: run.combat.turn + 5, die: 6,
+    startTurnProgress: undefined, pendingTriggers: [], pendingDistilled: undefined })
+  Object.assign(player, { hand: [], discard: [], energy: 0, shivs: 0, miracles: 0, potions: [],
+    powers: [], relics: [{ defId: 'loaded_die', spent: false }], strengthLossAtEndOfTurn: 0,
+    stance: 'neutral', orbs: player.orbs.map(() => null) })
+  run.combat.players = [player]
+  run.combat.enemies = run.combat.enemies.slice(0, 1)
+  window.__STS_DEBUG__.setRun(run)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
+check('a skipped post-roll Relic does not block local solo auto-end', () => assert(true))
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction((uids) => JSON.stringify(window.__STS_DEBUG__.getState().players[0].hand.map((card) =>
+  card.uid)) === JSON.stringify(uids), combatAppearanceRun.combat.players[0].hand.map((card) => card.uid))
+
 // Play a card by clicking it and then clicking an enemy, the way a player does.
 // Rows render highest-first, so the first enemy on screen is NOT enemies[0];
 // the assertion compares total enemy HP instead of guessing which one was hit.
@@ -680,6 +875,7 @@ await page.setViewportSize({ width: 1440, height: 900 })
 const cardTransformBeforeHover = await attackCard.evaluate((card) => getComputedStyle(card).transform)
 await attackCard.hover()
 await attackCard.focus()
+await page.waitForTimeout(200)
 const compactCardChrome = await attackCard.evaluate((card) => {
   const cost = card.querySelector('.card-face__cost')
   return {
@@ -690,12 +886,12 @@ const compactCardChrome = await attackCard.evaluate((card) => {
     transform: getComputedStyle(card).transform,
   }
 })
-check('hovering or focusing a card keeps it compact with one native cost', () => {
+check('hovering or focusing a card lifts it like the digital hand with one native cost', () => {
   assertEqual(compactCardChrome.inspectionCount, 0, 'hover/focus inspection count')
   assertEqual(compactCardChrome.duplicateCostCount, 0, 'duplicate overlay cost count')
   assert(compactCardChrome.nativeCostVisible, 'native card-face cost is hidden')
   assertEqual(compactCardChrome.nativeCost, '1', 'native card-face cost')
-  assertEqual(compactCardChrome.transform, cardTransformBeforeHover, 'hover/focus moved the card')
+  assert(compactCardChrome.transform !== cardTransformBeforeHover, 'hover/focus did not lift and enlarge the card')
 })
 await shot('02a-card-hover-desktop')
 await page.mouse.move(0, 0)
@@ -753,6 +949,166 @@ check('an unplayable card cannot execute', () => {
   assertEqual(afterDisabledClick.players[0].energy, 0)
   assertEqual(afterDisabledClick.log.length, beforeDisabledClick.log.length)
 })
+
+// Regression: choosing a targeted Distilled Chaos card used to leave the
+// modal open. Native showModal() made every enemy behind it inert, so Bash was
+// selected authoritatively but could never receive its target.
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingTriggers: [],
+    startTurnProgress: undefined })
+  Object.assign(player, { hand: [{ uid: 'empty-distilled-strike', defId: 'strike_ironclad', upgraded: false }],
+    draw: [], discard: [], potions: ['distilled_chaos'], energy: 1 })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('distilled_chaos'))
+const emptyDistilledDialog = await page.getByRole('dialog', { name: 'Distilled Chaos' }).count()
+const emptyDistilledPending = await page.evaluate(() => window.__STS_DEBUG__.getState().pendingDistilled)
+check('Distilled Chaos with no drawable cards resolves without an empty modal lock', () => {
+  assertEqual(emptyDistilledDialog, 0)
+  assertEqual(emptyDistilledPending, undefined)
+})
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingTriggers: [],
+    startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'distilled-miracle-strike', defId: 'strike_ironclad', upgraded: false }],
+    draw: [{ uid: 'distilled-after-miracle-defend', defId: 'defend_ironclad', upgraded: false }],
+    discard: [], potions: ['distilled_chaos'], energy: 6, miracles: 1, block: 0,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use Miracle on next card' }).click()
+await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).click()
+await page.getByRole('dialog', { name: 'Distilled Chaos' }).getByRole('button', { name: /Defend/ }).click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().pendingDistilled &&
+  !window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard)
+const distilledAfterMiracle = await readState()
+check('Distilled Chaos clears an armed Miracle before its forced card', () => {
+  assertEqual(distilledAfterMiracle.players[0].miracles, 1)
+  assert(distilledAfterMiracle.players[0].block > 0, 'the forced Defend never resolved')
+})
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingTriggers: [],
+    startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'pre-distilled-strike', defId: 'strike_ironclad', upgraded: false }],
+    draw: [{ uid: 'distilled-after-staging-bash', defId: 'bash', upgraded: false }],
+    discard: [], potions: ['distilled_chaos'], energy: 3,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.locator('.prompt').filter({ hasText: 'Choose an enemy' }).waitFor()
+await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).click()
+const stagedDistilledDialog = page.getByRole('dialog', { name: 'Distilled Chaos' })
+await stagedDistilledDialog.getByRole('button', { name: /Bash/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard?.cardUid ===
+  'distilled-after-staging-bash')
+await page.locator('.hand .card--selected').waitFor()
+const stagedAfterPotion = await page.locator('.hand .card--selected').textContent()
+check('Distilled Chaos replaces stale card targeting with its forced card', () => {
+  assert(stagedAfterPotion.includes('Bash'), `wrong forced card remained staged: ${stagedAfterPotion}`)
+})
+await page.locator('.enemy').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard === undefined)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const bash = { uid: 'distilled-bash-ui', defId: 'bash', upgraded: false }
+  const strike = { uid: 'distilled-strike-ui', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(next.combat, {
+    phase: 'player', pendingDistilled: { playerId: player.id, cards: [bash, strike] },
+    pendingCardCopy: undefined, pendingTriggers: [], startTurnProgress: undefined,
+  })
+  Object.assign(player, { hand: [bash, strike], energy: 0, potions: [] })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const distilledDialog = page.getByRole('dialog', { name: 'Distilled Chaos' })
+await distilledDialog.getByRole('button', { name: /Bash/ }).click()
+await page.waitForFunction(() => !document.querySelector('.distilled-choice[open]') &&
+  window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard?.cardUid === 'distilled-bash-ui')
+await page.locator('.hand .card--selected').waitFor()
+const bashStaged = await page.locator('.hand .card--selected').textContent()
+const beforeDistilledBash = await readState()
+await page.locator('.enemy').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().pendingDistilled?.cards.length === 1 &&
+  document.querySelector('.distilled-choice[open]'))
+const afterDistilledBash = await readState()
+check('Distilled Chaos closes for a targeted card, stages it, then resumes its queue', () => {
+  assert(bashStaged?.includes('Bash'), `expected Bash to stage automatically, got ${bashStaged}`)
+  assert(afterDistilledBash.enemies.some((enemy, index) => enemy.vulnerable > beforeDistilledBash.enemies[index].vulnerable),
+    'Bash never reached its enemy target')
+  assertDeepEqual(afterDistilledBash.pendingDistilled.cards.map((card) => card.uid), ['distilled-strike-ui'])
+})
+await distilledDialog.getByRole('button', { name: /Strike/ }).click()
+await page.waitForFunction(() => !document.querySelector('.distilled-choice[open]'))
+await page.locator('.enemy').first().click()
+await page.waitForFunction(() => !window.__STS_DEBUG__.getState().pendingDistilled)
+const afterDistilledStrike = await readState()
+check('Distilled Chaos can finish the remaining targeted card without locking', () => {
+  assertEqual(afterDistilledStrike.pendingDistilled, undefined)
+  assertEqual(afterDistilledStrike.startTurnProgress?.forcedCard, undefined)
+})
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const remaining = { uid: 'distilled-after-copy', defId: 'strike_ironclad', upgraded: false }
+  Object.assign(next.combat, {
+    phase: 'copy', pendingDistilled: { playerId: player.id, cards: [remaining] }, pendingTriggers: [],
+    startTurnProgress: undefined,
+    pendingCardCopy: {
+      playerId: player.id, card: { uid: 'distilled-double-tap-bash', defId: 'bash', upgraded: false },
+      energySpent: 0, resumePhase: 'player', forcedExhaust: false, forcedChoices: null,
+      deferredHavocs: [], sourceNames: ['Double Tap'], virtualOnly: true,
+    },
+  })
+  Object.assign(player, { hand: [remaining], energy: 0, potions: [] })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('.prompt').filter({ hasText: 'Choose an enemy for Bash copy (Double Tap)' }).waitFor()
+const distilledDuringCopy = await page.getByRole('dialog', { name: 'Distilled Chaos' }).isVisible()
+const copyTargetsOutsideDistilled = await page.locator('.enemy:not([disabled])').count()
+check('Distilled Chaos stays hidden while a queued Double Tap copy needs its target', () => {
+  assertEqual(distilledDuringCopy, false)
+  assert(copyTargetsOutsideDistilled > 0, 'the copy target controls stayed inert')
+})
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const remaining = { uid: 'distilled-after-trigger', defId: 'strike_ironclad', upgraded: false }
+  const enemy = next.combat.enemies[0]
+  Object.assign(next.combat, {
+    phase: 'player', pendingDistilled: { playerId: player.id, cards: [remaining] },
+    pendingCardCopy: undefined, startTurnProgress: undefined, nextTriggerId: 1,
+    pendingTriggers: [{ id: 0, playerId: player.id, sourceId: 'power:distilled-fire-breathing' }],
+    enemies: [
+      { ...enemy, uid: 'distilled-trigger-row-1', row: 0, hp: 10, maxHp: 10, dead: false },
+      { ...enemy, uid: 'distilled-trigger-row-2', row: 1, hp: 10, maxHp: 10, dead: false },
+    ],
+  })
+  Object.assign(player, {
+    hand: [remaining], energy: 0, potions: [],
+    powers: [{ uid: 'distilled-fire-breathing', defId: 'fire_breathing', upgraded: false }],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('.prompt').filter({ hasText: 'Fire Breathing — choose a row' }).waitFor()
+const distilledDuringTrigger = await page.getByRole('dialog', { name: 'Distilled Chaos' }).isVisible()
+const triggerRowsOutsideDistilled = await page.getByRole('button', { name: /Resolve .*Fire Breathing.*row/ }).count()
+check('Distilled Chaos stays hidden while a mandatory trigger needs its row', () => {
+  assertEqual(distilledDuringTrigger, false)
+  assertEqual(triggerRowsOutsideDistilled, 2)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => [...document.querySelectorAll('.card > .card-face > .card-face__illustration')]
+  .every((image) => image.complete && image.naturalWidth > 0))
 
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
@@ -851,7 +1207,8 @@ await page.getByRole('button', { name: 'End turn' }).click()
 const beforeDiscard = await readState()
 check('end-of-turn effects resolve before the hand order is confirmed', () => {
   assertEqual(beforeDiscard.phase, 'discard', 'the game pauses for the post-trigger hand')
-  assertEqual(beforeDiscard.players[0].hand.length, 4, 'the hand is still present for ordering')
+  assertEqual(beforeDiscard.players[0].hand.length, combatAppearanceRun.combat.players[0].hand.length,
+    'the hand is still present for ordering')
 })
 await shot('03b-discard-order')
 const discardPlayers = beforeDiscard.players.filter((player) => !player.dead)
@@ -860,7 +1217,8 @@ if (discardPlayers.length > 1) {
   const waitingForDiscards = await readState()
   check('one local seat cannot finalize another living player\'s hand', () => {
     assertEqual(waitingForDiscards.phase, 'discard', 'the other seat must confirm its own order')
-    assertEqual(waitingForDiscards.players[0].hand.length, 4, 'no hand is discarded early')
+    assertEqual(waitingForDiscards.players[0].hand.length, combatAppearanceRun.combat.players[0].hand.length,
+      'no hand is discarded early')
   })
 }
 for (const player of discardPlayers.slice(1)) await confirmDiscard(player)
@@ -2272,11 +2630,11 @@ await unclippedCard.hover()
 await page.waitForTimeout(250)
 const hoveredCardTop = await inspectCardTop(unclippedCard)
 await shot('06zld-watcher-batch-one')
-check('hand cards stay put on hover and are not clipped at the top edge', () => {
+check('hand cards lift on hover without clipping at the top edge', () => {
   assertEqual(restingCardTop.handOverflowY, 'visible')
   assertDeepEqual(restingCardTop.blockers, [], `resting card top is clipped at ${restingCardTop.top}`)
   assertDeepEqual(hoveredCardTop.blockers, [], `hovered card top is clipped at ${hoveredCardTop.top}`)
-  assertEqual(hoveredCardTop.top, restingCardTop.top, 'hover moved the card')
+  assert(hoveredCardTop.top < restingCardTop.top, 'hover did not lift the card')
 })
 await page.setViewportSize({ width: 1200, height: 650 })
 await page.mouse.move(0, 0)
@@ -2286,10 +2644,10 @@ const shortRestingCardTop = await inspectCardTop(shortViewportCard)
 await shortViewportCard.hover()
 await page.waitForTimeout(250)
 const shortHoveredCardTop = await inspectCardTop(shortViewportCard)
-check('short desktop viewports preserve the stationary unclipped card', () => {
+check('short desktop viewports preserve the lifted unclipped card', () => {
   assertDeepEqual(shortRestingCardTop.blockers, [], `resting card top is clipped at ${shortRestingCardTop.top}`)
   assertDeepEqual(shortHoveredCardTop.blockers, [], `hovered card top is clipped at ${shortHoveredCardTop.top}`)
-  assertEqual(shortHoveredCardTop.top, shortRestingCardTop.top, 'short viewport hover moved the card')
+  assert(shortHoveredCardTop.top < shortRestingCardTop.top, 'short viewport hover did not lift the card')
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 const outerCard = page.locator('.hand .card').first()
@@ -3031,26 +3389,22 @@ const havocCard = page.getByRole('button', { name: /^Havoc\+, cost 0,/ })
 await havocCard.waitFor()
 const havocLabel = await havocCard.getAttribute('aria-label')
 await havocCard.click()
-await page.getByText('Havoc — play the drawn card for 0 Energy').waitFor()
+await page.waitForSelector('.enemy--targeted')
 const havocForced = page.getByRole('button', { name: /^Strike, cost 0,/ })
 await havocForced.waitFor()
 const heldDuringHavoc = page.getByRole('button', { name: /^Defend,/ })
-const havocForcedEnabled = await havocForced.isEnabled()
 const heldDuringHavocEnabled = await heldDuringHavoc.isEnabled()
 const havocEndTurnActions = await page.getByRole('button', { name: 'End turn' }).count()
 const havocShivActions = await page.getByRole('button', { name: /Use Shiv/ }).count()
 const havocMiracleActions = await page.getByRole('button', { name: /Use Miracle/ }).count()
 check('Havoc+ explains its cleanup and locks the hand to its free draw', () => {
   assert(havocLabel.includes('exhaust it unless it is a Power'), havocLabel)
-  assertEqual(havocForcedEnabled, true)
   assertEqual(heldDuringHavocEnabled, false)
   assertEqual(havocEndTurnActions, 0)
   assertEqual(havocShivActions, 0)
   assertEqual(havocMiracleActions, 0)
 })
 await shot('06zpc-havoc-forced-card')
-await havocForced.click()
-await page.waitForSelector('.enemy--targeted')
 await page.locator('.enemy--targeted').click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().startTurnProgress)
 const havoc = await readState()
@@ -4448,7 +4802,7 @@ for (const freeKind of ['forced', 'discounted']) {
     Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, row: actor.row })
     window.__STS_DEBUG__.setRun(run)
   }, { baseline: colorlessBatch1Restore, freeKind })
-  await page.getByRole('button', { name: /^Whirlwind, cost 0,/ }).click()
+  if (freeKind === 'discounted') await page.getByRole('button', { name: /^Whirlwind, cost 0,/ }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard[0]?.defId === 'whirlwind')
   const freeBaseWhirlwind = await readState()
   const freeBasePrompt = await page.locator('.prompt').count()
@@ -4479,7 +4833,6 @@ await page.evaluate((baseline) => {
   Object.assign(run.combat.enemies[0], { hp: 10, maxHp: 10, block: 0, dead: false, row: actor.row })
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
-await page.getByRole('button', { name: /^Whirlwind\+, cost 0,/ }).click()
 await page.getByText(/Choose an enemy.*whole row/).waitFor()
 const forcedWhirlwindEnergyPrompt = await page.getByText('Choose Energy for Whirlwind+').count()
 await page.locator('.enemy--targeted').click()
@@ -4516,18 +4869,14 @@ await page.evaluate((baseline) => {
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
 await waitForAutomaticTurn(2)
-await page.getByText('Mayhem — play the drawn card for 0 Energy').waitFor()
+await page.waitForSelector('.enemy--targeted')
 const forcedMayhem = page.getByRole('button', { name: /^Meteor Strike\+, cost 0,/ })
 await forcedMayhem.waitFor()
 const mayhemPowerLabel = await page.locator('.power[aria-label^="Mayhem+"]').getAttribute('aria-label')
-const forcedMayhemEnabled = await forcedMayhem.isEnabled()
-check('Mayhem announces its discard fallback and enables an otherwise unaffordable card', () => {
+check('Mayhem announces its discard fallback and stages the otherwise unaffordable card', () => {
   assert(mayhemPowerLabel.includes('if it cannot be played, discard it'), mayhemPowerLabel)
-  assertEqual(forcedMayhemEnabled, true)
 })
 await shot('06zq-mayhem-forced-card')
-await forcedMayhem.click()
-await page.waitForSelector('.enemy--targeted')
 await page.locator('.enemy--targeted').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
 const mayhem = await readState()
@@ -4563,7 +4912,6 @@ await page.evaluate((baseline) => {
   window.__STS_DEBUG__.setRun(run)
 }, colorlessBatch1Restore)
 await waitForAutomaticTurn(2)
-await page.getByRole('button', { name: /^Survivor, cost 0,/ }).click()
 await page.getByText(/Discard 1 card.*0\/1 chosen/).waitFor()
 const forcedChoiceFodder = page.getByRole('button', { name: /^Defend,/ }).first()
 const forcedChoiceFodderEnabled = await forcedChoiceFodder.isEnabled()
@@ -9661,7 +10009,6 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
-await page.locator('.relic-actions > summary').click()
 await page.getByRole('button', { name: 'Use Golden Eye' }).click()
 const goldenEyePanel = page.getByRole('dialog', { name: 'Golden Eye — Scry 3' })
 await goldenEyePanel.waitFor()
@@ -9699,15 +10046,17 @@ await page.evaluate(() => {
   ]
   debug.setRun(run)
 })
-await page.locator('.relic-actions > summary').click()
 const invalidPostRollRelics = await page.getByRole('button', {
   name: /Use (Dolly's Mirror|Nilry's Codex|Loaded Die|Charon's Ashes)/,
 }).count()
 await page.getByRole('button', { name: 'Use The Abacus' }).waitFor()
+await page.waitForTimeout(400)
 const validPostRollRelic = await page.getByRole('button', { name: 'Use The Abacus' }).count()
+const postRollPhase = await page.evaluate(() => window.__STS_DEBUG__.getState().phase)
 check('a paused post-roll window shows only Relics matching the rolled face', () => {
   assertEqual(invalidPostRollRelics, 0)
   assertEqual(validPostRollRelic, 1)
+  assertEqual(postRollPhase, 'start')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

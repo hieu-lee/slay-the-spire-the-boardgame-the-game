@@ -4731,20 +4731,23 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
   return finishPreparedStartTurnWithChoices(prepared)
 }
 
+export function hasPostRollStartTurnChoice(state: CombatState): boolean {
+  return state.players.some((player) => player.potions.some((potionId) =>
+    canActivatePotion(state, player, potionId)) || player.relics.some((_relic, relicIndex) =>
+    canActivateRelic(state, player, relicIndex)))
+}
+
+/** Whether start-of-turn resolution contains an order, target, overflow, or Orb decision. */
+export function startTurnNeedsChoice(state: CombatState): boolean {
+  const abilities = startTurnAbilities(state)
+  return hasPostRollStartTurnChoice(state) || abilities.length > 1 || abilities.some((ability) =>
+    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
+    (ability.players?.length ?? 0) > 1 || ability.evokeChoice)
+}
+
 function finishPreparedStartTurnWithChoices(prepared: CombatState): CombatState {
   if (prepared.phase !== 'start' || prepared.startTurnProgress || prepared.pendingTriggers.length > 0) return prepared
-  const postRollItem = prepared.players.some((player) => !player.dead && (
-    player.potions.includes('gamblers_brew') || player.relics.some((relic) => !relic.spent && (
-      ['gambling_chip', 'the_abacus', 'toolbox'].includes(relic.defId) ||
-      relic.defId === 'charons_ashes' && prepared.die <= 2 ||
-      relic.defId === 'dollys_mirror' && prepared.die === 1 ||
-      relic.defId === 'nilrys_codex' && prepared.die === 4 ||
-      relic.defId === 'loaded_die' && prepared.die === 6
-    ))
-  ))
-  const abilities = startTurnAbilities(prepared)
-  return postRollItem || abilities.length > 1 || abilities.some((ability) =>
-    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 || ability.evokeChoice)
+  return startTurnNeedsChoice(prepared)
     ? prepared
     : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
 }
@@ -6011,6 +6014,7 @@ function cardResolutionIsOver(state: CombatState, context: PlayContext, actor: P
 function settle(state: CombatState): CombatState {
   if (lastStandActive(state) && state.players.every((player) => player.dead)) {
     state.pendingTriggers = []
+    delete state.pendingDistilled
     delete state.endTurnProgress
     delete state.pendingCardCopy
     delete state.startTurnProgress
@@ -6022,6 +6026,7 @@ function settle(state: CombatState): CombatState {
   // only a backstop for a state assembled by hand.
   if (state.enemies.every((enemy) => enemy.dead) && state.pendingSummons.length === 0) {
     state.pendingTriggers = []
+    delete state.pendingDistilled
     delete state.endTurnProgress
     delete state.pendingCardCopy
     delete state.startTurnProgress
@@ -6033,6 +6038,7 @@ function settle(state: CombatState): CombatState {
   // only exception, and applies only to a Boss fight.
   if (!lastStandActive(state) && state.players.some((player) => player.dead)) {
     state.pendingTriggers = []
+    delete state.pendingDistilled
     delete state.endTurnProgress
     delete state.pendingCardCopy
     delete state.startTurnProgress
@@ -6133,6 +6139,43 @@ export type RelicContext = {
   shivEnemyUids?: string[]
 }
 
+function publicHandCount(player: Player): number {
+  return (player as Player & { handCount?: number }).handCount ?? player.hand.length
+}
+
+/** Whether a held Relic has a legal manual activation before choosing its targets. */
+export function canActivateRelic(state: CombatState, player: Player, relicIndex: number): boolean {
+  const held = player.relics[relicIndex]
+  if (!held || player.dead || state.pendingDistilled || state.startTurnProgress?.forcedCard ||
+    (state.pendingTriggers?.length ?? 0) > 0 || (state.phase !== 'player' && state.phase !== 'start')) return false
+  const def = relicDef(held.defId)
+  const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
+  const oncePerRoll = reroute || held.defId === 'charons_ashes'
+  const manual = Boolean(def.activation) || oncePerRoll || held.defId === 'holy_water'
+  const postRoll = oncePerRoll || ['gambling_chip', 'the_abacus', 'toolbox'].includes(held.defId)
+  if (!manual || held.spent || held.defId === 'the_courier' ||
+    state.phase === 'start' && !postRoll || postRoll && (state.phase !== 'start' || state.startTurnProgress)) return false
+  if (state.pendingRelicScry) return held.defId === 'golden_eye' &&
+    state.pendingRelicScry.playerId === player.id && state.pendingRelicScry.relicIndex === relicIndex
+  if (held.defId === 'centennial_puzzle' && !player.lostHpThisCombat ||
+    held.defId === 'mummified_hand' && !player.powerPlayedThisTurn ||
+    held.defId === 'red_skull' && !player.shuffledThisCombat ||
+    held.defId === 'self_forming_clay' && !player.lostHpThisCombat ||
+    held.defId === 'holy_water' && (held.cubes ?? 0) < 1 ||
+    held.defId === 'charons_ashes' && (state.die > 2 || publicHandCount(player) === 0) ||
+    held.defId === 'dollys_mirror' && state.die !== 1 ||
+    held.defId === 'nilrys_codex' && state.die !== 4 ||
+    held.defId === 'loaded_die' && state.die !== 6) return false
+  if (reroute) {
+    const face = held.defId === 'dollys_mirror' ? 1 : held.defId === 'nilrys_codex' ? 2 : null
+    return state.players.some((owner) => !owner.dead && owner.relics.some((target, targetRelicIndex) =>
+      relicAbilities(relicDef(target.defId)).some((ability) => ability.trigger.kind === 'dieRelic' &&
+        (face === null || ability.trigger.faces.includes(face)) &&
+        (!['nilrys_codex', 'loaded_die'].includes(held.defId) || owner.id !== player.id || targetRelicIndex !== relicIndex))))
+  }
+  return true
+}
+
 /** Owner-authoritative activation for printed face-down and cube relics. */
 export function activateRelic(
   state: CombatState,
@@ -6140,17 +6183,11 @@ export function activateRelic(
   relicIndex: number,
   context: RelicContext = {},
 ): CombatState {
-  if ((state.pendingTriggers?.length ?? 0) > 0 || state.pendingDistilled ||
-    (state.phase !== 'player' && state.phase !== 'start')) return state
   const player = findPlayer(state, playerId)
   const held = player?.relics[relicIndex]
-  if (!player || player.dead || !held) return state
+  if (!player || !held || !canActivateRelic(state, player, relicIndex)) return state
   const def = relicDef(held.defId)
   const oncePerRoll = ['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
-  const postRoll = oncePerRoll || ['gambling_chip', 'the_abacus', 'toolbox'].includes(held.defId)
-  if (state.phase === 'start' && !postRoll) return state
-  if ((def.activation || oncePerRoll) && held.spent) return state
-  if (postRoll && (state.phase !== 'start' || state.startTurnProgress)) return state
 
   if (held.defId === 'golden_eye') {
     const pending = state.pendingRelicScry
@@ -6200,7 +6237,7 @@ export function activateRelic(
     const ability = targetHeld && relicAbilities(relicDef(targetHeld.defId))[context.targetAbilityIndex ?? 0]
     const face = ability?.trigger.kind === 'dieRelic' ? ability.trigger.faces : []
     const targetFace = held.defId === 'nilrys_codex' ? 2 : held.defId === 'dollys_mirror' ? 1 : undefined
-    if (!owner || !ability || (targetFace !== undefined && !face.includes(targetFace)) ||
+    if (!owner || owner.dead || !ability || (targetFace !== undefined && !face.includes(targetFace)) ||
       ['nilrys_codex', 'loaded_die'].includes(held.defId) && owner.id === playerId &&
       context.targetRelicIndex === relicIndex) return state
   }
@@ -6275,6 +6312,16 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
   return settle(next)
 }
 
+/** Whether a held Potion has a legal activation window or required source card. */
+export function canActivatePotion(state: CombatState, player: Player, potionId: string): boolean {
+  if (player.dead || !player.potions.includes(potionId) || state.startTurnProgress?.forcedCard ||
+    (state.pendingTriggers?.length ?? 0) > 0 || potionId === 'fairy_in_a_bottle') return false
+  if (potionId === 'gamblers_brew') return state.phase === 'start' &&
+    !state.startTurnProgress?.beforeDraw && !state.startTurnProgress?.rollPending &&
+    !state.startTurnProgress?.discard
+  return state.phase === 'player' && (potionId !== 'liquid_memories' || player.discard.length > 0)
+}
+
 /** Use and discard one held potion during the shared Player Turn (p.8, p.12). */
 export function activatePotion(
   state: CombatState,
@@ -6283,14 +6330,10 @@ export function activatePotion(
   context: PotionContext = {},
 ): CombatState {
   const changingDie = potionId === 'gamblers_brew'
-  if ((state.phase !== 'player' && !(changingDie && state.phase === 'start')) || state.startTurnProgress?.forcedCard ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = findPlayer(state, playerId)
-  if (!player || player.dead || !player.potions.includes(potionId)) return state
+  if (!player || !canActivatePotion(state, player, potionId)) return state
   const def = potionDef(potionId)
-  if (changingDie && (!Number.isInteger(context.die) || context.die! < 1 || context.die! > 6 ||
-    state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
-    state.startTurnProgress?.discard)) return state
+  if (changingDie && (!Number.isInteger(context.die) || context.die! < 1 || context.die! > 6)) return state
   if (potionId === 'liquid_memories' && (
     !context.recoverDiscardUid || !player.discard.some((card) => card.uid === context.recoverDiscardUid)
   )) return state
@@ -6341,10 +6384,11 @@ export function activatePotion(
     return next
   }
   if (potionId === 'distilled_chaos') {
-    const cards = drawInto(next, actor, 3)
-    next.pendingDistilled = { playerId: actor.id, cards }
-    next.log = [...next.log, `${actor.name} draws ${cards.length} cards to play for 0 Energy in any order`]
-    return next
+    const drawn = drawInto(next, actor, 3)
+    const cards = drawn.filter((card) => actor.hand.some((held) => held.uid === card.uid))
+    next.pendingDistilled = cards.length ? { playerId: actor.id, cards } : undefined
+    next.log = [...next.log, `${actor.name} draws ${drawn.length} cards; ${cards.length} remain to play for 0 Energy in any order`]
+    return settle(next)
   }
   const ctx: PlayContext = {
     enemyUid: context.enemyUid ?? null,

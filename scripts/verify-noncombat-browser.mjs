@@ -160,9 +160,55 @@ await page.waitForFunction(() => window.__STS_DEBUG__)
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+const soloNeowLayout = await page.evaluate(() => {
+  const neow = document.querySelector('.neow-screen__neow')?.getBoundingClientRect()
+  const speech = document.querySelector('.neow-face--solo')?.getBoundingClientRect()
+  return { speechLeft: speech?.left ?? -1, speechRight: speech?.right ?? innerWidth + 1,
+    gap: neow && speech ? Math.max(0, neow.left - speech.right, speech.left - neow.right) : Infinity,
+    viewportWidth: innerWidth }
+})
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'catch-up-solo-ui'))
+await page.waitForFunction(() => Object.keys(window.__STS_DEBUG__.getRun().neow.players).length === 2)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.setup = { kind: 'catch-up', targetAct: 2, playerIds: ['p2'], rowIndex: 0, repeatIndex: 0, playerIndex: 0, die: null }
+  run.neow.players = { p2: run.neow.players.p2 }
+  debug.setViewer('p1')
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Resolve Silent' }).click()
+await page.getByRole('heading', { name: 'Catch Up in progress' }).waitFor({ state: 'detached' })
+const localSoloCatchUpSwitched = await page.locator('.neow-action__owner > span').textContent()
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'noncombat-ui'))
 await page.waitForFunction(() => Object.keys(window.__STS_DEBUG__.getRun().neow.players).length === 4)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  window.__neowPotionRun = structuredClone(run)
+  run.players[0].potions = ['swift_potion', 'blood_potion', 'energy_potion']
+  run.neow.players.p1.redGoldPending = false
+  run.neow.players.p1.redReward = { kind: 'potion', choices: ['fire_potion'], cardsDrawn: ['fire_potion'] }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.neow-offer--potion button .item-card-image')]
+  .every((image) => image.naturalWidth > 0) && document.querySelectorAll('.neow-offer--potion button .item-card-image').length === 3)
+const localNeowReplacementCards = await page.locator('.neow-offer--potion button .item-card-image').count()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  debug.setViewer('p1')
+  debug.setRun(window.__neowPotionRun)
+  delete window.__neowPotionRun
+})
 suite('non-combat browser')
+
+check('solo Neow dialogue stays on-screen beside Neow', () => {
+  assert(soloNeowLayout.speechLeft >= 0 && soloNeowLayout.speechRight <= soloNeowLayout.viewportWidth)
+  assert(soloNeowLayout.gap <= 16, `Neow dialogue gap is ${soloNeowLayout.gap}px`)
+})
+
+check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))
+check('Neow potion replacement choices use physical card art', () => assertEqual(localNeowReplacementCards, 3))
 
 check('meta setup, achievements, and compact title layout survive real local navigation', () => {
   assertEqual(localAchievementCount, 19)
@@ -351,11 +397,22 @@ await page.getByLabel('Shopping for').selectOption('p1')
 await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await page.locator('.merchant-figure').waitFor()
 await page.screenshot({ path: join(outDir, 'merchant-4p-desktop.png'), fullPage: true })
+const merchantCardFallback = page.locator('.merchant-board .item-card-image').first()
+await merchantCardFallback.evaluate((image) => { image.src = '/missing-item-card.webp' })
+await page.waitForFunction(() => document.querySelector('.merchant-board .item-card-image')
+  ?.getAttribute('src') === '/assets/relic-icons/anchor.png')
+await page.screenshot({ path: join(outDir, 'merchant-item-card-fallback.png'), fullPage: true })
+const merchantFallbackSrc = await merchantCardFallback.getAttribute('src')
+const merchantFallbackFace = await page.locator('.merchant-board .item-card-fallback').count()
 const merchantShape = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, buttons: document.querySelectorAll('.merchant-board button').length, figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0 }))
 check('four-player Merchant is game-framed, responsive, and keyboard reachable', () => {
   assert(!merchantShape.overflow)
   assert(merchantShape.buttons >= 9)
   assert(merchantShape.figure > 200)
+})
+check('missing local item scans fall back to a full generated card face', () => {
+  assertEqual(merchantFallbackSrc, '/assets/relic-icons/anchor.png')
+  assertEqual(merchantFallbackFace, 1)
 })
 await page.keyboard.press('Tab')
 const focused = await page.locator(':focus-visible').count()
@@ -525,15 +582,18 @@ const buyTwo = page.getByRole('button', { name: /\[Buy 2\]/ })
 await buyTwo.focus()
 await buyTwo.press('Enter')
 await page.getByText('These rewards are face-up').waitFor()
-const revealedPotions = await page.locator('.event-cards fieldset legend').allTextContents()
+const revealedPotions = await page.locator('.event-cards > fieldset > legend').allTextContents()
 const passControls = await page.getByLabel('Pass to', { exact: true }).count()
 const replacementControls = await page.getByLabel('Replace', { exact: true }).count()
-for (const fieldset of await page.locator('.event-cards fieldset').all()) await fieldset.getByRole('button', { name: 'Take' }).click()
+const replacementCardImages = await page.locator('fieldset[aria-label="Replace"] .item-card-image')
+  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+for (const fieldset of await page.locator('.event-cards > fieldset').all()) await fieldset.getByRole('button', { name: 'Take' }).click()
 const overCapacityResolveDisabled = await page.getByRole('button', { name: /Resolve rewards/ }).isDisabled()
 check('revealed A4 Potion rewards expose take, skip, pass, and replacement controls', () => {
   assertEqual(revealedPotions.length, 2)
   assertEqual(passControls, 2)
   assertEqual(replacementControls, 2)
+  assertDeepEqual(replacementCardImages, [true, true])
   assertEqual(new Set(revealedPotions).size, 2)
   assert(overCapacityResolveDisabled, 'two taken Potions enabled with only one free A4 slot')
 })
@@ -737,13 +797,25 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-await page.getByLabel('Your relic').selectOption({ index: 1 })
+const joustRelic = page.locator('fieldset').filter({ hasText: 'Your relic' }).getByRole('button').first()
+await page.waitForFunction(() => {
+  const images = [...document.querySelectorAll('fieldset .item-card-image')]
+  return images.length >= 2 && images.every((image) => image.complete && image.naturalWidth > 0)
+})
+const joustItemCards = await page.locator('fieldset').filter({ hasText: /Your relic|Your potions/ })
+  .locator('.item-card-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+await joustRelic.click()
 const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
-await page.getByLabel('Your relic').selectOption('')
+await joustRelic.click()
+const clearedJoustRelic = await joustRelic.getAttribute('aria-pressed')
+const zeroGoldBetAfterClearing = await page.getByRole('button', { name: /\[Bet\]/ }).isDisabled()
 await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
 const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
 check('The Joust enables its printed Relic and Potion alternatives at zero Gold', () => {
   assert(zeroGoldRelicBetEnabled)
+  assertDeepEqual(joustItemCards, [true, true])
+  assertEqual(clearedJoustRelic, 'false')
+  assert(zeroGoldBetAfterClearing)
   assert(zeroGoldPotionBetEnabled)
 })
 
@@ -991,6 +1063,8 @@ await page.evaluate(() => {
     playerId: player.id, cardReward: true, choices: null, upgraded: false, prismatic: true,
     availableSources: ['ironclad', 'silent', 'defect', 'watcher'], potion: false, relic: false, bossRelics: false,
   }))
+  run.players[0].potions = ['swift_potion', 'blood_potion', 'energy_potion']
+  run.rewards[0].potion = 'fire_potion'
   debug.setRun(run)
 })
 const localRewardSources = page.locator('.reward-screen__player').first().getByRole('group', { name: 'Choose 3 different reward decks' })
@@ -1007,9 +1081,47 @@ const localRewardSelectionReconciled = await localRewardSources.evaluate((group)
   checked: group.querySelectorAll('input:checked').length,
   disabled: group.querySelector('button')?.disabled,
 }))
+const localRewardReplacementCards = await page.locator('.reward-screen__players > :first-child .reward-screen__potion button .item-card-image')
+  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 check('local Prismatic reward selections reconcile when a teammate exhausts a source', () => {
   assertEqual(localRewardSelectionReconciled.checked, 2)
   assert(localRewardSelectionReconciled.disabled)
+  assertDeepEqual(localRewardReplacementCards, [true, true, true])
+})
+
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'courier-auto-advance-lock'))
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'map'
+  run.neow = null
+  run.players[0].relics.push({ defId: 'the_courier', spent: false })
+  run.itemDecks.relics = ['anchor', ...run.itemDecks.relics.filter((id) => id !== 'anchor')]
+  debug.setRun(run)
+})
+await page.locator('.room--reachable').click()
+await page.getByRole('complementary', { name: 'The Courier' }).waitFor()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const player = run.combat.players[0]
+  run.combat = {
+    ...run.combat,
+    phase: 'player',
+    players: [{ ...player, hand: [], energy: 0, miracles: 0, shivs: 0, potions: [], powers: [] }],
+  }
+  debug.setRun(run)
+})
+await page.waitForTimeout(650)
+const courierAvailablePhase = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.phase)
+await page.getByRole('button', { name: 'Look at Relic' }).click()
+await page.getByRole('complementary', { name: 'The Courier offer' }).waitFor()
+await page.waitForTimeout(650)
+const courierLockedPhase = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.phase)
+check('an available or open Courier blocks local automatic turn advancement', () => {
+  assertEqual(courierAvailablePhase, 'player')
+  assertEqual(courierLockedPhase, 'player')
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'courier-ui'))
@@ -1065,6 +1177,26 @@ check('The Courier is a contained once-per-combat shared-Gold flow', () => {
   assert(courierRun.combat.players[0].relics.some((relic) => relic.defId === 'anchor'))
   assertEqual(courierRun.combat.players[0].gold, 0)
   assertEqual(courierRun.combat.players[1].gold, 0)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].potions = ['swift_potion', 'blood_potion', 'energy_potion']
+  run.combat.players[0].potions = [...run.players[0].potions]
+  run.courier = { usedBy: ['p1'], offer: { playerId: 'p1', kind: 'potion', id: 'fire_potion' } }
+  debug.setRun(run)
+})
+const courierReplacement = page.getByRole('group', { name: 'Replace Potion' })
+await courierReplacement.waitFor()
+const courierReplacementCards = await courierReplacement.locator('.item-card-image')
+  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+await courierReplacement.getByRole('button', { name: /Swift Potion/ }).click()
+await page.screenshot({ path: join(outDir, 'courier-potion-replacement.png'), fullPage: true })
+const courierReplacementSelected = await courierReplacement.getByRole('button', { name: /Swift Potion/ }).getAttribute('aria-pressed')
+await page.getByRole('button', { name: 'Discard offer' }).click()
+check('Courier potion replacement uses selectable physical card art', () => {
+  assertDeepEqual(courierReplacementCards, [true, true, true])
+  assertEqual(courierReplacementSelected, 'true')
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 
@@ -1451,30 +1583,34 @@ liveRoom.run.ascension = 4
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], gold: 0, potions: ['swift_potion', 'blood_potion'] }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
-await ann.getByLabel('Replace potion').selectOption('swift_potion')
+const merchantReplacement = ann.getByRole('group', { name: 'Replace potion' })
+await merchantReplacement.getByRole('button', { name: /Swift Potion/ }).click()
+const merchantReplacementCards = await merchantReplacement.locator('.item-card-image')
+  .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+await ann.screenshot({ path: join(outDir, 'merchant-potion-replacement.png'), fullPage: true })
 await ann.getByRole('button', { name: /Fire Potion/ }).click()
 const potionContributor = onlinePages[2]
 await potionContributor.reload({ waitUntil: 'networkidle' })
 await potionContributor.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
 const pendingPotion = potionContributor.getByRole('button', { name: /Fire Potion/ })
 const reconnectPotionEnabled = await pendingPotion.isEnabled()
-const contributorReplacementInputs = await potionContributor.getByLabel('Replace potion').count()
+const contributorReplacementInputs = await potionContributor.getByRole('group', { name: 'Replace potion' }).count()
 await pendingPotion.click()
 await potionContributor.getByRole('button', { name: /Sold/ }).first().waitFor()
 check('Merchant reconnect preserves the buyer-authorized potion replacement for contributors', () => {
   assert(reconnectPotionEnabled, 'pending Potion funding required the contributor to guess the buyer replacement')
   assertEqual(contributorReplacementInputs, 0)
+  assertDeepEqual(merchantReplacementCards, [true, true])
   assert(liveRoom.run.players[0].potions.includes('fire_potion'))
   assert(!liveRoom.run.players[0].potions.includes('swift_potion'))
 })
-await ann.waitForFunction(() => [...document.querySelectorAll('label')]
-  .find((label) => label.textContent?.includes('Replace potion'))?.querySelector('select')?.value === '')
-const stalePotionReplacement = await ann.getByLabel('Replace potion').inputValue()
+await ann.waitForFunction(() => document.querySelectorAll('.merchant-potion-discard button[aria-pressed="true"]').length === 0)
+const stalePotionReplacement = await merchantReplacement.getByRole('button', { pressed: true }).count()
 const consecutivePotionDisabled = await ann.getByRole('button', { name: /Swift Potion/ }).isDisabled()
-await ann.getByLabel('Replace potion').selectOption('blood_potion')
+await merchantReplacement.getByRole('button', { name: /Blood Potion/ }).click()
 const consecutivePotionEnabled = await ann.getByRole('button', { name: /Swift Potion/ }).isEnabled()
 check('Merchant clears a replacement after that Potion leaves the buyer inventory', () => {
-  assertEqual(stalePotionReplacement, '')
+  assertEqual(stalePotionReplacement, 0)
   assert(consecutivePotionDisabled)
   assert(consecutivePotionEnabled)
 })
@@ -1509,7 +1645,7 @@ await ann.reload({ waitUntil: 'networkidle' })
 const onlinePotionButtons = ann.locator('.merchant-shelf[aria-label="Potions"] button')
 await ann.getByText('Blocked by Sozu').first().waitFor()
 const onlineSozuMerchantDisabled = await onlinePotionButtons.evaluateAll((buttons) => buttons.every((button) => button.disabled))
-const onlineSozuReplacementControls = await ann.getByLabel('Replace potion').count()
+const onlineSozuReplacementControls = await ann.getByRole('group', { name: 'Replace potion' }).count()
 check('online Merchant disables every Potion purchase for a Sozu recipient', () => {
   assert(onlineSozuMerchantDisabled)
   assertEqual(onlineSozuReplacementControls, 0)
@@ -1833,11 +1969,12 @@ const stagedPage = bo
 await stagedPage.reload({ waitUntil: 'networkidle' })
 await stagedPage.getByRole('heading', { name: 'We Meet Again!' }).waitFor()
 const lockedCard = stagedPage.getByRole('button', { name: 'Inflame' })
-const lockedRelic = stagedPage.locator('.event-panel label').filter({ hasText: 'Your relic' }).locator('select')
+const lockedRelic = stagedPage.locator('fieldset').filter({ hasText: 'Your relic' })
+  .locator('button[aria-pressed="true"]')
 const lockedTarget = stagedPage.getByLabel('Reward recipient')
 const lockedSelectors = {
   cardPressed: await lockedCard.getAttribute('aria-pressed'), cardDisabled: await lockedCard.isDisabled(),
-  relic: await lockedRelic.inputValue(), relicDisabled: await lockedRelic.isDisabled(),
+  relic: await lockedRelic.locator('img').getAttribute('src'), relicDisabled: await lockedRelic.isDisabled(),
   target: await lockedTarget.inputValue(), targetDisabled: await lockedTarget.isDisabled(),
 }
 await stagedPage.locator('.event-stage fieldset').filter({ hasText: 'Anchor' }).getByRole('button', { name: 'Take' }).click()
@@ -1846,7 +1983,7 @@ await stagedPage.waitForFunction(() => Boolean(document.querySelector('.event-st
 check('Event reconnect restores and resolves the authoritative locked selectors', () => {
   assertEqual(lockedSelectors.cardPressed, 'true')
   assert(lockedSelectors.cardDisabled && lockedSelectors.relicDisabled && lockedSelectors.targetDisabled)
-  assertEqual(lockedSelectors.relic, lockedRelicId)
+  assertEqual(lockedSelectors.relic, `/assets/relic-icons/${lockedRelicId}.png`)
   assertEqual(lockedSelectors.target, stagedPlayerId)
   const resolvedPlayer = stagedRoom.run.players.find((player) => player.id === stagedPlayerId)
   assert(!resolvedPlayer.deck.some((card) => card.uid === 'locked-inflame'))

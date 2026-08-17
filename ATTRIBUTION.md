@@ -32,7 +32,7 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
-| Combat stage, actor cutouts, animation VFX, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Combat stage, actor cutouts, animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
@@ -59,16 +59,18 @@ No generated asset contains a card scan, logo, or readable text.
 `public/assets/combat/vfx/` contains five original transparent OpenAI Imagegen effects
 used by the shared idle, hit and defeat animations for every combat actor.
 
-`public/assets/status-icons/` contains fourteen committed generated combat-status symbols,
-and `public/assets/power-icons/` contains twenty-eight committed generated Power symbols.
-Cards without a dedicated Power symbol use a generated generic status symbol.
+`public/assets/status-icons/`, `public/assets/relic-icons/`, and
+`public/assets/potion-icons/` contain committed generated transparent symbols visually grounded
+in crops from their corresponding physical cards. `public/assets/power-icons/` contains
+twenty-eight committed generated Power symbols. Cards without a dedicated Power symbol use a
+generated generic status symbol.
 
 `public/assets/menu/` contains the generated title-screen spire and compendium archive backdrops.
 `public/assets/fonts/Kreon.ttf` is distributed under the bundled `Kreon-OFL.txt` license.
 
 `public/assets/sfx/` contains renamed, unmodified sounds from
 <https://opengameart.org/content/80-cc0-rpg-sfx> (`wood_01`, `book_01`,
-`blade_01`, `spell_01`, and `creature_hurt_01`). The pack is
+`blade_01`, `spell_01`, `spell_02`, and `creature_hurt_01`). The pack is
 released under CC0 1.0.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.

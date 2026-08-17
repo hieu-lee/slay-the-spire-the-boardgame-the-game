@@ -357,7 +357,6 @@ html { overflow-x: clip; }
   .sts-scope .combat__end-turn
 ):focus-visible,
 .game-settings > summary:focus-visible,
-.relic-actions > summary:focus-visible,
 .log > summary:focus-visible,
 .combat-log-drawer > summary:focus-visible,
 .online-lobby__settings > summary:focus-visible,
@@ -780,12 +779,12 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   transition: box-shadow var(--motion-lerp) var(--ease-lerp);
 }
 
-.relic-chip > .icon {
+.relic-chip > .item-icon-image {
   transition: transform var(--motion-lerp) var(--ease-lerp);
 }
 
-.relic-chip:hover > .icon,
-.relic-chip:focus-within > .icon {
+.relic-chip:hover > .item-icon-image,
+.relic-chip:focus-within > .item-icon-image {
   transform: translateY(-2px) scale(1.1);
 }
 
@@ -806,7 +805,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    opacity fades it too, and the one relic whose tooltip carries a
    state-critical line ("already used") would be the one rendered at 62%.
    So the icon is greyed and the plate is darkened, each on its own. */
-.relic-chip--spent > .icon { filter: grayscale(0.85) brightness(0.6); }
+.relic-chip--spent > .item-icon-image { filter: grayscale(0.85) brightness(0.6); }
 
 .relic-chip--spent {
   background: radial-gradient(circle at 38% 30%, #2e261d, #17110c 70%);
@@ -815,7 +814,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     inset 0 -2px 4px rgb(0 0 0 / 0.6),
     0 0 0 2px rgb(0 0 0 / 0.33);
 }
-.relic-chip .icon { width: 1.375rem; height: 1.375rem; }
+.relic-chip .item-icon-image { width: 1.75rem; height: 1.75rem; }
 
 /* Printed relic/potion prose, wherever an item is offered. Same voice as the
    tooltip body, so the shelf and the tooltip agree. */
@@ -928,7 +927,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 /* Native <details> paints its own triangle in the platform's colour and font.
    Removing the marker is what lets the summary become a key. */
 .game-settings > summary,
-.relic-actions > summary,
 .relic-actions details > summary,
 .end-turn-order > summary,
 .log > summary,
@@ -940,7 +938,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .game-settings > summary::-webkit-details-marker,
-.relic-actions > summary::-webkit-details-marker,
 .relic-actions details > summary::-webkit-details-marker,
 .end-turn-order > summary::-webkit-details-marker,
 .log > summary::-webkit-details-marker,
@@ -952,7 +949,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .game-settings > summary,
-.relic-actions > summary,
 .log > summary,
 .online-lobby__settings > summary,
 .start-menu__meta > summary,
@@ -985,7 +981,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    gold a few hundred lines up. `--light-yellow` clears it, and the open state
    is unmistakable from the panel itself rather than from a second hue. */
 .game-settings > summary:hover,
-.relic-actions > summary:hover,
 .log > summary:hover,
 .online-lobby__settings > summary:hover,
 .combat-log-drawer > summary:hover,
@@ -995,7 +990,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .game-settings[open] > summary,
-.relic-actions[open] > summary,
 .online-lobby__settings[open] > summary,
 .start-menu__meta[open] > summary,
 .combat-log-drawer[open] > summary,
@@ -1016,7 +1010,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 /* Inherits 0.65rem uppercase from `.start-menu__meta`; the key sets its own. */
 .start-menu__meta > summary { font-size: 0.8rem; letter-spacing: 0.08em; }
-.relic-actions > summary::before { content: '◆' / ''; }
 .log > summary::before { content: '❧' / ''; font-size: 1rem; }
 
 /* The menu popover is a column of full-width keys, not a row of loose inputs. */
@@ -1858,8 +1851,8 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
      rather than using a blanket `.sts-scope button`, which would also reach the
      hand — its per-card fan rotation lives in `transform` and is layout, not
      decoration. These two lists are the key list verbatim; keep them so. */
-  .relic-chip:hover > .icon,
-  .relic-chip:focus-within > .icon,
+  .relic-chip:hover > .item-icon-image,
+  .relic-chip:focus-within > .item-icon-image,
   .map .room--reachable:hover,
   :is(
     .sts-scope button:not([class]),
@@ -2291,6 +2284,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .card-morph--transform { --morph-flare: rgb(178 226 255 / 0.95); }
+.card-morph--remove { --morph-flare: rgb(255 99 72 / 0.95); }
 
 .card-morph--burn .card-morph__burst { animation: card-morph-burst 520ms var(--ease-lerp) both; }
 
@@ -2307,6 +2301,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .card-morph--transform .card-morph__caption { color: var(--blue-text); }
+.card-morph--remove .card-morph__caption { color: #ff9b78; }
 .card-morph--new .card-morph__caption { opacity: 1; }
 
 @keyframes card-morph-veil { from { opacity: 0 } to { opacity: 1 } }

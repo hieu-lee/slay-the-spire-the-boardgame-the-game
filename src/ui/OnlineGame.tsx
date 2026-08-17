@@ -443,7 +443,9 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           authoritativeRefresh={room.refreshEpoch}
           authoritativeRestoration={room.restorationEpoch}
           authoritativeConnected={room.connection === 'connected'}
-          autoAdvance={room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
+          mutationsEnabled={!run.courier.offer && room.connection === 'connected' &&
+            !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
+          autoAdvance={!run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>

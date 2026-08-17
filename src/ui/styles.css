@@ -51,9 +51,53 @@
 
 .room--hidden { color: #a9a2b5; border-color: #5e596b; background: radial-gradient(circle, #302d39, #17151d); }
 
+.item-card-image {
+  display: block;
+  width: min(9rem, 100%);
+  aspect-ratio: 320 / 457;
+  margin: .45rem auto;
+  object-fit: contain;
+  border-radius: .35rem;
+  filter: drop-shadow(0 .4rem .45rem rgb(0 0 0 / .55));
+}
+
+.item-card-fallback {
+  display: grid;
+  grid-template-rows: auto 1fr auto minmax(3rem, auto);
+  align-items: center;
+  width: min(9rem, 100%);
+  aspect-ratio: 320 / 457;
+  margin: .45rem auto;
+  overflow: hidden;
+  color: #f8efd8;
+  border: .18rem solid #a9833d;
+  border-radius: .55rem;
+  background: linear-gradient(#293c47 0 17%, #152128 17% 66%, #251c18 66%);
+  box-shadow: 0 .4rem .45rem rgb(0 0 0 / .55), inset 0 0 0 .12rem #15100d;
+}
+
+.item-card-fallback--potion { border-color: #6bb1c4; }
+.item-card-fallback > strong { padding: .35rem .25rem; font-size: .78rem; line-height: 1; }
+.item-card-fallback > .item-card-image {
+  width: min(4.4rem, 70%);
+  aspect-ratio: 1;
+  margin: .15rem auto;
+  filter: drop-shadow(0 .25rem .25rem rgb(0 0 0 / .55));
+}
+.item-card-fallback > small { padding: .15rem; color: #d9bf82; font-size: .6rem; text-transform: uppercase; }
+.item-card-fallback > span { padding: .35rem; font-size: .56rem; line-height: 1.2; }
+
+.item-icon-image {
+  width: 1.8rem;
+  height: 1.8rem;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
 /* Neow is a shared table ritual, not another menu: every dealt face and every
    revealed reward stays visible while the active seat resolves its card. */
 .neow-screen {
+  --neow-width: min(53vw, 54rem);
   position: relative;
   isolation: isolate;
   width: 100%;
@@ -77,7 +121,7 @@
   right: -3vw;
   bottom: 10rem;
   left: auto;
-  width: min(53vw, 54rem);
+  width: var(--neow-width);
   height: auto;
   filter: drop-shadow(0 1.5rem 2rem #000c);
   opacity: 1;
@@ -121,6 +165,14 @@
   margin: .75rem 0 0;
 }
 
+.neow-faces:has(.neow-face--solo) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  pointer-events: none;
+}
+
 .neow-face {
   position: relative;
   min-width: 0;
@@ -148,12 +200,14 @@
 .neow-face--solo {
   position: absolute;
   top: 9rem;
-  left: 34%;
-  width: min(21rem, 28vw);
+  right: calc(var(--neow-width) - 9rem);
+  left: auto;
+  width: min(24rem, 34vw);
   padding: 0;
   border: 0;
   background: none;
   box-shadow: none;
+  pointer-events: auto;
 }
 
 .neow-face--solo .neow-face__owner,
@@ -345,6 +399,15 @@
 }
 
 .courier-panel label { display: flex; gap: .4rem; align-items: center; }
+
+.courier-panel .item-replacement {
+  display: grid;
+  flex: 1 0 100%;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: .4rem;
+}
+
+.courier-panel .item-replacement .item-card-image { width: min(5rem, 100%); }
 
 .courier-panel button {
   border: 1px solid #d8a84b;
@@ -1799,7 +1862,6 @@ button:disabled {
   background: none;
 }
 
-.relic-actions > summary { padding: .3rem .55rem; border: 1px solid #5b4b31; background: #171b1e; cursor: pointer; }
 .relic-actions > section { display: flex; flex-wrap: wrap; gap: .4rem; max-width: min(36rem, calc(100vw - 2rem)); padding: .45rem; background: rgb(10 13 15 / .96); }
 
 .relic-actions details {
@@ -2911,6 +2973,11 @@ button:disabled {
   gap: 6px;
 }
 
+.outside-potions__targets .item-card-image {
+  width: 1.5rem;
+  margin: 0;
+}
+
 @keyframes reward-reveal {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
 }
@@ -3074,6 +3141,15 @@ button:disabled {
 }
 
 .merchant-shelf h3, .merchant-cards h3 { grid-column: 1 / -1; margin: 0; color: #f2dda9; }
+
+.merchant-potion-discard {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: .5rem;
+}
+
+.merchant-potion-discard .item-card-image { width: min(7rem, 100%); }
 
 .merchant-board button, .event-options button, .treasure-actions button {
   min-height: 88px;
@@ -3951,8 +4027,8 @@ button:disabled {
 
 .hand-scroll {
   min-width: 0;
-  margin-top: -3rem;
-  padding-top: 3rem;
+  margin-top: -4rem;
+  padding-top: 4rem;
   overflow: auto hidden;
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
@@ -4019,6 +4095,14 @@ button:disabled {
 .hand .card {
   margin-inline: calc(var(--card-width) * -0.12);
   filter: drop-shadow(0 0.45rem 0.4rem rgb(0 0 0 / 0.72));
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.hand .card:hover,
+.hand .card:focus-visible {
+  z-index: 9;
+  transform: translateY(-2.4rem) scale(1.15);
+  filter: drop-shadow(0 0.8rem 0.65rem rgb(0 0 0 / 0.82)) brightness(1.08);
 }
 
 .hand .card--selected {
@@ -4094,6 +4178,8 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hand .card { transition: none; }
+
   .seat__portrait img,
   .enemy__portrait > .enemy__art--cutout,
   .seat__portrait::before,

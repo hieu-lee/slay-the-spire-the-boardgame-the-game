@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
+import { potionIconPath } from '../game/assets.ts'
 import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePower,
@@ -15,10 +16,13 @@ import {
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   cardPlayConditionMet,
+  canActivatePotion,
+  canActivateRelic,
   chosenEvokeOrbs,
   chooseEndTurnTarget,
   chooseDistilledCard,
   defaultEndTurnOrder,
+  defaultStartTurnChoices,
   endTurnAbilities,
   endTurnChoiceId,
   endTurnChoiceTarget,
@@ -54,6 +58,7 @@ import {
   startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
+  startTurnNeedsChoice,
   startPlayerTurnWithChoices,
   validEndTurnOrder,
 } from '../game/combat.ts'
@@ -71,6 +76,7 @@ import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
 import { healthBand, pendingUiSurvivesContext, strikeClass } from './board-signals.ts'
+import { playSoundEffect } from './sfx.ts'
 
 type CombatScreenProps = {
   state: CombatState
@@ -79,6 +85,8 @@ type CombatScreenProps = {
   onChange?: (next: CombatState) => void
   onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
   autoAdvance?: boolean
+  courierAvailable?: boolean
+  mutationsEnabled?: boolean
   drawCount?: number
   decidedPlayerIds?: string[]
   savedDiscardOrder?: string[]
@@ -594,6 +602,8 @@ export function CombatScreen({
   onChange,
   onAction,
   autoAdvance = true,
+  courierAvailable = false,
+  mutationsEnabled = true,
   drawCount,
   decidedPlayerIds,
   savedDiscardOrder,
@@ -659,6 +669,7 @@ export function CombatScreen({
   const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
+  const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const viewerHasSozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
   const pendingTrigger = pendingTriggerAbility(state)
@@ -851,14 +862,17 @@ export function CombatScreen({
     } else if (dialog.open) dialog.close()
   }, [pending?.choiceCards, pending?.choiceConfirmed])
 
+  // A chosen Distilled Chaos card can still need a board target. Keeping the
+  // reveal modal open makes the whole board inert and strands that card.
+  const visibleDistilled = forcedCard || state.pendingCardCopy || pendingTrigger ? undefined : distilled
   const itemModalOpen = ['liquid_memories', 'purity_potion', 'entropic_brew'].includes(pendingPotion ?? '') ||
-    Boolean(relicScry) || Boolean(distilled)
+    Boolean(relicScry) || Boolean(visibleDistilled)
   useEffect(() => {
     const dialog = itemDialogRef.current
     if (itemModalOpen) {
       if (dialog && !dialog.open) dialog.showModal()
     } else if (dialog?.open) dialog.close()
-  }, [itemModalOpen, pendingPotion, relicScry?.playerId, distilled?.playerId])
+  }, [itemModalOpen, pendingPotion, relicScry?.playerId, visibleDistilled?.playerId])
 
   useEffect(() => {
     setStartTurnScryPicked([])
@@ -1278,6 +1292,7 @@ export function CombatScreen({
     ? discardTops[viewer.id]
     : discardCandidates.at(-1)?.uid ?? ''
   const abilities = onAction ? (partyEndTurnAbilities ?? []) : endTurnAbilities(state)
+  const endTurnNeedsChoice = abilities.length > 1 || abilities.some((ability) => (ability.targets?.length ?? 0) > 1)
   const defaultOrder = defaultEndTurnOrder(abilities)
   const viewerEndTurnOrder = validEndTurnOrder(abilities, endTurnOrder)
     ? endTurnOrder
@@ -1328,6 +1343,7 @@ export function CombatScreen({
   }) ?? []
   const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length &&
     !pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv && !pendingStartEvokeTarget && !pendingStartEvoke
+  const meaningfulStartTurnChoice = startTurnNeedsChoice(state)
   const isStartTurnEnemyTarget = (enemyUid: string) =>
     Boolean(pendingStartEnemy?.targets?.some((target) => target.uid === enemyUid) &&
       startEnemyChoiceAvailable(enemyUid)) ||
@@ -1476,6 +1492,46 @@ export function CombatScreen({
     else onChange?.(resolveStartPlayerTurn(state, choices))
   }
 
+  // Resolve the engine's deterministic default plan; keep every meaningful
+  // order, target, overflow, or Orb decision manual.
+  useEffect(() => {
+    if (!autoAdvance || state.phase !== 'start' || !canResolveStartTurn || meaningfulStartTurnChoice ||
+      baseStartTurnScries.length > 0 || activeStartTurnScry ||
+      activeStartTurnDiscard || pendingTrigger || forcedCard) return undefined
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const choices = defaultStartTurnChoices(state)
+      if (onAction) {
+        const outcome = await onAction({ kind: 'resolveStartTurn', choices })
+        if (!cancelled && outcome && (outcome.status === 'refused' || outcome.status === 'unknown' ||
+          outcome.status === 'reconciled' && outcome.snapshot?.run?.combat?.phase === 'start' &&
+          outcome.snapshot.run.combat.turn === state.turn)) setAutoAdvanceRetry((attempt) => attempt + 1)
+      } else onChange?.(resolveStartPlayerTurn(state, choices))
+    }, 250)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn, canResolveStartTurn,
+    meaningfulStartTurnChoice, baseStartTurnScries.length, activeStartTurnScry,
+    activeStartTurnDiscard, pendingTrigger, forcedCard])
+
+  const weakByActor = [
+    ...state.players.map((player) => [`player:${player.id}`, player.weak] as const),
+    ...state.enemies.map((enemy) => [`enemy:${enemy.uid}`, enemy.weak] as const),
+  ]
+  const previousWeakByActor = useRef(new Map(weakByActor))
+  const previousWeakRestoration = useRef(authoritativeRestoration)
+  const previousWeakConnected = useRef(authoritativeConnected)
+  useEffect(() => {
+    const restored = (authoritativeRestoration !== undefined &&
+      authoritativeRestoration !== previousWeakRestoration.current) ||
+      authoritativeConnected === false || previousWeakConnected.current === false
+    previousWeakRestoration.current = authoritativeRestoration
+    previousWeakConnected.current = authoritativeConnected
+    if (!restored && weakByActor.some(([id, weak]) => weak > (previousWeakByActor.current.get(id) ?? 0))) {
+      playSoundEffect('weak')
+    }
+    previousWeakByActor.current = new Map(weakByActor)
+  }, [authoritativeConnected, authoritativeRestoration, state.players, state.enemies])
+
   useEffect(() => {
     if (!autoAdvance || state.phase !== 'enemy' && state.phase !== 'roundEnd') return undefined
     let cancelled = false
@@ -1576,6 +1632,27 @@ export function CombatScreen({
     }
   }
 
+  // In local solo all information is present, so a turn with literally no
+  // card, token, potion, Power, or relic action can safely collapse. Online
+  // hands are private and shared turn order is meaningful, so clients never
+  // guess on behalf of the party.
+  const viewerHasLegalAction = viewer.hand.some((card) => canAfford(state, viewer, card, false, drawCount)) ||
+    viewer.shivs > 0 || viewer.miracles > 0 && viewer.energy < CAPS.energy && (
+      viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
+      viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
+    viewer.potions.some((potionId) => canActivatePotion(state, viewer, potionId)) ||
+    viewer.powers.some((power) => Boolean(faceOf(cardDef(power.defId), power.upgraded).activeAbility) &&
+      !powerAbilityUsed(state, viewer.id, power.uid)) ||
+    viewer.relics.some((_, relicIndex) => canActivateRelic(state, viewer, relicIndex)) || courierAvailable
+  useEffect(() => {
+    if (onAction || !autoAdvance || state.players.length !== 1 || state.phase !== 'player' ||
+      viewer.dead || viewerHasLegalAction || forcedCard || distilled || pending || pendingTrigger || orderingStage ||
+      endTurnNeedsChoice) return undefined
+    const timer = window.setTimeout(finishTurn, 450)
+    return () => window.clearTimeout(timer)
+  }, [autoAdvance, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
+    forcedCard, distilled, pending, pendingTrigger, orderingStage, endTurnNeedsChoice])
+
   function reconciliation(outcome: ActionOutcome | void) {
     const snapshot = outcome?.snapshot
     if (!snapshot?.run?.combat || snapshot.version < versionRef.current) return null
@@ -1602,6 +1679,7 @@ export function CombatScreen({
     setUsingPotion(true)
     setPending(null)
     setSpendingShiv(false)
+    setMiracleOnCard(false)
     setPendingPotion(null)
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
@@ -2144,6 +2222,26 @@ export function CombatScreen({
       !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots, undefined, next.effectEnergy ?? 0)) commit(next)
   }
 
+  // Distilled Chaos already asks which card to play. Requiring a second click
+  // on the same card in hand added no decision; stage it immediately so the
+  // next interaction is its real target/choice (or resolve it if it has none).
+  const forcedAttemptKey = forcedCardUid ? `${state.turn}\0${forcedCardUid}` : null
+  useEffect(() => {
+    if (!forcedAttemptKey || !mutationsEnabled) {
+      forcedAutoAttempt.current = null
+      return
+    }
+    if (!forcedCardUid || !viewer || pending || usingCard || forcedAutoAttempt.current === forcedAttemptKey) return
+    const card = viewer.hand.find((held) => held.uid === forcedCardUid)
+    if (card) {
+      forcedAutoAttempt.current = forcedAttemptKey
+      onCardClick(card)
+    }
+    // The forced uid is the authoritative transition. The helpers close over
+    // the matching state snapshot; depending on them would re-stage each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forcedAttemptKey, mutationsEnabled, usingCard])
+
   function onChoiceCardClick(card: CardInstance) {
     if (!pending?.choiceCards || !pending.choice) return
     const already = pending.picked.includes(card.uid)
@@ -2482,7 +2580,7 @@ export function CombatScreen({
                 >{used ? `${def.name} used` : `${staged ? '✓ ' : ''}Use ${def.name}`}</button>]
               }) : null}
               {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !orderingStage && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
-                if (state.phase === 'start' && potionId !== 'gamblers_brew') return []
+                if (!canActivatePotion(state, viewer, potionId)) return []
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
                 const count = viewer.potions.filter((held) => held === potionId).length
@@ -2512,7 +2610,7 @@ export function CombatScreen({
                       } else consumePotion(potionId)
                     }}
                   >
-                    <Icon name="potion" size={16} /> {staged ? '✓ ' : ''}{potion.name}{count > 1 ? ` ×${count}` : ''}
+                    <img className="item-icon-image" src={potionIconPath(potionId)} alt="" /> {staged ? '✓ ' : ''}{potion.name}{count > 1 ? ` ×${count}` : ''}
                   </button>
                 )
               }) : null}
@@ -2597,8 +2695,7 @@ export function CombatScreen({
                   </select>
                 </label>
               ) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && (abilities.length > 1 ||
-                abilities.some((ability) => (ability.targets?.length ?? 0) > 1)) ? (
+              {state.phase === 'player' && !forcedCard && !distilled && endTurnNeedsChoice ? (
                 <details className="end-turn-order" open={endTurnOrderOpen}
                   onToggle={(event) => setEndTurnOrderOpen(event.currentTarget.open)}>
                   <summary>End-turn order ({abilities.length})</summary>
@@ -2880,7 +2977,7 @@ export function CombatScreen({
             {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, index) => (
               <button type="button" key={`${held}:${index}`}
                 onClick={() => consumePotion('entropic_brew', { replacePotionId: held })}>
-                Replace {potionDef(held).name}
+                <img className="item-icon-image" src={potionIconPath(held)} alt="" /> Replace {potionDef(held).name}
               </button>
             ))}
           </div>
@@ -2889,21 +2986,12 @@ export function CombatScreen({
       ) : null}
 
       {!forcedCard && !distilled && !relicScry && (state.phase === 'player' || state.phase === 'start') ? (
-        <details className="relic-actions">
-          <summary>Relics</summary>
+        <div className="relic-actions">
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
-            const manual = Boolean(def.activation) || reroute || held.defId === 'charons_ashes' || held.defId === 'holy_water'
-            const postRoll = ['gambling_chip', 'the_abacus', 'toolbox'].includes(held.defId) ||
-              held.defId === 'charons_ashes' && state.die <= 2 ||
-              held.defId === 'dollys_mirror' && state.die === 1 ||
-              held.defId === 'nilrys_codex' && state.die === 4 ||
-              held.defId === 'loaded_die' && state.die === 6
-            if (!manual || held.spent || held.defId === 'the_courier' ||
-              state.phase === 'start' && !postRoll ||
-              postRoll && (state.phase !== 'start' || state.startTurnProgress)) return []
+            if (!canActivateRelic(state, viewer, relicIndex)) return []
             if (held.defId === 'golden_eye') return [<button type="button" key={relicIndex}
               onClick={() => useRelic(relicIndex)}>Use {def.name}</button>]
             if (held.defId === 'gambling_chip') return [<button type="button" key={relicIndex}
@@ -2949,7 +3037,7 @@ export function CombatScreen({
             if (reroute) {
               const face = held.defId === 'dollys_mirror' ? 1 : held.defId === 'nilrys_codex' ? 2 : null
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-                {state.players.flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
+                {state.players.filter((owner) => !owner.dead).flatMap((owner) => owner.relics.flatMap((target, targetRelicIndex) =>
                   relicAbilities(relicDef(target.defId)).flatMap((ability, targetAbilityIndex) => {
                     if (ability.trigger.kind !== 'dieRelic' || face !== null && !ability.trigger.faces.includes(face) ||
                       ['nilrys_codex', 'loaded_die'].includes(held.defId) && owner.id === viewerId &&
@@ -2972,7 +3060,7 @@ export function CombatScreen({
             </button>]
           })}
           </section>
-        </details>
+        </div>
       ) : null}
 
       {relicScry ? (
@@ -2992,15 +3080,15 @@ export function CombatScreen({
         </dialog>
       ) : null}
 
-      {distilled ? (
+      {visibleDistilled ? (
         <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="distilled-choice-title"
           onCancel={(event) => event.preventDefault()}>
           <h2 id="distilled-choice-title">Distilled Chaos</h2>
-          {distilled.playerId === viewerId ? (
+          {visibleDistilled.playerId === viewerId ? (
             <>
               <p>Choose the next revealed card to play for 0 Energy.</p>
               <div className="distilled-choice__cards">
-                {distilled.cards.map((card) => (
+                {visibleDistilled.cards.map((card) => (
                   <Card key={card.uid} card={card} cost={0} playable
                     onClick={() => onAction
                       ? void onAction({ kind: 'chooseDistilledCard', cardUid: card.uid })
@@ -3009,7 +3097,7 @@ export function CombatScreen({
               </div>
             </>
           ) : (
-            <p>Waiting for {state.players.find((player) => player.id === distilled.playerId)?.name ?? 'another player'} to choose the next card.</p>
+            <p>Waiting for {state.players.find((player) => player.id === visibleDistilled.playerId)?.name ?? 'another player'} to choose the next card.</p>
           )}
         </dialog>
       ) : null}
@@ -3320,7 +3408,8 @@ export function CombatScreen({
                       ) : null}
                       {occupant.potions.length > 0 ? (
                         <span className="seat__potions" title="Held potions">
-                          <Icon name="potion" size={14} /> {potionSummary(occupant)}
+                          {occupant.potions.map((id, index) => <img className="item-icon-image"
+                            key={`${id}-${index}`} src={potionIconPath(id)} alt="" />)} {potionSummary(occupant)}
                         </span>
                       ) : null}
                       {occupant.stance !== 'neutral' ? (

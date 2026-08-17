@@ -22,10 +22,11 @@ const HOLD_NEW = 900
 
 export type CardMorphRequest = {
   /** Distinguishes the verb in the caption and the burst's colour. */
-  kind: 'upgrade' | 'transform' | 'gain'
+  kind: 'upgrade' | 'transform' | 'gain' | 'remove'
   /** Null for `gain`: a random reward or blessing card comes from nowhere, not from another card. */
   from: CardInstance | null
-  to: CardInstance
+  /** Null for `remove`: the old card burns away without a replacement. */
+  to: CardInstance | null
   /** Same uid across a run's worth of morphs would collide in the queue. */
   key: string
 }
@@ -76,7 +77,9 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
     // lives for the length of the queue; only the stage below is keyed.
   }, [request.key, onDone])
 
-  const verb = request.kind === 'upgrade' ? 'Upgraded' : request.kind === 'transform' ? 'Transformed' : 'Gained'
+  const verb = request.kind === 'upgrade' ? 'Upgraded'
+    : request.kind === 'transform' ? 'Transformed'
+      : request.kind === 'remove' ? 'Removed' : 'Gained'
   return (
     // `inert` as well as `aria-hidden`: `Card` renders a real <button>, and an
     // aria-hidden subtree containing a focusable control is the classic
@@ -93,9 +96,9 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
             <Card card={request.from} playable={false} />
           </div>
         ) : null}
-        <div className="card-morph__slot card-morph__slot--to">
+        {request.to ? <div className="card-morph__slot card-morph__slot--to">
           <Card card={request.to} playable={false} />
-        </div>
+        </div> : null}
         <span className="card-morph__burst" />
       </div>
       {/* Keyed like the stage, and for the same reason. This sits OUTSIDE the
@@ -120,10 +123,12 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
  */
 function cardMorphAnnouncement(request: CardMorphRequest, name: (card: CardInstance) => string) {
   return request.kind === 'upgrade'
-    ? `${name(request.from!)} upgraded to ${name(request.to)}.`
+    ? `${name(request.from!)} upgraded to ${name(request.to!)}.`
     : request.kind === 'transform'
-      ? `${name(request.from!)} transformed into ${name(request.to)}.`
-      : `Gained ${name(request.to)}.`
+      ? `${name(request.from!)} transformed into ${name(request.to!)}.`
+      : request.kind === 'remove'
+        ? `Removed ${name(request.from!)}.`
+        : `Gained ${name(request.to!)}.`
 }
 
 /**
