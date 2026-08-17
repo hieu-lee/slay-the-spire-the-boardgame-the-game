@@ -70,8 +70,9 @@ generated generic status symbol.
 
 `public/assets/sfx/` contains renamed, unmodified sounds from
 <https://opengameart.org/content/80-cc0-rpg-sfx> (`wood_01`, `book_01`,
-`blade_01`, `spell_01`, `spell_02`, and `creature_hurt_01`). The pack is
-released under CC0 1.0.
+`book_02`, `blade_01`, `spell_01`, `spell_02`, `creature_hurt_01`,
+`creature_hurt_02`, `creature_die_01`, `metal_01`, `item_gem_03`, and
+`item_gem_04`). The pack is released under CC0 1.0.
 
 The icon and enemy-art scripts need PyMuPDF and Pillow: `pip install pymupdf pillow`.
 

@@ -30,6 +30,7 @@ import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { AchievementsScreen } from './AchievementsScreen.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
+import { useRunOutcomeSound } from './sfx.ts'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -164,6 +165,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
   const [achievementsOpen, setAchievementsOpen] = useState(false)
   const snapshot = room.snapshot
+  useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(

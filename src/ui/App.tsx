@@ -74,7 +74,7 @@ import { useCardMorphs } from './useCardMorphs.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
-import { installSoundEffects, SFX_STORAGE_KEY } from './sfx.ts'
+import { installSoundEffects, SFX_STORAGE_KEY, useRunOutcomeSound } from './sfx.ts'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -160,6 +160,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
   const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
+  useRunOutcomeSound(run)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [achievements, setAchievements] = useState(false)

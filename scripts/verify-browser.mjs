@@ -232,6 +232,12 @@ const sfxCanMute = await page.evaluate(() => localStorage.getItem('sts-sfx-enabl
 await settingsDialog.getByRole('button', { name: 'Sound effects off' }).click()
 const sfxCanRestore = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
 const menuSounds = await page.evaluate(() => window.__SFX_PLAYS__)
+const formSoundBefore = menuSounds.length
+await page.getByLabel('Player 1 character').selectOption('silent')
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/ui.ogg'), formSoundBefore)
+const formSoundPlays = await page.evaluate((before) =>
+  window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/ui.ogg'), formSoundBefore)
+await page.getByLabel('Player 1 character').selectOption('ironclad')
 const localAscensions = await page.getByLabel('Ascension').locator('option').evaluateAll((options) =>
   options.map((option) => option.value))
 const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
@@ -287,6 +293,7 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(sfxCanMute, 'off', 'sound preference did not mute')
   assertEqual(sfxCanRestore, 'on', 'sound preference did not restore')
   assert(menuSounds.includes('/assets/sfx/ui.ogg'), 'menu clicks did not play the UI sound')
+  assert(formSoundPlays, 'form changes did not play the UI sound')
   assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
   assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
   assertEqual(freshMenuCampaign.draftRunId, 'campaign-1')
@@ -703,6 +710,80 @@ check('Sentry uses a transparent full-body cutout and character status clears HP
   assertEqual(combatAppearance.statusOverlapsHp, false)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+const combatSfx = []
+for (const [file, action] of [
+  ['draw.ogg', 'draw'],
+  ['block.ogg', 'block'],
+  ['player-hit.ogg', 'hurt'],
+  ['heal.ogg', 'heal'],
+]) {
+  const before = await page.evaluate(() => window.__SFX_PLAYS__.length)
+  await page.evaluate((action) => {
+    const debug = window.__STS_DEBUG__
+    const next = structuredClone(debug.getRun())
+    const player = next.combat.players[0]
+    if (action === 'draw') {
+      const card = player.draw.shift()
+      if (!card) throw new Error('combat SFX fixture has no card to draw')
+      player.hand.push(card)
+    } else if (action === 'block') player.block += 1
+    else if (action === 'hurt') player.hp -= 1
+    else if (action === 'heal') player.hp += 1
+    else next.combat.phase = 'won'
+    debug.setRun(next)
+  }, action)
+  await page.waitForFunction(({ before, file }) =>
+    window.__SFX_PLAYS__.slice(before).includes(`/assets/sfx/${file}`), { before, file })
+  combatSfx.push(file)
+}
+const combinedSoundBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const next = structuredClone(debug.getRun())
+  const player = next.combat.players[0]
+  const card = player.draw.shift()
+  if (!card) throw new Error('combined combat SFX fixture has no card to draw')
+  player.hand.push(card)
+  player.hp -= 1
+  player.block += 1
+  debug.setRun(next)
+})
+await page.waitForFunction((before) => {
+  const sounds = window.__SFX_PLAYS__.slice(before)
+  return ['/assets/sfx/draw.ogg', '/assets/sfx/player-hit.ogg', '/assets/sfx/block.ogg']
+    .every((sound) => sounds.includes(sound))
+}, combinedSoundBefore)
+combatSfx.push('draw.ogg + player-hit.ogg + block.ogg')
+const victorySoundBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const next = structuredClone(debug.getRun())
+  next.combat.phase = 'won'
+  debug.setRun(next)
+})
+await page.waitForFunction((before) =>
+  window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/victory.ogg'), victorySoundBefore)
+combatSfx.push('victory.ogg')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+const defeatPlaysBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.phase = 'lost'
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) =>
+  window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/defeat.ogg'), defeatPlaysBefore)
+combatSfx.push('defeat.ogg')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+check('live combat changes play draw, block, health, victory, and defeat sounds', () => {
+  assertDeepEqual(combatSfx, [
+    'draw.ogg', 'block.ogg', 'player-hit.ogg', 'heal.ogg',
+    'draw.ogg + player-hit.ogg + block.ogg',
+    'victory.ogg', 'defeat.ogg',
+  ])
+})
 
 const weakPlaysBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate((run) => {
@@ -9192,10 +9273,13 @@ check('the solo table starts and labels a cumulative Ascension 9 run', () => {
   assert(ascensionHeader.includes('Ascension 9'), `missing Ascension status: ${ascensionHeader}`)
 })
 await shot('16-ascension-9-setup')
+const eventDefeatSoundBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   debug.setRun({ ...structuredClone(debug.getRun()), phase: 'defeat' })
 })
+await page.waitForFunction((before) =>
+  window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/defeat.ogg'), eventDefeatSoundBefore)
 await page.getByRole('button', { name: 'Record campaign result' }).click()
 await page.getByRole('button', { name: 'Begin next run →' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')

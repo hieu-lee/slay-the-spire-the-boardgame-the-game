@@ -541,6 +541,8 @@ function useStruck(
     }
     if (hurt.size === 0) return
 
+    if (state.phase !== 'lost' && state.players.some((player) => hurt.has(player.id))) playSoundEffect('hurt')
+
     // Each actor owns its beat and expiry. Concurrent hits must not cancel one
     // another, while a second hit on the same actor must restart its animation.
     setStruck((current) => new Set([...current, ...hurt]))
@@ -567,6 +569,48 @@ function useStruck(
   }, [])
 
   return { struck, beats: beats.current, damage: damage.current }
+}
+
+function useCombatSoundEffects(
+  state: CombatState,
+  viewerId: string,
+  animateOpeningHand: boolean,
+  authoritativeRestoration?: number,
+  authoritativeConnected?: boolean,
+) {
+  const previous = useRef<CombatState | null>(null)
+  const previousViewer = useRef(viewerId)
+  const previousRestoration = useRef(authoritativeRestoration)
+  const previousConnected = useRef(authoritativeConnected)
+
+  useEffect(() => {
+    const before = previous.current
+    const restored = (authoritativeRestoration !== undefined &&
+      authoritativeRestoration !== previousRestoration.current) ||
+      authoritativeConnected === false || previousConnected.current === false || previousViewer.current !== viewerId
+    previous.current = state
+    previousViewer.current = viewerId
+    previousRestoration.current = authoritativeRestoration
+    previousConnected.current = authoritativeConnected
+
+    const viewer = state.players.find((player) => player.id === viewerId)
+    if (!before) {
+      if (animateOpeningHand && viewer?.hand.length) playSoundEffect('draw')
+      return
+    }
+    if (restored || state.phase === 'won' || state.phase === 'lost') return
+    const priorPlayers = new Map(before.players.map((player) => [player.id, player]))
+    if (state.players.some((player) => player.hp > (priorPlayers.get(player.id)?.hp ?? player.hp))) {
+      playSoundEffect('heal')
+    }
+    const priorViewer = before.players.find((player) => player.id === viewerId)
+    if (viewer && priorViewer && drawnCardUids(priorViewer.hand, viewer.hand).length > 0) {
+      playSoundEffect('draw')
+    }
+    if (state.players.some((player) => player.block !== (priorPlayers.get(player.id)?.block ?? player.block))) {
+      playSoundEffect('block')
+    }
+  }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, state, viewerId])
 }
 
 /** Actors that crossed from alive to dead during this mounted combat. */
@@ -755,6 +799,7 @@ export function CombatScreen({
 
   const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
   const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
+  useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
   // Animate only changes witnessed while this combat is live. A reconnect or
   // restored snapshot is a baseline, never a replay of private cards the

@@ -502,6 +502,7 @@ try {
   const onlineOpeningDeal = await a.locator('.hand .card--drawn').first().evaluate((card) =>
     getComputedStyle(card).animationName)
   const onlineOpeningFirstFrame = await a.evaluate(() => window.__OPENING_HAND_FIRST_FRAME__)
+  const onlineOpeningSounds = await a.evaluate(() => window.__SFX_PLAYS__)
   const onlineRunStatus = await a.locator('.app-shell--online .run-status').textContent()
   check('the online table keeps the chosen Ascension visible during the run', () => {
     assert(onlineRunStatus.includes('Ascension 6'), `missing Ascension status: ${onlineRunStatus}`)
@@ -509,6 +510,7 @@ try {
   check('a newly entered online combat deals its opening hand', () => {
     assertEqual(onlineOpeningDeal, 'card-draw')
     assertEqual(onlineOpeningFirstFrame, true, 'the hand painted once before its draw class was applied')
+    assert(onlineOpeningSounds.includes('/assets/sfx/draw.ogg'), 'the opening draw was silent')
   })
   await a.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 
@@ -540,11 +542,14 @@ try {
   }))
   const reconnectWeakSounds = await a.evaluate(() => window.__SFX_PLAYS__
     .filter((path) => path === '/assets/sfx/weak.ogg').length)
+  const reconnectSounds = await a.evaluate(() => window.__SFX_PLAYS__
+    .filter((path) => path.startsWith('/assets/sfx/')))
   const reconnectDrawMotion = await a.locator('.hand .card--drawn').count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
     assertEqual(reconnectDeathMotion.falling, false)
     assertEqual(reconnectDeathMotion.animation, 'none')
     assertEqual(reconnectWeakSounds, 0)
+    assertDeepEqual(reconnectSounds, [])
     assertEqual(reconnectDrawMotion, 0)
   })
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)

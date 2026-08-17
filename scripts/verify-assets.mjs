@@ -73,7 +73,10 @@ const REQUIRED_ICONS = [
 suite('assets')
 
 check('sound effects are complete, compact, and decodable', () => {
-  const expected = ['attack.ogg', 'card.ogg', 'enemy-hit.ogg', 'magic.ogg', 'ui.ogg', 'weak.ogg']
+  const expected = [
+    'attack.ogg', 'block.ogg', 'card.ogg', 'defeat.ogg', 'draw.ogg', 'enemy-hit.ogg',
+    'heal.ogg', 'magic.ogg', 'player-hit.ogg', 'ui.ogg', 'victory.ogg', 'weak.ogg',
+  ]
   assertDeepEqual(listing(sfxRoot, '.ogg').sort(), expected)
   const files = expected.map((file) => join(sfxRoot, file))
   for (const file of files) {
@@ -82,8 +85,8 @@ check('sound effects are complete, compact, and decodable', () => {
     ], { encoding: 'utf8' })
     assert(result.status === 0 && Number(result.stdout) > 0, result.stderr || `${file} did not decode`)
   }
-  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 160 * 1024,
-    'sound effects exceed 160 KiB')
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
+    'sound effects exceed 320 KiB')
 })
 
 check('every character card has exactly one committed illustration', () => {
