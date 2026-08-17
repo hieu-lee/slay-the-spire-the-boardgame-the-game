@@ -7,15 +7,16 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the provenance of the limited bundled a
 
 ```bash
 pnpm install
-pnpm sync:assets     # fetch the local card/icon pack (see below)
+pnpm sync:assets     # optional: fetch publisher scans and rulebook assets
 pnpm dev             # play at http://localhost:5180
 ```
 
-Pick a player count and a seed, then click a card and click its target. The app runs a
-full combat round: play cards, end the turn, resolve the enemies, repeat. After a win, each
-survivor whose enemy grants a card reward may reveal three character cards and add one, or skip unseen.
+Choose **Single Player** for a one-character run. The app handles setup, the shared die,
+enemy turns, rewards, rooms, campaign progress, and Acts II–IV. Click a card and then its
+target to play it.
 
-For 2–4 player authoritative online co-op, voice chat, and Cloudflare Tunnel setup, see
+For 2–4 friends, choose **Multiplayer**, share the room code, and play from one browser per
+person. For the authoritative room server, voice chat, and Cloudflare Tunnel setup, see
 [`docs/online-play.md`](docs/online-play.md).
 
 ## Assets
@@ -88,17 +89,14 @@ Every random decision routes through the seeded RNG in `src/game/rng.ts`. A game
 described by `(seed, action log)`, which is what makes server-authoritative multiplayer,
 reconnection, and reproducible playtests all work off the same machinery.
 
-## What works, and what does not
+## Implemented scope
 
 A run climbs a generated Spire map, fights through encounters, elites and a boss, and
 carries HP, gold and relics between rooms. Combat covers the full round: energy, draw,
 the shared die, card play with targeting and choices, orbs, stances, Scry, statuses, and
 the enemy turn.
 
-The authoritative list of what is **not** implemented lives at the top of
-[`src/game/state.ts`](src/game/state.ts) and is kept in step with the code.
-
-Duplicating that list here is how it goes stale, so this file does not repeat it — not
-even a summary of it. The summary that used to sit here named "effects that scale off
-game state" as a largest gap for two commits after it was implemented, which is exactly
-the failure the list exists to prevent.
+The current scope is summarized at the top of [`src/game/state.ts`](src/game/state.ts).
+Executable inventory checks in [`scripts/verify-architecture.mjs`](scripts/verify-architecture.mjs)
+keep its counts aligned with the physical component manifests and fail if a printed character
+card is missing or the deferred-card list disagrees with the implementation.
