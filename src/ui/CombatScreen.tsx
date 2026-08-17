@@ -75,7 +75,14 @@ import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
-import { healthBand, pendingUiSurvivesContext, strikeClass } from './board-signals.ts'
+import {
+  cardMotionDestination,
+  drawnCardUids,
+  healthBand,
+  pendingUiSurvivesContext,
+  shouldDisarmCardFlight,
+  strikeClass,
+} from './board-signals.ts'
 import { playSoundEffect } from './sfx.ts'
 
 type CombatScreenProps = {
@@ -115,11 +122,26 @@ type CombatScreenProps = {
   authoritativeRestoration?: number
   /** Whether online snapshots are live rather than reconnect catch-up. */
   authoritativeConnected?: boolean
+  /** Deal the already-populated opening hand when this combat starts live. */
+  animateOpeningHand?: boolean
 }
 
 type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
 type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
 type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean; copiesBefore?: number }
+type MotionKey = 'energy' | 'draw' | 'discard' | 'exhaust'
+type CardFlight = {
+  beat: number
+  card: CardInstance
+  destination: ReturnType<typeof cardMotionDestination>
+}
+type MotionSnapshot = {
+  hand: readonly CardInstance[]
+  energy: number
+  draw: number
+  discard: number
+  exhaust: number
+}
 type PendingStartChoice =
   | { kind: 'enemy'; ability: StartTurnAbility }
   | { kind: 'player'; ability: StartTurnAbility }
@@ -620,6 +642,7 @@ export function CombatScreen({
   authoritativeRefresh,
   authoritativeRestoration,
   authoritativeConnected,
+  animateOpeningHand = authoritativeVersion === undefined,
 }: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
@@ -669,6 +692,22 @@ export function CombatScreen({
   const unknownPotionAction = useRef<UnknownPotionAction | null>(null)
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
+  const armedCardFlight = useRef<CardInstance | null>(null)
+  const motionBaseline = useRef<MotionSnapshot | null>(null)
+  const motionRestoration = useRef(authoritativeRestoration)
+  const motionConnected = useRef(authoritativeConnected)
+  const motionViewer = useRef(viewerId)
+  const motionTimers = useRef(new Map<MotionKey | 'flight', ReturnType<typeof setTimeout>>())
+  const flightBeat = useRef(0)
+  const [drawnCards, setDrawnCards] = useState<Set<string>>(new Set())
+  const [cardFlight, setCardFlight] = useState<CardFlight | null>(null)
+  const [motionActive, setMotionActive] = useState<Set<MotionKey>>(new Set())
+  const [motionBeats, setMotionBeats] = useState<Record<MotionKey, number>>({
+    energy: 0,
+    draw: 0,
+    discard: 0,
+    exhaust: 0,
+  })
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const viewerHasSozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
@@ -717,6 +756,116 @@ export function CombatScreen({
   const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
   const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
 
+  // Animate only changes witnessed while this combat is live. A reconnect or
+  // restored snapshot is a baseline, never a replay of private cards the
+  // viewer did not just draw or actions that happened while away. This runs
+  // before paint so a new hand never flashes in its settled position first.
+  useLayoutEffect(() => {
+    if (!viewer) return
+    const next: MotionSnapshot = {
+      hand: viewer.hand,
+      energy: viewer.energy,
+      draw: drawCount ?? viewer.draw.length,
+      discard: viewer.discard.length,
+      exhaust: viewer.exhaust.length,
+    }
+    const restored = (authoritativeRestoration !== undefined &&
+      authoritativeRestoration !== motionRestoration.current) ||
+      authoritativeConnected === false || motionConnected.current === false || motionViewer.current !== viewerId
+    motionRestoration.current = authoritativeRestoration
+    motionConnected.current = authoritativeConnected
+    motionViewer.current = viewerId
+    const before = motionBaseline.current
+    motionBaseline.current = next
+
+    if (!before) {
+      if (animateOpeningHand && next.hand.length > 0) {
+        setDrawnCards(new Set(next.hand.map((card) => card.uid)))
+      }
+      return
+    }
+
+    if (restored) {
+      armedCardFlight.current = null
+      for (const timer of motionTimers.current.values()) clearTimeout(timer)
+      motionTimers.current.clear()
+      setDrawnCards((current) => current.size === 0 ? current : new Set())
+      setCardFlight(null)
+      setMotionActive((current) => current.size === 0 ? current : new Set())
+      return
+    }
+
+    const arrivals = drawnCardUids(before.hand, next.hand)
+    if (arrivals.length > 0) {
+      setDrawnCards((current) => new Set([...current, ...arrivals]))
+    }
+
+    const armed = armedCardFlight.current
+    if (armed && before.hand.some((card) => card.uid === armed.uid) &&
+      !next.hand.some((card) => card.uid === armed.uid)) {
+      flightBeat.current += 1
+      setCardFlight({
+        beat: flightBeat.current,
+        card: armed,
+        destination: cardMotionDestination(
+          armed.uid,
+          viewer,
+          faceOf(cardDef(armed.defId), armed.upgraded).toDrawTop === true,
+        ),
+      })
+      armedCardFlight.current = null
+      const prior = motionTimers.current.get('flight')
+      if (prior) clearTimeout(prior)
+      motionTimers.current.set('flight', setTimeout(() => {
+        motionTimers.current.delete('flight')
+        setCardFlight(null)
+      }, 680))
+    } else if (state.phase !== 'player' && state.phase !== 'copy') {
+      armedCardFlight.current = null
+    }
+
+    const changed: MotionKey[] = []
+    if (before.energy !== next.energy) changed.push('energy')
+    if (before.draw !== next.draw) changed.push('draw')
+    if (before.discard !== next.discard) changed.push('discard')
+    if (before.exhaust !== next.exhaust) changed.push('exhaust')
+    if (changed.length > 0) {
+      setMotionBeats((current) => {
+        const updated = { ...current }
+        for (const key of changed) updated[key] += 1
+        return updated
+      })
+      setMotionActive((current) => new Set([...current, ...changed]))
+      for (const key of changed) {
+        const prior = motionTimers.current.get(key)
+        if (prior) clearTimeout(prior)
+        motionTimers.current.set(key, setTimeout(() => {
+          motionTimers.current.delete(key)
+          setMotionActive((current) => {
+            const updated = new Set(current)
+            updated.delete(key)
+            return updated
+          })
+        }, 420))
+      }
+    }
+  }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, drawCount, state, viewer])
+
+  // Keep this timer in its own effect so React development Strict Mode can
+  // clean up and restart it without leaving the animation class stuck on.
+  useEffect(() => {
+    if (drawnCards.size === 0) return undefined
+    const timer = setTimeout(
+      () => setDrawnCards(new Set()),
+      620 + Math.max(0, (viewer?.hand.length ?? 1) - 1) * 42,
+    )
+    return () => clearTimeout(timer)
+  }, [drawnCards, viewer?.hand.length])
+
+  useEffect(() => () => {
+    for (const timer of motionTimers.current.values()) clearTimeout(timer)
+  }, [])
+
   // Unknown delivery with the item still visible stays locked until a causally
   // later REST refresh. Exact inventory evidence can recognize a commit sooner.
   useEffect(() => {
@@ -749,6 +898,7 @@ export function CombatScreen({
         (card.copiesBefore !== undefined && state.pendingCardCopy.sourceNames.length < card.copiesBefore)
       : current && !current.hand.some((held) => held.uid === card?.cardUid)
     if (card && ((authoritativeRefresh !== undefined && authoritativeRefresh > card.refreshAttempt) || cardCommitted)) {
+      if (shouldDisarmCardFlight(!card.copy, cardCommitted === true)) armedCardFlight.current = null
       unknownCardAction.current = null
       cardActionPending.current = false
       setUsingCard(false)
@@ -1911,6 +2061,7 @@ export function CombatScreen({
       }
       return
     }
+    if (next.cardInHand) armedCardFlight.current = next.card
     const action = {
       kind: next.cardInHand ? 'playCard' : 'playCardCopy',
       cardUid: next.card.uid,
@@ -1940,8 +2091,14 @@ export function CombatScreen({
             ? current && !current.hand.some((card) => card.uid === next.card.uid)
             : currentCopy?.card.uid !== next.card.uid ||
               (copiesBefore !== undefined && currentCopy.sourceNames.length < copiesBefore)
-          if (committed ||
-            (refreshAttempt !== undefined && refreshRef.current !== undefined && refreshRef.current > refreshAttempt)) unlock()
+          const refreshed = refreshAttempt !== undefined && refreshRef.current !== undefined &&
+            refreshRef.current > refreshAttempt
+          if (committed || refreshed) {
+            if (refreshed && shouldDisarmCardFlight(next.cardInHand, committed === true)) {
+              armedCardFlight.current = null
+            }
+            unlock()
+          }
           else if (refreshAttempt !== undefined) {
             unknownCardAction.current = {
               refreshAttempt,
@@ -1949,15 +2106,23 @@ export function CombatScreen({
               copy: !next.cardInHand,
               copiesBefore,
             }
-          } else unlock()
+          } else {
+            if (current?.hand.some((card) => card.uid === next.card.uid)) armedCardFlight.current = null
+            unlock()
+          }
           return
         }
         unlock()
         if (outcome?.status === 'refused' || outcome?.status === 'reconciled') {
           const authoritative = reconciliation(outcome)
-          if (!authoritative || (next.cardInHand
+          if (!authoritative) {
+            if (shouldDisarmCardFlight(next.cardInHand, false)) armedCardFlight.current = null
+            return
+          }
+          if (next.cardInHand
             ? !authoritative.player.hand?.some((card) => card.uid === next.card.uid)
-            : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid)) return
+            : authoritative.combat.pendingCardCopy?.card.uid !== next.card.uid) return
+          if (next.cardInHand) armedCardFlight.current = null
           if (next.choiceCards &&
             (next.choice?.kind === 'recover' || next.choice?.kind === 'recoverExhaust')) {
             setMiracleOnCard(usingMiracle)
@@ -2551,7 +2716,7 @@ export function CombatScreen({
         <span className="combat__die" title="The round's shared die">
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
         </span>
-        <span className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
+        <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
           ? `Resolve ${copyResolutionLabel ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
         <span className="combat__actions">
@@ -3481,7 +3646,11 @@ export function CombatScreen({
 
       <footer className="hand-area">
         <div className="hand-area__stats">
-          <span className="pip pip--energy" title="Energy">
+          <span className={[
+            'pip',
+            'pip--energy',
+            motionActive.has('energy') ? `motion-pulse-${motionBeats.energy % 2}` : '',
+          ].filter(Boolean).join(' ')} title="Energy">
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
           {/* The piles read as stacks of cards with a count, not as three
@@ -3503,7 +3672,10 @@ export function CombatScreen({
               ['exhaust', 'Exhaust pile', viewer.exhaust.length, topOf(viewer.exhaust, viewer.powers, viewer.lostHpThisCombat)],
             ] as const
           ).map(([kind, label, count, top]) => (
-            <span className="pile" key={kind} title={top ? `${label} — ${top} on top` : label}>
+            <span className={[
+              'pile',
+              motionActive.has(kind) ? `motion-pulse-${motionBeats[kind] % 2}` : '',
+            ].filter(Boolean).join(' ')} data-pile={kind} key={kind} title={top ? `${label} — ${top} on top` : label}>
               <span className={`pile__stack pile__stack--${kind}`} aria-hidden="true" />
               <span className="pile__count" aria-hidden="true">
                 {count}
@@ -3524,6 +3696,8 @@ export function CombatScreen({
           {viewer.hand.map((card, index) => (
             <Card
               key={card.uid}
+              className={drawnCards.has(card.uid) ? 'card--drawn' : undefined}
+              style={{ '--deal-index': index } as React.CSSProperties}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
               cost={card.uid === forcedCardUid ? 0 : playCost(faceOf(cardDef(card.defId), card.upgraded), viewer, card)}
@@ -3553,6 +3727,16 @@ export function CombatScreen({
           ))}
         </div></div>
       </footer>
+      {cardFlight ? (
+        <div
+          className={`card-flight card-flight--${cardFlight.destination}`}
+          key={cardFlight.beat}
+          aria-hidden="true"
+          inert
+        >
+          <Card card={cardFlight.card} playable={false} />
+        </div>
+      ) : null}
     </div>
   )
 }

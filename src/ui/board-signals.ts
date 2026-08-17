@@ -2,6 +2,7 @@
 // component files so a plain Node check can import them — a .tsx module cannot
 // be loaded by the verify scripts, which is why these went untested for so long.
 import type { CombatState } from '../game/combat.ts'
+import type { CardInstance, Player } from '../game/types.ts'
 
 /**
  * Which band a health bar is in.
@@ -35,4 +36,40 @@ export function pendingUiSurvivesContext(
   viewerId: string,
 ): boolean {
   return phase === 'copy' && copyPlayerId === viewerId
+}
+
+/** Cards newly visible in a hand, in their dealt order. */
+export function drawnCardUids(
+  before: readonly CardInstance[],
+  after: readonly CardInstance[],
+): string[] {
+  const held = new Set(before.map((card) => card.uid))
+  return after.filter((card) => !held.has(card.uid)).map((card) => card.uid)
+}
+
+export function shouldAnimateOnlineOpeningHand(
+  previousPhase: string | undefined,
+  phase: string | undefined,
+  connected: boolean,
+): boolean {
+  return connected && phase === 'combat' && previousPhase !== undefined && previousPhase !== 'combat'
+}
+
+export function shouldDisarmCardFlight(cardInHand: boolean, committed: boolean): boolean {
+  return cardInHand && !committed
+}
+
+/** Where a committed card visibly resolves after leaving the hand. */
+export function cardMotionDestination(
+  cardUid: string,
+  player: Pick<Player, 'draw' | 'discard' | 'exhaust'>,
+  returnsToDraw = false,
+): 'draw' | 'discard' | 'exhaust' | 'stage' {
+  if (player.exhaust.some((card) => card.uid === cardUid)) return 'exhaust'
+  if (player.discard.some((card) => card.uid === cardUid)) return 'discard'
+  if (player.draw.some((card) => card.uid === cardUid)) return 'draw'
+  // Online snapshots deliberately redact the draw pile, so the public card
+  // rule is the fallback for Anger/Tantrum after visible piles are checked.
+  if (returnsToDraw) return 'draw'
+  return 'stage'
 }

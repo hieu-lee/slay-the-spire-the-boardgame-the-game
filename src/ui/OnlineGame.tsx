@@ -29,6 +29,7 @@ import { currentQuickSetupStep } from '../game/meta.ts'
 import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { AchievementsScreen } from './AchievementsScreen.tsx'
+import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -163,6 +164,13 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
   const [achievementsOpen, setAchievementsOpen] = useState(false)
   const snapshot = room.snapshot
+  const runPhase = snapshot?.run?.phase
+  const previousRunPhase = useRef(runPhase)
+  const animateOpeningHand = shouldAnimateOnlineOpeningHand(
+    previousRunPhase.current,
+    runPhase,
+    room.connection === 'connected',
+  )
   const voice = useVoiceChat({
     roomCode: snapshot?.code,
     playerId: snapshot?.you.playerId,
@@ -179,6 +187,10 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
     const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }), 900)
     return () => clearTimeout(timer)
   }, [room.act, room.connection, snapshot?.run?.combat?.phase])
+
+  useEffect(() => {
+    previousRunPhase.current = runPhase
+  }, [runPhase])
 
   // MUST stay above the early returns below — this component bails out for the
   // reconnecting and entry screens, and a hook called after those would run on
@@ -443,6 +455,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           authoritativeRefresh={room.refreshEpoch}
           authoritativeRestoration={room.restorationEpoch}
           authoritativeConnected={room.connection === 'connected'}
+          animateOpeningHand={animateOpeningHand}
           mutationsEnabled={!run.courier.offer && room.connection === 'connected' &&
             !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
           autoAdvance={!run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&

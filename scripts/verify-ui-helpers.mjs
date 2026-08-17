@@ -4,7 +4,15 @@
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
-import { healthBand, pendingUiSurvivesContext, strikeClass } from '../src/ui/board-signals.ts'
+import {
+  cardMotionDestination,
+  drawnCardUids,
+  healthBand,
+  pendingUiSurvivesContext,
+  shouldAnimateOnlineOpeningHand,
+  shouldDisarmCardFlight,
+  strikeClass,
+} from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -111,6 +119,35 @@ check('pending card UI survives only its owner copy transition', () => {
   assertEqual(pendingUiSurvivesContext('copy', 'p1', 'p2'), false)
   assertEqual(pendingUiSurvivesContext('copy', undefined, 'p1'), false)
   assertEqual(pendingUiSurvivesContext('player', 'p1', 'p1'), false)
+})
+
+check('hand motion identifies only newly visible cards and their real destination', () => {
+  const card = (uid) => ({ uid, defId: 'strike_ironclad', upgraded: false })
+  assertEqual(drawnCardUids([card('a'), card('b')], [card('b'), card('c'), card('d')]).join(','), 'c,d')
+  const piles = { draw: [card('drawn')], discard: [card('spent')], exhaust: [card('burned')] }
+  assertEqual(cardMotionDestination('drawn', piles), 'draw')
+  assertEqual(cardMotionDestination('spent', piles), 'discard')
+  assertEqual(cardMotionDestination('burned', piles), 'exhaust')
+  assertEqual(cardMotionDestination('power', piles), 'stage')
+  assertEqual(cardMotionDestination('anger', { draw: [], discard: [], exhaust: [] }, true), 'draw',
+    'public draw-top rules survive online draw-pile redaction')
+  assertEqual(cardMotionDestination('anger', { draw: [], discard: [], exhaust: [card('anger')] }, true), 'exhaust',
+    'a forced exhaust is authoritative over the ordinary draw-top rule')
+})
+
+check('online opening deals require a live phase transition', () => {
+  assertEqual(shouldAnimateOnlineOpeningHand('map', 'combat', true), true)
+  assertEqual(shouldAnimateOnlineOpeningHand('map', 'combat', false), false,
+    'a combat reached during reconnect must not replay its private opening hand')
+  assertEqual(shouldAnimateOnlineOpeningHand(undefined, 'combat', true), false,
+    'a restored first snapshot is a baseline')
+  assertEqual(shouldAnimateOnlineOpeningHand('combat', 'combat', true), false)
+})
+
+check('uncommitted in-hand actions disarm their decorative flight', () => {
+  assertEqual(shouldDisarmCardFlight(true, false), true)
+  assertEqual(shouldDisarmCardFlight(true, true), false)
+  assertEqual(shouldDisarmCardFlight(false, false), false, 'virtual copies never arm an in-hand flight')
 })
 
 report('ui helpers')

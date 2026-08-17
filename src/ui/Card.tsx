@@ -11,6 +11,8 @@ import type { Trigger } from '../game/triggers.ts'
 
 type CardProps = {
   card: CardInstance
+  className?: string
+  style?: React.CSSProperties
   /** Current cost after board-state reductions. */
   cost?: number | 'X'
   playable?: boolean
@@ -344,6 +346,8 @@ function costLabel(def: CardDef, cost = def.cost): string {
 
 export function Card({
   card,
+  className: extraClassName,
+  style,
   cost,
   playable = true,
   selected = false,
@@ -354,6 +358,7 @@ export function Card({
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const className = [
     'card',
+    extraClassName ?? '',
     playable ? '' : 'card--unplayable',
     selected ? 'card--selected' : '',
     picked ? 'card--picked' : '',
@@ -367,6 +372,7 @@ export function Card({
       className={className}
       data-sfx={def.type === 'attack' ? 'attack' : def.type === 'power' ? 'magic' : 'card'}
       style={{
+        ...style,
         // Tilt with distance from the middle, and drop the outer cards a
         // little so the row reads as an arc rather than a shelf.
         // The spread grows with the hand: a fixed angle made five cards look

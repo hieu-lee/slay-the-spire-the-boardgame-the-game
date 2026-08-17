@@ -1165,6 +1165,7 @@ button:disabled {
   padding: 0.1rem 0.45rem;
   border: 1px solid var(--edge);
   border-radius: 999px;
+  animation: phase-change 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .combat__phase--player {
@@ -1191,6 +1192,15 @@ button:disabled {
   font-size: 1.4rem;
   letter-spacing: 0.2em;
   text-transform: uppercase;
+  animation: result-arrive 520ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+@keyframes phase-change {
+  from { opacity: 0; transform: translateY(-8px) scale(0.88); filter: brightness(1.8); }
+}
+
+@keyframes result-arrive {
+  from { opacity: 0; transform: scale(0.72); letter-spacing: 0.5em; filter: brightness(2); }
 }
 
 .combat__result--won {
@@ -2304,12 +2314,74 @@ button:disabled {
   100% { transform: translateX(0); filter: brightness(1); }
 }
 
-@keyframes card-play {
-  from { opacity: 0; transform: translateY(14px) scale(0.94); }
+@keyframes card-draw {
+  0% {
+    opacity: 0;
+    transform: translate3d(-42vw, -3.5rem, 0) rotate(-18deg) scale(0.68);
+    filter: brightness(0.7);
+  }
+  72% {
+    opacity: 1;
+    transform: rotate(var(--fan-angle, 0deg)) translateY(calc(var(--fan-lift, 0px) - 8px)) scale(1.06);
+    filter: brightness(1.35);
+  }
+  100% {
+    transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
+    filter: brightness(1);
+  }
 }
 
-/* Deliberately NOT applied to .card globally: the hand re-renders on every
-   state change, and a blanket entry animation makes the whole hand flicker. */
+.hand .card--drawn {
+  animation: card-draw 520ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
+  animation-delay: calc(var(--deal-index, 0) * 42ms);
+}
+
+/* A committed card leaves the hand, holds centre-stage long enough to read,
+   then resolves toward its real pile. The clone is decorative; the original
+   action remains authoritative and never waits for motion to finish. */
+.card-flight {
+  --flight-x: 0vw;
+  --flight-y: -44vh;
+  --flight-turn: 0deg;
+  position: fixed;
+  z-index: 120;
+  left: 50%;
+  bottom: 1.2rem;
+  width: var(--card-width);
+  pointer-events: none;
+  animation: card-resolve 680ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.card-flight--draw { --flight-x: -38vw; --flight-y: -3rem; --flight-turn: -16deg; }
+.card-flight--discard { --flight-x: 43vw; --flight-y: -3rem; --flight-turn: 9deg; }
+.card-flight--exhaust { --flight-x: 47vw; --flight-y: -3rem; --flight-turn: -18deg; }
+
+.card-flight .card {
+  width: 100%;
+  transform: none;
+  filter: drop-shadow(0 1.2rem 1rem rgb(0 0 0 / 0.8));
+}
+
+@keyframes card-resolve {
+  0% { opacity: 1; transform: translate3d(-50%, 0, 0) rotate(-5deg) scale(0.88); }
+  45% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.28); }
+  68% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.28); filter: brightness(1.25); }
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(-50% + var(--flight-x)), var(--flight-y), 0) rotate(var(--flight-turn)) scale(0.3);
+  }
+}
+
+.motion-pulse-0 { animation: ui-pulse 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.motion-pulse-1 { animation: ui-pulse-again 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@keyframes ui-pulse {
+  45% { transform: translateY(-4px) scale(1.16); filter: brightness(1.65); }
+}
+
+@keyframes ui-pulse-again {
+  45% { transform: translateY(-4px) scale(1.16); filter: brightness(1.65); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .enemy--struck,
@@ -2809,6 +2881,17 @@ button:disabled {
   gap: 6px;
   position: relative;
   transition: transform 140ms ease, filter 140ms ease;
+  animation: reward-card-deal 380ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
+}
+
+.reward-screen__choice:nth-child(2) { animation-delay: 70ms; }
+.reward-screen__choice:nth-child(3) { animation-delay: 140ms; }
+.reward-screen__choice:nth-child(4) { animation-delay: 210ms; }
+.reward-screen__choice:nth-child(5) { animation-delay: 280ms; }
+
+@keyframes reward-card-deal {
+  from { opacity: 0; transform: translateY(54px) rotate(-5deg) scale(0.72); filter: brightness(0.65); }
+  72% { opacity: 1; transform: translateY(-6px) scale(1.04); filter: brightness(1.25); }
 }
 
 .reward-screen__choice:focus-within {
@@ -4179,6 +4262,18 @@ button:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .hand .card { transition: none; }
+
+  .hand .card--drawn,
+  .card-flight,
+  .motion-pulse-0,
+  .motion-pulse-1,
+  .combat__phase,
+  .combat__result,
+  .reward-screen__choice {
+    animation: none;
+  }
+
+  .card-flight { display: none; }
 
   .seat__portrait img,
   .enemy__portrait > .enemy__art--cutout,

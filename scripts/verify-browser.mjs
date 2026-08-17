@@ -22,11 +22,15 @@ const outDir = join(
   repoRoot,
   (args.find((a) => a.startsWith('--out=')) ?? '--out=artifacts/browser').slice(6),
 )
+const animationReferenceDir = process.env.UPDATE_ANIMATION_REFERENCES === '1'
+  ? join(repoRoot, 'docs/animation-reference')
+  : join(outDir, 'animation-reference')
 
 // Deliberately NOT wiped: a reviewer running this suite at the same time as
 // verify-all would delete the directory out from under the other run. Files are
 // overwritten in place instead, which is safe when two runs overlap.
 mkdirSync(outDir, { recursive: true })
+mkdirSync(animationReferenceDir, { recursive: true })
 
 // Port 0 asks the OS for a free port. A fixed port collides whenever another
 // copy of this suite is running — including verify-all's own parallelism.
@@ -602,12 +606,30 @@ check('exactly one room is reachable at the start', () => {
 })
 
 await enterFirstRoom()
+await page.waitForFunction(() => document.querySelector('.hand .card--drawn'))
+const openingDealMotion = await page.locator('.hand .card--drawn').first().evaluate((card) =>
+  getComputedStyle(card).animationName)
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'card-draw') {
+      animation.currentTime = 260
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(animationReferenceDir, 'combat-card-draw.png'), timeout: 15_000 })
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'card-draw' && animation.playState === 'paused') animation.play()
+  }
+})
 const booted = await shot('02-combat-start')
 check('the first room is an encounter and starts a combat', () => {
   assertEqual(booted.phase, 'player', 'combat opens on the Player Turn')
   assertEqual(booted.players[0].hand.length, 5, 'five cards are dealt')
   assertEqual(booted.players[0].energy, 3, 'energy starts at 3')
   assert(booted.die >= 1 && booted.die <= 6, `die should be 1-6, got ${booted.die}`)
+  assertEqual(openingDealMotion, 'card-draw', 'the opening hand should deal into place')
 })
 
 const activeRun = await readRun()
@@ -1017,7 +1039,51 @@ check('Distilled Chaos replaces stale card targeting with its forced card', () =
   assert(stagedAfterPotion.includes('Bash'), `wrong forced card remained staged: ${stagedAfterPotion}`)
 })
 await page.locator('.enemy').first().click()
+await page.waitForFunction(() => document.querySelector('.card-flight'))
+const cardPlayMotion = await page.locator('.card-flight').evaluate((flight) => ({
+  animation: getComputedStyle(flight).animationName,
+  destination: [...flight.classList].find((name) => name.startsWith('card-flight--')),
+}))
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'card-resolve') {
+      animation.currentTime = 330
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(animationReferenceDir, 'combat-card-play.png'), timeout: 15_000 })
+const cardPlayLanding = await page.evaluate(() => {
+  const animation = document.getAnimations().find((candidate) => candidate.animationName === 'card-resolve')
+  if (!animation) return null
+  animation.currentTime = 679
+  const flight = document.querySelector('.card-flight')?.getBoundingClientRect()
+  const pile = document.querySelector('[data-pile="discard"]')?.getBoundingClientRect()
+  if (!flight || !pile) return null
+  return {
+    distance: Math.hypot(
+      flight.left + flight.width / 2 - (pile.left + pile.width / 2),
+      flight.top + flight.height / 2 - (pile.top + pile.height / 2),
+    ),
+    flightX: flight.left + flight.width / 2,
+    pileX: pile.left + pile.width / 2,
+    viewportWidth: innerWidth,
+  }
+})
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'card-resolve' && animation.playState === 'paused') animation.play()
+  }
+})
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard === undefined)
+check('a committed card holds above combat before resolving to its pile', () => {
+  assertEqual(cardPlayMotion.animation, 'card-resolve')
+  assertEqual(cardPlayMotion.destination, 'card-flight--discard')
+  assert(cardPlayLanding !== null, 'the flight and destination pile were measurable')
+  assert(cardPlayLanding.flightX > cardPlayLanding.viewportWidth / 2,
+    'the discard flight went toward the right-side pile')
+  assert(cardPlayLanding.distance < 140, `the discard flight missed its pile by ${cardPlayLanding.distance}px`)
+})
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const player = next.combat.players[0]
@@ -1579,6 +1645,22 @@ for (const player of hiddenRewardRun.players) {
   await page.getByRole('button', { name: `Reveal 3 for ${player.name}` }).click()
 }
 await page.waitForFunction(() => document.querySelectorAll('.reward-screen__cards .card').length === 6)
+const rewardDealMotion = await page.locator('.reward-screen__choice').first().evaluate((choice) =>
+  getComputedStyle(choice).animationName)
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'reward-card-deal') {
+      animation.currentTime = 190
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(animationReferenceDir, 'reward-deal.png'), timeout: 15_000 })
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'reward-card-deal' && animation.playState === 'paused') animation.play()
+  }
+})
 // An upgraded reward still reveals base faces; only the card collected is
 // upgraded. Force that printed reward type so the UI contract stays covered.
 await page.evaluate(() => {
@@ -1604,6 +1686,7 @@ check('victory reveals three card rewards to every living player', () => {
   assertEqual(rewardRun.rewards.length, 2, 'both players receive their own reward')
   assertEqual(rewardCards, 6, 'three choices are shown per player')
   assert(collectLocked, 'the party cannot leave before everyone chooses')
+  assertEqual(rewardDealMotion, 'reward-card-deal', 'reward cards should deal into place')
   if (artSynced) {
     const broken = rewardArt.filter((entry) => !entry.ok)
     assertEqual(broken.length, 0, `broken reward art: ${broken.map((entry) => entry.src).join(', ')}`)
@@ -1658,6 +1741,30 @@ check('winning hands the party back to the map with somewhere to go', () => {
   assertEqual(backOnMap.players[0].deck.length, deckSizesBeforeReward[0] + 1, 'the chosen card persists')
   assertEqual(backOnMap.players[0].deck.at(-1).upgraded, true, 'an upgraded reward upgrades only the collected card')
   assertEqual(backOnMap.players[1].deck.length, deckSizesBeforeReward[1], 'skipping adds no card')
+})
+await page.waitForFunction(() => document.querySelector('.map__path--live') && document.querySelector('.room--here'))
+const mapMotion = await page.evaluate(() => ({
+  route: getComputedStyle(document.querySelector('.map__path--live')).animationName,
+  marker: getComputedStyle(document.querySelector('.room--here'), '::after').animationName,
+}))
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName === 'map-trail' || animation.animationName === 'map-ring') {
+      animation.currentTime = 500
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(animationReferenceDir, 'map-route.png'), timeout: 15_000 })
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if ((animation.animationName === 'map-trail' || animation.animationName === 'map-ring') &&
+      animation.playState === 'paused') animation.play()
+  }
+})
+check('the current map position and reachable route stay visibly alive', () => {
+  assertEqual(mapMotion.route, 'map-trail')
+  assertEqual(mapMotion.marker, 'map-ring')
 })
 await shot('05f-back-on-map')
 
@@ -7611,16 +7718,19 @@ const reducedMotion = await page.evaluate(() => {
   const seatArt = document.querySelector('.seat:not(.seat--dead) .seat__portrait img')
   const enemyArt = document.querySelector('.enemy:not(.enemy--dead) .enemy__art--cutout')
   const corpsePortrait = document.querySelector('.enemy--dead .enemy__portrait')
+  const phase = document.querySelector('.combat__phase')
   return {
     seat: seatArt ? getComputedStyle(seatArt).animationName : '',
     enemy: enemyArt ? getComputedStyle(enemyArt).animationName : '',
     corpse: corpsePortrait ? getComputedStyle(corpsePortrait).animationName : '',
+    phase: phase ? getComputedStyle(phase).animationName : '',
   }
 })
-check('reduced motion disables idle and defeat movement', () => {
+check('reduced motion disables ambient, phase, and defeat movement', () => {
   assertEqual(reducedMotion.seat, 'none')
   assertEqual(reducedMotion.enemy, 'none')
   assertEqual(reducedMotion.corpse, 'none')
+  assertEqual(reducedMotion.phase, 'none')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -7755,6 +7865,8 @@ const aoeAffordance = await page.evaluate(async () => {
   me.energy = 3
   debug.setRun(run)
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  await Promise.allSettled([...document.querySelectorAll('.hand .card--drawn')]
+    .flatMap((card) => card.getAnimations().map((animation) => animation.finished)))
 
   const cards = [...document.querySelectorAll('.hand .card')]
   const badges = cards.map((card) => card.querySelector('.card__aoe') !== null)
@@ -7846,7 +7958,7 @@ check('a card that spends itself says so too', () => {
 // The hand is fanned, not stacked: each card tilted by its distance from the
 // middle. Zeroing the angle and the lift left a flat row and passed everything.
 // Its own hand, because the check above deliberately leaves one card.
-await page.evaluate(async () => {
+await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.combat.players[0].hand = Array.from({ length: 5 }, (_unused, i) => ({
@@ -7855,8 +7967,10 @@ await page.evaluate(async () => {
     upgraded: false,
   }))
   debug.setRun(run)
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
 })
+await page.waitForFunction(() => document.querySelectorAll('.hand .card').length === 5)
+await page.locator('.hand .card--drawn').first().waitFor()
+await page.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 const fanShape = await page.evaluate(() => {
   const cards = [...document.querySelectorAll('.hand .card')]
   if (cards.length < 3) return { few: true }

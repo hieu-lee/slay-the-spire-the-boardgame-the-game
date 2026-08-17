@@ -483,15 +483,34 @@ try {
   const liveRoom = rooms.store.rooms.get(code)
   liveRoom.run.players.find((player) => player.name === 'Ann').potions = ['energy_potion', 'energy_potion', 'energy_potion']
   liveRoom.run.players.find((player) => player.name === 'Bo').potions = ['block_potion']
+  await a.evaluate(() => {
+    window.__OPENING_HAND_FIRST_FRAME__ = null
+    const observer = new MutationObserver(() => {
+      const card = document.querySelector('.app-shell--online .combat .hand .card')
+      if (!card) return
+      window.__OPENING_HAND_FIRST_FRAME__ = card.classList.contains('card--drawn')
+      observer.disconnect()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+  })
   await a.locator('.app-shell--online .room--reachable').click()
   await Promise.all([
     a.locator('.app-shell--online .combat').waitFor(),
     b.locator('.app-shell--online .combat').waitFor(),
+    a.locator('.hand .card--drawn').first().waitFor(),
   ])
+  const onlineOpeningDeal = await a.locator('.hand .card--drawn').first().evaluate((card) =>
+    getComputedStyle(card).animationName)
+  const onlineOpeningFirstFrame = await a.evaluate(() => window.__OPENING_HAND_FIRST_FRAME__)
   const onlineRunStatus = await a.locator('.app-shell--online .run-status').textContent()
   check('the online table keeps the chosen Ascension visible during the run', () => {
     assert(onlineRunStatus.includes('Ascension 6'), `missing Ascension status: ${onlineRunStatus}`)
   })
+  check('a newly entered online combat deals its opening hand', () => {
+    assertEqual(onlineOpeningDeal, 'card-draw')
+    assertEqual(onlineOpeningFirstFrame, true, 'the hand painted once before its draw class was applied')
+  })
+  await a.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 
   // Hold authentication after the reconnect GET has completed, then kill an
   // enemy before the first WebSocket snapshot. Both catch-up snapshots are
@@ -521,10 +540,12 @@ try {
   }))
   const reconnectWeakSounds = await a.evaluate(() => window.__SFX_PLAYS__
     .filter((path) => path === '/assets/sfx/weak.ogg').length)
+  const reconnectDrawMotion = await a.locator('.hand .card--drawn').count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
     assertEqual(reconnectDeathMotion.falling, false)
     assertEqual(reconnectDeathMotion.animation, 'none')
     assertEqual(reconnectWeakSounds, 0)
+    assertEqual(reconnectDrawMotion, 0)
   })
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)
   rooms.publishRoom(code)
