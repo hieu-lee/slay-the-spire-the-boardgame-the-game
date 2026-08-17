@@ -441,6 +441,8 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           cardPreview={snapshot.cardPreview}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}
+          authoritativeRestoration={room.restorationEpoch}
+          authoritativeConnected={room.connection === 'connected'}
           autoAdvance={room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}

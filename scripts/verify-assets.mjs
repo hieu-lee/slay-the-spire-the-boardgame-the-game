@@ -36,6 +36,7 @@ const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
+const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
@@ -51,6 +52,7 @@ const iconFiles = listing(iconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
+const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
 
@@ -333,6 +335,50 @@ print(json.dumps(faults))
   assert(pixelFaults.length === 0, `combat cutouts have opaque backgrounds:\n    ${pixelFaults.join('\n    ')}`)
 })
 
+check('combat animation effects are complete, transparent, and compact', () => {
+  const expected = [
+    'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
+  ]
+  assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
+  const files = expected.map((file) => join(combatVfxRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect combat VFX')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded combat VFX count')
+  for (const block of inspected) {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    assert(/  Width: 512[\s\S]*  Height: 512/.test(block), `${file} is not 512x512`)
+    assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
+  }
+  const probe = `
+import sys, json
+from PIL import Image
+faults = []
+for name in sys.argv[1:]:
+    alpha = Image.open(name).convert("RGBA").getchannel("A")
+    w, h = alpha.size
+    values = list(alpha.getdata())
+    label = name.rsplit("/", 1)[-1]
+    corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
+               alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
+    transparent = sum(value < 16 for value in values) / len(values)
+    visible = sum(value >= 16 for value in values) / len(values)
+    if max(corners) > 8:
+        faults.append(f"{label}: corners are opaque {corners}")
+    elif transparent < 0.5:
+        faults.append(f"{label}: only {transparent * 100:.1f}% transparent")
+    elif visible < 0.005:
+        faults.append(f"{label}: only {visible * 100:.1f}% visible")
+print(json.dumps(faults))
+`
+  const pixelResult = spawnSync('python3', ['-c', probe, ...files], { encoding: 'utf8' })
+  assert(pixelResult.status === 0, pixelResult.stderr || 'combat VFX pixel audit requires python3 + Pillow')
+  assertDeepEqual(JSON.parse(pixelResult.stdout.trim().split('\n').pop()), [],
+    'combat VFX must be visible effects on transparent canvases')
+  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
+    'combat VFX exceed 320 KiB')
+})
+
 check('bundled stage and generated icon inventories are complete and decodable', () => {
   const expectedStatus = [
     'aoe', 'attack', 'block', 'burn', 'draw', 'energy', 'miracle', 'orb', 'poison',
@@ -431,6 +477,7 @@ check('every artwork file fully decodes', () => {
     [enemyRoot, 'webp', enemyFiles.length],
     [combatEnemyRoot, 'webp', combatEnemyFiles.length],
     [combatCharacterRoot, 'webp', combatCharacterFiles.length],
+    [combatVfxRoot, 'webp', combatVfxFiles.length],
     [combatStageRoot, 'webp', existsSync(join(combatStageRoot, 'stage-act-1.webp')) ? 1 : 0],
     [iconRoot, 'png', iconFiles.length],
     [statusIconRoot, 'png', statusIconFiles.length],

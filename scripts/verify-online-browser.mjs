@@ -47,6 +47,20 @@ for (const context of [aContext, bContext]) {
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
         const socket = new Target(...args)
+        const send = socket.send.bind(socket)
+        socket.send = (message) => {
+          let auth = false
+          try { auth = JSON.parse(String(message)).type === 'authenticate' } catch {}
+          if (auth && window.__HOLD_ROOM_AUTH__) {
+            window.__RELEASE_ROOM_AUTH__ = () => {
+              window.__HOLD_ROOM_AUTH__ = false
+              window.__RELEASE_ROOM_AUTH__ = undefined
+              send(message)
+            }
+            return
+          }
+          send(message)
+        }
         sockets.push(socket)
         return socket
       },
@@ -473,6 +487,81 @@ try {
   check('the online table keeps the chosen Ascension visible during the run', () => {
     assert(onlineRunStatus.includes('Ascension 6'), `missing Ascension status: ${onlineRunStatus}`)
   })
+
+  // Hold authentication after the reconnect GET has completed, then kill an
+  // enemy before the first WebSocket snapshot. Both catch-up snapshots are
+  // restoration, not live hits, even though the mounted board stays present.
+  const restoredEnemy = structuredClone(liveRoom.run.combat.enemies[0])
+  await a.evaluate(() => {
+    window.__HOLD_ROOM_AUTH__ = true
+    window.__RELEASE_ROOM_AUTH__ = undefined
+    window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'death animation reconnect test')
+  })
+  await a.locator('.connection--reconnecting').waitFor()
+  await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
+  Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true })
+  rooms.publishRoom(code)
+  await b.locator('.enemy--dead').first().waitFor()
+  await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
+  await a.locator('.connection--connected').waitFor()
+  const reconnectedCorpse = a.locator('.enemy--dead').first()
+  await reconnectedCorpse.waitFor()
+  const reconnectDeathMotion = await reconnectedCorpse.evaluate((enemy) => ({
+    falling: enemy.classList.contains('enemy--falling'),
+    animation: getComputedStyle(enemy.querySelector('.enemy__portrait')).animationName,
+  }))
+  check('a retained online combat does not replay deaths learned during reconnect', () => {
+    assertEqual(reconnectDeathMotion.falling, false)
+    assertEqual(reconnectDeathMotion.animation, 'none')
+  })
+  Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)
+  rooms.publishRoom(code)
+  await Promise.all([
+    a.locator('.enemy--dead').waitFor({ state: 'detached' }),
+    b.locator('.enemy--dead').waitFor({ state: 'detached' }),
+  ])
+
+  // Capture a REST response, then let a newer WebSocket snapshot land before
+  // releasing it. The rejected stale GET must not cancel that live hit.
+  await a.locator('.combat[data-phase="player"]').waitFor()
+  let releaseStaleGet
+  const staleGetRelease = new Promise((resolve) => { releaseStaleGet = resolve })
+  let markStaleGetCaptured
+  const staleGetCaptured = new Promise((resolve) => { markStaleGetCaptured = resolve })
+  const staleFailureStart = failures.length
+  const roomGetPattern = `**/api/rooms/${code}`
+  await a.route(roomGetPattern, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    markStaleGetCaptured()
+    await staleGetRelease
+    await route.fulfill({ response })
+  })
+  await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
+  await a.locator('.combat__end-turn').click()
+  await staleGetCaptured
+  const liveHitEnemy = liveRoom.run.combat.enemies[0]
+  const liveHitHp = liveHitEnemy.hp
+  liveHitEnemy.hp -= 1
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').miracles = 1
+  await roomAction(b, { kind: 'spendMiracle' })
+  const liveHit = a.locator('.enemy--struck, .enemy--struck-alt').first()
+  await liveHit.waitFor()
+  releaseStaleGet()
+  await a.waitForTimeout(20)
+  const liveHitAfterStaleGet = await liveHit.evaluate((enemy) =>
+    getComputedStyle(enemy.querySelector('.enemy__portrait')).animationName)
+  await a.unroute(roomGetPattern)
+  const staleGetFailures = failures.splice(staleFailureStart)
+  check('a rejected stale REST snapshot does not cut short a newer socket hit', () => {
+    assert(liveHitAfterStaleGet.startsWith('struck-stage'), liveHitAfterStaleGet)
+    assertEqual(staleGetFailures.length, 1)
+    assert(staleGetFailures[0].includes('ERR_CONNECTION_RESET'), staleGetFailures[0])
+  })
+  liveRoom.run.combat.enemies.find((enemy) => enemy.uid === liveHitEnemy.uid).hp = liveHitHp
+  liveRoom.run.combat.players.find((player) => player.name === 'Bo').miracles = 1
+  await roomAction(b, { kind: 'spendMiracle' })
+  await liveHit.waitFor({ state: 'detached' })
 
   const [aView, bView] = await Promise.all([snapshot(a), snapshot(b)])
   const annPotions = await a.locator('.seat', { hasText: 'Ann' }).locator('.seat__potions').textContent()

@@ -32,7 +32,7 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
-| Combat stage, actor cutouts, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Combat stage, actor cutouts, animation VFX, card illustrations, status and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
@@ -55,6 +55,9 @@ AI-generated fan illustrations made with OpenAI Imagegen for this implementation
 new enemy batch was visually grounded in complete enemy cards from the official Slay the
 Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.
 No generated asset contains a card scan, logo, or readable text.
+
+`public/assets/combat/vfx/` contains five original transparent OpenAI Imagegen effects
+used by the shared idle, hit and defeat animations for every combat actor.
 
 `public/assets/status-icons/` contains fourteen committed generated combat-status symbols,
 and `public/assets/power-icons/` contains twenty-eight committed generated Power symbols.

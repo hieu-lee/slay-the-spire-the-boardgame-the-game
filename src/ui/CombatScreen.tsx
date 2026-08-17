@@ -103,6 +103,10 @@ type CombatScreenProps = {
   authoritativeVersion?: number
   /** Successful REST refresh count; omitted for the local table. */
   authoritativeRefresh?: number
+  /** Accepted newer REST snapshot count; omitted for the local table. */
+  authoritativeRestoration?: number
+  /** Whether online snapshots are live rather than reconnect catch-up. */
+  authoritativeConnected?: boolean
 }
 
 type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
@@ -468,49 +472,120 @@ function canAfford(
  * A hit that only changes a number is a hit the player misses entirely. The
  * flinch animation already existed in the stylesheet; nothing ever applied it.
  */
-function useStruck(state: CombatState): { struck: Set<string>; beat: number; damage: Map<string, number> } {
+function useStruck(
+  state: CombatState,
+  authoritativeRestoration?: number,
+  authoritativeConnected?: boolean,
+): { struck: Set<string>; beats: Map<string, number>; damage: Map<string, number> } {
   const previous = useRef(new Map<string, number>())
+  const previousRestoration = useRef(authoritativeRestoration)
+  const previousConnected = useRef(authoritativeConnected)
   const damage = useRef(new Map<string, number>())
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const beats = useRef(new Map<string, number>())
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const [struck, setStruck] = useState<Set<string>>(new Set())
-  // Bumped on every hit. Two blows on the same target inside the window leave
-  // the class name unchanged, and an unchanged class never restarts a CSS
-  // animation — so the second hit was not felt at all.
-  const [beat, setBeat] = useState(0)
 
   useEffect(() => {
     const now = new Map<string, number>()
     const hurt = new Set<string>()
+    const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
+      authoritativeConnected === false || previousConnected.current === false
+    previousRestoration.current = authoritativeRestoration
+    previousConnected.current = authoritativeConnected
     for (const entity of [...state.players, ...state.enemies]) {
       const id = 'uid' in entity ? entity.uid : entity.id
       now.set(id, entity.hp)
       const before = previous.current.get(id)
-      if (before !== undefined && entity.hp < before) {
+      if (!refreshed && before !== undefined && entity.hp < before) {
         hurt.add(id)
         damage.current.set(id, before - entity.hp)
       }
     }
     previous.current = now
+    if (refreshed) {
+      for (const timer of timers.current.values()) clearTimeout(timer)
+      timers.current.clear()
+      damage.current.clear()
+      setStruck((current) => current.size === 0 ? current : new Set())
+      return
+    }
     if (hurt.size === 0) return
 
-    // The timer lives in a ref rather than being cancelled by this effect's
-    // cleanup. Cleaning it up there meant any later state change that hurt
-    // nobody killed the pending "stop flinching" timer without scheduling a
-    // replacement — so the class stuck forever and, being unchanged, never
-    // re-triggered the animation again for the rest of the combat.
-    setStruck(hurt)
-    setBeat((count) => count + 1)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => {
-      timer.current = null
-      damage.current.clear()
-      setStruck(new Set())
-    }, 380)
-  }, [state])
+    // Each actor owns its beat and expiry. Concurrent hits must not cancel one
+    // another, while a second hit on the same actor must restart its animation.
+    setStruck((current) => new Set([...current, ...hurt]))
+    for (const id of hurt) {
+      const beat = (beats.current.get(id) ?? 0) + 1
+      beats.current.set(id, beat)
+      const prior = timers.current.get(id)
+      if (prior) clearTimeout(prior)
+      timers.current.set(id, setTimeout(() => {
+        if (beats.current.get(id) !== beat) return
+        timers.current.delete(id)
+        damage.current.delete(id)
+        setStruck((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }, 380))
+    }
+  }, [authoritativeConnected, authoritativeRestoration, state])
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) clearTimeout(timer)
+  }, [])
 
-  return { struck, beat, damage: damage.current }
+  return { struck, beats: beats.current, damage: damage.current }
+}
+
+/** Actors that crossed from alive to dead during this mounted combat. */
+function useFalling(
+  state: CombatState,
+  authoritativeRestoration?: number,
+  authoritativeConnected?: boolean,
+): Set<string> {
+  const previous = useRef(new Map<string, boolean>())
+  const previousRestoration = useRef(authoritativeRestoration)
+  const previousConnected = useRef(authoritativeConnected)
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const [falling, setFalling] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const now = new Map<string, boolean>()
+    const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
+      authoritativeConnected === false || previousConnected.current === false
+    previousRestoration.current = authoritativeRestoration
+    previousConnected.current = authoritativeConnected
+    for (const entity of [...state.players, ...state.enemies]) {
+      const id = 'uid' in entity ? entity.uid : entity.id
+      now.set(id, entity.dead)
+      if (refreshed) continue
+      if (previous.current.get(id) !== false || !entity.dead) continue
+      setFalling((current) => new Set(current).add(id))
+      const prior = timers.current.get(id)
+      if (prior) clearTimeout(prior)
+      timers.current.set(id, setTimeout(() => {
+        timers.current.delete(id)
+        setFalling((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }, 860))
+    }
+    previous.current = now
+    if (!refreshed) return
+    for (const timer of timers.current.values()) clearTimeout(timer)
+    timers.current.clear()
+    setFalling((current) => current.size === 0 ? current : new Set())
+  }, [authoritativeConnected, authoritativeRestoration, state])
+
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) clearTimeout(timer)
+  }, [])
+
+  return falling
 }
 
 export function CombatScreen({
@@ -533,6 +608,8 @@ export function CombatScreen({
   cardPreview,
   authoritativeVersion,
   authoritativeRefresh,
+  authoritativeRestoration,
+  authoritativeConnected,
 }: CombatScreenProps) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
@@ -626,7 +703,8 @@ export function CombatScreen({
     `${ability.players?.map((player) => player.id).join(',') ?? ''}:` +
     `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}`).join('\0')
 
-  const { struck, beat, damage } = useStruck(state)
+  const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
+  const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
 
   // Unknown delivery with the item still visible stays locked until a causally
   // later REST refresh. Exact inventory evidence can recognize a commit sooner.
@@ -3067,8 +3145,9 @@ export function CombatScreen({
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
                 struck={struck.has(enemy.uid)}
+                falling={falling.has(enemy.uid)}
                 hitDamage={damage.get(enemy.uid)}
-                beat={beat}
+                beat={beats.get(enemy.uid) ?? 0}
                 stageIndex={stageEnemies.length + index}
                 disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
                 targeted={(isStartTurnEnemyTarget(enemy.uid) ||
@@ -3150,7 +3229,8 @@ export function CombatScreen({
                         'seat',
                         occupant.id === viewerId ? 'seat--viewer' : '',
                         occupant.dead ? 'seat--dead' : '',
-                        struck.has(occupant.id) ? strikeClass('seat', beat) : '',
+                        falling.has(occupant.id) ? 'seat--falling' : '',
+                        struck.has(occupant.id) ? strikeClass('seat', beats.get(occupant.id) ?? 0) : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
@@ -3172,7 +3252,7 @@ export function CombatScreen({
                         />
                       </span>
                       {struck.has(occupant.id) ? (
-                        <span className="hit-vfx" aria-hidden="true"><strong>{damage.get(occupant.id)}</strong></span>
+                        <span className="hit-vfx" key={beats.get(occupant.id)} aria-hidden="true"><strong>{damage.get(occupant.id)}</strong></span>
                       ) : null}
                       <span className="seat__name">{occupant.name}</span>
                       <span className="bar">
@@ -3274,8 +3354,9 @@ export function CombatScreen({
                       label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
                       struck={struck.has(enemy.uid)}
+                      falling={falling.has(enemy.uid)}
                       hitDamage={damage.get(enemy.uid)}
-                      beat={beat}
+                      beat={beats.get(enemy.uid) ?? 0}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}

@@ -23,6 +23,8 @@ type EnemyCardProps = {
   hitDamage?: number
   /** Which hit this is, so a second blow restarts the animation. */
   beat?: number
+  /** Just crossed from alive to dead: play the one-shot defeat animation. */
+  falling?: boolean
   stageIndex?: number
   /** Player whose row this enemy occupies; bosses affect the whole party. */
   rowLabel?: string
@@ -237,6 +239,7 @@ export function EnemyCard({
   struck = false,
   hitDamage,
   beat = 0,
+  falling = false,
   stageIndex = 0,
   rowLabel,
   onClick,
@@ -257,6 +260,7 @@ export function EnemyCard({
   const className = [
     'enemy',
     enemy.dead ? 'enemy--dead' : '',
+    falling ? 'enemy--falling' : '',
     struck ? strikeClass('enemy', beat) : '',
     targeted ? 'enemy--targeted' : '',
     enemy.isBoss ? 'enemy--boss' : '',
@@ -350,7 +354,7 @@ export function EnemyCard({
           <Icon name={enemy.isBoss ? 'boss' : 'monster'} size={16} />
           <span className="enemy__name">{def.name}</span>
         </span>
-        {struck ? <span className="hit-vfx" aria-hidden="true"><strong>{hitDamage}</strong></span> : null}
+        {struck ? <span className="hit-vfx" key={beat} aria-hidden="true"><strong>{hitDamage}</strong></span> : null}
       </span>
 
       <span className="bar" aria-hidden="true">

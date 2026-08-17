@@ -189,6 +189,19 @@ await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
 
+const oneShotVfx = ['/assets/combat/vfx/hit-burst.webp', '/assets/combat/vfx/death-ash.webp',
+  '/assets/combat/vfx/death-ring.webp']
+const preloadedVfx = await page.evaluate((paths) => paths.map((path) => {
+  const url = new URL(path, location.href).href
+  const entry = performance.getEntriesByName(url).find((candidate) => candidate.entryType === 'resource')
+  return { path, ready: Boolean(entry && entry.responseEnd > 0), initiator: entry?.initiatorType }
+}), oneShotVfx)
+check('one-shot combat VFX are ready before the first hit', () => {
+  assertDeepEqual(preloadedVfx.map(({ path, ready }) => ({ path, ready })),
+    oneShotVfx.map((path) => ({ path, ready: true })))
+  assert(preloadedVfx.every(({ initiator }) => initiator === 'link'), JSON.stringify(preloadedVfx))
+})
+
 await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-physical-campaign')).nextRunNumber === 0)
 const freshMenuCampaign = await page.evaluate(() => ({
   saved: JSON.parse(localStorage.getItem('sts-physical-campaign')),
@@ -6879,6 +6892,36 @@ await page.evaluate(() => {
   run.combat.players[0].orbs = [null, null, null]
   debug.setRun(run)
 })
+await page.waitForTimeout(900)
+
+const idleMotion = await page.evaluate(() => {
+  const seatPortrait = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
+  const enemyPortrait = document.querySelector('.enemy:not(.enemy--dead) .enemy__portrait')
+  const seatArt = seatPortrait?.querySelector('img')
+  const enemyArt = enemyPortrait?.querySelector('.enemy__art--cutout')
+  return {
+    seat: seatArt ? getComputedStyle(seatArt).animationName : '',
+    enemy: enemyArt ? getComputedStyle(enemyArt).animationName : '',
+    seatMotes: seatPortrait ? getComputedStyle(seatPortrait, '::before').backgroundImage : '',
+    enemyMotes: enemyPortrait ? getComputedStyle(enemyPortrait, '::before').backgroundImage : '',
+  }
+})
+check('living players and enemies have grounded idle animation', () => {
+  assertEqual(idleMotion.seat, 'actor-idle')
+  assertEqual(idleMotion.enemy, 'actor-idle')
+  assert(idleMotion.seatMotes.includes('/assets/combat/vfx/hero-motes.webp'), idleMotion.seatMotes)
+  assert(idleMotion.enemyMotes.includes('/assets/combat/vfx/enemy-motes.webp'), idleMotion.enemyMotes)
+})
+const hoverEnemy = page.locator('.enemy:not(:disabled)').first()
+await hoverEnemy.hover()
+await page.waitForTimeout(300)
+const hoverScale = await hoverEnemy.locator('.enemy__art--cutout').evaluate((art) =>
+  new DOMMatrix(getComputedStyle(art).transform).a)
+check('idle motion composes with the enemy hover zoom', () => {
+  assert(hoverScale > 1.03, `hover scale stayed at ${hoverScale}`)
+})
+await page.mouse.move(0, 0)
+await shot('09a-combat-idle-animation')
 
 async function hurtViewer() {
   await page.evaluate(() => {
@@ -6905,6 +6948,28 @@ async function flinchCount(expected) {
 
 await hurtViewer()
 const flinchedAtOnce = await flinchCount(1)
+const hitMotion = await page.evaluate(() => {
+  const impact = document.querySelector('.seat--struck .hit-vfx, .seat--struck-alt .hit-vfx')
+  return impact ? {
+    animation: getComputedStyle(impact).animationName,
+    art: getComputedStyle(impact).backgroundImage,
+  } : null
+})
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['struck-stage', 'struck-stage-again', 'impact-bloom', 'damage-float'].includes(animation.animationName)) {
+      animation.currentTime = 150
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(outDir, '09b-combat-hit-animation.png'), timeout: 15_000 })
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['struck-stage', 'struck-stage-again', 'impact-bloom', 'damage-float'].includes(animation.animationName) &&
+      animation.playState === 'paused') animation.play()
+  }
+})
 // A state change that hurts nobody, landing inside the flinch window.
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -6918,6 +6983,8 @@ const flinchedAgain = await flinchCount(1)
 
 check('a hit is felt, and keeps being felt for the rest of the combat', () => {
   assertEqual(flinchedAtOnce, 1, 'the damaged seat should flinch')
+  assertEqual(hitMotion?.animation, 'impact-bloom', 'the generated impact effect should animate')
+  assert(hitMotion?.art.includes('/assets/combat/vfx/hit-burst.webp'), hitMotion?.art ?? 'missing hit VFX')
   assertEqual(flinchCleared, 0, 'and stop flinching even if another change interrupts')
   assertEqual(flinchedAgain, 1, 'and flinch again on the next hit')
 })
@@ -6927,8 +6994,10 @@ check('a hit is felt, and keeps being felt for the rest of the combat', () => {
 await flinchCount(0)
 await page.evaluate(() => {
   window.__STS_FLINCHES__ = []
+  window.__STS_IMPACTS__ = 0
   document.addEventListener('animationstart', (event) => {
     if (event.animationName.startsWith('struck')) window.__STS_FLINCHES__.push(event.animationName)
+    if (event.animationName === 'impact-bloom') window.__STS_IMPACTS__ += 1
   })
 })
 for (let i = 0; i < 2; i++) {
@@ -6939,12 +7008,31 @@ for (let i = 0; i < 2; i++) {
 const beats = await page.evaluate(() => ({
   count: window.__STS_FLINCHES__.length,
   names: window.__STS_FLINCHES__,
+  impacts: window.__STS_IMPACTS__,
 }))
 check('two hits in quick succession are both felt', () => {
   assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
+  assert(beats.impacts >= 2, `expected at least two generated hit bursts, got ${beats.impacts}`)
   assertEqual(new Set(beats.names).size, 2,
     `the two flinches must use different animations to restart: ${beats.names.join(', ')}`)
 })
+
+await flinchCount(0)
+await hurtViewer()
+await flinchCount(1)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].hp -= 1
+  debug.setRun(run)
+})
+const concurrentFlinches = await flinchCount(2)
+const concurrentBursts = await page.locator('.seat--struck .hit-vfx, .seat--struck-alt .hit-vfx').count()
+check('rapid hits on different actors keep both signals alive', () => {
+  assertEqual(concurrentFlinches, 2)
+  assertEqual(concurrentBursts, 2)
+})
+await flinchCount(0)
 
 // The enemy's remaining hit points are the number the whole turn is planned
 // around. Twice it fell below the fold at small sizes because the board was
@@ -7109,14 +7197,34 @@ const corpse = await page.evaluate(() => {
   return foe.uid
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].dead)
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+      Number(animation.currentTime) < 250) {
+      animation.currentTime = 380
+      animation.pause()
+    }
+  }
+})
+await shot('09c-enemy-defeat-animation')
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+      animation.playState === 'paused') animation.play()
+  }
+})
 const corpseView = await page.evaluate(() => {
   const tile = document.querySelector('.enemy--dead')
+  const portrait = tile?.querySelector('.enemy__portrait')
   return {
     found: tile != null,
     intents: tile?.querySelectorAll('.intent').length ?? -1,
     tokens: tile?.querySelectorAll('.token').length ?? -1,
     disabled: tile?.disabled ?? false,
     label: tile?.getAttribute('aria-label') ?? '',
+    deathAnimation: portrait ? getComputedStyle(portrait).animationName : '',
+    ash: portrait ? getComputedStyle(portrait, '::before').backgroundImage : '',
+    ring: portrait ? getComputedStyle(portrait, '::after').backgroundImage : '',
   }
 })
 check('a defeated enemy stops telegraphing and stops carrying tokens', () => {
@@ -7125,7 +7233,115 @@ check('a defeated enemy stops telegraphing and stops carrying tokens', () => {
   assertEqual(corpseView.tokens, 0, 'and no tokens')
   assert(corpseView.disabled, 'and cannot be clicked')
   assert(corpseView.label.includes('defeated'), `and says so: ${corpseView.label}`)
+  assertEqual(corpseView.deathAnimation, 'actor-defeat', 'and plays its defeat animation')
+  assert(corpseView.ash.includes('/assets/combat/vfx/death-ash.webp'), corpseView.ash)
+  assert(corpseView.ring.includes('/assets/combat/vfx/death-ring.webp'), corpseView.ring)
 })
+
+// A reconnect remounts the combat with its current dead actors. Those corpses
+// keep the final collapsed pose, but must not replay a death from long ago.
+const restoredCombat = await readRun()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun({ ...run, phase: 'map' }), restoredCombat)
+await page.waitForFunction(() => !document.querySelector('.board'))
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), restoredCombat)
+await page.waitForFunction(() => document.querySelector('.enemy--dead .enemy__portrait'))
+const restoredCorpse = await page.locator('.enemy--dead .enemy__portrait').evaluate((portrait) => ({
+  falling: portrait.closest('.enemy')?.classList.contains('enemy--falling') ?? true,
+  animation: getComputedStyle(portrait).animationName,
+  ash: getComputedStyle(portrait, '::before').animationName,
+  opacity: getComputedStyle(portrait).opacity,
+}))
+check('restored and reconnected corpses do not replay old deaths', () => {
+  assert(!restoredCorpse.falling, 'a restored corpse should not be marked as newly falling')
+  assertEqual(restoredCorpse.animation, 'none')
+  assertEqual(restoredCorpse.ash, 'none')
+  assertEqual(restoredCorpse.opacity, '0.28')
+})
+
+await page.emulateMedia({ reducedMotion: 'reduce' })
+const reducedMotion = await page.evaluate(() => {
+  const seatArt = document.querySelector('.seat:not(.seat--dead) .seat__portrait img')
+  const enemyArt = document.querySelector('.enemy:not(.enemy--dead) .enemy__art--cutout')
+  const corpsePortrait = document.querySelector('.enemy--dead .enemy__portrait')
+  return {
+    seat: seatArt ? getComputedStyle(seatArt).animationName : '',
+    enemy: enemyArt ? getComputedStyle(enemyArt).animationName : '',
+    corpse: corpsePortrait ? getComputedStyle(corpsePortrait).animationName : '',
+  }
+})
+check('reduced motion disables idle and defeat movement', () => {
+  assertEqual(reducedMotion.seat, 'none')
+  assertEqual(reducedMotion.enemy, 'none')
+  assertEqual(reducedMotion.corpse, 'none')
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[2].hp = 0
+  run.combat.players[2].dead = true
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.seat--dead.seat--falling .seat__portrait'))
+const reducedActiveDeath = await page.locator('.seat--dead.seat--falling .seat__portrait').evaluate((portrait) => ({
+  portrait: getComputedStyle(portrait).animationName,
+  ash: getComputedStyle(portrait, '::before').animationName,
+  ring: getComputedStyle(portrait, '::after').animationName,
+}))
+check('reduced motion also disables a newly triggered death', () => {
+  assertDeepEqual(reducedActiveDeath, { portrait: 'none', ash: 'none', ring: 'none' })
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[2].hp = run.combat.players[2].maxHp
+  run.combat.players[2].dead = false
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.seat--dead').length === 0)
+await page.emulateMedia({ reducedMotion: 'no-preference' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].hp = 0
+  run.combat.players[1].dead = true
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.seat--dead').length === 1)
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+      Number(animation.currentTime) < 250) {
+      animation.currentTime = 380
+      animation.pause()
+    }
+  }
+})
+await shot('09d-player-defeat-animation')
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+      animation.playState === 'paused') animation.play()
+  }
+})
+const fallenPlayerAnimation = await page.locator('.seat--dead .seat__portrait').evaluate((portrait) => ({
+  animation: getComputedStyle(portrait).animationName,
+  ash: getComputedStyle(portrait, '::before').backgroundImage,
+  ring: getComputedStyle(portrait, '::after').backgroundImage,
+}))
+check('a fallen player uses the same complete defeat language', () => {
+  assertEqual(fallenPlayerAnimation.animation, 'actor-defeat')
+  assert(fallenPlayerAnimation.ash.includes('/assets/combat/vfx/death-ash.webp'), fallenPlayerAnimation.ash)
+  assert(fallenPlayerAnimation.ring.includes('/assets/combat/vfx/death-ring.webp'), fallenPlayerAnimation.ring)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[1].hp = run.combat.players[1].maxHp
+  run.combat.players[1].dead = false
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.seat--dead').length === 0)
 
 // A cost the hand cannot fully pay must still be committable — the engine
 // accepts it, and the UI used to demand the printed count and strand the card.

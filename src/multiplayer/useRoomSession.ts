@@ -272,6 +272,7 @@ export function useRoomSession() {
   const [credentials, setCredentials] = useState<Credentials | null>(savedCredentials)
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null)
   const [refreshEpoch, setRefreshEpoch] = useState(0)
+  const [restorationEpoch, setRestorationEpoch] = useState(0)
   const [connection, setConnection] = useState<Connection>(credentials ? 'connecting' : 'idle')
   const [error, setError] = useState('')
   const [entering, setEntering] = useState(false)
@@ -302,8 +303,11 @@ export function useRoomSession() {
   }, [])
 
   const accept = useCallback((next: RoomSnapshot) => {
-    if (!snapshotRef.current || snapshotRef.current.code !== next.code || next.version >= snapshotRef.current.version) snapshotRef.current = next
-    setSnapshot((current) => !current || current.code !== next.code || next.version >= current.version ? next : current)
+    const current = snapshotRef.current
+    if (current && current.code === next.code && next.version < current.version) return false
+    snapshotRef.current = next
+    setSnapshot(next)
+    return !current || current.code !== next.code || next.version > current.version
   }, [])
 
   const reconcileUnknown = useCallback((target: number, actionGeneration: number, activeCredentials: Credentials) => {
@@ -324,7 +328,7 @@ export function useRoomSession() {
             signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
           })) as RoomSnapshot
           if (generation.current !== actionGeneration) break
-          accept(latest)
+          if (accept(latest)) setRestorationEpoch((current) => current + 1)
           setRefreshEpoch((current) => Math.max(current, refreshId))
           if (refreshId > reconciliation.current.target) reconciliation.current.target = 0
           delay = 1_000
@@ -362,7 +366,7 @@ export function useRoomSession() {
           signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
         })) as RoomSnapshot
         if (!active || generation.current !== connectedGeneration) return
-        accept(restored)
+        if (accept(restored)) setRestorationEpoch((current) => current + 1)
         setRefreshEpoch((current) => Math.max(current, refreshId))
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
         const next = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(credentials.code)}`)
@@ -519,7 +523,7 @@ export function useRoomSession() {
               signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
             })) as RoomSnapshot
             if (generation.current === actionGeneration) {
-              accept(latest)
+              if (accept(latest)) setRestorationEpoch((current) => current + 1)
               setRefreshEpoch((current) => Math.max(current, refreshId))
             }
             return {
@@ -629,6 +633,7 @@ export function useRoomSession() {
   return {
     snapshot,
     refreshEpoch,
+    restorationEpoch,
     connection,
     error,
     entering,
