@@ -101,7 +101,7 @@ export function StartMenu({
           onQuickStartActChange={onQuickStartAct}
         />
         <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-          Sound effects {sfxEnabled ? 'on' : 'off'}
+          Sound {sfxEnabled ? 'on' : 'off'}
         </button>
         <fieldset className="start-menu__party">
           <legend>Characters</legend>

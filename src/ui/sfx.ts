@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { enemyDef } from '../game/enemies.ts'
 
 export const SFX_STORAGE_KEY = 'sts-sfx-enabled'
 
@@ -18,6 +19,36 @@ const SOUNDS = {
 } as const
 
 type Sound = keyof typeof SOUNDS
+
+const BOSS_TRACKS = {
+  1: '/assets/bgm/the-guardian-emerges.mp3',
+  2: '/assets/bgm/battle-with-the-champ.mp3',
+  3: '/assets/bgm/the-awakened-one.mp3',
+  4: '/assets/bgm/the-heart.mp3',
+} as const
+
+type BossCombat = { phase: string; enemies: readonly { defId: string; ascension?: number; isBoss: boolean }[] }
+
+function bossTrack(combat?: BossCombat | null) {
+  if (!combat || combat.phase === 'won' || combat.phase === 'lost') return
+  const boss = combat.enemies.find((enemy) => enemy.isBoss)
+  const act = boss && enemyDef(boss.defId, boss.ascension).bossAct
+  return act ? BOSS_TRACKS[act] : undefined
+}
+
+/** Loop the appropriate act theme while a boss combat is active. */
+export function useBossFightMusic(combat?: BossCombat | null, enabled = true) {
+  const track = enabled ? bossTrack(combat) : undefined
+
+  useEffect(() => {
+    if (!track) return
+    const audio = new Audio(track)
+    audio.loop = true
+    audio.volume = 0.2
+    void audio.play().catch(() => {})
+    return () => audio.pause()
+  }, [track])
+}
 
 export function useRunOutcomeSound(
   run?: { phase: string; combat?: { phase: string } | null } | null,
