@@ -6,25 +6,19 @@ the room WebSocket carries signaling only, never audio.
 
 ## Local party
 
-Run these in separate terminals:
+Start the game, room server, and public tunnel together:
 
 ```bash
-pnpm dev:rooms
-pnpm dev
+pnpm play
 ```
 
-Open `http://localhost:5180`, choose **Play online**, create a room, and share its
-six-character code. A run starts only after every seat has a live connection.
+Open the printed `https://…trycloudflare.com` URL, choose **Play online**, create a
+room, and share the same link plus its six-character code. A run starts only after
+every seat has a live connection. Press Ctrl-C once to stop all three processes.
 
 ## Share over Cloudflare Tunnel
 
-Install `cloudflared`, start both development processes above, then run:
-
-```bash
-pnpm tunnel
-```
-
-Share the printed `https://…trycloudflare.com` URL. HTTPS is required for microphone
+Install `cloudflared`, then run `pnpm play` as above. HTTPS is required for microphone
 access outside localhost. Only port 5180 is tunneled: Vite proxies `/api` and `/ws` to
 the room server on `127.0.0.1:8787`, so room tokens and voice signaling stay on one
 origin. The development server uses strict port 5180, so it fails visibly instead of
@@ -43,7 +37,7 @@ server-only credentials:
 ```bash
 CLOUDFLARE_TURN_KEY_ID=… \
 CLOUDFLARE_TURN_API_TOKEN=… \
-pnpm dev:rooms
+pnpm play
 ```
 
 The browser authenticates to `/api/rooms/:code/voice-ice`; the room server exchanges the
