@@ -1189,6 +1189,14 @@ await page.evaluate((run) => {
     draw: [], discard: [], potions: ['distilled_chaos'], energy: 1 })
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
+const distilledUseVisual = await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).evaluate((button) => ({
+  text: button.textContent?.trim(),
+  icon: button.querySelector('img')?.getAttribute('src'),
+}))
+check('Potion use controls render the Potion icon instead of its name', () => {
+  assertEqual(distilledUseVisual.text, 'Use')
+  assert(distilledUseVisual.icon?.includes('/potion-icons/distilled_chaos.png'), distilledUseVisual.icon)
+})
 await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('distilled_chaos'))
 const emptyDistilledDialog = await page.getByRole('dialog', { name: 'Distilled Chaos' }).count()
@@ -6324,6 +6332,14 @@ await shot('07o-silent-modifier-cards-ready')
 await page.getByRole('button', { name: /^Accuracy\+,/ }).click()
 await page.getByRole('button', { name: /^Footwork\+,/ }).click()
 await page.getByRole('button', { name: /^Envenom\+,/ }).click()
+const shivUseVisual = await page.getByRole('button', { name: 'Use Shiv' }).evaluate((button) => ({
+  text: button.textContent?.trim(),
+  icon: button.querySelector('img')?.getAttribute('src'),
+}))
+check('Shiv use controls render the Shiv icon instead of its name', () => {
+  assertEqual(shivUseVisual.text, 'Use')
+  assert(shivUseVisual.icon?.includes('/icons/shiv'), shivUseVisual.icon)
+})
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
 await page.getByRole('button', { name: /^Choke\+,/ }).click()
@@ -6453,9 +6469,17 @@ const battleHymnArtWidth = await artWidth(battleHymnCard)
 if (artSynced) assert(battleHymnArtWidth >= 700, `expected upscaled Battle Hymn art, got ${battleHymnArtWidth}px`)
 await battleHymnCard.click()
 const battleHymnPowerLabel = await page.getByRole('button', { name: /^Battle Hymn\+?:/ }).getAttribute('aria-label')
+const battleHymnUseVisual = await page.getByRole('button', { name: 'Use Battle Hymn+' }).evaluate((button) => ({
+  text: button.textContent?.trim(),
+  icon: button.querySelector('img')?.getAttribute('src'),
+}))
 check('Battle Hymn+ exposes its Wrath bonus and activation accessibly', () => {
   assert(battleHymnPowerLabel.includes('2 +2 if you are in wrath damage'), battleHymnPowerLabel)
   assert(battleHymnPowerLabel.includes('activate once per turn'), battleHymnPowerLabel)
+})
+check('Power use controls render their glyph instead of repeating the name', () => {
+  assertEqual(battleHymnUseVisual.text, 'Use')
+  assert(battleHymnUseVisual.icon?.includes('/status-icons/attack.png'), battleHymnUseVisual.icon)
 })
 await page.getByRole('button', { name: 'Use Battle Hymn+' }).click()
 await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
@@ -10427,6 +10451,14 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
+const goldenEyeUseVisual = await page.getByRole('button', { name: 'Use Golden Eye' }).evaluate((button) => ({
+  text: button.textContent?.trim(),
+  icon: button.querySelector('img')?.getAttribute('src'),
+}))
+check('Relic use controls render the Relic icon instead of its name', () => {
+  assertEqual(goldenEyeUseVisual.text, 'Use')
+  assert(goldenEyeUseVisual.icon?.includes('/relic-icons/golden_eye.png'), goldenEyeUseVisual.icon)
+})
 await page.getByRole('button', { name: 'Use Golden Eye' }).click()
 const goldenEyePanel = page.getByRole('dialog', { name: 'Golden Eye — Scry 3' })
 await goldenEyePanel.waitFor()
@@ -10483,7 +10515,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => ![...document.querySelectorAll('button')]
-  .some((button) => button.textContent?.trim() === 'Use The Abacus'))
+  .some((button) => button.getAttribute('aria-label') === 'Use The Abacus'))
 const relicDuringStartProgress = await page.getByRole('button', { name: 'Use The Abacus' }).count()
 check('private start progress hides post-roll Relic controls', () => {
   assertEqual(relicDuringStartProgress, 0)

@@ -1131,6 +1131,19 @@ button:disabled {
   color: var(--gold);
 }
 
+.combat__actions button,
+.relic-actions > section > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.combat__actions button .item-icon-image,
+.relic-actions > section > button .item-icon-image {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
 /* ---------- combat ---------- */
 
 /* Flex, not grid: the result banner is conditional, so fixed grid rows would

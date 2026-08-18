@@ -279,7 +279,7 @@ export function powerGlyph(def: CardDef): PowerGlyphName {
   return 'power'
 }
 
-function PowerGlyph({ def }: { def: CardDef }) {
+export function PowerGlyph({ def }: { def: CardDef }) {
   const fallback = powerGlyph(def)
   return (
     <img

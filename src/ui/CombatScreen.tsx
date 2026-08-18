@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
-import { potionIconPath } from '../game/assets.ts'
+import { potionIconPath, relicIconPath } from '../game/assets.ts'
 import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePower,
@@ -73,7 +73,7 @@ import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
-import { PowerRow } from './PowerRow.tsx'
+import { PowerGlyph, PowerRow } from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
@@ -2802,6 +2802,7 @@ export function CombatScreen({
                   type="button"
                   key={power.uid}
                   disabled={usingPower || used || Boolean(pending?.choiceCards)}
+                  aria-label={used ? `${def.name} used` : `Use ${def.name}`}
                   aria-pressed={staged}
                   onClick={() => {
                     setPending(null)
@@ -2812,7 +2813,7 @@ export function CombatScreen({
                     setPotionOverflowRequired(0)
                     setPendingPowerUid(staged ? null : power.uid)
                   }}
-                >{used ? `${def.name} used` : `${staged ? '✓ ' : ''}Use ${def.name}`}</button>]
+                >{used ? `${def.name} used` : <>{staged ? '✓ ' : ''}Use <PowerGlyph def={def} /></>}</button>]
               }) : null}
               {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !orderingStage && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
                 if (!canActivatePotion(state, viewer, potionId)) return []
@@ -2830,6 +2831,7 @@ export function CombatScreen({
                     type="button"
                     key={potionId}
                     disabled={usingPotion || Boolean(pending?.choiceCards)}
+                    aria-label={`Use ${potion.name}${count > 1 ? ` (${count} available)` : ''}`}
                     aria-pressed={needsTarget ? staged : undefined}
                     title={potion.text}
                     onClick={() => {
@@ -2845,7 +2847,7 @@ export function CombatScreen({
                       } else consumePotion(potionId)
                     }}
                   >
-                    <img className="item-icon-image" src={potionIconPath(potionId)} alt="" /> {staged ? '✓ ' : ''}{potion.name}{count > 1 ? ` ×${count}` : ''}
+                    {staged ? '✓ ' : ''}Use <img className="item-icon-image" src={potionIconPath(potionId)} alt="" />{count > 1 ? ` ×${count}` : ''}
                   </button>
                 )
               }) : null}
@@ -2853,6 +2855,7 @@ export function CombatScreen({
                 <button
                   type="button"
                   disabled={Boolean(pending?.choiceCards)}
+                  aria-label="Use Shiv"
                   aria-pressed={spendingShiv}
                   onClick={() => {
                     setPending(null)
@@ -2864,13 +2867,14 @@ export function CombatScreen({
                     setSpendingShiv((current) => !current)
                   }}
                 >
-                  {spendingShiv ? '✓ ' : ''}Use Shiv
+                  {spendingShiv ? '✓ ' : ''}Use <Icon name="shiv" size={22} />
                 </button>
               ) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger && viewer.miracles > 0 ? (
                 <button
                   type="button"
                   disabled={Boolean(pending?.choiceCards)}
+                  aria-label={viewer.energy === CAPS.energy ? 'Use Miracle on next card' : 'Use Miracle (+1 Energy)'}
                   aria-pressed={viewer.energy === CAPS.energy ? miracleOnCard : undefined}
                   onClick={() => {
                     if (viewer.energy < CAPS.energy) {
@@ -2888,9 +2892,7 @@ export function CombatScreen({
                     }
                   }}
                 >
-                  {viewer.energy === CAPS.energy
-                    ? `${miracleOnCard ? '✓ ' : ''}Use Miracle on next card`
-                    : 'Use Miracle (+1 Energy)'}
+                  {miracleOnCard ? '✓ ' : ''}Use <Icon name="miracle" size={22} /> {viewer.energy === CAPS.energy ? 'on next card' : '(+1 Energy)'}
                 </button>
               ) : null}
               {state.phase === 'discard' && retainAllowance > 0 && discardableHand.length > 0 ? (
@@ -3231,7 +3233,7 @@ export function CombatScreen({
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
             if (!canActivateRelic(state, viewer, relicIndex)) return []
             if (held.defId === 'golden_eye') return [<button type="button" key={relicIndex}
-              onClick={() => useRelic(relicIndex)}>Use {def.name}</button>]
+              aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}>Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
             if (held.defId === 'gambling_chip') return [<button type="button" key={relicIndex}
               onClick={() => useRelic(relicIndex)}>Reroll with {def.name}</button>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
@@ -3256,7 +3258,7 @@ export function CombatScreen({
             if (held.defId === 'ninja_scroll') {
               const overflow = overflowShivCount(state, 2)
               if (overflow === 0) return [<button type="button" key={relicIndex}
-                onClick={() => useRelic(relicIndex)}>Use {def.name}</button>]
+                aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}>Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 <p>Choose {overflow} immediate Shiv target{overflow === 1 ? '' : 's'}.</p>
                 {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
@@ -3293,8 +3295,9 @@ export function CombatScreen({
                   })))}
               </details>]
             }
-            return [<button type="button" key={relicIndex} onClick={() => useRelic(relicIndex)}>
-              Use {def.name}{held.cubes !== undefined ? ` (${held.cubes})` : ''}
+            return [<button type="button" key={relicIndex} aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}`}
+              onClick={() => useRelic(relicIndex)}>
+              Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />{held.cubes !== undefined ? ` (${held.cubes})` : ''}
             </button>]
           })}
           </section>

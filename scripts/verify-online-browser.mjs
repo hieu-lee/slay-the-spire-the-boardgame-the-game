@@ -885,7 +885,7 @@ try {
   await a.getByRole('button', { name: 'Target row 1' }).click()
   await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Use Combust+') && button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Combust+' && button.disabled))
   const lockedUnknownCombust = await a.getByRole('button', { name: 'Use Combust+' }).isDisabled()
   await a.getByText('Choose a row for Combust+').waitFor()
   await a.unroute(combustRoomPattern)
