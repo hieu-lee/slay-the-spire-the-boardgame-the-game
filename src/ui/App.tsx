@@ -14,6 +14,7 @@ import {
   leaveRoom,
   finishMerchant,
   finishRun,
+  giveUpFight,
   purchaseAtMerchant,
   removeAtCurrentMerchant,
   resolveCampfire,
@@ -65,6 +66,7 @@ import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { CompendiumScreen } from './CompendiumScreen.tsx'
+import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
@@ -166,6 +168,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
   useBossFightMusic(run.combat, sfxEnabled && active)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
+  const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
@@ -255,8 +258,8 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
     })
   }
 
+  if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} backLabel={open ? 'Back to fight' : undefined} />
   if (!open) {
-    if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
       characters={characters}
@@ -343,6 +346,8 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
           <button type="button" onClick={startFreshRun}>
             New run
           </button>
+          {run.phase === 'combat' ? <button type="button" onClick={() => setCompendium(true)}>Compendium</button> : null}
+          {run.phase === 'combat' ? <button type="button" onClick={() => setGiveUpOpen(true)}>Give up</button> : null}
           <button type="button" onClick={onOnline}>Play online</button>
           <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
             Sound {sfxEnabled ? 'on' : 'off'}
@@ -350,6 +355,15 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
           </div>
         </details>
       </header>
+
+      {giveUpOpen && run.phase === 'combat' ? <GiveUpPanel
+        players={run.players} playerId={viewerId}
+        onVote={(yes) => {
+          setGiveUpOpen(false)
+          if (yes) setRun((current) => giveUpFight(current))
+        }}
+        onCancel={() => setGiveUpOpen(false)}
+      /> : null}
 
       {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen

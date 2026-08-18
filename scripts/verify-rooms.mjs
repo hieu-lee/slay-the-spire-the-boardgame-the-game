@@ -213,6 +213,74 @@ check('disconnect snapshots tolerate legacy partial run markers', () => {
   assertEqual(markDisconnected(room, seat.token).run, null)
 })
 
+suite('give-up authority')
+
+check('all eligible players must vote yes and the vote survives reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const deadlineAt = snapshotFor(room, a.token).giveUpVote.deadlineAt
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt })
+  assertEqual(room.run.phase, 'combat', 'one yes vote surrendered the party')
+  room.run.courier.offer = { playerId: a.playerId, kind: 'potion', id: 'block_potion' }
+  room.courierPledge = { playerId: a.playerId, id: 'block_potion', payments: { [a.playerId]: 1 } }
+  markDisconnected(room, b.token)
+  joinRoom(room, { token: b.token })
+  assertEqual(snapshotFor(room, b.token).giveUpVote.votes[a.playerId], true)
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt })
+  assertEqual(room.run.phase, 'defeat')
+  assertEqual(room.run.courier.offer, null)
+  assertEqual(room.courierPledge, undefined)
+  assertEqual(snapshotFor(room, a.token).giveUpVote, undefined)
+})
+
+check('a no vote and an expired deadline cannot surrender the fight', () => {
+  const { room, a, b } = twoSeatRoom()
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const deadlineAt = room.giveUpVote.deadlineAt
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'no', deadlineAt })
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt })
+  assertEqual(room.run.phase, 'combat')
+  room.giveUpVote.deadlineAt = Date.now() - 1
+  assertEqual(snapshotFor(room, a.token).giveUpVote, undefined, 'an expired vote remained visible')
+  let expired
+  try { apply(room, a.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: room.giveUpVote.deadlineAt }) } catch (error) { expired = error }
+  assertEqual(expired?.name, 'RoomError')
+  assertEqual(room.run.phase, 'combat', 'a late yes vote surrendered the party')
+})
+
+check('a one-seat online fight gives up immediately without a vote wait', () => {
+  const room = createRoom(createStore(), { code: 'GIVEUP' })
+  const seat = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  startRun(room, seat.token, { seed: 20 })
+  enterFirstCombat(room, seat.token)
+  room.cardPreviews = { [seat.playerId]: { cardUid: 'stale' } }
+  room.endTurnReady = { [seat.playerId]: true }
+  room.endTurnAbilities = [{ id: 'stale' }]
+  room.endTurnOrder = ['stale']
+  room.startTurnCombatId = room.run.combat.combatId
+  room.startTurnOrder = ['stale']
+  apply(room, seat.token, { kind: 'giveUpVote', vote: 'start' })
+  assertEqual(room.run.phase, 'defeat')
+  for (const key of ['cardPreviews', 'endTurnReady', 'endTurnAbilities', 'endTurnOrder', 'startTurnCombatId', 'startTurnOrder']) {
+    assertEqual(room[key], undefined, `one-seat surrender retained ${key}`)
+  }
+})
+
+check('fallen Last Stand players still vote before a multiplayer fight is given up', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.lastStand = true
+  room.run.combat.lastStand = true
+  const fallen = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(fallen, { hp: 0, dead: true })
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const vote = snapshotFor(room, a.token).giveUpVote
+  assertDeepEqual(vote.eligiblePlayerIds, [a.playerId, b.playerId])
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: vote.deadlineAt })
+  assertEqual(room.run.phase, 'combat', 'the survivor surrendered without the fallen player')
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: vote.deadlineAt })
+  assertEqual(room.run.phase, 'defeat')
+})
+
 suite('Neow authority')
 
 check('Neow deals public faces without leaking its remaining deck and blocks normal play', () => {

@@ -21,7 +21,7 @@ const POOLS: { id: Pool; label: string; sigil: string }[] = [
 
 const CARDS_BY_NAME = Object.values(CARDS).sort((a, b) => a.name.localeCompare(b.name))
 
-export function CompendiumScreen({ onBack }: { onBack: () => void }) {
+export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { onBack: () => void; backLabel?: string }) {
   const [pool, setPool] = useState<Pool>('all')
   const [search, setSearch] = useState('')
   const [type, setType] = useState<'all' | CardDef['type']>('all')
@@ -62,7 +62,7 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
   return (
     <main className="compendium">
       <aside className="compendium__filters">
-        <button type="button" className="compendium__back" onClick={onBack} aria-label="Back to main menu">←</button>
+        <button type="button" className="compendium__back" onClick={onBack} aria-label={backLabel}>←</button>
         <h1>Compendium</h1>
         <label className="compendium__search">
           <span className="visually-hidden">Search cards</span>

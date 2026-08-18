@@ -53,6 +53,7 @@ import {
   enterRoom,
   finishRun,
   finishMerchant,
+  giveUpFight,
   faceOf,
   hasPendingRelicAcquisition,
   leaveRoom,
@@ -118,6 +119,7 @@ import {
 export const CHARACTERS = ['ironclad', 'silent', 'defect', 'watcher']
 
 export const MAX_SEATS = 4
+export const GIVE_UP_TIMEOUT_MS = 10_000
 
 /**
  * Ambiguous glyphs are left out: a room code gets read aloud over voice chat,
@@ -631,6 +633,58 @@ function neowRewardChoice(action) {
   fail('Choose a valid Neow reward')
 }
 
+function activeGiveUpVote(room, now = Date.now()) {
+  const vote = room.giveUpVote
+  return vote && vote.combatId === room.run?.combat?.combatId && vote.deadlineAt > now
+    ? vote
+    : undefined
+}
+
+function finishGiveUp(room) {
+  room.run = giveUpFight(room.run)
+  room.giveUpVote = undefined
+  room.courierPledge = undefined
+  room.cardPreviews = undefined
+  room.endTurnReady = undefined
+  clearEndTurnOrdering(room)
+  clearStartTurnPlan(room)
+}
+
+function applyGiveUpVote(room, seat, action, seatToken) {
+  const combat = room.run?.combat
+  if (room.run?.phase !== 'combat' || !combat || combat.phase === 'won' || combat.phase === 'lost') {
+    fail('There is no active fight to give up')
+  }
+  const eligiblePlayerIds = combat.players.map((player) => player.id)
+  const current = activeGiveUpVote(room)
+  if (action.vote === 'start') {
+    if (Object.keys(action).some((key) => key !== 'kind' && key !== 'vote')) fail('Invalid give-up vote')
+    if (current) return { changed: false, snapshot: snapshotFor(room, seatToken) }
+    if (eligiblePlayerIds.length === 1) {
+      finishGiveUp(room)
+    } else {
+      room.giveUpVote = {
+        combatId: combat.combatId,
+        deadlineAt: Date.now() + GIVE_UP_TIMEOUT_MS,
+        eligiblePlayerIds,
+        votes: {},
+      }
+    }
+  } else {
+    if ((action.vote !== 'yes' && action.vote !== 'no') ||
+      Object.keys(action).some((key) => !['kind', 'vote', 'deadlineAt'].includes(key)) ||
+      !Number.isSafeInteger(action.deadlineAt) || current?.deadlineAt !== action.deadlineAt) {
+      fail('That give-up vote has expired')
+    }
+    const votes = { ...current.votes, [seat.playerId]: action.vote === 'yes' }
+    if (eligiblePlayerIds.every((playerId) => votes[playerId] === true)) {
+      finishGiveUp(room)
+    } else room.giveUpVote = { ...current, eligiblePlayerIds, votes }
+  }
+  room.version += 1
+  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
 /** One authenticated action covers Neow's red reward, blue option, and queued rewards. */
 function neowAction(room, seat, action, seatToken) {
   if (action.playerId !== undefined) fail('Neow choices are bound to your seat')
@@ -702,6 +756,7 @@ export function apply(room, seatToken, action) {
   if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
     fail('Finish the pending Relic acquisition first')
   }
+  if (action?.kind === 'giveUpVote') return applyGiveUpVote(room, seat, action, seatToken)
 
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
@@ -2453,6 +2508,7 @@ export function snapshotFor(room, seatToken) {
   const run = Array.isArray(room.run?.players) ? room.run : null
   const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
+  const giveUpVote = activeGiveUpVote(room)
 
   return {
     code: room.code,
@@ -2530,6 +2586,10 @@ export function snapshotFor(room, seatToken) {
         : { optionIds: [room.eventPledge.optionId] },
     } : undefined,
     eventCanSkip: viewerId !== null && run ? canSkipEvent(run, viewerId) : false,
+    giveUpVote: giveUpVote ? {
+      ...structuredClone(giveUpVote),
+      remainingMs: Math.max(0, giveUpVote.deadlineAt - Date.now()),
+    } : undefined,
     campaignProgress: {
       version: room.campaignProgress.version,
       characters: structuredClone(room.campaignProgress.characters),

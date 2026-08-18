@@ -4062,6 +4062,7 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number): CombatState
 
 /** Start of Turn: reset, draw 5, then roll the shared die (p.12). Mutates `next`. */
 function beginPlayerTurn(next: CombatState): CombatState {
+  const opening = next.turn === 0
   next.phase = 'start'
   next.turn += 1
   resolveDueSummons(next, 'startOfTurn')
@@ -4093,7 +4094,7 @@ function beginPlayerTurn(next: CombatState): CombatState {
   // by a later player's reset.
   for (const player of next.players) {
     if (player.dead) continue
-    const leftover = player.relics.some((relic) => relic.defId === 'ice_cream') ? player.energy : 0
+    const leftover = !opening && player.relics.some((relic) => relic.defId === 'ice_cream') ? player.energy : 0
     player.energy = Math.min(CAPS.energy, 3 + leftover)
     player.nextCardCost = null
     const keepBlock = player.powers.some((power) => cardDef(power.defId).retainBlock) || player.calipersArmed

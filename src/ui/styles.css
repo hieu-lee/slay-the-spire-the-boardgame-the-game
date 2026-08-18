@@ -1952,6 +1952,11 @@ button:disabled {
   border-color: var(--edge);
 }
 
+.give-up-panel { width: min(28rem, calc(100% - 2rem)); }
+.give-up-panel ul { margin: 0 0 1rem; padding: 0; list-style: none; }
+.give-up-panel__actions { display: flex; justify-content: center; gap: .75rem; }
+.give-up-panel__actions button { min-height: 44px; padding: .45rem .8rem; }
+
 @keyframes prompt-in {
   from {
     opacity: 0;

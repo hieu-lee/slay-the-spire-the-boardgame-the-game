@@ -305,6 +305,28 @@ try {
     assert(Array.isArray(bViewOfB.hand), 'Bo receives Bo\'s own hand')
   })
 
+  const voteStarted = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'giveUpVote', vote: 'start' } },
+  })
+  const voteDeadline = voteStarted.body.giveUpVote.deadlineAt
+  const firstYes = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: a.token,
+    body: { action: { kind: 'giveUpVote', vote: 'yes', deadlineAt: voteDeadline } },
+  })
+  service.store.rooms.get(code).giveUpVote.deadlineAt = Date.now() - 1
+  const lateYes = await request(`/api/rooms/${code}/action`, {
+    method: 'POST', token: joined[0].token,
+    body: { action: { kind: 'giveUpVote', vote: 'yes', deadlineAt: voteDeadline } },
+  })
+  check('give-up votes are authenticated, public, and refused after the server deadline', () => {
+    assertEqual(voteStarted.status, 200)
+    assert(voteStarted.body.giveUpVote.remainingMs > 9_000 && voteStarted.body.giveUpVote.remainingMs <= 10_000)
+    assertEqual(firstYes.body.giveUpVote.votes[a.playerId], true)
+    assertEqual(lateYes.status, 409)
+    assertEqual(service.store.rooms.get(code).run.phase, 'combat')
+  })
+
   // A refusal that still changed the room has to reach the rest of the party —
   // and must NOT reach the refused seat, whose snapshot frame would wipe the
   // recovery message the refusal just put on its screen.

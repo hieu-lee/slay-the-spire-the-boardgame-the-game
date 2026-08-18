@@ -30,6 +30,8 @@ import { currentQuickSetupStep } from '../game/meta.ts'
 import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { AchievementsScreen } from './AchievementsScreen.tsx'
+import { CompendiumScreen } from './CompendiumScreen.tsx'
+import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
 
@@ -195,6 +197,8 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const [code, setCode] = useState('')
   const [character, setCharacter] = useState<(typeof CHARACTERS)[number][0]>('ironclad')
   const [achievementsOpen, setAchievementsOpen] = useState(false)
+  const [compendiumOpen, setCompendiumOpen] = useState(false)
+  const [soloGiveUpOpen, setSoloGiveUpOpen] = useState(false)
   const snapshot = room.snapshot
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
   useBossFightMusic(snapshot?.run?.combat, sfxEnabled && room.connection === 'connected')
@@ -225,6 +229,10 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   useEffect(() => {
     previousRunPhase.current = runPhase
   }, [runPhase])
+
+  useEffect(() => {
+    if (snapshot?.giveUpVote) setCompendiumOpen(false)
+  }, [snapshot?.giveUpVote?.deadlineAt])
 
   // MUST stay above the early returns below — this component bails out for the
   // reconnecting and entry screens, and a hook called after those would run on
@@ -395,6 +403,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   }
 
   const run = snapshot.run
+  if (compendiumOpen) return <CompendiumScreen onBack={() => setCompendiumOpen(false)} backLabel="Back to fight" />
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
   const roomsCleared = Object.values(run.map.rooms).filter((mapRoom) => mapRoom.visited).length
@@ -464,10 +473,34 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
             Sound {sfxEnabled ? 'on' : 'off'}
           </button>
+          {run.phase === 'combat' ? <button type="button" onClick={() => setCompendiumOpen(true)}>Compendium</button> : null}
+          {run.phase === 'combat' ? <button type="button"
+            disabled={room.connection !== 'connected'}
+            onClick={() => snapshot.seats.length === 1
+              ? setSoloGiveUpOpen(true)
+              : room.act({ kind: 'giveUpVote', vote: 'start' })}>Give up</button> : null}
           <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
           </div>
         </details>
       </header>
+
+      {run.phase === 'combat' && soloGiveUpOpen ? <GiveUpPanel
+        players={run.players}
+        playerId={snapshot.you.playerId}
+        onVote={(yes) => {
+          setSoloGiveUpOpen(false)
+          if (yes) void room.act({ kind: 'giveUpVote', vote: 'start' })
+        }}
+        onCancel={() => setSoloGiveUpOpen(false)}
+      /> : null}
+      {run.phase === 'combat' && snapshot.giveUpVote ? <GiveUpPanel
+        vote={snapshot.giveUpVote}
+        players={run.players}
+        playerId={snapshot.you.playerId}
+        onVote={(yes) => room.act({
+          kind: 'giveUpVote', vote: yes ? 'yes' : 'no', deadlineAt: snapshot.giveUpVote!.deadlineAt,
+        })}
+      /> : null}
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
       {foreignCardChoice && cardChoiceSeat?.connected

@@ -192,6 +192,14 @@ export type RoomSnapshot = {
   courierPledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> }
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
   eventCanSkip: boolean
+  giveUpVote?: {
+    combatId: string
+    deadlineAt: number
+    remainingMs: number
+    receivedAt?: number
+    eligiblePlayerIds: string[]
+    votes: Record<string, boolean>
+  }
   campaignProgress: CampaignProgress
   run: VisibleRun | null
 }
@@ -313,8 +321,12 @@ export function useRoomSession() {
   const accept = useCallback((next: RoomSnapshot) => {
     const current = snapshotRef.current
     if (current && current.code === next.code && next.version < current.version) return false
-    snapshotRef.current = next
-    setSnapshot(next)
+    const received = next.giveUpVote ? {
+      ...next,
+      giveUpVote: { ...next.giveUpVote, receivedAt: performance.now() },
+    } : next
+    snapshotRef.current = received
+    setSnapshot(received)
     return !current || current.code !== next.code || next.version > current.version
   }, [])
 

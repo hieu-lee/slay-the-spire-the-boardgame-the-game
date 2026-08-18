@@ -51,6 +51,7 @@ import {
   advanceAct,
   createRun,
   enterRoom,
+  giveUpFight,
   resolveCampfire,
   resolveCardRewards,
   resolveCombat,
@@ -550,6 +551,18 @@ check('start of turn resets energy and block and draws five', () => {
   assertEqual(next.players[0].block, 0, 'player Block clears at the start of the Player Turn')
   assertEqual(next.players[0].hand.length, 5, 'five cards are drawn')
   assert(next.die >= 1 && next.die <= 6, `the shared die should be 1-6, got ${next.die}`)
+})
+
+check('Ice Cream banks Energy between turns, not the combat setup value', () => {
+  const player = makePlayer({ relics: [{ defId: 'ice_cream', spent: false }] })
+  const opening = startPlayerTurn(combat([player], [makeEnemy()]))
+  const nextTurn = startPlayerTurn({
+    ...opening,
+    phase: 'roundEnd',
+    players: opening.players.map((candidate) => ({ ...candidate, energy: 2 })),
+  })
+  assertEqual(opening.players[0].energy, 3, 'Ice Cream doubled the opening Energy')
+  assertEqual(nextTurn.players[0].energy, 5, 'Ice Cream did not restore leftover Energy')
 })
 
 check('Foresight pauses after Reset, Scries privately, then draws and rolls', () => {
@@ -1590,6 +1603,26 @@ check('a lost combat carries the party out of it as it stood', () => {
   assert(after.players[0].dead, 'the fallen player is carried out as dead')
   assertEqual(after.players[1].hp, 3, "and the survivor's hit points come from the combat")
   assertEqual(after.players[1].gold, 12, 'as does their gold')
+})
+
+check('giving up ends only an active fight and records a party defeat immediately', () => {
+  const run = postNeowRun(78, [
+    { id: 'p1', name: 'Ann', character: 'ironclad' },
+    { id: 'p2', name: 'Bo', character: 'silent' },
+  ])
+  const entered = enterRoom(run, roomChoices(run)[0].id)
+  const surrendered = giveUpFight(entered)
+  const surrenderedWithCourier = giveUpFight({
+    ...entered,
+    courier: { usedBy: ['p1'], offer: { playerId: 'p1', kind: 'potion', id: 'block_potion' } },
+  })
+  assertEqual(surrendered.phase, 'defeat')
+  assertEqual(surrendered.combat, null)
+  assert(surrendered.players.every((player) => player.dead && player.hp === 0))
+  assert(surrendered.log.some((line) => line === 'The party gives up.'))
+  assertEqual(surrenderedWithCourier.phase, 'defeat', 'an open Courier offer blocked surrender')
+  assertEqual(surrenderedWithCourier.courier.offer, null)
+  assert(giveUpFight(run) === run, 'giving up outside combat changed the run')
 })
 
 check('nothing else resolves once the last enemy is dead', () => {

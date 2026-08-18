@@ -494,13 +494,6 @@ function describeSeat(player: Player): string {
   return parts.join(', ')
 }
 
-function potionSummary(player: Player): string {
-  return [...new Set(player.potions)].map((potionId) => {
-    const count = player.potions.filter((held) => held === potionId).length
-    return `${potionDef(potionId).name}${count > 1 ? ` ×${count}` : ''}`
-  }).join(', ')
-}
-
 function potionDescription(player: Player): string {
   return [...new Set(player.potions)].map((potionId) => {
     const count = player.potions.filter((held) => held === potionId).length
@@ -3831,7 +3824,7 @@ export function CombatScreen({
                       {occupant.potions.length > 0 ? (
                         <span className="seat__potions">
                           {occupant.potions.map((id, index) => <PotionIcon id={id} focusable={false}
-                            key={`${id}-${index}`} />)} {potionSummary(occupant)}
+                            key={`${id}-${index}`} />)}
                         </span>
                       ) : null}
                       </span>

@@ -1948,6 +1948,21 @@ export function resolveCombat(state: RunState): RunState {
   return state.eventCombat ? applyDeadlyEvent(state, next) : next
 }
 
+/** End an active fight as a party defeat without resolving any pending combat choice. */
+export function giveUpFight(state: RunState): RunState {
+  if (state.phase !== 'combat' || !state.combat || state.combat.phase === 'won' || state.combat.phase === 'lost') return state
+  return resolveCombat({
+    ...state,
+    courier: { ...state.courier, offer: null },
+    combat: {
+      ...state.combat,
+      phase: 'lost',
+      players: state.combat.players.map((player) => ({ ...player, hp: 0, dead: true })),
+      log: [...state.combat.log, 'The party gives up.'],
+    },
+  })
+}
+
 /** Swap or move one player before the reserved Ascension 13 boss. */
 export function switchBetweenCombatRow(state: RunState, playerId: string, row: number): RunState {
   if (state.phase !== 'betweenCombat' || !state.pendingBossDefId ||

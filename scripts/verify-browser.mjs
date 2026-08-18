@@ -709,6 +709,42 @@ check('New run confirms before discarding an active run', () => {
   assertEqual(runAfterCancelledRestart.phase, 'combat')
 })
 
+const runBeforeFightCompendium = await readRun()
+await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'Compendium' }).click()
+await page.locator('.compendium').waitFor()
+await page.getByPlaceholder('Search').fill('Bash')
+await page.getByLabel('View upgrades').check()
+const fightCompendiumUpgrade = await page.locator('.compendium-card img').first().getAttribute('src')
+await page.getByRole('button', { name: 'Back to fight' }).click()
+await page.locator('.combat').waitFor()
+const runAfterFightCompendium = await readRun()
+check('fight settings can inspect upgraded cards and resume the unchanged run', () => {
+  assert(fightCompendiumUpgrade?.includes('bash+.webp'), `wrong upgraded card art: ${fightCompendiumUpgrade}`)
+  assertDeepEqual(runAfterFightCompendium, runBeforeFightCompendium)
+})
+
+if (!(await gameMenu.evaluate((details) => details.open))) await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'Give up' }).click()
+const soloGiveUp = page.getByRole('dialog', { name: 'Give up this fight?' })
+const soloGiveUpModal = await soloGiveUp.evaluate((dialog) => dialog.matches(':modal'))
+await soloGiveUp.getByRole('button', { name: 'Cancel' }).click()
+const runAfterGiveUpCancel = await readRun()
+if (!(await gameMenu.evaluate((details) => details.open))) await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'Give up' }).click()
+await soloGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
+await page.getByRole('heading', { name: 'The party has fallen' }).waitFor()
+const surrenderedSoloRun = await readRun()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeFightCompendium)
+await page.locator('.combat').waitFor()
+if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
+check('single-player Give up uses a modal confirmation and ends the fight immediately', () => {
+  assert(soloGiveUpModal, 'the give-up confirmation was not modal')
+  assertDeepEqual(runAfterGiveUpCancel, runBeforeFightCompendium)
+  assertEqual(surrenderedSoloRun.phase, 'defeat')
+  assert(surrenderedSoloRun.log.includes('The party gives up.'))
+})
+
 let boundaryRunPrompt = ''
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -7372,7 +7408,7 @@ const brewReplacementTip = page.locator('.potion-tip').filter({ hasText: 'Block 
 await brewReplacementTip.waitFor()
 const brewReplacementDescription = await page.locator(`[id="${brewReplacementDescriptionId}"]`).textContent()
 check('Entropic Brew replacement Potion icons explain their effects', () => {
-  assertEqual(brewReplacementDescription, 'Gain 2 Block.')
+  assertEqual(brewReplacementDescription, '2 Block to any player.')
 })
 await page.keyboard.press('Escape')
 await brewReplacementTip.waitFor({ state: 'hidden' })
@@ -7430,6 +7466,7 @@ const combatPotionDescriptionId = await combatPotionButton.getAttribute('aria-de
 const combatPotionDescription = await page.locator(`[id="${combatPotionDescriptionId}"]`).textContent()
 const seatWithCunning = page.getByRole('button', { name: /Cunning Potion: Gain 3 Shivs/ })
 const seatPotionIcon = seatWithCunning.locator('.seat__potions .potion-chip').first()
+const seatPotionText = await seatWithCunning.locator('.seat__potions').textContent()
 const seatPotionLabel = await seatWithCunning.getAttribute('aria-label')
 await seatPotionIcon.hover()
 const seatPotionTip = page.locator('.potion-tip').filter({ hasText: 'Cunning Potion' })
@@ -7437,6 +7474,7 @@ await seatPotionTip.waitFor()
 const seatPotionTipBox = await seatPotionTip.boundingBox()
 const visibleSeatPotionTips = await page.locator('.potion-tip').count()
 check('seat-held Potions expose their effects and keep the tooltip inside the viewport', () => {
+  assertEqual(seatPotionText, '', 'Potion names rendered beside their icons')
   assert(seatPotionLabel.includes('Cunning Potion: Gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.'))
   assert(seatPotionTipBox && seatPotionTipBox.x >= 0 && seatPotionTipBox.y >= 0)
   assert(seatPotionTipBox.x + seatPotionTipBox.width <= 1440)
@@ -7621,10 +7659,12 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].dead === true)
 const deadPotionControls = await page.locator('.combat__actions').getByRole('button', { name: /Energy Potion/ }).count()
-const deadPotionSummary = await page.locator('.seat--viewer .seat__potions').textContent()
+const deadPotionIcons = await page.locator('.seat--viewer .seat__potions .potion-chip').count()
+const deadSeatLabel = await page.locator('.seat--viewer').getAttribute('aria-label')
 check('a dead seat keeps public potion information but gets no Player Turn controls', () => {
   assertEqual(deadPotionControls, 0)
-  assert(deadPotionSummary.includes('Energy Potion'))
+  assertEqual(deadPotionIcons, 1)
+  assert(deadSeatLabel.includes('Energy Potion: Gain 2 Energy.'))
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

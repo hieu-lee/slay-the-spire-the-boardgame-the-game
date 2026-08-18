@@ -156,6 +156,7 @@ export {
   leaveRoom,
   finishMerchant,
   finishRun,
+  giveUpFight,
   purchaseAtMerchant,
   revealCourier,
   skipEvent,

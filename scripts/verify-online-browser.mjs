@@ -584,6 +584,74 @@ try {
   })
   await a.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 
+  const onlineRunBeforeCompendium = await snapshot(a)
+  await a.locator('details.game-settings > summary').click()
+  await a.getByRole('button', { name: 'Compendium' }).click()
+  await a.locator('.compendium').waitFor()
+  await a.getByLabel('View upgrades').check()
+  await a.getByRole('button', { name: 'Back to fight' }).click()
+  await a.locator('.app-shell--online .combat').waitFor()
+  const onlineRunAfterCompendium = await snapshot(a)
+  check('online fight settings can inspect upgrades without mutating the shared run', () => {
+    assertEqual(onlineRunAfterCompendium.version, onlineRunBeforeCompendium.version)
+    assertDeepEqual(onlineRunAfterCompendium.run.combat, onlineRunBeforeCompendium.run.combat)
+  })
+
+  const giveUpRestore = structuredClone(liveRoom.run)
+  await a.evaluate(() => {
+    const actualNow = Date.now
+    window.__RESTORE_DATE_NOW__ = () => { Date.now = actualNow }
+    Date.now = () => actualNow() + 60 * 60 * 1000
+  })
+  await b.locator('details.game-settings > summary').click()
+  await b.getByRole('button', { name: 'Compendium' }).click()
+  await b.locator('.compendium').waitFor()
+  await a.locator('details.game-settings > summary').click()
+  await a.getByRole('button', { name: 'Give up' }).click()
+  const aGiveUp = a.getByRole('dialog', { name: 'Give up this fight?' })
+  const bGiveUp = b.getByRole('dialog', { name: 'Give up this fight?' })
+  await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
+  const compendiumInterruptedByVote = await b.locator('.compendium').count()
+  liveRoom.giveUpVote.deadlineAt = Date.now() + 250
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([aGiveUp.waitFor({ state: 'hidden' }), bGiveUp.waitFor({ state: 'hidden' })])
+  await a.getByRole('button', { name: 'Give up' }).click()
+  await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
+  const giveUpDeadlineLabel = await aGiveUp.getByRole('timer').textContent()
+  const giveUpBounds = await aGiveUp.evaluate((dialog) => {
+    const box = dialog.getBoundingClientRect()
+    return { modal: dialog.matches(':modal'), left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+      width: innerWidth, height: innerHeight }
+  })
+  await a.screenshot({ path: join(outDir, '02a-give-up-vote.png'), fullPage: true })
+  await aGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
+  await bGiveUp.getByText('Ann: Yes').waitFor()
+  await b.reload({ waitUntil: 'domcontentloaded' })
+  await b.locator('.connection--connected').waitFor()
+  const restoredGiveUp = b.getByRole('dialog', { name: 'Give up this fight?' })
+  await restoredGiveUp.getByText('Ann: Yes').waitFor()
+  await restoredGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
+  await Promise.all([a.getByRole('heading', { name: 'The party has fallen' }).waitFor(),
+    b.getByRole('heading', { name: 'The party has fallen' }).waitFor()])
+  const surrenderedOnlineRun = await snapshot(a)
+  await a.evaluate(() => window.__RESTORE_DATE_NOW__())
+  liveRoom.run = giveUpRestore
+  liveRoom.giveUpVote = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([a.locator('.app-shell--online .combat').waitFor(), b.locator('.app-shell--online .combat').waitFor()])
+  await a.locator('details.game-settings').evaluate((details) => { details.open = false })
+  check('online Give up restarts after expiry and is a reconnect-safe unanimous 10-second vote', () => {
+    assert(/^\d+s remaining$/.test(giveUpDeadlineLabel), `missing give-up deadline: ${giveUpDeadlineLabel}`)
+    assertEqual(compendiumInterruptedByVote, 0, 'an incoming give-up vote stayed hidden behind Compendium')
+    assert(giveUpBounds.modal, 'the give-up vote was not modal')
+    assert(giveUpBounds.left >= 0 && giveUpBounds.right <= giveUpBounds.width &&
+      giveUpBounds.top >= 0 && giveUpBounds.bottom <= giveUpBounds.height,
+    `give-up panel leaves the viewport: ${JSON.stringify(giveUpBounds)}`)
+    assertEqual(surrenderedOnlineRun.run.phase, 'defeat')
+  })
+
   // Hold authentication after the reconnect GET has completed, then kill an
   // enemy before the first WebSocket snapshot. Both catch-up snapshots are
   // restoration, not live hits, even though the mounted board stays present.
@@ -692,8 +760,12 @@ try {
   await liveHit.waitFor({ state: 'detached' })
 
   const [aView, bView] = await Promise.all([snapshot(a), snapshot(b)])
-  const annPotions = await a.locator('.seat', { hasText: 'Ann' }).locator('.seat__potions').textContent()
-  const boPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
+  const annSeat = a.locator('.seat', { hasText: 'Ann' })
+  const boSeat = a.locator('.seat', { hasText: 'Bo' })
+  const annPotions = await annSeat.locator('.seat__potions .potion-chip').count()
+  const boPotions = await boSeat.locator('.seat__potions .potion-chip').count()
+  const annSeatLabel = await annSeat.getAttribute('aria-label')
+  const boSeatLabel = await boSeat.getAttribute('aria-label')
   const foreignPotionControls = await a.locator('.combat__actions').getByRole('button', { name: /Block Potion/ }).count()
   check('each browser receives only its own hidden cards', () => {
     const aId = aView.you.playerId
@@ -705,8 +777,10 @@ try {
     assertEqual(aView.run.players.find((player) => player.id === bId).deck, null)
   })
   check('every online seat shows every face-up potion without granting its controls', () => {
-    assert(annPotions.includes('Energy Potion ×3'))
-    assert(boPotions.includes('Block Potion'))
+    assertEqual(annPotions, 3)
+    assertEqual(boPotions, 1)
+    assert(annSeatLabel.includes('Energy Potion ×3: Gain 2 Energy.'))
+    assert(boSeatLabel.includes('Block Potion: 2 Block to any player.'))
     assertEqual(foreignPotionControls, 0)
   })
   let annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
@@ -3173,7 +3247,7 @@ try {
     b.locator('.combat[data-phase="enemy"]').waitFor(),
   ])
   const enemyTurn = await snapshot(a)
-  const enemyTurnPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions').textContent()
+  const enemyTurnPotions = await a.locator('.seat', { hasText: 'Bo' }).locator('.seat__potions .potion-chip').count()
   check('each seat independently confirms the shared end of turn', () => {
     const ann = enemyTurn.run.combat.players.find((player) => player.id === enemyTurn.you.playerId)
     const bo = enemyTurn.run.combat.players.find((player) => player.id !== enemyTurn.you.playerId)
@@ -3181,8 +3255,8 @@ try {
     assertEqual(bo.handCount, 0)
     assertEqual(enemyTurn.run.combat.phase, 'enemy')
   })
-  check('face-up potion summaries remain visible outside the Player Turn', () => {
-    assert(enemyTurnPotions.includes('Block Potion'))
+  check('face-up potion icons remain visible outside the Player Turn', () => {
+    assertEqual(enemyTurnPotions, 1)
   })
   await a.waitForFunction(() => !['enemy'].includes(document.querySelector('.app-shell--online .combat')?.dataset.phase))
   await a.unroute(actionUrl, refuseFirstAutomaticEnemy)
