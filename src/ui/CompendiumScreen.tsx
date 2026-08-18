@@ -122,11 +122,9 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
               <button type="button" className={`compendium-card compendium-card--${card.owner}`}
                 key={card.id} onClick={() => setSelected(card)}
                 aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
-                {card.owner !== 'status' ? (
-                  <img src={cardImagePath(face, showUpgrade)} alt="" loading="lazy"
-                    onLoad={(event) => revealDecodedImage(event.currentTarget)}
-                    onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
-                ) : null}
+                <img src={cardImagePath(face, showUpgrade)} alt="" loading="lazy"
+                  onLoad={(event) => revealDecodedImage(event.currentTarget)}
+                  onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 <CardFace def={face} rules={playText} />
               </button>
             )
@@ -141,11 +139,9 @@ export function CompendiumScreen({ onBack }: { onBack: () => void }) {
           onClose={() => setSelected(null)}>
           <button type="button" onClick={() => detailRef.current?.close()} aria-label="Close card detail">×</button>
           <span className="compendium__detail-card">
-                {selected?.owner !== 'status' ? (
-                  <img src={cardImagePath(selectedFace, upgraded && Boolean(selected?.upgrade))} alt=""
-                    onLoad={(event) => revealDecodedImage(event.currentTarget)}
-                    onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
-                ) : null}
+                <img src={cardImagePath(selectedFace, upgraded && Boolean(selected?.upgrade))} alt=""
+                  onLoad={(event) => revealDecodedImage(event.currentTarget)}
+                  onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
                 <CardFace def={selectedFace} rules={cardPlayText(selectedFace)} />
               </span>
         </dialog>

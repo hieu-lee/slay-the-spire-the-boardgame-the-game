@@ -16,7 +16,8 @@ import { enemyDef } from '../src/game/enemies.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
-const artSynced = existsSync(cardArtDir) && readdirSync(cardArtDir).length > 0
+const GENERATED_STATUS_SCANS = new Set(['curses__daze.webp', 'curses__burn.webp', 'curses__slimed.webp'])
+const artSynced = existsSync(cardArtDir) && readdirSync(cardArtDir).some((file) => !GENERATED_STATUS_SCANS.has(file))
 const args = process.argv.slice(2)
 const headed = args.includes('--headed')
 const outDir = join(
@@ -378,11 +379,13 @@ await page.getByRole('button', { name: 'Statuses' }).click()
 await page.getByPlaceholder('Search').fill('Daze')
 const dazeLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
 await page.locator('.compendium-card').first().click()
-const statusDetailFallback = await page.locator('.compendium__detail-card').evaluate((card) => ({
-  hasPublisherImage: Boolean(card.querySelector(':scope > img')),
-  fallbackVisible: getComputedStyle(card.querySelector('.card-face')).visibility === 'visible',
+const statusDetailAsset = await page.locator('.compendium__detail-card').evaluate((card) => ({
+  source: card.querySelector(':scope > img')?.getAttribute('src'),
+  visible: (() => {
+    const image = card.querySelector(':scope > img')
+    return Boolean(image?.complete && image.naturalWidth > 0 && getComputedStyle(image).visibility === 'visible')
+  })(),
   text: card.querySelector('.card-face')?.textContent ?? '',
-  rulesSize: Number.parseFloat(getComputedStyle(card.querySelector('.card-face__rules')).fontSize),
 }))
 await page.keyboard.press('Escape')
 await page.getByPlaceholder('Search').fill('Slimed')
@@ -412,10 +415,10 @@ check('the compendium filters the real card catalog and opens card detail', () =
   assert(curseUpgradeSource?.endsWith('curses__clumsy.webp') && !curseUpgradeSource.includes('clumsy+'),
     `non-upgradable curse requested the wrong face: ${curseUpgradeSource}`)
   assert(curseImageVisible, 'the curse scan stayed hidden after changing filters')
-  assert(!statusDetailFallback.hasPublisherImage && statusDetailFallback.fallbackVisible &&
-    statusDetailFallback.text.includes('Daze') && statusDetailFallback.text.includes('unplayable') &&
-    statusDetailFallback.text.includes('ethereal') && statusDetailFallback.rulesSize >= 13,
-  `unscanned status detail has no fallback: ${JSON.stringify(statusDetailFallback)}`)
+  assert(statusDetailAsset.source?.endsWith('curses__daze.webp') && statusDetailAsset.visible &&
+    statusDetailAsset.text.includes('Daze') && statusDetailAsset.text.includes('unplayable') &&
+    statusDetailAsset.text.includes('ethereal'),
+  `Daze status scan did not render: ${JSON.stringify(statusDetailAsset)}`)
   assert(dazeLabel?.includes('unplayable') && dazeLabel.includes('ethereal'), dazeLabel)
   assert(slimedLabel?.includes('cost 1'), slimedLabel)
 })

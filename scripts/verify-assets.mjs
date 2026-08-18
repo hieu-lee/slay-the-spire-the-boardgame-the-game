@@ -144,28 +144,21 @@ const indexedKeys = new Set(
   }),
 )
 
-/**
- * Pools with no scans in the source set. The UI degrades to a name plate for
- * these rather than showing a broken image.
- *
- * An explicit allowlist, NOT "skip anything whose path is not in the index":
- * that used `cardImagePath` as its own skip condition, so a regression in the
- * path builder made every card skip itself and the check passed while pointing
- * every single card at one nonexistent file.
- */
-const UNSCANNED_POOLS = new Set(['status'])
+const GENERATED_CARD_KEYS = new Set(['curses__daze.webp', 'curses__burn.webp', 'curses__slimed.webp'])
+const knownCardKeys = new Set([...indexedKeys, ...GENERATED_CARD_KEYS])
+const hasPublisherScans = cardFiles.some((file) => !GENERATED_CARD_KEYS.has(file))
 
 check('every defined card resolves to an image that exists', () => {
   if (cardFiles.length === 0) return // not synced
   const missing = []
   const unindexed = []
   for (const def of Object.values(CARDS)) {
-    if (UNSCANNED_POOLS.has(def.owner)) continue
+    if (def.owner !== 'status' && !hasPublisherScans) continue
     for (const upgraded of [false, true]) {
       // Only check the upgraded face for cards that actually have one.
       if (upgraded && !def.upgrade) continue
       const path = cardImagePath(faceOf(def, upgraded), upgraded)
-      if (!indexedKeys.has(path.split('/').pop())) {
+      if (!knownCardKeys.has(path.split('/').pop())) {
         unindexed.push(`${def.id}${upgraded ? '+' : ''} -> ${path}`)
         continue
       }
@@ -182,6 +175,22 @@ check('every defined card resolves to an image that exists', () => {
   assert(missing.length === 0, `missing card art:\n    ${missing.join('\n    ')}`)
 })
 
+check('generated status scans decode at the shipped card resolution', () => {
+  const files = [...GENERATED_CARD_KEYS].map((file) => join(cardRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect generated status scans')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded generated status scan count')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    return width === 744 && height === 1039 && statSync(join(cardRoot, file)).size <= 60 * 1024
+      ? [] : [`${file} must be a 744x1039 WebP under 60 KiB`]
+  })
+  assertDeepEqual(faults, [], 'generated status scan faults')
+})
+
 // Path shape is checked even without artwork, since it is pure code.
 check('image paths are safe, normalised browser paths', () => {
   for (const def of Object.values(CARDS)) {
@@ -195,13 +204,13 @@ check('image paths are safe, normalised browser paths', () => {
 })
 
 check('the card art on disk matches the index exactly', () => {
-  if (cardFiles.length === 0) return
-  const expected = cardIndex.reduce((count, entry) => count + (entry.hasUpgrade ? 2 : 1), 0)
+  if (!hasPublisherScans) return
+  const expected = cardIndex.reduce((count, entry) => count + (entry.hasUpgrade ? 2 : 1), 0) + GENERATED_CARD_KEYS.size
   assertEqual(cardFiles.length, expected, 'every index entry should have exactly one file per face')
 })
 
 check('character card art stays at source resolution', () => {
-  if (cardFiles.length === 0) return
+  if (!hasPublisherScans) return
   const files = cardFiles
     .filter((file) => /^(ironclad|silent|defect|watcher)__/.test(file))
     .map((file) => join(cardRoot, file))
@@ -221,7 +230,7 @@ check('character card art stays at source resolution', () => {
 // Card art is the bulk of the payload; a careless re-sync at full resolution
 // would add hundreds of megabytes without anyone noticing until clone time.
 check('card art stays within its size budget', () => {
-  if (cardFiles.length === 0) return
+  if (!hasPublisherScans) return
   let total = 0
   const oversized = []
   for (const file of cardFiles) {
@@ -243,6 +252,7 @@ check('no stale card images linger from an older naming scheme', () => {
     expected.add(`${key}.webp`)
     if (entry.hasUpgrade) expected.add(`${key}+.webp`)
   }
+  for (const key of GENERATED_CARD_KEYS) expected.add(key)
   const strays = cardFiles.filter((file) => !expected.has(file))
   assert(
     strays.length === 0,
