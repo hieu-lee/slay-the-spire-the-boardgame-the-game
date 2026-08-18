@@ -5,7 +5,7 @@ import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
 import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
 import type { Enemy, Player } from '../game/types.ts'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
@@ -27,6 +27,8 @@ type EnemyCardProps = {
   beat?: number
   /** Just crossed from alive to dead: play the one-shot defeat animation. */
   falling?: boolean
+  /** Decorative, authoritative action effects aimed at this enemy. */
+  vfx?: ReactNode
   stageIndex?: number
   /** Player whose row this enemy occupies; bosses affect the whole party. */
   rowLabel?: string
@@ -257,6 +259,7 @@ export function EnemyCard({
   hitDamage,
   beat = 0,
   falling = false,
+  vfx,
   stageIndex = 0,
   rowLabel,
   defender,
@@ -300,6 +303,7 @@ export function EnemyCard({
       type="button"
       className={className}
       data-sfx="enemy"
+      data-enemy-id={enemy.uid}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
@@ -371,6 +375,7 @@ export function EnemyCard({
             event.currentTarget.style.display = 'none'
           }}
         />
+        {vfx}
         {rowLabel ? (
           <span className="enemy__row" title={`Row ${enemy.row + 1} · ${rowLabel}`} aria-hidden="true">
             <span className="enemy__row-long">{rowLabel}</span>

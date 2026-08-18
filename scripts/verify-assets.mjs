@@ -38,6 +38,7 @@ const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
 const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
+const combatActionVfxRoot = join(combatVfxRoot, 'actions')
 const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
@@ -56,6 +57,7 @@ const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
+const combatActionVfxFiles = listing(combatActionVfxRoot, '.webp')
 const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
 const relicIconFiles = listing(relicIconRoot, '.png')
@@ -357,8 +359,21 @@ check('combat animation effects are complete, transparent, and compact', () => {
   const expected = [
     'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
   ]
+  const expectedActions = [
+    'guard-bloom.webp', 'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp',
+    'magic-burst.webp', 'potion-burst.webp', 'silent-poison.webp', 'silent-shiv.webp',
+    'watcher-calm-aura.webp', 'watcher-pray.webp', 'watcher-wrath-aura.webp',
+  ]
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
-  const files = expected.map((file) => join(combatVfxRoot, file))
+  assertDeepEqual(combatActionVfxFiles.sort(), expectedActions, 'personal combat VFX inventory')
+  const entryHtml = readFileSync(join(repoRoot, 'index.html'), 'utf8')
+  for (const file of expectedActions) {
+    assert(entryHtml.includes(`/assets/combat/vfx/actions/${file}`), `${file} is not preloaded for first use`)
+  }
+  const files = [
+    ...expected.map((file) => join(combatVfxRoot, file)),
+    ...expectedActions.map((file) => join(combatActionVfxRoot, file)),
+  ]
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not inspect combat VFX')
   const inspected = result.stdout.split(/^File: /m).slice(1)
@@ -393,8 +408,12 @@ print(json.dumps(faults))
   assert(pixelResult.status === 0, pixelResult.stderr || 'combat VFX pixel audit requires python3 + Pillow')
   assertDeepEqual(JSON.parse(pixelResult.stdout.trim().split('\n').pop()), [],
     'combat VFX must be visible effects on transparent canvases')
-  assert(files.reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
-    'combat VFX exceed 320 KiB')
+  assert(expected.map((file) => join(combatVfxRoot, file))
+    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
+    'base combat VFX exceed 320 KiB')
+  assert(expectedActions.map((file) => join(combatActionVfxRoot, file))
+    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 1024 * 1024,
+    'personal combat VFX exceed 1 MiB')
 })
 
 check('bundled stage and generated icon inventories are complete and decodable', () => {

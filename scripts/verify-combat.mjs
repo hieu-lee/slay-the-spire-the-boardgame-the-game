@@ -129,6 +129,175 @@ check('playing Strike damages the chosen enemy', () => {
   assertEqual(next.players[0].discard.length, 1, 'and lands in the discard pile')
 })
 
+check('accepted card and potion actions append bounded public presentation events', () => {
+  const bash = instance('bash', true)
+  const privateCard = instance('defend_ironclad')
+  const initial = combat([makePlayer({
+    hand: [bash, privateCard],
+    energy: 3,
+    potions: ['purity_potion'],
+  })], [makeEnemy({ uid: 'target', hp: 20, maxHp: 20 })])
+
+  const refused = playCard(initial, 'p1', bash.uid, { enemyUid: 'missing', playerId: null })
+  assertEqual(refused, initial, 'an invalid play changed the combat state')
+  assertDeepEqual(initial.presentationEvents, [], 'an invalid play published an animation')
+
+  let state = playCard(initial, 'p1', bash.uid, { enemyUid: 'target', playerId: null })
+  assertDeepEqual(state.presentationEvents, [{
+    seq: 1,
+    kind: 'card',
+    actorId: 'p1',
+    sourceId: 'bash',
+    upgraded: true,
+    copied: false,
+    energy: 2,
+    enemyIds: ['target'],
+    playerIds: [],
+  }])
+
+  state = activatePotion(state, 'p1', 'purity_potion', { exhaustUids: [privateCard.uid] })
+  const potionEvent = state.presentationEvents.at(-1)
+  assertDeepEqual(potionEvent, {
+    seq: 2,
+    kind: 'potion',
+    actorId: 'p1',
+    sourceId: 'purity_potion',
+    enemyIds: [],
+    playerIds: [],
+  })
+  assert(!JSON.stringify(potionEvent).includes(privateCard.uid), 'a presentation event leaked a private card UID')
+
+  const survivor = instance('survivor')
+  const discarded = instance('defend_silent')
+  const withDiscard = playCard(combat([makePlayer({
+    character: 'silent', hand: [survivor, discarded], energy: 3,
+  })], [makeEnemy()]), 'p1', survivor.uid, {
+    enemyUid: null,
+    playerId: 'p1',
+    discardUids: [discarded.uid],
+  })
+  assert(!JSON.stringify(withDiscard.presentationEvents).includes(discarded.uid),
+    'a card presentation event leaked a discard choice UID')
+
+  let bounded = combat([
+    makePlayer({ potions: Array.from({ length: 13 }, () => 'weak_potion') }),
+  ], [makeEnemy({ hp: 100, maxHp: 100 })])
+  for (let index = 0; index < 13; index++) {
+    bounded = activatePotion(bounded, 'p1', 'weak_potion', { enemyUid: 'e1' })
+  }
+  assertEqual(bounded.presentationEvents.length, 12)
+  assertEqual(bounded.presentationEvents[0].seq, 2)
+  assertEqual(bounded.presentationEvents.at(-1).seq, 13)
+})
+
+check('presentation events resolve row, boss, and ally scopes', () => {
+  const cleave = instance('cleave')
+  let state = combat([makePlayer({ hand: [cleave] })], [
+    makeEnemy({ uid: 'row-a', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'row-b', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'other-row', row: 1, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'boss', row: 1, hp: 20, maxHp: 20, isBoss: true }),
+  ])
+  state = playCard(state, 'p1', cleave.uid, { enemyUid: 'row-a', playerId: 'p1' })
+  assertDeepEqual(state.presentationEvents.at(-1).enemyIds, ['row-a', 'row-b', 'boss'])
+  assertDeepEqual(state.presentationEvents.at(-1).playerIds, [], 'the actor received a duplicate target overlay')
+
+  const defend = instance('defend_ironclad', true)
+  state = combat([
+    makePlayer({ id: 'p1', hand: [defend] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy()])
+  state = playCard(state, 'p1', defend.uid, { enemyUid: null, playerId: 'p2' })
+  assertDeepEqual(state.presentationEvents.at(-1).playerIds, ['p2'])
+
+  state = combat([makePlayer({ potions: ['explosive_potion'] })], [
+    makeEnemy({ uid: 'potion-row', row: 0, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'potion-other', row: 1, hp: 20, maxHp: 20 }),
+    makeEnemy({ uid: 'potion-boss', row: 1, hp: 20, maxHp: 20, isBoss: true }),
+  ])
+  state = activatePotion(state, 'p1', 'explosive_potion', { enemyRow: 0 })
+  assertDeepEqual(state.presentationEvents.at(-1).enemyIds, ['potion-row', 'potion-boss'])
+})
+
+check('surplus hostile choices cannot publish false presentation targets', () => {
+  const defend = instance('defend_ironclad')
+  const initial = combat([
+    makePlayer({ id: 'p1', hand: [defend] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent' }),
+  ], [makeEnemy({ uid: 'e1' })])
+  for (const context of [
+    { enemyUid: 'e1', playerId: 'p1' },
+    { enemyUid: null, enemyUids: ['e1'], playerId: 'p1' },
+    { enemyUid: null, playerId: 'p1', playerIds: ['p2'] },
+  ]) {
+    const played = playCard(initial, 'p1', defend.uid, context)
+    assert(played !== initial, `Defend refused a tolerated surplus choice: ${JSON.stringify(context)}`)
+    assertDeepEqual(played.presentationEvents.at(-1).enemyIds, [])
+    assertDeepEqual(played.presentationEvents.at(-1).playerIds, [])
+  }
+
+  const potionState = combat([
+    makePlayer({ potions: ['energy_potion'] }),
+  ], [makeEnemy({ uid: 'e1' })])
+  const used = activatePotion(potionState, 'p1', 'energy_potion', { enemyUid: 'e1', targetPlayerId: 'p1' })
+  assertDeepEqual(used.presentationEvents.at(-1).enemyIds, [])
+  assertDeepEqual(used.presentationEvents.at(-1).playerIds, [])
+
+  const berserk = instance('berserk')
+  const powered = playCard(combat([
+    makePlayer({ hand: [berserk] }),
+  ], [makeEnemy({ uid: 'e1' })]), 'p1', berserk.uid, { enemyUid: 'e1', playerId: 'p1' })
+  assertDeepEqual(powered.presentationEvents.at(-1).enemyIds, [],
+    'a triggered row Power cannot animate a tolerated surplus enemy choice')
+
+  const bomb = instance('the_bomb')
+  const armed = playCard(combat([
+    makePlayer({ hand: [bomb] }),
+  ], [makeEnemy({ uid: 'e1' }), makeEnemy({ uid: 'e2' })]), 'p1', bomb.uid,
+  { enemyUid: null, playerId: 'p1' })
+  assertDeepEqual(armed.presentationEvents.at(-1).enemyIds, [],
+    'The Bomb cannot animate its delayed damage when the Power is merely armed')
+})
+
+check('copied and modal card resolutions publish their actual presentation metadata', () => {
+  const doubleTap = instance('double_tap')
+  const strike = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [doubleTap, strike], energy: 3 })], [
+    makeEnemy({ hp: 20, maxHp: 20 }),
+  ])
+  state = playCard(state, 'p1', doubleTap.uid, { enemyUid: null, playerId: null })
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  assertEqual(state.phase, 'copy')
+  assertDeepEqual(state.presentationEvents.at(-1), {
+    seq: 2,
+    kind: 'card',
+    actorId: 'p1',
+    sourceId: 'strike_ironclad',
+    upgraded: false,
+    copied: true,
+    energy: 1,
+    enemyIds: ['e1'],
+    playerIds: [],
+  })
+  state = playCardCopy(state, 'p1', { enemyUid: 'e1', playerId: null })
+  assertDeepEqual(state.presentationEvents.at(-1), {
+    seq: 3,
+    kind: 'card',
+    actorId: 'p1',
+    sourceId: 'strike_ironclad',
+    upgraded: false,
+    copied: false,
+    energy: 0,
+    enemyIds: ['e1'],
+    playerIds: [],
+  })
+
+  const ironWave = instance('iron_wave', true)
+  state = combat([makePlayer({ hand: [ironWave], energy: 3 })], [makeEnemy()])
+  state = playCard(state, 'p1', ironWave.uid, { enemyUid: 'e1', playerId: null, mode: 1 })
+  assertEqual(state.presentationEvents.at(-1).mode, 1)
+})
+
 check('Curl Up fires once, only after HP damage, and can block later hits', () => {
   const first = instance('strike_ironclad')
   const second = instance('strike_ironclad')
@@ -5314,6 +5483,9 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     evokeEnemyUids: [lightningRowTarget(0), lightningRowTarget(1)],
   })
   assertDeepEqual(evoked.enemies.map((enemy) => enemy.hp), [18, 18, 18, 16])
+  assertDeepEqual([...evoked.presentationEvents.at(-1).enemyIds].sort(),
+    ['back', 'boss', 'front-a', 'front-b'],
+    'Electrodynamics left row sentinels in its public target VFX')
   assertEqual(playCard(evokeState, 'p1', dual.uid, {
     enemyUid: null, playerId: 'p1', evokeSlots: [0], evokeEnemyUids: ['front-a', 'back'],
   }), evokeState, 'Electrodynamics accepted single-enemy Lightning targets')
@@ -9520,6 +9692,14 @@ check('Fairy revival preserves Painful Stabs damage accounting', () => {
   const resolved = enemyTurn({ ...state, phase: 'enemy' })
   assertEqual(resolved.players[0].hp, 1)
   assert(resolved.players[0].draw.some((card) => card.defId === 'daze'), 'Painful Stabs lost the revived hit')
+  assertDeepEqual(resolved.presentationEvents.at(-1), {
+    seq: 1,
+    kind: 'potion',
+    actorId: 'p1',
+    sourceId: 'fairy_in_a_bottle',
+    enemyIds: [],
+    playerIds: ['p1'],
+  })
 
   const strike = instance('strike_ironclad')
   const guardian = combat([

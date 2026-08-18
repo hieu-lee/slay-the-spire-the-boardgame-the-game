@@ -1139,15 +1139,18 @@ button:disabled {
 }
 
 .combat__actions button .item-icon-image,
+.combat__actions button .icon {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
 .relic-actions > section > button .item-icon-image,
-.combat__actions button .icon,
 .relic-actions > section > button .icon {
   width: 2.8rem;
   height: 2.8rem;
 }
 
 .combat__actions button .icon {
-  transform: scale(1.5);
   filter: drop-shadow(0 0 0.18rem rgb(245 227 180 / 0.85));
 }
 
@@ -1355,24 +1358,6 @@ button:disabled {
 .seat__pending {
   color: var(--ink-dim);
   font-size: 0.65rem;
-}
-
-.stance {
-  align-self: flex-start;
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-}
-
-.stance--calm {
-  color: #6fb7d8;
-}
-
-.stance--wrath {
-  color: #d86f6f;
 }
 
 /* ---------- enemy ---------- */
@@ -3683,7 +3668,7 @@ button:disabled {
   pointer-events: none;
 }
 
-.seat__portrait img {
+.seat__portrait > img {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -3860,6 +3845,221 @@ button:disabled {
   0%, 100% { opacity: 0.14; transform: translateY(2%) scale(0.96); }
   50% { opacity: 0.32; transform: translateY(-3%) scale(1.02); }
 }
+
+/* Watcher stance is part of her silhouette, not another status label. The two
+   generated textures differ in shape as well as colour, while CSS supplies the
+   quiet ambient motion. */
+.stance-aura {
+  position: absolute;
+  z-index: 0;
+  inset: -24% -18% -12%;
+  background: center / contain no-repeat;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.stance-aura--calm {
+  background-image: url('/assets/combat/vfx/actions/watcher-calm-aura.webp');
+  filter: drop-shadow(0 0 0.45rem rgb(218 246 255 / 0.72));
+  opacity: 0.82;
+  animation: calm-aura 2.2s ease-in-out infinite;
+}
+
+.stance-aura--wrath {
+  background-image: url('/assets/combat/vfx/actions/watcher-wrath-aura.webp');
+  filter: drop-shadow(0 0 0.5rem rgb(255 54 37 / 0.82));
+  opacity: 0.9;
+  animation: wrath-aura 1.05s ease-in-out infinite;
+}
+
+@keyframes calm-aura {
+  0%, 100% { opacity: 0.66; transform: rotate(-2deg) scale(0.96); }
+  50% { opacity: 0.92; transform: rotate(2deg) translateY(-2%) scale(1.03); }
+}
+
+@keyframes wrath-aura {
+  0%, 100% { opacity: 0.7; transform: rotate(-4deg) scale(0.94); }
+  38% { opacity: 1; transform: rotate(3deg) translateY(-3%) scale(1.06); }
+  68% { opacity: 0.8; transform: rotate(-1deg) scale(1); }
+}
+
+/* Authoritative presentation events render the same semantic overlay for the
+   acting client and every peer. Generated art is the primary layer; the small
+   CSS marks keep the family readable while it fades in and out. */
+.combat-vfx {
+  position: absolute;
+  z-index: 12;
+  inset: -24%;
+  background-image: var(--vfx-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #ffe091));
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  animation: combat-vfx-reveal 820ms ease-out both;
+}
+
+.combat-vfx--actor { z-index: 3; }
+.combat-vfx--target { z-index: 12; }
+
+.combat-vfx::before,
+.combat-vfx::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.combat-vfx::before {
+  inset: 22%;
+  border: 0.16rem solid color-mix(in srgb, var(--vfx-tone-color, #ffe091) 72%, white);
+  border-radius: 50%;
+  animation: combat-vfx-ring 650ms ease-out both;
+}
+
+.combat-vfx::after {
+  top: 44%;
+  right: 12%;
+  left: 12%;
+  height: 12%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, white 45%, var(--vfx-tone-color, #f59a3d) 56%, transparent);
+  transform: rotate(-24deg);
+  animation: combat-vfx-streak 520ms ease-out both;
+}
+
+.combat-vfx--blunt::before {
+  inset: 28%;
+  border-width: 0.35rem;
+  border-color: rgb(255 200 91 / 0.92);
+  box-shadow: 0 0 1rem rgb(255 112 45 / 0.8), inset 0 0 0.6rem white;
+}
+
+.combat-vfx--blunt::after {
+  inset: 34%;
+  height: auto;
+  border-radius: 50%;
+  background: radial-gradient(circle, white 0 8%, #ffc054 9% 28%, transparent 65%);
+  transform: none;
+}
+
+.combat-vfx--lightning {
+  filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #7beaff));
+}
+
+.combat-vfx--lightning::before {
+  inset: 8% 42%;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(#efffff, #5ce6ff 42%, #587eff);
+  clip-path: polygon(45% 0, 100% 0, 61% 36%, 92% 36%, 12% 100%, 34% 55%, 0 55%);
+  animation: lightning-strike 560ms steps(2, jump-none) both;
+}
+
+.combat-vfx--lightning::after {
+  background: radial-gradient(ellipse, white, #66eaff 24%, transparent 68%);
+  transform: none;
+}
+
+.combat-vfx--mantra {
+  filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #78efff));
+}
+
+.combat-vfx--mantra::before,
+.combat-vfx--stance::before,
+.combat-vfx--orb::before {
+  inset: 14%;
+  border-color: rgb(159 244 255 / 0.9);
+  border-style: double;
+  border-width: 0.35rem;
+  animation: mantra-ring 760ms ease-out both;
+}
+
+.combat-vfx--mantra::after,
+.combat-vfx--stance::after,
+.combat-vfx--orb::after {
+  inset: 8% 38%;
+  height: auto;
+  background: linear-gradient(transparent, #d9fcff 42%, #5bdced 64%, transparent);
+  transform: none;
+}
+
+.combat-vfx--poison { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #67d74c)); }
+.combat-vfx--poison::before { border-color: var(--vfx-tone-color, #77df4b); }
+.combat-vfx--frost { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #aaf4ff)); }
+.combat-vfx--dark { filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #9b6cff)); }
+.combat-vfx--block { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #55bbff)); }
+.combat-vfx--buff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #ffbb58)); }
+.combat-vfx--debuff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #b676e8)); }
+.combat-vfx--draw,
+.combat-vfx--discard,
+.combat-vfx--exhaust,
+.combat-vfx--utility { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #8bd9ff)); }
+
+@keyframes combat-vfx-reveal {
+  0% { opacity: 0; transform: scale(0.62); }
+  20% { opacity: 1; transform: scale(1.08); }
+  64% { opacity: 0.86; }
+  100% { opacity: 0; transform: scale(1.18); }
+}
+
+@keyframes combat-vfx-ring {
+  from { opacity: 0; transform: scale(0.3); }
+  32% { opacity: 1; }
+  to { opacity: 0; transform: scale(1.35); }
+}
+
+@keyframes combat-vfx-streak {
+  from { opacity: 0; transform: translateX(-24%) rotate(-24deg) scaleX(0.25); }
+  30% { opacity: 1; }
+  to { opacity: 0; transform: translateX(18%) rotate(-24deg) scaleX(1.2); }
+}
+
+@keyframes lightning-strike {
+  0%, 100% { opacity: 0; transform: translateY(-8%) scaleY(0.7); }
+  18%, 44%, 70% { opacity: 1; transform: translate(3%, 0) scaleY(1); }
+  30%, 58% { opacity: 0.32; transform: translate(-3%, 0) scaleY(0.94); }
+}
+
+@keyframes mantra-ring {
+  from { opacity: 0; transform: rotate(-100deg) scale(1.3); }
+  35% { opacity: 1; }
+  to { opacity: 0; transform: rotate(24deg) scale(0.48); }
+}
+
+.seat--vfx-lunge .seat__portrait > img,
+.seat--vfx-recoil .seat__portrait > img,
+.seat--vfx-cast .seat__portrait > img,
+.seat--vfx-drink .seat__portrait > img,
+.seat--vfx-throw .seat__portrait > img {
+  animation-duration: 620ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.25, 1);
+  animation-fill-mode: both;
+  animation-iteration-count: 1;
+}
+
+.seat--vfx-lunge.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-lunge; }
+.seat--vfx-lunge.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-lunge-again; }
+.seat--vfx-recoil.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-recoil; }
+.seat--vfx-recoil.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-recoil-again; }
+.seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast; }
+.seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-again; }
+.seat--vfx-drink.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-drink; }
+.seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
+.seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
+.seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
+
+@keyframes vfx-lunge { 0%, 100% { transform: translateX(0) rotate(0); } 32% { transform: translateX(14%) rotate(3deg) scale(1.04); } }
+@keyframes vfx-lunge-again { 0%, 100% { transform: translateX(0) rotate(0); } 32% { transform: translateX(14%) rotate(3deg) scale(1.04); } }
+@keyframes vfx-recoil { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
+@keyframes vfx-recoil-again { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
+@keyframes vfx-cast { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
+@keyframes vfx-cast-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
+@keyframes vfx-drink { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
+@keyframes vfx-drink-again { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
+@keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
+@keyframes vfx-throw-again { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
 
 .enemy__row {
   position: absolute;
@@ -4294,7 +4494,7 @@ button:disabled {
 
   .card-flight { display: none; }
 
-  .seat__portrait img,
+  .seat__portrait > img,
   .enemy__portrait > .enemy__art--cutout,
   .seat__portrait::before,
   .enemy__portrait::before,
@@ -4306,6 +4506,21 @@ button:disabled {
   .hit-vfx strong {
     animation: none;
   }
+
+  .stance-aura,
+  .combat-vfx,
+  .combat-vfx::before,
+  .combat-vfx::after,
+  .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img {
+    animation: none;
+    transform: none;
+  }
+
+  .stance-aura--calm { opacity: 0.66; }
+  .stance-aura--wrath { opacity: 0.78; }
+  .combat-vfx { opacity: 0.55; }
+  .combat-vfx::before,
+  .combat-vfx::after { opacity: 0.45; }
 
   .seat--dead .seat__portrait,
   .enemy--dead .enemy__portrait,
@@ -4541,10 +4756,6 @@ button:disabled {
   background: rgb(4 7 9 / 0.82);
   border: 1px solid rgb(222 190 113 / 0.42);
   border-radius: 999px;
-}
-
-.seat__meta .stance {
-  align-self: center;
 }
 
 .row__seat .seat > .orbs {

@@ -4,6 +4,8 @@
 import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
+import { POTIONS } from '../src/game/relics.ts'
+import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
 import {
   MIN_STAGE_SCALE,
   STAGE_GAP_REM,
@@ -87,6 +89,65 @@ check('repo-native card art is keyed by stable card ID, not printed face name', 
   assertEqual(base, `${CARD_ART_ROOT}/ironclad/bash.webp`)
   assertEqual(upgraded, base, 'base and upgrade share one text-free illustration')
   assertEqual(cardArtPath(CARDS.strike_silent), `${CARD_ART_ROOT}/silent/strike_silent.webp`)
+})
+
+check('every reachable card resolves a stable combat VFX recipe for every character', () => {
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'watcher-pray',
+    'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
+  const cards = Object.values(CARDS)
+  assertEqual(cards.filter((card) => characters.includes(card.owner)).length, 251,
+    'the complete character card pool is covered')
+  for (const card of cards) {
+    for (const character of characters) {
+      const base = cardVfxRecipe(character, card.id)
+      const upgraded = cardVfxRecipe(character, `${card.id}+`)
+      assertEqual(JSON.stringify(upgraded), JSON.stringify(base),
+        `${character}/${card.id}+ keeps the base visual identity`)
+      for (const token of [base.asset, base.tone]) {
+        assert(/^[a-z0-9-]+$/.test(token), `${character}/${card.id} has a path-safe VFX token: ${token}`)
+      }
+      assert(assets.has(base.asset), `${character}/${card.id} resolves to a supplied asset: ${base.asset}`)
+      assertEqual(vfxAssetPath(base), `/assets/combat/vfx/actions/${base.asset}.webp`)
+    }
+  }
+})
+
+check('notable card identities stay distinct and portable between characters', () => {
+  const strike = cardVfxRecipe('ironclad', 'strike_ironclad')
+  const bash = cardVfxRecipe('ironclad', 'bash')
+  assert(strike.family !== bash.family && strike.asset !== bash.asset, 'Strike is a slash; Bash is a blunt impact')
+  assert(JSON.stringify(cardVfxRecipe('defect', 'zap')) !== JSON.stringify(cardVfxRecipe('defect', 'ball_lightning')),
+    'Zap channels in place while Ball Lightning carries its own tone')
+  assert(cardVfxRecipe('watcher', 'vigilance').tone !== cardVfxRecipe('watcher', 'eruption').tone,
+    'Calm and Wrath cannot be text-only palette twins')
+  assert(cardVfxRecipe('silent', 'deadly_poison').family !== cardVfxRecipe('silent', 'blade_dance').family,
+    'Poison and Shiv cards keep separate effect languages')
+  assertEqual(JSON.stringify(cardVfxRecipe('watcher', 'bash')), JSON.stringify(bash),
+    'an iconic card keeps its VFX when another character plays it')
+
+  const wishStrength = cardVfxRecipe('watcher', 'wish', 0)
+  const wishBlock = cardVfxRecipe('watcher', 'wish', 1)
+  const wishMiracles = cardVfxRecipe('watcher', 'wish', 2)
+  assertEqual(wishStrength.family, 'buff')
+  assertEqual(wishBlock.family, 'block')
+  assertEqual(wishMiracles.family, 'mantra')
+})
+
+check('all physical potion IDs have explicit VFX recipes', () => {
+  assertEqual(Object.keys(POTIONS).length, 21)
+  const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'watcher-pray',
+    'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
+  const toneColors = new Set()
+  for (const potionId of Object.keys(POTIONS)) {
+    const potion = potionVfxRecipe(potionId)
+    assert(/^[a-z0-9-]+$/.test(potion.asset), `${potionId} has a path-safe asset token`)
+    assert(assets.has(potion.asset), `${potionId} resolves to a supplied asset: ${potion.asset}`)
+    const color = vfxToneColor(potion.tone)
+    assert(/^#[0-9a-f]{6}$/.test(color), `${potionId} has a CSS-safe tone colour`)
+    toneColors.add(color)
+  }
+  assertEqual(toneColors.size, Object.keys(POTIONS).length, 'every Potion keeps a visible tone identity')
 })
 
 

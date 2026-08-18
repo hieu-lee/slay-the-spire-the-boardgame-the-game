@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
+import type { CombatPhase, CombatPresentationEvent, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
 import type { CampfireChoice, CardRewardOffer, PendingRelicPreview, RunPhase } from '../game/run.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions, RunMetaState } from '../game/meta.ts'
@@ -85,6 +85,7 @@ export type VisibleCombat = {
   pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
   playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
+  presentationEvents: CombatPresentationEvent[]
   pendingSummons: {
     sourceUid: string
     row: number

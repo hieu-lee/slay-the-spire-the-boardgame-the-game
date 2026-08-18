@@ -228,16 +228,17 @@ await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
 suite('browser')
 
-const oneShotVfx = ['/assets/combat/vfx/hit-burst.webp', '/assets/combat/vfx/death-ash.webp',
-  '/assets/combat/vfx/death-ring.webp']
+const preloadedCombatVfx = ['/assets/combat/vfx/hit-burst.webp', '/assets/combat/vfx/death-ash.webp',
+  '/assets/combat/vfx/death-ring.webp', '/assets/combat/vfx/actions/watcher-calm-aura.webp',
+  '/assets/combat/vfx/actions/watcher-wrath-aura.webp']
 const preloadedVfx = await page.evaluate((paths) => paths.map((path) => {
   const url = new URL(path, location.href).href
   const entry = performance.getEntriesByName(url).find((candidate) => candidate.entryType === 'resource')
   return { path, ready: Boolean(entry && entry.responseEnd > 0), initiator: entry?.initiatorType }
-}), oneShotVfx)
-check('one-shot combat VFX are ready before the first hit', () => {
+}), preloadedCombatVfx)
+check('core combat VFX are preloaded before their first appearance', () => {
   assertDeepEqual(preloadedVfx.map(({ path, ready }) => ({ path, ready })),
-    oneShotVfx.map((path) => ({ path, ready: true })))
+    preloadedCombatVfx.map((path) => ({ path, ready: true })))
   assert(preloadedVfx.every(({ initiator }) => initiator === 'link'), JSON.stringify(preloadedVfx))
 })
 
@@ -1192,10 +1193,13 @@ await page.evaluate((run) => {
 const distilledUseVisual = await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).evaluate((button) => ({
   text: button.textContent?.trim(),
   icon: button.querySelector('img')?.getAttribute('src'),
+  iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
 }))
 check('Potion use controls render the Potion icon instead of its name', () => {
   assertEqual(distilledUseVisual.text, 'Use')
   assert(distilledUseVisual.icon?.includes('/potion-icons/distilled_chaos.png'), distilledUseVisual.icon)
+  assert(distilledUseVisual.iconWidth && distilledUseVisual.iconWidth >= 22 && distilledUseVisual.iconWidth <= 23,
+    distilledUseVisual.iconWidth)
 })
 await page.locator('.combat__actions').getByRole('button', { name: /Distilled Chaos/ }).click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('distilled_chaos'))
@@ -6339,8 +6343,9 @@ const shivUseVisual = await page.getByRole('button', { name: 'Use Shiv' }).evalu
 }))
 check('Shiv use controls render the Shiv icon instead of its name', () => {
   assertEqual(shivUseVisual.text, 'Use')
-  assert(shivUseVisual.icon?.includes('/icons/shiv'), shivUseVisual.icon)
-  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 66, shivUseVisual.iconWidth)
+  assert(shivUseVisual.icon?.includes('/assets/status-icons/shiv.png'), shivUseVisual.icon)
+  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 22 && shivUseVisual.iconWidth <= 23,
+    shivUseVisual.iconWidth)
 })
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
@@ -7699,6 +7704,282 @@ check('idle motion composes with the enemy hover zoom', () => {
 })
 await page.mouse.move(0, 0)
 await shot('09a-combat-idle-animation')
+
+async function publishPresentationEvent(event) {
+  return page.evaluate((nextEvent) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const history = run.combat.presentationEvents ?? []
+    // This long suite deliberately restores older snapshots of the same combat.
+    // Keep synthetic probe events above any sequence the live fixture saw first.
+    const seq = history.reduce((latest, item) => Math.max(latest, item.seq), 1_000_000) + 1
+    run.combat.presentationEvents = [...history, { ...nextEvent, seq }].slice(-12)
+    debug.setRun(run)
+    return seq
+  }, event)
+}
+
+// Stance is visually carried by the Watcher now. It remains in the button's
+// accessible name, but the old floating CALM/WRATH text is gone.
+const watcherPlayerId = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], { character: 'watcher', stance: 'calm' })
+  debug.setRun(run)
+  return run.combat.players[0].id
+})
+const watcherSeat = page.locator(`.seat[data-player-id="${watcherPlayerId}"]`)
+await watcherSeat.locator('.stance-aura--calm').waitFor()
+const calmPresentation = await watcherSeat.evaluate((seat) => {
+  const aura = seat.querySelector('.stance-aura--calm')
+  return {
+    visibleText: seat.querySelectorAll('.stance').length,
+    label: seat.getAttribute('aria-label') ?? '',
+    image: aura ? getComputedStyle(aura).backgroundImage : '',
+    animation: aura ? getComputedStyle(aura).animationName : '',
+  }
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].stance = 'wrath'
+  debug.setRun(run)
+})
+await watcherSeat.locator('.stance-aura--wrath').waitFor()
+const wrathPresentation = await watcherSeat.evaluate((seat) => {
+  const aura = seat.querySelector('.stance-aura--wrath')
+  return {
+    label: seat.getAttribute('aria-label') ?? '',
+    image: aura ? getComputedStyle(aura).backgroundImage : '',
+    animation: aura ? getComputedStyle(aura).animationName : '',
+  }
+})
+check('Watcher Calm and Wrath use distinct accessible portrait auras instead of text', () => {
+  assertEqual(calmPresentation.visibleText, 0)
+  assert(calmPresentation.label.includes('calm stance'), calmPresentation.label)
+  assert(wrathPresentation.label.includes('wrath stance'), wrathPresentation.label)
+  assert(calmPresentation.image.includes('watcher-calm-aura.webp'), calmPresentation.image)
+  assert(wrathPresentation.image.includes('watcher-wrath-aura.webp'), wrathPresentation.image)
+  assertEqual(calmPresentation.animation, 'calm-aura')
+  assertEqual(wrathPresentation.animation, 'wrath-aura')
+})
+
+const vfxActor = () => page.locator('.combat-vfx--actor').last()
+const vfxTarget = () => page.locator('.enemy .combat-vfx--target').last()
+const firstEnemyId = await page.locator('.enemy').first().getAttribute('data-enemy-id')
+const firstPlayerId = watcherPlayerId
+const secondPlayerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1]?.id)
+if (!firstEnemyId) throw new Error('personal VFX fixture needs an actor and enemy')
+if (!secondPlayerId) throw new Error('personal VFX fixture needs two players')
+const rowTargetFixture = await page.evaluate((livingUid) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const living = run.combat.enemies.find((enemy) => enemy.uid === livingUid)
+  const corpse = run.combat.enemies.find((enemy) => enemy.uid !== livingUid)
+  if (!living || !corpse) throw new Error('row VFX fixture needs two enemies')
+  Object.assign(corpse, { row: living.row, hp: 0, dead: true })
+  debug.setRun(run)
+  return { row: living.row, corpseUid: corpse.uid }
+}, firstEnemyId)
+await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"].enemy--dead`).waitFor()
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], { character: 'ironclad', stance: 'neutral' })
+  debug.setRun(run)
+})
+await watcherSeat.locator('.seat__portrait > img[src$="/ironclad.webp"]').waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  enemyRow: rowTargetFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await vfxTarget().waitFor()
+const strikePresentation = await vfxTarget().evaluate((vfx) => ({
+  family: vfx.getAttribute('data-vfx-family'),
+  motion: vfx.getAttribute('data-vfx-motion'),
+  image: getComputedStyle(vfx).backgroundImage,
+  actorOverlays: document.querySelectorAll('.seat .combat-vfx--actor[data-vfx-source="strike_ironclad"]').length,
+  targets: document.querySelectorAll('.enemy .combat-vfx--target[data-vfx-source="strike_ironclad"]').length,
+}))
+strikePresentation.actorAnimation = await watcherSeat.locator('.seat__portrait > img').evaluate((image) =>
+  getComputedStyle(image).animationName)
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (animation.animationName.startsWith('combat-vfx') || animation.animationName.startsWith('vfx-')) {
+      animation.currentTime = 300
+      animation.pause()
+    }
+  }
+})
+await page.screenshot({ path: join(animationReferenceDir, 'combat-personal-vfx.png'), timeout: 15_000 })
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) if (animation.playState === 'paused') animation.play()
+})
+await vfxTarget().waitFor({ state: 'detached' })
+
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'bash', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 2,
+})
+await vfxTarget().waitFor()
+const bashPresentation = await vfxTarget().evaluate((vfx) => ({
+  family: vfx.getAttribute('data-vfx-family'),
+  image: getComputedStyle(vfx).backgroundImage,
+}))
+await vfxTarget().waitFor({ state: 'detached' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'defect'
+  debug.setRun(run)
+})
+await watcherSeat.locator('.seat__portrait > img[src$="/defect.webp"]').waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'zap', enemyIds: [], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+})
+await vfxActor().waitFor()
+const zapPresentation = await vfxActor().evaluate((vfx) => ({
+  family: vfx.getAttribute('data-vfx-family'),
+  image: getComputedStyle(vfx).backgroundImage,
+}))
+await vfxActor().waitFor({ state: 'detached' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], { character: 'watcher', stance: 'calm' })
+  debug.setRun(run)
+})
+await watcherSeat.locator('.stance-aura--calm').waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'pray', enemyIds: [], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+})
+await vfxActor().waitFor()
+const prayPresentation = await vfxActor().evaluate((vfx) => ({
+  family: vfx.getAttribute('data-vfx-family'),
+  tone: vfx.getAttribute('data-vfx-tone'),
+  image: getComputedStyle(vfx).backgroundImage,
+}))
+await vfxActor().waitFor({ state: 'detached' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'silent'
+  debug.setRun(run)
+})
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'predator', enemyIds: [firstEnemyId],
+  playerIds: [secondPlayerId], upgraded: false, copied: false, energy: 2,
+})
+await vfxTarget().waitFor()
+const mixedTargetPresentation = await page.evaluate(({ enemyId, playerId }) => ({
+  enemyImpacts: document.querySelectorAll(
+    `.enemy[data-enemy-id="${enemyId}"] .combat-vfx--target[data-vfx-source="predator"]`,
+  ).length,
+  allyImpacts: document.querySelectorAll(
+    `.seat[data-player-id="${playerId}"] .combat-vfx--target[data-vfx-source="predator"]`,
+  ).length,
+}), { enemyId: firstEnemyId, playerId: secondPlayerId })
+check('mixed hostile/support cards never paint attack art on the ally target', () => {
+  assertEqual(mixedTargetPresentation.enemyImpacts, 1)
+  assertEqual(mixedTargetPresentation.allyImpacts, 0)
+})
+await vfxTarget().waitFor({ state: 'detached' })
+
+await publishPresentationEvent({
+  kind: 'potion', actorId: firstPlayerId, sourceId: 'fire_potion', enemyIds: [firstEnemyId], playerIds: [],
+})
+await vfxTarget().waitFor()
+const potionPresentation = await vfxTarget().evaluate((vfx) => ({
+  kind: vfx.getAttribute('data-vfx-kind'),
+  family: vfx.getAttribute('data-vfx-family'),
+  motion: vfx.getAttribute('data-vfx-motion'),
+  image: getComputedStyle(vfx).backgroundImage,
+  toneColor: getComputedStyle(vfx).getPropertyValue('--vfx-tone-color').trim(),
+  ringColor: getComputedStyle(vfx, '::before').borderTopColor,
+}))
+check('personal card and potion events render distinct authoritative recipes', () => {
+  assertEqual(strikePresentation.family, 'slash')
+  assertEqual(strikePresentation.motion, 'lunge')
+  assert(strikePresentation.actorAnimation.startsWith('vfx-lunge'), strikePresentation.actorAnimation)
+  assertEqual(strikePresentation.actorOverlays, 0, 'hostile impact art belongs on the enemy, not the actor')
+  assertEqual(strikePresentation.targets, 1)
+  assert(strikePresentation.image.includes('ironclad-strike.webp'), strikePresentation.image)
+  assertEqual(bashPresentation.family, 'blunt')
+  assert(bashPresentation.image.includes('ironclad-bash.webp'), bashPresentation.image)
+  assertEqual(zapPresentation.family, 'lightning')
+  assert(zapPresentation.image.includes('lightning-channel.webp'), zapPresentation.image)
+  assertEqual(prayPresentation.family, 'mantra')
+  assertEqual(prayPresentation.tone, 'mantra-cyan')
+  assert(prayPresentation.image.includes('watcher-pray.webp'), prayPresentation.image)
+  assertEqual(potionPresentation.kind, 'potion')
+  assertEqual(potionPresentation.family, 'projectile')
+  assertEqual(potionPresentation.motion, 'throw')
+  assert(potionPresentation.image.includes('potion-burst.webp'), potionPresentation.image)
+})
+
+await vfxActor().waitFor({ state: 'detached' })
+const firstActorSeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${firstActorSeq}"]`).waitFor()
+await watcherSeat.locator('.seat__portrait > img').evaluate((image) => image.setAttribute('data-restart-probe', 'old'))
+await publishPresentationEvent({
+  kind: 'card', actorId: secondPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+const secondActorSeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${secondActorSeq}"]`).waitFor()
+const actorRestartMarker = await watcherSeat.locator('.seat__portrait > img').getAttribute('data-restart-probe')
+check('interleaved teammate events cannot suppress a repeated actor motion', () => {
+  assertEqual(firstActorSeq % 2, secondActorSeq % 2, 'the fixture did not reproduce equal global parity')
+  assertEqual(actorRestartMarker, null, 'the repeated actor motion reused its stale portrait node')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${secondActorSeq}"]`).waitFor({ state: 'detached' })
+
+await page.emulateMedia({ reducedMotion: 'reduce' })
+await publishPresentationEvent({
+  kind: 'potion', actorId: firstPlayerId, sourceId: 'energy_potion', enemyIds: [], playerIds: [firstPlayerId],
+})
+await vfxActor().waitFor()
+const reducedPersonalVfx = await watcherSeat.evaluate((seat) => {
+  const aura = seat.querySelector('.stance-aura--calm')
+  const vfx = seat.querySelector('.combat-vfx')
+  const art = seat.querySelector('.seat__portrait > img')
+  return {
+    auraAnimation: aura ? getComputedStyle(aura).animationName : '',
+    auraOpacity: aura ? Number(getComputedStyle(aura).opacity) : 0,
+    vfxAnimation: vfx ? getComputedStyle(vfx).animationName : '',
+    vfxOpacity: vfx ? Number(getComputedStyle(vfx).opacity) : 0,
+    vfxCount: seat.querySelectorAll('.combat-vfx').length,
+    toneColor: vfx ? getComputedStyle(vfx).getPropertyValue('--vfx-tone-color').trim() : '',
+    ringColor: vfx ? getComputedStyle(vfx, '::before').borderTopColor : '',
+    actorAnimation: art ? getComputedStyle(art).animationName : '',
+  }
+})
+check('reduced motion keeps static stance and action identity without movement', () => {
+  assertEqual(reducedPersonalVfx.auraAnimation, 'none', 'the Calm aura still moves')
+  assert(reducedPersonalVfx.auraOpacity > 0)
+  assertEqual(reducedPersonalVfx.vfxAnimation, 'none', 'the action overlay still moves')
+  assert(reducedPersonalVfx.vfxOpacity > 0)
+  assertEqual(reducedPersonalVfx.vfxCount, 1, 'a self-targeting action duplicated its actor overlay')
+  assert(reducedPersonalVfx.toneColor !== potionPresentation.toneColor,
+    'different Potion tones resolved to the same colour')
+  assert(reducedPersonalVfx.ringColor !== potionPresentation.ringColor,
+    'different Potion tones rendered the same ring colour')
+  assertEqual(reducedPersonalVfx.actorAnimation, 'none', 'the acting character still moves')
+})
+await page.emulateMedia({ reducedMotion: 'no-preference' })
+await vfxActor().waitFor({ state: 'detached' })
 
 async function hurtViewer() {
   await page.evaluate(() => {

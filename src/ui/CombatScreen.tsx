@@ -63,7 +63,7 @@ import {
   validEndTurnOrder,
 } from '../game/combat.ts'
 import type {
-  CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, PowerContext,
+  CombatPresentationEvent, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, PowerContext,
   RelicContext, StartTurnAbility, StartTurnChoice, StartTurnScryAbility, StartTurnScryPreview,
 } from '../game/combat.ts'
 import { potionDef, relicAbilities, relicDef } from '../game/relics.ts'
@@ -71,6 +71,8 @@ import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
+import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
+import type { VfxRecipe } from './combat-vfx.ts'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerGlyph, PowerRow } from './PowerRow.tsx'
@@ -144,6 +146,28 @@ type MotionSnapshot = {
   draw: number
   discard: number
   exhaust: number
+}
+type ActiveCombatVfx = { event: CombatPresentationEvent; recipe: VfxRecipe }
+
+function CombatVfx({ active, role }: { active: ActiveCombatVfx; role: 'actor' | 'target' }) {
+  const { event, recipe } = active
+  return (
+    <span
+      className={`combat-vfx combat-vfx--${role} combat-vfx--${recipe.family}`}
+      data-vfx-seq={event.seq}
+      data-vfx-kind={event.kind}
+      data-vfx-source={event.sourceId}
+      data-vfx-family={recipe.family}
+      data-vfx-motion={recipe.actorMotion}
+      data-vfx-asset={recipe.asset}
+      data-vfx-tone={recipe.tone}
+      style={{
+        '--vfx-image': `url("${vfxAssetPath(recipe)}")`,
+        '--vfx-tone-color': vfxToneColor(recipe.tone),
+      } as React.CSSProperties}
+      aria-hidden="true"
+    />
+  )
 }
 type PendingStartChoice =
   | { kind: 'enemy'; ability: StartTurnAbility }
@@ -665,6 +689,62 @@ function useFalling(
   return falling
 }
 
+/** Only actions witnessed live animate; mounted and restored history is a baseline. */
+function usePresentationEvents(
+  state: CombatState,
+  authoritativeRestoration?: number,
+  authoritativeConnected?: boolean,
+): CombatPresentationEvent[] {
+  const baseline = useRef<number | null>(null)
+  const previousCombat = useRef(state.combatId)
+  const previousRestoration = useRef(authoritativeRestoration)
+  const previousConnected = useRef(authoritativeConnected)
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const [active, setActive] = useState<CombatPresentationEvent[]>([])
+
+  useLayoutEffect(() => {
+    const events = state.presentationEvents ?? []
+    const latest = events.reduce((seq, event) => Math.max(seq, event.seq), -1)
+    const combatChanged = state.combatId !== previousCombat.current
+    const restored = (authoritativeRestoration !== undefined &&
+      authoritativeRestoration !== previousRestoration.current) ||
+      authoritativeConnected === false || previousConnected.current === false
+    previousCombat.current = state.combatId
+    previousRestoration.current = authoritativeRestoration
+    previousConnected.current = authoritativeConnected
+
+    if (baseline.current === null || combatChanged || restored) {
+      baseline.current = combatChanged ? latest : Math.max(baseline.current ?? -1, latest)
+      for (const timer of timers.current.values()) clearTimeout(timer)
+      timers.current.clear()
+      setActive((current) => current.length === 0 ? current : [])
+      return
+    }
+
+    const unseen = events.filter((event) => event.seq > baseline.current!)
+    baseline.current = Math.max(baseline.current, latest)
+    if (unseen.length === 0) return
+    setActive((current) => [
+      ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
+      ...unseen,
+    ])
+    for (const event of unseen) {
+      const prior = timers.current.get(event.seq)
+      if (prior) clearTimeout(prior)
+      timers.current.set(event.seq, setTimeout(() => {
+        timers.current.delete(event.seq)
+        setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))
+      }, 900))
+    }
+  }, [authoritativeConnected, authoritativeRestoration, state.combatId, state.presentationEvents])
+
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) clearTimeout(timer)
+  }, [])
+
+  return active
+}
+
 export function CombatScreen({
   state,
   viewerId,
@@ -803,6 +883,28 @@ export function CombatScreen({
 
   const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
   const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
+  const livePresentationEvents = usePresentationEvents(state, authoritativeRestoration, authoritativeConnected)
+  const activeVfx = useMemo<ActiveCombatVfx[]>(() => {
+    const resolved: ActiveCombatVfx[] = []
+    for (const event of livePresentationEvents) {
+      if (event.kind === 'potion') {
+        resolved.push({ event, recipe: potionVfxRecipe(event.sourceId) })
+        continue
+      }
+      const actor = state.players.find((player) => player.id === event.actorId)
+      if (actor) resolved.push({
+        event,
+        recipe: cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+      })
+    }
+    return resolved
+  }, [livePresentationEvents, state.players])
+  const actorVfxFor = (playerId: string) => activeVfx.filter(({ event }) => event.actorId === playerId)
+  const playerVfxFor = (playerId: string) => activeVfx.filter(({ event, recipe }) =>
+    event.actorId !== playerId && event.playerIds.includes(playerId) &&
+    !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
+      .includes(recipe.family))
+  const enemyVfxFor = (enemy: Enemy) => activeVfx.filter(({ event }) => event.enemyIds.includes(enemy.uid))
   useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
   // Animate only changes witnessed while this combat is live. A reconnect or
@@ -3478,6 +3580,9 @@ export function CombatScreen({
                 falling={falling.has(enemy.uid)}
                 hitDamage={damage.get(enemy.uid)}
                 beat={beats.get(enemy.uid) ?? 0}
+                vfx={enemyVfxFor(enemy).map((active) => (
+                  <CombatVfx key={active.event.seq} active={active} role="target" />
+                ))}
                 stageIndex={stageEnemies.length + index}
                 // A boss stands in every row, so the only reading that means
                 // anything to the person looking at the screen is their own.
@@ -3499,6 +3604,9 @@ export function CombatScreen({
         {rows.map((row) => {
           const occupant = state.players.find((player) => player.row === row)
           const foes = state.enemies.filter((enemy) => enemy.row === row && !enemy.isBoss)
+          const actorEvents = occupant ? actorVfxFor(occupant.id) : []
+          const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0)
+          const latestActorVfx = actorEvents[actorEvents.length - 1]
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -3564,6 +3672,9 @@ export function CombatScreen({
                         occupant.dead ? 'seat--dead' : '',
                         falling.has(occupant.id) ? 'seat--falling' : '',
                         struck.has(occupant.id) ? strikeClass('seat', beats.get(occupant.id) ?? 0) : '',
+                        latestActorVfx && latestActorVfx.recipe.actorMotion !== 'none'
+                          ? `seat--vfx-${latestActorVfx.recipe.actorMotion} seat--vfx-beat-${latestActorVfx.event.seq % 2}`
+                          : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
                           (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
@@ -3575,14 +3686,27 @@ export function CombatScreen({
                         .filter(Boolean)
                         .join(' ')}
                       onClick={() => onAllyClick(occupant)}
+                      data-player-id={occupant.id}
+                      data-stance={occupant.stance}
                       aria-label={describeSeat(occupant)}
                     >
                       <span className="seat__portrait" aria-hidden="true">
+                        {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
+                          <span className={`stance-aura stance-aura--${occupant.stance}`} />
+                        ) : null}
                         <img
+                          key={`${occupant.character}-${latestActorVfx?.event.seq ?? 'idle'}`}
                           src={`/assets/combat/characters/${occupant.character}.webp`}
+                          data-vfx-seq={latestActorVfx?.event.seq}
                           alt=""
                           onError={(event) => { event.currentTarget.style.display = 'none' }}
                         />
+                        {actorVfx.map((active) => (
+                          <CombatVfx key={`actor-${active.event.seq}`} active={active} role="actor" />
+                        ))}
+                        {playerVfxFor(occupant.id).map((active) => (
+                          <CombatVfx key={`target-${active.event.seq}`} active={active} role="target" />
+                        ))}
                       </span>
                       {struck.has(occupant.id) ? (
                         <span className="hit-vfx" key={beats.get(occupant.id)} aria-hidden="true"><strong>{damage.get(occupant.id)}</strong></span>
@@ -3657,9 +3781,6 @@ export function CombatScreen({
                             key={`${id}-${index}`} src={potionIconPath(id)} alt="" />)} {potionSummary(occupant)}
                         </span>
                       ) : null}
-                      {occupant.stance !== 'neutral' ? (
-                        <span className={`stance stance--${occupant.stance}`}>{occupant.stance}</span>
-                      ) : null}
                       </span>
                     </button>
                     <div className="seat__status-strip">
@@ -3691,6 +3812,9 @@ export function CombatScreen({
                       falling={falling.has(enemy.uid)}
                       hitDamage={damage.get(enemy.uid)}
                       beat={beats.get(enemy.uid) ?? 0}
+                      vfx={enemyVfxFor(enemy).map((active) => (
+                        <CombatVfx key={active.event.seq} active={active} role="target" />
+                      ))}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       defender={occupant}

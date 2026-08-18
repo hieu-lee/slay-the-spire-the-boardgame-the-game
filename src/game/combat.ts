@@ -133,8 +133,29 @@ export type CombatState = {
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] }
   /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
   playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
+  /** Recent public actions for player-facing animation; reconnecting clients baseline the sequence. */
+  presentationEvents: CombatPresentationEvent[]
   log: string[]
 }
+
+type PresentationTargets = {
+  seq: number
+  actorId: string
+  sourceId: string
+  enemyIds: string[]
+  playerIds: string[]
+  enemyRow?: number
+}
+
+export type CombatPresentationEvent = PresentationTargets & (
+  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
+  | { kind: 'potion' }
+)
+
+type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
+  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
+  | { kind: 'potion' }
+)
 
 export type PendingTrigger = {
   id: number
@@ -230,6 +251,95 @@ export const defaultEndTurnOrder = (abilities: readonly EndTurnAbility[]): EndTu
     : ability.id)
 
 const clone = <T,>(value: T): T => structuredClone(value)
+
+const PRESENTATION_EVENT_LIMIT = 12
+
+type PresentationContext = {
+  enemyUid?: string | null
+  enemyUids?: readonly (string | null)[]
+  shivEnemyUids?: readonly (string | null)[]
+  evokeEnemyUids?: readonly (string | null)[]
+  playerId?: string | null
+  playerIds?: readonly string[]
+  switchWithPlayerId?: string | null
+  enemyRow?: number | null
+}
+
+function presentationTargets(
+  state: CombatState,
+  actorId: string,
+  enemyScope: TargetScope,
+  supportScope: TargetScope,
+  context: PresentationContext,
+): Pick<PresentationTargets, 'enemyIds' | 'playerIds' | 'enemyRow'> {
+  const scopedEnemies = ['enemy', 'row', 'allEnemies'].includes(enemyScope)
+    ? resolveEnemyTargets(state, enemyScope, context.enemyUid ?? null, context.enemyRow)
+    : []
+  const evokeEnemies = (context.evokeEnemyUids ?? []).flatMap((id) => {
+    if (typeof id !== 'string') return []
+    const row = lightningRowFromTarget(id)
+    return row === null ? [id] : resolveEnemyTargets(state, 'row', null, row).map((enemy) => enemy.uid)
+  })
+  const enemyIds = [...new Set([
+    ...scopedEnemies.map((enemy) => enemy.uid),
+    ...(context.enemyUids ?? []),
+    ...(context.shivEnemyUids ?? []),
+    ...evokeEnemies,
+  ].filter((id): id is string => typeof id === 'string'))]
+  const scopedPlayers = supportScope === 'allPlayers'
+    ? state.players.filter((player) => !player.dead).map((player) => player.id)
+    : supportScope === 'anyPlayer' ? [context.playerId ?? actorId] : []
+  const playerIds = [...new Set([
+    ...scopedPlayers,
+    ...(context.playerIds ?? []),
+    context.switchWithPlayerId,
+  ].filter((id): id is string => typeof id === 'string' && id !== actorId))]
+  return {
+    enemyIds,
+    playerIds,
+    ...(enemyScope === 'row' && Number.isInteger(context.enemyRow) ? { enemyRow: context.enemyRow! } : {}),
+  }
+}
+
+function presentationEnemyScope(
+  def: CardDef,
+  effects: readonly Effect[],
+  actor: Player,
+  includeEvokes: boolean,
+  energySpent: number,
+): TargetScope {
+  const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
+  return cardNeedsEnemy(active, actor, includeEvokes, energySpent) ? def.target ?? 'enemy' : 'self'
+}
+
+function presentationCardContext(
+  def: CardDef,
+  effects: readonly Effect[],
+  context: PlayContext,
+): PresentationContext {
+  return {
+    enemyUid: context.enemyUid,
+    enemyRow: context.enemyRow,
+    enemyUids: cardEnemyChoiceCount(def, context.mode) > 0 ? context.enemyUids : [],
+    shivEnemyUids: context.shivEnemyUids,
+    evokeEnemyUids: context.evokeEnemyUids,
+    playerId: context.playerId,
+    playerIds: cardPlayerChoiceCount(def, context.mode) > 0 ? context.playerIds : [],
+    switchWithPlayerId: effects.some((effect) => effect.kind === 'switchRows')
+      ? context.switchWithPlayerId : undefined,
+  }
+}
+
+function addPresentationEvent(
+  state: CombatState,
+  event: NewPresentationEvent,
+): void {
+  const events = state.presentationEvents ?? []
+  state.presentationEvents = [...events, {
+    seq: (events.at(-1)?.seq ?? 0) + 1,
+    ...event,
+  }].slice(-PRESENTATION_EVENT_LIMIT)
+}
 
 function forgetRetain(card: CardInstance): CardInstance {
   const {
@@ -651,6 +761,13 @@ function losePlayerHp(state: CombatState, player: Player, amount: number): numbe
       player.potions.splice(fairy, 1)
       state.potionDeck.push('fairy_in_a_bottle')
       player.hp = 2
+      addPresentationEvent(state, {
+        kind: 'potion',
+        actorId: player.id,
+        sourceId: 'fairy_in_a_bottle',
+        enemyIds: [],
+        playerIds: [player.id],
+      })
       state.log = [...state.log, `${player.name}'s Fairy in a Bottle restores them to 2 HP`]
     } else {
       player.dead = true
@@ -2867,6 +2984,17 @@ export function evokeTargetProgress(
   return { index: chosen.length, options: [], complete: true, endedCombat: false }
 }
 
+function cardRequiresChosenEnemy(
+  def: CardDef,
+  actor: Player,
+  includeEvokes = true,
+  energySpent?: number,
+  mode?: number,
+): boolean {
+  const effects = def.modes ? def.modes[mode ?? -1]?.effects : undefined
+  return cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def, actor, includeEvokes, energySpent)
+}
+
 function needsChosenEnemy(
   state: CombatState,
   def: CardDef,
@@ -2876,8 +3004,7 @@ function needsChosenEnemy(
   energySpent?: number,
   mode?: number,
 ): boolean {
-  const effects = def.modes ? def.modes[mode ?? -1]?.effects : undefined
-  if (!cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def, actor, includeEvokes, energySpent)) return false
+  if (!cardRequiresChosenEnemy(def, actor, includeEvokes, energySpent, mode)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 
@@ -3259,6 +3386,18 @@ export function playCard(
   const copySources = copySourcesFor(def, actor)
   const doubled = copySources.length > 0
   consumeCopySource(actor, copySources)
+  addPresentationEvent(next, {
+    kind: 'card',
+    actorId: actor.id,
+    sourceId: def.id,
+    upgraded: held.upgraded,
+    copied: doubled,
+    energy: cost,
+    ...(context.mode === undefined ? {} : { mode: context.mode }),
+    ...presentationTargets(next, actor.id,
+      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy),
+      def.supportTarget ?? 'self', presentationCardContext(def, effects, context)),
+  })
 
   // The card leaves hand before resolving and belongs to no pile until cleanup,
   // which is what stops a card that draws from drawing itself (p.12).
@@ -3498,6 +3637,18 @@ export function playCardCopy(
   const next = clone(state)
   const copy = next.pendingCardCopy!
   const actor = findPlayer(next, playerId)!
+  addPresentationEvent(next, {
+    kind: 'card',
+    actorId: actor.id,
+    sourceId: def.id,
+    upgraded: copy.card.upgraded,
+    copied: copy.virtualOnly === true || copy.sourceNames.length > 1,
+    energy: copy.energySpent,
+    ...(context.mode === undefined ? {} : { mode: context.mode }),
+    ...presentationTargets(next, actor.id,
+      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, pending.energySpent),
+      def.supportTarget ?? 'self', presentationCardContext(def, effects, context)),
+  })
   if ((copy.queuedCopySources?.length ?? 0) > 0) {
     consumeCopySource(actor, copy.queuedCopySources!)
     copy.queuedCopySources = []
@@ -6171,6 +6322,7 @@ export function createCombat(
     pendingTriggers: [],
     nextTriggerId: 0,
     playedCardsThisTurn: [],
+    presentationEvents: [],
     log: [],
   }
 }
@@ -6422,6 +6574,17 @@ export function activatePotion(
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
+  addPresentationEvent(next, {
+    kind: 'potion',
+    actorId: actor.id,
+    sourceId: potionId,
+    ...presentationTargets(next, actor.id, def.target ?? 'self', def.supportTarget ?? 'self', {
+      enemyUid: context.enemyUid,
+      enemyRow: context.enemyRow,
+      shivEnemyUids: potionId === 'cunning_potion' ? context.shivEnemyUids : [],
+      playerId: context.targetPlayerId,
+    }),
+  })
   actor.potions.splice(actor.potions.indexOf(potionId), 1)
   next.potionDeck.push(potionId)
   next.log = [...next.log, `${actor.name} uses ${def.name}`]

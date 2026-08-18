@@ -398,12 +398,16 @@ await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await page.locator('.merchant-figure').waitFor()
 await page.screenshot({ path: join(outDir, 'merchant-4p-desktop.png'), fullPage: true })
 const merchantCardFallback = page.locator('.merchant-board .item-card-image').first()
-await merchantCardFallback.evaluate((image) => { image.src = '/missing-item-card.webp' })
-await page.waitForFunction(() => document.querySelector('.merchant-board .item-card-image')
-  ?.getAttribute('src') === '/assets/relic-icons/anchor.png')
+if (await page.locator('.merchant-board .item-card-fallback').count() === 0) {
+  await merchantCardFallback.evaluate((image) => { image.src = '/missing-item-card.webp' })
+  await page.waitForFunction(() => document.querySelector('.merchant-board .item-card-image')
+    ?.getAttribute('src') === '/assets/relic-icons/anchor.png')
+}
 await page.screenshot({ path: join(outDir, 'merchant-item-card-fallback.png'), fullPage: true })
-const merchantFallbackSrc = await merchantCardFallback.getAttribute('src')
-const merchantFallbackFace = await page.locator('.merchant-board .item-card-fallback').count()
+const merchantAnchorFallback = page.locator('.merchant-board .item-card-fallback').filter({ hasText: 'Anchor' })
+const merchantFallbackSrc = await merchantAnchorFallback.locator('.item-card-image').getAttribute('src')
+const merchantFallbackName = await merchantAnchorFallback.locator('strong').textContent()
+const merchantFallbackFace = await merchantAnchorFallback.count()
 const merchantShape = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, buttons: document.querySelectorAll('.merchant-board button').length, figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0 }))
 check('four-player Merchant is game-framed, responsive, and keyboard reachable', () => {
   assert(!merchantShape.overflow)
@@ -412,6 +416,7 @@ check('four-player Merchant is game-framed, responsive, and keyboard reachable',
 })
 check('missing local item scans fall back to a full generated card face', () => {
   assertEqual(merchantFallbackSrc, '/assets/relic-icons/anchor.png')
+  assertEqual(merchantFallbackName, 'Anchor')
   assertEqual(merchantFallbackFace, 1)
 })
 await page.keyboard.press('Tab')
@@ -483,7 +488,7 @@ check('local co-op card removal can use shared Gold', () => assertEqual(removalP
 await setRoom('treasure')
 await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
 await page.screenshot({ path: join(outDir, 'treasure-4p-desktop.png'), fullPage: true })
-const treasureName = await page.locator('.treasure-relic strong').textContent()
+const treasureName = await page.locator('.treasure-relic > strong').textContent()
 const takeRelicButtons = await page.getByRole('button', { name: /Take relic/ }).count()
 check('Treasure gives the active seat one dominant face-up relic choice', () => {
   assertEqual(treasureName, 'Anchor')
@@ -1138,7 +1143,8 @@ await page.evaluate(() => {
 await page.locator('.room--reachable').click()
 await page.getByRole('complementary', { name: 'The Courier' }).waitFor()
 await page.getByRole('button', { name: 'Look at Relic' }).click()
-await page.getByRole('complementary', { name: 'The Courier offer' }).getByText(/Anchor/).waitFor()
+await page.getByRole('complementary', { name: 'The Courier offer' })
+  .getByText('The Courier · Anchor', { exact: true }).waitFor()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

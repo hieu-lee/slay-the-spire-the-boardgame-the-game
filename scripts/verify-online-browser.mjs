@@ -600,8 +600,25 @@ try {
   await a.locator('.connection--reconnecting').waitFor()
   await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
   Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true, weak: 1 })
+  const reconnectActor = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const historicalVfxSeq = liveRoom.run.combat.presentationEvents
+    .reduce((latest, event) => Math.max(latest, event.seq), -1) + 1
+  liveRoom.run.combat.presentationEvents = [...liveRoom.run.combat.presentationEvents, {
+    seq: historicalVfxSeq,
+    kind: 'card',
+    actorId: reconnectActor.id,
+    sourceId: 'strike_ironclad',
+    enemyIds: [liveRoom.run.combat.enemies[0].uid],
+    playerIds: [],
+    upgraded: false,
+    copied: false,
+    energy: 1,
+  }].slice(-12)
   rooms.publishRoom(code)
   await b.locator('.enemy--dead').first().waitFor()
+  const peerHistoricalVfx = b.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`)
+  await peerHistoricalVfx.first().waitFor()
+  const peerHistoricalSource = await peerHistoricalVfx.first().getAttribute('data-vfx-source')
   await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
   await a.locator('.connection--connected').waitFor()
   const reconnectedCorpse = a.locator('.enemy--dead').first()
@@ -615,12 +632,15 @@ try {
   const reconnectSounds = await a.evaluate(() => window.__SFX_PLAYS__
     .filter((path) => path.startsWith('/assets/sfx/')))
   const reconnectDrawMotion = await a.locator('.hand .card--drawn').count()
+  const reconnectHistoricalVfx = await a.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`).count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
     assertEqual(reconnectDeathMotion.falling, false)
     assertEqual(reconnectDeathMotion.animation, 'none')
     assertEqual(reconnectWeakSounds, 0)
     assertDeepEqual(reconnectSounds, [])
     assertEqual(reconnectDrawMotion, 0)
+    assertEqual(peerHistoricalSource, 'strike_ironclad', 'a connected peer missed the live action')
+    assertEqual(reconnectHistoricalVfx, 0, 'the reconnect replayed an action learned while offline')
   })
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)
   rooms.publishRoom(code)
@@ -2894,6 +2914,14 @@ try {
     .find((player) => player.id === aView.you.playerId)
   await a.getByRole('button', { name: /^(Strike|Bash),/ }).first().click()
   if (await a.locator('.prompt').count()) await a.locator('.enemy:not([disabled])').first().click()
+  const localPlayedVfx = a.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').last()
+  const peerPlayedVfx = b.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').last()
+  await Promise.all([localPlayedVfx.waitFor(), peerPlayedVfx.waitFor()])
+  const [localPlayedSource, peerPlayedSource, peerTargetVfx] = await Promise.all([
+    localPlayedVfx.getAttribute('data-vfx-source'),
+    peerPlayedVfx.getAttribute('data-vfx-source'),
+    b.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').count(),
+  ])
   await b.waitForFunction((before) => {
     const lines = [...document.querySelectorAll('.combat__log li')].map((line) => line.textContent ?? '')
     return lines.some((line) => line.includes('Strike')) || lines.length > before
@@ -2908,6 +2936,10 @@ try {
     assert(afterPlay.run.combat.log.length > beforeRemoteAction.run.combat.log.length,
       'the remote browser did not see the play log')
     assertEqual(shownDraw, actualDraw, 'the private hand used the wrong public draw-pile count')
+    assertEqual(peerPlayedSource, localPlayedSource, 'peers resolved different VFX recipes for the same play')
+    assert(peerPlayedSource === 'bash' || peerPlayedSource?.startsWith('strike_'),
+      `unexpected source ${peerPlayedSource}`)
+    assert(peerTargetVfx > 0, 'the peer did not render the authoritative enemy impact')
   })
   const viewerEnemyGeometry = await a.evaluate(() => {
     const board = document.querySelector('.board')?.getBoundingClientRect()
@@ -3709,7 +3741,12 @@ try {
   const fourSeatCount = await fourPages[0].locator('.setup .pip').evaluateAll((pips) =>
     pips.filter((pip) => /[●○]/.test(pip.textContent ?? '')).length)
   const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
-  const revealedItemImages = await fourPages[0].locator('.reward-screen__relic > .item-card-image, .reward-screen__potion > .item-card-image')
+  const revealedItemImages = await fourPages[0].locator([
+    '.reward-screen__relic > .item-card-image',
+    '.reward-screen__relic > .item-card-fallback > .item-card-image',
+    '.reward-screen__potion > .item-card-image',
+    '.reward-screen__potion > .item-card-fallback > .item-card-image',
+  ].join(', '))
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   const heldPotionCards = await fourPages[0].locator('.reward-screen__potion button .item-card-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))

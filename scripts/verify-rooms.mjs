@@ -991,6 +991,7 @@ check('an online seat can use only its own potion with a valid target', () => {
     forged = error
   }
   assert(forged, 'one seat used another player\'s potion')
+  assertDeepEqual(room.run.combat.presentationEvents, [], 'refused potion actions published animations')
 
   const hp = enemy().hp
   const before = room.version
@@ -1000,6 +1001,25 @@ check('an online seat can use only its own potion with a valid target', () => {
   assertEqual(mine().potions.length, 0)
   assertDeepEqual(theirs().potions, ['block_potion'])
   assert(room.version > before, 'using a potion did not publish the new board')
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.presentationEvents.at(-1), {
+    seq: 1,
+    kind: 'potion',
+    actorId: a.playerId,
+    sourceId: 'fire_potion',
+    enemyIds: [enemy().uid],
+    playerIds: [],
+  }, 'the other seat did not receive the public potion animation')
+  room.run.combat.presentationEvents.at(-1).privateChoiceUid = mine().hand[0]?.uid ?? 'private-choice'
+  assertEqual(snapshotFor(room, b.token).run.combat.presentationEvents.at(-1).privateChoiceUid, undefined,
+    'room redaction forwarded an unapproved presentation-event field')
+
+  mine().potions = ['energy_potion']
+  const surplusTargetPotion = apply(room, a.token, {
+    kind: 'usePotion', potionId: 'energy_potion', enemyUid: enemy().uid, targetPlayerId: a.playerId,
+  })
+  assert(surplusTargetPotion.changed)
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.presentationEvents.at(-1).enemyIds, [],
+    'a surplus hostile Potion target published a false peer impact')
 
   const block = theirs().block
   const helped = apply(room, b.token, {
@@ -1010,6 +1030,19 @@ check('an online seat can use only its own potion with a valid target', () => {
   assert(helped.changed)
   assertEqual(mine().block, 2, 'Block Potion can target another online seat')
   assertEqual(theirs().block, block)
+
+  const privateCard = mine().hand[0]
+  assert(privateCard, 'the potion privacy fixture needs a card in hand')
+  mine().potions = ['purity_potion']
+  apply(room, a.token, {
+    kind: 'usePotion',
+    potionId: 'purity_potion',
+    exhaustUids: [privateCard.uid],
+  })
+  const publicPurityEvent = snapshotFor(room, b.token).run.combat.presentationEvents.at(-1)
+  assertEqual(publicPurityEvent.sourceId, 'purity_potion')
+  assert(!allStrings(publicPurityEvent).includes(privateCard.uid),
+    'a public presentation event leaked an opponent hand UID')
 
   mine().potions = ['cunning_potion']
   mine().shivs = 4

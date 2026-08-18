@@ -2510,6 +2510,21 @@ function redactCombat(combat, viewerId) {
         : null,
     } : undefined,
     playedCardsThisTurn: structuredClone(combat.playedCardsThisTurn ?? []),
+    presentationEvents: (combat.presentationEvents ?? []).map((event) => ({
+      seq: event.seq,
+      kind: event.kind,
+      actorId: event.actorId,
+      sourceId: event.sourceId,
+      enemyIds: [...event.enemyIds],
+      playerIds: [...event.playerIds],
+      ...(event.enemyRow === undefined ? {} : { enemyRow: event.enemyRow }),
+      ...(event.kind === 'card' ? {
+        upgraded: event.upgraded,
+        copied: event.copied,
+        energy: event.energy,
+        ...(event.mode === undefined ? {} : { mode: event.mode }),
+      } : {}),
+    })),
     // Pending summons are public telegraphed enemy-card effects; the shuffled
     // Summons deck itself remains server-only.
     pendingSummons: structuredClone(combat.pendingSummons ?? []),
