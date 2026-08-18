@@ -4566,7 +4566,10 @@ button:disabled {
 
   display: block;
   overflow: auto hidden;
+  scrollbar-width: none;
 }
+
+.board::-webkit-scrollbar { display: none; }
 
 .row__enemies {
   display: contents;

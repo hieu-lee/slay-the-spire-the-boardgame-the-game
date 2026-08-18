@@ -7795,6 +7795,25 @@ await publishPresentationEvent({
   enemyRow: rowTargetFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await vfxTarget().waitFor()
+const strikeOverflow = await page.locator('.board').evaluate((board) => ({
+  overflowX: getComputedStyle(board).overflowX,
+  scrollbarWidth: getComputedStyle(board).scrollbarWidth,
+  webkitScrollbarDisplay: getComputedStyle(board, '::-webkit-scrollbar').display,
+  horizontalRange: (() => {
+    const stageWidth = board.style.getPropertyValue('--stage-width')
+    const original = board.scrollLeft
+    board.style.setProperty('--stage-width', `${board.clientWidth + 96}px`)
+    board.scrollLeft = 0
+    const left = board.scrollLeft
+    board.scrollLeft = board.scrollWidth
+    const right = board.scrollLeft
+    board.style.setProperty('--stage-width', stageWidth)
+    board.scrollLeft = original
+    return right - left
+  })(),
+  pageScrollWidth: document.documentElement.scrollWidth,
+  pageClientWidth: document.documentElement.clientWidth,
+}))
 const strikePresentation = await vfxTarget().evaluate((vfx) => ({
   family: vfx.getAttribute('data-vfx-family'),
   motion: vfx.getAttribute('data-vfx-motion'),
@@ -7910,6 +7929,12 @@ check('personal card and potion events render distinct authoritative recipes', (
   assertEqual(strikePresentation.actorOverlays, 0, 'hostile impact art belongs on the enemy, not the actor')
   assertEqual(strikePresentation.targets, 1)
   assert(strikePresentation.image.includes('ironclad-strike.webp'), strikePresentation.image)
+  assertEqual(strikeOverflow.overflowX, 'auto', 'crowded stages must remain horizontally reachable')
+  assertEqual(strikeOverflow.scrollbarWidth, 'none', 'combat VFX exposed Firefox scrollbar chrome')
+  assertEqual(strikeOverflow.webkitScrollbarDisplay, 'none', 'combat VFX exposed Chromium scrollbar chrome')
+  assert(strikeOverflow.horizontalRange > 0, 'hidden scrollbar styling disabled horizontal stage scrolling')
+  assert(strikeOverflow.pageScrollWidth <= strikeOverflow.pageClientWidth + 1,
+    `Strike VFX overflows the page (${strikeOverflow.pageScrollWidth} > ${strikeOverflow.pageClientWidth})`)
   assertEqual(bashPresentation.family, 'blunt')
   assert(bashPresentation.image.includes('ironclad-bash.webp'), bashPresentation.image)
   assertEqual(zapPresentation.family, 'lightning')
