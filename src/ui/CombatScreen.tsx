@@ -74,7 +74,7 @@ import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
 import type { VfxRecipe } from './combat-vfx.ts'
-import { Icon, IconValue, dieIcon } from './Icon.tsx'
+import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerGlyph, PowerRow } from './PowerRow.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
@@ -119,6 +119,11 @@ type CombatScreenProps = {
   partyStartTurnAbilities?: StartTurnAbility[]
   partyStartTurnScryAbilities?: StartTurnScryAbility[]
   startTurnCoordinatorId?: string | null
+  startTurnChoiceId?: string
+  savedStartTurnEnemyTargets?: Record<string, string>
+  savedStartTurnChoices?: StartTurnChoice[]
+  partyStartTurnOrderPending?: boolean
+  partyStartTurnOrderLocked?: boolean
   partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
   partyStartTurnDiscard?: { playerId: string; sourceId: string; label: string; cards: CardInstance[] | null }
   /** Room snapshot version; omitted for the local table. */
@@ -772,6 +777,11 @@ export function CombatScreen({
   partyStartTurnAbilities,
   partyStartTurnScryAbilities,
   startTurnCoordinatorId,
+  startTurnChoiceId,
+  savedStartTurnEnemyTargets,
+  savedStartTurnChoices,
+  partyStartTurnOrderPending = false,
+  partyStartTurnOrderLocked = false,
   partyStartTurnScry,
   partyStartTurnDiscard,
   cardPreview,
@@ -886,10 +896,15 @@ export function CombatScreen({
   const baseStartAbilities = state.phase === 'start' && !pendingTrigger
     ? (partyStartTurnAbilities ?? startTurnAbilities(state))
     : []
+  const savedStartChoiceKey = savedStartTurnChoices?.map((choice) =>
+    `${choice.id}:${choice.enemyUid ?? ''}:${choice.targetPlayerId ?? ''}:` +
+    `${choice.shivEnemyUids.join(',')}:${choice.evokeSlots?.join(',') ?? ''}:` +
+    `${choice.evokeEnemyUids?.join(',') ?? ''}`).join('\0') ?? ''
   const startAbilityKey = baseStartAbilities.map((ability) =>
     `${ability.id}:${ability.overflowShivs}:${ability.targets?.map((target) => target.uid).join(',') ?? ''}:` +
     `${ability.players?.map((player) => player.id).join(',') ?? ''}:` +
-    `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}`).join('\0')
+    `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}:` +
+    `${savedStartTurnEnemyTargets?.[ability.id] ?? ''}`).join('\0') + `\0${savedStartChoiceKey}`
 
   const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
   const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
@@ -1396,21 +1411,29 @@ export function CombatScreen({
 
   useEffect(() => {
     if (state.phase !== 'start') return
+    const savedChoices = new Map((savedStartTurnChoices ?? []).map((choice) => [choice.id, choice]))
     setStartTurnOrder(baseStartAbilities.map((ability) => ability.id))
     setStartTurnEnemyTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id,
-      ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+      savedStartTurnEnemyTargets?.[ability.id] ??
+        savedChoices.get(ability.id)?.enemyUid ??
+        (ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined),
     ])))
     setStartTurnPlayerTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id,
-      ability.players?.length === 1 ? ability.players[0]!.id : undefined,
+      savedChoices.get(ability.id)?.targetPlayerId ??
+        (ability.players?.length === 1 ? ability.players[0]!.id : undefined),
     ])))
     setStartTurnTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
       ability.id,
-      Array(ability.overflowShivs).fill(undefined),
+      savedChoices.get(ability.id)?.shivEnemyUids ?? Array(ability.overflowShivs).fill(undefined),
     ])))
-    setStartTurnEvokeSlots(Object.fromEntries(baseStartAbilities.map((ability) => [ability.id, []])))
-    setStartTurnEvokeTargets(Object.fromEntries(baseStartAbilities.map((ability) => [ability.id, []])))
+    setStartTurnEvokeSlots(Object.fromEntries(baseStartAbilities.map((ability) => [
+      ability.id, savedChoices.get(ability.id)?.evokeSlots ?? [],
+    ])))
+    setStartTurnEvokeTargets(Object.fromEntries(baseStartAbilities.map((ability) => [
+      ability.id, savedChoices.get(ability.id)?.evokeEnemyUids ?? [],
+    ])))
   }, [startAbilityKey, state.phase])
 
   useEffect(() => {
@@ -1645,8 +1668,15 @@ export function CombatScreen({
   }))
   const orderedStartAbilities = startTurnAbilities(state, startIds, startChoiceDrafts)
   const canResolveStartTurn = !onAction || viewer.id === startTurnCoordinatorId
+  const orderTargetIndex = startTurnChoiceId
+    ? orderedStartAbilities.findIndex((ability) => ability.id === startTurnChoiceId)
+    : -1
+  const startChoiceAbilities = partyStartTurnOrderPending
+    ? orderedStartAbilities.slice(0, orderTargetIndex < 0 ? orderedStartAbilities.length : orderTargetIndex)
+    : orderedStartAbilities.filter((ability) => !startTurnChoiceId || ability.id === startTurnChoiceId)
   const pendingStartChoice = canResolveStartTurn
-    ? orderedStartAbilities.flatMap<PendingStartChoice>((ability) => {
+    ? startChoiceAbilities
+      .flatMap<PendingStartChoice>((ability) => {
       if (ability.targets &&
         (startTurnEnemyTargets[ability.id] === undefined || ability.enemyTargetStale)) {
         return [{ kind: 'enemy', ability }]
@@ -1662,7 +1692,7 @@ export function CombatScreen({
         return [{ kind: 'evokeTarget', ability, index: ability.evokeTargetIndex }]
       }
       return ability.evokeChoice ? [{ kind: 'evoke', ability }] : []
-    })[0]
+      })[0]
     : undefined
   const pendingStartEnemy = pendingStartChoice?.kind === 'enemy' ? pendingStartChoice.ability : undefined
   const pendingStartPlayer = pendingStartChoice?.kind === 'player' ? pendingStartChoice.ability : undefined
@@ -1686,14 +1716,15 @@ export function CombatScreen({
   function moveStartTurnAbility(id: string, delta: -1 | 1) {
     const from = startIds.indexOf(id)
     const to = from + delta
-    if (!canResolveStartTurn || from < 0 || to < 0 || to >= startIds.length) return
+    if (!canResolveStartTurn || partyStartTurnOrderLocked || from < 0 || to < 0 || to >= startIds.length) return
     const order = [...startIds]
     ;[order[from], order[to]] = [order[to]!, order[from]!]
     const plan = startTurnAbilities(state, order)
     setStartTurnOrder(order)
     setStartTurnEnemyTargets(Object.fromEntries(plan.map((ability) => [
       ability.id,
-      ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+      savedStartTurnEnemyTargets?.[ability.id] ??
+        (ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined),
     ])))
     setStartTurnPlayerTargets(Object.fromEntries(plan.map((ability) => [
       ability.id,
@@ -2925,7 +2956,7 @@ export function CombatScreen({
                     setPotionOverflowRequired(0)
                     setPendingPowerUid(staged ? null : power.uid)
                   }}
-                >{used ? `${def.name} used` : <>{staged ? '✓ ' : ''}Use <PowerGlyph def={def} /></>}</button>]
+                ><PowerGlyph def={def} /></button>]
               }) : null}
               {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !orderingStage && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
                 if (!canActivatePotion(state, viewer, potionId)) return []
@@ -2960,13 +2991,15 @@ export function CombatScreen({
                       } else consumePotion(potionId)
                     }}
                   >
-                    {staged ? '✓ ' : ''}Use <img className="item-icon-image" src={potionIconPath(potionId)} alt="" />{count > 1 ? ` ×${count}` : ''}
+                    <img className="item-icon-image" src={potionIconPath(potionId)} alt="" />
                   </button>
                 </PotionTooltipAnchor>
               }) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger && viewer.shivs > 0 ? (
+              {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !orderingStage &&
+              !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.shivs > 0 ? (
                 <button
                   type="button"
+                  className={`combat__shiv-action${spendingShiv ? ' is-chosen' : ''}`}
                   disabled={Boolean(pending?.choiceCards)}
                   aria-label="Use Shiv"
                   aria-pressed={spendingShiv}
@@ -2980,7 +3013,7 @@ export function CombatScreen({
                     setSpendingShiv((current) => !current)
                   }}
                 >
-                  {spendingShiv ? '✓ ' : ''}Use <Icon name="shiv" size={22} />
+                  <StatusIcon name="shiv" size={22} />
                 </button>
               ) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger && viewer.miracles > 0 ? (
@@ -3005,7 +3038,7 @@ export function CombatScreen({
                     }
                   }}
                 >
-                  {miracleOnCard ? '✓ ' : ''}Use <Icon name="miracle" size={22} /> {viewer.energy === CAPS.energy ? 'on next card' : '(+1 Energy)'}
+                  <Icon name="miracle" size={22} />
                 </button>
               ) : null}
               {state.phase === 'discard' && retainAllowance > 0 && discardableHand.length > 0 ? (
@@ -3141,10 +3174,10 @@ export function CombatScreen({
                           : ''}{evoked > 0 || ability.evokeChoice
                           ? ` — Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`
                           : ''}</span>
-                        <button type="button" disabled={!canResolveStartTurn || index === 0}
+                        <button type="button" disabled={!canResolveStartTurn || partyStartTurnOrderLocked || index === 0}
                           aria-label={`Move ${ability.label} earlier`}
                           onClick={() => moveStartTurnAbility(ability.id, -1)}>↑</button>
-                        <button type="button" disabled={!canResolveStartTurn || index === orderedStartAbilities.length - 1}
+                        <button type="button" disabled={!canResolveStartTurn || partyStartTurnOrderLocked || index === orderedStartAbilities.length - 1}
                           aria-label={`Move ${ability.label} later`}
                           onClick={() => moveStartTurnAbility(ability.id, 1)}>↓</button>
                       </li>
@@ -3162,7 +3195,8 @@ export function CombatScreen({
                   onClick={() => {
                     setStartTurnEnemyTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
                       ability.id,
-                      ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined,
+                      savedStartTurnEnemyTargets?.[ability.id] ??
+                        (ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined),
                     ])))
                     setStartTurnPlayerTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
                       ability.id,
@@ -3180,7 +3214,10 @@ export function CombatScreen({
               ) : null}
               <button type="button" className="combat__end-turn" onClick={finishStartTurn}
                 disabled={!startTurnReady || !canResolveStartTurn}>
-                {canResolveStartTurn ? 'Resolve start of turn' : 'Waiting for start-turn order'}
+                {canResolveStartTurn
+                  ? partyStartTurnOrderPending ? 'Confirm start-of-turn order'
+                    : startTurnChoiceId ? 'Confirm Noxious Fumes target' : 'Resolve start of turn'
+                  : 'Waiting for start-turn order'}
               </button>
             </>
           ) : null}
@@ -3350,7 +3387,7 @@ export function CombatScreen({
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
             if (!canActivateRelic(state, viewer, relicIndex)) return []
             if (held.defId === 'golden_eye') return [<button type="button" key={relicIndex}
-              aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}>Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
+              aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}><img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
             if (held.defId === 'gambling_chip') return [<button type="button" key={relicIndex}
               onClick={() => useRelic(relicIndex)}>Reroll with {def.name}</button>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
@@ -3375,7 +3412,7 @@ export function CombatScreen({
             if (held.defId === 'ninja_scroll') {
               const overflow = overflowShivCount(state, 2)
               if (overflow === 0) return [<button type="button" key={relicIndex}
-                aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}>Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
+                aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}><img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 <p>Choose {overflow} immediate Shiv target{overflow === 1 ? '' : 's'}.</p>
                 {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
@@ -3414,7 +3451,7 @@ export function CombatScreen({
             }
             return [<button type="button" key={relicIndex} aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}`}
               onClick={() => useRelic(relicIndex)}>
-              Use <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />{held.cubes !== undefined ? ` (${held.cubes})` : ''}
+              <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
             </button>]
           })}
           </section>

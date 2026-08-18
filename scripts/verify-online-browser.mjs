@@ -2568,16 +2568,17 @@ try {
   const boBeforeNoxious = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
   Object.assign(liveRoom.run.combat, { phase: 'roundEnd', turn: 1, log: [] })
   Object.assign(annBeforeNoxious, {
-    hand: [],
-    powers: [{ uid: 'online-noxious', defId: 'noxious_fumes', upgraded: false }],
+    hand: [], shivs: 5,
+    powers: [{ uid: 'online-earlier-infinite', defId: 'infinite_blades', upgraded: false }],
     draw: Array.from({ length: 5 }, (_, index) => ({
-      uid: `online-noxious-ann-${index}`, defId: 'defend_silent', upgraded: false,
+      uid: `online-noxious-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
     })),
   })
   Object.assign(boBeforeNoxious, {
     hand: [],
+    powers: [{ uid: 'online-noxious', defId: 'noxious_fumes', upgraded: false }],
     draw: Array.from({ length: 5 }, (_, index) => ({
-      uid: `online-noxious-bo-${index}`, defId: 'defend_ironclad', upgraded: false,
+      uid: `online-noxious-bo-${index}`, defId: 'defend_silent', upgraded: false,
     })),
   })
   for (const enemy of liveRoom.run.combat.enemies) {
@@ -2593,18 +2594,21 @@ try {
     a.locator('.combat[data-phase="start"]').waitFor(),
     b.locator('.combat[data-phase="start"]').waitFor(),
   ])
-  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes — choose an enemy'))
-  const teammateNoxiousPrompts = await b.locator('.prompt').count()
-  const teammateNoxiousTargets = await b.locator('.enemy--targeted').count()
+  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('overflow Shiv 1/1'))
+  await a.getByRole('button', { name: 'Skip this Shiv' }).click()
+  await a.getByRole('button', { name: 'Confirm start-of-turn order' }).click()
+  await b.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('Noxious Fumes — choose an enemy'))
+  const teammateNoxiousPrompts = await a.locator('.prompt').count()
+  const teammateNoxiousTargets = await a.locator('.enemy--targeted').count()
   check('waiting teammates cannot target Noxious Fumes', () => {
     assertEqual(teammateNoxiousPrompts, 0)
     assertEqual(teammateNoxiousTargets, 0)
   })
-  await a.locator('.enemy:not([disabled])').last().click()
-  await a.getByRole('button', { name: 'Resolve start of turn' }).click()
+  await b.locator('.enemy:not([disabled])').last().click()
+  await b.getByRole('button', { name: 'Confirm Noxious Fumes target' }).click()
   await a.locator('.combat[data-phase="player"]').waitFor()
-  const resolvedNoxious = await snapshot(a)
-  check('Noxious Fumes sends its chosen enemy through the online action', () => {
+  const resolvedNoxious = await snapshot(b)
+  check('Silent sends Noxious Fumes chosen enemy through the online action', () => {
     const poison = resolvedNoxious.run.combat.enemies.map((enemy) => enemy.poison)
     assertEqual(poison.filter((amount) => amount === 1).length, 1)
     assertEqual(poison.reduce((sum, amount) => sum + amount, 0), 1)

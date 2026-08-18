@@ -1154,6 +1154,15 @@ button:disabled {
   filter: drop-shadow(0 0 0.18rem rgb(245 227 180 / 0.85));
 }
 
+.combat__actions .combat__shiv-action .icon {
+  width: 4.2rem;
+  height: 4.2rem;
+}
+
+.combat__actions .combat__shiv-action.is-chosen {
+  box-shadow: 0 0 0 0.15rem var(--trim-lit), 0 0 0.7rem rgb(246 197 89 / 0.8);
+}
+
 /* ---------- combat ---------- */
 
 /* Flex, not grid: the result banner is conditional, so fixed grid rows would

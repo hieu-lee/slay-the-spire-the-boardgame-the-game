@@ -7357,6 +7357,41 @@ check('Shivs are separate attacks and overflow may attack immediately', () => {
   assertEqual(overflow.enemies[1].hp, 19, 'the second overflow Shiv independently attacks another enemy')
 })
 
+check('a Shiv waits while an item card choice is pending', () => {
+  const queued = instance('strike_silent')
+  const waiting = combat(
+    [makePlayer({ character: 'silent', hand: [queued], shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  waiting.pendingDistilled = { playerId: 'p1', cards: [queued] }
+  assertEqual(spendShiv(waiting, 'p1', 'e1'), waiting,
+    'a Shiv bypassed the unresolved Distilled Chaos card choice')
+
+  const scrying = combat(
+    [makePlayer({ character: 'silent', shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  scrying.pendingRelicScry = { playerId: 'p1', relicIndex: 0, cards: [queued] }
+  assertEqual(spendShiv(scrying, 'p1', 'e1'), scrying,
+    'a Shiv bypassed the unresolved Golden Eye Scry')
+
+  const concluded = combat(
+    [makePlayer({ character: 'silent', shivs: 1 })],
+    [makeEnemy({ hp: 20, maxHp: 20 })],
+  )
+  concluded.players[0].cardPlayLocked = true
+  assertEqual(spendShiv(concluded, 'p1', 'e1'), concluded,
+    'a Shiv bypassed the card-play lock from Conclude or Meditate')
+
+  const timeWarped = combat(
+    [makePlayer({ character: 'silent', shivs: 1 })],
+    [makeEnemy({ defId: 'time_eater', isBoss: true, actionIndex: 2, hp: 20, maxHp: 20 })],
+  )
+  timeWarped.players[0].cardsPlayedThisTurn = 99
+  assertEqual(spendShiv(timeWarped, 'p1', 'e1'), timeWarped,
+    'a Shiv bypassed Time Warp after card play reached its limit')
+})
+
 // Weak and Vulnerable are spent by a hit LANDING (p.24). A counted attack that
 // comes to nothing lands none, and Barrage at zero orbs is that attack — a
 // legal play the Defect can make on turn 1 of every combat, since they start
@@ -8947,6 +8982,15 @@ check('the start of turn stops only for a sequence that can change something', (
     character: 'silent', powers: [instance('noxious_fumes')],
   })], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })])
   assertEqual(startTurnNeedsChoice(twoTargets), true, 'and a target of its own is always asked for')
+
+  const revivedTarget = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes')],
+  })], [
+    makeEnemy({ uid: 'living', defId: 'darkling' }),
+    makeEnemy({ uid: 'revived', defId: 'darkling_bha', hp: 0, dead: true, row: 1 }),
+  ])
+  assertEqual(startTurnNeedsChoice(revivedTarget), true,
+    'Regrow before Noxious Fumes can expose another legal target')
 })
 
 check('Calipers preserves Block through only the next Reset', () => {

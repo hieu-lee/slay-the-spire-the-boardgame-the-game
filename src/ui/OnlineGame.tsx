@@ -505,6 +505,11 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           partyStartTurnAbilities={snapshot.startTurnAbilities}
           partyStartTurnScryAbilities={snapshot.startTurnScryAbilities}
           startTurnCoordinatorId={snapshot.startTurnCoordinatorId}
+          startTurnChoiceId={snapshot.startTurnChoiceId}
+          savedStartTurnEnemyTargets={snapshot.startTurnEnemyTargets}
+          savedStartTurnChoices={snapshot.startTurnChoices}
+          partyStartTurnOrderPending={snapshot.startTurnOrderPending}
+          partyStartTurnOrderLocked={snapshot.startTurnOrderLocked}
           partyStartTurnScry={snapshot.startTurnScry}
           partyStartTurnDiscard={snapshot.startTurnDiscard}
           savedDiscardOrder={snapshot.discardOrder}

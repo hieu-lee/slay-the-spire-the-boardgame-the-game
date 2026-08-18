@@ -912,6 +912,7 @@ export function apply(room, seatToken, action) {
   }
   if (cancelsPendingCatchUp) room.seats = room.seats.filter((candidate) => !candidate.pendingCatchUp)
   room.run = next
+  if (before.combat?.phase === 'start') clearStartTurnPlan(room)
   settleForcedCards(room)
   if (before.phase === 'combat' && room.run.phase !== 'combat') settlePendingRelics(room)
   const current = room.run
@@ -1496,9 +1497,144 @@ function resolveEndTurn(room, seat, action, seatToken) {
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
+function savedStartTurnChoices(room) {
+  const combatId = room.run?.combat?.combatId
+  return room.startTurnCombatId === combatId ? room.startTurnChoices : undefined
+}
+
+function plannedStartTurnAbilities(room) {
+  const combat = room.run?.combat
+  if (!combat) return []
+  const order = room.startTurnCombatId === combat.combatId ? room.startTurnOrder : undefined
+  if (!Array.isArray(order)) return startTurnAbilities(combat)
+  const targets = room.startTurnEnemyTargets ?? {}
+  const stored = new Map((savedStartTurnChoices(room) ?? []).map((choice) => [choice.id, choice]))
+  return startTurnAbilities(combat, order, order.map((id) => ({
+    id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    ...stored.get(id), enemyUid: targets[id] ?? stored.get(id)?.enemyUid,
+  })))
+}
+
+function clearStartTurnPlan(room) {
+  room.startTurnCombatId = undefined
+  room.startTurnOrder = undefined
+  room.startTurnEnemyTargets = undefined
+  room.startTurnChoices = undefined
+}
+
+function savedStartTurnEnemyTargets(room) {
+  const abilities = plannedStartTurnAbilities(room)
+  const combatId = room.run?.combat?.combatId
+  const storedTargets = room.startTurnCombatId === combatId ? room.startTurnEnemyTargets : undefined
+  return Object.fromEntries(abilities.flatMap((ability) => {
+    const target = storedTargets?.[ability.id]
+    return typeof target === 'string' && ability.targets?.some((candidate) => candidate.uid === target)
+      ? [[ability.id, target]] : []
+  }))
+}
+
+function noxiousFumesIds(combat) {
+  return new Set(combat?.players.flatMap((player) => player.powers
+    .filter((power) => power.defId === 'noxious_fumes')
+    .map((power) => `${player.id}/power:${power.uid}`)) ?? [])
+}
+
+function pendingNoxiousFumes(room) {
+  const combat = room.run?.combat
+  const saved = savedStartTurnEnemyTargets(room)
+  const ids = noxiousFumesIds(combat)
+  const abilities = plannedStartTurnAbilities(room)
+  const pending = abilities.find((ability) =>
+    ids.has(ability.id) && (ability.targets?.length ?? 0) > 1 && !saved[ability.id])
+  if (pending || !combat || (room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)) ||
+    !abilities.some((ability) => ability.id === 'enemy:darkling/regrow')) return pending
+  // Regrow can turn the one forced target in the default plan into a real
+  // Noxious choice after the coordinator moves it earlier.
+  return abilities.find((ability) => ids.has(ability.id) && (ability.targets?.length ?? 0) > 0)
+}
+
+function startTurnAbilityNeedsChoice(ability, saved, stored = new Set()) {
+  return !saved[ability.id] && !stored.has(ability.id) && (ability.overflowShivs > 0 || ability.evokeChoice ||
+    (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1)
+}
+
+function startTurnChoicePending(ability, choice) {
+  return Boolean(ability.targets && (!choice?.enemyUid || ability.enemyTargetStale)) ||
+    Boolean(ability.players && !ability.players.some((player) => player.id === choice?.targetPlayerId)) ||
+    ability.staleShivIndex !== undefined || ability.evokeTargetIndex !== undefined || Boolean(ability.evokeChoice)
+}
+
+function validStartTurnChoice(ability, choice) {
+  return !startTurnChoicePending(ability, choice) &&
+    (ability.targets
+      ? ability.targets.some((target) => target.uid === choice.enemyUid)
+      : choice.enemyUid === undefined) &&
+    (ability.players
+      ? ability.players.some((player) => player.id === choice.targetPlayerId)
+      : choice.targetPlayerId === undefined) &&
+    choice.shivEnemyUids.length === ability.overflowShivs &&
+    (choice.evokeSlots?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
+    (choice.evokeEnemyUids?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
+    (ability.evokeOrbs ?? []).every((orb, index) => orb === 'frost'
+      ? choice.evokeEnemyUids?.[index] === null
+      : typeof choice.evokeEnemyUids?.[index] === 'string')
+}
+
+function mergedStartTurnChoices(room, choices, storedChoices = savedStartTurnChoices(room) ?? []) {
+  const stored = new Map(storedChoices.map((choice) => [choice.id, choice]))
+  const targets = savedStartTurnEnemyTargets(room)
+  return choices.map((choice) => ({
+    ...choice,
+    ...stored.get(choice.id),
+    enemyUid: targets[choice.id] ?? stored.get(choice.id)?.enemyUid ?? choice.enemyUid,
+  }))
+}
+
+function choicesBeforeNoxious(combat, order, choices, fumesId) {
+  const abilities = startTurnAbilities(combat, order, choices)
+  const index = abilities.findIndex((ability) => ability.id === fumesId)
+  if (abilities.length !== order.length || index < 0 || abilities
+    .slice(0, index).some((ability, abilityIndex) => !validStartTurnChoice(ability, choices[abilityIndex]))) {
+    fail('Resolve every Start-of-Turn choice before Noxious Fumes')
+  }
+  return choices.slice(0, index)
+}
+
+function connectedStartTurnPlayer(room, playerId) {
+  const combat = room.run?.combat
+  const alive = new Set(combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
+  return room.seats.find((seat) => seat.connected && seat.playerId === playerId)?.playerId ??
+    room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
+}
+
+function startTurnOrderCoordinator(room) {
+  const combat = room.run?.combat
+  const abilities = plannedStartTurnAbilities(room)
+  const saved = savedStartTurnEnemyTargets(room)
+  const fumes = pendingNoxiousFumes(room)
+  const fumesIds = noxiousFumesIds(combat)
+  const owner = abilities.find((ability) => !fumesIds.has(ability.id) &&
+    startTurnAbilityNeedsChoice(ability, saved))?.playerId ?? fumes?.playerId
+  return connectedStartTurnPlayer(room, owner)
+}
+
+function startTurnOrderPending(room) {
+  const combat = room.run?.combat
+  const fumes = pendingNoxiousFumes(room)
+  if (!combat || !fumes || (room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder))) {
+    return false
+  }
+  return startTurnOrderCoordinator(room) !== connectedStartTurnPlayer(room, fumes.playerId)
+}
+
 function startTurnCoordinator(room) {
-  const alive = new Set(room.run?.combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
-  return room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
+  if (startTurnOrderPending(room)) return startTurnOrderCoordinator(room)
+  const abilities = plannedStartTurnAbilities(room)
+  const saved = savedStartTurnEnemyTargets(room)
+  const stored = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
+  const owner = pendingNoxiousFumes(room)?.playerId ??
+    abilities.find((ability) => startTurnAbilityNeedsChoice(ability, saved, stored))?.playerId
+  return connectedStartTurnPlayer(room, owner)
 }
 
 function resolveStartTurn(room, seat, action, seatToken) {
@@ -1518,16 +1654,94 @@ function resolveStartTurn(room, seat, action, seatToken) {
       choice.evokeEnemyUids.length > UID_LIMIT)))) {
     fail('Start-of-Turn choices must contain every ability and valid targets')
   }
-  const next = resolveStartPlayerTurn(combat, choices.map((choice) => ({
+  const normalized = choices.map((choice) => ({
     id: choice.id,
     enemyUid: choice.enemyUid,
     targetPlayerId: choice.targetPlayerId,
     shivEnemyUids: [...choice.shivEnemyUids],
     evokeSlots: slotList(choice.evokeSlots),
     evokeEnemyUids: targetList(choice.evokeEnemyUids),
-  })))
-  if (next === combat) fail('The Start-of-Turn order or targets are stale')
+  }))
+  const previousPlan = {
+    combatId: room.startTurnCombatId,
+    order: room.startTurnOrder,
+    targets: room.startTurnEnemyTargets,
+    choices: room.startTurnChoices,
+  }
+  const existingOrder = room.startTurnCombatId === combat.combatId ? room.startTurnOrder : undefined
+  if (existingOrder && normalized.some((choice, index) => choice.id !== existingOrder[index])) {
+    fail('The Start-of-Turn order is already committed')
+  }
+  if (startTurnOrderPending(room)) {
+    const order = normalized.map((choice) => choice.id)
+    const fumes = pendingNoxiousFumes(room)
+    if (!fumes || startTurnAbilities(combat, order).length !== startTurnAbilities(combat).length) {
+      fail('Start-of-Turn choices must contain every ability and valid targets')
+    }
+    const stagedChoices = choicesBeforeNoxious(combat, order, normalized, fumes.id)
+    room.startTurnCombatId = combat.combatId
+    room.startTurnOrder = order
+    room.startTurnEnemyTargets = undefined
+    room.startTurnChoices = stagedChoices
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  const pendingFumes = pendingNoxiousFumes(room)
+  if (pendingFumes) {
+    const order = normalized.map((choice) => choice.id)
+    const prefixChoices = existingOrder
+      ? savedStartTurnChoices(room) ?? []
+      : choicesBeforeNoxious(combat, order, normalized, pendingFumes.id)
+    const ownerChoices = normalized.map((choice) => choice.id === pendingFumes.id ? choice : ({
+      id: choice.id, shivEnemyUids: [], evokeSlots: [], evokeEnemyUids: [],
+    }))
+    const stagedChoices = mergedStartTurnChoices(room, ownerChoices, prefixChoices)
+    const plannedFumes = startTurnAbilities(combat, order, stagedChoices)
+      .find((ability) => ability.id === pendingFumes.id)
+    const target = normalized.find((choice) => choice.id === pendingFumes.id)?.enemyUid
+    if (!plannedFumes?.targets?.some((candidate) => candidate.uid === target)) {
+      fail('Choose a living enemy for Noxious Fumes')
+    }
+    const savedTargets = savedStartTurnEnemyTargets(room)
+    room.startTurnCombatId = combat.combatId
+    room.startTurnOrder = order
+    room.startTurnChoices = prefixChoices
+    room.startTurnEnemyTargets = { ...savedTargets, [pendingFumes.id]: target }
+    const staged = mergedStartTurnChoices(room, ownerChoices)
+    const stagedById = new Map(staged.map((choice) => [choice.id, choice]))
+    const remainingChoice = plannedStartTurnAbilities(room).some((ability) =>
+      startTurnChoicePending(ability, stagedById.get(ability.id)))
+    if (pendingNoxiousFumes(room) || remainingChoice) {
+      room.version += 1
+      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    }
+  }
+  const saved = savedStartTurnEnemyTargets(room)
+  const resolvedChoices = mergedStartTurnChoices(room, normalized).map((choice) => saved[choice.id]
+    ? { ...choice, enemyUid: saved[choice.id] }
+    : choice)
+  const next = resolveStartPlayerTurn(combat, resolvedChoices)
+  if (next === combat) {
+    const fumesIds = noxiousFumesIds(combat)
+    const staleFumes = new Set(startTurnAbilities(combat, resolvedChoices.map((choice) => choice.id), resolvedChoices)
+      .filter((ability) => fumesIds.has(ability.id) && saved[ability.id] && ability.enemyTargetStale)
+      .map((ability) => ability.id))
+    if (staleFumes.size > 0) {
+      room.startTurnCombatId = combat.combatId
+      room.startTurnOrder = resolvedChoices.map((choice) => choice.id)
+      room.startTurnEnemyTargets = Object.fromEntries(Object.entries(room.startTurnEnemyTargets ?? {})
+        .filter(([id]) => !staleFumes.has(id)))
+      room.version += 1
+      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    }
+    room.startTurnCombatId = previousPlan.combatId
+    room.startTurnOrder = previousPlan.order
+    room.startTurnEnemyTargets = previousPlan.targets
+    room.startTurnChoices = previousPlan.choices
+    fail('The Start-of-Turn order or targets are stale')
+  }
   room.run = { ...room.run, combat: next }
+  clearStartTurnPlan(room)
   settleForcedCards(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -2266,8 +2480,16 @@ export function snapshotFor(room, seatToken) {
     endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
     endTurnCoordinatorId: room.endTurnAbilities ? endTurnCoordinator(room) : undefined,
     startTurnAbilities: run?.combat?.phase === 'start'
-      ? startTurnAbilities(run.combat)
+      ? plannedStartTurnAbilities(room)
       : undefined,
+    startTurnChoiceId: run?.combat?.phase === 'start' ? pendingNoxiousFumes(room)?.id : undefined,
+    startTurnEnemyTargets: run?.combat?.phase === 'start' ? savedStartTurnEnemyTargets(room) : undefined,
+    startTurnChoices: run?.combat?.phase === 'start' && room.startTurnCombatId === run.combat.combatId
+      ? structuredClone(room.startTurnChoices ?? [])
+      : undefined,
+    startTurnOrderPending: run?.combat?.phase === 'start' ? startTurnOrderPending(room) : undefined,
+    startTurnOrderLocked: run?.combat?.phase === 'start' &&
+      room.startTurnCombatId === run.combat.combatId && Array.isArray(room.startTurnOrder),
     startTurnScryAbilities: run?.combat?.phase === 'start'
       ? startTurnScryAbilities(run.combat)
       : undefined,

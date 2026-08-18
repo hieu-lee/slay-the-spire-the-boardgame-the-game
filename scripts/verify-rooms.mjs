@@ -3028,11 +3028,12 @@ check('Infinite Blades pauses Start of Turn for authoritative overflow choices',
   assertEqual(pending.run.combat.phase, 'start')
   assertEqual(pending.startTurnAbilities.length, 1)
   assertEqual(pending.startTurnAbilities[0].overflowShivs, 2)
-  assertEqual(pending.startTurnCoordinatorId, a.playerId)
+  assertEqual(pending.startTurnCoordinatorId, b.playerId,
+    'the owner of the overflow Shiv choice should coordinate it')
 
   let unauthorized = null
   try {
-    apply(room, b.token, {
+    apply(room, a.token, {
       kind: 'resolveStartTurn',
       choices: [{ id: pending.startTurnAbilities[0].id, shivEnemyUids: [null, null] }],
     })
@@ -3041,14 +3042,14 @@ check('Infinite Blades pauses Start of Turn for authoritative overflow choices',
   }
   assertEqual(unauthorized?.name, 'RoomError', 'a non-coordinator cannot resolve everyone\'s order')
 
-  markDisconnected(room, a.token)
-  const transferred = snapshotFor(room, b.token)
-  assertEqual(transferred.startTurnCoordinatorId, b.playerId, 'disconnect transfers the pending coordinator')
+  markDisconnected(room, b.token)
+  const transferred = snapshotFor(room, a.token)
+  assertEqual(transferred.startTurnCoordinatorId, a.playerId, 'disconnect transfers the pending coordinator')
   const [first, second] = room.run.combat.enemies
   first.hp = 1
   let staleTarget = null
   try {
-    apply(room, b.token, {
+    apply(room, a.token, {
       kind: 'resolveStartTurn',
       choices: [{
         id: transferred.startTurnAbilities[0].id,
@@ -3061,7 +3062,7 @@ check('Infinite Blades pauses Start of Turn for authoritative overflow choices',
   assertEqual(staleTarget?.name, 'RoomError', 'a queued Shiv cannot hit an enemy killed by the prior Shiv')
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [1, 20],
     'a stale overflow target partially mutated the authoritative combat')
-  apply(room, b.token, {
+  apply(room, a.token, {
     kind: 'resolveStartTurn',
     choices: [{
       id: transferred.startTurnAbilities[0].id,
@@ -3076,14 +3077,31 @@ check('Infinite Blades pauses Start of Turn for authoritative overflow choices',
 })
 
 check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => {
-  const { room, a } = twoSeatRoom()
+  const { room, a, b } = twoSeatRoom()
   const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
   Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
   Object.assign(ann, {
+    shivs: 5,
+    powers: [
+      { uid: 'room-earlier-infinite', defId: 'infinite_blades', upgraded: false },
+      { uid: 'room-later-infinite', defId: 'infinite_blades', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-earlier-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  Object.assign(silent, {
     powers: [{ uid: 'room-noxious', defId: 'noxious_fumes', upgraded: false }],
     draw: Array.from({ length: 5 }, (_, index) => ({
       uid: `room-noxious-${index}`, defId: 'defend_ironclad', upgraded: false,
     })),
+  })
+  room.run.combat.enemies.push({
+    ...room.run.combat.enemies[0], uid: 'room-noxious-extra', row: 3,
+  })
+  room.run.combat.enemies.push({
+    ...room.run.combat.enemies[0], uid: 'room-noxious-fallback', row: 4,
   })
   for (const enemy of room.run.combat.enemies) {
     Object.assign(enemy, { hp: 20, maxHp: 20, poison: 0, dead: false, abilityUsed: true })
@@ -3091,28 +3109,412 @@ check('Noxious Fumes keeps its Start-of-Turn enemy target authoritative', () => 
 
   apply(room, a.token, { kind: 'startTurn' })
   const pending = snapshotFor(room, a.token)
-  const [ability] = pending.startTurnAbilities
+  const earlier = pending.startTurnAbilities.find((entry) => entry.id.includes('room-earlier-infinite'))
+  const later = pending.startTurnAbilities.find((entry) => entry.id.includes('room-later-infinite'))
+  const ability = pending.startTurnAbilities.find((entry) => entry.label.includes('Noxious Fumes'))
   assertEqual(pending.run.combat.phase, 'start')
   assertEqual(ability.targets.length, room.run.combat.enemies.length)
-  const [stale, chosen] = room.run.combat.enemies
+  assertEqual(pending.startTurnCoordinatorId, a.playerId,
+    'the ordinary coordinator should commit the combined order before Silent targets Noxious Fumes')
+  assertEqual(pending.startTurnOrderPending, true)
+  assertEqual(pending.startTurnChoiceId, ability.id)
+  const [stale, chosen, alternate, fallback] = room.run.combat.enemies
   Object.assign(stale, { hp: 0, dead: true })
-  let staleChoice = null
+  let stolenOrder = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [
+        { id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] },
+        { id: earlier.id, shivEnemyUids: [null] },
+        { id: later.id, shivEnemyUids: [null] },
+      ],
+    })
+  } catch (error) {
+    stolenOrder = error
+  }
+  assertEqual(stolenOrder?.name, 'RoomError', 'the Noxious Fumes owner commandeered the table order')
+  const versionBeforeInvalidPrefix = room.version
+  let invalidPrefix = null
   try {
     apply(room, a.token, {
       kind: 'resolveStartTurn',
-      choices: [{ id: ability.id, enemyUid: stale.uid, shivEnemyUids: [] }],
+      choices: [
+        {
+          id: earlier.id,
+          enemyUid: chosen.uid,
+          targetPlayerId: a.playerId,
+          shivEnemyUids: [null, null],
+          evokeSlots: [0],
+          evokeEnemyUids: [null],
+        },
+        { id: ability.id, shivEnemyUids: [] },
+        { id: later.id, shivEnemyUids: [null] },
+      ],
+    })
+  } catch (error) {
+    invalidPrefix = error
+  }
+  assertEqual(invalidPrefix?.name, 'RoomError', 'an illegal pre-Noxious choice was staged')
+  assertEqual(room.version, versionBeforeInvalidPrefix, 'a rejected prefix changed the room version')
+  assertEqual(room.startTurnCombatId, undefined)
+  assertEqual(room.startTurnOrder, undefined)
+  assertEqual(room.startTurnEnemyTargets, undefined)
+  assertEqual(room.startTurnChoices, undefined, 'a rejected prefix partially mutated staged choices')
+  apply(room, a.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: earlier.id, shivEnemyUids: [chosen.uid] },
+      { id: ability.id, shivEnemyUids: [] },
+      { id: later.id, shivEnemyUids: [null] },
+    ],
+  })
+  const targetStage = snapshotFor(room, b.token)
+  assertEqual(targetStage.startTurnCoordinatorId, b.playerId)
+  assertEqual(targetStage.startTurnOrderLocked, true)
+  assertEqual(targetStage.startTurnChoiceId, ability.id)
+  assertDeepEqual(targetStage.startTurnAbilities.map((entry) => entry.id), [earlier.id, ability.id, later.id],
+    'the coordinator\'s committed order was not preserved for the target owner')
+  let reorderedTarget = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [
+        { id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] },
+        { id: earlier.id, shivEnemyUids: [null] },
+        { id: later.id, shivEnemyUids: [null] },
+      ],
+    })
+  } catch (error) {
+    reorderedTarget = error
+  }
+  assertEqual(reorderedTarget?.name, 'RoomError', 'the target owner changed the committed table order')
+  let staleChoice = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [
+        { id: earlier.id, shivEnemyUids: [chosen.uid] },
+        { id: ability.id, enemyUid: stale.uid, shivEnemyUids: [] },
+        { id: later.id, shivEnemyUids: [null] },
+      ],
     })
   } catch (error) {
     staleChoice = error
   }
   assertEqual(staleChoice?.name, 'RoomError', 'a dead Noxious Fumes target was accepted')
   assertEqual(chosen.poison, 0, 'a stale target partially resolved the Power')
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: earlier.id, shivEnemyUids: [chosen.uid] },
+      { id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] },
+      { id: later.id, shivEnemyUids: [null] },
+    ],
+  })
+  const staged = snapshotFor(room, a.token)
+  assertEqual(staged.run.combat.phase, 'start')
+  assertEqual(staged.startTurnEnemyTargets[ability.id], chosen.uid,
+    'the Silent target was not preserved for the combined order')
+  assertEqual(staged.startTurnCoordinatorId, a.playerId,
+    'the earlier Infinite Blades owner should resolve the remaining order')
+  chosen.hp = 1
+  const reopened = snapshotFor(room, b.token)
+  assertEqual(reopened.run.combat.phase, 'start')
+  assertEqual(reopened.startTurnCoordinatorId, b.playerId)
+  assertEqual(reopened.startTurnChoiceId, ability.id)
+  assertDeepEqual(reopened.startTurnEnemyTargets, {},
+    'a Noxious target invalidated by an earlier committed choice was not reopened')
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: earlier.id, shivEnemyUids: [chosen.uid] },
+      { id: ability.id, enemyUid: alternate.uid, shivEnemyUids: [] },
+      { id: later.id, shivEnemyUids: [null] },
+    ],
+  })
   apply(room, a.token, {
     kind: 'resolveStartTurn',
-    choices: [{ id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] }],
+    choices: [
+      { id: earlier.id, shivEnemyUids: [chosen.uid] },
+      { id: ability.id, enemyUid: chosen.uid, shivEnemyUids: [] },
+      { id: later.id, shivEnemyUids: [null] },
+    ],
   })
   assertEqual(room.run.combat.phase, 'player')
-  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).poison, 1)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === chosen.uid).poison, 0)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === alternate.uid).poison, 1,
+    'the coordinator replaced the Silent\'s Noxious Fumes target')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === fallback.uid).poison, 0)
+})
+
+check('Noxious Fumes can target a Darkling revived earlier in the chosen order', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, {
+    shivs: 5,
+    powers: [{ uid: 'room-regrow-infinite', defId: 'infinite_blades', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-regrow-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  Object.assign(silent, {
+    powers: [{ uid: 'room-regrow-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-regrow-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  const base = room.run.combat.enemies[0]
+  room.run.combat.enemies = [
+    { ...base, uid: 'room-regrow-living', defId: 'darkling', row: 0, hp: 8, maxHp: 8, dead: false },
+    { ...base, uid: 'room-regrow-revived', defId: 'darkling_bha', row: 1, hp: 0, maxHp: 8, dead: true },
+  ]
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, a.token)
+  const fumes = pending.startTurnAbilities.find((ability) => ability.id.includes('room-regrow-fumes'))
+  const regrow = pending.startTurnAbilities.find((ability) => ability.id === 'enemy:darkling/regrow')
+  const infinite = pending.startTurnAbilities.find((ability) => ability.id.includes('room-regrow-infinite'))
+  assertEqual(pending.startTurnCoordinatorId, a.playerId)
+  assertEqual(pending.startTurnOrderPending, true)
+  apply(room, a.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: infinite.id, shivEnemyUids: [null] },
+      { id: regrow.id, shivEnemyUids: [] },
+      { id: fumes.id, enemyUid: 'room-regrow-revived', shivEnemyUids: [] },
+    ],
+  })
+  const targetStage = snapshotFor(room, b.token)
+  assertEqual(targetStage.startTurnCoordinatorId, b.playerId)
+  assertEqual(targetStage.startTurnChoiceId, fumes.id)
+  assertDeepEqual(targetStage.startTurnEnemyTargets, {},
+    'the order coordinator supplied the Silent-owned Noxious target')
+  assertDeepEqual(targetStage.startTurnChoices.map((choice) => choice.id), [infinite.id, regrow.id],
+    'choices before Noxious Fumes were not preserved with the committed order')
+  assert(targetStage.startTurnAbilities.find((ability) => ability.id === fumes.id)
+    .targets.some((target) => target.uid === 'room-regrow-revived'))
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: infinite.id, shivEnemyUids: [null] },
+      { id: regrow.id, shivEnemyUids: [] },
+      { id: fumes.id, enemyUid: 'room-regrow-revived', shivEnemyUids: [] },
+    ],
+  })
+  assertEqual(room.run.combat.phase, 'player')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'room-regrow-revived').poison, 1)
+})
+
+check('an invalid pre-Noxious Frost target leaves the staged plan untouched', () => {
+  const { room, a, b } = twoSeatRoom()
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(defect, {
+    character: 'defect',
+    powers: [{ uid: 'room-frost-storm', defId: 'storm', upgraded: false }],
+    orbs: ['frost', 'lightning', 'dark'],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-frost-draw-${index}`, defId: 'defend_defect', upgraded: false,
+    })),
+  })
+  Object.assign(silent, {
+    powers: [{ uid: 'room-frost-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-frost-silent-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  room.run.combat.enemies.push({ ...room.run.combat.enemies[0], uid: 'room-frost-extra', row: 3 })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, a.token)
+  const storm = pending.startTurnAbilities.find((ability) => ability.id.includes('room-frost-storm'))
+  const fumes = pending.startTurnAbilities.find((ability) => ability.id.includes('room-frost-fumes'))
+  const version = room.version
+  let refused = null
+  try {
+    apply(room, a.token, {
+      kind: 'resolveStartTurn',
+      choices: [
+        {
+          id: storm.id,
+          shivEnemyUids: [],
+          evokeSlots: [0],
+          evokeEnemyUids: [room.run.combat.enemies[0].uid],
+        },
+        { id: fumes.id, shivEnemyUids: [] },
+      ],
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError', 'a Frost evoke accepted an enemy target')
+  assertEqual(room.version, version, 'a rejected Frost target changed the room version')
+  assertEqual(room.startTurnCombatId, undefined)
+  assertEqual(room.startTurnOrder, undefined)
+  assertEqual(room.startTurnEnemyTargets, undefined)
+  assertEqual(room.startTurnChoices, undefined, 'a rejected Frost target partially staged a plan')
+})
+
+check('a legal start-phase die change rebuilds a staged Noxious Fumes plan', () => {
+  const { room, a, b } = twoSeatRoom()
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(ann, {
+    shivs: 5,
+    powers: [{ uid: 'room-reroll-infinite', defId: 'infinite_blades', upgraded: false }],
+    relics: [
+      { defId: 'the_abacus', spent: false },
+      { defId: 'captains_wheel', spent: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-reroll-ann-${index}`, defId: 'defend_ironclad', upgraded: false,
+    })),
+  })
+  Object.assign(silent, {
+    powers: [{ uid: 'room-reroll-fumes', defId: 'noxious_fumes', upgraded: false }],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-reroll-bo-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  room.run.combat.enemies.push({ ...room.run.combat.enemies[0], uid: 'room-reroll-extra', row: 3 })
+  const choices = (snapshot) => snapshot.startTurnAbilities.map((ability) => ({
+    id: ability.id,
+    enemyUid: ability.targets?.[0]?.uid,
+    targetPlayerId: ability.players?.[0]?.id,
+    shivEnemyUids: Array(ability.overflowShivs).fill(null),
+    evokeSlots: [],
+    evokeEnemyUids: [],
+  }))
+
+  apply(room, a.token, { kind: 'startTurn' })
+  room.run.combat.die = 2
+  const initial = snapshotFor(room, a.token)
+  apply(room, a.token, { kind: 'resolveStartTurn', choices: choices(initial) })
+  assertEqual(snapshotFor(room, b.token).startTurnOrderLocked, true)
+
+  apply(room, a.token, { kind: 'activateRelic', relicIndex: 0 })
+  const rebuilt = snapshotFor(room, a.token)
+  assertEqual(room.run.combat.die, 3)
+  assertEqual(rebuilt.startTurnOrderLocked, false, 'the stale pre-reroll order stayed locked')
+  assertEqual(rebuilt.startTurnOrderPending, true)
+  assert(rebuilt.startTurnAbilities.some((ability) => ability.label.includes("Captain's Wheel")),
+    'the rerolled die ability was absent from the rebuilt plan')
+
+  apply(room, a.token, { kind: 'resolveStartTurn', choices: choices(rebuilt) })
+  const targetStage = snapshotFor(room, b.token)
+  apply(room, b.token, { kind: 'resolveStartTurn', choices: choices(targetStage) })
+  assertEqual(room.run.combat.phase, 'player', 'the rebuilt start-turn plan could not resolve')
+})
+
+check('a rejected Noxious Fumes plan commits no target or cross-combat state', () => {
+  const { room, a, b } = twoSeatRoom()
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(silent, {
+    powers: [
+      { uid: 'room-atomic-fumes', defId: 'noxious_fumes', upgraded: false },
+      { uid: 'room-atomic-demon', defId: 'demon_form', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-atomic-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  room.run.combat.enemies.push({ ...room.run.combat.enemies[0], uid: 'room-atomic-extra', row: 3 })
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token)
+  const fumes = pending.startTurnAbilities.find((ability) => ability.id.includes('room-atomic-fumes'))
+  const demon = pending.startTurnAbilities.find((ability) => ability.id.includes('room-atomic-demon'))
+  const version = room.version
+  let refused = null
+  try {
+    apply(room, b.token, {
+      kind: 'resolveStartTurn',
+      choices: [
+        { id: fumes.id, enemyUid: room.run.combat.enemies[1].uid, shivEnemyUids: [] },
+        { id: demon.id, shivEnemyUids: [null] },
+      ],
+    })
+  } catch (error) {
+    refused = error
+  }
+  assertEqual(refused?.name, 'RoomError')
+  assertEqual(room.version, version, 'a refused target changed the authoritative version')
+  assertEqual(room.startTurnEnemyTargets, undefined, 'a refused target leaked into room state')
+
+  room.startTurnCombatId = 'a-different-combat'
+  room.startTurnOrder = pending.startTurnAbilities.map((ability) => ability.id)
+  room.startTurnEnemyTargets = { [fumes.id]: room.run.combat.enemies[1].uid }
+  const isolated = snapshotFor(room, b.token)
+  assertEqual(isolated.startTurnChoiceId, fumes.id, 'a prior combat suppressed the Silent target choice')
+  assertDeepEqual(isolated.startTurnEnemyTargets, {}, 'a prior combat target leaked into the snapshot')
+  room.startTurnCombatId = room.startTurnOrder = room.startTurnEnemyTargets = undefined
+
+  const ann = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(ann, {
+    shivs: 5,
+    powers: [{ uid: 'room-old-choice-ann', defId: 'infinite_blades', upgraded: false }],
+  })
+  Object.assign(silent, {
+    shivs: 5,
+    powers: [{ uid: 'room-old-choice-silent', defId: 'infinite_blades', upgraded: false }],
+  })
+  const current = snapshotFor(room, a.token)
+  const expectedCoordinator = current.startTurnCoordinatorId
+  const firstChoice = current.startTurnAbilities.find((ability) => ability.playerId === expectedCoordinator)
+  room.startTurnCombatId = 'a-different-combat'
+  room.startTurnChoices = [{
+    id: firstChoice.id, shivEnemyUids: [null], evokeSlots: [], evokeEnemyUids: [],
+  }]
+  const choicesIsolated = snapshotFor(room, a.token)
+  assertEqual(choicesIsolated.startTurnCoordinatorId, expectedCoordinator,
+    'a prior combat choice changed the current coordinator')
+  assertEqual(choicesIsolated.startTurnChoices, undefined, 'a prior combat choice leaked into the snapshot')
+  room.startTurnCombatId = room.startTurnChoices = undefined
+})
+
+check('a stale target map cannot suppress a second Noxious Fumes choice', () => {
+  const { room, a, b } = twoSeatRoom()
+  const silent = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+  Object.assign(silent, {
+    powers: [
+      { uid: 'room-target-map-first', defId: 'noxious_fumes', upgraded: false },
+      { uid: 'room-target-map-second', defId: 'noxious_fumes', upgraded: false },
+    ],
+    draw: Array.from({ length: 5 }, (_, index) => ({
+      uid: `room-target-map-draw-${index}`, defId: 'defend_silent', upgraded: false,
+    })),
+  })
+  room.run.combat.enemies.push({ ...room.run.combat.enemies[0], uid: 'room-target-map-extra', row: 3 })
+  for (const enemy of room.run.combat.enemies) {
+    Object.assign(enemy, { hp: 20, maxHp: 20, poison: 0, dead: false, abilityUsed: true })
+  }
+
+  apply(room, a.token, { kind: 'startTurn' })
+  const pending = snapshotFor(room, b.token)
+  const [first, second] = pending.startTurnAbilities.filter((ability) =>
+    ability.id.includes('room-target-map-'))
+  room.startTurnCombatId = 'a-different-combat'
+  room.startTurnEnemyTargets = { [second.id]: room.run.combat.enemies[0].uid }
+  apply(room, b.token, {
+    kind: 'resolveStartTurn',
+    choices: [
+      { id: first.id, enemyUid: room.run.combat.enemies[1].uid, shivEnemyUids: [] },
+      { id: second.id, shivEnemyUids: [] },
+    ],
+  })
+  const next = snapshotFor(room, b.token)
+  assertEqual(next.run.combat.phase, 'start', 'a stale target skipped the second Noxious choice')
+  assertEqual(next.startTurnChoiceId, second.id)
+  assertDeepEqual(next.startTurnEnemyTargets, { [first.id]: room.run.combat.enemies[1].uid })
 })
 
 check('Storm preserves full-slot Orb and target choices across coordinator reconnect', () => {
@@ -3141,7 +3543,7 @@ check('Storm preserves full-slot Orb and target choices across coordinator recon
   assertEqual(ability.evokeChoice.options.length, 3)
   let malformed = null
   try {
-    apply(room, a.token, {
+    apply(room, b.token, {
       kind: 'resolveStartTurn',
       choices: [{
         id: ability.id, shivEnemyUids: [], evokeSlots: ['length'], evokeEnemyUids: [null],
@@ -3153,12 +3555,12 @@ check('Storm preserves full-slot Orb and target choices across coordinator recon
   assertEqual(malformed?.name, 'RoomError', 'a crafted Orb slot escaped room validation')
   assertEqual(room.run.combat.phase, 'start')
 
-  markDisconnected(room, a.token)
-  const transferred = snapshotFor(room, b.token)
-  assertEqual(transferred.startTurnCoordinatorId, b.playerId)
+  markDisconnected(room, b.token)
+  const transferred = snapshotFor(room, a.token)
+  assertEqual(transferred.startTurnCoordinatorId, a.playerId)
   assertEqual(transferred.startTurnAbilities[0].evokeChoice.options.length, 3)
   const target = room.run.combat.enemies[1]
-  apply(room, b.token, {
+  apply(room, a.token, {
     kind: 'resolveStartTurn',
     choices: [{
       id: ability.id,

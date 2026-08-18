@@ -159,6 +159,11 @@ export type RoomSnapshot = {
   endTurnCoordinatorId?: string | null
   startTurnAbilities?: StartTurnAbility[]
   startTurnCoordinatorId?: string | null
+  startTurnChoiceId?: string
+  startTurnEnemyTargets?: Record<string, string>
+  startTurnChoices?: StartTurnChoice[]
+  startTurnOrderPending?: boolean
+  startTurnOrderLocked?: boolean
   startTurnScryAbilities?: StartTurnScryAbility[]
   startTurnScry?: {
     id: string

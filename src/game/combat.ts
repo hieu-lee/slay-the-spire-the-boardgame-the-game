@@ -4916,6 +4916,8 @@ export function startTurnNeedsChoice(state: CombatState): boolean {
   // An ability that cannot be resolved without input, whatever else is queued.
   if (abilities.some((ability) => ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
     (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true
+  if (abilities.some((ability) => ability.id === 'enemy:darkling/regrow') &&
+    abilities.some((ability) => (ability.targets?.length ?? 0) > 0)) return true
   return abilities.filter((ability) => (ability.targets?.length ?? 0) > 0).length > 1
 }
 
@@ -6513,10 +6515,13 @@ export function activateRelic(
 
 /** Spend one Shiv as its own one-damage attack (p.17). */
 export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+  if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry ||
+    state.startTurnProgress?.forcedCard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
-  if (!player || player.dead || player.shivs < 1) return state
+  if (!player || player.dead || player.shivs < 1 || player.cardPlayLocked || reachedTimeWarpLimit(state, player)) {
+    return state
+  }
   if (resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
   const next = clone(state)
   const actor = next.players.find((candidate) => candidate.id === playerId)!

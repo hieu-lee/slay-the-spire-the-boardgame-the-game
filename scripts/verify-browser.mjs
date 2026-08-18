@@ -1195,8 +1195,8 @@ const distilledUseVisual = await page.locator('.combat__actions').getByRole('but
   icon: button.querySelector('img')?.getAttribute('src'),
   iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
 }))
-check('Potion use controls render the Potion icon instead of its name', () => {
-  assertEqual(distilledUseVisual.text, 'Use')
+check('Potion use controls render only the Potion icon', () => {
+  assertEqual(distilledUseVisual.text, '')
   assert(distilledUseVisual.icon?.includes('/potion-icons/distilled_chaos.png'), distilledUseVisual.icon)
   assert(distilledUseVisual.iconWidth && distilledUseVisual.iconWidth >= 22 && distilledUseVisual.iconWidth <= 23,
     distilledUseVisual.iconWidth)
@@ -6340,14 +6340,26 @@ const shivUseVisual = await page.getByRole('button', { name: 'Use Shiv' }).evalu
   text: button.textContent?.trim(),
   icon: button.querySelector('img')?.getAttribute('src'),
   iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
+  boxShadow: getComputedStyle(button).boxShadow,
 }))
-check('Shiv use controls render the Shiv icon instead of its name', () => {
-  assertEqual(shivUseVisual.text, 'Use')
+check('Shiv use controls render only the Shiv icon', () => {
+  assertEqual(shivUseVisual.text, '')
   assert(shivUseVisual.icon?.includes('/assets/status-icons/shiv.png'), shivUseVisual.icon)
-  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 22 && shivUseVisual.iconWidth <= 23,
-    shivUseVisual.iconWidth)
+  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 66, shivUseVisual.iconWidth)
 })
 await page.getByRole('button', { name: 'Use Shiv' }).click()
+await page.mouse.move(0, 0)
+await page.evaluate(() => document.activeElement?.blur())
+const activeShivVisual = await page.getByRole('button', { name: 'Use Shiv' }).evaluate((button) => ({
+  pressed: button.getAttribute('aria-pressed'),
+  chosen: button.classList.contains('is-chosen'),
+  boxShadow: getComputedStyle(button).boxShadow,
+}))
+check('the icon-only Shiv control visibly shows its active state', () => {
+  assertEqual(activeShivVisual.pressed, 'true')
+  assertEqual(activeShivVisual.chosen, true)
+  assert(activeShivVisual.boxShadow !== shivUseVisual.boxShadow)
+})
 await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()
 await page.getByRole('button', { name: /^Choke\+,/ }).click()
 await page.locator('.enemy').filter({ hasText: /18\/20/ }).first().click()
@@ -6484,8 +6496,8 @@ check('Battle Hymn+ exposes its Wrath bonus and activation accessibly', () => {
   assert(battleHymnPowerLabel.includes('2 +2 if you are in wrath damage'), battleHymnPowerLabel)
   assert(battleHymnPowerLabel.includes('activate once per turn'), battleHymnPowerLabel)
 })
-check('Power use controls render their glyph instead of repeating the name', () => {
-  assertEqual(battleHymnUseVisual.text, 'Use')
+check('Power use controls render only their glyph', () => {
+  assertEqual(battleHymnUseVisual.text, '')
   assert(battleHymnUseVisual.icon?.includes('/status-icons/attack.png'), battleHymnUseVisual.icon)
 })
 await page.getByRole('button', { name: 'Use Battle Hymn+' }).click()
@@ -9676,6 +9688,14 @@ check('held Potion icons expose the printed effect on touch or keyboard focus', 
 await shot('15d-outside-potion-tooltip')
 await page.keyboard.press('Escape')
 await outsidePotionTip.waitFor({ state: 'hidden' })
+const outsidePotionVisual = await outsidePotionIcon.evaluate((icon) => {
+  return { text: icon.textContent?.trim(), icon: icon.querySelector('img')?.getAttribute('src') }
+})
+check('the outside Potion inventory renders icons without item-name text', () => {
+  assertEqual(outsidePotionVisual.text, '')
+  assert(outsidePotionLabel.includes('Energy Potion'))
+  assertEqual(outsidePotionVisual.icon, '/assets/potion-icons/energy_potion.png')
+})
 await page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true }).click()
 await page.locator('.outside-potions__targets').waitFor()
 await chooseSeat(potionSeatIds[1])
@@ -10853,8 +10873,8 @@ const goldenEyeUseVisual = await page.getByRole('button', { name: 'Use Golden Ey
   text: button.textContent?.trim(),
   icon: button.querySelector('img')?.getAttribute('src'),
 }))
-check('Relic use controls render the Relic icon instead of its name', () => {
-  assertEqual(goldenEyeUseVisual.text, 'Use')
+check('Relic use controls render only the Relic icon', () => {
+  assertEqual(goldenEyeUseVisual.text, '')
   assert(goldenEyeUseVisual.icon?.includes('/relic-icons/golden_eye.png'), goldenEyeUseVisual.icon)
 })
 await page.getByRole('button', { name: 'Use Golden Eye' }).click()
