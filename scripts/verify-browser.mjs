@@ -1492,7 +1492,7 @@ const mapButtonBackground = await page.getByRole('button', { name: 'Map' }).eval
 const mapButtonPlacement = await page.evaluate(() => {
   const map = document.querySelector('.map-peek__open').getBoundingClientRect()
   const menu = document.querySelector('.game-settings > summary').getBoundingClientRect()
-  return { gap: menu.left - map.right, aligned: Math.abs(menu.top - map.top) < 2 }
+  return { gap: menu.left - map.right, centered: Math.abs((menu.top + menu.bottom - map.top - map.bottom) / 2) < 2 }
 })
 const settingsButton = await page.locator('.game-settings > summary').evaluate((summary) => {
   const icon = summary.querySelector('img')
@@ -1502,8 +1502,8 @@ check('the combat map button uses the map-scroll icon', () => {
   assertEqual(mapButtonIcon.source, '/assets/menu/map-scroll.png')
   assert(mapButtonIcon.loaded, 'the map-scroll icon did not load')
   assertEqual(mapButtonBackground, 'none')
-  assert(mapButtonPlacement.gap >= 0 && mapButtonPlacement.gap <= 24 && mapButtonPlacement.aligned,
-    `the map button is not beside Menu: ${JSON.stringify(mapButtonPlacement)}`)
+  assert(mapButtonPlacement.gap >= 0 && mapButtonPlacement.gap <= 24 && mapButtonPlacement.centered,
+    `the map button is not beside Settings: ${JSON.stringify(mapButtonPlacement)}`)
   assertEqual(settingsButton.label, 'Settings')
   assertEqual(settingsButton.source, '/assets/menu/settings-cog.png')
   assert(settingsButton.loaded, 'the settings-cog icon did not load')
@@ -6335,10 +6335,12 @@ await page.getByRole('button', { name: /^Envenom\+,/ }).click()
 const shivUseVisual = await page.getByRole('button', { name: 'Use Shiv' }).evaluate((button) => ({
   text: button.textContent?.trim(),
   icon: button.querySelector('img')?.getAttribute('src'),
+  iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
 }))
 check('Shiv use controls render the Shiv icon instead of its name', () => {
   assertEqual(shivUseVisual.text, 'Use')
   assert(shivUseVisual.icon?.includes('/icons/shiv'), shivUseVisual.icon)
+  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 66, shivUseVisual.iconWidth)
 })
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.locator('.enemy').filter({ hasText: /20\/20/ }).first().click()

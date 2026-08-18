@@ -2746,7 +2746,7 @@ try {
   await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×3/ }).click()
   await a.getByRole('alert').filter({ hasText: /fetch|network/i }).waitFor()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion ×3') && button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×3' && button.disabled))
   await reconciliationRetriesExhausted
   await a.waitForTimeout(0)
   await a.evaluate((snapshot) => {
@@ -2755,7 +2755,7 @@ try {
     }))
   }, interleavedSnapshot)
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion ×3') && button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×3' && button.disabled))
   const lockedAfterDelayedSnapshot = await a.locator('.combat__actions')
     .getByRole('button', { name: /Energy Potion ×3/ }).isDisabled()
   const afterLostResponse = await snapshot(a)
@@ -2780,7 +2780,7 @@ try {
     }))
   }, afterLostResponse)
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))
   const committedSnapshotUnlocked = await a.locator('.combat__actions')
     .getByRole('button', { name: /Energy Potion ×2/ }).isEnabled()
   check('a committed snapshot arriving after unknown unlocks from exact inventory evidence', () => {
@@ -2805,7 +2805,7 @@ try {
   await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
   await a.getByRole('alert').filter({ hasText: 'Request failed (429)' }).waitFor()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))
   const afterRateLimit = await snapshot(a)
   let rateLimitErrors = 0
   for (let index = failures.length - 1; index >= rateLimitFailureStart; index -= 1) {
@@ -2831,7 +2831,7 @@ try {
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
   await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion ×2') && !button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion ×2' && !button.disabled))
   for (let index = failures.length - 1; index >= boundedRetryFailureStart; index -= 1) {
     if (failures[index].includes('ERR_CONNECTION_RESET')) failures.splice(index, 1)
   }
@@ -2853,13 +2853,13 @@ try {
   await a.route(`**/api/rooms/${code}/action`, async (route) => {
     const response = await route.fetch()
     liveCommittedPotionStatus = response.status()
-    await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).waitFor()
+    await a.locator('.combat__actions').getByRole('button', { name: 'Use Energy Potion', exact: true }).waitFor()
     await route.abort('connectionreset')
   }, { times: 1 })
   await a.locator('.combat__actions').getByRole('button', { name: /Energy Potion ×2/ }).click()
   await a.getByRole('alert').filter({ hasText: /fetch|network/i }).waitFor()
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion') && !button.textContent.includes('×') && !button.disabled))
+    .some((button) => button.getAttribute('aria-label') === 'Use Energy Potion' && !button.disabled))
   const afterLiveResponseLoss = await snapshot(a)
   const annAfterLiveResponseLoss = afterLiveResponseLoss.run.combat.players
     .find((player) => player.id === aView.you.playerId)
@@ -2874,12 +2874,12 @@ try {
   }
 
   const energyBeforePotionDoubleClick = annAfterLiveResponseLoss.energy
-  await a.locator('.combat__actions').getByRole('button', { name: 'Energy Potion', exact: true }).evaluate((button) => {
+  await a.locator('.combat__actions').getByRole('button', { name: 'Use Energy Potion', exact: true }).evaluate((button) => {
     button.click()
     button.click()
   })
   await a.waitForFunction(() => ![...document.querySelectorAll('.combat__actions button')]
-    .some((button) => button.textContent?.includes('Energy Potion')))
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Use Energy Potion')))
   const afterPotionDoubleClick = await snapshot(a)
   const annAfterPotion = afterPotionDoubleClick.run.combat.players.find((player) => player.id === aView.you.playerId)
   check('one rapid double-click consumes only one physical potion', () => {

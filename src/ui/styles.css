@@ -1139,9 +1139,16 @@ button:disabled {
 }
 
 .combat__actions button .item-icon-image,
-.relic-actions > section > button .item-icon-image {
-  width: 1.4rem;
-  height: 1.4rem;
+.relic-actions > section > button .item-icon-image,
+.combat__actions button .icon,
+.relic-actions > section > button .icon {
+  width: 2.8rem;
+  height: 2.8rem;
+}
+
+.combat__actions button .icon {
+  transform: scale(1.5);
+  filter: drop-shadow(0 0 0.18rem rgb(245 227 180 / 0.85));
 }
 
 /* ---------- combat ---------- */

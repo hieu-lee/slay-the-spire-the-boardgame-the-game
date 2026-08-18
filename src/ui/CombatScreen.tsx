@@ -2831,7 +2831,7 @@ export function CombatScreen({
                     type="button"
                     key={potionId}
                     disabled={usingPotion || Boolean(pending?.choiceCards)}
-                    aria-label={`Use ${potion.name}${count > 1 ? ` (${count} available)` : ''}`}
+                    aria-label={`Use ${potion.name}${count > 1 ? ` ×${count}` : ''}`}
                     aria-pressed={needsTarget ? staged : undefined}
                     title={potion.text}
                     onClick={() => {
