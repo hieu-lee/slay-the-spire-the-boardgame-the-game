@@ -9,6 +9,7 @@ import {
   cardNeedsChoicePreview,
   cardNeedsEnemy,
   cardModeIsAvailable,
+  combatRowLabel,
   createCombat,
   defaultStartTurnChoices,
   endPlayerTurn,
@@ -118,6 +119,22 @@ function makeEnemy(over = {}) {
 const combat = (players, enemies) => createCombat(createRng(42), players, enemies)
 
 suite('combat')
+
+check('row labels use character names and disambiguate duplicate characters', () => {
+  const named = combat([
+    makePlayer({ name: 'Ann', character: 'ironclad' }),
+    makePlayer({ id: 'p2', name: 'Bo', character: 'silent', row: 1 }),
+  ], [makeEnemy()])
+  assertEqual(combatRowLabel(named, 0), 'Row Ironclad')
+  assertEqual(combatRowLabel(named, 1), 'Row Silent')
+
+  named.players[1].character = 'ironclad'
+  assertEqual(combatRowLabel(named, 0), 'Row Ironclad (Player 1)')
+  assertEqual(combatRowLabel(named, 1), 'Row Ironclad (Player 2)')
+  ;[named.players[0].row, named.players[1].row] = [named.players[1].row, named.players[0].row]
+  assertEqual(combatRowLabel(named, 0), 'Row Ironclad (Player 2)')
+  assertEqual(combatRowLabel(named, 1), 'Row Ironclad (Player 1)')
+})
 
 check('playing Strike damages the chosen enemy', () => {
   const strike = instance('strike_ironclad')
@@ -5466,7 +5483,7 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
   ], enemies())
   const lightning = endTurnAbilities(endState).find((ability) => ability.id === 'p1/orb:0')
-  assertDeepEqual(lightning.targets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  assertDeepEqual(lightning.targets.map((target) => target.label), ['Row Defect + boss', 'Row Ironclad + boss'])
   const ended = beginEndPlayerTurn(endState, endTurnAbilities(endState).map((ability) =>
     ability.id === lightning.id
       ? chooseEndTurnTarget(ability.id, lightningRowTarget(1))
@@ -5542,7 +5559,7 @@ check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning 
   const ability = startTurnAbilities(state)[0]
   const chooseOrb = [{ id: ability.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: [] }]
   const targeted = startTurnAbilities(state, undefined, chooseOrb)[0]
-  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), ['Row 1 + boss', 'Row 2 + boss'])
+  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), ['Row Defect + boss', 'Row 2 + boss'])
   const resolved = resolveStartPlayerTurn(state, [{
     ...chooseOrb[0], evokeEnemyUids: [lightningRowTarget(1)],
   }])
@@ -5808,7 +5825,8 @@ check('Seek privately searches its draw pile, takes 1/2 cards, shuffles, and Exh
   assertEqual(shardSearched.players[0].hand[0].uid, sought[0].uid,
     'A Thousand Cuts interrupted Seek before its searched card reached hand')
   assertDeepEqual(shardSearched.enemies.map((enemy) => enemy.hp), [10, 10])
-  assertDeepEqual(pendingTriggerAbility(shardSearched)?.rows?.map((target) => target.row), [0, 1])
+  assertDeepEqual(pendingTriggerAbility(shardSearched)?.rows,
+    [{ row: 0, label: 'Row Silent' }, { row: 1, label: 'Row 2' }])
   const shardResolved = resolvePendingTrigger(
     shardSearched, 'p1', shardSearched.pendingTriggers[0].id, 1,
   )

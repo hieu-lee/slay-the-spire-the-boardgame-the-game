@@ -826,6 +826,34 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     inset 0 -2px 4px rgb(0 0 0 / 0.6),
     0 0 0 2px rgb(0 0 0 / 0.33);
 }
+
+/* Potion belts scroll on narrow screens and combat seats use filters, so the
+   tooltip is portalled to the viewport rather than clipped or re-anchored. */
+.potion-chip {
+  display: inline-grid;
+  place-items: center;
+  cursor: help;
+}
+
+.potion-chip .item-icon-image {
+  transition: transform var(--motion-lerp) var(--ease-lerp), filter var(--motion-lerp) var(--ease-lerp);
+}
+
+.potion-chip:hover .item-icon-image,
+.potion-chip:focus-within .item-icon-image {
+  transform: translateY(-2px) scale(1.1);
+  filter: drop-shadow(0 0 0.45rem rgb(107 177 196 / 0.9));
+}
+
+.potion-tip {
+  position: fixed;
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, 0);
+  pointer-events: none;
+}
+
+.potion-tip--hoverable { pointer-events: auto; }
 .relic-chip .item-icon-image { width: 1.75rem; height: 1.75rem; }
 
 /* Printed relic/potion prose, wherever an item is offered. Same voice as the
@@ -1865,6 +1893,8 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
      decoration. These two lists are the key list verbatim; keep them so. */
   .relic-chip:hover > .item-icon-image,
   .relic-chip:focus-within > .item-icon-image,
+  .potion-chip:hover .item-icon-image,
+  .potion-chip:focus-within .item-icon-image,
   .map .room--reachable:hover,
   :is(
     .sts-scope button:not([class]),

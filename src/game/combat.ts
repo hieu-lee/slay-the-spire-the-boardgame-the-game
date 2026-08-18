@@ -381,6 +381,16 @@ function combatRows(state: CombatState): number[] {
   ])].sort((a, b) => a - b)
 }
 
+export function combatRowLabel(state: Pick<CombatState, 'players'>, row: number): string {
+  const playerIndex = state.players.findIndex((candidate) => candidate.row === row)
+  if (playerIndex < 0) return `Row ${row + 1}`
+  const character = state.players[playerIndex]!.character
+  const label = `${character.charAt(0).toUpperCase()}${character.slice(1)}`
+  const duplicateCharacter = state.players.some((candidate, index) =>
+    index !== playerIndex && candidate.character === character)
+  return `Row ${label}${duplicateCharacter ? ` (Player ${playerIndex + 1})` : ''}`
+}
+
 function rowExists(state: CombatState, row: unknown): row is number {
   return Number.isInteger(row) && combatRows(state).includes(row as number)
 }
@@ -412,7 +422,7 @@ function lightningTargetOptions(
   const boss = livingEnemies(state).some((enemy) => enemy.isBoss)
   return combatRows(state).map((row) => ({
     uid: lightningRowTarget(row),
-    label: `Row ${row + 1}${boss ? ' + boss' : ''}`,
+    label: `${combatRowLabel(state, row)}${boss ? ' + boss' : ''}`,
   }))
 }
 
@@ -6086,7 +6096,7 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
     playerId: player.id,
     label: source.name,
     rows: triggerNeedsRowChoice(state, player, source)
-      ? combatRows(state).map((row) => ({ row, label: `Row ${row + 1}` }))
+      ? combatRows(state).map((row) => ({ row, label: combatRowLabel(state, row) }))
       : undefined,
     targets: triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)
       ? livingEnemies(state).map((enemy) => ({

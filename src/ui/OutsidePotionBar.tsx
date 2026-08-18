@@ -1,9 +1,9 @@
 import { useLayoutEffect, useState } from 'react'
 import { potionDef } from '../game/relics.ts'
 import { healingCapFor } from '../game/run.ts'
-import { potionIconPath } from '../game/assets.ts'
 import type { Player } from '../game/types.ts'
 import { ItemImage } from './ItemImage.tsx'
+import { PotionIcon } from './PotionIcon.tsx'
 
 type Props = {
   players: Player[]
@@ -34,7 +34,7 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
   return <aside className="outside-potions" aria-label="Potion inventory">
     <strong>Potions</strong>
     {viewer.potions.map((id, index) => <div className="outside-potions__item" key={`${id}-${index}`}>
-      <span><img className="item-icon-image" src={potionIconPath(id)} alt="" />{potionDef(id).name}</span>
+      <span><PotionIcon id={id} />{potionDef(id).name}</span>
       {id === 'blood_potion' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}
         disabled={viewerDead || viewer.hp >= healingCapFor(viewer)} onClick={() => onUse(id)}>Use</button> : null}
       {id === 'entropic_brew' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}

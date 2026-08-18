@@ -902,7 +902,7 @@ try {
     return route.continue()
   })
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
-  await a.getByRole('button', { name: 'Target row 1' }).click()
+  await a.getByRole('button', { name: 'Target Row Ironclad' }).click()
   await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
     .some((button) => button.getAttribute('aria-label') === 'Use Combust+' && button.disabled))
@@ -923,7 +923,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: 'Target row 1' }).click()
+  await a.getByRole('button', { name: 'Target Row Ironclad' }).click()
   for (let attempt = 0; attempt < 50 &&
     !liveRoom.run.combat.powerTriggersUsedThisTurn.includes(`${annLive.id}/power:online-combust`); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -961,7 +961,7 @@ try {
   })
   assert(sameSeatCombust.ok, 'could not activate Combust through the same seat')
   await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
-  const staleCombustRows = await a.getByRole('button', { name: /^Target row/ }).count()
+  const staleCombustRows = await a.getByRole('button', { name: /^Target Row/ }).count()
   check('a same-seat authoritative activation clears stale Combust targeting', () => {
     assertEqual(staleCombustRows, 0)
   })
@@ -1013,7 +1013,7 @@ try {
   })
   assert(competingFireDraw.ok, 'could not publish the same-seat Fire Breathing draw')
   await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor()
-  const staleFireTargets = await a.getByRole('button', { name: /^Target row/ }).count()
+  const staleFireTargets = await a.getByRole('button', { name: /^Target Row/ }).count()
   check('a mandatory online trigger clears stale staged targeting', () => {
     assertEqual(staleFireTargets, 0)
   })
@@ -1035,7 +1035,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: /Fire Breathing\+ in row 2$/ }).click()
+  await a.getByRole('button', { name: /Fire Breathing\+ in Row Silent$/ }).click()
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 1; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -1047,7 +1047,7 @@ try {
     assertEqual(submittedFire.enemyRow, 1)
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
   })
-  await a.getByRole('button', { name: /Fire Breathing\+ in row 1$/ }).click()
+  await a.getByRole('button', { name: /Fire Breathing\+ in Row Ironclad$/ }).click()
   await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
   check('online Fire Breathing resolves every qualifying draw before play resumes', () => {
     assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)

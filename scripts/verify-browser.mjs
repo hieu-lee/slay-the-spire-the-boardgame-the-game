@@ -11,7 +11,7 @@ import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
-import { STALE_END_TURN_ORDER } from '../src/game/combat.ts'
+import { combatRowLabel, STALE_END_TURN_ORDER } from '../src/game/combat.ts'
 import { enemyDef } from '../src/game/enemies.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1384,7 +1384,7 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 await page.locator('.prompt').filter({ hasText: 'Fire Breathing — choose a row' }).waitFor()
 const distilledDuringTrigger = await page.getByRole('dialog', { name: 'Distilled Chaos' }).isVisible()
-const triggerRowsOutsideDistilled = await page.getByRole('button', { name: /Resolve .*Fire Breathing.*row/ }).count()
+const triggerRowsOutsideDistilled = await page.getByRole('button', { name: /Resolve .*Fire Breathing.*Row/ }).count()
 check('Distilled Chaos stays hidden while a mandatory trigger needs its row', () => {
   assertEqual(distilledDuringTrigger, false)
   assertEqual(triggerRowsOutsideDistilled, 2)
@@ -4115,10 +4115,10 @@ await page.keyboard.press('Escape')
 await page.waitForFunction(() => !document.querySelector('.power__zoom'))
 await page.getByRole('button', { name: /^Dual Cast,/ }).click()
 await page.getByRole('button', { name: /lightning slot 1/i }).click()
-await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).waitFor()
+await page.getByRole('button', { name: 'Evoke Lightning in Row Silent' }).waitFor()
 await shot('06zphgce-electrodynamics-row-choice')
-await page.getByRole('button', { name: 'Evoke Lightning in row 2' }).click()
-await page.getByRole('button', { name: 'Evoke Lightning in row 1' }).click()
+await page.getByRole('button', { name: 'Evoke Lightning in Row Silent' }).click()
+await page.getByRole('button', { name: 'Evoke Lightning in Row Defect' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 2)
 const electroResolved = await readState()
 check('Electrodynamics+ visibly channels three Orbs and makes each Lightning Evoke choose a row', () => {
@@ -7346,6 +7346,31 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const actor = run.combat.players[0]
+  actor.potions = ['entropic_brew', 'block_potion', 'fire_potion', 'skill_potion']
+  actor.relics = actor.relics.filter((relic) => relic.defId !== 'sozu')
+  run.combat.potionLimit = 3
+  run.combat.potionDeck = ['energy_potion', 'blood_potion']
+  debug.setRun(run)
+})
+await page.locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
+const brewReplacement = page.getByRole('button', { name: 'Replace Block Potion' })
+const brewReplacementDescriptionId = await brewReplacement.getAttribute('aria-describedby')
+await brewReplacement.hover()
+const brewReplacementTip = page.locator('.potion-tip').filter({ hasText: 'Block Potion' })
+await brewReplacementTip.waitFor()
+const brewReplacementDescription = await page.locator(`[id="${brewReplacementDescriptionId}"]`).textContent()
+check('Entropic Brew replacement Potion icons explain their effects', () => {
+  assertEqual(brewReplacementDescription, 'Gain 2 Block.')
+})
+await page.keyboard.press('Escape')
+await brewReplacementTip.waitFor({ state: 'hidden' })
+await page.keyboard.press('Escape')
+await page.getByRole('dialog', { name: 'Entropic Brew' }).waitFor({ state: 'hidden' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
   actor.potions = ['entropic_brew', 'block_potion']
   actor.relics = [...actor.relics.filter((relic) => relic.defId !== 'sozu'), { defId: 'sozu', spent: false }]
   run.combat.potionDeck = ['fire_potion', 'skill_potion']
@@ -7388,6 +7413,48 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies.some((enemy) => !enemy.dead && enemy.hp === 1))
+const combatPotionButton = page.locator('.combat__actions').getByRole('button', { name: /Cunning Potion/ })
+const combatPotionDescriptionId = await combatPotionButton.getAttribute('aria-describedby')
+const combatPotionDescription = await page.locator(`[id="${combatPotionDescriptionId}"]`).textContent()
+const seatWithCunning = page.getByRole('button', { name: /Cunning Potion: Gain 3 Shivs/ })
+const seatPotionIcon = seatWithCunning.locator('.seat__potions .potion-chip').first()
+const seatPotionLabel = await seatWithCunning.getAttribute('aria-label')
+await seatPotionIcon.hover()
+const seatPotionTip = page.locator('.potion-tip').filter({ hasText: 'Cunning Potion' })
+await seatPotionTip.waitFor()
+const seatPotionTipBox = await seatPotionTip.boundingBox()
+const visibleSeatPotionTips = await page.locator('.potion-tip').count()
+check('seat-held Potions expose their effects and keep the tooltip inside the viewport', () => {
+  assert(seatPotionLabel.includes('Cunning Potion: Gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.'))
+  assert(seatPotionTipBox && seatPotionTipBox.x >= 0 && seatPotionTipBox.y >= 0)
+  assert(seatPotionTipBox.x + seatPotionTipBox.width <= 1440)
+  assert(seatPotionTipBox.y + seatPotionTipBox.height <= 900)
+  assertEqual(visibleSeatPotionTips, 1, 'another focused Potion left an overlapping tooltip open')
+})
+await shot('05d-seat-potion-tooltip')
+await page.keyboard.press('Escape')
+await seatPotionTip.waitFor({ state: 'hidden' })
+await page.mouse.move(0, 0)
+await combatPotionButton.hover()
+const combatPotionTip = page.locator('.potion-tip').filter({ hasText: 'Cunning Potion' })
+await combatPotionTip.waitFor()
+const combatPotionTipText = await combatPotionTip.textContent()
+const combatPotionTipBox = await combatPotionTip.boundingBox()
+await combatPotionTip.hover()
+await page.waitForTimeout(250)
+const combatPotionTipHoverable = await combatPotionTip.isVisible()
+check('hovering a combat Potion icon shows its printed effect inside the viewport', () => {
+  assertEqual(combatPotionDescription, 'Gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.')
+  assert(combatPotionTipText.includes('Gain 3 Shivs. Treat each Shiv as a separate 0 cost Attack.'))
+  assert(combatPotionTipBox && combatPotionTipBox.x >= 0 && combatPotionTipBox.y >= 0)
+  assert(combatPotionTipBox.x + combatPotionTipBox.width <= 1440)
+  assert(combatPotionTipBox.y + combatPotionTipBox.height <= 900)
+  assert(combatPotionTipHoverable, 'the Potion tooltip disappeared when the pointer entered it')
+})
+await shot('05e-potion-tooltip')
+await page.keyboard.press('Escape')
+await combatPotionTip.waitFor({ state: 'hidden' })
+await page.mouse.move(0, 0)
 const cunningBefore = await readState()
 const fragilePotionTarget = cunningBefore.enemies.find((enemy) => !enemy.dead && enemy.hp === 1)
 const cunningTarget = cunningBefore.enemies.find((enemy) => !enemy.dead && enemy.hp === 11)
@@ -7477,7 +7544,10 @@ const explosiveTarget = firedPotion.enemies
   .sort((a, b) => b.row - a.row)[0]
 assert(explosiveTarget, 'the browser potion playtest needs one living row target')
 await page.setViewportSize({ width: 1280, height: 800 })
-await page.locator('.combat__actions').getByRole('button', { name: /Explosive Potion/ }).click()
+const explosivePotionButton = page.locator('.combat__actions').getByRole('button', { name: /Explosive Potion/ })
+await explosivePotionButton.focus()
+await page.locator('.potion-tip').filter({ hasText: 'Explosive Potion' }).waitFor()
+await page.keyboard.press('Enter')
 await page.waitForSelector('.row__potion-target')
 const compactRowTargets = page.locator('.row__potion-target')
 const compactRowTargetGeometry = await compactRowTargets.evaluateAll((targets) => {
@@ -7511,8 +7581,12 @@ check('two-player compact desktop row targets track their lanes and remain reach
 await page.locator('.prompt').evaluate(async (element) => {
   await Promise.all(element.getAnimations().map((animation) => animation.finished))
 })
+const activatedExplosivePotionTips = await page.locator('.potion-tip').count()
+check('activating a Potion dismisses its tooltip before row targeting', () => {
+  assertEqual(activatedExplosivePotionTips, 0)
+})
 await shot('05h-explosive-potion-row-targeting')
-await page.getByRole('button', { name: `Target row ${explosiveTarget.row + 1}` }).click()
+await page.getByRole('button', { name: `Target ${combatRowLabel(firedPotion, explosiveTarget.row)}` }).click()
 await page.waitForFunction(() =>
   !window.__STS_DEBUG__.getState().players[0].potions.includes('explosive_potion'))
 const explodedPotion = await readState()
@@ -9586,6 +9660,22 @@ const potionSeatIds = await page.evaluate(() => {
   return run.players.map((player) => player.id)
 })
 await chooseSeat(potionSeatIds[0])
+const outsidePotionIcon = page.locator('.outside-potions .potion-chip').first()
+const outsidePotionLabel = await outsidePotionIcon.getAttribute('aria-label')
+await outsidePotionIcon.evaluate((element) => {
+  element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
+  element.focus()
+})
+const outsidePotionTip = page.locator('.potion-tip').filter({ hasText: 'Energy Potion' })
+await outsidePotionTip.waitFor()
+const outsidePotionTipText = await outsidePotionTip.textContent()
+check('held Potion icons expose the printed effect on touch or keyboard focus', () => {
+  assert(outsidePotionLabel.includes('Energy Potion. Potion. Gain 2 Energy.'))
+  assert(outsidePotionTipText.includes('Gain 2 Energy.'))
+})
+await shot('15d-outside-potion-tooltip')
+await page.keyboard.press('Escape')
+await outsidePotionTip.waitFor({ state: 'hidden' })
 await page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true }).click()
 await page.locator('.outside-potions__targets').waitFor()
 await chooseSeat(potionSeatIds[1])
@@ -9893,7 +9983,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: 'Use Combust+' }).click()
-await page.getByRole('button', { name: 'Target row 1' }).click()
+await page.getByRole('button', { name: 'Target Row Ironclad' }).click()
 const combustResolved = await readState()
 const combustLocked = await page.getByRole('button', { name: 'Combust+ used' }).isDisabled()
 check('Combust+ visibly targets a row, includes the boss, and locks after use', () => {
@@ -9987,14 +10077,14 @@ await page.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
 const firePowerLabel = await page.locator('.power[aria-label^="Fire Breathing"]').getAttribute('aria-label')
 await page.getByRole('button', { name: /^Battle Trance,/ }).click()
 await page.getByText("Ironclad's Fire Breathing+ — choose a row").waitFor()
-const fireRows = await page.getByRole('button', { name: /^Resolve .*Fire Breathing\+ in row/ }).count()
+const fireRows = await page.getByRole('button', { name: /^Resolve .*Fire Breathing\+ in Row/ }).count()
 check('Fire Breathing pauses on a visible row picker for each qualifying draw', () => {
   assert(firePowerLabel.includes('whenever you draw a status or curse card'))
   assertEqual(fireRows, 2)
 })
 await shot('16e-fire-breathing-choice')
-await page.getByRole('button', { name: /Fire Breathing\+ in row 2$/ }).click()
-await page.getByRole('button', { name: /Fire Breathing\+ in row 1$/ }).click()
+await page.getByRole('button', { name: /Fire Breathing\+ in Row 2$/ }).click()
+await page.getByRole('button', { name: /Fire Breathing\+ in Row Ironclad$/ }).click()
 const fireResolved = await readState()
 check('Fire Breathing+ resolves both direct-damage rows and includes the boss each time', () => {
   assertDeepEqual(fireResolved.enemies.map((enemy) => enemy.hp), [7, 7, 4])
@@ -10061,8 +10151,8 @@ await juggernautPower.click()
 await page.locator('.enemy--targeted').nth(1).click()
 await page.getByRole('button', { name: /^Seeing Red,/ }).click()
 await page.getByText("Ironclad's Berserk+ — choose a row").waitFor()
-assertEqual(await page.getByRole('button', { name: /^Resolve .*Berserk\+ in row/ }).count(), 2)
-await page.getByRole('button', { name: /Berserk\+ in row 2$/ }).click()
+assertEqual(await page.getByRole('button', { name: /^Resolve .*Berserk\+ in Row/ }).count(), 2)
+await page.getByRole('button', { name: /Berserk\+ in Row 2$/ }).click()
 const ironcladRareResolved = await readState()
 check('Juggernaut and Berserk resolve chosen targets only after their source cards finish', () => {
   assertDeepEqual(ironcladRareResolved.enemies.map((enemy) => enemy.hp), [10, 6, 8])
@@ -10131,7 +10221,7 @@ const thousandCutsPower = page.locator('.power[aria-label^="A Thousand Cuts+"]')
 await thousandCutsPower.click()
 await shot('16h-silent-shuffle-x-rares')
 await thousandCutsPower.click()
-await page.getByRole('button', { name: /A Thousand Cuts\+ in row 2$/ }).click()
+await page.getByRole('button', { name: /A Thousand Cuts\+ in Row 2$/ }).click()
 const silentRaresResolved = await readState()
 check('Malaise+ and A Thousand Cuts+ resolve through X and shuffle choices', () => {
   assertEqual(silentRaresResolved.enemies[0].weak, 3)

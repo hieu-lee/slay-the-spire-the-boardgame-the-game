@@ -18,6 +18,7 @@ import {
   cardPlayConditionMet,
   canActivatePotion,
   canActivateRelic,
+  combatRowLabel,
   chosenEvokeOrbs,
   chooseEndTurnTarget,
   chooseDistilledCard,
@@ -76,6 +77,7 @@ import type { VfxRecipe } from './combat-vfx.ts'
 import { Icon, IconValue, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerGlyph, PowerRow } from './PowerRow.tsx'
+import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
@@ -478,7 +480,7 @@ function describeSeat(player: Player): string {
     parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
   }
   for (const orb of player.orbs) if (orb) parts.push(`${orb} orb`)
-  if (player.potions.length > 0) parts.push(`potions ${potionSummary(player)}`)
+  if (player.potions.length > 0) parts.push(`potions ${potionDescription(player)}`)
   if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
   // Powers are deliberately NOT listed here. They render as a sibling list
   // outside this button, with their own labels — naming them here as well had
@@ -491,6 +493,14 @@ function potionSummary(player: Player): string {
   return [...new Set(player.potions)].map((potionId) => {
     const count = player.potions.filter((held) => held === potionId).length
     return `${potionDef(potionId).name}${count > 1 ? ` ×${count}` : ''}`
+  }).join(', ')
+}
+
+function potionDescription(player: Player): string {
+  return [...new Set(player.potions)].map((potionId) => {
+    const count = player.potions.filter((held) => held === potionId).length
+    const potion = potionDef(potionId)
+    return `${potion.name}${count > 1 ? ` ×${count}` : ''}: ${potion.text}`
   }).join(', ')
 }
 
@@ -2928,14 +2938,15 @@ export function CombatScreen({
                     viewer.potions.length - 1 + 2 > state.potionLimit || Boolean(potion.target) || (
                   potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
                 ) || overflowShivCount(state, shivs) > 0
-                return (
+                const descriptionId = `potion-action-${viewer.id}-${potionId}-description`
+                return <PotionTooltipAnchor id={potionId} key={potionId}>
+                  <span id={descriptionId} className="visually-hidden">{potion.text}</span>
                   <button
                     type="button"
-                    key={potionId}
                     disabled={usingPotion || Boolean(pending?.choiceCards)}
                     aria-label={`Use ${potion.name}${count > 1 ? ` ×${count}` : ''}`}
+                    aria-describedby={descriptionId}
                     aria-pressed={needsTarget ? staged : undefined}
-                    title={potion.text}
                     onClick={() => {
                       if (needsTarget) {
                         setPending(null)
@@ -2951,7 +2962,7 @@ export function CombatScreen({
                   >
                     {staged ? '✓ ' : ''}Use <img className="item-icon-image" src={potionIconPath(potionId)} alt="" />{count > 1 ? ` ×${count}` : ''}
                   </button>
-                )
+                </PotionTooltipAnchor>
               }) : null}
               {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger && viewer.shivs > 0 ? (
                 <button
@@ -3316,12 +3327,16 @@ export function CombatScreen({
           <h2 id="entropic-choice-title">Entropic Brew</h2>
           <p>Choose one held Potion to discard, then gain two.</p>
           <div className="item-actions">
-            {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, index) => (
-              <button type="button" key={`${held}:${index}`}
+            {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, index) => {
+              const descriptionId = `entropic-replace-${held}-${index}-description`
+              return <PotionTooltipAnchor id={held} key={`${held}:${index}`}>
+                <span id={descriptionId} className="visually-hidden">{potionDef(held).text}</span>
+                <button type="button" aria-describedby={descriptionId}
                 onClick={() => consumePotion('entropic_brew', { replacePotionId: held })}>
-                <img className="item-icon-image" src={potionIconPath(held)} alt="" /> Replace {potionDef(held).name}
-              </button>
-            ))}
+                  <img className="item-icon-image" src={potionIconPath(held)} alt="" /> Replace {potionDef(held).name}
+                </button>
+              </PotionTooltipAnchor>
+            })}
           </div>
           <button type="button" className="prompt__cancel" onClick={cancelPotionChoice}>Cancel</button>
         </dialog>
@@ -3607,6 +3622,7 @@ export function CombatScreen({
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0)
           const latestActorVfx = actorEvents[actorEvents.length - 1]
+          const rowLabel = combatRowLabel(state, row)
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -3620,7 +3636,7 @@ export function CombatScreen({
                   className="row__potion-target"
                   onClick={() => consumePotion(pendingPotion!, { enemyRow: row })}
                 >
-                  Target row {row + 1}
+                  Target {rowLabel}
                 </button>
               ) : null}
               {pendingPowerDef?.target === 'row' ? (
@@ -3629,7 +3645,7 @@ export function CombatScreen({
                   className="row__potion-target"
                   onClick={() => usePower(pendingPowerUid!, { enemyRow: row })}
                 >
-                  Target row {row + 1}
+                  Target {rowLabel}
                 </button>
               ) : null}
               {pendingTrigger?.playerId === viewer.id && pendingTrigger.rows?.some((target) => target.row === row) ? (
@@ -3639,7 +3655,7 @@ export function CombatScreen({
                   disabled={usingTrigger}
                   onClick={() => resolveTrigger(row)}
                 >
-                  Resolve {pendingTrigger.label} in row {row + 1}
+                  Resolve {pendingTrigger.label} in {rowLabel}
                 </button>
               ) : null}
               {(pendingEvokeUsesRows && pendingEvokeTargetUids.has(lightningRowTarget(row))) ||
@@ -3658,7 +3674,7 @@ export function CombatScreen({
                     stageOrCommit({ ...pending!, evokeEnemyUids: targets })
                   }}
                 >
-                  Evoke Lightning in row {row + 1}
+                  Evoke Lightning in {rowLabel}
                 </button>
               ) : null}
               <div className="row__seat">
@@ -3776,9 +3792,9 @@ export function CombatScreen({
                         </span>
                       ) : null}
                       {occupant.potions.length > 0 ? (
-                        <span className="seat__potions" title="Held potions">
-                          {occupant.potions.map((id, index) => <img className="item-icon-image"
-                            key={`${id}-${index}`} src={potionIconPath(id)} alt="" />)} {potionSummary(occupant)}
+                        <span className="seat__potions">
+                          {occupant.potions.map((id, index) => <PotionIcon id={id} focusable={false}
+                            key={`${id}-${index}`} />)} {potionSummary(occupant)}
                         </span>
                       ) : null}
                       </span>
