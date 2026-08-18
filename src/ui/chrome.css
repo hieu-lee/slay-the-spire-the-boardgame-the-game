@@ -2657,11 +2657,35 @@ main.compendium .compendium__back:focus-visible {
 
 .map-peek__open {
   margin-left: auto;
+  display: grid;
+  width: 2.6rem;
+  min-height: 2.6rem;
+  padding: 0.25rem;
+  border: 0;
+  background: none;
+  place-items: center;
 }
 
-/* `.game-settings` claims `margin-left: auto` to sit at the right end of the
-   header. With a second control beside it only the FIRST needs to push. */
-.map-peek__open + .game-settings {
+.map-peek__open > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.game-settings > .game-settings__summary::before {
+  content: none;
+}
+
+.game-settings__summary > img {
+  width: 1.2rem;
+  height: 1.2rem;
+  object-fit: contain;
+}
+
+/* The dialog sits between this button and `.game-settings` in the DOM. The
+   general sibling keeps both controls together at the right edge. */
+.map-peek__open ~ .game-settings {
   margin-left: 0;
 }
 
@@ -2714,6 +2738,13 @@ main.compendium .compendium__back:focus-visible {
   flex: 0 1 auto;
   background: radial-gradient(ellipse at 50% 40%, rgb(30 22 18 / 0.6), transparent 70%);
   box-shadow: none;
+}
+
+/* The opening Encounter is the lowest node. Its tooltip opens below the
+   medallion, so it needs scrollable tail room just like the combat map. */
+.app-shell > .map,
+.online-mutations > .map {
+  padding-bottom: 7.5rem;
 }
 
 /* ---------- the party room ---------- */

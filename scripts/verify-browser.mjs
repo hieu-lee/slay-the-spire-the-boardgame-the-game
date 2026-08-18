@@ -649,6 +649,20 @@ check('exactly one room is reachable at the start', () => {
   assertEqual(reachableAtStart, 1, 'the opening encounter is the only way in')
 })
 
+await page.locator('.room--reachable').hover()
+await page.waitForFunction(() =>
+  getComputedStyle(document.querySelector('.room--reachable .room-tip')).visibility === 'visible')
+const openingMapTip = await page.evaluate(() => {
+  const map = document.querySelector('.map')
+  const tip = document.querySelector('.room--reachable .room-tip')
+  const mapBox = map.getBoundingClientRect()
+  const tipBox = tip.getBoundingClientRect()
+  return { contained: tipBox.bottom <= mapBox.bottom + 1 }
+})
+check('the opening map node tooltip has room below it', () => {
+  assert(openingMapTip.contained, 'the opening Encounter tooltip was clipped below the map')
+})
+
 await enterFirstRoom()
 await page.waitForFunction(() => document.querySelector('.hand .card--drawn'))
 const openingDealMotion = await page.locator('.hand .card--drawn').first().evaluate((card) =>
@@ -1463,6 +1477,29 @@ if (originalViewport) await page.setViewportSize(originalViewport)
 // The map, read from inside a fight. This is where a party decides what its
 // deck is FOR, so the act's boss has to be legible without leaving the combat.
 const bossDuringCombat = (await readRun()).actBossDefId
+const mapButtonIcon = await page.getByRole('button', { name: 'Map' }).locator('img').evaluate((image) => ({
+  source: image.getAttribute('src'), loaded: image.complete && image.naturalWidth > 0,
+}))
+const mapButtonBackground = await page.getByRole('button', { name: 'Map' }).evaluate((button) => getComputedStyle(button).backgroundImage)
+const mapButtonPlacement = await page.evaluate(() => {
+  const map = document.querySelector('.map-peek__open').getBoundingClientRect()
+  const menu = document.querySelector('.game-settings > summary').getBoundingClientRect()
+  return { gap: menu.left - map.right, aligned: Math.abs(menu.top - map.top) < 2 }
+})
+const settingsButton = await page.locator('.game-settings > summary').evaluate((summary) => {
+  const icon = summary.querySelector('img')
+  return { label: summary.textContent?.trim(), source: icon?.getAttribute('src'), loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0 }
+})
+check('the combat map button uses the map-scroll icon', () => {
+  assertEqual(mapButtonIcon.source, '/assets/menu/map-scroll.png')
+  assert(mapButtonIcon.loaded, 'the map-scroll icon did not load')
+  assertEqual(mapButtonBackground, 'none')
+  assert(mapButtonPlacement.gap >= 0 && mapButtonPlacement.gap <= 24 && mapButtonPlacement.aligned,
+    `the map button is not beside Menu: ${JSON.stringify(mapButtonPlacement)}`)
+  assertEqual(settingsButton.label, 'Settings')
+  assertEqual(settingsButton.source, '/assets/menu/settings-cog.png')
+  assert(settingsButton.loaded, 'the settings-cog icon did not load')
+})
 await page.getByRole('button', { name: 'Map' }).click()
 await page.locator('.map-peek[open] .room').first().waitFor()
 const peekBossNode = page.locator('.map-peek .room--boss').first()

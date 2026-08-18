@@ -321,7 +321,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
           <MapOverlay map={visibleMap(run)} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}
         <details className="game-settings">
-          <summary>Menu</summary>
+          <summary className="game-settings__summary"><img src="/assets/menu/settings-cog.png" alt="" />Settings</summary>
           <div className="setup">
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>

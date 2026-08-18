@@ -507,6 +507,16 @@ try {
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
   ])
+  await a.locator('.app-shell--online .room--reachable').hover()
+  await a.waitForFunction(() =>
+    getComputedStyle(document.querySelector('.app-shell--online .room--reachable .room-tip')).visibility === 'visible')
+  const onlineOpeningMapTip = await a.locator('.app-shell--online .map').evaluate((map) => {
+    const tip = map.querySelector('.room--reachable .room-tip')
+    return tip.getBoundingClientRect().bottom <= map.getBoundingClientRect().bottom + 1
+  })
+  check('the online opening map node tooltip has room below it', () => {
+    assert(onlineOpeningMapTip, 'the online opening Encounter tooltip was clipped below the map')
+  })
   const onlineBoss = createCombat(createRng(406), openingRoom.run.players, [{
     uid: 'online-boss', defId: 'hexaghost', row: 0, hp: 36, maxHp: 36, block: 0, strength: 0,
     vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false, isBoss: true,

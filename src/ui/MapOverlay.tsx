@@ -36,7 +36,9 @@ export function MapOverlay({ map, act, bossDefId }: MapOverlayProps) {
 
   return (
     <>
-      <button className="map-peek__open" type="button" onClick={() => setOpen(true)}>Map</button>
+      <button className="map-peek__open" type="button" aria-label="Map" onClick={() => setOpen(true)}>
+        <img src="/assets/menu/map-scroll.png" alt="" />
+      </button>
       <dialog className="map-peek" ref={dialogRef} onClose={() => setOpen(false)} aria-label={`Act ${act} map`}>
         <div className="map-peek__panel">
           <header>
