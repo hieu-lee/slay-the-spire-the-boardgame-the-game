@@ -564,6 +564,28 @@ check('Ascension 13 between-boss row choices and reserved boss survive reconnect
     'the server did not start the reserved distinct boss')
 })
 
+check('ordinary between-combat row choices survive reconnect', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run = { ...room.run, phase: 'map', combat: null }
+  const moved = apply(room, a.token, { kind: 'switchBetweenCombatRow', row: 1 })
+  assert(moved.changed, 'the map rejected a legal between-combat row switch')
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).row, 0)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.players.find((player) => player.id === a.playerId).row, 1)
+})
+
+check('Event-room row choices survive reconnect before combat', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run = { ...room.run, phase: 'room', combat: null }
+  const moved = apply(room, a.token, { kind: 'switchBetweenCombatRow', row: 1 })
+  assert(moved.changed, 'the Event room rejected a legal between-combat row switch')
+  assertEqual(room.run.players.find((player) => player.id === b.playerId).row, 0)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.players.find((player) => player.id === a.playerId).row, 1)
+})
+
 check('another seat cannot bypass a pending Relic to start a boss or Act', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.phase = 'betweenCombat'
@@ -5865,17 +5887,27 @@ check('beating a boss resolves the shared boss-Relic offer before the next Act',
       hp: 0,
       dead: true,
       isBoss: true,
-      goldReward: 0,
-      cardReward: null,
+      goldReward: 3,
+      cardReward: 'normal',
+      potionReward: false,
     })),
   }
+  const goldBefore = room.run.players.map((player) => player.gold)
 
   apply(room, a.token, { kind: 'resolveCombat' })
   assertEqual(room.run.phase, 'reward')
+  assertDeepEqual(room.run.players.map((player, index) => player.gold - goldBefore[index]), [3, 3])
+  assert(room.run.rewards.every((reward) => reward.cardReward), 'the boss omitted its normal Card Reward')
   const choices = room.run.rewards[0].bossRelics
   assertEqual(choices.length, 3, 'two players reveal players + 1 boss Relics')
-  apply(room, a.token, { kind: 'bossRelicReward', choice: 'gain', relicId: choices[0] })
+  apply(room, a.token, { kind: 'cardReward', choice: null })
+  apply(room, b.token, { kind: 'cardReward', choice: null })
+  apply(room, a.token, { kind: 'bossRelicReward', choice: 'skip' })
   apply(room, b.token, { kind: 'bossRelicReward', choice: 'skip' })
+  assert(room.run.rewards.every((reward) => reward.potion === false && reward.relic === false && reward.bossRelics === false),
+    JSON.stringify(room.run.rewards))
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
   assertEqual(room.run.phase, 'victory')
 
   apply(room, a.token, { kind: 'advanceAct' })

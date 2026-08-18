@@ -163,6 +163,8 @@ export type CardRewardOffer = {
   /** Exact physical cards exposed by this reveal. */
   cardsDrawn?: string[]
   raresDrawn?: string[]
+  /** Revealed cards temporarily removed while another reward consumes later cards. */
+  drawsReserved?: boolean
   /** Setup Rare rewards draw directly from the rare stack. */
   cardSource?: 'ordinary' | 'rare'
   prismatic?: boolean
@@ -1277,7 +1279,7 @@ const ELITES: Record<number, EncounterCard[]> = {
     { defId: 'giant_head', goldReward: 3, cardReward: 'upgraded', relicReward: true },
   ],
   4: [
-    { defId: 'spire_shield', goldReward: 0, cardReward: null },
+    { defId: 'spire_shield', goldReward: 0, cardReward: 'upgraded' },
   ],
 }
 
@@ -1391,7 +1393,7 @@ function buildEncounter(
   const summonSupply = createSummonSupply(rng)
 
   if (kind === 'boss') {
-    const row = players[players.length - 1]?.row ?? 0
+    const row = Math.max(0, ...players.map((player) => player.row))
     const deck = BOSSES[act] ?? BOSSES[1]!
     // `actBossDefId` is the roll the map already made and showed the party;
     // `forcedBossDefId` overrides even that (Mind Bloom, the Ascension 13
@@ -1407,8 +1409,8 @@ function buildEncounter(
       row,
       startingHp(enemyDef(defId, ascension), count),
       true,
-      0,
-      null,
+      act <= 2 ? ascension >= 10 ? 2 : 3 : 0,
+      act <= 2 ? 'normal' : null,
       ascension,
     )]
     const summon = (boss: Enemy, group: string, summonRow: number, uid: string, isBoss = false) => {
@@ -1443,7 +1445,7 @@ function buildEncounter(
     }
     const hp = startingHp(enemyDef(card.defId, ascension), count)
     // Elites are placed in the bottom row (p.11).
-    const row = players[0]?.row ?? 0
+    const row = Math.min(...players.map((player) => player.row))
     const elite = spawn(
       card.defId, 'elite', row, hp, false, card.goldReward, card.cardReward,
       ascension,
@@ -1809,16 +1811,18 @@ export function resolveCombat(state: RunState): RunState {
   const wasBoss = room?.kind === 'boss' && !state.eventCombat
   const wasBonusBoss = state.eventCombat?.mindBloom === true
   const wasElite = room?.kind === 'elite' || state.eventCombat?.kind === 'elite' || state.eventCombat?.mindBloom === true
+  const printedBossRewards = wasBoss && state.act <= 2
   const lastStandActEnd = state.lastStand && combat.players.some((player) => player.dead) &&
     (wasBoss || state.eventCombat?.kind === 'boss')
   const sharedReward = wasElite || wasBoss || state.eventCombat?.kind === 'boss'
-    ? combat.enemies.find((enemy) => enemyDef(enemy.defId, enemy.ascension).elite || enemy.isBoss)
+    ? combat.enemies.find((enemy) => enemy.uid === 'elite' || enemy.uid === 'boss-0') ??
+      combat.enemies.find((enemy) => enemyDef(enemy.defId, enemy.ascension).elite || enemy.isBoss)
     : undefined
   let players = state.players.map((player) => {
     const after = combat.players.find((candidate) => candidate.id === player.id)
     if (!after) return player
     const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === after.row)
-    const rewardGold = source?.goldReward ?? 0
+    const rewardGold = printedBossRewards ? state.ascension >= 10 ? 2 : 3 : source?.goldReward ?? 0
     const canGainGold = !hasRelic(after, 'ectoplasm')
     const goldenIdol = hasRelic(after, 'golden_idol') ? 1 : 0
     const meatHp = hasRelic(after, 'meat_on_the_bone') && after.hp < 4 ? 4 : after.hp
@@ -1865,22 +1869,13 @@ export function resolveCombat(state: RunState): RunState {
   const betweenBosses = wasBoss && Boolean(state.pendingBossDefId) && !lastStandActEnd
   const finalBoss = wasBoss && state.act >= 4
   const destination = lastStandActEnd || wasBoss && !betweenBosses ? 'victory' : betweenBosses ? 'betweenCombat' : 'map'
-  const bossChoices = wasBoss && !betweenBosses && !finalBoss
+  const bossChoices = printedBossRewards
     ? state.bossRelicDeck.slice(0, bossRelicOfferSize(players.filter((player) => !player.dead).length))
     : []
   const rewards = players.flatMap<CardRewardOffer>((player) => {
     if (player.dead) return []
     const whitePotion: false | null = hasRelic(player, 'white_beast_statue') ? null : false
-    if (wasBoss && !betweenBosses && !finalBoss) return [{
-      playerId: player.id,
-      cardReward: false,
-      choices: null,
-      upgraded: false,
-      potion: whitePotion,
-      relic: false as const,
-      bossRelics: [...bossChoices],
-    }]
-    if (betweenBosses || finalBoss) return whitePotion === false ? [] : [{
+    if (betweenBosses || finalBoss || wasBoss && !printedBossRewards) return whitePotion === false ? [] : [{
       playerId: player.id,
       cardReward: false,
       choices: null,
@@ -1890,7 +1885,7 @@ export function resolveCombat(state: RunState): RunState {
       bossRelics: false as const,
     }]
     const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
-    const printedCardReward = wasBonusBoss ? 'normal' : source?.cardReward
+    const printedCardReward = wasBonusBoss || printedBossRewards ? 'normal' : source?.cardReward
     const transformedReward = modifier('transformed') && printedCardReward === 'normal'
     const vintageReward = modifier('vintage') && printedCardReward === 'normal' && !wasElite && !wasBoss
     const prismatic = hasRelic(player, 'prismatic_shard')
@@ -1901,7 +1896,7 @@ export function resolveCombat(state: RunState): RunState {
     const potion: false | null = potionCount > 0 ? null : false
     // Elite relics are resolved by the shared physical room reward below.
     const relic: false | null = (source?.relicReward === true && !wasElite || vintageReward) ? null : false
-    if (!cardReward && !transformedReward && potion === false && relic === false) return []
+    if (!cardReward && !transformedReward && potion === false && relic === false && !printedBossRewards) return []
     return [{
       playerId: player.id,
       cardReward,
@@ -1913,7 +1908,7 @@ export function resolveCombat(state: RunState): RunState {
       potion,
       potionQueue: potionCount > 1 ? Array(potionCount - 1).fill(null) : undefined,
       relic,
-      bossRelics: false as const,
+      bossRelics: printedBossRewards ? [...bossChoices] : false as const,
     }]
   })
   const roomState = wasElite ? createRelicReward('elite', itemDecks, players, state.chooseYourRelic) : null
@@ -1930,7 +1925,7 @@ export function resolveCombat(state: RunState): RunState {
     rng,
     phase: rewards.length > 0 ? 'reward' : roomState ? 'room' : destination,
     players,
-    bossRelicDeck: wasBoss && !finalBoss ? state.bossRelicDeck.slice(bossChoices.length) : state.bossRelicDeck,
+    bossRelicDeck: printedBossRewards ? state.bossRelicDeck.slice(bossChoices.length) : state.bossRelicDeck,
     potionDeck: combat.potionDeck,
     combat: null,
     pendingBossDefId: betweenBosses ? state.pendingBossDefId : null,
@@ -1963,9 +1958,11 @@ export function giveUpFight(state: RunState): RunState {
   })
 }
 
-/** Swap or move one player before the reserved Ascension 13 boss. */
+/** Swap or move one player between combats (rulebook p.13). */
 export function switchBetweenCombatRow(state: RunState, playerId: string, row: number): RunState {
-  if (state.phase !== 'betweenCombat' || !state.pendingBossDefId ||
+  const canSwitch = state.phase === 'map' || state.phase === 'room' ||
+    state.phase === 'betweenCombat' && Boolean(state.pendingBossDefId)
+  if (!canSwitch ||
     !Number.isInteger(row) || row < 0 || row >= state.players.length) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || player.dead || player.row === row) return state
@@ -1976,7 +1973,7 @@ export function switchBetweenCombatRow(state: RunState, playerId: string, row: n
       candidate.id === playerId ? { ...candidate, row }
         : other && candidate.id === other.id ? { ...candidate, row: player.row }
           : candidate),
-    log: [...state.log, `${player.name} moves to row ${row + 1} before the next boss.`],
+    log: [...state.log, `${player.name} moves to row ${row + 1} before the next combat.`],
   }
 }
 
@@ -2139,6 +2136,27 @@ export function revealCardReward(state: RunState, playerId: string, sources: rea
           raresDrawn: rare,
         }
       : candidate),
+  }
+}
+
+function reserveRevealedRewardDraws(state: RunState, playerId: string): RunState {
+  const offer = state.rewards.find((candidate) => candidate.playerId === playerId && candidate.cardReward &&
+    candidate.choices !== null && !candidate.drawsReserved && candidate.cardsDrawn && candidate.raresDrawn)
+  const player = state.players.find((candidate) => candidate.id === playerId)
+  if (!offer || !player) return state
+  const cards = offer.cardsDrawn ?? []
+  const rares = offer.raresDrawn ?? []
+  if (cards.some((card, index) => player.cardRewards[index] !== card) ||
+    rares.some((card, index) => player.rareRewards[index] !== card)) return state
+  return {
+    ...state,
+    players: state.players.map((candidate) => candidate.id === playerId ? {
+      ...candidate,
+      cardRewards: candidate.cardRewards.slice(cards.length),
+      rareRewards: candidate.rareRewards.slice(rares.length),
+    } : candidate),
+    rewards: state.rewards.map((candidate) => candidate === offer
+      ? { ...candidate, drawsReserved: true } : candidate),
   }
 }
 
@@ -2399,7 +2417,8 @@ export function acquireRelic(state: RunState, playerId: string, relicId: string)
 /** Only the owner sees cards exposed by a pending one-shot relic. */
 export function pendingRelicPreview(state: RunState, playerId: string): PendingRelicPreview | null {
   if (!Array.isArray(state.players)) return null
-  const player = state.players.find((candidate) => candidate.id === playerId)
+  const reserved = reserveRevealedRewardDraws(state, playerId)
+  const player = reserved.players.find((candidate) => candidate.id === playerId)
   const pending = player?.relics.find((relic) => relic.pending)
   if (!player || !pending) return null
   if (['enchiridion', 'orrery', 'tiny_house'].includes(pending.defId)) {
@@ -2416,6 +2435,7 @@ export function resolvePendingRelic(
   rewardIndices: readonly number[] = [],
 ): RunState {
   if (state.phase === 'combat') return state
+  state = reserveRevealedRewardDraws(state, playerId)
   const player = state.players.find((candidate) => candidate.id === playerId)
   const pending = player?.relics.find((relic) => relic.pending)
   if (!player || !pending || new Set(cardUids).size !== cardUids.length ||
@@ -2563,7 +2583,7 @@ export function resolveCardRewards(
   decisions: Readonly<Record<string, number | null>>,
 ): RunState {
   if (state.phase !== 'reward' || !state.rewardDestination || hasPendingRelicAcquisition(state)) return state
-  if (state.rewards.some((offer) => offer.transformReward || offer.potion !== false || (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false)) return state
+  if (state.rewards.some((offer) => offer.transformReward || offer.potion !== false || (offer.relic ?? false) !== false)) return state
   for (const offer of state.rewards.filter((candidate) => candidate.cardReward)) {
     const player = state.players.find((candidate) => candidate.id === offer.playerId)
     if (!player) return state
@@ -2621,7 +2641,10 @@ export function resolveCardRewards(
       const selected = choice === null ? null : shown[choice]
       let owner = {
         ...player,
-        rareRewards: [...player.rareRewards.slice(shown.length), ...shown.filter((_id, index) => index !== choice)],
+        rareRewards: [
+          ...(offer.drawsReserved ? player.rareRewards : player.rareRewards.slice(shown.length)),
+          ...shown.filter((_id, index) => index !== choice),
+        ],
       }
       if (selected) owner = addCard(owner, selected, `c${++nextUid}`, offer.upgraded)
       return owner
@@ -2629,19 +2652,31 @@ export function resolveCardRewards(
     const draw = offer.cardsDrawn && offer.raresDrawn
       ? { choices: shown, cardsDrawn: offer.cardsDrawn, raresDrawn: offer.raresDrawn }
       : drawCardChoices(player)
-    const bottomed = bottomCardChoices(player, draw, choice)
+    const bottomed = bottomCardChoices(offer.drawsReserved ? {
+      ...player,
+      cardRewards: [...draw.cardsDrawn, ...player.cardRewards],
+      rareRewards: [...draw.raresDrawn, ...player.rareRewards],
+    } : player, draw, choice)
     if (selected === null) return bottomed
     return addCard(bottomed, selected, `c${++nextUid}`, offer.upgraded)
   })
 
-  return {
+  const rewards = state.rewards.map((offer) => offer.cardReward ? { ...offer, cardReward: false } : offer)
+  const next = {
     ...state,
-    phase: state.roomState ? 'room' : state.rewardDestination ?? 'map',
     players,
-    rewards: [],
-    rewardDestination: state.roomState ? state.rewardDestination : null,
+    rewards,
     log: [...state.log, 'The party collects its rewards.'],
   }
+  return rewards.some((offer) => offer.transformReward || offer.potion !== false ||
+    (offer.relic ?? false) !== false || (offer.bossRelics ?? false) !== false)
+    ? next
+    : {
+        ...next,
+        phase: state.roomState ? 'room' : state.rewardDestination ?? 'map',
+        rewards: [],
+        rewardDestination: state.roomState ? state.rewardDestination : null,
+      }
 }
 
 /** Resolve or skip one Transformed normal reward without exposing the next deck card. */
@@ -3384,6 +3419,8 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       state.ascension,
       bossDefId,
     )
+    // Mind Bloom prints its own Relic + Card Reward, not the boss card's Gold.
+    if (mindBloom) encounter.enemies.find((enemy) => enemy.uid === 'boss-0')!.goldReward = 0
     const combat = startPlayerTurnWithChoices(createCombat(
       rng,
       players,

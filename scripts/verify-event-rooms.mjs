@@ -1,9 +1,9 @@
-import { EVENT_DEFINITIONS } from '../src/game/events.ts'
+import { EVENT_DEFINITIONS, eventCanStartCombat } from '../src/game/events.ts'
 import { CARDS } from '../src/game/cards.ts'
 import { createEventRoom, resolveEventDecision } from '../src/game/event-room.ts'
 import { createItemDecks } from '../src/game/acquisition.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
-import { canSkipEvent, chooseEvent, chooseRelicReward, createPlayer, createRun, enterRoom, finishMerchant, finishRun, resolveCardRewards, resolveCombat, resolvePotionReward, roomChoices, skipEvent } from '../src/game/run.ts'
+import { canSkipEvent, chooseEvent, chooseRelicReward, createPlayer, createRun, enterRoom, finishMerchant, finishRun, resolveCardRewards, resolveCombat, resolvePotionReward, roomChoices, skipEvent, switchBetweenCombatRow } from '../src/game/run.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 import { postNeowRun } from './lib/post-neow-run.mjs'
@@ -397,13 +397,27 @@ check('Mind Bloom War reserves no reward before combat and records a seeded Act 
   assert(['guardian_attack', 'hexaghost', 'slime_boss'].includes(run.eventCombat.bossDefId))
 })
 
+check('players can switch rows after a combat Event is revealed', () => {
+  const run = inEvent('mind_bloom', 2)
+  const switched = switchBetweenCombatRow(run, 'p1', 1)
+  assertEqual(switched.players.find((player) => player.id === 'p1').row, 1)
+  assertEqual(switched.players.find((player) => player.id === 'p2').row, 0)
+  assertEqual(switched.roomState.card.id, 'mind_bloom')
+})
+
+check('Secret Portal keeps row switching visible before a combat destination', () => {
+  assert(eventCanStartCombat(EVENT_DEFINITIONS.secret_portal))
+})
+
 check('Mind Bloom War counts as a bonus Boss and awards its campaign mark', () => {
   let run = inEvent('mind_bloom', 1)
   run.act = 3
+  const gold = run.players[0].gold
   run.map.position = run.map.rows[0][0]
   run.campaign = { ...run.campaign, bossesDefeated: 2, highestBossActDefeated: 2 }
   run = chooseEvent(run, 'p1', { optionIds: ['war'] })
   run = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won', enemies: run.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true })) } })
+  assertEqual(run.players[0].gold, gold)
   assertEqual(run.campaign.bossesDefeated, 3)
   assertEqual(run.campaign.highestBossActDefeated, 2)
   const finished = finishRun({ ...run, phase: 'defeat' })

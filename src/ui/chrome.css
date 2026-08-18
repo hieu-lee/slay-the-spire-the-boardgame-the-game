@@ -1766,7 +1766,26 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    padding, or it is dragged up underneath that panel. The run log does not
    count — it is `position: fixed` and occupies no row. */
 .sts-scope .map:has(~ .room-screen),
-.sts-scope .campfire:has(~ .room-screen) { margin-bottom: 0; }
+.sts-scope .campfire:has(~ .room-screen),
+.sts-scope .map:has(~ .map-row-switch) { margin-bottom: 0; }
+
+.sts-scope .map-row-switch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem 1.2rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 1rem;
+  border-top: 1px solid rgb(217 180 91 / 0.35);
+  background: linear-gradient(180deg, rgb(45 31 24 / 0.96), rgb(20 15 12 / 0.96));
+}
+
+.sts-scope .map-row-switch label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 
 /* ---------- the map ---------- */
 

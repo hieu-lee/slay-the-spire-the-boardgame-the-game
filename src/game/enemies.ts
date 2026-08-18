@@ -78,7 +78,7 @@ export type EnemyAbility =
   | { kind: 'slow'; damagePerHit: number }
   | { kind: 'rally'; summonDefId: string }
   | { kind: 'splitOnDeath'; defIds: string[]; largeSlimeStrength?: number }
-  | { kind: 'rebirth'; hpPerPlayer: number; defId?: string; clearWeakVulnerable?: boolean; strength?: number; strengthPerPower?: boolean; timing?: 'endOfTurn' }
+  | { kind: 'rebirth'; hpPerPlayer: number; defId?: string; clearWeakVulnerable?: boolean; strength?: number; strengthPerPower?: boolean; timing?: 'startOfTurn' | 'endOfTurn' }
   | { kind: 'sharpHide'; damage: number }
   | { kind: 'curiosity' }
   | { kind: 'timeWarp'; limits: number[] }
@@ -280,7 +280,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'red_louse_first',
     name: 'Red Louse',
     artId: 'red_louse',
-    hpByPlayers: [4, 4, 4, 4],
+    hpByPlayers: [3, 3, 3, 3],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 2 }],
@@ -352,6 +352,16 @@ export const ENEMIES: Record<string, EnemyDef> = {
         [{ kind: 'gainStrength', amount: 2 }],
       ),
     },
+    ability: { kind: 'sporeCloud', vulnerable: 1 },
+  },
+
+  fungi_beast_summon: {
+    id: 'fungi_beast_summon', name: 'Fungi Beast', artId: 'fungi_beast', hpByPlayers: [5, 5, 5, 5],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'gainStrength', amount: 2 }],
+      [{ kind: 'attack', amount: 2 }],
+      [{ kind: 'attack', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }],
+    ) },
     ability: { kind: 'sporeCloud', vulnerable: 1 },
   },
 
@@ -546,19 +556,19 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   mystic: {
-    id: 'mystic', name: 'Mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
+    id: 'mystic', name: 'Mystic', hpByPlayers: [12, 12, 12, 12],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'healAllEnemies', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
-      [{ kind: 'strengthenAllEnemies', amount: 1 }],
+      [{ kind: 'strengthenAllEnemies', amount: 1 }, { kind: 'actsLast' }],
     ) },
   },
 
   mystic_2sh: {
-    id: 'mystic_2sh', name: 'Mystic', artId: 'mystic', hpByPlayers: [12, 12, 12, 12], actsLast: true,
+    id: 'mystic_2sh', name: 'Mystic', artId: 'mystic', hpByPlayers: [12, 12, 12, 12],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
-      [{ kind: 'strengthenAllEnemies', amount: 1 }],
+      [{ kind: 'strengthenAllEnemies', amount: 1 }, { kind: 'actsLast' }],
       [{ kind: 'healAllEnemies', amount: 3 }],
     ) },
   },
@@ -778,7 +788,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ascension: [
       { min: 1, hpByPlayers: [15, 32, 48, 64], pattern: { kind: 'cube', slots: [
         { actions: [{ kind: 'attack', amount: 1, aoe: true }], once: true },
-        { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'daze', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+        { actions: [{ kind: 'attack', amount: 2, aoe: true }, { kind: 'daze', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
       ] } },
       { min: 12, hpByPlayers: [16, 34, 56, 82], pattern: { kind: 'single', actions: [
         { kind: 'attack', amount: 1, aoe: true }, { kind: 'daze', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 },
@@ -1128,7 +1138,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     name: 'Gremlin Nob',
     elite: true,
     // Elites scale with the party via the HP board (p.11).
-    hpByPlayers: [15, 30, 45, 60],
+    hpByPlayers: [14, 28, 42, 56],
     pattern: {
       kind: 'cube',
       slots: [
@@ -1390,7 +1400,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     ] },
     abilities: [
       { kind: 'curiosity' },
-      { kind: 'rebirth', hpPerPlayer: 50, defId: 'awakened_one_phase_2', strengthPerPower: true, timing: 'endOfTurn' },
+      { kind: 'rebirth', hpPerPlayer: 50, defId: 'awakened_one_phase_2', strengthPerPower: true, timing: 'startOfTurn' },
     ],
     ascension: [{ min: 10, pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 3 }] },
@@ -1510,7 +1520,7 @@ const SUMMON_CARDS: SummonSupply = {
   red_louse: ['red_louse_summon'],
   spike_slime: ['spike_slime', 'spike_slime_dv2', 'spike_slime_v2d', 'spike_slime_2dv'],
   large_slime: ['large_slime_summon_w4s', 'large_slime_summon_w4s', 'large_slime_summon_4sw', 'large_slime_summon_sw4'],
-  fungi_beast: ['fungi_beast'],
+  fungi_beast: ['fungi_beast_summon'],
   fungi_beast_a7: ['fungi_beast_a7'],
   cultist: Array(8).fill('cultist'),
   torch_head: Array(8).fill('torch_head'),

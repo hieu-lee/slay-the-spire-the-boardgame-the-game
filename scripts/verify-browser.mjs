@@ -659,6 +659,41 @@ check('exactly one room is reachable at the start', () => {
   assertEqual(reachableAtStart, 1, 'the opening encounter is the only way in')
 })
 
+const rowSwitchPanel = page.getByText('Switch rows before the next combat', { exact: true }).locator('..')
+const rowSwitches = rowSwitchPanel.locator('select')
+const rowSwitchCount = await rowSwitches.count()
+check('the map exposes every local player row between combats', () => {
+  assertEqual(rowSwitchCount, 2)
+})
+await rowSwitches.first().selectOption('1')
+await page.waitForFunction(() => {
+  const players = window.__STS_DEBUG__.getRun().players
+  return players[0].row === 1 && players[1].row === 0
+})
+const switchedRows = (await readRun()).players.map((player) => player.row)
+check('switching into an occupied row swaps the players', () => {
+  assertDeepEqual(switchedRows, [1, 0])
+})
+await rowSwitches.first().selectOption('0')
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players[0].row === 0)
+const mapBeforeRoomSwitchCheck = await readRun()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun({
+  ...run,
+  phase: 'room',
+  roomState: {
+    kind: 'event', decisions: {}, dieRolls: {},
+    card: { id: 'encounter', name: 'Encounter!', scope: 'party', instanceId: 'test-encounter', act: 1, minAscension: 0, requiresColorlessUnlock: false,
+      options: [{ id: 'fight', label: 'Fight!', description: 'Treat this room as an Encounter.', effects: [{ tag: 'combat', room: 'encounter' }] }] },
+  },
+}), mapBeforeRoomSwitchCheck)
+const roomRowSwitchCount = await page.getByText('Switch rows before the next combat', { exact: true })
+  .locator('..').locator('select').count()
+check('local noncombat rooms keep row switching available', () => {
+  assertEqual(roomRowSwitchCount, 2)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapBeforeRoomSwitchCheck)
+await page.locator('.room--reachable').waitFor()
+
 await page.locator('.room--reachable').hover()
 await page.waitForFunction(() =>
   getComputedStyle(document.querySelector('.room--reachable .room-tip')).visibility === 'visible')

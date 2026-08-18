@@ -444,6 +444,14 @@ export const EVENT_CARDS: readonly EventCard[] = INSTANCES.map(
   },
 )
 
+/** Whether resolving this Event can immediately begin combat, including a die result. */
+export function eventCanStartCombat(card: EventDefinition): boolean {
+  const effectsCanStartCombat = (effects: readonly EventEffect[]): boolean => effects.some((effect) =>
+    effect.tag === 'combat' || effect.tag === 'move' || Object.values(effect.results ?? {}).some((result) =>
+      result && effectsCanStartCombat(result)))
+  return card.options.some((option) => effectsCanStartCombat(option.effects))
+}
+
 /** Builds the physical Event deck for one act and advances the run RNG exactly once per shuffle swap. */
 export function buildEventDeck(
   rng: RngState,

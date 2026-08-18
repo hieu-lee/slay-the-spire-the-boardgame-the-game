@@ -1147,6 +1147,137 @@ check('defeating the Corrupt Heart ends without an unusable boss Relic reward', 
   assertDeepEqual(resolved.rewards, [])
 })
 
+check('Act I and II bosses pay every player their printed gold, card, and Boss Relic rewards', () => {
+  const seats = [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+    { id: 'p3', name: 'Defect', character: 'defect' },
+    { id: 'p4', name: 'Watcher', character: 'watcher' },
+  ]
+  for (const ascension of [0, 10]) for (let count = 1; count <= 4; count++) {
+    const run = postNeowRun(940 + ascension + count, seats.slice(0, count), ascension)
+    const bossId = run.map.rows.at(-1)[0]
+    const entered = enterRoom({
+      ...run,
+      actBossDefId: 'slime_boss',
+      map: { ...run.map, position: run.map.rows.at(-2)[0] },
+    }, bossId)
+    const goldBefore = entered.players.map((player) => player.gold)
+    entered.combat.phase = 'won'
+    entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+    const resolved = resolveCombat(entered)
+    const gold = ascension >= 10 ? 2 : 3
+    assertDeepEqual(resolved.players.map((player, index) => player.gold - goldBefore[index]),
+      Array(count).fill(gold), `${count}P A${ascension} boss gold`)
+    assertEqual(resolved.rewards.length, count, `${count}P A${ascension} reward owners`)
+    for (const reward of resolved.rewards) {
+      assertEqual(reward.cardReward, true, 'the normal Card Reward is present')
+      assertEqual(reward.upgraded, false)
+      assert(reward.bossRelics.length > 0, 'the shared Boss Relic offer is present')
+    }
+  }
+})
+
+check('persisted pre-fix boss combats receive their printed rewards on resolution', () => {
+  const run = postNeowRun(962, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    actBossDefId: 'slime_boss',
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  const gold = entered.players[0].gold
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 0, dead: true, goldReward: 0, cardReward: null,
+  }))
+  const resolved = resolveCombat(entered)
+  assertEqual(resolved.players[0].gold, gold + 3)
+  assertEqual(resolved.rewards[0].cardReward, true)
+  assert(resolved.rewards[0].bossRelics.length > 0)
+})
+
+check('boss Card Rewards and Orrery settle in either order without corrupting reward decks', () => {
+  const run = postNeowRun(965, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    actBossDefId: 'slime_boss',
+    bossRelicDeck: ['orrery', ...run.bossRelicDeck.filter((id) => id !== 'orrery')],
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const offered = resolveCombat(entered)
+  const deckSize = offered.players[0].deck.length
+
+  let cardFirst = revealCardReward(structuredClone(offered), 'p1')
+  cardFirst = resolveCardRewards(cardFirst, { p1: 0 })
+  assertEqual(cardFirst.rewards[0].cardReward, false, 'Boss Relics blocked the printed Card Reward')
+  cardFirst = resolveBossRelicReward(cardFirst, 'p1', 'orrery')
+  const cardFirstChoices = pendingRelicPreview(cardFirst, 'p1').rewardChoices
+  cardFirst = resolvePendingRelic(cardFirst, 'p1', [], [0, 0, 0, 0])
+
+  let relicFirst = revealCardReward(structuredClone(offered), 'p1')
+  relicFirst = resolveBossRelicReward(relicFirst, 'p1', 'orrery')
+  relicFirst = structuredClone(relicFirst)
+  const relicFirstChoices = pendingRelicPreview(relicFirst, 'p1').rewardChoices
+  assertDeepEqual(relicFirstChoices, cardFirstChoices, 'Orrery reused the already revealed boss cards')
+  relicFirst = resolvePendingRelic(relicFirst, 'p1', [], [0, 0, 0, 0])
+  relicFirst = resolveCardRewards(relicFirst, { p1: 0 })
+
+  assertDeepEqual([...relicFirst.players[0].cardRewards].sort(), [...cardFirst.players[0].cardRewards].sort())
+  assertDeepEqual([...relicFirst.players[0].rareRewards].sort(), [...cardFirst.players[0].rareRewards].sort())
+  assertDeepEqual(
+    relicFirst.players[0].deck.slice(deckSize).map((card) => card.defId).sort(),
+    cardFirst.players[0].deck.slice(deckSize).map((card) => card.defId).sort(),
+    'reward order duplicated or discarded a gained card',
+  )
+})
+
+check('Act III bosses have no unprinted Boss Relic reward', () => {
+  const run = postNeowRun(963, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    act: 3,
+    actBossDefId: 'time_eater',
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  const bossRelics = [...entered.bossRelicDeck]
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const resolved = resolveCombat(entered)
+  assertDeepEqual(resolved.rewards, [])
+  assertDeepEqual(resolved.bossRelicDeck, bossRelics, 'the unprinted reward did not consume the deck')
+})
+
+check('the Act IV elite grants every player an upgraded Card Reward and the shared Relic', () => {
+  const run = postNeowRun(964, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ], 11)
+  const eliteRoom = Object.values(run.map.rooms).find((room) => room.kind === 'elite')
+  const approach = Object.values(run.map.rooms).find((room) => room.exits.includes(eliteRoom?.id))
+  assert(eliteRoom && approach, 'the fixture needs a reachable elite room')
+  const entered = enterRoom({
+    ...run,
+    act: 4,
+    enemyDecks: { act: 4, first: [], encounter: [], elite: [
+      { defId: 'spire_shield', goldReward: 0, cardReward: 'upgraded' },
+    ] },
+    map: { ...run.map, position: approach.id },
+  }, eliteRoom.id)
+  assertDeepEqual(entered.combat.enemies.map((enemy) => enemy.defId).sort(), ['spire_shield', 'spire_spear'])
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const resolved = resolveCombat(entered)
+  assertEqual(resolved.rewards.length, 2)
+  assert(resolved.rewards.every((reward) => reward.cardReward && reward.upgraded),
+    'each living player gets the printed upgraded Card Reward')
+  assertEqual(resolved.roomState?.kind, 'elite', 'the shared elite Relic remains queued')
+})
+
 check('White Beast Statue offers its Potion after the first A13 boss before regrouping', () => {
   const run = postNeowRun(913, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 13)
   const bossId = run.map.rows.at(-1)[0]
@@ -1179,6 +1310,7 @@ check('The Last Stand ends A13 after the first boss instead of starting the seco
   const entered = enterRoom(run, roomChoices(run)[0].id)
   const offered = resolveCombat({
     ...run,
+    act: 3,
     phase: 'combat',
     map: { ...run.map, position: bossId },
     pendingBossDefId: 'time_eater',
@@ -1191,10 +1323,10 @@ check('The Last Stand ends A13 after the first boss instead of starting the seco
       enemies: entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true, isBoss: true })),
     },
   })
-  assertEqual(offered.rewardDestination, 'victory')
+  assertEqual(offered.rewardDestination, null)
   assertEqual(offered.pendingBossDefId, null)
-  const finished = resolveBossRelicReward(offered, 'p2', null)
-  assertEqual(finished.phase, 'victory')
+  assertEqual(offered.phase, 'victory')
+  assertDeepEqual(offered.rewards, [])
 })
 
 check('one-shot Relics resolve with all remaining legal cards when the deck is depleted', () => {
@@ -1340,13 +1472,14 @@ const PRINTED_HP = {
   green_louse: [3, 3, 3, 3],
   green_louse_21w: [3, 3, 3, 3],
   red_louse: [4, 4, 4, 4],
-  red_louse_first: [4, 4, 4, 4],
+  red_louse_first: [3, 3, 3, 3],
   red_louse_summon: [3, 3, 3, 3],
   spike_slime: [5, 5, 5, 5],
   spike_slime_dv2: [5, 5, 5, 5],
   spike_slime_v2d: [5, 5, 5, 5],
   spike_slime_2dv: [5, 5, 5, 5],
   fungi_beast: [6, 6, 6, 6],
+  fungi_beast_summon: [5, 5, 5, 5],
   blue_slaver: [10, 10, 10, 10],
   red_slaver: [10, 10, 10, 10],
   looter: [9, 9, 9, 9],
@@ -1361,7 +1494,7 @@ const PRINTED_HP = {
   sentry_a: [7, 7, 7, 7],
   sentry_b: [8, 8, 8, 8],
   sentries: [7, 7, 7, 7],
-  gremlin_nob: [15, 30, 45, 60],
+  gremlin_nob: [14, 28, 42, 56],
   lagavulin: [22, 44, 66, 88],
   chosen_14: [14, 14, 14, 14],
   chosen_16: [16, 16, 16, 16],
@@ -1702,16 +1835,30 @@ check('a four player encounter draws one enemy per row at four-player HP', () =>
   }
 })
 
+check('players can switch rows on the map before every combat', () => {
+  const run = postNeowRun(120, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const switched = switchBetweenCombatRow(run, 'p1', 1)
+  assertEqual(switched.players.find((player) => player.id === 'p1').row, 1)
+  assertEqual(switched.players.find((player) => player.id === 'p2').row, 0,
+    'moving into an occupied row swaps the two players')
+  assert(switched.log.at(-1).includes('before the next combat'))
+})
+
 check('an elite stands in the bottom row, a boss in the top', () => {
   const party = [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
   ]
-  const run = postNeowRun(21, party)
-  const bottomRow = run.players[0].row
-  const topRow = run.players[run.players.length - 1].row
+  const initial = postNeowRun(21, party)
+  const run = switchBetweenCombatRow(initial, 'p1', 2)
+  const bottomRow = Math.min(...run.players.map((player) => player.row))
+  const topRow = Math.max(...run.players.map((player) => player.row))
   assert(bottomRow !== topRow, 'the fixture needs distinct rows to be meaningful')
+  assert(run.players[0].row !== bottomRow, 'the fixture must catch array-order placement')
 
   const bossId = run.map.rows[run.map.rows.length - 1][0]
   const parked = { ...run, map: { ...run.map, position: run.map.rows[run.map.rows.length - 2][0] } }
@@ -1723,7 +1870,7 @@ check('an elite stands in the bottom row, a boss in the top', () => {
   assert(eliteRoom && approach, 'the generated map needs a reachable elite')
   const eliteRun = { ...run, map: { ...run.map, position: approach.id } }
   const elite = enterRoom(eliteRun, eliteRoom.id).combat.enemies.find((enemy) => enemy.uid === 'elite')
-  assertEqual(elite.row, run.players[0].row, 'an elite is placed in the bottom row (p.11)')
+  assertEqual(elite.row, bottomRow, 'an elite is placed in the physical bottom row (p.11)')
 })
 
 check('HP board columns are read by party size', () => {

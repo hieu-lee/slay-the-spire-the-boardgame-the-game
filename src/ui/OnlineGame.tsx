@@ -34,6 +34,7 @@ import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+import { eventCanStartCombat } from '../game/events.ts'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -406,6 +407,8 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   if (compendiumOpen) return <CompendiumScreen onBack={() => setCompendiumOpen(false)} backLabel="Back to fight" />
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
+    run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
   const roomsCleared = Object.values(run.map.rooms).filter((mapRoom) => mapRoom.visited).length
   const cardChoiceSeat = snapshot.seats.find((seat) => seat.playerId === snapshot.cardChoicePlayerId)
   const foreignCardChoice = cardChoiceSeat !== undefined && cardChoiceSeat.playerId !== snapshot.you.playerId
@@ -573,6 +576,14 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           {wingChoices(run.map, viewer).map((target) => <button type="button" key={target.id}
             onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>Ignore paths to {target.kind}</button>)}
         </section> : null}</> : null}
+      {!pendingAcquisition && viewer && canSwitchRowsHere &&
+      run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
+        <label>Switch your row before the next combat
+          <select value={viewer.row} onChange={(event) => room.act({ kind: 'switchBetweenCombatRow', row: Number(event.target.value) })}>
+            {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+          </select>
+        </label>
+      </section> : null}
       {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={snapshot.pendingRelic.relicId}
         pending={snapshot.pendingRelic} deck={viewer.deck}
         onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}

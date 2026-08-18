@@ -225,10 +225,36 @@ check('a Daze-free roll adds no Daze at all', () => {
 
 check('HP scales with the party size', () => {
   const nob = enemyDef('gremlin_nob')
-  assertEqual(startingHp(nob, 1), 15, 'solo uses the first HP column')
-  assertEqual(startingHp(nob, 3), 45, 'three players use the third column')
-  assertEqual(startingHp(nob, 4), 60, 'four players use the fourth column')
-  assertEqual(startingHp(nob, 9), 60, 'more than four players clamps to the four-player column')
+  assertEqual(startingHp(nob, 1), 14, 'solo uses the first HP column')
+  assertEqual(startingHp(nob, 3), 42, 'three players use the third HP column')
+  assertEqual(startingHp(nob, 4), 56, 'four players use the fourth HP column')
+  assertEqual(startingHp(nob, 9), 56, 'more than four players clamps to the four-player column')
+})
+
+check('the printed Act I and II enemy corrections stay distinct', () => {
+  const fungi = enemyDef('fungi_beast_summon')
+  assertEqual(startingHp(fungi, 4), 5, 'the summoned Fungi Beast has 5 HP')
+  assertDeepEqual(actionsFor(fungi, 1, 0), [{ kind: 'gainStrength', amount: 2 }])
+  assertDeepEqual(actionsFor(fungi, 3, 0), [{ kind: 'attack', amount: 2 }])
+  assertDeepEqual(actionsFor(fungi, 5, 0), [
+    { kind: 'attack', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 },
+  ])
+
+  const taskmaster = enemyDef('taskmaster', 1)
+  assertEqual(actionsFor(taskmaster, 1, 1).find((action) => action.kind === 'daze')?.amount, 1,
+    'Ascension 1 Taskmaster adds one Daze per player')
+
+  for (const id of ['mystic', 'mystic_2sh']) {
+    const def = enemyDef(id)
+    const strengthRoll = [1, 3, 5].find((die) =>
+      actionsFor(def, die, 0).some((action) => action.kind === 'strengthenAllEnemies'))
+    assert(actionsFor(def, strengthRoll, 0).some((action) => action.kind === 'actsLast'),
+      `${id} Strength row must act last`)
+    for (const die of [1, 3, 5].filter((candidate) => candidate !== strengthRoll)) {
+      assert(!actionsFor(def, die, 0).some((action) => action.kind === 'actsLast'),
+        `${id} non-Strength row must keep normal order`)
+    }
+  }
 })
 
 check('a full round runs Player Turn then Enemy Turn and repeats', () => {

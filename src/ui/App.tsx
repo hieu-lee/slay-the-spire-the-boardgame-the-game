@@ -53,6 +53,7 @@ import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
 import { isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
+import { eventCanStartCombat } from '../game/events.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
@@ -246,6 +247,8 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
   // the run's. The summary labels it "Rooms this act" to match.
   const roomsCleared = Object.values(run.map.rooms).filter((room) => room.visited).length
   const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
+    run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
@@ -432,6 +435,17 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
           </section> : null}
         </>
       ) : null}
+
+      {!pendingAcquisition && canSwitchRowsHere &&
+      run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
+        <strong>Switch rows before the next combat</strong>
+        {run.players.filter((player) => !player.dead).map((player) => <label key={player.id}>{player.name}
+          <select value={player.row} onChange={(event) => setRun((current) =>
+            switchBetweenCombatRow(current, player.id, Number(event.target.value)))}>
+            {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+          </select>
+        </label>)}
+      </section> : null}
 
       {!allocatingCampaignMarks && run.phase === 'reward' && !pendingAcquisition ? (
         <RewardScreen

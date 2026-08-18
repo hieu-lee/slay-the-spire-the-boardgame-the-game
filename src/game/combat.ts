@@ -636,13 +636,14 @@ function triggerEnemyDeath(state: CombatState, enemy: Enemy): void {
   const rebirth = abilities.find((ability) => ability.kind === 'rebirth')
   if (rebirth?.kind === 'rebirth' && !enemy.abilityUsed) {
     enemy.abilityUsed = true
-    if (rebirth.timing === 'endOfTurn') {
+    if (rebirth.timing) {
       state.pendingSummons.push({
         sourceUid: enemy.uid, row: enemy.row, defIds: [rebirth.defId ?? enemy.defId],
-        turn: state.turn, timing: 'endOfTurn', direct: true, isBoss: enemy.isBoss,
+        turn: state.turn + Number(rebirth.timing === 'startOfTurn'), timing: rebirth.timing,
+        direct: true, isBoss: enemy.isBoss,
         strength: rebirth.strength, strengthPerPower: rebirth.strengthPerPower && (enemy.ascension ?? 0) >= 10,
       })
-      state.log = [...state.log, `${name} will return at the end of the turn`]
+      state.log = [...state.log, `${name} will return ${rebirth.timing === 'startOfTurn' ? 'next round' : 'at the end of the turn'}`]
     } else {
       const nextDefId = rebirth.defId ?? enemy.defId
       if (nextDefId !== enemy.defId) enemy.actionIndex = 0
@@ -1572,6 +1573,9 @@ function applyEffect(
     }
     case 'applyVulnerable': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
+        const invincible = enemyAbilities(enemyDef(target.defId, target.ascension))
+          .some((ability) => ability.kind === 'invincible') && !target.abilityUsed
+        if (invincible) continue
         const before = target.vulnerable
         target.vulnerable = gainVulnerable(target.vulnerable, effect.amount)
         // Only when the token actually went on: at the cap nothing happened,

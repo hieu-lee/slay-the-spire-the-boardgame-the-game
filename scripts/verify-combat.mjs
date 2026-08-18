@@ -9768,16 +9768,26 @@ check('Foresight resumes the shared Draw step after it plays Weave', () => {
   assertEqual(state.enemies[0].hp, 4)
 })
 
-check('active Invincible rejects Weak but still accepts Poison', () => {
+check('active Invincible rejects Weak and Vulnerable but still accepts Poison', () => {
   const neutralize = instance('neutralize')
+  const bash = instance('bash')
   const poison = instance('deadly_poison')
-  let state = combat([makePlayer({ character: 'silent', hand: [neutralize, poison], energy: 3 })], [
+  let state = combat([makePlayer({ character: 'silent', hand: [neutralize, bash, poison], energy: 5 })], [
     makeEnemy({ uid: 'heart', defId: 'corrupt_heart', hp: 100, maxHp: 100 }),
   ])
   state = playCard(state, 'p1', neutralize.uid, { enemyUid: 'heart', playerId: null })
+  state = playCard(state, 'p1', bash.uid, { enemyUid: 'heart', playerId: null })
   state = playCard(state, 'p1', poison.uid, { enemyUid: 'heart', playerId: null })
   assertEqual(state.enemies[0].weak, 0)
+  assertEqual(state.enemies[0].vulnerable, 0)
   assertEqual(state.enemies[0].poison, 1)
+
+  const secondBash = instance('bash')
+  state.players[0].hand.push(secondBash)
+  state.players[0].energy = 2
+  state.enemies[0].abilityUsed = true
+  state = playCard(state, 'p1', secondBash.uid, { enemyUid: 'heart', playerId: null })
+  assertEqual(state.enemies[0].vulnerable, 1, 'Vulnerable works after Invincible is removed')
 })
 
 check('Fairy revival preserves Painful Stabs damage accounting', () => {
@@ -9814,6 +9824,27 @@ check('a lethal hit spends attacker Weak before a boss rebirth', () => {
   const resolved = playCard(state, 'p1', bash.uid, { enemyUid: 'champ', playerId: null })
   assertEqual(resolved.players[0].weak, 0)
   assertEqual(resolved.enemies[0].defId, 'the_champ_fury')
+})
+
+check('Awakened One returns at the start of the next round, after skipping an Enemy Turn', () => {
+  const strike = instance('strike_ironclad')
+  let state = combat([makePlayer({ hand: [strike], powers: [instance('inflame'), instance('juggernaut')] })], [
+    makeEnemy({ uid: 'awakened', defId: 'awakened_one_phase_1', hp: 1, maxHp: 50,
+      isBoss: true, ascension: 10 }),
+  ])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'awakened', playerId: null })
+  assert(state.enemies[0].dead, 'Phase 1 should be dead for the rest of this round')
+  assertEqual(state.pendingSummons[0].turn, state.turn + 1)
+
+  state = endPlayerTurn(state)
+  assertEqual(state.enemies.some((enemy) => enemy.defId === 'awakened_one_phase_2'), false,
+    'Phase 2 appeared before the Enemy Turn')
+  state = enemyTurn(state)
+  assertEqual(state.players[0].hp, 10, 'the dead boss still attacked this round')
+  state = preparePlayerTurn(state)
+  const reborn = state.enemies.find((enemy) => enemy.defId === 'awakened_one_phase_2')
+  assert(reborn && !reborn.dead, 'Phase 2 did not appear at the next round')
+  assertEqual(reborn.strength, 2, 'A10 Rebirth reads the largest Power count at summon time')
 })
 
 report('combat')

@@ -515,6 +515,26 @@ try {
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
   ])
+  const onlineRowSelect = a.getByLabel('Switch your row before the next combat')
+  const onlineRowControlCount = await onlineRowSelect.count()
+  check('the online map exposes the viewer row between combats', () => {
+    assertEqual(onlineRowControlCount, 1)
+  })
+  await onlineRowSelect.selectOption('1')
+  await a.waitForFunction(() => [...document.querySelectorAll('label')]
+    .find((label) => label.textContent?.includes('Switch your row before the next combat'))
+    ?.querySelector('select')?.value === '1')
+  const rowSwitched = await snapshot(a)
+  check('an online map row switch reaches authoritative state', () => {
+    const mine = rowSwitched.run.players.find((player) => player.id === rowSwitched.you.playerId)
+    assertEqual(mine?.row, 1)
+    assertEqual(new Set(rowSwitched.run.players.map((player) => player.row)).size, 2,
+      'the server duplicated an occupied row')
+  })
+  await onlineRowSelect.selectOption('0')
+  await a.waitForFunction(() => [...document.querySelectorAll('label')]
+    .find((label) => label.textContent?.includes('Switch your row before the next combat'))
+    ?.querySelector('select')?.value === '0')
   await a.locator('.app-shell--online .room--reachable').hover()
   await a.waitForFunction(() =>
     getComputedStyle(document.querySelector('.app-shell--online .room--reachable .room-tip')).visibility === 'visible')
