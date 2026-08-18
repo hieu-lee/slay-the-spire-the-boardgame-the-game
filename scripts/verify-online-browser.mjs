@@ -45,9 +45,17 @@ for (const context of [aContext, bContext]) {
     const sockets = []
     window.__ROOM_SOCKETS__ = sockets
     window.__SFX_PLAYS__ = []
+    window.__SFX_DETAILS__ = []
     window.__BGM_PAUSES__ = []
     HTMLMediaElement.prototype.play = function play() {
       window.__SFX_PLAYS__.push(new URL(this.src).pathname)
+      window.__SFX_DETAILS__.push({
+        path: new URL(this.src).pathname,
+        cue: this.dataset.combatSfx ?? null,
+        rate: this.playbackRate,
+        volume: this.volume,
+        delayMs: Number(this.dataset.combatSfxDelay ?? 0),
+      })
       return Promise.resolve()
     }
     HTMLMediaElement.prototype.pause = function pause() {
@@ -661,6 +669,7 @@ try {
   const restoredEnemy = structuredClone(liveRoom.run.combat.enemies[0])
   await a.evaluate(() => {
     window.__SFX_PLAYS__ = []
+    window.__SFX_DETAILS__ = []
     window.__HOLD_ROOM_AUTH__ = true
     window.__RELEASE_ROOM_AUTH__ = undefined
     window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'death animation reconnect test')
@@ -669,6 +678,7 @@ try {
   await a.waitForFunction(() => typeof window.__RELEASE_ROOM_AUTH__ === 'function')
   Object.assign(liveRoom.run.combat.enemies[0], { hp: 0, dead: true, weak: 1 })
   const reconnectActor = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  await b.evaluate(() => { window.__SFX_DETAILS__ = [] })
   const historicalVfxSeq = liveRoom.run.combat.presentationEvents
     .reduce((latest, event) => Math.max(latest, event.seq), -1) + 1
   liveRoom.run.combat.presentationEvents = [...liveRoom.run.combat.presentationEvents, {
@@ -686,7 +696,11 @@ try {
   await b.locator('.enemy--dead').first().waitFor()
   const peerHistoricalVfx = b.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`)
   await peerHistoricalVfx.first().waitFor()
+  await b.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+    sound.cue?.includes(':strike_ironclad:')).length === 2)
   const peerHistoricalSource = await peerHistoricalVfx.first().getAttribute('data-vfx-source')
+  const peerHistoricalSounds = await b.evaluate(() => window.__SFX_DETAILS__.filter((sound) =>
+    sound.cue?.includes(':strike_ironclad:')))
   await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
   await a.locator('.connection--connected').waitFor()
   const reconnectedCorpse = a.locator('.enemy--dead').first()
@@ -699,6 +713,7 @@ try {
     .filter((path) => path === '/assets/sfx/weak.ogg').length)
   const reconnectSounds = await a.evaluate(() => window.__SFX_PLAYS__
     .filter((path) => path.startsWith('/assets/sfx/')))
+  const reconnectPersonalSounds = await a.evaluate(() => window.__SFX_DETAILS__.filter((sound) => sound.cue))
   const reconnectDrawMotion = await a.locator('.hand .card--drawn').count()
   const reconnectHistoricalVfx = await a.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`).count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
@@ -708,6 +723,10 @@ try {
     assertDeepEqual(reconnectSounds, [])
     assertEqual(reconnectDrawMotion, 0)
     assertEqual(peerHistoricalSource, 'strike_ironclad', 'a connected peer missed the live action')
+    assertEqual(peerHistoricalSounds.length, 2, 'the connected peer missed Strike personal audio')
+    assert(peerHistoricalSounds[0].rate !== 1, 'the peer received generic instead of tuned audio')
+    assert(peerHistoricalSounds.some((sound) => sound.delayMs >= 36), 'the peer missed the timed identity accent')
+    assertDeepEqual(reconnectPersonalSounds, [], 'the reconnect replayed personal audio history')
     assertEqual(reconnectHistoricalVfx, 0, 'the reconnect replayed an action learned while offline')
   })
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)

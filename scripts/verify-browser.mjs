@@ -71,9 +71,18 @@ page.on('response', (response) => {
 
 await page.addInitScript(() => {
   window.__SFX_PLAYS__ = []
+  window.__SFX_DETAILS__ = []
   window.__BGM_PAUSES__ = []
   HTMLMediaElement.prototype.play = function play() {
     window.__SFX_PLAYS__.push(new URL(this.src).pathname)
+    window.__SFX_DETAILS__.push({
+      path: new URL(this.src).pathname,
+      cue: this.dataset.combatSfx ?? null,
+      rate: this.playbackRate,
+      volume: this.volume,
+      preservesPitch: this.preservesPitch,
+      delayMs: Number(this.dataset.combatSfxDelay ?? 0),
+    })
     return Promise.resolve()
   }
   HTMLMediaElement.prototype.pause = function pause() {
@@ -7572,6 +7581,16 @@ const fireTarget = blockedByPotion.enemies
   .sort((a, b) => b.hp + b.block - a.hp - a.block)[0]
 assert(fireTarget && fireTarget.hp + fireTarget.block >= 4,
   'the browser Fire Potion playtest needs a target that can take all 4 damage')
+const fireSfxCombatId = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.combatId = `${run.combat.combatId}-fire-sfx`
+  run.combat.presentationEvents = []
+  debug.setRun(run)
+  return run.combat.combatId
+})
+await page.waitForFunction((combatId) => window.__STS_DEBUG__.getState().combatId === combatId, fireSfxCombatId)
+const firePotionSoundsBefore = await page.evaluate(() => window.__SFX_DETAILS__.length)
 await page.locator('.combat__actions').getByRole('button', { name: /Fire Potion/ }).click()
 await page.waitForSelector('.enemy--targeted')
 await page.locator('.prompt').evaluate(async (element) => {
@@ -7582,11 +7601,20 @@ await page.locator(
   `.enemy--targeted:not(:disabled)[aria-label*="${fireTarget.hp} of ${fireTarget.maxHp} hit points"]`,
 ).first().click()
 await page.waitForFunction(() => !window.__STS_DEBUG__.getState().players[0].potions.includes('fire_potion'))
+await page.waitForTimeout(400)
 const firedPotion = await readState()
+const firePotionSounds = await page.evaluate((before) => window.__SFX_DETAILS__.slice(before), firePotionSoundsBefore)
 check('a targeted potion waits for an enemy, then consumes itself', () => {
   const durability = firedPotion.enemies.reduce((sum, enemy) => sum + enemy.hp + enemy.block, 0)
   assertEqual(durability, durabilityBeforePotion - 4)
   assertEqual(firedPotion.players[0].potions.includes('fire_potion'), false)
+})
+check('an actual Potion use has one UI click plus its personal effect, without duplicate UI audio', () => {
+  assertEqual(firePotionSounds.filter((sound) => !sound.cue && sound.path === '/assets/sfx/ui.ogg').length, 1)
+  assertEqual(firePotionSounds.filter((sound) => sound.cue === 'potion:fire_potion').length, 2,
+    `captured ${JSON.stringify(firePotionSounds)}`)
+  assertEqual(firePotionSounds.filter((sound) =>
+    sound.cue === 'potion:fire_potion' && sound.path === '/assets/sfx/ui.ogg').length, 0)
 })
 
 const explosiveTarget = firedPotion.enemies
@@ -7897,6 +7925,10 @@ const firstPlayerId = watcherPlayerId
 const secondPlayerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1]?.id)
 if (!firstEnemyId) throw new Error('personal VFX fixture needs an actor and enemy')
 if (!secondPlayerId) throw new Error('personal VFX fixture needs two players')
+await page.evaluate(() => {
+  localStorage.setItem('sts-sfx-enabled', 'on')
+  window.__SFX_DETAILS__ = []
+})
 const rowTargetFixture = await page.evaluate((livingUid) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -7921,6 +7953,8 @@ await publishPresentationEvent({
   enemyRow: rowTargetFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await vfxTarget().waitFor()
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:ironclad:strike_ironclad:base').length === 2)
 const strikeOverflow = await page.locator('.board').evaluate((board) => ({
   overflowX: getComputedStyle(board).overflowX,
   scrollbarWidth: getComputedStyle(board).scrollbarWidth,
@@ -7968,6 +8002,8 @@ await publishPresentationEvent({
   playerIds: [], upgraded: false, copied: false, energy: 2,
 })
 await vfxTarget().waitFor()
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:ironclad:bash:base').length === 3)
 const bashPresentation = await vfxTarget().evaluate((vfx) => ({
   family: vfx.getAttribute('data-vfx-family'),
   image: getComputedStyle(vfx).backgroundImage,
@@ -7986,6 +8022,8 @@ await publishPresentationEvent({
   upgraded: false, copied: false, energy: 1,
 })
 await vfxActor().waitFor()
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:defect:zap:base').length === 3)
 const zapPresentation = await vfxActor().evaluate((vfx) => ({
   family: vfx.getAttribute('data-vfx-family'),
   image: getComputedStyle(vfx).backgroundImage,
@@ -8004,6 +8042,8 @@ await publishPresentationEvent({
   upgraded: false, copied: false, energy: 1,
 })
 await vfxActor().waitFor()
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:watcher:pray:base').length === 3)
 const prayPresentation = await vfxActor().evaluate((vfx) => ({
   family: vfx.getAttribute('data-vfx-family'),
   tone: vfx.getAttribute('data-vfx-tone'),
@@ -8040,6 +8080,7 @@ await publishPresentationEvent({
   kind: 'potion', actorId: firstPlayerId, sourceId: 'fire_potion', enemyIds: [firstEnemyId], playerIds: [],
 })
 await vfxTarget().waitFor()
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) => sound.cue === 'potion:fire_potion').length === 2)
 const potionPresentation = await vfxTarget().evaluate((vfx) => ({
   kind: vfx.getAttribute('data-vfx-kind'),
   family: vfx.getAttribute('data-vfx-family'),
@@ -8048,6 +8089,7 @@ const potionPresentation = await vfxTarget().evaluate((vfx) => ({
   toneColor: getComputedStyle(vfx).getPropertyValue('--vfx-tone-color').trim(),
   ringColor: getComputedStyle(vfx, '::before').borderTopColor,
 }))
+const personalSounds = await page.evaluate(() => window.__SFX_DETAILS__.filter((sound) => sound.cue))
 check('personal card and potion events render distinct authoritative recipes', () => {
   assertEqual(strikePresentation.family, 'slash')
   assertEqual(strikePresentation.motion, 'lunge')
@@ -8073,6 +8115,100 @@ check('personal card and potion events render distinct authoritative recipes', (
   assertEqual(potionPresentation.motion, 'throw')
   assert(potionPresentation.image.includes('potion-burst.webp'), potionPresentation.image)
 })
+check('personal VFX events carry their matching layered SFX identity', () => {
+  const soundsFor = (cue) => personalSounds.filter((sound) => sound.cue === cue)
+  const strike = soundsFor('card:ironclad:strike_ironclad:base')
+  const bash = soundsFor('card:ironclad:bash:base')
+  const zap = soundsFor('card:defect:zap:base')
+  const pray = soundsFor('card:watcher:pray:base')
+  const potion = soundsFor('potion:fire_potion')
+  assertEqual(strike.length, 2, 'Strike should layer its slash and personal accent')
+  assertEqual(bash.length, 3, 'Bash should layer impact, block weight, and its accent')
+  assertEqual(zap.length, 3, 'Zap should layer channel, electric impact, and its accent')
+  assertEqual(pray.length, 3, 'Pray should layer mantra, recovery, and its accent')
+  assertEqual(potion.length, 2, 'a potion should layer its effect and identity')
+  assert(new Set([strike, bash, zap, pray, potion].map((sounds) =>
+    sounds.map(({ path, rate }) => `${path}@${rate}`).join('|'))).size === 5,
+  'iconic actions must remain audibly distinct')
+  assert(personalSounds.every((sound) => sound.rate !== 1 && sound.preservesPitch === false),
+    'personal sounds must apply their tuned pitch instead of generic playback')
+  assert([strike, bash, zap, pray, potion].every((sounds) => sounds.some((sound) => sound.delayMs >= 36)),
+    'each action needs an audible timed identity accent')
+})
+
+await vfxTarget().waitFor({ state: 'detached' })
+const deltaMixStart = await page.evaluate(() => window.__SFX_DETAILS__.length)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  const enemy = run.combat.enemies.find((candidate) => !candidate.dead)
+  const history = run.combat.presentationEvents ?? []
+  const seq = history.reduce((latest, item) => Math.max(latest, item.seq), 1_000_000) + 1
+  actor.character = 'ironclad'
+  actor.block += 1
+  actor.maxHp += 1
+  actor.hp += 1
+  actor.hand.push({ uid: 'personal-sfx-draw', defId: 'strike_ironclad', upgraded: false })
+  if (enemy) enemy.weak += 1
+  run.combat.presentationEvents = [...history, {
+    seq, kind: 'card', actorId: actor.id, sourceId: 'defend_ironclad', enemyIds: [], playerIds: [actor.id],
+    upgraded: false, copied: false, energy: 1,
+  }].slice(-12)
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:ironclad:defend_ironclad:base').length === 2)
+const deltaMixSounds = await page.evaluate((start) => window.__SFX_DETAILS__.slice(start), deltaMixStart)
+check('an authoritative personal cue replaces overlapping state-delta sounds', () => {
+  const duplicated = deltaMixSounds.filter((sound) => !sound.cue && [
+    '/assets/sfx/block.ogg', '/assets/sfx/draw.ogg', '/assets/sfx/heal.ogg', '/assets/sfx/weak.ogg',
+  ].includes(sound.path))
+  assertDeepEqual(duplicated, [])
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'watcher'
+  debug.setRun(run)
+})
+await watcherSeat.locator('.seat__portrait > img[src$="/watcher.webp"]').waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'zap', enemyIds: [], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+})
+await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
+  sound.cue === 'card:watcher:zap:base').length >= 2, undefined, { polling: 'raf' })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  window.__SFX_DETAILS__ = []
+  run.combat.combatId = `${run.combat.combatId}-personal-sfx-boundary`
+  debug.setRun(run)
+})
+await page.waitForTimeout(300)
+const combatBoundarySounds = await page.evaluate(() => window.__SFX_DETAILS__.filter((sound) => sound.cue))
+check('a new combat never replays a still-active cue from the prior combat', () => {
+  assertDeepEqual(combatBoundarySounds, [])
+})
+
+const mutedPersonalSoundBefore = await page.evaluate(() => {
+  localStorage.setItem('sts-sfx-enabled', 'off')
+  return window.__SFX_DETAILS__.length
+})
+await publishPresentationEvent({
+  kind: 'potion', actorId: firstPlayerId, sourceId: 'fire_potion', enemyIds: [firstEnemyId], playerIds: [],
+})
+await vfxTarget().waitFor()
+await page.waitForTimeout(100)
+const mutedPersonalSoundAfter = await page.evaluate(() => {
+  localStorage.setItem('sts-sfx-enabled', 'on')
+  return window.__SFX_DETAILS__.length
+})
+check('the global SFX preference also mutes personal combat cues', () => {
+  assertEqual(mutedPersonalSoundAfter, mutedPersonalSoundBefore)
+})
+await vfxTarget().waitFor({ state: 'detached' })
 
 await vfxActor().waitFor({ state: 'detached' })
 const firstActorSeq = await publishPresentationEvent({
@@ -8097,6 +8233,13 @@ check('interleaved teammate events cannot suppress a repeated actor motion', () 
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${secondActorSeq}"]`).waitFor({ state: 'detached' })
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], { character: 'watcher', stance: 'calm' })
+  debug.setRun(run)
+})
+await watcherSeat.locator('.stance-aura--calm').waitFor()
 await page.emulateMedia({ reducedMotion: 'reduce' })
 await publishPresentationEvent({
   kind: 'potion', actorId: firstPlayerId, sourceId: 'energy_potion', enemyIds: [], playerIds: [firstPlayerId],

@@ -72,6 +72,7 @@ import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
+import { cardSfxRecipe, potionSfxRecipe } from './combat-sfx.ts'
 import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
 import type { VfxRecipe } from './combat-vfx.ts'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -90,7 +91,7 @@ import {
   stageScaleFor,
   strikeClass,
 } from './board-signals.ts'
-import { playSoundEffect } from './sfx.ts'
+import { playCombatSound, playSoundEffect } from './sfx.ts'
 
 type CombatScreenProps = {
   state: CombatState
@@ -634,15 +635,19 @@ function useCombatSoundEffects(
       return
     }
     if (restored || state.phase === 'won' || state.phase === 'lost') return
+    const previousPresentationSeq = before.presentationEvents?.at(-1)?.seq ?? 0
+    const actionPresented = (state.presentationEvents?.at(-1)?.seq ?? 0) > previousPresentationSeq
     const priorPlayers = new Map(before.players.map((player) => [player.id, player]))
-    if (state.players.some((player) => player.hp > (priorPlayers.get(player.id)?.hp ?? player.hp))) {
+    if (!actionPresented && state.players.some((player) =>
+      player.hp > (priorPlayers.get(player.id)?.hp ?? player.hp))) {
       playSoundEffect('heal')
     }
     const priorViewer = before.players.find((player) => player.id === viewerId)
-    if (viewer && priorViewer && drawnCardUids(priorViewer.hand, viewer.hand).length > 0) {
+    if (!actionPresented && viewer && priorViewer && drawnCardUids(priorViewer.hand, viewer.hand).length > 0) {
       playSoundEffect('draw')
     }
-    if (state.players.some((player) => player.block !== (priorPlayers.get(player.id)?.block ?? player.block))) {
+    if (!actionPresented && state.players.some((player) =>
+      player.block !== (priorPlayers.get(player.id)?.block ?? player.block))) {
       playSoundEffect('block')
     }
   }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, state, viewerId])
@@ -751,6 +756,58 @@ function usePresentationEvents(
   }, [])
 
   return active
+}
+
+function usePersonalCombatSoundEffects(
+  state: CombatState,
+  events: readonly CombatPresentationEvent[],
+  authoritativeRestoration?: number,
+  authoritativeConnected?: boolean,
+) {
+  const combatId = useRef(state.combatId)
+  const played = useRef(new Set<number>())
+  const pending = useRef(new Map<number, () => void>())
+  const previousRestoration = useRef(authoritativeRestoration)
+  const previousConnected = useRef(authoritativeConnected)
+
+  useEffect(() => {
+    const reset = combatId.current !== state.combatId ||
+      authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current ||
+      authoritativeConnected === false || previousConnected.current === false
+    combatId.current = state.combatId
+    previousRestoration.current = authoritativeRestoration
+    previousConnected.current = authoritativeConnected
+    if (reset) {
+      for (const cancel of pending.current.values()) cancel()
+      pending.current.clear()
+      played.current.clear()
+      return
+    }
+    const active = new Set(events.map((event) => event.seq))
+    for (const [seq, cancel] of pending.current) {
+      if (active.has(seq)) continue
+      cancel()
+      pending.current.delete(seq)
+    }
+    for (const event of events) {
+      if (played.current.has(event.seq)) continue
+      if (event.kind === 'potion') {
+        played.current.add(event.seq)
+        pending.current.set(event.seq, playCombatSound(potionSfxRecipe(event.sourceId)))
+        continue
+      }
+      const actor = state.players.find((player) => player.id === event.actorId)
+      if (!actor) continue
+      played.current.add(event.seq)
+      pending.current.set(event.seq,
+        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded)))
+    }
+  }, [authoritativeConnected, authoritativeRestoration, events, state.combatId, state.players])
+
+  useEffect(() => () => {
+    for (const cancel of pending.current.values()) cancel()
+    pending.current.clear()
+  }, [])
 }
 
 export function CombatScreen({
@@ -902,6 +959,12 @@ export function CombatScreen({
   const { struck, beats, damage } = useStruck(state, authoritativeRestoration, authoritativeConnected)
   const falling = useFalling(state, authoritativeRestoration, authoritativeConnected)
   const livePresentationEvents = usePresentationEvents(state, authoritativeRestoration, authoritativeConnected)
+  usePersonalCombatSoundEffects(
+    state,
+    livePresentationEvents,
+    authoritativeRestoration,
+    authoritativeConnected,
+  )
   const activeVfx = useMemo<ActiveCombatVfx[]>(() => {
     const resolved: ActiveCombatVfx[] = []
     for (const event of livePresentationEvents) {
@@ -1874,6 +1937,7 @@ export function CombatScreen({
     ...state.enemies.map((enemy) => [`enemy:${enemy.uid}`, enemy.weak] as const),
   ]
   const previousWeakByActor = useRef(new Map(weakByActor))
+  const previousWeakPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? 0)
   const previousWeakRestoration = useRef(authoritativeRestoration)
   const previousWeakConnected = useRef(authoritativeConnected)
   useEffect(() => {
@@ -1882,7 +1946,11 @@ export function CombatScreen({
       authoritativeConnected === false || previousWeakConnected.current === false
     previousWeakRestoration.current = authoritativeRestoration
     previousWeakConnected.current = authoritativeConnected
-    if (!restored && weakByActor.some(([id, weak]) => weak > (previousWeakByActor.current.get(id) ?? 0))) {
+    const presentationSeq = state.presentationEvents?.at(-1)?.seq ?? 0
+    const actionPresented = presentationSeq > previousWeakPresentationSeq.current
+    previousWeakPresentationSeq.current = presentationSeq
+    if (!restored && !actionPresented &&
+      weakByActor.some(([id, weak]) => weak > (previousWeakByActor.current.get(id) ?? 0))) {
       playSoundEffect('weak')
     }
     previousWeakByActor.current = new Map(weakByActor)

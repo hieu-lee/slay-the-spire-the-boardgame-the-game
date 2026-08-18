@@ -6,6 +6,7 @@ import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } fr
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
+import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
   MIN_STAGE_SCALE,
   STAGE_GAP_REM,
@@ -148,6 +149,54 @@ check('all physical potion IDs have explicit VFX recipes', () => {
     toneColors.add(color)
   }
   assertEqual(toneColors.size, Object.keys(POTIONS).length, 'every Potion keeps a visible tone identity')
+})
+
+check('every card and acting character resolves a bounded personal SFX recipe', () => {
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  const sounds = new Set(['ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak'])
+  for (const card of Object.values(CARDS)) {
+    for (const character of characters) {
+      const base = cardSfxRecipe(character, card.id)
+      const upgraded = cardSfxRecipe(character, `${card.id}+`)
+      assertEqual(JSON.stringify(upgraded), JSON.stringify(base), `${character}/${card.id}+ keeps its sound identity`)
+      assertEqual(base.cue, `card:${character}:${card.id}:base`)
+      assert(base.layers.length > 1 && base.layers.length <= 3, `${base.cue} has a compact layered recipe`)
+      for (const layer of base.layers) {
+        assert(sounds.has(layer.sound), `${base.cue} uses a known sound`)
+        assert(layer.rate >= 0.65 && layer.rate <= 1.45, `${base.cue} playback rate stays usable`)
+        assert(layer.volume > 0 && layer.volume <= 0.3, `${base.cue} volume stays below generic UI audio`)
+      }
+      assert(base.layers.at(-1).delayMs >= 36, `${base.cue} has a perceptible identity accent`)
+    }
+  }
+  const accents = characters.flatMap((character) => Object.values(CARDS).map((card) =>
+    JSON.stringify(cardSfxRecipe(character, card.id).layers.at(-1))))
+  assertEqual(new Set(accents).size, accents.length,
+    'every acting-character/card pair has a distinct sound, coarse pitch, or timing accent')
+})
+
+check('iconic cards and modes keep audible identities', () => {
+  const signature = (recipe) => JSON.stringify(recipe.layers)
+  assert(signature(cardSfxRecipe('ironclad', 'strike_ironclad')) !== signature(cardSfxRecipe('ironclad', 'bash')),
+    'Strike and Bash cannot collapse to one impact')
+  assert(signature(cardSfxRecipe('defect', 'zap')) !== signature(cardSfxRecipe('defect', 'ball_lightning')),
+    'Zap and Ball Lightning have separately tuned electricity')
+  assert(signature(cardSfxRecipe('watcher', 'vigilance')) !== signature(cardSfxRecipe('watcher', 'eruption')),
+    'Calm and Wrath have different sound shapes')
+  assert(signature(cardSfxRecipe('silent', 'deadly_poison')) !== signature(cardSfxRecipe('silent', 'blade_dance')),
+    'poison and Shivs stay distinct')
+  assert(signature(cardSfxRecipe('ironclad', 'bash')) !== signature(cardSfxRecipe('watcher', 'bash')),
+    'the acting character colors a cross-character card')
+  assertEqual(new Set([0, 1, 2].map((mode) => signature(cardSfxRecipe('watcher', 'wish', mode)))).size, 3,
+    'all Wish choices have their own sound')
+})
+
+check('all physical potions have distinct audible cues', () => {
+  const recipes = Object.keys(POTIONS).map(potionSfxRecipe)
+  assertEqual(recipes.length, 21)
+  assertEqual(new Set(recipes.map((recipe) => recipe.cue)).size, recipes.length, 'potion cue IDs are unique')
+  assertEqual(new Set(recipes.map((recipe) => JSON.stringify(recipe.layers))).size, recipes.length,
+    'the potion deck does not collapse to generic drink audio')
 })
 
 

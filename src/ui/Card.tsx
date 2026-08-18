@@ -370,7 +370,7 @@ export function Card({
     <button
       type="button"
       className={className}
-      data-sfx={def.type === 'attack' ? 'attack' : def.type === 'power' ? 'magic' : 'card'}
+      data-sfx="card"
       style={{
         ...style,
         // Tilt with distance from the middle, and drop the outer cards a

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { enemyDef } from '../game/enemies.ts'
+import type { CombatSfxRecipe } from './combat-sfx.ts'
 
 export const SFX_STORAGE_KEY = 'sts-sfx-enabled'
 
@@ -97,8 +98,27 @@ export function playSoundEffect(sound: Sound) {
   playSound(sound)
 }
 
-function playSound(sound: Sound) {
+export function playCombatSound(recipe: CombatSfxRecipe): () => void {
+  if (localStorage.getItem(SFX_STORAGE_KEY) === 'off') return () => {}
+  const timers: number[] = []
+  recipe.layers.forEach((layer) => {
+    const play = () => {
+      if (localStorage.getItem(SFX_STORAGE_KEY) !== 'off') {
+        playSound(layer.sound, layer.volume, layer.rate, recipe.cue, layer.delayMs)
+      }
+    }
+    if (layer.delayMs > 0) timers.push(window.setTimeout(play, layer.delayMs))
+    else play()
+  })
+  return () => timers.forEach((timer) => window.clearTimeout(timer))
+}
+
+function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs = 0) {
   const audio = new Audio(SOUNDS[sound])
-  audio.volume = 0.35
+  audio.volume = volume
+  audio.playbackRate = rate
+  audio.preservesPitch = false
+  if (cue) audio.dataset.combatSfx = cue
+  if (delayMs) audio.dataset.combatSfxDelay = String(delayMs)
   void audio.play().catch(() => {})
 }
