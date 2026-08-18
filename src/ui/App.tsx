@@ -54,6 +54,7 @@ import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampai
 import type { CampaignProgress } from '../game/campaign.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
+import { MapOverlay } from './MapOverlay.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { relicDef } from '../game/relics.ts'
@@ -314,6 +315,9 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
             </>
           ) : null}
         </div>
+        {run.phase !== 'map' && run.phase !== 'setup' ? (
+          <MapOverlay map={visibleMap(run)} act={run.act} bossDefId={run.actBossDefId} />
+        ) : null}
         <details className="game-settings">
           <summary>Menu</summary>
           <div className="setup">
@@ -401,6 +405,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
       {!allocatingCampaignMarks && run.phase === 'map' ? (
         <>
           <MapScreen map={visibleMap(run)} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: visibleMap(run) })} blocked={pendingAcquisition}
+            bossDefId={run.actBossDefId}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
           {!pendingAcquisition && wingBootChoices(run, viewerId).length > 0 ? <section className="room-screen">
             <strong>Wing Boots</strong>

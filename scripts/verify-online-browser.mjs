@@ -251,7 +251,7 @@ try {
   await a.getByRole('button', { name: 'Join voice' }).click()
   await b.getByRole('button', { name: 'Join voice' }).click()
   await c.getByRole('button', { name: 'Join voice' }).click()
-  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: 'Voice 2/2' }).waitFor()))
+  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: '2/2' }).waitFor()))
   await Promise.all([a, b, c].map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
     .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 2)))
   const remoteAudioCounts = await Promise.all([a, b, c].map((page) => page.evaluate(() => [...document.querySelectorAll('audio')]
@@ -260,9 +260,9 @@ try {
   const muted = await a.getByRole('button', { name: 'Unmute' }).getAttribute('aria-pressed')
   await a.screenshot({ path: join(outDir, '01a-live-party-voice.png'), fullPage: true })
   await c.getByRole('button', { name: 'Leave voice' }).click()
-  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/2' }).waitFor()))
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: '1/2' }).waitFor()))
   await c.getByRole('button', { name: 'Join voice' }).click()
-  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: 'Voice 2/2' }).waitFor()))
+  await Promise.all([a, b, c].map((page) => page.locator('.voice__status', { hasText: '2/2' }).waitFor()))
   let voiceLeaveReached
   const voiceLeaveStarted = new Promise((resolve) => { voiceLeaveReached = resolve })
   let releaseVoiceLeave
@@ -276,7 +276,7 @@ try {
   await voiceLeaveStarted
   const stoppedBeforeLeave = await c.evaluate(() => window.__LOCAL_VOICE_STREAMS__.at(-1)
     ?.getAudioTracks().every((track) => track.readyState === 'ended'))
-  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/2' }).waitFor()))
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: '1/2' }).waitFor()))
   check('three browsers establish, mute, and leave native voice', () => {
     assert(remoteAudioCounts.every((count) => count === 2), `remote audio counts: ${remoteAudioCounts.join(', ')}`)
     assertEqual(muted, 'true')
@@ -285,29 +285,66 @@ try {
   releaseVoiceLeave()
   await a.locator('.online-seat', { hasText: 'Cy' }).waitFor({ state: 'detached' })
   await c.close()
-  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/1' }).waitFor()))
+  await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: '1/1' }).waitFor()))
   for (const [dropped, observer, seatName] of [[b, a, 'Bo'], [a, b, 'Ann']]) {
     await dropped.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close(4000, 'test reconnect'))
-    await observer.locator('.online-seat', { hasText: seatName }).locator('small', { hasText: 'away' }).waitFor()
-    await observer.locator('.voice__status', { hasText: 'Voice 0/1' }).waitFor()
-    await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: 'Voice 1/1' }).waitFor()))
+    await observer.locator('.online-seat', { hasText: seatName }).locator('.online-seat__class em', { hasText: 'away' }).waitFor()
+    await observer.locator('.voice__status', { hasText: '0/1' }).waitFor()
+    await Promise.all([a, b].map((page) => page.locator('.voice__status', { hasText: '1/1' }).waitFor()))
     await Promise.all([a, b].map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
       .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 1)))
   }
   check('active voice recovers after either signaling socket reconnects', () => {})
   await b.getByRole('button', { name: 'Leave voice' }).click()
-  await a.locator('.voice__status', { hasText: 'Voice 0/1' }).waitFor()
+  await a.locator('.voice__status', { hasText: '0/1' }).waitFor()
   await a.getByRole('button', { name: 'Leave voice' }).click()
   await a.screenshot({ path: join(outDir, '01-two-player-lobby.png'), fullPage: true })
 
   const [aOnline, bOnline] = await Promise.all([
-    a.locator('.online-seat', { hasText: 'online' }).count(),
-    b.locator('.online-seat', { hasText: 'online' }).count(),
+    a.locator('.online-seat[aria-label*="online"]').count(),
+    b.locator('.online-seat[aria-label*="online"]').count(),
   ])
   check('two browsers converge in one lobby', () => {
     assertEqual(healthAfterDoubleCreate.rooms, 1, 'double create orphaned a room')
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
+  })
+
+  const lobbyChrome = await a.evaluate(() => {
+    const table = document.querySelector('.online-lobby__table')
+    const mine = document.querySelector('.online-seat--you')
+    const seats = [...document.querySelectorAll('.online-seat:not(.online-seat--empty)')]
+    const box = table.getBoundingClientRect()
+    return {
+      // The panel wears the same chamfer + hard shadow as every other painted
+      // panel, rather than the flat rounded card this screen used to be.
+      chamfered: getComputedStyle(table).clipPath !== 'none',
+      rounded: getComputedStyle(table).borderRadius,
+      portraits: seats.filter((seat) => seat.querySelector('.online-seat__portrait img')).length,
+      mineIsFirst: mine === seats[0],
+      overflowsX: document.documentElement.scrollWidth > window.innerWidth + 1,
+      fits: box.left >= -1 && box.right <= window.innerWidth + 1,
+      startKeyed: getComputedStyle(document.querySelector('.online-lobby__start')).clipPath !== 'none',
+    }
+  })
+  await a.setViewportSize({ width: 380, height: 820 })
+  await a.waitForTimeout(250)
+  const narrowLobby = await a.evaluate(() => ({
+    overflowsX: document.documentElement.scrollWidth > window.innerWidth + 1,
+    seats: document.querySelectorAll('.online-seat').length,
+  }))
+  await a.screenshot({ path: join(outDir, '01c-lobby-narrow.png'), fullPage: true })
+  await a.setViewportSize({ width: 1280, height: 800 })
+  await a.waitForTimeout(250)
+  check('the party room is dressed like the rest of the game and fits a phone', () => {
+    assert(lobbyChrome.chamfered, 'the lobby panel is not chamfered like the other painted panels')
+    assertEqual(lobbyChrome.rounded, '0px', 'the pre-chrome rounded card is still there')
+    assertEqual(lobbyChrome.portraits, 2, 'a taken seat did not show its character portrait')
+    assert(lobbyChrome.mineIsFirst, 'the viewer\'s own seat is not the one marked')
+    assert(lobbyChrome.startKeyed, 'Enter the Spire is not wearing the shared key skin')
+    assert(!lobbyChrome.overflowsX && lobbyChrome.fits, 'the lobby panel overflows a desktop window')
+    assertEqual(narrowLobby.seats, 4, 'the four places are not all shown on a narrow window')
+    assert(!narrowLobby.overflowsX, 'the lobby scrolls sideways at 380px')
   })
   await Promise.all([openLobbySettings(a), openLobbySettings(b)])
   await a.locator('.online-lobby').getByLabel('Ascension').selectOption('3')
@@ -3380,9 +3417,9 @@ try {
   for (const [index, character] of ['silent', 'defect', 'watcher'].entries()) {
     await enterOnline(fourPages[index + 1], ['Sable', 'Cobalt', 'Violet'][index], character, fourCode)
   }
-  await fourPages[0].locator('.online-seat').filter({ hasText: 'online' }).nth(3).waitFor()
+  await fourPages[0].locator('.online-seat[aria-label*="online"]').nth(3).waitFor()
   for (const page of fourPages) await page.getByRole('button', { name: 'Join voice' }).click()
-  await Promise.all(fourPages.map((page) => page.locator('.voice__status', { hasText: 'Voice 3/3' }).waitFor()))
+  await Promise.all(fourPages.map((page) => page.locator('.voice__status', { hasText: '3/3' }).waitFor()))
   await Promise.all(fourPages.map((page) => page.waitForFunction(() => [...document.querySelectorAll('audio')]
     .filter((audio) => audio.srcObject?.getAudioTracks().length).length === 3)))
   const fourVoiceTracks = await Promise.all(fourPages.map((page) => page.evaluate(() => [...document.querySelectorAll('audio')]

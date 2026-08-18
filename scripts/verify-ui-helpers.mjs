@@ -5,12 +5,16 @@ import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import {
+  MIN_STAGE_SCALE,
+  STAGE_GAP_REM,
+  STAGE_MARGIN_REM,
   cardMotionDestination,
   drawnCardUids,
   healthBand,
   pendingUiSurvivesContext,
   shouldAnimateOnlineOpeningHand,
   shouldDisarmCardFlight,
+  stageScaleFor,
   strikeClass,
 } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
@@ -148,6 +152,27 @@ check('uncommitted in-hand actions disarm their decorative flight', () => {
   assertEqual(shouldDisarmCardFlight(true, false), true)
   assertEqual(shouldDisarmCardFlight(true, true), false)
   assertEqual(shouldDisarmCardFlight(false, false), false, 'virtual copies never arm an in-hand flight')
+})
+
+// The Slime Boss splits into three slimes PER PLAYER, so the actor count is not
+// bounded by the party — this is the case that used to push every seat off the
+// board while the auto-scroll centred on enemies.
+check('the stage shrinks only as far as it has to', () => {
+  const rem = 16
+  const fits = (actors) => (actors * STAGE_GAP_REM + STAGE_MARGIN_REM) * rem
+  assertEqual(stageScaleFor(6, fits(6), rem), 1, 'a stage that already fits is never shrunk')
+  assertEqual(stageScaleFor(6, fits(6) * 2, rem), 1, 'nor is one with room to spare blown up')
+  assertEqual(stageScaleFor(0, 1280, rem), 1, 'an empty stage has nothing to scale')
+  assertEqual(stageScaleFor(6, 0, rem), 1, 'an unmeasured board leaves the stage alone')
+
+  // Half the room the stage wants, so it would halve — but the floor catches it.
+  assertEqual(stageScaleFor(12, fits(12) / 2, rem), MIN_STAGE_SCALE, 'the stage never shrinks past the floor')
+  assertEqual(stageScaleFor(12, fits(12) * 0.8, rem), 0.8, 'and shrinks exactly as much as it lacks above it')
+
+  // Four players against a split Slime Boss: 4 seats, 12 slimes, the boss.
+  const slimeSplit = stageScaleFor(17, 1280, rem)
+  assert(slimeSplit >= MIN_STAGE_SCALE, `the floor holds: ${slimeSplit}`)
+  assert(slimeSplit < 1, 'and seventeen actors on a 1280px board do need shrinking')
 })
 
 report('ui helpers')

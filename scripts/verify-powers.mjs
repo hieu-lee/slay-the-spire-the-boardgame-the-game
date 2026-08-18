@@ -606,7 +606,7 @@ check('Infinite Blades resolves shared-supply overflow in the chosen Start-of-Tu
   assertEqual(skipped.enemies[0].hp, 20, 'explicit skips deal no damage')
 })
 
-check('Noxious Fumes targets one enemy next turn, while its upgrade poisons all enemies', () => {
+check('Noxious Fumes targets one enemy next turn, while its upgrade poisons that enemy\'s row', () => {
   const fumes = instance('noxious_fumes')
   const beforePlay = combat(
     [player({ id: 'p1', name: 'Ann', character: 'silent', hand: [fumes], energy: 1, draw: deck() })],
@@ -635,7 +635,19 @@ check('Noxious Fumes targets one enemy next turn, while its upgrade poisons all 
     })],
     [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 })],
   ))
-  assertDeepEqual(upgraded.enemies.map((target) => target.poison), [1, 1])
+  // The upgrade prints the AoE starburst, so it is one row plus any boss, and
+  // the automatic choice takes the first listed target's row.
+  assertDeepEqual(upgraded.enemies.map((target) => target.poison), [1, 0])
+
+  const withBoss = startPlayerTurn(combat(
+    [player({
+      id: 'p1', name: 'Ann', character: 'silent',
+      powers: [instance('noxious_fumes', true)], draw: deck(),
+    })],
+    [enemy({ uid: 'e1' }), enemy({ uid: 'e2', row: 1 }), enemy({ uid: 'boss', row: 2, isBoss: true })],
+  ))
+  assertDeepEqual(withBoss.enemies.map((target) => target.poison), [1, 0, 1],
+    'a boss stands in every row, so an AoE always reaches it')
 })
 
 check('the Start of Turn reshuffle fires an on-shuffle Power', () => {
@@ -1091,14 +1103,19 @@ check('an end-of-turn draw is preserved when a discard order was submitted', () 
   const defend = instance('defend_ironclad')
   const drawn = instance('strike_ironclad')
   const state = combat([
-    player({ hand: [defend, bash], draw: [drawn], powers: [instance('fixture_end_draw')] }),
+    // A Claw held back makes the discard top worth arranging, which is what
+    // keeps the turn at the prompt long enough to inspect the post-trigger hand.
+    player({
+      hand: [defend, bash], draw: [drawn], discard: [instance('claw')],
+      powers: [instance('fixture_end_draw')],
+    }),
   ], [enemy()])
   const prepared = beginEndPlayerTurn(state)
   assertEqual(prepared.phase, 'discard', 'the post-trigger hand is offered for ordering')
   assertEqual(prepared.players[0].hand.length, 3, 'the drawn card is present in that choice')
   const next = endPlayerTurn(prepared, { p1: [bash.uid, drawn.uid, defend.uid] })
   assertEqual(next.players[0].hand.length, 0, 'the post-trigger hand is discarded')
-  assertEqual(next.players[0].discard.length, 3, 'the drawn card is not lost')
+  assertEqual(next.players[0].discard.length, 4, 'the drawn card is not lost, and the Claw is still under it')
   assertEqual(next.players[0].discard.at(-1).uid, defend.uid, 'the post-trigger choice controls the top')
   delete CARDS.fixture_end_draw
 })

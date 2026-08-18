@@ -470,10 +470,50 @@ check('end of turn discards every hand', () => {
   assertEqual(next.phase, 'enemy', 'the Enemy Turn follows')
 })
 
+// The prompt used to fire every single round, for every seat, whatever they
+// held — which is what made ending a co-op turn feel like two rounds of clicking.
+check('the discard prompt appears only when the arrangement can matter', () => {
+  const ordinary = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('bash'), instance('defend_ironclad'), instance('strike_ironclad')] }),
+  ], [makeEnemy()]))
+  assertEqual(ordinary.phase, 'enemy', 'an ordinary hand has no arrangement worth stopping for')
+  assertEqual(ordinary.players[0].hand.length, 0, 'and it was discarded on the way past')
+
+  const clawed = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
+  ], [makeEnemy()]))
+  assertEqual(clawed.phase, 'discard', 'a Claw makes the top of the discard pile worth choosing')
+
+  const single = beginEndPlayerTurn(combat([
+    makePlayer({ hand: [instance('bash')], draw: [instance('claw')] }),
+  ], [makeEnemy()]))
+  assertEqual(single.phase, 'enemy', 'one card has only one arrangement, Claw or not')
+
+  // `createCombat` zeroes this, so it has to be set on the built state.
+  const withRetain = combat([
+    makePlayer({ hand: [instance('bash'), instance('defend_ironclad')] }),
+  ], [makeEnemy()])
+  withRetain.players[0].retainCardsThisTurn = 1
+  const retaining = beginEndPlayerTurn(withRetain)
+  assertEqual(retaining.phase, 'discard', 'an optional Retain is always a real choice')
+
+  const withCasualty = combat([
+    makePlayer({ hand: [instance('bash'), instance('defend_ironclad')], draw: [instance('claw')] }),
+    makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, hand: [instance('slice')] }),
+    // Last Stand keeps the fight going after a death, and it needs a boss.
+  ], [makeEnemy({ row: 1, isBoss: true })])
+  withCasualty.lastStand = true
+  Object.assign(withCasualty.players[0], { hp: 0, dead: true })
+  const dead = beginEndPlayerTurn(withCasualty)
+  assertEqual(dead.phase, 'enemy', 'a fallen player is not asked to arrange anything')
+})
+
 check('players choose which card is on top when discarding their hand', () => {
   const bash = instance('bash')
   const deflect = instance('deflect')
-  const state = combat([makePlayer({ hand: [deflect, bash] })], [makeEnemy()])
+  // A Claw in the deck is what makes the top of the discard pile worth arranging,
+  // and so what makes the turn stop to ask.
+  const state = combat([makePlayer({ hand: [deflect, bash], draw: [instance('claw')] })], [makeEnemy()])
   const next = endPlayerTurn(state, { p1: [bash.uid, deflect.uid] })
   assertEqual(next.players[0].discard.at(-1)?.uid, deflect.uid, 'the chosen 0-cost card lands on top')
 
@@ -1110,7 +1150,9 @@ check('Curses resolve their printed end-of-turn rules before discard', () => {
   const shame = instance('shame')
   const pain = instance('pain')
   const state = combat([
-    makePlayer({ hand: [decay, doubt, shame, pain], hp: 8, block: 2 }),
+    // The Claw is what keeps the turn parked at the discard prompt, so the hand
+    // is still there to inspect after the curses have had their say.
+    makePlayer({ hand: [decay, doubt, shame, pain], draw: [instance('claw')], hp: 8, block: 2 }),
   ], [makeEnemy()])
   const next = beginEndPlayerTurn(state)
   assertEqual(next.players[0].hp, 8, 'Decay damage is absorbed by Block')
@@ -4003,15 +4045,17 @@ check('the card-play ledger resets each turn and ignores refused plays', () => {
   assertEqual(reset.players[0].cardsPlayedThisTurn, 0)
 })
 
-check('Die Die Die hits every enemy and Rainbow channels its three Orbs in order', () => {
+check('Die Die Die sweeps one row and the boss, and Rainbow channels its three Orbs in order', () => {
   for (const upgraded of [false, true]) {
     const die = instance('die_die_die', upgraded)
     const died = playCard(combat([makePlayer({ hand: [die] })], [
       makeEnemy({ uid: 'left', hp: 10, maxHp: 10, row: 0 }),
       makeEnemy({ uid: 'right', hp: 10, maxHp: 10, row: 1 }),
       makeEnemy({ uid: 'boss', hp: 10, maxHp: 10, row: 2, isBoss: true }),
-    ]), 'p1', die.uid, { enemyUid: null, playerId: null })
-    assertDeepEqual(died.enemies.map((enemy) => enemy.hp), Array(3).fill(upgraded ? 6 : 7))
+    ]), 'p1', die.uid, { enemyUid: 'left', playerId: null })
+    const swung = upgraded ? 6 : 7
+    assertDeepEqual(died.enemies.map((enemy) => enemy.hp), [swung, 10, swung],
+      'the AoE symbol is one row plus the boss, never the enemy standing in another row')
     assertEqual(died.players[0].exhaust[0].uid, die.uid)
 
     const rainbow = instance('rainbow', upgraded)
@@ -4053,7 +4097,7 @@ check('a lethal first repeated Evoke ends combat after removing only the chosen 
   assert(!forced.log.includes('Defect channels 1 lightning'), 'an Orb that was never placed was logged as channeled')
 })
 
-check('Immolate and the Silent clouds reach every enemy before their later clauses', () => {
+check('Immolate and the Silent clouds reach one row and the boss before their later clauses', () => {
   for (const upgraded of [false, true]) {
     const enemies = [
       makeEnemy({ uid: 'left', hp: 20, maxHp: 20, row: 0 }),
@@ -4062,29 +4106,30 @@ check('Immolate and the Silent clouds reach every enemy before their later claus
     ]
     const immolate = instance('immolate', upgraded)
     const burned = playCard(combat([makePlayer({ hand: [immolate] })], enemies), 'p1', immolate.uid, {
-      enemyUid: null, playerId: null,
+      enemyUid: 'left', playerId: null,
     })
-    assertDeepEqual(burned.enemies.map((enemy) => enemy.hp), Array(3).fill(upgraded ? 13 : 15))
+    const scorched = upgraded ? 13 : 15
+    assertDeepEqual(burned.enemies.map((enemy) => enemy.hp), [scorched, 20, scorched])
     assertEqual(burned.players[0].draw.filter((card) => card.defId === 'daze').length, 2)
 
     const wail = instance('piercing_wail', upgraded)
     const wailed = playCard(combat([makePlayer({ hand: [wail] })], enemies), 'p1', wail.uid, {
-      enemyUid: null, playerId: null,
+      enemyUid: 'left', playerId: null,
     })
-    assertDeepEqual(wailed.enemies.map((enemy) => enemy.weak), [1, 1, 1])
+    assertDeepEqual(wailed.enemies.map((enemy) => enemy.weak), [1, 0, 1])
     assertEqual(wailed.players[0].block, upgraded ? 3 : 1)
 
     const cloud = instance('crippling_cloud', upgraded)
     const clouded = playCard(combat([makePlayer({ hand: [cloud] })], enemies), 'p1', cloud.uid, {
-      enemyUid: null, playerId: null,
+      enemyUid: 'left', playerId: null,
     })
-    assertDeepEqual(clouded.enemies.map((enemy) => enemy.poison), Array(3).fill(upgraded ? 2 : 1))
-    assertDeepEqual(clouded.enemies.map((enemy) => enemy.weak), [1, 1, 1])
+    assertDeepEqual(clouded.enemies.map((enemy) => enemy.poison), [upgraded ? 2 : 1, 0, upgraded ? 2 : 1])
+    assertDeepEqual(clouded.enemies.map((enemy) => enemy.weak), [1, 0, 1])
   }
 
   const lethal = instance('immolate')
   const won = playCard(combat([makePlayer({ hand: [lethal] })], [makeEnemy({ hp: 5, maxHp: 5 })]),
-    'p1', lethal.uid, { enemyUid: null, playerId: null })
+    'p1', lethal.uid, { enemyUid: 'e1', playerId: null })
   assertEqual(won.phase, 'won')
   assertEqual(won.players[0].draw.filter((card) => card.defId === 'daze').length, 0,
     'Immolate added Daze after its attack had already won combat')
@@ -5190,7 +5235,11 @@ check('Defragment stacks only on Orb end-of-turn effects and loses Ethereal when
   const upgraded = instance('defragment', true)
   const ethereal = beginEndPlayerTurn(combat([makePlayer({ hand: [base, upgraded] })], [makeEnemy()]))
   assertDeepEqual(ethereal.players[0].exhaust.map((card) => card.uid), [base.uid])
-  assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [upgraded.uid])
+  // One card left to put down is not a decision, so the turn no longer stops to
+  // ask; the surviving copy goes straight to the discard pile.
+  assertDeepEqual(ethereal.players[0].hand.map((card) => card.uid), [])
+  assertDeepEqual(ethereal.players[0].discard.map((card) => card.uid), [upgraded.uid],
+    'only the Ethereal copy was exhausted')
 })
 
 check('Static Discharge boosts only Lightning Orb end-of-turn effects', () => {
@@ -6090,7 +6139,9 @@ check('Blur gains its printed discard-this-turn bonus on both faces', () => {
   }
 })
 
-check('All-Out Attack discards the chosen card after hitting every enemy', () => {
+// The printed card carries the AoE starburst, exactly as Cleave does — one row
+// and any boss, not the whole board.
+check('All-Out Attack discards the chosen card after sweeping one row', () => {
   for (const upgraded of [false, true]) {
     const attack = instance('all_out_attack', upgraded)
     const chosen = instance('deflect')
@@ -6100,9 +6151,9 @@ check('All-Out Attack discards the chosen card after hitting every enemy', () =>
     ], [
       makeEnemy({ uid: 'left', hp: 10, maxHp: 10 }),
       makeEnemy({ uid: 'right', row: 1, hp: 10, maxHp: 10 }),
-    ]), 'p1', attack.uid, { enemyUid: null, playerId: null, discardUids: [chosen.uid] })
+    ]), 'p1', attack.uid, { enemyUid: 'left', playerId: null, discardUids: [chosen.uid] })
     const damage = upgraded ? 3 : 2
-    assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [10 - damage, 10 - damage])
+    assertDeepEqual(state.enemies.map((enemy) => enemy.hp), [10 - damage, 10])
     assertDeepEqual(state.players[0].hand.map((card) => card.uid), [kept.uid])
     assertDeepEqual(state.players[0].discard.map((card) => card.uid), [chosen.uid, attack.uid])
   }
@@ -6128,7 +6179,7 @@ check('Reflex and Tactician react only when a card effect discards them', () => 
     const reflexState = playCard(combat([
       makePlayer({ character: 'silent', hand: [attack, reflex, kept], draw: Array.from({ length: 5 }, () => instance('deflect')) }),
     ], [makeEnemy()]), 'p1', attack.uid, {
-      enemyUid: null, playerId: null, discardUids: [reflex.uid],
+      enemyUid: 'e1', playerId: null, discardUids: [reflex.uid],
     })
     assertEqual(reflexState.players[0].hand.length, upgraded ? 4 : 3)
     assert(reflexState.players[0].discard.some((card) => card.uid === reflex.uid))
@@ -6137,7 +6188,7 @@ check('Reflex and Tactician react only when a card effect discards them', () => 
     const tacticianState = playCard(combat([
       makePlayer({ character: 'silent', hand: [attack, tactician, kept], energy: 1 }),
     ], [makeEnemy()]), 'p1', attack.uid, {
-      enemyUid: null, playerId: null, discardUids: [tactician.uid],
+      enemyUid: 'e1', playerId: null, discardUids: [tactician.uid],
     })
     assertEqual(tacticianState.players[0].energy, upgraded ? 3 : 2)
     assert(tacticianState.players[0].exhaust.some((card) => card.uid === tactician.uid))
@@ -7824,7 +7875,9 @@ check('Fire Breathing pauses the remaining end-turn order after Dark Embrace dra
   const finished = resolvePendingTrigger(paused, 'p1', paused.pendingTriggers[0].id, 0)
   assertEqual(finished.enemies[0].dead, true)
   assertEqual(finished.enemies[1].hp, 9, 'Lightning did not retarget after Fire killed its chosen enemy')
-  assertEqual(finished.phase, 'discard')
+  // The resumed order ran to the end, and with nothing left to arrange the turn
+  // no longer stops at a discard prompt on its way to the Enemy Turn.
+  assertEqual(finished.phase, 'enemy')
   assertEqual(finished.endTurnProgress, undefined)
 })
 
@@ -8674,6 +8727,36 @@ check('reroute Relics ignore fallen teammates in Last Stand', () => {
   assertEqual(activateRelic(state, 'p1', 0, {
     targetRelicPlayerId: 'p2', targetRelicIndex: 0, targetAbilityIndex: 0,
   }), state)
+})
+
+// A "Resolve start of turn" click in front of a sequence that cannot change the
+// outcome is the same dead beat the discard prompt used to be.
+check('the start of turn stops only for a sequence that can change something', () => {
+  const startOf = (players, enemies) => ({ ...combat(players, enemies), phase: 'start', die: 4 })
+
+  const commuting = startOf([makePlayer({
+    powers: [instance('demon_form'), instance('infinite_blades')],
+  })], [makeEnemy()])
+  assertEqual(startTurnAbilities(commuting).length, 2, 'precondition: two abilities are queued')
+  assertEqual(startTurnNeedsChoice(commuting), false,
+    'neither is aimed at anything, so their order cannot matter')
+
+  const oneAimed = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes'), instance('demon_form')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(oneAimed), false,
+    'one aimed ability with one legal target still has nothing to decide')
+
+  const twoAimed = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes'), instance('noxious_fumes')],
+  })], [makeEnemy()])
+  assertEqual(startTurnNeedsChoice(twoAimed), true,
+    'two aimed abilities can kill each other\'s target, so the order is a real choice')
+
+  const twoTargets = startOf([makePlayer({
+    character: 'silent', powers: [instance('noxious_fumes')],
+  })], [makeEnemy({ uid: 'left' }), makeEnemy({ uid: 'right', row: 1 })])
+  assertEqual(startTurnNeedsChoice(twoTargets), true, 'and a target of its own is always asked for')
 })
 
 check('Calipers preserves Block through only the next Reset', () => {

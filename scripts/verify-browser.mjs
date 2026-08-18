@@ -12,6 +12,7 @@ import { chromium } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 import { STALE_END_TURN_ORDER } from '../src/game/combat.ts'
+import { enemyDef } from '../src/game/enemies.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
@@ -165,6 +166,33 @@ async function waitForAutomaticTurn(turn) {
 
 async function waitForAutomaticEnemyResolution() {
   await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'enemy')
+}
+
+/**
+ * Gives every seat a reason to be asked for a discard order.
+ *
+ * The prompt only appears for a player who owns a card that reads the top of
+ * their discard pile — Claw is the cheapest — so any flow that means to exercise
+ * the ordering UI has to opt in. An ordinary hand now walks straight past it.
+ */
+async function plantDiscardOrderCards() {
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    for (const player of run.combat.players) {
+      if (!player.draw.some((card) => card.defId === 'claw')) {
+        player.draw = [...player.draw, { uid: `ui-claw-${player.id}`, defId: 'claw', upgraded: false }]
+      }
+      // Two cards, or there is no order to put them in and the prompt is still
+      // skipped however many Claws the deck holds.
+      while (player.hand.length < 2) {
+        player.hand = [...player.hand, {
+          uid: `ui-order-pad-${player.id}-${player.hand.length}`, defId: 'defend_ironclad', upgraded: false,
+        }]
+      }
+    }
+    debug.setRun(run)
+  })
 }
 
 async function endTurn() {
@@ -684,6 +712,7 @@ check('New run confirms before discarding an Act-boundary run', () => {
   assertEqual(localCatchUpPanel, 0, 'Single Player exposed a local add-player path')
 })
 
+await plantDiscardOrderCards()
 const combatAppearanceRun = await readRun()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -1350,6 +1379,41 @@ check('every base and upgraded character face fits at desktop sizes', () => {
 })
 if (originalViewport) await page.setViewportSize(originalViewport)
 
+// The map, read from inside a fight. This is where a party decides what its
+// deck is FOR, so the act's boss has to be legible without leaving the combat.
+const bossDuringCombat = (await readRun()).actBossDefId
+await page.getByRole('button', { name: 'Map' }).click()
+await page.locator('.map-peek[open] .room').first().waitFor()
+const peekBossNode = page.locator('.map-peek .room--boss').first()
+await peekBossNode.hover()
+await page.waitForFunction(() =>
+  getComputedStyle(document.querySelector('.map-peek .room--boss .room-tip')).visibility === 'visible')
+const mapPeek = await page.evaluate(() => {
+  const node = document.querySelector('.map-peek .room--boss')
+  const tip = node.querySelector('.room-tip')
+  const box = tip.getBoundingClientRect()
+  const panel = document.querySelector('.map-peek__panel').getBoundingClientRect()
+  return {
+    label: node.getAttribute('aria-label'),
+    tip: tip.textContent,
+    reachable: document.querySelectorAll('.map-peek .room--reachable').length,
+    contained: box.top >= panel.top - 1 && box.bottom <= panel.bottom + 1 &&
+      box.left >= panel.left - 1 && box.right <= panel.right + 1,
+    modal: document.querySelector('.map-peek').matches(':modal'),
+  }
+})
+await shot('03a1-map-during-combat')
+check('the map opens over a fight, names the act boss, and cannot be walked', () => {
+  assert(mapPeek.modal, 'the map peek is not a modal dialog')
+  assertEqual(mapPeek.reachable, 0, 'a map opened mid-fight offered a room to enter')
+  const bossName = enemyDef(bossDuringCombat, 0).name
+  assert(mapPeek.label.includes(bossName), `${bossName} missing from ${mapPeek.label}`)
+  assert(mapPeek.tip.includes(bossName), `${bossName} missing from the hover panel: ${mapPeek.tip}`)
+  assert(mapPeek.contained, 'the hover panel opened outside the map dialog and was clipped')
+})
+await page.locator('.map-peek').getByRole('button', { name: 'Close' }).click()
+await page.waitForFunction(() => !document.querySelector('.map-peek[open]'))
+
 await page.getByRole('button', { name: 'End turn' }).click()
 const beforeDiscard = await readState()
 check('end-of-turn effects resolve before the hand order is confirmed', () => {
@@ -1577,6 +1641,9 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
   const before = await readState()
   assert(before && !['won', 'lost'].includes(before.phase),
     `the fight ended before enemy turn ${enemyTurn + 1}; this block needs a live combat`)
+  // `endTurn()` parks focus on the seat menu's <summary> on its way through the
+  // discard prompt, and that focused control is what this round needs to blur.
+  await plantDiscardOrderCards()
   // The blur has to land while the button is gone, and the enemy round can be
   // over before a Playwright round-trip observes it — so the page watches for
   // that frame itself instead of being asked about it afterwards.
@@ -3267,6 +3334,7 @@ check('Meditate+ selects two discards and surfaces its turn lock through the con
 })
 await page.getByText('No additional cards this turn', { exact: true }).waitFor()
 await shot('06zle-watcher-retain-lifecycle')
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 await confirmAllDiscards()
@@ -3801,7 +3869,13 @@ await page.evaluate((baseline) => {
   })
   Object.assign(actor, {
     name: 'Defect', character: 'defect',
-    hand: [{ uid: 'ui-defragment', defId: 'defragment', upgraded: true }],
+    // Two spare cards, so a discard order is still a real decision and the turn
+    // stops at the prompt where these Orb effects can be read off the board.
+    hand: [
+      { uid: 'ui-defragment', defId: 'defragment', upgraded: true },
+      { uid: 'ui-defragment-spare-a', defId: 'defend_defect', upgraded: false },
+      { uid: 'ui-defragment-spare-b', defId: 'defend_defect', upgraded: false },
+    ],
     energy: 3, orbs: ['lightning', 'frost', null], orbEndTurnBonus: 0,
   })
   run.combat.enemies = run.combat.enemies.slice(0, 1)
@@ -3816,6 +3890,7 @@ await defragmentCard.click()
 const defragmentPower = page.getByRole('button', { name: /^Defragment\+: Orb end-of-turn effects get \+1$/ })
 await defragmentPower.waitFor()
 await shot('06zphe-defragment-power')
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const defragmented = await readState()
@@ -3856,6 +3931,7 @@ await page.getByRole('button', {
   name: /^Static Discharge\+: Lightning Orb end-of-turn effects get \+2$/,
 }).waitFor()
 await shot('06zphgb-static-discharge-power')
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const discharged = await readState()
@@ -4168,6 +4244,7 @@ const equilibriumCard = page.getByRole('button', { name: /^Equilibrium\+, cost 2
 const equilibriumLabel = await equilibriumCard.getAttribute('aria-label')
 await shot('06zphgia-equilibrium-ready')
 await equilibriumCard.click()
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 await page.getByRole('button', { name: 'Retain Defend' }).click()
@@ -4211,6 +4288,7 @@ const plansCard = page.getByRole('button', { name: /^Well-Laid Plans\+, cost 1,/
 const plansLabel = await plansCard.getAttribute('aria-label')
 await shot('06zphgid-well-laid-plans-ready')
 await plansCard.click()
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 await page.getByRole('button', { name: 'Retain Strike' }).click()
@@ -4271,6 +4349,7 @@ check('Loop target choices stay inside a narrow end-turn tray', () => {
 })
 await shot('06zphgic1a-loop-compact-desktop-order')
 await page.setViewportSize({ width: 1440, height: 900 })
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const looped = await readState()
@@ -5951,9 +6030,15 @@ await page.getByRole('button', { name: /^Blur\+,/ }).click()
 await page.getByRole('button', { name: /^All-Out Attack\+,/ }).click()
 await page.locator('.prompt').filter({ hasText: 'Discard 1' }).waitFor()
 await page.getByRole('button', { name: /^Slice,/ }).click()
+// The AoE starburst is one row plus any boss, so the sweep asks which row —
+// after its discard clause, which is what unlocks the enemy highlight.
+await page.waitForSelector('.enemy--targeted')
+const allOutTarget = page.locator('.enemy--targeted[data-row="0"]').first()
+await allOutTarget.scrollIntoViewIfNeeded()
+await allOutTarget.click()
 await page.getByRole('button', { name: /^Expertise\+,/ }).click()
 const silentTurnCards = await readState()
-check('Silent turn cards resolve discard, draw-to-size, Block, and all-enemy damage', () => {
+check('Silent turn cards resolve discard, draw-to-size, Block, and row damage', () => {
   assertEqual(silentTurnCards.players[0].powers.length, 0)
   assertEqual(silentTurnCards.players[0].block, 4)
   assertEqual(silentTurnCards.players[0].energy, 3)
@@ -5961,7 +6046,9 @@ check('Silent turn cards resolve discard, draw-to-size, Block, and all-enemy dam
   assert(silentTurnCards.players[0].exhaust.some((card) => card.uid === 'ui-setup'))
   assertEqual(silentTurnCards.players[0].hand.length, 7)
   assert(silentTurnCards.players[0].discard.some((card) => card.uid === 'ui-all-out-discard'))
-  assert(silentTurnCards.enemies.every((enemy) => enemy.hp === enemy.maxHp - 3))
+  assert(silentTurnCards.enemies.every((enemy) =>
+    enemy.hp === enemy.maxHp - (enemy.row === 0 || enemy.isBoss ? 3 : 0)),
+    JSON.stringify(silentTurnCards.enemies.map((enemy) => [enemy.row, enemy.hp, enemy.maxHp])))
 })
 await shot('07j-silent-turn-cards')
 
@@ -6838,12 +6925,22 @@ await page.evaluate(() => {
 const noxiousUpgraded = page.locator('.power[aria-label^="Noxious Fumes+"]')
 await noxiousUpgraded.waitFor()
 const noxiousUpgradedLabel = await noxiousUpgraded.getAttribute('aria-label')
+// The upgrade prints the AoE starburst, so it still asks which row to gas.
 await waitForAutomaticTurn(3)
+await page.locator('.combat[data-phase="start"]').waitFor()
+await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose an enemy'))
+await page.locator('.enemy:not([disabled])').nth(1).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
 await page.locator('.combat[data-phase="player"]').waitFor()
 const noxiousAll = await readState()
-check('upgraded Noxious Fumes automatically poisons every enemy', () => {
-  assert(noxiousUpgradedLabel.includes('1 Poison to every enemy'), noxiousUpgradedLabel)
-  assert(noxiousAll.enemies.every((enemy) => enemy.poison === (enemy.dead ? 0 : 1)))
+check('upgraded Noxious Fumes gasses the chosen row and any boss', () => {
+  assert(noxiousUpgradedLabel.includes('1 Poison to one enemy row and any boss'), noxiousUpgradedLabel)
+  const gassed = noxiousAll.enemies.filter((enemy) => enemy.poison === 1)
+  assert(gassed.length > 0, 'nothing was poisoned at all')
+  const row = gassed[0].row
+  assert(noxiousAll.enemies.every((enemy) =>
+    enemy.poison === (!enemy.dead && (enemy.row === row || enemy.isBoss) ? 1 : 0)),
+    JSON.stringify(noxiousAll.enemies.map((enemy) => [enemy.row, enemy.poison, enemy.dead])))
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeNoxiousFumes)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'start')
@@ -8339,7 +8436,7 @@ check('scanned card labels include conditional numbers and support targets', () 
   const heavyPlus = injectedLabels.find((label) => label.startsWith('Heavy Blade+')) ?? ''
   assert(backstab.includes('2 if the target is at full hit points'), `Backstab bonus is missing: ${backstab}`)
   assert(predator.includes('support effect may target any player'), `Predator support target is missing: ${predator}`)
-  assert(sweeping.includes('affects every enemy'), `Sweeping Beam target is missing: ${sweeping}`)
+  assert(sweeping.includes('affects a whole row and any boss'), `Sweeping Beam target is missing: ${sweeping}`)
   assert(feelNoPain.includes('whenever you exhaust a card'), `Power trigger is missing: ${feelNoPain}`)
   assert(heavy.includes('3 per Strength'), `Heavy Blade multiplier is wrong: ${heavy}`)
   assert(heavyPlus.includes('5 per Strength'), `Heavy Blade+ multiplier is wrong: ${heavyPlus}`)
@@ -8878,6 +8975,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 1280, height: 800 })
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const compactDiscardControls = await page.locator('.combat__actions').evaluate((element) => {
@@ -8915,6 +9013,7 @@ await shot('15-compact-desktop-discard-top')
 // A card keeps its uid when it cycles through the deck. A top-card choice from
 // one turn must not silently select that same card when it comes back later.
 await chooseSeat('p1')
+await plantDiscardOrderCards()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -9003,6 +9102,7 @@ check('a stale Lightning target keeps the whole end-turn plan editable', () => {
 })
 await shot('15bba-stale-orb-target')
 await page.getByLabel('Target for Ironclad — Lightning Orb 2').selectOption({ label: 'Acid Slime' })
+await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const cursePrepared = await readState()
@@ -9795,11 +9895,13 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   const actor = run.combat.players[0]
   Object.assign(actor, {
+    // Every AoE attack now asks which row it sweeps, so the card that needs no
+    // choice at all is a swing that cannot land: Blizzard with no Frost to spend.
     hand: [
       { uid: 'ui-double-tap-aoe', defId: 'double_tap', upgraded: true },
-      { uid: 'ui-double-immolate', defId: 'immolate', upgraded: false },
+      { uid: 'ui-double-blizzard', defId: 'blizzard', upgraded: false },
     ],
-    draw: [], discard: [], exhaust: [], energy: 3,
+    draw: [], discard: [], exhaust: [], energy: 3, orbs: [null, null, null],
     doubledAttacksThisTurn: 0, attacksPlayedThisTurn: 0,
   })
   run.combat.phase = 'player'
@@ -9810,14 +9912,14 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /^Double Tap\+,/ }).click()
-await page.getByRole('button', { name: /^Immolate,/ }).click()
+await page.getByRole('button', { name: /^Blizzard,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player' &&
   window.__STS_DEBUG__.getState().players[0].attacksPlayedThisTurn === 2)
 const doubledAoe = await readState()
 check('a Double Tap copy with no choices auto-resolves instead of deadlocking', () => {
-  assertDeepEqual(doubledAoe.enemies.map((enemy) => enemy.hp), [10, 10])
-  assertEqual(doubledAoe.players[0].draw.filter((card) => card.defId === 'daze').length, 4)
-  assertEqual(doubledAoe.players[0].energy, 1)
+  assertDeepEqual(doubledAoe.enemies.map((enemy) => enemy.hp), [20, 20], 'no Frost, so no hits')
+  assertEqual(doubledAoe.players[0].energy, 2, 'Double Tap+ is free, Blizzard costs 1')
+  assertEqual(doubledAoe.pendingCardCopy, undefined, 'the copy resolved rather than waiting on a choice')
 })
 
 await page.evaluate(() => {

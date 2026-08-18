@@ -882,8 +882,7 @@ button:disabled {
   font: inherit;
 }
 
-.online-entry button:not(:disabled),
-.online-lobby__table > button:not(:disabled) {
+.online-entry button:not(:disabled) {
   border-color: var(--gold);
   color: var(--gold);
 }
@@ -3659,7 +3658,7 @@ button:disabled {
   position: relative;
   display: grid;
   width: 100%;
-  height: clamp(7.5rem, 18vh, 12rem);
+  height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
   place-items: end center;
   pointer-events: none;
 }
@@ -4319,15 +4318,17 @@ button:disabled {
 }
 
 .board[data-rows='3'] .seat__portrait {
-  height: 7.4rem;
+  height: calc(7.4rem * var(--stage-scale));
 }
 
 .board[data-rows='4'] .seat__portrait {
-  height: 5.7rem;
+  height: calc(5.7rem * var(--stage-scale));
 }
 
 /* Co-op lanes share one physical stage: every actor stands on the same floor. */
 .board {
+  --stage-scale: 1;
+
   display: block;
   overflow: auto hidden;
 }
@@ -4361,12 +4362,16 @@ button:disabled {
   padding: 0;
 }
 
+/* Every actor measurement below is multiplied by --stage-scale, so a stage that
+   has outgrown the board shrinks as one piece instead of turning into a row of
+   thin towers. CombatScreen sets the scale from the actor count and the board's
+   measured width. */
 .row__seat {
   position: absolute;
-  bottom: 1.1rem;
-  left: calc(1.5rem + var(--stage-row) * var(--stage-gap));
+  bottom: calc(1.1rem * var(--stage-scale));
+  left: calc(1.5rem * var(--stage-scale) + var(--stage-row) * var(--stage-gap));
   width: var(--stage-actor-width);
-  height: 18.5rem;
+  height: calc(18.5rem * var(--stage-scale));
   align-content: start;
 }
 
@@ -4378,10 +4383,10 @@ button:disabled {
 .board .enemy,
 .board .board__bosses .enemy {
   position: absolute;
-  right: calc(1.5rem + var(--stage-index) * var(--stage-gap));
-  bottom: 1.1rem;
+  right: calc(1.5rem * var(--stage-scale) + var(--stage-index) * var(--stage-gap));
+  bottom: calc(1.1rem * var(--stage-scale));
   width: var(--stage-actor-width);
-  height: 14rem;
+  height: calc(14rem * var(--stage-scale));
 }
 
 .board[data-rows='3'] .enemy__portrait:has(> img),
@@ -4396,21 +4401,21 @@ button:disabled {
 }
 
 .row__seat .seat {
-  height: 18.5rem;
+  height: calc(18.5rem * var(--stage-scale));
 }
 
 .row__seat .seat__portrait,
 .board .enemy__portrait {
   position: absolute;
   right: 0;
-  bottom: 3rem;
+  bottom: calc(3rem * var(--stage-scale));
   left: 0;
 }
 
 .row__seat .seat__name {
   position: absolute;
   right: 0;
-  bottom: 1.55rem;
+  bottom: calc(1.55rem * var(--stage-scale));
   left: 0;
 }
 
@@ -4418,8 +4423,20 @@ button:disabled {
 .board .enemy .bar {
   position: absolute;
   right: 0;
-  bottom: 0.35rem;
+  bottom: calc(0.35rem * var(--stage-scale));
   left: 0;
+}
+
+/* The name and HP strips are the first things to become unreadable as the stage
+   shrinks, so they scale too — but never above their full-size value. */
+.board .enemy__head,
+.board .seat__name,
+.board .bar__label {
+  font-size: min(0.78rem, calc(0.86rem * var(--stage-scale)));
+}
+
+.board .enemy__intent .intent {
+  zoom: min(1, calc(var(--stage-scale) + 0.15));
 }
 
 .seat__status-strip {

@@ -18,8 +18,16 @@ type Props = {
 export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, onAction }: Props) {
   const [upgradePreviews, setUpgradePreviews] = useState<Record<string, boolean>>({})
   const [sources, setSources] = useState<RewardSource[]>([])
-  const allDecided = run.rewards.every((offer) => (!offer.cardReward || decided.includes(offer.playerId)) && !offer.transformReward &&
+  // Item rewards are settled by the table, so they still gate everyone. Whether
+  // a TEAMMATE has picked their card does not: one player reconsidering used to
+  // reopen the confirmation for all four, which is what made this feel like two
+  // rounds of clicking instead of one.
+  const itemsSettled = run.rewards.every((offer) => !offer.transformReward &&
     offer.potion === false && (offer.relic ?? false) === false && (offer.bossRelics ?? false) === false)
+  const cardOffers = run.rewards.filter((offer) => offer.cardReward)
+  const confirmedCount = cardOffers.filter((offer) => confirmed.includes(offer.playerId)).length
+  const iConfirmed = confirmed.includes(viewerId)
+  const iDecided = decided.includes(viewerId)
 
   return (
     <section className="reward-screen">
@@ -137,14 +145,21 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
           )
         })}
       </div>
+      {/* One button, and it stays live after you press it — the count is what
+          tells you who the party is still waiting on, and pressing again is how
+          you take your own confirmation back to change your card. */}
       <button
         className="reward-screen__collect"
         type="button"
-        disabled={!allDecided || !decided.includes(viewerId) || confirmed.includes(viewerId)}
-        onClick={() => onAction({ kind: 'cardReward', choice: 'confirm' })}
+        aria-pressed={iConfirmed}
+        disabled={!itemsSettled || !iDecided}
+        onClick={() => onAction({ kind: 'cardReward', choice: iConfirmed ? 'unconfirm' : 'confirm' })}
       >
-        {confirmed.includes(viewerId) ? 'Confirmed — waiting for party' : 'Confirm rewards'}
+        {iConfirmed ? '✓ ' : ''}Confirm rewards {confirmedCount}/{cardOffers.length}
       </button>
+      {iConfirmed && confirmedCount < cardOffers.length ? (
+        <p className="muted" role="status">Waiting for the party. Press again to change your card.</p>
+      ) : null}
     </section>
   )
 }

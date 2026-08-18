@@ -123,6 +123,8 @@ export type VisibleRun = {
     } | null>
   } | null
   pendingBossDefId: string | null
+  /** This act's boss. Rolled in the open at setup, so it is not redacted. */
+  actBossDefId: string | null
   map: SpireMap
   log: string[]
   players: VisiblePlayer[]

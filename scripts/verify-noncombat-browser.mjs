@@ -1226,7 +1226,10 @@ const auxiliaryLobbyContexts = await Promise.all(onlineSeats.slice(2).map(async 
   await auxiliaryPage.goto(base, { waitUntil: 'networkidle' })
   return context
 }))
-await lobbyPage.waitForFunction(() => [...document.querySelectorAll('.online-seat')].filter((seat) => seat.textContent?.includes('online')).length === 4)
+// A connected seat no longer PRINTS "online" — the portrait says it is taken
+// and only an absent player is captioned. The state is still on the label.
+await lobbyPage.waitForFunction(() => [...document.querySelectorAll('.online-seat')]
+  .filter((seat) => seat.getAttribute('aria-label')?.includes('online')).length === 4)
 const onlineLobby = lobbyPage.locator('main.online-lobby')
 await onlineLobby.locator('.online-lobby__settings > summary').click()
 const ascensionOptions = await onlineLobby.getByLabel('Ascension').locator('option').count()
@@ -1243,8 +1246,11 @@ await lobbyPage.waitForFunction(() => {
   return selected.length === 2 && document.querySelector('.online-lobby__meta select[aria-label="Starting Act"]')?.value === '2'
 })
 await onlineMeta.locator('.start-menu__meta-panel').evaluate((panel) => { panel.scrollTop = panel.scrollHeight })
-const leaderStartEnabled = await onlineLobby.getByRole('button', { name: 'Enter the Spire' }).isEnabled()
-const guestStartDisabled = await guestLobbyPage.getByRole('button', { name: 'Enter the Spire' }).isDisabled()
+// By class, not by name: a non-leader's start button says who DOES start the
+// run rather than repeating an instruction it will not carry out.
+const leaderStartEnabled = await onlineLobby.locator('.online-lobby__start').isEnabled()
+const guestStartLabel = await guestLobbyPage.locator('.online-lobby__start').textContent()
+const guestStartDisabled = await guestLobbyPage.locator('.online-lobby__start').isDisabled()
 const guestMetaDisabled = await guestLobbyPage.locator('.online-lobby__meta').getByLabel('Run mode').isDisabled()
 await lobbyPage.screenshot({ path: join(outDir, 'meta-online-lobby.png'), fullPage: true })
 check('online lobby persists Choose Your Relic and lists only unlocked Ascensions', () => {
@@ -1254,6 +1260,7 @@ check('online lobby persists Choose Your Relic and lists only unlocked Ascension
 check('online run setup is host-owned and rapid modifier edits compose against authoritative state', () => {
   assert(leaderStartEnabled, 'party leader could not start a connected ready lobby')
   assert(guestStartDisabled, 'non-leader could start the run')
+  assert(/starts the run/.test(guestStartLabel), `the guest was not told who starts: ${guestStartLabel}`)
   assert(guestMetaDisabled, 'non-leader could edit official run setup')
   assertEqual(liveRoom.metaOptions.mode, 'custom')
   assertDeepEqual(liveRoom.metaOptions.modifiers, ['cursed', 'night_terrors'])

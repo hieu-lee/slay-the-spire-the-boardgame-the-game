@@ -4,8 +4,8 @@
     {
       "name": "sts-dev",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--host", "0.0.0.0"],
-      "port": 5173
+      "runtimeArgs": ["vite", "--host", "0.0.0.0", "--port", "5180", "--strictPort"],
+      "port": 5180
     }
   ]
 }

@@ -12,6 +12,7 @@ import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
 import { MapScreen } from './MapScreen.tsx'
+import { MapOverlay } from './MapOverlay.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
@@ -109,15 +110,41 @@ function wingChoices(map: { position: string | null; rows: string[][]; rooms: Re
     .filter((room): room is Room => room !== undefined)
 }
 
-function Seat({ seat }: { seat?: PublicSeat }) {
+/**
+ * One place at the table.
+ *
+ * The character's own portrait rather than its name in small caps: four seats
+ * spelling out "Ironclad · online" four times was most of the wall of text this
+ * screen used to be, and the art says which class it is at a glance — the same
+ * portrait the player will look at all run.
+ */
+function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
+  const character = seat ? CHARACTERS.find(([id]) => id === seat.character) : undefined
   return (
-    <div className={seat ? 'online-seat' : 'online-seat online-seat--empty'}>
+    <div
+      className={['online-seat', seat ? '' : 'online-seat--empty', you ? 'online-seat--you' : '']
+        .filter(Boolean).join(' ')}
+      // A bare div resolves to role=generic, where `aria-label` is prohibited
+      // and silently dropped — the same trap `RelicChip` documents. The label is
+      // the whole accessible content of the seat, so it has to survive.
+      role="group"
+      aria-label={seat
+        ? `${seat.name}, ${character?.[1] ?? seat.character}${you ? ', you' : ''}, ${seat.connected ? 'online' : 'away'}`
+        : 'Open seat'}
+    >
       {seat ? (
         <>
-          <span>{seat.name}</span>
-          <small>{CHARACTERS.find(([id]) => id === seat.character)?.[1]} · {seat.connected ? 'online' : 'away'}</small>
+          <span className="online-seat__portrait" aria-hidden="true">
+            <img src={`/assets/combat/characters/${seat.character}.webp`} alt=""
+              onError={(event) => { event.currentTarget.style.display = 'none' }} />
+          </span>
+          <span className="online-seat__name" aria-hidden="true">{seat.name}</span>
+          <span className="online-seat__class" aria-hidden="true">
+            {character?.[1] ?? seat.character}
+            {seat.connected ? null : <em> · away</em>}
+          </span>
         </>
-      ) : <span>Open seat</span>}
+      ) : <span className="online-seat__open" aria-hidden="true">Open seat</span>}
     </div>
   )
 }
@@ -149,9 +176,13 @@ function VoiceControls({ voice, seats, connected }: {
   const connectedPeers = Object.values(voice.peerStates).filter((state) => state === 'connected').length
   return (
     <div className="voice" aria-label="Party voice">
-      <span className="voice__status">Voice {connectedPeers}/{Math.max(0, seats.length - 1)}</span>
+      {/* The peer count rides the Leave button rather than sitting beside it as
+          a third element: it is a fact ABOUT the voice channel, and three
+          separate controls in a row was what crowded this corner. */}
       <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
-      <button type="button" onClick={voice.stop}>Leave voice</button>
+      <button type="button" onClick={voice.stop}>
+        Leave voice <span className="voice__status">{connectedPeers}/{Math.max(0, seats.length - 1)}</span>
+      </button>
       {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
       {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} />)}
     </div>
@@ -282,15 +313,24 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           <span className={`connection connection--${room.connection}`}>{room.connection}</span>
         </header>
         <section className="online-lobby__table">
-          <span className="online-entry__eyebrow">Party room</span>
-          <h1>{snapshot.code}</h1>
-          <button type="button" onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>Copy room code</button>
-          <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
-          <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements</button>
-          <div className="online-lobby__seats">
-            {Array.from({ length: 4 }, (_, index) => <Seat key={index} seat={snapshot.seats[index]} />)}
+          {/* The code and the one action taken on it, on one line: it was a
+              headline with a full-width button under it, which read as the
+              screen's primary control rather than as a convenience. */}
+          <div className="online-lobby__code">
+            <span className="online-entry__eyebrow">Party room</span>
+            <h1>{snapshot.code}</h1>
+            <button className="online-lobby__copy" type="button"
+              onClick={() => void navigator.clipboard.writeText(snapshot.code).catch(() => {})}>Copy code</button>
           </div>
-          <label>
+
+          <div className="online-lobby__seats">
+            {Array.from({ length: 4 }, (_, index) => (
+              <Seat key={index} seat={snapshot.seats[index]}
+                you={snapshot.seats[index]?.playerId === snapshot.you.playerId} />
+            ))}
+          </div>
+
+          <label className="online-lobby__character">
             Your character
             <select disabled={!connected} value={snapshot.you.character} onChange={(event) => room.chooseCharacter(event.target.value as typeof character)}>
               {CHARACTERS.map(([id, label]) => <option key={id} value={id} disabled={taken.has(id)}>{label}</option>)}
@@ -332,8 +372,20 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
               />
             </fieldset>
           </details>
-          <button type="button" disabled={!connected || !ready || !isPartyLeader} onClick={room.start}>
-            {connected && ready ? 'Enter the Spire' : 'Waiting for every seat to connect'}
+          {/* Secondary controls on one line, below the settings tray and above
+              the only button that starts anything. Voice and Achievements were
+              stacked between the room code and the seats, where they read as
+              steps in setting the party up. */}
+          <div className="online-lobby__aside">
+            <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} />
+            <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements</button>
+          </div>
+
+          <button className="online-lobby__start" type="button"
+            disabled={!connected || !ready || !isPartyLeader} onClick={room.start}>
+            {connected && ready
+              ? isPartyLeader ? 'Enter the Spire' : `${partyLeader?.name ?? 'The party leader'} starts the run`
+              : 'Waiting for every seat'}
           </button>
           {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
         </section>
@@ -393,6 +445,9 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
           {viewer ? <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} /> : null}
         </div>
+        {run.phase !== 'map' && run.phase !== 'setup' ? (
+          <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
+        ) : null}
         <details className="game-settings">
           <summary>Party</summary>
           <div className="setup">
@@ -473,7 +528,8 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
       ) : null}
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
-        blocked={pendingAcquisition} onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
+        blocked={pendingAcquisition} bossDefId={run.actBossDefId}
+        onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
         {!pendingAcquisition && wingChoices(run.map, viewer).length > 0 ? <section className="room-screen"><strong>Wing Boots</strong>
           {wingChoices(run.map, viewer).map((target) => <button type="button" key={target.id}
             onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>Ignore paths to {target.kind}</button>)}

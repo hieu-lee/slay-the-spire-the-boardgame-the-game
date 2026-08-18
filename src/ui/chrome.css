@@ -147,7 +147,9 @@ html { overflow-x: clip; }
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
 ) {
   display: inline-flex;
   gap: 0.4rem;
@@ -194,7 +196,9 @@ html { overflow-x: clip; }
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
 ):hover:not(:disabled) {
   /* --light-yellow, not --sts-gold: gold on this slate plate measures 4.12:1
      at the top of the glyph band. Same warm hover family, clears 4.5:1. */
@@ -212,7 +216,9 @@ html { overflow-x: clip; }
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
 ):active:not(:disabled) {
   transform: translateY(2px) scale(1, 1);
   filter: none;
@@ -230,7 +236,9 @@ html { overflow-x: clip; }
   .sts-scope .neow-offer__skip,
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
 ):disabled {
   /* The client tints unavailable things toward a desaturated teal rather than
      just dimming them. Its own constant, rgb(102,153,153), is a multiply tint
@@ -318,7 +326,9 @@ html { overflow-x: clip; }
   .sts-scope button[class=''],
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
-  .sts-scope .online-entry__back
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
 ) .muted { color: #dfd5c2; }
 
 /* Gold keys carry dark text, so the muted sub-label inside one has to darken
@@ -342,6 +352,8 @@ html { overflow-x: clip; }
   .sts-scope .campfire__leave,
   .sts-scope .prompt__cancel,
   .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
   /* These three carry their own `clip-path` in styles.css and were missed when
      this list was written, so the global 2px ring was clipped away entirely and
      keyboard focus was invisible on the two biggest keys in the game — "Leave
@@ -1863,7 +1875,9 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     .sts-scope .neow-offer__skip,
     .sts-scope .campfire__leave,
     .sts-scope .prompt__cancel,
-    .sts-scope .online-entry__back
+    .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
   ):hover:not(:disabled),
   :is(
     .sts-scope button:not([class]),
@@ -1874,7 +1888,9 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     .sts-scope .neow-offer__skip,
     .sts-scope .campfire__leave,
     .sts-scope .prompt__cancel,
-    .sts-scope .online-entry__back
+    .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start
   ):active:not(:disabled) { transform: none; }
 
   /* styles.css zeroes every animation DURATION under this query
@@ -2542,4 +2558,348 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 main.compendium .compendium__back:focus-visible {
   outline: 3px solid var(--sts-gold);
   outline-offset: -10px;
+}
+
+/* ---------- map node tooltips ---------- */
+
+/* The same panel as `.relic-tip`, and for the same reason: an icon-only node
+   cannot say what a room holds, and the native `title` it replaces was
+   unstyleable, a second late, and had no room for the act's boss.
+
+   Anchored to the NODE rather than to a shared strip, which is the opposite of
+   the relic bar's arrangement — map nodes are already scattered across a wide
+   frame, so there is no one opening point that reads as belonging to any of
+   them. `.room` is already `position: relative` (styles.css), so the node owns
+   the context; the translate below centres a 17rem box on a 52px node. */
+.room-tip {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + 0.55rem);
+  left: 50%;
+  display: grid;
+  gap: 0.15rem;
+  width: 17rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.6rem 0.9rem 0.7rem;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  color: var(--tip-body);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -0.3rem);
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp),
+    visibility 0s linear var(--motion-lerp);
+}
+
+/* `.room` is `position: relative; z-index: 1`, so each node opens its own
+   stacking context and the tooltip's z-index cannot escape it — the nodes drawn
+   after it in the row painted straight through the panel. Lift the whole node
+   while it is explaining itself. */
+.room:hover,
+.room:focus-visible {
+  z-index: 400;
+}
+
+.room:hover > .room-tip,
+.room:focus-visible > .room-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition-delay: 0s;
+}
+
+/* One room explains itself at a time. Hover is the more immediate intent, so a
+   node under the pointer wins over one merely holding focus — the same rule the
+   relic bar needs, for the same collision. */
+.map__frame:has(.room:hover) .room:not(:hover) > .room-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.room-tip__name {
+  color: var(--sts-gold);
+  font-size: 0.95rem;
+}
+
+.room-tip__pool {
+  color: var(--trim-lit);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.room-tip__status {
+  color: var(--light-yellow);
+  font-style: italic;
+}
+
+/* The node scales on hover and its tooltip is a child, so the panel was being
+   magnified with it. Undo exactly that factor. */
+.map .room--reachable:hover > .room-tip {
+  transform: translate(-50%, 0) scale(0.926);
+}
+
+/* ---------- the map, read-only, over a fight ---------- */
+
+.map-peek__open {
+  margin-left: auto;
+}
+
+/* `.game-settings` claims `margin-left: auto` to sit at the right end of the
+   header. With a second control beside it only the FIRST needs to push. */
+.map-peek__open + .game-settings {
+  margin-left: 0;
+}
+
+.map-peek {
+  width: min(1100px, calc(100% - 2rem));
+  max-height: calc(100vh - 3rem);
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: visible;
+}
+
+.map-peek::backdrop {
+  background: rgb(8 6 5 / 82%);
+  backdrop-filter: blur(3px);
+}
+
+.map-peek__panel {
+  display: flex;
+  max-height: calc(100vh - 3rem);
+  flex-direction: column;
+  padding: 1rem 1.1rem 1.2rem;
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0, 100% var(--chamfer),
+    100% calc(100% - var(--chamfer)), calc(100% - var(--chamfer)) 100%,
+    var(--chamfer) 100%, 0 calc(100% - var(--chamfer)), 0 var(--chamfer));
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.1), transparent 18%),
+    linear-gradient(180deg, #2b211a, #17110d 70%);
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 3px rgb(0 0 0 / 0.7);
+}
+
+.map-peek__panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+/* The map paints itself full-bleed for the map SCREEN, where it is the whole
+   page. Inside a panel that would run it out past both edges. */
+.map-peek__panel .map {
+  width: auto;
+  margin: 0;
+  /* Every tooltip opens BELOW its node, including the boss at the top: the
+     panel's own header clips anything that tries to open above it, and the
+     lowest row needs the tail room either way. */
+  padding: 0.75rem 0 7.5rem;
+  flex: 0 1 auto;
+  background: radial-gradient(ellipse at 50% 40%, rgb(30 22 18 / 0.6), transparent 70%);
+  box-shadow: none;
+}
+
+/* ---------- the party room ---------- */
+
+/* The lobby was the last screen still wearing the pre-chrome web idiom: a
+   0.75rem-radius card with a 1px gold hairline, floating on a flat gradient,
+   while the main menu, the compendium and the achievements screen had all moved
+   to painted art with chamfered panels. It read as a different application, and
+   with every control stacked in one centred column it read as a form.
+
+   Same background plate as the start menu, so arriving here from "Multiplayer"
+   is a change of panel rather than a change of game. */
+.sts-scope.online-lobby {
+  align-content: center;
+  padding: 4.5rem 1rem 2.5rem;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgb(10 8 7 / 0.62), rgb(8 6 5 / 0.9) 60%, rgb(4 3 3 / 0.97)),
+    url('/assets/menu/title-spire.webp') center 28% / cover no-repeat fixed;
+}
+
+.sts-scope .online-lobby__table {
+  width: min(46rem, 100%);
+  padding: clamp(1.4rem, 4vw, 2.4rem);
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0, 100% var(--chamfer),
+    100% calc(100% - var(--chamfer)), calc(100% - var(--chamfer)) 100%,
+    var(--chamfer) 100%, 0 calc(100% - var(--chamfer)), 0 var(--chamfer));
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.1), transparent 16%),
+    linear-gradient(180deg, #2b211a, #17110d 70%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    var(--hard-shadow-lg);
+}
+
+/* The room code and the one thing anybody does with it, on a line. */
+.sts-scope .online-lobby__code {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0 1rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid rgb(217 180 91 / 0.16);
+  text-align: left;
+}
+
+.sts-scope .online-lobby__code .online-entry__eyebrow {
+  grid-column: 1;
+}
+
+.sts-scope.online-lobby h1 {
+  grid-column: 1;
+  margin: 0;
+  color: var(--cream);
+  font-size: clamp(2rem, 6vw, 3.1rem);
+  letter-spacing: 0.16em;
+}
+
+.sts-scope .online-lobby__copy {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.sts-scope .online-lobby__seats {
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.9rem;
+  margin: 1.4rem 0;
+}
+
+.sts-scope .online-seat {
+  min-height: 0;
+  align-content: start;
+  gap: 0.1rem;
+  padding: 0.8rem 0.6rem 0.7rem;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(
+    8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px),
+    calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+  background: linear-gradient(180deg, rgb(58 46 36 / 0.7), rgb(22 17 13 / 0.85));
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.55), inset 0 0 0 3px var(--trim-dim);
+}
+
+/* The seat you occupy, in the same gold the rest of the chrome uses for "this
+   one is yours" — nothing else on the screen said which of the four you were. */
+.sts-scope .online-seat--you {
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.55), inset 0 0 0 3px var(--sts-gold);
+}
+
+.sts-scope .online-seat__portrait {
+  display: grid;
+  height: 5.5rem;
+  place-items: end center;
+  overflow: hidden;
+}
+
+.sts-scope .online-seat__portrait img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.55));
+}
+
+.sts-scope .online-seat__name {
+  color: var(--cream);
+  font-size: 1rem;
+}
+
+.sts-scope .online-seat__class {
+  color: var(--trim-lit);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sts-scope .online-seat__class em {
+  color: var(--red-text);
+  font-style: normal;
+}
+
+.sts-scope .online-seat--empty {
+  border: 0;
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.4), inset 0 0 0 3px rgb(122 96 60 / 0.35);
+  background: linear-gradient(180deg, rgb(30 24 19 / 0.5), rgb(16 13 10 / 0.6));
+}
+
+.sts-scope .online-seat__open {
+  display: grid;
+  min-height: 8.4rem;
+  place-items: center;
+  color: var(--trim-dim);
+  letter-spacing: 0.08em;
+}
+
+.sts-scope .online-lobby__character {
+  max-width: 20rem;
+  margin: 0 auto 1.2rem;
+  justify-items: center;
+  text-align: center;
+}
+
+/* Voice and Achievements, spaced like controls rather than like a paragraph. */
+.sts-scope .online-lobby__aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  margin: 1.3rem 0 1.4rem;
+}
+
+.sts-scope.online-lobby .voice {
+  width: auto;
+  margin: 0;
+  gap: 0.7rem;
+}
+
+.sts-scope .voice__status {
+  color: var(--trim-lit);
+  font-size: 0.78rem;
+}
+
+/* Closed, this is one control among the others; the frame around it belonged to
+   the panel it used to open into and made an empty box of the rest of the line.
+   Open, it earns the frame back. */
+.sts-scope .online-lobby__settings {
+  width: fit-content;
+  margin: 0.4rem auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.sts-scope .online-lobby__settings[open] {
+  width: min(32rem, 100%);
+  padding: 0.5rem;
+  border: 1px solid #584a36;
+  background: rgb(14 16 17 / 0.7);
+}
+
+/* The one control that starts anything, given the weight to say so. */
+.sts-scope .online-lobby__start {
+  min-width: 15rem;
+  margin-top: 0.4rem;
+  font-size: 1.05rem;
 }

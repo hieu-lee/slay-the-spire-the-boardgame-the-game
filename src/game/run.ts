@@ -93,6 +93,11 @@ export type RunState = {
   bossRelicDeck: string[]
   /** Ascension 13's second distinct Act III boss, fought after the first. */
   pendingBossDefId: string | null
+  /**
+   * This act's boss, rolled with the map and public to the whole party — it is
+   * what the map names at the top so a deck can be built toward it.
+   */
+  actBossDefId: string | null
   rewards: CardRewardOffer[]
   rewardDestination: 'map' | 'combat' | 'betweenCombat' | 'setup' | 'victory' | null
   itemDecks: ItemDecks
@@ -527,6 +532,7 @@ export function createRun(
   const keys = createSpireKeys()
   const baseMap = generateMap(rng, 1, ACT_SHAPE, ascension)
   const map = isActIVUnlocked(campaignProgress) ? addBurningElite(rng, baseMap) : baseMap
+  const actBossDefId = rollActBoss(rng, 1)
   const colorlessUnlocked = isColorlessUnlocked(campaignProgress)
   const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character))
   itemDecks.relics = [...relicDecks.relicDeck]
@@ -597,6 +603,7 @@ export function createRun(
     relicDeck: [...itemDecks.relics],
     bossRelicDeck: relicDecks.bossRelicDeck,
     pendingBossDefId: null,
+    actBossDefId,
     rewards: [],
     rewardDestination: null,
     itemDecks,
@@ -828,6 +835,7 @@ function finishQuickSetup(state: RunState): RunState {
     setup: null,
     map,
     enemyDecks: createEnemyDecks(rng, act, state.ascension),
+    actBossDefId: rollActBoss(rng, act),
     eventDeck: act === 4 ? [] : buildEventDeck(rng, act, state.ascension, colorlessUnlocked),
     eventsVisited: 0,
     roomState: null,
@@ -1280,6 +1288,25 @@ const BOSSES: Record<number, string[]> = {
   4: ['corrupt_heart'],
 }
 
+/**
+ * The act's boss, rolled when its map is laid out rather than on arrival.
+ *
+ * Setup step 6 is "roll to pick the Act I boss" — the roll happens at the table,
+ * in the open, before anybody walks a step. Deciding it on arrival instead meant
+ * the party spent a whole act building a deck against an unknown, when the
+ * printed game tells them at the start what they are climbing toward.
+ *
+ * Drawn from a SIDE stream keyed on the run's current rng position and the act,
+ * rather than from the run's own stream. Still deterministic — the position it
+ * is keyed on is itself deterministic — but it advances no counter, so every
+ * existing seed deals the same cards and lays out the same map as it did before
+ * this roll moved from the boss room to the map.
+ */
+function rollActBoss(rng: RngState, act: number): string {
+  const deck = BOSSES[act] ?? BOSSES[1]!
+  return deck[nextInt(createRng(rng.seed + act * 0x9e3779b1), deck.length)]!
+}
+
 function createEnemyDecks(rng: RngState, act: number, ascension: number): EnemyDecks {
   const eligible = (cards: EncounterCard[]) => cards.filter((card) =>
     ascension >= (card.minAscension ?? 0) && ascension <= (card.maxAscension ?? Number.POSITIVE_INFINITY))
@@ -1358,6 +1385,7 @@ function buildEncounter(
   first = false,
   ascension = 0,
   forcedBossDefId?: string,
+  actBossDefId?: string | null,
 ): { enemies: Enemy[]; summonSupply: SummonSupply; nextBossDefId?: string } {
   const count = players.length
   const summonSupply = createSummonSupply(rng)
@@ -1365,10 +1393,13 @@ function buildEncounter(
   if (kind === 'boss') {
     const row = players[players.length - 1]?.row ?? 0
     const deck = BOSSES[act] ?? BOSSES[1]!
-    const first = nextInt(rng, deck.length)
-    const defId = forcedBossDefId ?? deck[first]!
+    // `actBossDefId` is the roll the map already made and showed the party;
+    // `forcedBossDefId` overrides even that (Mind Bloom, the Ascension 13
+    // second boss). The fallback roll is for a run saved before either existed.
+    const defId = forcedBossDefId ?? actBossDefId ?? deck[nextInt(rng, deck.length)]!
+    const chosen = Math.max(0, deck.indexOf(defId))
     const nextBossDefId = !forcedBossDefId && act === 3 && ascension >= 13
-      ? deck[(first + 1 + nextInt(rng, deck.length - 1)) % deck.length]!
+      ? deck[(chosen + 1 + nextInt(rng, deck.length - 1)) % deck.length]!
       : undefined
     const enemies = [spawn(
       defId,
@@ -1630,6 +1661,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     const first = state.act === 1 && state.map.position === null && room.id === state.map.rows[0]?.[0]
     const { enemies, summonSupply, nextBossDefId } = buildEncounter(
       rng, enemyDecks, state.act, players, room.kind, first, state.ascension,
+      undefined, state.actBossDefId,
     )
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
@@ -3507,6 +3539,7 @@ export function advanceAct(state: RunState): RunState {
     players,
     combat: null,
     pendingBossDefId: null,
+    actBossDefId: rollActBoss(rng, act),
     eventDeck: act === 4 ? [] : buildEventDeck(rng, act as 1 | 2 | 3, state.ascension, colorlessUnlocked),
     eventsVisited: 0,
     roomState: null,

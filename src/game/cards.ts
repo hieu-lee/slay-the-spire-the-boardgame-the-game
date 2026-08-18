@@ -994,7 +994,7 @@ export const CARDS: Record<string, CardDef> = {
   }),
   immolate: card({
     id: 'immolate', name: 'Immolate', owner: 'ironclad', type: 'attack', rarity: 'rare', cost: 2,
-    target: 'allEnemies',
+    target: 'row',
     effects: [{ kind: 'hit', amount: 5 }, { kind: 'addDaze', amount: 2, pile: 'draw' }],
     upgrade: { effects: [{ kind: 'hit', amount: 7 }, { kind: 'addDaze', amount: 2, pile: 'draw' }] },
   }),
@@ -1025,21 +1025,21 @@ export const CARDS: Record<string, CardDef> = {
   }),
   die_die_die: card({
     id: 'die_die_die', name: 'Die Die Die', owner: 'silent', type: 'attack', rarity: 'rare', cost: 1,
-    target: 'allEnemies',
+    target: 'row',
     exhaust: true,
     effects: [{ kind: 'hit', amount: 3 }],
     upgrade: { effects: [{ kind: 'hit', amount: 4 }] },
   }),
   piercing_wail: card({
     id: 'piercing_wail', name: 'Piercing Wail', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 1,
-    target: 'allEnemies',
+    target: 'row',
     exhaust: true,
     effects: [{ kind: 'block', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
     upgrade: { effects: [{ kind: 'block', amount: 3 }, { kind: 'applyWeak', amount: 1 }] },
   }),
   crippling_cloud: card({
     id: 'crippling_cloud', name: 'Crippling Cloud', owner: 'silent', type: 'skill', rarity: 'uncommon', cost: 2,
-    target: 'allEnemies',
+    target: 'row',
     exhaust: true,
     effects: [{ kind: 'poison', amount: 1 }, { kind: 'applyWeak', amount: 1 }],
     upgrade: { effects: [{ kind: 'poison', amount: 2 }, { kind: 'applyWeak', amount: 1 }] },
@@ -1451,7 +1451,7 @@ export const CARDS: Record<string, CardDef> = {
     type: 'attack',
     rarity: 'common',
     cost: 1,
-    target: 'allEnemies',
+    target: 'row',
     effects: [{ kind: 'hit', amount: 1 }, { kind: 'draw', amount: 1 }],
     upgrade: { effects: [{ kind: 'hit', amount: 2 }, { kind: 'draw', amount: 1 }] },
   }),
@@ -2366,6 +2366,9 @@ export const CARDS: Record<string, CardDef> = {
     effects: [{ kind: 'upgradeStarterCards', amount: 1 }],
     upgrade: { cost: 1 },
   }),
+  // The only printed "ALL enemies" in the set — it says so in words rather than
+  // wearing the AoE starburst every other sweep card carries, and the starburst
+  // is one row plus the boss (p.15), not the whole board.
   the_bomb: card({
     id: 'the_bomb', name: 'The Bomb', owner: 'colorless', type: 'power', rarity: 'rare', cost: 2,
     trigger: { kind: 'endOfTurn' },
@@ -2587,7 +2590,7 @@ export const CARDS: Record<string, CardDef> = {
   }),
   all_out_attack: card({
     id: 'all_out_attack', name: 'All-Out Attack', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 1,
-    target: 'allEnemies',
+    target: 'row',
     effects: [{ kind: 'hit', amount: 2 }, { kind: 'discard', amount: 1 }],
     upgrade: { effects: [{ kind: 'hit', amount: 3 }, { kind: 'discard', amount: 1 }] },
   }),
@@ -2678,7 +2681,7 @@ export const CARDS: Record<string, CardDef> = {
     trigger: { kind: 'startOfTurn' },
     target: 'enemy',
     effects: [{ kind: 'poison', amount: 1 }],
-    upgrade: { target: 'allEnemies' },
+    upgrade: { target: 'row' },
   }),
   envenom: card({
     id: 'envenom', name: 'Envenom', owner: 'silent', type: 'power', rarity: 'rare', cost: 3,

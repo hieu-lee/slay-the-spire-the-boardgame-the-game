@@ -459,6 +459,26 @@ check('a Daze pushed into a deck is reported', () => {
   assert(/slipped a Daze into/.test(line), `one Daze reads as "a Daze", not "1 Dazes": ${line}`)
 })
 
+// Weak is a flat -1 (p.24), and nothing anywhere clamps a hit up to 1, so the
+// smallest attack in the game is cancelled outright rather than chipped to 1.
+check('Weak takes a 1-damage attack all the way to 0', () => {
+  const weakened = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse', weak: 1 })]))
+  assertEqual(weakened.players[0].hp, 10, 'a Weak attacker printing 1 does nothing at all')
+  assertEqual(weakened.enemies[0].weak, 0, 'and still spends the token for swinging')
+
+  // The two cancel rather than compounding, so the same swing lands in full.
+  const alsoVulnerable = enemyTurn(inEnemyPhase(
+    [player({ vulnerable: 1 })], [enemy({ defId: 'green_louse', weak: 1 })],
+  ))
+  assertEqual(alsoVulnerable.players[0].hp, 9, 'Weak into Vulnerable is neither doubled nor reduced')
+
+  // Strength is added BEFORE Weak subtracts, so it can carry a hit back over 0.
+  const strengthened = enemyTurn(inEnemyPhase(
+    [player()], [enemy({ defId: 'green_louse', weak: 1, strength: 1 })],
+  ))
+  assertEqual(strengthened.players[0].hp, 9, '1 printed, +1 Strength, -1 Weak')
+})
+
 check('Block is only credited when Block did the work', () => {
   // A Weak attack reduced to nothing is not the shield's doing, and saying so
   // tells the player their Block is working when they have none.

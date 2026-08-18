@@ -43,7 +43,10 @@ Stand rule (§3).
    separate "1st Encounter!" deck kept aside.
 4. Place map tokens: dark tokens on dark spaces, light on light, then flip all face up.
 5. Each player takes a row on the right edge, filling the lowest open space first.
-6. Roll to pick the Act I boss; place it face down at the top.
+6. Roll to pick the Act I boss; place it face down at the top. **We deviate:** the roll is
+   public at a real table, so this port keeps the boss face *up* — the map names it, and a
+   party can build a deck for the fight it is actually walking toward. See
+   `docs/architecture.md` § Hidden information.
 7. **Neow's Blessing:** each player draws one card, gains the red reward, then chooses one
    of three blue rewards.
 8. **Solo only:** 2 gold and the Loaded Die relic. (Rulebook p.4 step 12 writes this as a

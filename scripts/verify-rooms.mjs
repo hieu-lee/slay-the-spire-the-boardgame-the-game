@@ -28,7 +28,7 @@ import { CAPS, CARDS, GOLDEN_TICKET, REBUILT_END_TURN_ORDER, ROOM_LABEL, STALE_E
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
-import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
 /** Every string that appears anywhere in a structure, at any depth. */
 function allStrings(value, out = []) {
@@ -107,6 +107,21 @@ function twoSeatRoom() {
   startRun(room, a.token, { seed: 2 })
   enterFirstCombat(room, a.token)
   return { store, room, a, b }
+}
+
+/**
+ * Makes the end-of-turn discard prompt appear for these seats.
+ *
+ * The turn only stops to collect an order from a player whose deck contains a
+ * card that reads the top of the discard pile — Claw is the cheapest one. Every
+ * fixture below that exercises the ordering protocol has to opt in explicitly,
+ * which is the point: an ordinary hand never reaches that prompt any more.
+ */
+function wantsDiscardOrder(room, ...playerIds) {
+  for (const playerId of playerIds) {
+    const player = room.run.combat.players.find((candidate) => candidate.id === playerId)
+    player.draw = [...player.draw, { uid: `claw-${playerId}`, defId: 'claw', upgraded: false }]
+  }
 }
 
 function threeSeatRoom() {
@@ -601,6 +616,65 @@ check('online seats choose only their own revealed card reward', () => {
   )
 })
 
+check('a reward confirmation is per seat, and toggles', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
+  }))
+  apply(room, a.token, { kind: 'resolveCombat' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+
+  // Confirming before the whole table has chosen: the counter is worthless if a
+  // seat that is done cannot say so until everyone else is done too.
+  assertThrows(() => apply(room, a.token, { kind: 'cardReward', choice: 'confirm' }),
+    'a seat with no choice of its own cannot confirm')
+  apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [a.playerId])
+
+  // Repeating it is a no-op, not a flip: a resend after a timeout the server had
+  // already applied would otherwise leave the seat unconfirmed and the table
+  // waiting on a player whose screen said they were done.
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [a.playerId], 'confirming twice unconfirmed the seat')
+
+  // Taking it back is its own action, so one button can drive both safely.
+  apply(room, a.token, { kind: 'cardReward', choice: 'unconfirm' })
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [])
+  apply(room, a.token, { kind: 'cardReward', choice: 'unconfirm' })
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [], 'unconfirming twice re-confirmed the seat')
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+
+  // The seat that reconsiders is the only one whose confirmation reopens.
+  apply(room, b.token, { kind: 'cardReward', choice: 1 })
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map', 'both seats confirmed, so the rewards settled')
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [], 'and the ledger is cleared behind them')
+})
+
+check('one seat changing its card leaves every other confirmation standing', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.phase = 'won'
+  room.run.combat.enemies = room.run.combat.enemies.map((enemy) => ({
+    ...enemy, hp: 0, dead: true, cardReward: 'normal', potionReward: false,
+  }))
+  apply(room, a.token, { kind: 'resolveCombat' })
+  apply(room, a.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, b.token, { kind: 'cardReward', choice: 'reveal' })
+  apply(room, a.token, { kind: 'cardReward', choice: 0 })
+  apply(room, a.token, { kind: 'cardReward', choice: 'confirm' })
+  apply(room, b.token, { kind: 'cardReward', choice: 0 })
+  // b reconsiders before confirming. a is untouched by that.
+  apply(room, b.token, { kind: 'cardReward', choice: 1 })
+  assertDeepEqual(snapshotFor(room, a.token).rewardConfirmed, [a.playerId],
+    'a teammate\'s new card is not information any other seat\'s choice rests on')
+  assertEqual(room.run.phase, 'reward', 'and the table has still not settled')
+  apply(room, b.token, { kind: 'cardReward', choice: 'confirm' })
+  assertEqual(room.run.phase, 'map')
+})
+
 check('Potion rewards are server-authored, reconnect-safe, and seat-owned', () => {
   const { room, a, b } = twoSeatRoom()
   room.run.combat.phase = 'won'
@@ -1061,6 +1135,7 @@ check('online seats ready together, then submit only their own post-trigger disc
   const { room, a, b } = twoSeatRoom()
   const first = room.run.combat.players.find((player) => player.id === a.playerId)
   const second = room.run.combat.players.find((player) => player.id === b.playerId)
+  wantsDiscardOrder(room, a.playerId, b.playerId)
   const firstOrder = first.hand.map((card) => card.uid).reverse()
   const waiting = apply(room, a.token, { kind: 'endTurn' })
   assertEqual(room.run.combat.phase, 'player', 'one ready seat cannot end the shared turn')
@@ -1095,12 +1170,14 @@ check('online discard orders are validated after Ethereal leaves the hand', () =
   first.hand = [
     { uid: 'online-clumsy', defId: 'clumsy', upgraded: false },
     { uid: 'online-strike', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'online-strike-2', defId: 'strike_ironclad', upgraded: false },
   ]
+  wantsDiscardOrder(room, a.playerId, b.playerId)
   const staleOrder = first.hand.map((card) => card.uid)
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
   const preparedFirst = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertDeepEqual(preparedFirst.hand.map((card) => card.uid), ['online-strike'],
+  assertDeepEqual(preparedFirst.hand.map((card) => card.uid), ['online-strike', 'online-strike-2'],
     'the authoritative end-turn step exhausts Clumsy before asking for an order')
 
   let error = null
@@ -1110,7 +1187,7 @@ check('online discard orders are validated after Ethereal leaves the hand', () =
     error = thrown
   }
   assertEqual(error?.name, 'RoomError', 'a pre-Ethereal hand order must be rejected')
-  apply(room, a.token, { kind: 'discardHand', discardOrder: ['online-strike'] })
+  apply(room, a.token, { kind: 'discardHand', discardOrder: ['online-strike', 'online-strike-2'] })
   apply(room, b.token, { kind: 'discardHand', discardOrder: second.hand.map((card) => card.uid) })
   assertEqual(room.run.combat.phase, 'enemy')
 })
@@ -1258,7 +1335,7 @@ check('a stale end-turn order tells the coordinator how to recover', () => {
     kind: 'resolveEndTurn',
     abilityOrder: [`${freshOrb.id}@${freshOrb.targets[0].uid}`],
   })
-  assertEqual(room.run.combat.phase, 'discard', 'the party could not recover from the stale order')
+  assertEqual(room.run.combat.phase, 'enemy', 'the party could not recover from the stale order')
 })
 
 check('a refused plan keeps the party arrangement when the abilities are still live', () => {
@@ -1302,7 +1379,7 @@ check('a stale end-turn order with nothing left to choose just resolves', () => 
     if (enemy.uid !== firstEnemy.uid) Object.assign(enemy, { hp: 0, dead: true })
   }
   apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${secondEnemy.uid}`] })
-  assertEqual(room.run.combat.phase, 'discard', 'the forced Orb did not end the turn')
+  assertEqual(room.run.combat.phase, 'enemy', 'the forced Orb did not end the turn')
 })
 
 check('Loop Orb choices are public, authoritative, and reject forged targets online', () => {
@@ -1405,6 +1482,7 @@ check('an unbounded hand can submit its full discard order online', () => {
     ...player.hand[0],
     uid: `large-hand-${index}`,
   }))
+  wantsDiscardOrder(room, a.playerId, b.playerId)
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
   const order = player.hand.map((card) => card.uid).reverse()
@@ -1424,6 +1502,7 @@ check('disconnecting every seat never advances a partially-readied turn', () => 
 
 check('reconnecting a ready seat resumes a turn paused with nobody connected', () => {
   const { room, a, b } = twoSeatRoom()
+  wantsDiscardOrder(room, a.playerId, b.playerId)
   apply(room, a.token, { kind: 'endTurn' })
   markDisconnected(room, a.token)
   markDisconnected(room, b.token)
@@ -1433,6 +1512,7 @@ check('reconnecting a ready seat resumes a turn paused with nobody connected', (
 
 check('reconnecting a decided seat resumes discard settlement', () => {
   const { room, a, b } = twoSeatRoom()
+  wantsDiscardOrder(room, a.playerId, b.playerId)
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
   const player = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
@@ -1961,7 +2041,10 @@ check('a disconnected Meditate+ preview deterministically settles both recoverie
   assertEqual(room.cardPreviews?.[a.playerId], undefined)
   const settled = room.run.combat.players.find((player) => player.id === a.playerId)
   assertDeepEqual(settled.hand.map((card) => card.uid), recovered.map((card) => card.uid))
-  assert(settled.hand.every((card) => card.retainThisTurn === true))
+  // Both were Retained, so nothing was left to arrange and the turn ran on —
+  // which is where a Retain stops being "this turn" and becomes "last turn".
+  assert(settled.hand.every((card) => card.retainedLastTurn === true))
+  assert(settled.hand.every((card) => card.retainThisTurn === undefined))
   assert(settled.discard.some((card) => card.uid === leftBehind.uid))
   const teammate = snapshotFor(room, b.token)
   assert(!allStrings(teammate).some((value) => recovered.some((card) => card.uid === value)),
@@ -3245,10 +3328,21 @@ check('Mayhem settles when its owner was already disconnected before Start of Tu
     }))
     const secret = { uid: `offline-mayhem-${ordered}`, defId: 'strike_ironclad', upgraded: false }
     Object.assign(room.run.combat, { phase: 'roundEnd', turn: 1 })
+    // Two abilities AIMED at an enemy are what still needs an order; a pair that
+    // merely gains Strength commutes and is resolved for the table now. One
+    // enemy on the board keeps each of them down to a single legal target, so
+    // the only decision left is the sequence.
+    if (ordered) {
+      room.run.combat.enemies = room.run.combat.enemies.slice(0, 1)
+      Object.assign(room.run.combat.enemies[0], { hp: 20, maxHp: 20, dead: false, row: ann.row })
+    }
     Object.assign(ann, {
       powers: [
         { uid: `offline-power-${ordered}`, defId: 'mayhem', upgraded: false },
-        ...(ordered ? [{ uid: 'offline-demon-form', defId: 'demon_form', upgraded: false }] : []),
+        ...(ordered ? [
+          { uid: 'offline-fumes-a', defId: 'noxious_fumes', upgraded: false },
+          { uid: 'offline-fumes-b', defId: 'noxious_fumes', upgraded: false },
+        ] : []),
       ],
       draw: [...opening, secret], hand: [], discard: [], energy: 0,
     })
@@ -3261,9 +3355,12 @@ check('Mayhem settles when its owner was already disconnected before Start of Tu
     apply(room, b.token, { kind: 'startTurn' })
     if (ordered) {
       const abilities = snapshotFor(room, b.token).startTurnAbilities
+      assert(abilities, 'two aimed abilities should still be published for ordering')
       apply(room, b.token, {
         kind: 'resolveStartTurn',
-        choices: abilities.map((ability) => ({ id: ability.id, shivEnemyUids: [] })),
+        choices: abilities.map((ability) => ({
+          id: ability.id, enemyUid: ability.targets?.[0]?.uid, shivEnemyUids: [],
+        })),
       })
     }
     assertEqual(room.run.combat.phase, 'player')
@@ -4009,8 +4106,23 @@ check('a disconnected Prepared+ pays its complete committed discard', () => {
   apply(room, b.token, { kind: 'endTurn' })
   const resolved = room.run.combat.players.find((candidate) => candidate.id === a.playerId)
   assertEqual(room.cardPreviews?.[a.playerId], undefined, 'the abandoned Prepared+ stayed locked')
-  assertDeepEqual(resolved.hand.map((card) => card.uid), [drawn[1].uid])
-  assertDeepEqual(resolved.discard.map((card) => card.uid), [held.uid, drawn[0].uid, prepared.uid])
+  // Nothing left to arrange, so the turn discards the remainder rather than
+  // parking on a prompt the disconnected seat could not answer anyway.
+  assertDeepEqual(resolved.hand.map((card) => card.uid), [])
+  assertDeepEqual(resolved.discard.map((card) => card.uid),
+    [held.uid, drawn[0].uid, prepared.uid, drawn[1].uid])
+})
+
+// The act's boss is rolled in the open at setup, so the map may name it. The
+// Ascension 13 SECOND Act III boss is not — it is drawn when the first falls.
+check('this act\'s boss is public and the reserved one is not', () => {
+  const { room, a } = twoSeatRoom()
+  room.run.pendingBossDefId = 'time_eater'
+  const snapshot = snapshotFor(room, a.token)
+  assertEqual(snapshot.run.actBossDefId, room.run.actBossDefId, 'the map could not name the act boss')
+  assert(snapshot.run.actBossDefId, 'no boss was rolled with the act map')
+  assertEqual(snapshot.run.pendingBossDefId, null, 'the reserved second boss leaked')
+  assert(!allStrings(snapshot).includes('time_eater'), 'the reserved second boss leaked by value')
 })
 
 check('the rng state never reaches a client', () => {
@@ -5980,7 +6092,7 @@ check('end-turn Fire Breathing cannot deadlock on an already-disconnected owner'
 
   apply(room, b.token, { kind: 'endTurn' })
   assertEqual(room.run.combat.pendingTriggers.length, 0)
-  assertEqual(room.run.combat.phase, 'discard')
+  assertEqual(room.run.combat.phase, 'enemy', 'nothing left to arrange, so the turn ran straight on')
   assertDeepEqual(room.run.combat.enemies.slice(0, 2).map((enemy) => enemy.hp), [8, 10])
 })
 

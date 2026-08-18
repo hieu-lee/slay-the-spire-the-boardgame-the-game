@@ -4737,12 +4737,25 @@ export function hasPostRollStartTurnChoice(state: CombatState): boolean {
     canActivateRelic(state, player, relicIndex)))
 }
 
-/** Whether start-of-turn resolution contains an order, target, overflow, or Orb decision. */
+/**
+ * Whether start-of-turn resolution contains an order, target, overflow, or Orb
+ * decision — and so whether the table has to be stopped to make it.
+ *
+ * Two abilities used to be enough on their own, which put a "Resolve start of
+ * turn" click in front of a turn where nothing about the sequence could change
+ * the outcome. An ORDER only matters between two abilities that are AIMED at an
+ * enemy: `STALE_END_TURN_ORDER` says as much on the other side of the turn —
+ * "the cause is always an ability aimed at something an earlier ability kills".
+ * A pair that only gains Block, draws, or channels an Orb commutes, so the
+ * engine resolves them in its own canonical order and gets on with the game.
+ */
 export function startTurnNeedsChoice(state: CombatState): boolean {
+  if (hasPostRollStartTurnChoice(state)) return true
   const abilities = startTurnAbilities(state)
-  return hasPostRollStartTurnChoice(state) || abilities.length > 1 || abilities.some((ability) =>
-    ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
-    (ability.players?.length ?? 0) > 1 || ability.evokeChoice)
+  // An ability that cannot be resolved without input, whatever else is queued.
+  if (abilities.some((ability) => ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
+    (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true
+  return abilities.filter((ability) => (ability.targets?.length ?? 0) > 0).length > 1
 }
 
 function finishPreparedStartTurnWithChoices(prepared: CombatState): CombatState {
@@ -4994,7 +5007,55 @@ function continueEndPlayerTurn(
 
   delete next.endTurnProgress
   next.phase = 'discard'
-  return settle(next)
+  const settled = settle(next)
+  // Stopping the whole party to collect a confirmation per seat, when not one of
+  // them had anything to arrange, was the clunkiest beat in the round. Skip the
+  // prompt outright unless somebody's hand actually poses a question. Done here
+  // rather than in the two callers so solo and online cannot drift apart.
+  if (settled.phase === 'discard' && !settled.players.some(discardNeedsChoice)) {
+    return endPlayerTurn(settled)
+  }
+  return settled
+}
+
+/**
+ * Whether either face of this card reads the top of the discard pile.
+ *
+ * A scan of the whole face rather than a walk down `amount.bonus.when`, which is
+ * the only shape the condition takes today: this decides whether a player is
+ * ASKED for an order, and a card added later in some other shape would silently
+ * stop being asked rather than fail loudly.
+ */
+function readsDiscardTop(card: CardInstance): boolean {
+  const def = cardDef(card.defId)
+  return JSON.stringify([faceOf(def, false), faceOf(def, true)]).includes('discardTopCosts')
+}
+
+/**
+ * Whether this player's end-of-turn discard is a decision or a formality.
+ *
+ * Only two things make it a decision. An optional Retain, where the player picks
+ * which cards stay. And the order itself — but that decides one thing only, what
+ * sits on TOP of the discard pile, which nothing reads unless this player owns a
+ * Claw or a Steam Barrier. So the prompt asks a Defect running Claws and stays
+ * out of everybody else's way; it used to stop all four players every round to
+ * collect confirmations of an arrangement that could not matter.
+ *
+ * AUTHORITATIVE STATE ONLY. It reads `player.draw`, which the room server
+ * redacts from every client — a browser asking this about a teammate, or about
+ * itself online, would get "no choice" for a deck that has a Claw in it. The
+ * phase is the server's answer to this question; nothing in `src/ui/` should ask
+ * it again.
+ */
+export function discardNeedsChoice(player: Player): boolean {
+  if (player.dead) return false
+  if ((player.retainCardsThisTurn ?? 0) > 0) return true
+  const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
+    !faceOf(cardDef(card.defId), card.upgraded).retain)
+  if (discarding.length <= 1) return false
+  // Every pile, not just the hand: the card that cares may still be undrawn.
+  return [player.hand, player.draw, player.discard, player.exhaust, player.powers]
+    .some((pile) => pile.some(readsDiscardTop))
 }
 
 /**

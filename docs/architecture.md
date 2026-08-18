@@ -69,6 +69,14 @@ into a state and asserts they do not survive the rebuild.
 In co-op the practical secrets are draw-pile order, unrevealed rewards, and undrawn enemy
 intents — not player hands, which the table can freely discuss.
 
+The act's boss is deliberately **not** one of them. Setup step 6 rolls it in the open before
+anybody moves, so `actBossDefId` is rolled with the act's map and published, and the map
+names it. Deciding it on arrival instead meant a party spent a whole act building a deck
+against an unknown. It is drawn from a side RNG stream keyed on the run's position and the
+act, so it stays deterministic without consuming the main sequence — every existing seed
+deals the same cards. The Ascension 13 *second* Act III boss (`pendingBossDefId`) is a
+different thing and stays hidden: it is drawn when the first boss falls, not at the table.
+
 ## Testing
 
 No test framework. Each check is a standalone Node program under `scripts/verify-*.mjs`

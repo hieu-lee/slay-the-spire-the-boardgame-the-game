@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import type { Room, SpireMap } from '../game/map.ts'
+import { enemyDef } from '../game/enemies.ts'
 import { Icon } from './Icon.tsx'
 import type { IconName } from './icons.ts'
 
@@ -8,6 +9,17 @@ type MapScreenProps = {
   map: SpireMap
   choices: Room[]
   blocked?: boolean
+  /**
+   * This act's boss, rolled at setup and public. Named on the boss node so a
+   * party mid-act can see what it is building a deck against.
+   */
+  bossDefId?: string | null
+  /**
+   * Shown for reading, not for walking — the in-combat map view. Nothing is
+   * reachable, but unlike `blocked` the nodes stay hoverable and focusable,
+   * which is the entire point of opening it.
+   */
+  readOnly?: boolean
   onEnter: (roomId: string) => void
 }
 
@@ -29,6 +41,17 @@ const ROOM_LABEL: Record<Room['kind'], string> = {
   campfire: 'Campfire',
   treasure: 'Treasure',
   merchant: 'Merchant',
+}
+
+/** What a room is for, in one line — the thing a bare icon cannot say. */
+const ROOM_TEXT: Record<Room['kind'], string> = {
+  encounter: 'One enemy card per player, one per row.',
+  elite: 'A harder fight in the bottom row. Every player gains the rewards.',
+  boss: 'Counts as being in every row. Every player gains the rewards.',
+  event: 'An unknown card from the Act deck.',
+  campfire: 'Rest to heal, or Smith to upgrade a card.',
+  treasure: 'A relic.',
+  merchant: 'Spend gold on cards, relics, potions, and card removal.',
 }
 
 type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
@@ -81,7 +104,9 @@ function jitter(id: string): { x: number; y: number } {
  * rather than computed from the layout: the rows wrap and centre themselves, so
  * the only reliable source of a room's position is the DOM.
  */
-export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenProps) {
+export function MapScreen({
+  map, choices, blocked = false, bossDefId, readOnly = false, onEnter,
+}: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const wasBlocked = useRef(blocked)
   const [lines, setLines] = useState<Line[]>([])
@@ -147,11 +172,13 @@ export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenP
   return (
     <div className="map" inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
-        {choices.length === 0
-          ? 'Nowhere to go.'
-          : map.position === null
-            ? 'Enter the Spire.'
-            : 'Choose the next room.'}
+        {readOnly
+          ? 'Hover a room to read it.'
+          : choices.length === 0
+            ? 'Nowhere to go.'
+            : map.position === null
+              ? 'Enter the Spire.'
+              : 'Choose the next room.'}
       </p>
 
       <div className="map__frame" ref={frameRef}>
@@ -175,7 +202,16 @@ export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenP
               if (!room) return null
               const isHere = map.position === id
               const canGo = reachable.has(id)
-              const label = room.hidden ? 'Unknown room' : ROOM_LABEL[room.kind]
+              const named = !room.hidden && room.kind === 'boss' && bossDefId
+                ? enemyDef(bossDefId, 0).name
+                : null
+              const label = room.hidden ? 'Unknown room' : named ?? ROOM_LABEL[room.kind]
+              const text = room.hidden
+                ? 'An Uncertain Future hides what this room holds until you arrive.'
+                : ROOM_TEXT[room.kind]
+              const status = isHere
+                ? 'The party is here.'
+                : room.visited ? 'Already cleared.' : canGo ? 'Reachable.' : 'Out of reach.'
               const wobble = jitter(id)
               return (
                 <button
@@ -198,21 +234,31 @@ export function MapScreen({ map, choices, blocked = false, onEnter }: MapScreenP
                   aria-disabled={!canGo}
                   onClick={() => canGo && onEnter(id)}
                   aria-label={[
-                    label,
-                    isHere ? 'the party is here' : '',
-                    room.visited && !isHere ? 'already cleared' : '',
-                    canGo ? 'reachable' : 'out of reach',
+                    named ? `${ROOM_LABEL.boss}: ${named}` : label,
+                    room.burning ? 'Burning Elite' : '',
+                    text,
+                    status,
                   ]
                     .filter(Boolean)
                     .join(', ')}
                   aria-current={isHere ? 'location' : undefined}
-                  title={label}
                   style={{ '--jitter-x': `${wobble.x}px`, '--jitter-y': `${wobble.y}px` } as React.CSSProperties}
                 >
                   {/* Icon only. The name is in the accessible label and in the
                       tooltip; printing it under every node turned the Spire
                       into a list of captioned boxes. */}
                   <Icon name={room.hidden ? 'daze' : ROOM_ICON[room.kind]} size={!room.hidden && room.kind === 'boss' ? 34 : 24} />
+                  {/* Hidden from the screen reader on purpose: it repeats the
+                      button's own `aria-label`, exactly as the relic tooltip
+                      does. The native `title` it replaces could not be styled,
+                      took a second to appear, and never showed the boss. */}
+                  <span className="room-tip" aria-hidden="true">
+                    <strong className="room-tip__name">{label}</strong>
+                    {named ? <span className="room-tip__pool">{ROOM_LABEL.boss}</span> : null}
+                    {room.burning ? <span className="room-tip__pool">Burning Elite</span> : null}
+                    <span className="room-tip__text">{text}</span>
+                    <span className="room-tip__status">{status}</span>
+                  </span>
                 </button>
               )
             })}

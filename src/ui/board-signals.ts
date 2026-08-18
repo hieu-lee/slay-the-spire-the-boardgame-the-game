@@ -30,6 +30,27 @@ export function strikeClass(base: 'seat' | 'enemy', beat: number): string {
   return beat % 2 === 0 ? `${base}--struck` : `${base}--struck-alt`
 }
 
+/** Stage geometry at full size, in rem: actor pitch, then the slack either end. */
+export const STAGE_GAP_REM = 10
+export const STAGE_MARGIN_REM = 4
+/** Below this a card stops being readable, so the board scrolls instead. */
+export const MIN_STAGE_SCALE = 0.66
+
+/**
+ * How far to shrink the stage so its actors fit the board.
+ *
+ * The stage is one line, so its width grows with the party AND with every
+ * summon: a Slime Boss splitting in front of four players puts 17 actors on it.
+ * Scaling the whole stage keeps them on one floor and stops the auto-scroll from
+ * having to choose between showing a player their own character and showing them
+ * what they are fighting.
+ */
+export function stageScaleFor(actors: number, boardWidthPx: number, remPx: number): number {
+  const needed = (actors * STAGE_GAP_REM + STAGE_MARGIN_REM) * remPx
+  if (actors <= 0 || needed <= 0 || boardWidthPx <= 0) return 1
+  return Math.min(1, Math.max(MIN_STAGE_SCALE, boardWidthPx / needed))
+}
+
 export function pendingUiSurvivesContext(
   phase: CombatState['phase'],
   copyPlayerId: string | undefined,

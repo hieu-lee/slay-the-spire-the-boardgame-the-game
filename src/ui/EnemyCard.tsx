@@ -2,7 +2,9 @@ import { cardDef } from '../game/cards.ts'
 import { cardImagePath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
-import type { Enemy } from '../game/types.ts'
+// Aliased: `hitDamage` is also this component's floating hit-VFX number.
+import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
+import type { Enemy, Player } from '../game/types.ts'
 import type { CSSProperties } from 'react'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
@@ -28,6 +30,13 @@ type EnemyCardProps = {
   stageIndex?: number
   /** Player whose row this enemy occupies; bosses affect the whole party. */
   rowLabel?: string
+  /**
+   * The player this enemy will swing at, so the intent can show the damage that
+   * will land rather than the number printed on the enemy card. Their Vulnerable
+   * and Power count both change it. An AoE hits every row, but the occupant of
+   * this row is the reading that matters to whoever owns it.
+   */
+  defender?: Pick<Player, 'vulnerable' | 'powers'>
   onClick?: (enemy: Enemy) => void
 }
 
@@ -50,8 +59,16 @@ type IntentPart = {
   visibleLabel?: string
 }
 
-/** An enemy's telegraphed intent, in the game's own symbols. */
-function intentParts(action: EnemyAction): IntentPart[] {
+/**
+ * An enemy's telegraphed intent, in the game's own symbols.
+ *
+ * `swing` turns a PRINTED attack number into the damage it will actually deal.
+ * Without it the intent showed the number off the enemy card and the blow landed
+ * for something else entirely: a Weakened enemy printing 1 deals 0 (Weak is a
+ * flat -1 and nothing clamps a hit up to 1), and the board still promised 1.
+ * Reading "will this kill me" off the board is the whole point of an intent.
+ */
+function intentParts(action: EnemyAction, swing: (printed: number) => number): IntentPart[] {
   switch (action.kind) {
     case 'attack': {
       // Repeated symbols, not a formula. Twin Strike prints two swords side by
@@ -60,14 +77,14 @@ function intentParts(action: EnemyAction): IntentPart[] {
       const times = action.times && action.times > 1 ? action.times : 1
       return Array.from({ length: times }, (_unused, index) => ({
         icon: 'attack' as const,
-        value: action.amount,
+        value: swing(action.amount),
         aoe: action.aoe,
         times: index === 0 && times > 1 ? times : undefined,
         echo: index > 0,
       }))
     }
     case 'attackSequence':
-      return action.hits.map((hit) => ({ icon: 'attack', value: hit.amount, aoe: hit.aoe }))
+      return action.hits.map((hit) => ({ icon: 'attack', value: swing(hit.amount), aoe: hit.aoe }))
     case 'block':
       return [{ icon: 'block', value: action.perPlayer ? `${action.amount}/player` : action.amount }]
     case 'gainStrength':
@@ -115,7 +132,7 @@ function intentParts(action: EnemyAction): IntentPart[] {
     case 'transform':
       return [{ icon: 'monster', label: `enters ${action.defId.replaceAll('_', ' ')}`, visibleLabel: 'Mode' }]
     case 'guardianModeShift':
-      return [{ icon: 'attack', value: action.amount, label: 'if Block remains; otherwise enters Defensive Mode' }]
+      return [{ icon: 'attack', value: swing(action.amount), label: 'if Block remains; otherwise enters Defensive Mode' }]
     case 'removeInvincible':
       return [{ icon: 'monster', label: 'removes Invincible', visibleLabel: 'Invincible off' }]
     case 'shuffleStatus':
@@ -242,15 +259,25 @@ export function EnemyCard({
   falling = false,
   stageIndex = 0,
   rowLabel,
+  defender,
   onClick,
 }: EnemyCardProps) {
   const def = enemyDef(enemy.defId, enemy.ascension)
   const actions = actionsForEnemy(enemy, die)
-  const intent = actions.flatMap(intentParts)
-  if ((enemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
-    intent.push(...intentParts({ kind: 'actsLast' }))
-  }
   const abilities = enemyAbilities(def)
+  // Curiosity adds the defender's Power count to every hit, so it belongs in the
+  // preview for the same reason Strength and Weak do.
+  const curiosity = abilities.some((ability) => ability.kind === 'curiosity')
+  const mods = attackerModsOfEnemy(enemy)
+  const swing = (printed: number) => swingDamage(
+    printed + (curiosity ? defender?.powers.length ?? 0 : 0),
+    mods,
+    { vulnerable: defender?.vulnerable ?? 0 },
+  )
+  const intent = actions.flatMap((action) => intentParts(action, swing))
+  if ((enemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
+    intent.push(...intentParts({ kind: 'actsLast' }, swing))
+  }
   const abilityLabels = abilities.map((ability) => {
     const text = displayedAbilityText(ability, enemy, def.id, die, false)
     return `${text}${enemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`

@@ -1728,13 +1728,21 @@ function cardReward(room, seat, action, seatToken) {
     room.version += 1
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
-  if (choice === 'confirm') {
+  if (choice === 'confirm' || choice === 'unconfirm') {
     if (run.rewards.some((candidate) => candidate.transformReward || candidate.potion !== false || (candidate.relic ?? false) !== false || (candidate.bossRelics ?? false) !== false)) {
       fail('Settle every item reward first')
     }
-    const undecided = run.rewards.filter((candidate) => candidate.cardReward && !(candidate.playerId in (room.rewardChoices ?? {})))
-    if (undecided.length > 0) fail('Everyone must choose before rewards are confirmed')
-    room.rewardConfirmed = { ...room.rewardConfirmed, [seat.playerId]: true }
+    // Only YOUR own pick gates YOUR own confirmation. Waiting for the whole
+    // table first made the counter useless: nobody could tick over until the
+    // last player had chosen, so the confirm read as a second, pointless round.
+    if (!(seat.playerId in (room.rewardChoices ?? {}))) fail('Choose a reward before confirming it')
+    // The DESIRED state, not a flip. One button drives both, but a flip is not
+    // idempotent: a double-click, or a resend after a timeout the server had
+    // already applied, would land a player back on "unconfirmed" while their
+    // screen said otherwise and the table waited on them.
+    room.rewardConfirmed = { ...room.rewardConfirmed }
+    if (choice === 'unconfirm') delete room.rewardConfirmed[seat.playerId]
+    else room.rewardConfirmed[seat.playerId] = true
     room.version += 1
     const waiting = settleReward(room)
     return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
@@ -1745,8 +1753,14 @@ function cardReward(room, seat, action, seatToken) {
     fail('Choose one of your revealed cards or skip')
   }
   room.rewardChoices = { ...room.rewardChoices, [seat.playerId]: choice }
-  // Any changed decision reopens the final table confirmation for everyone.
-  room.rewardConfirmed = undefined
+  // Changing your mind reopens YOUR confirmation and nobody else's. Wiping the
+  // table's was the whole reason one player reconsidering made everyone re-click:
+  // a teammate's card is not information any other player's choice rests on.
+  // (Revealing more cards IS such information, and still clears every seat.)
+  if (room.rewardConfirmed?.[seat.playerId]) {
+    room.rewardConfirmed = { ...room.rewardConfirmed }
+    delete room.rewardConfirmed[seat.playerId]
+  }
   settleDisconnectedRewards(room)
   room.version += 1
   const waiting = settleReward(room)
@@ -2406,6 +2420,11 @@ function redactRun(run, viewerId) {
       ])),
     } : null,
     pendingBossDefId: null,
+    // Public, unlike `pendingBossDefId`: setup rolls this act's boss in the open
+    // before anybody moves, and the map names it so decks can be built for it.
+    // The Ascension 13 SECOND Act III boss above stays hidden — that one is not
+    // rolled at the table, it is drawn when the first boss falls.
+    actBossDefId: run.actBossDefId ?? null,
     map: visibleMap(run),
     // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
     log: run.log,

@@ -76,11 +76,14 @@ import { EnemyCard } from './EnemyCard.tsx'
 import { PowerRow } from './PowerRow.tsx'
 import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
+  STAGE_GAP_REM,
+  STAGE_MARGIN_REM,
   cardMotionDestination,
   drawnCardUids,
   healthBand,
   pendingUiSurvivesContext,
   shouldDisarmCardFlight,
+  stageScaleFor,
   strikeClass,
 } from './board-signals.ts'
 import { playSoundEffect } from './sfx.ts'
@@ -721,6 +724,7 @@ export function CombatScreen({
   const [startTurnScryPicked, setStartTurnScryPicked] = useState<string[]>([])
   const [resolvingStartTurnScry, setResolvingStartTurnScry] = useState(false)
   const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
+  const [stageScale, setStageScale] = useState(1)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -1378,8 +1382,24 @@ export function CombatScreen({
   }, [state.log.length])
   const bosses = state.enemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = state.enemies.filter((enemy) => !enemy.isBoss)
-  const stageGap = state.players.length >= 3 ? 8 : 10
+  const stageCount = state.players.length + state.enemies.length
+  const stageGap = STAGE_GAP_REM * stageScale
   const stageLayoutKey = state.enemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
+
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    const fit = () => {
+      if (board.clientWidth === 0) return
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      setStageScale(stageScaleFor(stageCount, board.clientWidth, rem))
+    }
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(fit)
+    observer.observe(board)
+    return () => observer.disconnect()
+  }, [stageCount])
 
   // With a full party the board can outgrow the viewport. Rather than shrink
   // everything, keep the row the player actually controls on screen.
@@ -1475,6 +1495,11 @@ export function CombatScreen({
   const confirmedDiscards = decidedPlayerIds
     ? livingPlayers.filter((player) => decidedPlayerIds.includes(player.id)).length
     : livingPlayers.filter((player) => discardOrders[player.id]).length
+  // Online only: hotseat has no per-seat readiness, so one click ends the turn
+  // for the table and a counter there would sit at 0 until it vanished.
+  const endTurnCount = decidedPlayerIds && livingPlayers.length > 1
+    ? `${confirmedDiscards}/${livingPlayers.length}`
+    : null
   const discardableHand = viewer.hand.filter((card) =>
     !card.endTurnProtected && !card.retainThisTurn && !faceOf(cardDef(card.defId), card.upgraded).retain)
   const retainAllowance = viewer.retainCardsThisTurn ?? 0
@@ -2941,6 +2966,9 @@ export function CombatScreen({
                 </details>
               ) : null}
               {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
+              {/* The count lives on the End turn button itself. A co-op turn
+                  ends when everyone says so, and being told who the table is
+                  waiting on is the whole reason a second screen existed. */}
               {!forcedCard && !distilled ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
                 disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) ||
                   (orderingStage && viewer.id !== endTurnCoordinatorId)}>
@@ -2948,7 +2976,7 @@ export function CombatScreen({
                   ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
                   : orderingStage
                     ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
-                    : 'End turn'}
+                    : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
               </button> : null}
             </>
           ) : null}
@@ -3429,9 +3457,10 @@ export function CombatScreen({
         tabIndex={0}
         aria-label="Combat board"
         style={{
-          '--stage-width': `${Math.max(48, (state.players.length + state.enemies.length) * stageGap + 4)}rem`,
+          '--stage-scale': stageScale,
+          '--stage-width': `${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem`,
           '--stage-gap': `${stageGap}rem`,
-          '--stage-actor-width': `${state.players.length >= 3 ? 7.5 : 9}rem`,
+          '--stage-actor-width': `${stageGap - 1 * stageScale}rem`,
         } as React.CSSProperties}
       >
         {bosses.length > 0 ? (
@@ -3447,6 +3476,9 @@ export function CombatScreen({
                 hitDamage={damage.get(enemy.uid)}
                 beat={beats.get(enemy.uid) ?? 0}
                 stageIndex={stageEnemies.length + index}
+                // A boss stands in every row, so the only reading that means
+                // anything to the person looking at the screen is their own.
+                defender={viewer}
                 disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
                 targeted={(isStartTurnEnemyTarget(enemy.uid) ||
                   (pendingTrigger?.playerId === viewer.id &&
@@ -3658,6 +3690,7 @@ export function CombatScreen({
                       beat={beats.get(enemy.uid) ?? 0}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
+                      defender={occupant}
                       disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
                       targeted={(isStartTurnEnemyTarget(enemy.uid) ||
                         (pendingTrigger?.playerId === viewer.id &&
