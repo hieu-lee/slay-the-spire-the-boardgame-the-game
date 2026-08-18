@@ -75,7 +75,7 @@ import { useCardMorphs } from './useCardMorphs.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
-import { installSoundEffects, SFX_STORAGE_KEY, useRunOutcomeSound } from './sfx.ts'
+import { installSoundEffects, SFX_STORAGE_KEY, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -137,19 +137,20 @@ export function App() {
     <>
       <div className="game-mode" hidden={online}>
         <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onOnline={() => setOnline(true)}
-          sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} />
+          sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} active={!online} />
       </div>
       {online ? <OnlineGame onLocal={() => setOnline(false)} sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} /> : null}
     </>
   )
 }
 
-function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
+function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: {
   open: boolean
   onOpen: () => void
   onOnline: () => void
   sfxEnabled: boolean
   onToggleSfx: () => void
+  active: boolean
 }) {
   const [playerCount, setPlayerCount] = useState(1)
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
@@ -162,6 +163,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   useRunOutcomeSound(run)
+  useBossFightMusic(run.combat, sfxEnabled && active)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [achievements, setAchievements] = useState(false)
@@ -343,7 +345,7 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx }: {
           </button>
           <button type="button" onClick={onOnline}>Play online</button>
           <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-            Sound effects {sfxEnabled ? 'on' : 'off'}
+            Sound {sfxEnabled ? 'on' : 'off'}
           </button>
           </div>
         </details>

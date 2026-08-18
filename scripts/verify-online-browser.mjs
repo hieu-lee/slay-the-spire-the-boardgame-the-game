@@ -45,9 +45,13 @@ for (const context of [aContext, bContext]) {
     const sockets = []
     window.__ROOM_SOCKETS__ = sockets
     window.__SFX_PLAYS__ = []
+    window.__BGM_PAUSES__ = []
     HTMLMediaElement.prototype.play = function play() {
       window.__SFX_PLAYS__.push(new URL(this.src).pathname)
       return Promise.resolve()
+    }
+    HTMLMediaElement.prototype.pause = function pause() {
+      window.__BGM_PAUSES__.push(new URL(this.src).pathname)
     }
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
@@ -503,6 +507,25 @@ try {
     a.locator('.app-shell--online .map').waitFor(),
     b.locator('.app-shell--online .map').waitFor(),
   ])
+  const onlineBoss = createCombat(createRng(406), openingRoom.run.players, [{
+    uid: 'online-boss', defId: 'hexaghost', row: 0, hp: 36, maxHp: 36, block: 0, strength: 0,
+    vulnerable: 0, weak: 0, poison: 0, actionIndex: 0, abilityUsed: false, dead: false, isBoss: true,
+  }], 'online-bgm', [], 3)
+  openingRoom.run = { ...openingRoom.run, phase: 'combat', combat: onlineBoss }
+  openingRoom.version += 1
+  rooms.publishRoom(code)
+  await a.waitForFunction(() => window.__SFX_PLAYS__.includes('/assets/bgm/the-guardian-emerges.mp3'))
+  const reconnectBgmPlayBefore = await a.evaluate(() => window.__SFX_PLAYS__.length)
+  await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
+  await a.locator('.connection--reconnecting').waitFor()
+  await a.waitForFunction(() => window.__BGM_PAUSES__.includes('/assets/bgm/the-guardian-emerges.mp3'))
+  await a.locator('.connection--connected').waitFor()
+  await a.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), reconnectBgmPlayBefore)
+  check('online boss music pauses during reconnect and resumes from the authoritative boss state', () => assert(true))
+  openingRoom.run = { ...openingRoom.run, phase: 'map', combat: null }
+  openingRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('.app-shell--online .map').waitFor()
   await a.evaluate(() => window.__ROOM_SOCKETS__.at(-1)?.close())
   await a.locator('.connection--reconnecting').waitFor()
   const inertWhileReconnecting = await a.locator('.online-mutations').evaluate((table) => table.inert)

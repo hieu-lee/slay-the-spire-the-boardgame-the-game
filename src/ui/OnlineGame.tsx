@@ -31,7 +31,7 @@ import { DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { AchievementsScreen } from './AchievementsScreen.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
-import { useRunOutcomeSound } from './sfx.ts'
+import { useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -197,6 +197,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const [achievementsOpen, setAchievementsOpen] = useState(false)
   const snapshot = room.snapshot
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
+  useBossFightMusic(snapshot?.run?.combat, sfxEnabled && room.connection === 'connected')
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(
@@ -356,7 +357,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
               {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
             </label> : null}
             <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-              Sound effects {sfxEnabled ? 'on' : 'off'}
+              Sound {sfxEnabled ? 'on' : 'off'}
             </button>
             <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
               <legend>Official run setup</legend>
@@ -461,7 +462,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           {snapshot.seats.map((seat) => <span className="pip" key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
           <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
           <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-            Sound effects {sfxEnabled ? 'on' : 'off'}
+            Sound {sfxEnabled ? 'on' : 'off'}
           </button>
           <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
           </div>

@@ -59,7 +59,9 @@ page.on('console', (message) => {
 })
 page.on('pageerror', (error) => pageErrors.push(String(error)))
 page.on('requestfailed', (request) =>
-  requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`),
+  request.failure()?.errorText !== 'net::ERR_ABORTED' || !request.url().includes('/assets/bgm/')
+    ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
+    : undefined,
 )
 page.on('response', (response) => {
   if (response.status() >= 400 && response.url().startsWith(base)) {
@@ -69,9 +71,13 @@ page.on('response', (response) => {
 
 await page.addInitScript(() => {
   window.__SFX_PLAYS__ = []
+  window.__BGM_PAUSES__ = []
   HTMLMediaElement.prototype.play = function play() {
     window.__SFX_PLAYS__.push(new URL(this.src).pathname)
     return Promise.resolve()
+  }
+  HTMLMediaElement.prototype.pause = function pause() {
+    window.__BGM_PAUSES__.push(new URL(this.src).pathname)
   }
 })
 
@@ -254,11 +260,11 @@ const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
 await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => button.focus())
 const settingsKeepsFocus = await settingsDialog.evaluate((dialog) => dialog.contains(document.activeElement))
-const sfxToggle = settingsDialog.getByRole('button', { name: 'Sound effects on' })
+const sfxToggle = settingsDialog.getByRole('button', { name: 'Sound on' })
 const sfxStartsEnabled = await sfxToggle.getAttribute('aria-pressed')
 await sfxToggle.click()
 const sfxCanMute = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
-await settingsDialog.getByRole('button', { name: 'Sound effects off' }).click()
+await settingsDialog.getByRole('button', { name: 'Sound off' }).click()
 const sfxCanRestore = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
 const menuSounds = await page.evaluate(() => window.__SFX_PLAYS__)
 const formSoundBefore = menuSounds.length
@@ -741,6 +747,78 @@ check('Sentry uses a transparent full-body cutout and character status clears HP
   assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [1024, 1536])
   assertEqual(combatAppearance.statusOverlapsHp, false)
 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+const musicBeforeBoss = await page.evaluate(() => window.__SFX_PLAYS__)
+check('ordinary combat does not start boss music', () => {
+  assert(!musicBeforeBoss.some((sound) => sound.startsWith('/assets/bgm/')))
+})
+const bossMusic = [
+  ['hexaghost', 'the-guardian-emerges.mp3'],
+  ['the_champ', 'battle-with-the-champ.mp3'],
+  ['awakened_one_phase_1', 'the-awakened-one.mp3'],
+  ['corrupt_heart', 'the-heart.mp3'],
+]
+for (const [defId, file] of bossMusic) {
+  const before = await page.evaluate(() => window.__SFX_PLAYS__.length)
+  await page.evaluate(({ run, defId }) => {
+    const next = structuredClone(run)
+    Object.assign(next.combat.enemies[0], { defId, isBoss: true, dead: false })
+    window.__STS_DEBUG__.setRun(next)
+  }, { run: combatAppearanceRun, defId })
+  await page.waitForFunction(({ before, file }) =>
+    window.__SFX_PLAYS__.slice(before).includes(`/assets/bgm/${file}`), { before, file })
+}
+const slimeBossMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+const slimeBossPauseBefore = await page.evaluate(() => window.__BGM_PAUSES__.filter((sound) => sound === '/assets/bgm/the-guardian-emerges.mp3').length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat.enemies[0], { defId: 'slime_boss', isBoss: true, dead: false })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), slimeBossMusicBefore)
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.enemies[0].dead = true
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForTimeout(100)
+const slimeBossMusicContinues = await page.evaluate((before) => window.__BGM_PAUSES__.filter((sound) => sound === '/assets/bgm/the-guardian-emerges.mp3').slice(before).length, slimeBossPauseBefore)
+check('Slime Boss music continues through its split', () => assertEqual(slimeBossMusicContinues, 0))
+for (const phase of ['won', 'lost']) {
+  const before = await page.evaluate(() => window.__BGM_PAUSES__.length)
+  await page.evaluate((phase) => {
+    const next = structuredClone(window.__STS_DEBUG__.getRun())
+    next.combat.phase = phase
+    window.__STS_DEBUG__.setRun(next)
+  }, phase)
+  await page.waitForFunction(({ before }) => window.__BGM_PAUSES__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), { before })
+  if (phase === 'won') {
+    const restartBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+    await page.evaluate((run) => {
+      const next = structuredClone(run)
+      Object.assign(next.combat.enemies[0], { defId: 'slime_boss', isBoss: true, dead: false })
+      window.__STS_DEBUG__.setRun(next)
+    }, combatAppearanceRun)
+    await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), restartBefore)
+  }
+}
+check('boss music stops when combat ends', () => assert(true))
+
+const mutedBossMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  Object.assign(next.combat.enemies[0], { defId: 'hexaghost', isBoss: true, dead: false })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), mutedBossMusicBefore)
+const mutedBossPauseBefore = await page.evaluate(() => window.__BGM_PAUSES__.length)
+if (!await gameMenu.evaluate((menu) => menu.open)) await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'Sound on' }).click()
+await page.waitForFunction((before) => window.__BGM_PAUSES__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), mutedBossPauseBefore)
+await gameMenu.getByRole('button', { name: 'Sound off' }).click()
+if (await gameMenu.evaluate((menu) => menu.open)) await gameMenu.locator(':scope > summary').click()
+check('Sound control stops active boss music', () => assert(true))
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 const combatSfx = []
