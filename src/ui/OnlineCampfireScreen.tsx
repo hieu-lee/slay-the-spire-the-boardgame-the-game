@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { canUpgradeCard } from '../game/run.ts'
-import type { VisiblePlayer } from '../multiplayer/useRoomSession.ts'
+import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import { Card } from './Card.tsx'
 import { Icon } from './Icon.tsx'
@@ -12,7 +12,7 @@ type Props = {
   player: VisiblePlayer
   saved?: Decision
   decided: string[]
-  seats: { playerId: string; name: string }[]
+  seats: PublicSeat[]
   onAction: (action: object) => void
   rubyAvailable?: boolean
   restAllowed?: boolean
@@ -28,18 +28,17 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.choice === 'ruby' || decision?.cardUid !== undefined
+  const alive = seats.some((seat) => seat.playerId === player.id)
 
   useEffect(() => {
     if (saved) setDecision(saved)
   }, [saved?.cardUid, saved?.choice])
 
   return (
-    <section className="campfire">
-      <h2><Icon name="burn" size={26} /> Campfire</h2>
-      <p className="muted">
-        {seats.map((seat) => `${seat.name}: ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`).join(' · ')}
-      </p>
-      <div className="campfire__player">
+    <section className="campfire" data-party-size={seats.length}>
+      <div className="campfire__prompt">
+      <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
+      {alive ? <div className="campfire__player">
         <span className="campfire__name">{player.name} · {player.hp}/{player.maxHp}</span>
         <div className="campfire__choices">
           {(coffee || !restAllowed) && (hammer || upgradable.length === 0) ? <button type="button" className={decision?.choice === 'leave' ? 'is-chosen' : ''}
@@ -47,10 +46,10 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
             Leave <span className="muted">No campfire action available</span>
           </button> : null}
           <button type="button" disabled={coffee || !restAllowed} className={decision?.choice === 'rest' ? 'is-chosen' : ''} onClick={() => setDecision({ choice: 'rest' })}>
-            Rest <span className="muted">+{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : ''}</span>
+            <img src="/assets/noncombat/campfire/rest.webp" alt="" /><strong>Rest</strong><span className="muted">+{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : ''}</span>
           </button>
           <button type="button" disabled={hammer || upgradable.length === 0} className={decision?.choice === 'smith' ? 'is-chosen' : ''} onClick={() => setDecision({ choice: 'smith' })}>
-            Smith <span className="muted">upgrade</span>
+            <img src="/assets/noncombat/campfire/smith.webp" alt="" /><strong>Smith</strong><span className="muted">upgrade</span>
           </button>
           {rubyAvailable ? <button type="button" className={decision?.choice === 'ruby' ? 'is-chosen' : ''} onClick={() => setDecision({ choice: 'ruby' })}>
             ◆ Ruby Key <span className="muted">skip campfire</span>
@@ -68,15 +67,22 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
           </div>
         ) : null}
         {chosen ? <p className="muted">Becomes {faceOf(cardDef(chosen.defId), true).name}</p> : null}
+      </div> : <p className="campfire__spectator" role="status">Your climb has ended. You are watching the surviving party choose.</p>}
       </div>
-      <button
+      <div className="campfire__players" aria-label="Party around the campfire">
+        {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} data-ready={decided.includes(seat.playerId)} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
+          <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
+          <span><strong>{seat.name}</strong><small>{seat.connected ? (decided.includes(seat.playerId) ? 'Ready' : 'Choosing…') : 'Reconnecting…'}</small></span>
+        </div>)}
+      </div>
+      {alive ? <button
         type="button"
         className="campfire__leave"
         disabled={!ready}
         onClick={() => onAction({ kind: 'campfire', choices: { [player.id]: decision } })}
       >
         {decided.includes(player.id) ? 'Update choice' : 'Lock in choice'}
-      </button>
+      </button> : null}
     </section>
   )
 }

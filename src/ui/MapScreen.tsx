@@ -54,6 +54,8 @@ const ROOM_TEXT: Record<Room['kind'], string> = {
   merchant: 'Spend gold on cards, relics, potions, and card removal.',
 }
 
+const LEGEND_KINDS: Room['kind'][] = ['event', 'merchant', 'treasure', 'campfire', 'encounter', 'elite', 'boss']
+
 type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
 
 /**
@@ -266,6 +268,12 @@ export function MapScreen({
           </div>
         ))}
       </div>
+      <aside className="map__legend" aria-label="Map legend">
+        <strong>Legend</strong>
+        <ul>
+          {LEGEND_KINDS.map((kind) => <li key={kind}><Icon name={ROOM_ICON[kind]} size={19} /> {ROOM_LABEL[kind]}</li>)}
+        </ul>
+      </aside>
     </div>
   )
 }

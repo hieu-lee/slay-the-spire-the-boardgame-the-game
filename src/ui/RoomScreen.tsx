@@ -219,6 +219,7 @@ function MerchantScreen({
         src="/assets/noncombat/merchant.webp"
         alt="A traveling merchant welcomes the party"
       />
+      <p className="merchant-greeting" aria-hidden="true">Welcome! I have just what you need.</p>
       <div className="room-banner">
         <span>Welcome, traveler</span>
         <h2 id="merchant-title">The Merchant</h2>
@@ -842,9 +843,7 @@ function EventScreen({
   const latestDie = room.dieRolls[player.id]?.at(-1);
   return (
     <section className="room-stage event-stage" aria-labelledby="event-title">
-      <div className="event-art">
-        <span>?</span>
-      </div>
+      <div className="event-art" aria-hidden="true" />
       <div className="event-panel">
         <div className="room-banner">
           <span>Event</span>

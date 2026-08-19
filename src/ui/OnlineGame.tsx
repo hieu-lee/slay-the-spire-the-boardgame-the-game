@@ -657,7 +657,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
         </section>
       ) : null}
       {run.phase === 'room' && roomKind === 'campfire' && viewer ? (
-        <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats} onAction={room.act}
+        <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats.filter((seat) => !run.players.find((candidate) => candidate.id === seat.playerId)?.dead)} onAction={room.act}
           rubyAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.ruby}
           restAllowed={!run.meta.modifierIds.includes('night_terrors')} />
       ) : null}

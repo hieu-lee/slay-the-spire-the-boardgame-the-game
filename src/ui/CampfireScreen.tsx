@@ -23,6 +23,17 @@ type Decision = CampfireDecision
 export function CampfireScreen({ players, onResolve, rubyAvailable = false, restAllowed = true }: CampfireScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
   const living = players.filter((player) => !player.dead)
+  const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
+  const player = living.find((candidate) => candidate.id === focusedId) ?? living[0]
+  const decision = player ? decisions[player.id] : undefined
+  const coffee = player?.relics.some((relic) => relic.defId === 'coffee_dripper') ?? false
+  const hammer = player?.relics.some((relic) => relic.defId === 'fusion_hammer') ?? false
+  const peacePipe = player?.relics.some((relic) => relic.defId === 'peace_pipe') ?? false
+  const restHeal = player ? 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0) : 3
+  const upgradable = player?.deck.filter(canUpgradeCard) ?? []
+  const restBlocked = coffee || !restAllowed
+  const blocked = restBlocked && (hammer || upgradable.length === 0)
+  const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
@@ -30,35 +41,12 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   })
 
   return (
-    <section className="campfire">
-      <h2>
-        <Icon name="burn" size={26} /> Campfire
-      </h2>
-      <p className="muted">Rest to heal 3, or Smith to upgrade a card.</p>
-
-      <div className="campfire__players">
-        {living.map((player) => {
-          const decision = decisions[player.id]
-          const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
-          const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
-          const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
-          const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
-          const upgradable = player.deck.filter(canUpgradeCard)
-          const restBlocked = coffee || !restAllowed
-          const blocked = restBlocked && (hammer || upgradable.length === 0)
-          const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
-          return (
-            /* Grouped and named, so a screen reader announces whose keys these
-               are. With four seats the tab ring was "Rest, Smith, Rest, Smith,
-               Rest, Smith…" with nothing to tell them apart. Same treatment the
-               merchant shelves use. */
-            <div className="campfire__player" key={player.id}
-              role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
-              <span className="campfire__name">
-                {player.name} · {player.hp}/{player.maxHp}
-              </span>
-
-              <div className="campfire__choices">
+    <section className="campfire" data-party-size={living.length}>
+      <div className="campfire__prompt">
+        <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
+        {player ? <div className="campfire__player" role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
+          <span className="campfire__name">What will {player.name} do? · {player.hp}/{player.maxHp} HP</span>
+          <div className="campfire__choices">
                 {blocked ? <button type="button"
                   className={decision?.choice === 'leave' ? 'is-chosen' : ''}
                   onClick={() => setDecisions((current) => ({ ...current, [player.id]: { choice: 'leave' } }))}>
@@ -72,7 +60,8 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
                   }
                 >
-                  Rest
+                  <img src="/assets/noncombat/campfire/rest.webp" alt="" />
+                  <strong>Rest</strong>
                   <span className="muted"> +{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
                 {rubyAvailable ? <button
@@ -88,12 +77,13 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
                   }
                 >
-                  Smith
+                  <img src="/assets/noncombat/campfire/smith.webp" alt="" />
+                  <strong>Smith</strong>
                   <span className="muted"> upgrade</span>
                 </button>
-              </div>
+          </div>
 
-              {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
+          {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
                 {player.deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card}
                   selected={decision.removeCardUid === card.uid}
                   onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
@@ -101,7 +91,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   } }))} />)}
               </div> : null}
 
-              {decision?.choice === 'smith' ? (
+          {decision?.choice === 'smith' ? (
                 <>
                   <div className="campfire__deck">
                     {upgradable.map((card) => (
@@ -132,9 +122,25 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     </div>
                   ) : null}
                 </>
-              ) : null}
-            </div>
-          )
+          ) : null}
+        </div> : null}
+      </div>
+
+      <div className="campfire__players" aria-label="Party around the campfire">
+        {living.map((seat, index) => {
+          const choice = decisions[seat.id]
+          const status = choice?.choice === 'smith' && !choice.cardUid ? 'Choose a card' : choice ? choice.choice : 'Choose'
+          return <button
+            type="button"
+            className={`campfire__seat campfire__seat--${index}`}
+            key={seat.id}
+            aria-label={`${seat.name}, ${seat.hp} of ${seat.maxHp} HP, ${status}`}
+            aria-pressed={seat.id === player?.id}
+            onClick={() => setFocusedId(seat.id)}
+          >
+            <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
+            <span><strong>{seat.name}</strong><small>{seat.hp}/{seat.maxHp} HP · {status}</small></span>
+          </button>
         })}
       </div>
 

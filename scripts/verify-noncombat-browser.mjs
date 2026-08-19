@@ -519,6 +519,8 @@ await page.setViewportSize({ width: 1280, height: 800 })
 await setRoom('event')
 await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
 await page.locator('.room-stage').evaluate((element) => { element.scrollTop = 0 })
+await page.mouse.move(0, 0)
+await page.locator('.card-morph').waitFor({ state: 'detached' })
 await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), fullPage: true })
 const eventShape = await page.evaluate(() => {
   const stage = document.querySelector('.room-stage')?.getBoundingClientRect()

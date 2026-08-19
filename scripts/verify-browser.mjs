@@ -10123,9 +10123,9 @@ check('resolving a local Relic restores map keyboard focus', () => {
 
 // The campfire is the first non-combat room with real interaction: each player
 // independently Rests or Smiths, and nobody leaves until all have chosen.
-await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire'))
+await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'campfire'))
 await bypassNeow()
-await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 2)
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -10135,16 +10135,41 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
-// Four seats offering "Rest" and "Smith" are indistinguishable in a tab ring
-// without a per-seat name.
-const campfireSeatNames = await page.evaluate(() => [...document.querySelectorAll('.campfire__player')]
-  .map((seat) => ({ role: seat.getAttribute('role'), label: seat.getAttribute('aria-label') })))
+const campfireSeatNames = await page.evaluate(() => [...document.querySelectorAll('.campfire__seat')]
+  .map((seat) => ({ role: seat.getAttribute('role') ?? seat.tagName.toLowerCase(), label: seat.getAttribute('aria-label') })))
 check('each campfire seat is named for the player it belongs to', () => {
   assert(campfireSeatNames.length > 1, 'expected more than one seat')
-  assert(campfireSeatNames.every((seat) => seat.role === 'group' && /\d+ of \d+ HP$/.test(seat.label ?? '')),
+  assert(campfireSeatNames.every((seat) => seat.role === 'button' && /\d+ of \d+ HP/.test(seat.label ?? '')),
     `seats not individually named: ${JSON.stringify(campfireSeatNames)}`)
   assertEqual(new Set(campfireSeatNames.map((seat) => seat.label)).size, campfireSeatNames.length,
     'two seats share a name')
+})
+
+const campfirePartyLayouts = []
+for (let living = 1; living <= 4; living += 1) {
+  await page.evaluate((count) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players = run.players.map((player, index) => ({ ...player, dead: index >= count }))
+    debug.setRun(run)
+  }, living)
+  await page.waitForFunction((count) => document.querySelector('.campfire')?.getAttribute('data-party-size') === String(count), living)
+  campfirePartyLayouts.push(await page.evaluate(() => ({
+    count: document.querySelectorAll('.campfire__seat').length,
+    loaded: [...document.querySelectorAll('.campfire__seat img')].every((image) => image.naturalWidth > 0),
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  })))
+}
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => ({ ...player, dead: false }))
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribute('data-party-size') === '4')
+check('campfire party art covers every living party size without overflow', () => {
+  assertDeepEqual(campfirePartyLayouts.map((layout) => layout.count), [1, 2, 3, 4])
+  assert(campfirePartyLayouts.every((layout) => layout.loaded && !layout.overflow), JSON.stringify(campfirePartyLayouts))
 })
 
 const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
@@ -10152,11 +10177,19 @@ check('a campfire will not let the party leave until everyone has chosen', () =>
   assert(leaveLockedBefore, 'the leave button must be disabled while a choice is outstanding')
 })
 
-await page.locator('.campfire__player').nth(0).getByRole('button', { name: /Rest/ }).click()
-await page.locator('.campfire__player').nth(1).getByRole('button', { name: /Smith/ }).click()
+const campfireSeats = page.locator('.campfire__seat')
+const campfirePrompt = page.locator('.campfire__prompt')
+await campfireSeats.nth(0).click()
+await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
+await campfireSeats.nth(1).click()
+await campfirePrompt.getByRole('button', { name: /Smith/ }).click()
 await page.waitForSelector('.campfire__deck .card')
 await shot('12-campfire')
 await page.locator('.campfire__deck .card').first().click()
+for (const index of [2, 3]) {
+  await campfireSeats.nth(index).click()
+  await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
+}
 const leaveLockedAfter = await page.locator('.campfire__leave').isDisabled()
 await page.locator('.campfire__leave').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')

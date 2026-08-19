@@ -3374,14 +3374,39 @@ try {
   // receive the exact redacted snapshots used in production.
   const itemBaseline = structuredClone(liveRoom.run)
   const annRun = liveRoom.run.players.find((player) => player.name === 'Ann')
+  const ownerGame = a.locator('.app-shell--online')
+  const teammateGame = b.locator('.app-shell--online')
+  liveRoom.run = structuredClone(itemBaseline)
+  const campfireRoomId = liveRoom.run.map.rows[0][0]
+  liveRoom.run.phase = 'room'
+  liveRoom.run.combat = null
+  liveRoom.run.roomState = null
+  liveRoom.run.map.position = campfireRoomId
+  liveRoom.run.map.rooms[campfireRoomId].kind = 'campfire'
+  liveRoom.run.players.find((player) => player.name === 'Bo').dead = true
+  liveRoom.campfireChoices = undefined
+  rooms.publishRoom(code)
+  await Promise.all([ownerGame, teammateGame].map((game) => game.getByRole('heading', { name: /Campfire/ }).waitFor()))
+  const deadCampfireStatus = await teammateGame.getByRole('status').textContent()
+  const deadCampfireControls = await teammateGame.locator('.campfire__prompt button, .campfire__leave').count()
+  const livingCampfirePortraits = await teammateGame.locator('.campfire__seat').count()
+  const ownerCampfireControls = await ownerGame.locator('.campfire__prompt button').count()
+  check('a dead online viewer spectates the living Campfire without submitting a choice', () => {
+    assert(deadCampfireStatus.includes('watching the surviving party'), deadCampfireStatus)
+    assertEqual(deadCampfireControls, 0)
+    assertEqual(livingCampfirePortraits, 1)
+    assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
+  })
+  liveRoom.run = structuredClone(itemBaseline)
+  liveRoom.campfireChoices = undefined
+  rooms.publishRoom(code)
+  await Promise.all([ownerGame, teammateGame].map((game) => game.locator('.combat').waitFor()))
   liveRoom.run = {
     ...liveRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
       potion: false, relic: 'astrolabe', bossRelics: false }],
   }
   await roomAction(a, { kind: 'relicReward', choice: 'gain' })
-  const ownerGame = a.locator('.app-shell--online')
-  const teammateGame = b.locator('.app-shell--online')
   await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
   await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))

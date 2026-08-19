@@ -1310,31 +1310,34 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 /* ---------- the campfire ---------- */
 
-/* A rest site was a heading and two small keys stranded in the top eighth of an
-   empty black window. It is a place in the digital game — a lit fire in a dark
-   room — so it gets the stage art, a warm firelight wash from below, and its
-   content centred in the space it actually has. */
+/* The rest site is staged from behind the party, with one shared smoke-cloud
+   choice panel. Keeping every seat in one scene covers any living subset of a
+   four-player party without multiplying layouts. */
 .sts-scope .campfire {
   position: relative;
   isolation: isolate;
-  /* `safe center` for the same reason `.map` uses it: styles.css makes this a
-     column flex box with `overflow-y: auto` in the shell's `1fr` row, and
-     centring a SCROLLER strands its excess above the scroll origin, which
-     `scrollTop` cannot reach. It bites harder here than on the map — a party of
-     three or four with two seats mid-Smith overflows easily, and the stranded
-     top is the first seat's Rest/Smith keys. With `Leave` disabled until every
-     seat has settled, that seat could not choose and the screen was a dead end.
-     styles.css declares no `justify-content` here, so a browser without `safe`
-     falls back to flex-start, which is the safe end of the trade. */
-  justify-content: safe center;
+  justify-content: flex-start;
   width: 100vw;
   margin: -1.25rem calc(50% - 50vw) 0;
-  padding: 2rem 1rem 2.5rem;
+  padding: clamp(0.75rem, 2vh, 1.4rem) 1rem 2.5rem;
+  overflow: hidden auto;
   background:
-    radial-gradient(ellipse 60% 45% at 50% 96%, rgb(226 120 42 / 0.3), transparent 70%),
-    linear-gradient(180deg, rgb(8 6 5 / 0.92), rgb(10 7 6 / 0.86) 55%, rgb(5 4 3 / 0.94)),
-    url('/assets/combat/stage-act-1.webp') center 35% / cover no-repeat;
+    linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
+    url('/assets/noncombat/campfire/scene.webp') center bottom / cover no-repeat;
   box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
+}
+
+.sts-scope .campfire__prompt {
+  position: relative;
+  z-index: 5;
+  width: min(47rem, calc(100% - 2rem));
+  max-height: min(43vh, 24rem);
+  overflow: auto;
+  padding: 0.75rem clamp(0.8rem, 2vw, 1.5rem) 1rem;
+  text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgb(54 58 57 / 0.94), rgb(27 31 31 / 0.9) 66%, transparent 72%);
+  filter: drop-shadow(0 0.8rem 1.3rem rgb(0 0 0 / 0.65));
 }
 
 /* The fire itself: the campfire heading's flame icon, given a slow flicker so
@@ -1350,14 +1353,25 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   70% { opacity: 0.92; transform: scale(0.98); }
 }
 
+.sts-scope .campfire__prompt h2 {
+  justify-content: center;
+  color: var(--light-yellow);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.8);
+}
+
+.sts-scope .campfire__spectator {
+  margin: 0.75rem auto;
+  color: var(--ink-dim);
+  text-wrap: balance;
+}
+
 .sts-scope .campfire__player {
-  padding: 1rem 1.1rem;
-  background: linear-gradient(180deg, rgb(43 31 26 / 0.88), rgb(21 16 12 / 0.92));
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.65),
-    inset 0 2px 0 rgb(217 180 91 / 0.22);
-  filter: drop-shadow(var(--hard-shadow));
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  filter: none;
 }
 
 .sts-scope .campfire__name { color: var(--light-yellow); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6); }
@@ -1366,8 +1380,119 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .campfire__choices button {
   flex-direction: column;
   gap: 0.15rem;
-  min-width: 9rem;
-  min-height: 4.2rem;
+  min-width: 8.5rem;
+  min-height: 6.5rem;
+  padding: 0.25rem 0.65rem 0.55rem;
+  border-color: rgb(186 193 191 / 0.48);
+  background: linear-gradient(180deg, rgb(81 86 85 / 0.9), rgb(43 47 47 / 0.94));
+  box-shadow: 0 4px 0 rgb(8 10 10 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+.sts-scope .campfire__choices button > img {
+  width: 6.8rem;
+  height: 3.7rem;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.8));
+}
+
+.sts-scope .campfire__choices button > strong { font-size: 1rem; }
+
+.sts-scope .campfire__deck {
+  max-width: 100%;
+  max-height: 9.5rem;
+  overflow: auto;
+  padding: 0.35rem;
+  background: rgb(10 12 12 / 0.52);
+}
+
+.sts-scope .campfire__players {
+  position: relative;
+  flex: 1 0 clamp(18rem, 45vh, 28rem);
+  width: min(76rem, 100%);
+  min-height: 18rem;
+  margin-top: -1rem;
+}
+
+.sts-scope .campfire__seat {
+  position: absolute;
+  bottom: -1.2rem;
+  display: block;
+  width: min(25vw, 17rem);
+  height: 100%;
+  padding: 0;
+  overflow: visible;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+
+.sts-scope div.campfire__seat { cursor: default; }
+
+.sts-scope .campfire__seat > img {
+  width: 100%;
+  height: calc(100% - 2.8rem);
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 0.9rem 0.8rem rgb(0 0 0 / 0.8));
+}
+
+.sts-scope .campfire__seat > span {
+  position: absolute;
+  z-index: 2;
+  bottom: 0.7rem;
+  left: 50%;
+  display: grid;
+  width: max-content;
+  min-width: min(11rem, 90%);
+  max-width: 100%;
+  translate: -50% 0;
+  padding: 0.3rem 0.6rem;
+  color: #f7ead0;
+  background: linear-gradient(180deg, rgb(56 45 38 / 0.94), rgb(24 20 18 / 0.96));
+  border: 1px solid var(--trim-dim);
+  clip-path: polygon(0.45rem 0, calc(100% - 0.45rem) 0, 100% 50%, calc(100% - 0.45rem) 100%, 0.45rem 100%, 0 50%);
+  text-align: center;
+  text-shadow: 1px 2px 0 #000;
+}
+
+.sts-scope .campfire__seat small { color: var(--ink-dim); text-transform: capitalize; }
+.sts-scope .campfire__seat[aria-pressed='true'] > span,
+.sts-scope .campfire__seat[data-ready='true'] > span { color: var(--light-yellow); border-color: var(--sts-gold); }
+.sts-scope .campfire__seat:hover,
+.sts-scope .campfire__seat[aria-pressed='true'] { filter: brightness(1.12); transform: translateY(-0.3rem); }
+
+.sts-scope .campfire[data-party-size='1'] .campfire__seat--0 { left: 8%; }
+.sts-scope .campfire[data-party-size='2'] .campfire__seat--0 { left: 6%; }
+.sts-scope .campfire[data-party-size='2'] .campfire__seat--1 { right: 6%; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--0 { left: 0; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--1 { left: 37.5%; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--2 { right: 0; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--0 { left: 0; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 24%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { right: 24%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { right: 0; }
+
+.sts-scope .campfire__leave {
+  position: absolute;
+  z-index: 7;
+  right: 1rem;
+  bottom: 1rem;
+}
+
+@media (max-width: 700px) {
+  .sts-scope .campfire { padding-inline: 0.25rem; padding-bottom: 4.5rem; }
+  .sts-scope .campfire__prompt { width: calc(100% - 0.5rem); max-height: 48vh; }
+  .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
+  .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
+  .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
+  .sts-scope .campfire__players { flex-basis: 16rem; min-height: 16rem; margin-top: 0; }
+  .sts-scope .campfire__seat { width: 34%; }
+  .sts-scope .campfire__seat > span { min-width: 7rem; padding-inline: 0.3rem; font-size: 0.72rem; }
+  .sts-scope .campfire[data-party-size='3'] .campfire__seat--1 { left: 33%; }
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 22%; }
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { right: 22%; }
 }
 
 /* ---------- room stages ---------- */
@@ -1402,6 +1527,122 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .campaign-end > span {
   color: var(--light-yellow);
   text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6);
+}
+
+/* Events now read as an illustrated encounter, not a twelve-rem question
+   mark beside a form. The same stage is decorative; event rules remain the
+   only source of truth and stay in the choice panel. */
+.sts-scope .event-stage {
+  background:
+    linear-gradient(90deg, transparent 0 42%, rgb(5 9 10 / 0.72) 64%, rgb(4 6 7 / 0.92)),
+    url('/assets/noncombat/event-stage.webp') center / cover no-repeat;
+}
+
+.sts-scope .event-art {
+  min-height: min(62vh, 37rem);
+  background: none;
+}
+
+.sts-scope .event-panel {
+  max-height: min(68vh, 42rem);
+  overflow: auto;
+  padding: clamp(0.8rem, 2vw, 1.4rem);
+  background: linear-gradient(180deg, rgb(21 27 28 / 0.9), rgb(10 14 15 / 0.94));
+  border: 1px solid var(--trim-dim);
+  box-shadow: inset 0 0 2.5rem rgb(0 0 0 / 0.48), var(--hard-shadow);
+  backdrop-filter: blur(3px);
+}
+
+.sts-scope .event-options button {
+  min-height: 3.6rem;
+  padding: 0.65rem 1.2rem 0.65rem 1.5rem;
+  border-color: #a96a41;
+  color: #f7ecd7;
+  background: linear-gradient(90deg, rgb(89 40 29 / 0.96), rgb(45 31 28 / 0.96));
+  clip-path: polygon(0.65rem 0, 100% 0, calc(100% - 0.65rem) 50%, 100% 100%, 0.65rem 100%, 0 50%);
+  box-shadow: inset 0 1px 0 rgb(255 216 160 / 0.18);
+}
+
+/* Shop stock sits on wooden shelves; the generated merchant remains a
+   character at the counter instead of a faded watermark behind a green form. */
+.sts-scope .merchant-stage {
+  background:
+    radial-gradient(circle at 84% 30%, rgb(216 159 76 / 0.22), transparent 28%),
+    linear-gradient(145deg, #2d211b 0%, #101516 68%, #070909 100%);
+}
+
+.sts-scope .merchant-figure { z-index: 0; opacity: 0.96; }
+
+.sts-scope .merchant-greeting {
+  position: absolute;
+  z-index: 2;
+  top: 8rem;
+  right: clamp(10rem, 24vw, 20rem);
+  max-width: 14rem;
+  margin: 0;
+  padding: 0.65rem 1rem;
+  color: #30261c;
+  background: #eee5cc;
+  border: 2px solid #897a62;
+  border-radius: 48% 52% 45% 55%;
+  box-shadow: 0 0.5rem 1rem rgb(0 0 0 / 0.45);
+  rotate: -2deg;
+  font-family: 'Kreon', Georgia, serif;
+  text-align: center;
+}
+
+.sts-scope .merchant-board {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 9.6rem, rgb(56 30 19 / 0.92) 9.6rem 10.1rem),
+    linear-gradient(105deg, rgb(92 69 41 / 0.96), rgb(54 64 42 / 0.98) 40%, rgb(36 47 34 / 0.98));
+  border-color: #392116;
+  box-shadow: inset 0 0 0 3px #a4824f55, inset 0 0 70px #111b1199, 0 1rem 2rem rgb(0 0 0 / 0.55);
+}
+
+.sts-scope .merchant-shelf,
+.sts-scope .merchant-cards {
+  align-content: start;
+  padding: 0.7rem;
+  background: rgb(24 32 25 / 0.48);
+  border-bottom: 0.45rem solid #4d2b1a;
+  box-shadow: 0 0.35rem 0 #25150f;
+}
+
+.sts-scope .merchant-shelf .room-item-text {
+  display: -webkit-box;
+  min-height: 2.2em;
+  overflow: hidden;
+  line-height: 1.1;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (max-width: 700px) {
+  .sts-scope .merchant-greeting { display: none; }
+  .sts-scope .merchant-figure { opacity: 0.35; }
+  .sts-scope .merchant-shelf,
+  .sts-scope .merchant-cards { padding: 0.35rem; }
+  .sts-scope .merchant-shelf .room-item-text { display: none; }
+}
+
+@media (max-width: 760px) {
+  .sts-scope .event-stage {
+    grid-template-columns: 1fr;
+    align-content: end;
+    background:
+      linear-gradient(180deg, transparent 0 32%, rgb(5 9 10 / 0.78) 58%, rgb(4 6 7 / 0.95)),
+      url('/assets/noncombat/event-stage.webp') 42% center / cover no-repeat;
+  }
+  .sts-scope .event-art { min-height: 25vh; }
+  .sts-scope .event-panel { max-height: 58vh; }
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .sts-scope .event-panel { max-height: calc(100vh - 12rem); padding-block: 0.65rem; }
+  .sts-scope .event-panel .room-banner { margin-bottom: 0.65rem; }
+  .sts-scope .event-panel .event-cards--deck { max-height: 6rem; margin-bottom: 0.45rem; }
+  .sts-scope .event-options { gap: 0.4rem; }
+  .sts-scope .event-options button { min-height: 3rem; padding-block: 0.4rem; }
 }
 
 .sts-scope .room-banner h2 {
@@ -1789,10 +2030,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 /* ---------- the map ---------- */
 
-/* The climb used to be a column of circles on an empty page, with the whole
-   lower half of the window unused. It is now a place: painted rock behind it,
-   the column centred in the space it has, and the party's route worn into the
-   ground rather than ruled onto it. */
+/* The digital game's climb is ink on parchment, with a pinned legend. */
 .map {
   position: relative;
   isolation: isolate;
@@ -1810,16 +2048,92 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   width: 100vw;
   margin: -1.25rem calc(50% - 50vw) 0;
   padding: 1.5rem 0 2rem;
+  color: #272727;
   background:
-    radial-gradient(ellipse at 50% 45%, rgb(10 8 7 / 0.55), rgb(8 6 5 / 0.88) 62%, rgb(4 3 3 / 0.97)),
-    url('/assets/menu/title-spire.webp') center 28% / cover no-repeat;
-  box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
+    linear-gradient(90deg, rgb(24 17 12 / 0.42), transparent 8%, transparent 92%, rgb(24 17 12 / 0.42)),
+    url('/assets/noncombat/map-parchment.webp') center / cover no-repeat;
+  box-shadow: inset 0 0 5rem rgb(44 29 15 / 0.45);
 }
 
 .map__hint {
+  position: relative;
+  z-index: 3;
+  color: #38332c;
   font-size: 0.8rem;
   letter-spacing: 0.14em;
-  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6);
+  text-shadow: 0 1px 0 rgb(255 249 220 / 0.65);
+}
+
+.map__frame {
+  width: min(52rem, calc(100% - 17rem));
+  min-width: min(28rem, calc(100% - 17rem));
+}
+
+.map__row {
+  gap: clamp(1.8rem, 4vw, 4.2rem);
+}
+
+.map .room {
+  color: #3a3937;
+  background: rgb(218 210 183 / 0.55);
+  border-color: rgb(52 51 49 / 0.58);
+  box-shadow: inset 0 0 0 2px rgb(255 250 223 / 0.28), 0 2px 4px rgb(40 29 18 / 0.35);
+}
+
+.map .room--visited { color: rgb(89 85 76 / 0.65); border-color: rgb(69 65 58 / 0.3); }
+
+.map .room--here {
+  color: #202020;
+  border-color: #202020;
+  box-shadow: inset 0 0 0 2px rgb(255 250 223 / 0.55), 0 0 0 3px rgb(37 36 34 / 0.3);
+}
+
+.map .room--boss {
+  color: #4d1715;
+  background: rgb(196 176 148 / 0.75);
+  border-color: #7e2822;
+}
+
+.map__legend {
+  position: absolute;
+  z-index: 4;
+  top: 15%;
+  right: clamp(1rem, 4vw, 4.5rem);
+  width: 11.5rem;
+  padding: 1rem 1.1rem 1.25rem;
+  color: #272727;
+  background: linear-gradient(90deg, #c9d4d2, #eef0e8 12%, #d9dfd9 86%, #b6c4c3);
+  border-block: 2px solid #879897;
+  box-shadow: 0 0.65rem 1rem rgb(30 24 18 / 0.38), inset 0 0 1.4rem rgb(56 81 82 / 0.18);
+  rotate: 1deg;
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.map__legend::before,
+.map__legend::after {
+  content: '';
+  position: absolute;
+  left: -0.45rem;
+  right: -0.45rem;
+  height: 0.6rem;
+  background: #c7d1cf;
+  border: 1px solid #82918f;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.35);
+}
+
+.map__legend::before { top: -0.35rem; }
+.map__legend::after { bottom: -0.35rem; }
+.map__legend > strong { display: block; margin-bottom: 0.45rem; text-align: center; font-size: 1.1rem; }
+.map__legend ul { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.map__legend li { display: flex; align-items: center; gap: 0.55rem; }
+
+@media (max-width: 760px) {
+  .map { justify-content: flex-start; }
+  .map__frame { width: calc(100% - 1rem); min-width: 0; }
+  .map__row { gap: 1.1rem; }
+  .map__legend { position: relative; top: auto; right: auto; width: min(28rem, calc(100% - 2rem)); }
+  .map__legend ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* The hand-placed wobble, applied from the per-room custom properties set in
@@ -1836,7 +2150,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 /* A worn trail of dots, not a drawn line. This is the map's signature and the
    single most recognisable thing on the screen. */
 .map__path {
-  stroke: rgb(176 150 112 / 0.65);
+  stroke: rgb(67 65 61 / 0.62);
   stroke-width: 5;
   stroke-linecap: round;
   stroke-dasharray: 0 17;
