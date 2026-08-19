@@ -88,7 +88,10 @@ export function PowerRow({ powers }: PowerRowProps) {
   useEffect(() => {
     if (!zoom?.pinned) return undefined
     const dismiss = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') drop()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        drop()
+      }
     }
     const drop = () => {
       releaseZoom(close.current)

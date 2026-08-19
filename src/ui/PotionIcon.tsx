@@ -66,6 +66,7 @@ export function PotionTooltipAnchor({ id, children, focusable = false, decorativ
     if (!showing) return undefined
     const dismiss = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (anchor.current?.closest('dialog[open]')) event.preventDefault()
       event.stopPropagation()
       setTipHovered(false)
       setDismissed('manual')

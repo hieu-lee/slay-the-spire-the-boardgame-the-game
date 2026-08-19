@@ -943,9 +943,9 @@ export function CombatScreen({
     ? `${cardPreview.cardUid}\0${cardPreview.copy === true}\0${cardPreview.kind}\0${cardPreview.spendMiracle}\0${cardPreview.enemyUid ?? ''}\0${cardPreview.cards.map((card) => card.uid).join('\0')}`
     : ''
   const orderingStage = partyEndTurnAbilities !== undefined
-  const baseStartAbilities = state.phase === 'start' && !pendingTrigger
+  const baseStartAbilities = useMemo(() => state.phase === 'start' && !pendingTrigger
     ? (partyStartTurnAbilities ?? startTurnAbilities(state))
-    : []
+    : [], [partyStartTurnAbilities, pendingTrigger?.id, state])
   const savedStartChoiceKey = savedStartTurnChoices?.map((choice) =>
     `${choice.id}:${choice.enemyUid ?? ''}:${choice.targetPlayerId ?? ''}:` +
     `${choice.shivEnemyUids.join(',')}:${choice.evokeSlots?.join(',') ?? ''}:` +
@@ -1709,10 +1709,10 @@ export function CombatScreen({
     ? endTurnOrder
     : defaultOrder
   const canOrderEndTurn = !orderingStage || viewer.id === endTurnCoordinatorId
-  const startIds = startTurnOrder.length === baseStartAbilities.length
+  const startIds = useMemo(() => startTurnOrder.length === baseStartAbilities.length
     ? startTurnOrder
-    : baseStartAbilities.map((ability) => ability.id)
-  const startChoiceDrafts: StartTurnChoice[] = startIds.map((id) => ({
+    : baseStartAbilities.map((ability) => ability.id), [baseStartAbilities, startTurnOrder])
+  const startChoiceDrafts: StartTurnChoice[] = useMemo(() => startIds.map((id) => ({
     id,
     enemyUid: startTurnEnemyTargets[id],
     targetPlayerId: startTurnPlayerTargets[id],
@@ -1721,8 +1721,11 @@ export function CombatScreen({
     evokeSlots: startTurnEvokeSlots[id] ?? [],
     evokeEnemyUids: (startTurnEvokeTargets[id] ?? [])
       .filter((uid): uid is string | null => uid !== undefined),
-  }))
-  const orderedStartAbilities = startTurnAbilities(state, startIds, startChoiceDrafts)
+  })), [startIds, startTurnEnemyTargets, startTurnEvokeSlots, startTurnEvokeTargets,
+    startTurnPlayerTargets, startTurnTargets])
+  const orderedStartAbilities = useMemo(() => baseStartAbilities.length > 0
+    ? startTurnAbilities(state, startIds, startChoiceDrafts)
+    : [], [baseStartAbilities, startChoiceDrafts, startIds, state])
   const canResolveStartTurn = !onAction || viewer.id === startTurnCoordinatorId
   const orderTargetIndex = startTurnChoiceId
     ? orderedStartAbilities.findIndex((ability) => ability.id === startTurnChoiceId)
@@ -1761,7 +1764,7 @@ export function CombatScreen({
   }) ?? []
   const startTurnReady = orderedStartAbilities.length === baseStartAbilities.length &&
     !pendingStartEnemy && !pendingStartPlayer && !pendingStartShiv && !pendingStartEvokeTarget && !pendingStartEvoke
-  const meaningfulStartTurnChoice = startTurnNeedsChoice(state)
+  const meaningfulStartTurnChoice = startTurnNeedsChoice(state, baseStartAbilities)
   const isStartTurnEnemyTarget = (enemyUid: string) =>
     Boolean(pendingStartEnemy?.targets?.some((target) => target.uid === enemyUid) &&
       startEnemyChoiceAvailable(enemyUid)) ||

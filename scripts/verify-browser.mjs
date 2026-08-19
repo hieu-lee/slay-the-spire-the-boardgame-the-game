@@ -345,6 +345,25 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(reloadedMenuCampaign.draftRunId, 'campaign-1')
 })
 
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
+const characterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
+  const box = screen.getBoundingClientRect()
+  const hero = screen.querySelector('.start-menu__character-hero')?.getBoundingClientRect()
+  return {
+    contained: screen.scrollWidth <= screen.clientWidth && screen.scrollHeight <= screen.clientHeight,
+    heroContained: Boolean(hero && hero.left >= box.left && hero.right <= box.right && hero.top >= box.top && hero.bottom <= box.bottom),
+    choices: screen.querySelectorAll('.start-menu__character-roster button').length,
+  }
+})
+await shot('00-title-character-select')
+await page.getByRole('button', { name: 'Back', exact: true }).click()
+check('Single Player opens a contained visual character picker before starting', () => {
+  assertEqual(characterSelection.choices, 4)
+  assert(characterSelection.contained, 'character selection needs a nested scrollbar')
+  assert(characterSelection.heroContained, 'selected character art leaves the selection frame')
+})
+
 await page.getByRole('button', { name: 'Compendium' }).click()
 await page.locator('.compendium').waitFor()
 const allCardCount = await page.locator('.compendium-card').count()
@@ -541,6 +560,7 @@ await page.getByRole('button', { name: 'Settings' }).click()
 await page.getByLabel('Player 1 character').selectOption('watcher')
 await page.getByRole('button', { name: 'Close' }).click()
 await page.getByRole('button', { name: 'Single Player' }).click()
+await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const configuredLocalRun = await readRun()
 check('single-player setup starts exactly one selected character', () => {
@@ -735,6 +755,31 @@ check('the first room is an encounter and starts a combat', () => {
   assertEqual(openingDealMotion, 'card-draw', 'the opening hand should deal into place')
 })
 
+await page.keyboard.press('Escape')
+const pauseMenu = page.getByRole('dialog', { name: 'Slay the Spire' })
+await pauseMenu.waitFor()
+const pauseActions = await pauseMenu.getByRole('button').allTextContents()
+const pausedCombat = await readState()
+await shot('02a-combat-paused')
+await pauseMenu.getByRole('button', { name: 'Resume' }).click()
+await pauseMenu.waitFor({ state: 'hidden' })
+check('Escape pauses combat without changing it and exposes the expected run actions', () => {
+  assertDeepEqual(pausedCombat, booted)
+  assertDeepEqual(pauseActions.map((label) => label.trim()), ['Resume', 'Compendium', 'Give up', 'Return to main menu'])
+})
+
+const gameMenu = page.locator('details.game-settings')
+await gameMenu.locator(':scope > summary').click()
+await gameMenu.getByRole('button', { name: 'Play online' }).click()
+await page.getByRole('heading', { name: 'Climb together' }).waitFor()
+await page.keyboard.press('Escape')
+const hiddenLocalPauseCount = await page.locator('.game-mode dialog.pause-menu[open]').count()
+await page.getByRole('button', { name: 'Solo table' }).click()
+await page.locator('.combat').waitFor()
+check('the hidden solo table cannot intercept Escape while multiplayer is active', () => {
+  assertEqual(hiddenLocalPauseCount, 0)
+})
+
 const activeRun = await readRun()
 const activeRunId = activeRun.campaign.runId
 let newRunPrompt = ''
@@ -742,8 +787,7 @@ page.once('dialog', async (dialog) => {
   newRunPrompt = dialog.message()
   await dialog.dismiss()
 })
-const gameMenu = page.locator('details.game-settings')
-await gameMenu.locator(':scope > summary').click()
+if (!await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
 await gameMenu.getByRole('button', { name: 'New run' }).click()
 if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
 const runAfterCancelledRestart = await readRun()
@@ -899,6 +943,24 @@ for (const phase of ['won', 'lost']) {
   }
 }
 check('boss music stops when combat ends', () => assert(true))
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.phase = 'won'
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'won')
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+await page.waitForTimeout(1_100)
+const pausedFinishedCombat = await readRun()
+await pauseMenu.getByRole('button', { name: 'Resume' }).click()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+check('pause freezes the completed-combat transition', () => {
+  assertEqual(pausedFinishedCombat.phase, 'combat')
+  assertEqual(pausedFinishedCombat.combat.phase, 'won')
+})
 
 const mutedBossMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate((run) => {
@@ -11238,6 +11300,24 @@ check('the local Neow scene keeps its full-bleed at every width', () => {
     assertEqual(sample.faces, 1, `local Neow dealt ${sample.faces} faces at ${sample.size}`)
     assert(sample.bled, `the local Neow scene lost its full-bleed width at ${sample.size}`)
   }
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.phase = 'won'
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'won')
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+page.once('dialog', (dialog) => dialog.accept())
+await pauseMenu.getByRole('button', { name: 'Return to main menu' }).click()
+await page.getByRole('heading', { name: 'Slay the Spire' }).waitFor()
+await page.waitForTimeout(1_100)
+const abandonedFinishedCombat = await readRun()
+check('returning to the menu does not resume a paused completed-combat transition', () => {
+  assertEqual(abandonedFinishedCombat.phase, 'combat')
+  assertEqual(abandonedFinishedCombat.combat.phase, 'won')
 })
 
 writeFileSync(

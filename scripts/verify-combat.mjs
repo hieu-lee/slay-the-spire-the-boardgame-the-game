@@ -9008,8 +9008,20 @@ check('the start of turn stops only for a sequence that can change something', (
   const twoAimed = startOf([makePlayer({
     character: 'silent', powers: [instance('noxious_fumes'), instance('noxious_fumes')],
   })], [makeEnemy()])
-  assertEqual(startTurnNeedsChoice(twoAimed), true,
-    'two aimed abilities can kill each other\'s target, so the order is a real choice')
+  const twoAimedAbilities = startTurnAbilities(twoAimed)
+  const originalStructuredClone = globalThis.structuredClone
+  let reusedAbilitiesCloned = false
+  try {
+    globalThis.structuredClone = (value) => {
+      reusedAbilitiesCloned = true
+      return originalStructuredClone(value)
+    }
+    assertEqual(startTurnNeedsChoice(twoAimed, twoAimedAbilities), true,
+      'two aimed abilities can kill each other\'s target, so the order is a real choice')
+  } finally {
+    globalThis.structuredClone = originalStructuredClone
+  }
+  assertEqual(reusedAbilitiesCloned, false, 'the UI can reuse its computed abilities without another simulation')
 
   const twoTargets = startOf([makePlayer({
     character: 'silent', powers: [instance('noxious_fumes')],

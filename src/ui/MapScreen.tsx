@@ -120,20 +120,21 @@ export function MapScreen({
     const frame = frameRef.current
     if (!frame) return
     const origin = frame.getBoundingClientRect()
-    const centre = (id: string) => {
-      const node = frame.querySelector<HTMLElement>(`[data-room="${CSS.escape(id)}"]`)
-      if (!node) return null
+    const centres = new Map<string, { x: number; y: number }>()
+    for (const node of frame.querySelectorAll<HTMLElement>('[data-room]')) {
+      const id = node.dataset.room
+      if (!id) continue
       const box = node.getBoundingClientRect()
-      return { x: box.left - origin.left + box.width / 2, y: box.top - origin.top + box.height / 2 }
+      centres.set(id, { x: box.left - origin.left + box.width / 2, y: box.top - origin.top + box.height / 2 })
     }
 
     const live = new Set(reachableKey ? reachableKey.split(',') : [])
     const next: Line[] = []
     for (const room of Object.values(map.rooms)) {
-      const from = centre(room.id)
+      const from = centres.get(room.id)
       if (!from) continue
       for (const exitId of room.exits) {
-        const to = centre(exitId)
+        const to = centres.get(exitId)
         if (!to) continue
         next.push({
           key: `${room.id}->${exitId}`,

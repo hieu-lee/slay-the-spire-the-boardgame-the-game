@@ -4915,9 +4915,12 @@ export function hasPostRollStartTurnChoice(state: CombatState): boolean {
  * A pair that only gains Block, draws, or channels an Orb commutes, so the
  * engine resolves them in its own canonical order and gets on with the game.
  */
-export function startTurnNeedsChoice(state: CombatState): boolean {
+export function startTurnNeedsChoice(
+  state: CombatState,
+  knownAbilities?: readonly StartTurnAbility[],
+): boolean {
   if (hasPostRollStartTurnChoice(state)) return true
-  const abilities = startTurnAbilities(state)
+  const abilities = knownAbilities ?? startTurnAbilities(state)
   // An ability that cannot be resolved without input, whatever else is queued.
   if (abilities.some((ability) => ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
     (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true

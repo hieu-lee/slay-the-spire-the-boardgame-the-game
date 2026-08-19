@@ -32,6 +32,13 @@ const HEROES: { id: CharacterId; name: string }[] = [
   { id: 'watcher', name: 'Watcher' },
 ]
 
+const HERO_COPY: Record<CharacterId, string> = {
+  ironclad: 'A relentless warrior who trades health for overwhelming strength.',
+  silent: 'A precise huntress who turns poison and preparation into lethal turns.',
+  defect: 'A combat automaton that channels orbs for power that builds over time.',
+  watcher: 'A disciplined ascetic who changes stances to control risk and reward.',
+}
+
 export function StartMenu({
   characters,
   ascension,
@@ -54,7 +61,9 @@ export function StartMenu({
   onToggleSfx,
 }: StartMenuProps) {
   const [selection, setSelection] = useState('Single Player')
+  const [choosingCharacter, setChoosingCharacter] = useState(false)
   const settingsDialog = useRef<HTMLDialogElement>(null)
+  const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   return (
     <main className="start-menu">
       <div className="start-menu__profile" aria-label="Current profile">
@@ -62,15 +71,16 @@ export function StartMenu({
         <span><strong>THE PARTY</strong><small>Board Game Chronicle</small></span>
       </div>
 
-      <section className="start-menu__title" aria-labelledby="game-title">
+      {!choosingCharacter ? <section className="start-menu__title" aria-labelledby="game-title">
         <p className="start-menu__eyebrow">Contention Games · fan implementation</p>
         <h1 id="game-title"><span>Slay</span><small>the</small><span>Spire</span></h1>
         <p className="start-menu__edition">THE BOARD GAME</p>
-      </section>
+      </section> : null}
 
-      <nav className="start-menu__nav" aria-label="Main menu">
+      {!choosingCharacter ? <nav className="start-menu__nav" aria-label="Main menu">
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
-          onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')} onClick={onStart}>Single Player</button>
+          onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
+          onClick={() => setChoosingCharacter(true)}>Single Player</button>
         <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
@@ -80,7 +90,28 @@ export function StartMenu({
         <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
           onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
           onClick={() => settingsDialog.current?.showModal()}>Settings</button>
-      </nav>
+      </nav> : <section className="start-menu__character-select" aria-labelledby="character-select-title">
+        <div className="start-menu__character-copy">
+          <p>Choose your character</p>
+          <h1 id="character-select-title">{hero.name}</h1>
+          <p>{HERO_COPY[hero.id]}</p>
+          <small>Ascension {ascension}</small>
+        </div>
+        <img className="start-menu__character-hero" src={`/assets/combat/characters/${hero.id}.webp`} alt={hero.name} />
+        <div className="start-menu__character-roster" aria-label="Characters">
+          {HEROES.map((candidate) => <button type="button" key={candidate.id}
+            aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
+            onClick={() => onCharacter(0, candidate.id)}>
+            <img src={`/assets/combat/characters/${candidate.id}.webp`} alt="" />
+            <span>{candidate.name}</span>
+          </button>)}
+        </div>
+        <div className="start-menu__character-actions">
+          <button type="button" onClick={() => setChoosingCharacter(false)}>Back</button>
+          <button type="button" onClick={() => settingsDialog.current?.showModal()}>Run settings</button>
+          <button type="button" className="is-chosen" onClick={onStart}>Embark</button>
+        </div>
+      </section>}
 
       <dialog ref={settingsDialog} className="start-menu__setup" aria-labelledby="start-menu-settings-title">
         <header><h2 id="start-menu-settings-title">Settings</h2><button type="button" onClick={() => settingsDialog.current?.close()}>Close</button></header>

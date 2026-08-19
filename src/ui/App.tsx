@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { CombatState } from '../game/combat.ts'
 import {
   advanceAct,
@@ -54,7 +54,6 @@ import { isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
 import { eventCanStartCombat } from '../game/events.ts'
-import { CombatScreen } from './CombatScreen.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
@@ -62,16 +61,13 @@ import { RewardScreen } from './RewardScreen.tsx'
 import { relicDef } from '../game/relics.ts'
 import { IconValue } from './Icon.tsx'
 import { RelicBar } from './RelicChip.tsx'
-import { OnlineGame } from './OnlineGame.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
-import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
-import { AchievementsScreen } from './AchievementsScreen.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { RunSummary, summarySeat } from './RunSummary.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
@@ -79,6 +75,11 @@ import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
 import { installSoundEffects, SFX_STORAGE_KEY, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+
+const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
+const OnlineGame = lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
+const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const AchievementsScreen = lazy(() => import('./AchievementsScreen.tsx').then((module) => ({ default: module.AchievementsScreen })))
 
 const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'ironclad', name: 'Ironclad' },
@@ -137,19 +138,20 @@ export function App() {
     return !enabled
   })
   return (
-    <>
+    <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>
-        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onOnline={() => setOnline(true)}
+        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={() => setOnline(true)}
           sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} active={!online} />
       </div>
       {online ? <OnlineGame onLocal={() => setOnline(false)} sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} /> : null}
-    </>
+    </Suspense>
   )
 }
 
-function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: {
+function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, active }: {
   open: boolean
   onOpen: () => void
+  onClose: () => void
   onOnline: () => void
   sfxEnabled: boolean
   onToggleSfx: () => void
@@ -166,16 +168,52 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   useRunOutcomeSound(run)
-  useBossFightMusic(run.combat, sfxEnabled && active)
+  useBossFightMusic(run.combat, sfxEnabled && active && open)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)
+  const [pauseOpen, setPauseOpen] = useState(false)
+  const pauseDialog = useRef<HTMLDialogElement>(null)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
 
   /** The settings the run in progress was actually built from. */
   const [built, setBuilt] = useState({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} as RunMetaOptions })
+
+  useEffect(() => {
+    const dialog = pauseDialog.current
+    if (!dialog) return
+    if (!active && pauseOpen) {
+      setPauseOpen(false)
+      return
+    }
+    if (pauseOpen && !dialog.open) dialog.showModal()
+    else if (!pauseOpen && dialog.open) dialog.close()
+  }, [active, pauseOpen])
+
+  useEffect(() => {
+    if (!active || !open || compendium || giveUpOpen) return undefined
+    let timer: number | undefined
+    const pause = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || pauseDialog.current?.open || document.querySelector('dialog[open]')) return
+      if (event.target instanceof Element && event.target.closest('.powers, .potion-chip, .relic-chip')) return
+      if (document.querySelector('.power__zoom, .potion-tip, .relic-chip:hover > .relic-tip, .relic-chip:focus-within > .relic-tip')) return
+      const settings = document.querySelector<HTMLDetailsElement>('.game-settings[open]')
+      if (settings) {
+        settings.open = false
+        return
+      }
+      timer = window.setTimeout(() => {
+        if (!event.defaultPrevented && !document.querySelector('dialog[open]')) setPauseOpen(true)
+      })
+    }
+    document.addEventListener('keydown', pause)
+    return () => {
+      document.removeEventListener('keydown', pause)
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [active, compendium, giveUpOpen, open])
 
   function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters, nextMeta: RunMetaOptions = metaOptions) {
     const nextCharacters = legalCharacters(selected)
@@ -232,12 +270,12 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
   useEffect(() => {
-    if (run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+    if (open && !pauseOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
       const timer = setTimeout(() => setRun((current) => resolveCombat(current)), 900)
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [run.combat])
+  }, [open, pauseOpen, run.combat])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
@@ -368,11 +406,27 @@ function LocalGame({ open, onOpen, onOnline, sfxEnabled, onToggleSfx, active }: 
         onCancel={() => setGiveUpOpen(false)}
       /> : null}
 
+      <dialog ref={pauseDialog} className="choice-modal pause-menu" aria-labelledby="pause-menu-title"
+        onCancel={(event) => { event.preventDefault(); setPauseOpen(false) }}>
+        <section className="choice-modal__panel">
+          <p>Game paused</p>
+          <h2 id="pause-menu-title">Slay the Spire</h2>
+          <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
+          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button> : null}
+          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
+          <button type="button" onClick={() => {
+            if (!window.confirm('Abandon this run and return to the main menu?')) return
+            setPauseOpen(false)
+            onClose()
+          }}>Return to main menu</button>
+        </section>
+      </dialog>
+
       {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
-          autoAdvance={!run.courier.offer}
+          autoAdvance={!pauseOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}

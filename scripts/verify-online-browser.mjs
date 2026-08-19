@@ -3728,6 +3728,7 @@ try {
   const combatReplacementIcons = await brewDialog.locator('.item-icon-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   await fourPages[0].keyboard.press('Escape')
+  await fourPages[0].keyboard.press('Escape')
   await brewDialog.waitFor({ state: 'hidden' })
   const afterBrewEscape = await snapshot(fourPages[0])
   await fourPages[0].locator('.combat__actions').getByRole('button', { name: /Entropic Brew/ }).click()
