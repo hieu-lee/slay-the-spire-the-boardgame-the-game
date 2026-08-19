@@ -74,7 +74,10 @@ import { useCardMorphs } from './useCardMorphs.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
-import { installSoundEffects, SFX_STORAGE_KEY, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+import { installSoundEffects, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+import { SettingsDialog } from './SettingsDialog.tsx'
+import { useGameSettings } from './game-settings.ts'
+import type { GameSettings } from './game-settings.ts'
 
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const OnlineGame = lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
@@ -131,30 +134,26 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 export function App() {
   const [online, setOnline] = useState(hasRoomSession)
   const [localOpen, setLocalOpen] = useState(false)
-  const [sfxEnabled, setSfxEnabled] = useState(() => localStorage.getItem(SFX_STORAGE_KEY) !== 'off')
-  useEffect(() => sfxEnabled ? installSoundEffects() : undefined, [sfxEnabled])
-  const toggleSfx = () => setSfxEnabled((enabled) => {
-    localStorage.setItem(SFX_STORAGE_KEY, enabled ? 'off' : 'on')
-    return !enabled
-  })
+  const [settings, setSettings] = useGameSettings()
+  useEffect(() => settings.sfxVolume > 0 ? installSoundEffects() : undefined, [settings.sfxVolume])
   return (
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>
         <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={() => setOnline(true)}
-          sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} active={!online} />
+          settings={settings} onSettings={setSettings} active={!online} />
       </div>
-      {online ? <OnlineGame onLocal={() => setOnline(false)} sfxEnabled={sfxEnabled} onToggleSfx={toggleSfx} /> : null}
+      {online ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
     </Suspense>
   )
 }
 
-function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, active }: {
+function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, active }: {
   open: boolean
   onOpen: () => void
   onClose: () => void
   onOnline: () => void
-  sfxEnabled: boolean
-  onToggleSfx: () => void
+  settings: GameSettings
+  onSettings: (settings: GameSettings) => void
   active: boolean
 }) {
   const [playerCount, setPlayerCount] = useState(1)
@@ -168,11 +167,13 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   useRunOutcomeSound(run)
-  useBossFightMusic(run.combat, sfxEnabled && active && open)
+  useBossFightMusic(run.combat, active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)
   const [pauseOpen, setPauseOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
@@ -199,11 +200,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
       if (event.key !== 'Escape' || event.defaultPrevented || pauseDialog.current?.open || document.querySelector('dialog[open]')) return
       if (event.target instanceof Element && event.target.closest('.powers, .potion-chip, .relic-chip')) return
       if (document.querySelector('.power__zoom, .potion-tip, .relic-chip:hover > .relic-tip, .relic-chip:focus-within > .relic-tip')) return
-      const settings = document.querySelector<HTMLDetailsElement>('.game-settings[open]')
-      if (settings) {
-        settings.open = false
-        return
-      }
       timer = window.setTimeout(() => {
         if (!event.defaultPrevented && !document.querySelector('dialog[open]')) setPauseOpen(true)
       })
@@ -228,11 +224,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
     setViewerId('p1')
     setBuilt({ count, seed, ascension: legalAscension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta: nextMeta })
     setRun(newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, nextMeta))
-  }
-
-  function startFreshRun() {
-    if (!run.campaign.finalized && !window.confirm('Start a new run? The one in progress will be lost.')) return
-    restart(1, crypto.randomUUID(), ascension, false, false, characters, metaOptions)
   }
 
   // A debug bridge for the Playwright suite: drive real clicks, assert real
@@ -270,12 +261,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
   useEffect(() => {
-    if (open && !pauseOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+    if (open && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
       const timer = setTimeout(() => setRun((current) => resolveCombat(current)), 900)
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [open, pauseOpen, run.combat])
+  }, [open, pauseOpen, run.combat, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
@@ -333,8 +324,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
-      sfxEnabled={sfxEnabled}
-      onToggleSfx={onToggleSfx}
+      settings={settings}
+      onSettings={onSettings}
     />
   }
 
@@ -364,9 +355,15 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
         {run.phase !== 'map' && run.phase !== 'setup' ? (
           <MapOverlay map={visibleMap(run)} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}
-        <details className="game-settings">
-          <summary className="game-settings__summary"><img src="/assets/menu/settings-cog.png" alt="" />Settings</summary>
-          <div className="setup">
+        <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
+          onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
+          <img src="/assets/menu/settings-cog.png" alt="" />
+        </button>
+      </header>
+
+      <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}
+        onClose={() => { setSettingsOpen(false); if (settingsReturnToPause) setPauseOpen(true) }}
+        generalChildren={<>
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
             <ul>{run.meta.modifierIds.map((id) => {
@@ -374,28 +371,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
               return <li key={id}><strong>{modifier.name}</strong> — {modifier.rule}</li>
             })}</ul>
           </details> : null}
-          {run.players.length > 1 ? <label>
-            Seat
+          {run.players.length > 1 ? <label className="settings-select">Seat
             <select value={viewerId} onChange={(event) => setViewerId(event.target.value)}>
-              {run.players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name}
-                </option>
-              ))}
+              {run.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select>
           </label> : null}
-          <button type="button" onClick={startFreshRun}>
-            New run
-          </button>
-          {run.phase === 'combat' ? <button type="button" onClick={() => setCompendium(true)}>Compendium</button> : null}
-          {run.phase === 'combat' ? <button type="button" onClick={() => setGiveUpOpen(true)}>Give up</button> : null}
-          <button type="button" onClick={onOnline}>Play online</button>
-          <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-            Sound {sfxEnabled ? 'on' : 'off'}
-          </button>
-          </div>
-        </details>
-      </header>
+        </>} />
 
       {giveUpOpen && run.phase === 'combat' ? <GiveUpPanel
         players={run.players} playerId={viewerId}
@@ -412,6 +393,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
           <p>Game paused</p>
           <h2 id="pause-menu-title">Slay the Spire</h2>
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
+          <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
           {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button> : null}
           {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
@@ -426,7 +408,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
-          autoAdvance={!pauseOpen && !run.courier.offer}
+          autoAdvance={!pauseOpen && !settingsOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}

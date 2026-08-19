@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
+import { SettingsDialog } from './SettingsDialog.tsx'
+import type { GameSettings } from './game-settings.ts'
 
 type StartMenuProps = {
   characters: readonly CharacterId[]
@@ -21,8 +23,8 @@ type StartMenuProps = {
   onOnline: () => void
   onCompendium: () => void
   onAchievements: () => void
-  sfxEnabled: boolean
-  onToggleSfx: () => void
+  settings: GameSettings
+  onSettings: (settings: GameSettings) => void
 }
 
 const HEROES: { id: CharacterId; name: string }[] = [
@@ -57,12 +59,13 @@ export function StartMenu({
   onOnline,
   onCompendium,
   onAchievements,
-  sfxEnabled,
-  onToggleSfx,
+  settings,
+  onSettings,
 }: StartMenuProps) {
   const [selection, setSelection] = useState('Single Player')
   const [choosingCharacter, setChoosingCharacter] = useState(false)
-  const settingsDialog = useRef<HTMLDialogElement>(null)
+  const runSettingsDialog = useRef<HTMLDialogElement>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
   return (
     <main className="start-menu">
@@ -89,7 +92,7 @@ export function StartMenu({
           onFocus={() => setSelection('Achievements')} onMouseEnter={() => setSelection('Achievements')} onClick={onAchievements}>Achievements</button>
         <button type="button" aria-label="Settings" data-selected={selection === 'Settings'}
           onFocus={() => setSelection('Settings')} onMouseEnter={() => setSelection('Settings')}
-          onClick={() => settingsDialog.current?.showModal()}>Settings</button>
+          onClick={() => setSettingsOpen(true)}>Settings</button>
       </nav> : <section className="start-menu__character-select" aria-labelledby="character-select-title">
         <div className="start-menu__character-copy">
           <p>Choose your character</p>
@@ -108,13 +111,14 @@ export function StartMenu({
         </div>
         <div className="start-menu__character-actions">
           <button type="button" onClick={() => setChoosingCharacter(false)}>Back</button>
-          <button type="button" onClick={() => settingsDialog.current?.showModal()}>Run settings</button>
+          <button type="button" onClick={() => runSettingsDialog.current?.showModal()}>Run settings</button>
           <button type="button" className="is-chosen" onClick={onStart}>Embark</button>
         </div>
       </section>}
 
-      <dialog ref={settingsDialog} className="start-menu__setup" aria-labelledby="start-menu-settings-title">
-        <header><h2 id="start-menu-settings-title">Settings</h2><button type="button" onClick={() => settingsDialog.current?.close()}>Close</button></header>
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />
+      <dialog ref={runSettingsDialog} className="start-menu__setup" aria-labelledby="start-menu-settings-title">
+        <header><h2 id="start-menu-settings-title">Run setup</h2><button type="button" onClick={() => runSettingsDialog.current?.close()}>Close</button></header>
         <label>
           Ascension
           <select aria-label="Ascension" value={ascension} onChange={(event) => onAscension(Number(event.target.value))}>
@@ -131,9 +135,6 @@ export function StartMenu({
           onCustomModifierChange={onCustomModifier}
           onQuickStartActChange={onQuickStartAct}
         />
-        <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-          Sound {sfxEnabled ? 'on' : 'off'}
-        </button>
         <fieldset className="start-menu__party">
           <legend>Characters</legend>
           {characters.slice(0, 1).map((character, seat) => {

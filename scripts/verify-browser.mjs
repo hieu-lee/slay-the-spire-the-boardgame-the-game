@@ -150,11 +150,15 @@ async function waitForPowerZoom() {
 }
 
 async function chooseSeat(playerId) {
-  const menu = page.locator('details.game-settings')
-  if (!(await menu.evaluate((details) => details.open))) await menu.locator(':scope > summary').click()
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'general' }).click()
   const selector = page.getByLabel('Seat')
   if (await selector.count()) await selector.selectOption(playerId)
-  await menu.locator(':scope > summary').click()
+  if (await page.locator('.combat').count()) {
+    const expectedViewer = page.locator(`.seat--viewer[data-player-id="${playerId}"]`)
+    await expectedViewer.waitFor()
+  }
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
 }
 
 async function confirmDiscard(player) {
@@ -232,6 +236,36 @@ async function enterFirstRoom() {
   }
 }
 
+const blockedStorageContext = await browser.newContext({ viewport: { width: 800, height: 600 } })
+await blockedStorageContext.addInitScript(() => {
+  const getItem = Storage.prototype.getItem
+  Storage.prototype.getItem = function blockedSettingsRead(key) {
+    if (key === 'sts-game-settings') throw new DOMException('Blocked', 'SecurityError')
+    return getItem.call(this, key)
+  }
+})
+const blockedStoragePage = await blockedStorageContext.newPage()
+await blockedStoragePage.goto(base, { waitUntil: 'networkidle' })
+const blockedStorageLoads = await blockedStoragePage.getByRole('button', { name: 'Single Player' }).count()
+await blockedStorageContext.close()
+check('blocked settings storage falls back without preventing startup', () => assertEqual(blockedStorageLoads, 1))
+
+const legacyContext = await browser.newContext({ viewport: { width: 800, height: 600 } })
+await legacyContext.addInitScript(() => localStorage.setItem('sts-sfx-enabled', 'off'))
+const legacyPage = await legacyContext.newPage()
+await legacyPage.goto(base, { waitUntil: 'networkidle' })
+await legacyPage.getByRole('button', { name: 'Settings' }).click()
+const legacyDialog = legacyPage.getByRole('dialog', { name: 'Settings' })
+await legacyDialog.getByRole('button', { name: 'audio' }).click()
+const legacyVolumes = {
+  bgm: await legacyDialog.getByLabel('Music volume').inputValue(),
+  sfx: await legacyDialog.getByLabel('Sound effects volume').inputValue(),
+}
+await legacyContext.close()
+check('the legacy sound-off preference migrates music and effects as muted', () => {
+  assertDeepEqual(legacyVolumes, { bgm: '0', sfx: '0' })
+})
+
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__ !== undefined)
 
@@ -270,14 +304,31 @@ const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
 await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => button.focus())
 const settingsKeepsFocus = await settingsDialog.evaluate((dialog) => dialog.contains(document.activeElement))
-const sfxToggle = settingsDialog.getByRole('button', { name: 'Sound on' })
-const sfxStartsEnabled = await sfxToggle.getAttribute('aria-pressed')
-await sfxToggle.click()
+await settingsDialog.getByRole('button', { name: 'video' }).click()
+const selectedSettingsTab = await settingsDialog.getByRole('button', { pressed: true }).textContent()
+const videoSettingsPanel = await settingsDialog.getByRole('tabpanel', { name: 'video' }).count()
+const videoSettings = await settingsDialog.textContent()
+const fullscreenAction = await settingsDialog.getByRole('button', { name: 'Enter fullscreen' }).count()
+await settingsDialog.getByLabel('High-contrast UI').check()
+const highContrastRoot = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--cream').trim())
+const highContrastTitleControl = await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => getComputedStyle(button).color)
+await settingsDialog.getByLabel('High-contrast UI').uncheck()
+await settingsDialog.getByRole('button', { name: 'audio' }).click()
+const sfxSlider = settingsDialog.getByLabel('Sound effects volume')
+const voiceSlider = await settingsDialog.getByLabel('Voice chat volume').count()
+const sfxStartsEnabled = await sfxSlider.getAttribute('value')
+await sfxSlider.fill('0')
 const sfxCanMute = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
-await settingsDialog.getByRole('button', { name: 'Sound off' }).click()
+await sfxSlider.fill('100')
 const sfxCanRestore = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
 const menuSounds = await page.evaluate(() => window.__SFX_PLAYS__)
-const formSoundBefore = menuSounds.length
+await shot('00-title-settings')
+await page.keyboard.press('Escape')
+await settingsDialog.waitFor({ state: 'hidden' })
+const settingsDismissedWithEscape = await settingsDialog.isHidden()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Run settings' }).click()
+const formSoundBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.getByLabel('Player 1 character').selectOption('silent')
 await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/ui.ogg'), formSoundBefore)
 const formSoundPlays = await page.evaluate((before) =>
@@ -287,10 +338,8 @@ const localAscensions = await page.getByLabel('Ascension').locator('option').eva
   options.map((option) => option.value))
 const localCharacterSeats = await page.getByLabel(/^Player \d character$/).count()
 const setupHasDevControls = await page.locator('.start-menu__setup').getByText(/Party|Seed|Choose Your Relic|Last Stand/).count()
-await shot('00-title-settings')
-await page.keyboard.press('Escape')
-await settingsDialog.waitFor({ state: 'hidden' })
-const settingsDismissedWithEscape = await settingsDialog.isHidden()
+await page.getByRole('button', { name: 'Close' }).click()
+await page.getByRole('button', { name: 'Back', exact: true }).click()
 await page.getByRole('button', { name: 'Single Player' }).hover()
 const titleMenu = await page.locator('.start-menu').evaluate((menu) => {
   const box = menu.getBoundingClientRect()
@@ -333,8 +382,15 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(setupHasDevControls, 0, 'developer setup controls leaked into settings')
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
+  assertEqual(selectedSettingsTab?.trim(), 'video', 'the selected settings tab is not exposed')
+  assertEqual(videoSettingsPanel, 1, 'the video tab does not control an accessible panel')
   assert(settingsDismissedWithEscape, 'Escape did not close settings')
-  assertEqual(sfxStartsEnabled, 'true', 'sound effects should default on')
+  assert(videoSettings.includes('Reduce motion') && videoSettings.includes('High-contrast UI'), 'video accessibility options are missing')
+  assertEqual(fullscreenAction, 1, 'fullscreen control is missing')
+  assertEqual(voiceSlider, 1, 'voice chat volume is missing')
+  assertEqual(highContrastRoot, '#fff9e8', 'high contrast did not reach the title screen')
+  assertEqual(highContrastTitleControl, 'rgb(255, 255, 255)', 'high contrast did not change a rendered title control')
+  assertEqual(sfxStartsEnabled, '100', 'sound effects should default on')
   assertEqual(sfxCanMute, 'off', 'sound preference did not mute')
   assertEqual(sfxCanRestore, 'on', 'sound preference did not restore')
   assert(menuSounds.includes('/assets/sfx/ui.ogg'), 'menu clicks did not play the UI sound')
@@ -556,10 +612,8 @@ check('the compendium remains usable on a minimum desktop viewport', () => {
 })
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Back to main menu' }).click()
-await page.getByRole('button', { name: 'Settings' }).click()
-await page.getByLabel('Player 1 character').selectOption('watcher')
-await page.getByRole('button', { name: 'Close' }).click()
 await page.getByRole('button', { name: 'Single Player' }).click()
+await page.getByRole('button', { name: 'Watcher' }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const configuredLocalRun = await readRun()
@@ -765,41 +819,24 @@ await pauseMenu.getByRole('button', { name: 'Resume' }).click()
 await pauseMenu.waitFor({ state: 'hidden' })
 check('Escape pauses combat without changing it and exposes the expected run actions', () => {
   assertDeepEqual(pausedCombat, booted)
-  assertDeepEqual(pauseActions.map((label) => label.trim()), ['Resume', 'Compendium', 'Give up', 'Return to main menu'])
-})
-
-const gameMenu = page.locator('details.game-settings')
-await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'Play online' }).click()
-await page.getByRole('heading', { name: 'Climb together' }).waitFor()
-await page.keyboard.press('Escape')
-const hiddenLocalPauseCount = await page.locator('.game-mode dialog.pause-menu[open]').count()
-await page.getByRole('button', { name: 'Solo table' }).click()
-await page.locator('.combat').waitFor()
-check('the hidden solo table cannot intercept Escape while multiplayer is active', () => {
-  assertEqual(hiddenLocalPauseCount, 0)
+  assertDeepEqual(pauseActions.map((label) => label.trim()), ['Resume', 'Settings', 'Compendium', 'Give up', 'Return to main menu'])
 })
 
 const activeRun = await readRun()
 const activeRunId = activeRun.campaign.runId
-let newRunPrompt = ''
-page.once('dialog', async (dialog) => {
-  newRunPrompt = dialog.message()
-  await dialog.dismiss()
-})
-if (!await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'New run' }).click()
-if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
-const runAfterCancelledRestart = await readRun()
-check('New run confirms before discarding an active run', () => {
-  assertEqual(newRunPrompt, 'Start a new run? The one in progress will be lost.')
-  assertEqual(runAfterCancelledRestart.campaign.runId, activeRunId)
-  assertEqual(runAfterCancelledRestart.phase, 'combat')
+await page.getByRole('button', { name: 'Settings' }).click()
+const runSettings = page.getByRole('dialog', { name: 'Settings' })
+const settingsRunActions = await runSettings.getByRole('button').allTextContents()
+await runSettings.getByRole('button', { name: /Back/ }).click()
+const iconOnlySettingsText = await page.locator('.game-settings').textContent()
+check('the HUD settings button is icon-only and contains no run-abandon actions', () => {
+  assertEqual(iconOnlySettingsText?.trim(), '')
+  assert(!settingsRunActions.some((label) => /Give up|Return to main menu|New run|Play online/.test(label)))
 })
 
 const runBeforeFightCompendium = await readRun()
-await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'Compendium' }).click()
+await page.keyboard.press('Escape')
+await pauseMenu.getByRole('button', { name: 'Compendium' }).click()
 await page.locator('.compendium').waitFor()
 await page.getByPlaceholder('Search').fill('Bash')
 await page.getByLabel('View upgrades').check()
@@ -812,20 +849,19 @@ check('fight settings can inspect upgraded cards and resume the unchanged run', 
   assertDeepEqual(runAfterFightCompendium, runBeforeFightCompendium)
 })
 
-if (!(await gameMenu.evaluate((details) => details.open))) await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'Give up' }).click()
+await page.keyboard.press('Escape')
+await pauseMenu.getByRole('button', { name: 'Give up' }).click()
 const soloGiveUp = page.getByRole('dialog', { name: 'Give up this fight?' })
 const soloGiveUpModal = await soloGiveUp.evaluate((dialog) => dialog.matches(':modal'))
 await soloGiveUp.getByRole('button', { name: 'Cancel' }).click()
 const runAfterGiveUpCancel = await readRun()
-if (!(await gameMenu.evaluate((details) => details.open))) await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'Give up' }).click()
+await page.keyboard.press('Escape')
+await pauseMenu.getByRole('button', { name: 'Give up' }).click()
 await soloGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
 await page.getByRole('heading', { name: 'The party has fallen' }).waitFor()
 const surrenderedSoloRun = await readRun()
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), runBeforeFightCompendium)
 await page.locator('.combat').waitFor()
-if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
 check('single-player Give up uses a modal confirmation and ends the fight immediately', () => {
   assert(soloGiveUpModal, 'the give-up confirmation was not modal')
   assertDeepEqual(runAfterGiveUpCancel, runBeforeFightCompendium)
@@ -833,7 +869,6 @@ check('single-player Give up uses a modal confirmation and ends the fight immedi
   assert(surrenderedSoloRun.log.includes('The party gives up.'))
 })
 
-let boundaryRunPrompt = ''
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -843,20 +878,15 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 const localCatchUpPanel = await page.getByRole('heading', { name: 'Catch Up' }).count()
-page.once('dialog', async (dialog) => {
-  boundaryRunPrompt = dialog.message()
-  await dialog.dismiss()
-})
-await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'New run' }).click()
-const boundaryRunAfterCancelledRestart = await readRun()
-if (await gameMenu.evaluate((details) => details.open)) await gameMenu.locator(':scope > summary').click()
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+const boundaryPauseActions = await pauseMenu.getByRole('button').allTextContents()
+await pauseMenu.getByRole('button', { name: 'Resume' }).click()
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), activeRun)
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
-check('New run confirms before discarding an Act-boundary run', () => {
-  assertEqual(boundaryRunPrompt, 'Start a new run? The one in progress will be lost.')
-  assertEqual(boundaryRunAfterCancelledRestart.campaign.runId, activeRunId)
-  assertEqual(boundaryRunAfterCancelledRestart.phase, 'map')
+check('Escape owns the Act-boundary return flow without exposing a local catch-up setup', () => {
+  assert(boundaryPauseActions.some((label) => label.trim() === 'Return to main menu'))
+  assertEqual(activeRunId, (activeRun.campaign.runId))
   assertEqual(localCatchUpPanel, 0, 'Single Player exposed a local add-player path')
 })
 
@@ -962,6 +992,22 @@ check('pause freezes the completed-combat transition', () => {
   assertEqual(pausedFinishedCombat.combat.phase, 'won')
 })
 
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.combat.phase = 'won'
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Settings' }).click()
+await page.waitForTimeout(1_100)
+const settingsFrozenCombat = await readRun()
+await runSettings.getByRole('button', { name: /Back/ }).click()
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'player')
+check('Settings freezes the completed-combat transition', () => {
+  assertEqual(settingsFrozenCombat.phase, 'combat')
+  assertEqual(settingsFrozenCombat.combat.phase, 'won')
+})
+
 const mutedBossMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate((run) => {
   const next = structuredClone(run)
@@ -970,12 +1016,20 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), mutedBossMusicBefore)
 const mutedBossPauseBefore = await page.evaluate(() => window.__BGM_PAUSES__.length)
-if (!await gameMenu.evaluate((menu) => menu.open)) await gameMenu.locator(':scope > summary').click()
-await gameMenu.getByRole('button', { name: 'Sound on' }).click()
+await page.getByRole('button', { name: 'Settings' }).click()
+await runSettings.getByRole('button', { name: 'audio' }).click()
+await runSettings.getByLabel('Music volume').fill('0')
 await page.waitForFunction((before) => window.__BGM_PAUSES__.slice(before).includes('/assets/bgm/the-guardian-emerges.mp3'), mutedBossPauseBefore)
-await gameMenu.getByRole('button', { name: 'Sound off' }).click()
-if (await gameMenu.evaluate((menu) => menu.open)) await gameMenu.locator(':scope > summary').click()
-check('Sound control stops active boss music', () => assert(true))
+await runSettings.getByLabel('Music volume').fill('20')
+const volumeChangePlaysBefore = await page.evaluate(() => window.__SFX_PLAYS__.filter((sound) => sound === '/assets/bgm/the-guardian-emerges.mp3').length)
+await runSettings.getByLabel('Music volume').fill('40')
+await runSettings.getByLabel('Music volume').fill('20')
+const volumeChangePlaysAfter = await page.evaluate(() => window.__SFX_PLAYS__.filter((sound) => sound === '/assets/bgm/the-guardian-emerges.mp3').length)
+await runSettings.getByRole('button', { name: /Back/ }).click()
+check('Music volume stops and restores active boss music', () => assert(true))
+check('changing a nonzero Music volume does not restart the boss track', () => {
+  assertEqual(volumeChangePlaysAfter, volumeChangePlaysBefore)
+})
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
 const combatSfx = []
@@ -1637,12 +1691,12 @@ const mapButtonIcon = await page.getByRole('button', { name: 'Map' }).locator('i
 const mapButtonBackground = await page.getByRole('button', { name: 'Map' }).evaluate((button) => getComputedStyle(button).backgroundImage)
 const mapButtonPlacement = await page.evaluate(() => {
   const map = document.querySelector('.map-peek__open').getBoundingClientRect()
-  const menu = document.querySelector('.game-settings > summary').getBoundingClientRect()
+  const menu = document.querySelector('.game-settings').getBoundingClientRect()
   return { gap: menu.left - map.right, centered: Math.abs((menu.top + menu.bottom - map.top - map.bottom) / 2) < 2 }
 })
-const settingsButton = await page.locator('.game-settings > summary').evaluate((summary) => {
+const settingsButton = await page.locator('.game-settings').evaluate((summary) => {
   const icon = summary.querySelector('img')
-  return { label: summary.textContent?.trim(), source: icon?.getAttribute('src'), loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0 }
+  return { label: summary.getAttribute('aria-label'), text: summary.textContent?.trim(), source: icon?.getAttribute('src'), loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0 }
 })
 check('the combat map button uses the map-scroll icon', () => {
   assertEqual(mapButtonIcon.source, '/assets/menu/map-scroll.png')
@@ -1651,6 +1705,7 @@ check('the combat map button uses the map-scroll icon', () => {
   assert(mapButtonPlacement.gap >= 0 && mapButtonPlacement.gap <= 24 && mapButtonPlacement.centered,
     `the map button is not beside Settings: ${JSON.stringify(mapButtonPlacement)}`)
   assertEqual(settingsButton.label, 'Settings')
+  assertEqual(settingsButton.text, '')
   assertEqual(settingsButton.source, '/assets/menu/settings-cog.png')
   assert(settingsButton.loaded, 'the settings-cog icon did not load')
 })
@@ -8290,22 +8345,24 @@ check('a new combat never replays a still-active cue from the prior combat', () 
   assertDeepEqual(combatBoundarySounds, [])
 })
 
-const mutedPersonalSoundBefore = await page.evaluate(() => {
-  localStorage.setItem('sts-sfx-enabled', 'off')
-  return window.__SFX_DETAILS__.length
-})
+await page.getByRole('button', { name: 'Settings' }).click()
+await runSettings.getByRole('button', { name: 'audio' }).click()
+await runSettings.getByLabel('Sound effects volume').fill('0')
+await runSettings.getByRole('button', { name: /Back/ }).click()
+const mutedPersonalSoundBefore = await page.evaluate(() => window.__SFX_DETAILS__.length)
 await publishPresentationEvent({
   kind: 'potion', actorId: firstPlayerId, sourceId: 'fire_potion', enemyIds: [firstEnemyId], playerIds: [],
 })
 await vfxTarget().waitFor()
 await page.waitForTimeout(100)
-const mutedPersonalSoundAfter = await page.evaluate(() => {
-  localStorage.setItem('sts-sfx-enabled', 'on')
-  return window.__SFX_DETAILS__.length
-})
+const mutedPersonalSoundAfter = await page.evaluate(() => window.__SFX_DETAILS__.length)
 check('the global SFX preference also mutes personal combat cues', () => {
   assertEqual(mutedPersonalSoundAfter, mutedPersonalSoundBefore)
 })
+await page.getByRole('button', { name: 'Settings' }).click()
+await runSettings.getByRole('button', { name: 'audio' }).click()
+await runSettings.getByLabel('Sound effects volume').fill('100')
+await runSettings.getByRole('button', { name: /Back/ }).click()
 await vfxTarget().waitFor({ state: 'detached' })
 
 await vfxActor().waitFor({ state: 'detached' })

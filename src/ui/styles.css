@@ -1213,7 +1213,6 @@ button:disabled {
 }
 
 .game-settings { position: relative; margin-left: auto; }
-.game-settings > summary,
 .online-lobby__settings > summary {
   min-height: 2.5rem;
   padding: .45rem .75rem;
@@ -1222,17 +1221,6 @@ button:disabled {
   color: #f5dfaa;
   background: #1d2730;
   cursor: pointer;
-}
-.game-settings > .setup {
-  position: absolute;
-  z-index: 100;
-  top: calc(100% + .4rem);
-  right: 0;
-  width: min(32rem, calc(100vw - 2rem));
-  padding: .75rem;
-  border: 1px solid #7e6841;
-  background: rgb(13 16 18 / .98);
-  box-shadow: 0 .8rem 2rem #000b;
 }
 .online-lobby__settings {
   width: min(32rem, 100%);

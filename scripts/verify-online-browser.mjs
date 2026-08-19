@@ -172,6 +172,26 @@ try {
   const backDisabledDuringEntry = await guardedEntry.getByRole('button', { name: '← Solo table' }).isDisabled()
   await guardedEntry.locator('.online-lobby').waitFor()
   const guardedCredentials = await credentials(guardedEntry)
+  const preserveContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
+  await preserveContext.addInitScript((saved) => {
+    sessionStorage.setItem('sts-room-session', JSON.stringify(saved))
+    localStorage.setItem('sts-room-recoveries', JSON.stringify([saved]))
+  }, guardedCredentials)
+  const preservePage = await preserveContext.newPage()
+  await preservePage.route(`**/api/rooms/${guardedCredentials.code}`, (route) => route.abort())
+  await preservePage.routeWebSocket('**/ws', () => {})
+  await preservePage.goto(origin, { waitUntil: 'networkidle' })
+  await preservePage.getByRole('heading', { name: 'Reconnecting' }).waitFor()
+  await preservePage.getByRole('button', { name: '← Solo table' }).click()
+  await preservePage.getByRole('button', { name: 'Single Player' }).waitFor()
+  const preservedRecovery = await preservePage.evaluate((code) => ({
+    active: sessionStorage.getItem('sts-room-session'),
+    recoverable: JSON.parse(localStorage.getItem('sts-room-recoveries') ?? '[]').some((saved) => saved.code === code),
+  }), guardedCredentials.code)
+  await preserveContext.close()
+  check('leaving a reconnect screen for the solo table preserves recovery', () => {
+    assertDeepEqual(preservedRecovery, { active: null, recoverable: true })
+  })
   const spare = await fetch(`${roomOrigin}/api/rooms`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -311,6 +331,8 @@ try {
   await a.locator('.voice__status', { hasText: '0/1' }).waitFor()
   await a.getByRole('button', { name: 'Leave voice' }).click()
   await a.screenshot({ path: join(outDir, '01-two-player-lobby.png'), fullPage: true })
+  const lobbyRunSettings = await a.locator('.online-lobby__settings > summary').textContent()
+  const lobbyGlobalSettings = await a.getByRole('button', { name: 'Settings', exact: true }).count()
 
   const [aOnline, bOnline] = await Promise.all([
     a.locator('.online-seat[aria-label*="online"]').count(),
@@ -320,6 +342,8 @@ try {
     assertEqual(healthAfterDoubleCreate.rooms, 1, 'double create orphaned a room')
     assertEqual(aOnline, 2)
     assertEqual(bOnline, 2)
+    assertEqual(lobbyRunSettings?.trim(), 'Run settings', 'the run setup disclosure is not distinctly named')
+    assertEqual(lobbyGlobalSettings, 1, 'the global Settings control is ambiguous')
   })
 
   const lobbyChrome = await a.evaluate(() => {
@@ -612,9 +636,27 @@ try {
   })
   await a.waitForFunction(() => !document.querySelector('.hand .card--drawn'))
 
+  const onlineSettingsFreezeRestore = structuredClone(liveRoom.run.combat)
+  liveRoom.run.combat.phase = 'won'
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('.combat[data-phase="won"]').waitFor()
+  await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Settings' }).click()))
+  await a.waitForTimeout(1_100)
+  const onlineSettingsFrozen = await snapshot(a)
+  await Promise.all([a, b].map((page) => page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()))
+  liveRoom.run.combat = onlineSettingsFreezeRestore
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator(`.combat[data-phase="${onlineSettingsFreezeRestore.phase}"]`).waitFor()
+  check('online Settings freezes authoritative combat completion', () => {
+    assertEqual(onlineSettingsFrozen.run.phase, 'combat')
+    assertEqual(onlineSettingsFrozen.run.combat.phase, 'won')
+  })
+
   const onlineRunBeforeCompendium = await snapshot(a)
-  await a.locator('details.game-settings > summary').click()
-  await a.getByRole('button', { name: 'Compendium' }).click()
+  await a.press('body', 'Escape')
+  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
   await a.locator('.compendium').waitFor()
   await a.getByLabel('View upgrades').check()
   await a.getByRole('button', { name: 'Back to fight' }).click()
@@ -631,11 +673,11 @@ try {
     window.__RESTORE_DATE_NOW__ = () => { Date.now = actualNow }
     Date.now = () => actualNow() + 60 * 60 * 1000
   })
-  await b.locator('details.game-settings > summary').click()
-  await b.getByRole('button', { name: 'Compendium' }).click()
+  await b.press('body', 'Escape')
+  await b.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
   await b.locator('.compendium').waitFor()
-  await a.locator('details.game-settings > summary').click()
-  await a.getByRole('button', { name: 'Give up' }).click()
+  await a.press('body', 'Escape')
+  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Give up' }).click()
   const aGiveUp = a.getByRole('dialog', { name: 'Give up this fight?' })
   const bGiveUp = b.getByRole('dialog', { name: 'Give up this fight?' })
   await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
@@ -644,7 +686,12 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await Promise.all([aGiveUp.waitFor({ state: 'hidden' }), bGiveUp.waitFor({ state: 'hidden' })])
-  await a.getByRole('button', { name: 'Give up' }).click()
+  liveRoom.giveUpVote = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.waitForFunction(() => !document.querySelector('.give-up-panel'))
+  await a.press('body', 'Escape')
+  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Give up' }).click()
   await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
   const giveUpDeadlineLabel = await aGiveUp.getByRole('timer').textContent()
   const giveUpBounds = await aGiveUp.evaluate((dialog) => {
@@ -669,7 +716,6 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await Promise.all([a.locator('.app-shell--online .combat').waitFor(), b.locator('.app-shell--online .combat').waitFor()])
-  await a.locator('details.game-settings').evaluate((details) => { details.open = false })
   check('online Give up restarts after expiry and is a reconnect-safe unanimous 10-second vote', () => {
     assert(/^\d+s remaining$/.test(giveUpDeadlineLabel), `missing give-up deadline: ${giveUpDeadlineLabel}`)
     assertEqual(compendiumInterruptedByVote, 0, 'an incoming give-up vote stayed hidden behind Compendium')
@@ -2546,14 +2592,22 @@ try {
   Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Bo'), unloadRestore.bo)
   liveRoom.run.combat.enemies = unloadRestore.enemies
 
-  await a.locator('details.game-settings > summary').click()
-  await a.getByRole('button', { name: 'Solo table' }).click()
-  const preservedLocalPhase = await a.evaluate(() => window.__STS_DEBUG__.getRun().phase)
-  await a.getByRole('button', { name: 'Play online' }).click()
-  await a.locator('.app-shell--online .combat').waitFor()
-  check('switching modes preserves both the solo run and online seat', () => {
-    assert(preservedLocalPhase.length > 0)
+  const onlineHeaderControls = await a.locator('.app-shell--online .app-shell__header').evaluate((header) =>
+    [...header.querySelectorAll(':scope > .voice button, :scope > .map-peek__open, :scope > .game-settings')]
+      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim()))
+  check('online run controls keep voice, map, and icon-only settings in the requested order', () => {
+    assertDeepEqual(onlineHeaderControls, ['Join voice', 'Map', 'Settings'])
   })
+  await a.getByRole('button', { name: 'Join voice' }).click()
+  await a.getByRole('button', { name: 'Leave voice' }).waitFor()
+  const joinedOnlineHeaderControls = await a.locator('.app-shell--online .app-shell__header').evaluate((header) =>
+    [...header.querySelectorAll(':scope > .voice button, :scope > .map-peek__open, :scope > .game-settings')]
+      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim())
+      .map((label) => label?.startsWith('Leave voice,') ? 'Leave voice' : label))
+  check('joined online run controls add Leave voice and Mute ahead of Map and Settings', () => {
+    assertDeepEqual(joinedOnlineHeaderControls, ['Leave voice', 'Mute', 'Map', 'Settings'])
+  })
+  await a.getByRole('button', { name: 'Leave voice' }).click()
 
   const charonRestore = structuredClone(liveRoom.run.combat)
   const annBeforeCharon = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
@@ -3316,8 +3370,15 @@ try {
 
   const reconnectCredentials = await credentials(b)
   await b.close()
-  const boStatus = a.locator('.setup .pip', { hasText: 'Bo' })
+  await a.getByRole('button', { name: 'Settings' }).click()
+  const settingsIds = await a.locator('.settings-dialog [id]').evaluateAll((nodes) => nodes.map((node) => node.id))
+  check('mounted settings dialogs keep unique accessible IDs', () => {
+    assertEqual(new Set(settingsIds).size, settingsIds.length)
+  })
+  await a.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'general' }).click()
+  const boStatus = a.locator('.settings-party span', { hasText: 'Bo' })
   await boStatus.filter({ hasText: '○' }).waitFor({ state: 'attached' })
+  await a.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
   b = installScreenAudit(await bContext.newPage())
   b.on('pageerror', (error) => failures.push(String(error)))
   b.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
@@ -3451,8 +3512,7 @@ try {
   check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
     assert(reconnectedMapBlocked)
   })
-  await teammateGame.locator('details.game-settings > summary').click()
-  const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Solo table' })
+  const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Settings' })
   await teammateHeaderControl.focus()
   const astrolabeChoices = ownerGame.locator('.campfire__deck button')
   for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
@@ -3471,8 +3531,6 @@ try {
     assert(teammateMapFocusable)
     assert(teammateHeaderFocusPreserved)
   })
-  await teammateGame.locator('details.game-settings > summary').click()
-
   Object.assign(liveRoom.run, {
     phase: 'reward', rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
@@ -3881,8 +3939,10 @@ try {
   await roomAction(fourPages[0], { kind: 'potionReward', choice: 'reveal' })
   await roomAction(fourPages[0], { kind: 'cardReward', choice: 'reveal' })
   await fourPages[1].getByText('Golden Ticket · Rare').waitFor()
-  const fourSeatCount = await fourPages[0].locator('.setup .pip').evaluateAll((pips) =>
-    pips.filter((pip) => /[●○]/.test(pip.textContent ?? '')).length)
+  await fourPages[0].getByRole('button', { name: 'Settings' }).click()
+  await fourPages[0].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'general' }).click()
+  const fourSeatCount = await fourPages[0].locator('.settings-party span').count()
+  await fourPages[0].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
   const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
   const revealedItemImages = await fourPages[0].locator([
     '.reward-screen__relic > .item-card-image',
@@ -3922,7 +3982,10 @@ try {
   await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()
   await fourPages[0].screenshot({ path: join(outDir, '09b-four-player-compact-desktop-pending-relic.png'), fullPage: true })
   await fourPages[0].evaluate(() => window.__ROOM_SOCKETS__?.at(-1)?.close(4000, 'item reconnect test'))
-  await fourPages[1].locator('.setup .pip', { hasText: 'Iris ○' }).waitFor({ state: 'attached' })
+  await fourPages[1].getByRole('button', { name: 'Settings' }).click()
+  await fourPages[1].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'general' }).click()
+  await fourPages[1].locator('.settings-party span', { hasText: 'Iris ○' }).waitFor({ state: 'attached' })
+  await fourPages[1].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
   await fourPages[0].reload({ waitUntil: 'domcontentloaded' })
   await fourPages[0].locator('.connection--connected').waitFor()
   const pendingAfterFourReconnect = (await snapshot(fourPages[0])).pendingRelic
@@ -3982,6 +4045,47 @@ try {
       'the online header crushed the game title')
   })
   await fourPages[0].screenshot({ path: join(outDir, '11-last-stand-victory-compact-desktop.png'), fullPage: true })
+  await fourPages[1].press('body', 'Escape')
+  await fourPages[1].getByRole('dialog', { name: 'Slay the Spire' }).waitFor()
+  const finalizedRun = fourRoom.run
+  fourRoom.phase = 'lobby'
+  fourRoom.run = null
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[1].locator('.online-lobby').waitFor()
+  fourRoom.phase = 'run'
+  fourRoom.run = finalizedRun
+  fourRoom.version += 1
+  rooms.publishRoom(fourCode)
+  await fourPages[1].getByRole('heading', { name: 'Act 1 complete' }).waitFor()
+  const staleLobbyPause = await fourPages[1].locator('.pause-menu[open]').count()
+  check('returning to the lobby clears a stale pause before the next run', () => {
+    assertEqual(staleLobbyPause, 0)
+  })
+  let offlineLeaveStarted
+  const heldLeaveStarted = new Promise((resolveStarted) => { offlineLeaveStarted = resolveStarted })
+  let releaseOfflineLeave
+  const heldLeave = new Promise((resolveLeave) => { releaseOfflineLeave = resolveLeave })
+  await fourPages[0].route(`**/api/rooms/${fourCode}/leave`, async (route) => {
+    offlineLeaveStarted()
+    await heldLeave
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  })
+  await fourPages[0].press('body', 'Escape')
+  const offlinePause = fourPages[0].getByRole('dialog', { name: 'Slay the Spire' })
+  await offlinePause.waitFor()
+  fourPages[0].once('dialog', (dialog) => dialog.accept())
+  await offlinePause.getByRole('button', { name: 'Return to main menu' }).click()
+  await heldLeaveStarted
+  await fourPages[0].getByRole('button', { name: 'Single Player' }).waitFor()
+  const forgottenOfflineSession = await fourPages[0].evaluate(() => ({
+    active: sessionStorage.getItem('sts-room-session'),
+    recoveries: localStorage.getItem('sts-room-recoveries'),
+  }))
+  check('Return to main menu forgets local recovery without waiting for the leave endpoint', () => {
+    assertDeepEqual(forgottenOfflineSession, { active: null, recoveries: null })
+  })
+  releaseOfflineLeave()
   await Promise.all(fourContexts.map((context) => context.close()))
 
   check('the online flow has no browser errors', () => {

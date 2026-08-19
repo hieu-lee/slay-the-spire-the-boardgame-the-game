@@ -32,10 +32,9 @@ page.on('console', (message) => { if (message.type() === 'error') failures.push(
 page.on('pageerror', (error) => failures.push(String(error)))
 
 async function chooseLocalSeat(option) {
-  const menu = page.locator('details.game-settings')
-  await menu.locator(':scope > summary').click()
+  await page.getByRole('button', { name: 'Settings' }).click()
   await page.getByLabel('Seat').selectOption(option)
-  await menu.locator(':scope > summary').click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
 }
 
 async function setRoom(kind) {
@@ -77,7 +76,8 @@ await page.screenshot({ path: join(outDir, 'achievements-local-compact-desktop.p
 await page.getByRole('button', { name: 'Back to main menu' }).click()
 
 await page.setViewportSize({ width: 1280, height: 720 })
-await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Run settings' }).click()
 const localMeta = page.locator('.start-menu__meta')
 await localMeta.locator('summary').click()
 await localMeta.getByLabel('Run mode').selectOption('daily')
@@ -86,14 +86,14 @@ const localDailyModifierCount = await page.locator('.start-menu__daily li').coun
 const localDailyModifierNames = await page.locator('.start-menu__daily strong').allTextContents()
 await localMeta.locator('summary').click()
 await page.getByRole('button', { name: 'Close' }).click()
-await page.getByRole('button', { name: 'Single Player' }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localDailyRunIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().meta.modifierIds)
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 await page.setViewportSize({ width: 1280, height: 720 })
-await page.getByRole('button', { name: 'Settings' }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Run settings' }).click()
 await localMeta.locator('summary').click()
 await localMeta.getByLabel('Run mode').selectOption('custom')
 await localMeta.getByRole('checkbox', { name: /Cursed/ }).click()
@@ -116,11 +116,10 @@ const compactMetaFrame = await page.evaluate(() => {
 await page.screenshot({ path: join(outDir, 'meta-start-menu-compact-landscape.png'), fullPage: true })
 await localMeta.locator('summary').click()
 await page.getByRole('button', { name: 'Close' }).click()
-await page.getByRole('button', { name: 'Single Player' }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localMetaRun = await page.evaluate(() => window.__STS_DEBUG__.getRun())
-await page.locator('details.game-settings > summary').click()
+await page.getByRole('button', { name: 'Settings' }).click()
 const localModifierSummary = page.locator('.run-modifiers > summary')
 await localModifierSummary.waitFor()
 const localModifierSummaryText = await localModifierSummary.textContent()
@@ -128,7 +127,7 @@ await localModifierSummary.click()
 const visibleNightTerrors = await page.getByText(/Night Terrors/).count()
 await page.setViewportSize({ width: 1100, height: 760 })
 await page.screenshot({ path: join(outDir, 'meta-custom-run.png'), fullPage: true })
-await page.locator('details.game-settings > summary').click()
+await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -400,6 +399,46 @@ await page.getByLabel('Shopping for').selectOption('p1')
 await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await page.locator('.merchant-figure').waitFor()
 await page.screenshot({ path: join(outDir, 'merchant-4p-desktop.png'), fullPage: true })
+await page.setViewportSize({ width: 1280, height: 720 })
+const merchant720 = await page.locator('.merchant-stage').evaluate((stage) => {
+  const box = stage.getBoundingClientRect()
+  const leave = stage.querySelector('.room-proceed')?.getBoundingClientRect()
+  return { bottom: box.bottom, viewport: innerHeight, leaveBottom: leave?.bottom ?? Infinity }
+})
+await page.screenshot({ path: join(outDir, 'merchant-4p-1280x720.png'), fullPage: true })
+await page.setViewportSize({ width: 1024, height: 600 })
+const merchant600 = await page.locator('.merchant-stage').evaluate((stage) => {
+  const stageBox = stage.getBoundingClientRect()
+  const shelfItems = [...stage.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')]
+  const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
+  const prices = [...stage.querySelectorAll('.merchant-shelf .room-price')].map((price) => price.getBoundingClientRect())
+  return {
+    stageBottom: stageBox.bottom,
+    viewport: innerHeight,
+    itemWidth: Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
+    cardWidth: card?.width ?? 0,
+    pricesVisible: prices.every((price) => price.height > 0 && price.top >= stageBox.top && price.bottom <= stageBox.bottom + 1),
+  }
+})
+await page.mouse.move(0, 0)
+await page.screenshot({ path: join(outDir, 'merchant-4p-1024x600.png'), fullPage: true })
+await page.setViewportSize({ width: 390, height: 844 })
+const merchant390 = await page.locator('.merchant-stage').evaluate((stage) => {
+  const shelfItem = stage.querySelector('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')?.getBoundingClientRect()
+  const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
+  const board = stage.querySelector('.merchant-board')?.getBoundingClientRect()
+  const removal = stage.querySelector('.merchant-removal')?.getBoundingClientRect()
+  const detail = stage.querySelector('.merchant-shelf .room-item-text')
+  return {
+    itemWidth: shelfItem?.width ?? 0,
+    cardWidth: card?.width ?? 0,
+    removalRatio: board && removal ? removal.width / board.width : 0,
+    detailVisible: detail ? getComputedStyle(detail).position === 'static' && detail.getBoundingClientRect().height > 0 : false,
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-4p-390x844.png'), fullPage: true })
+await page.setViewportSize({ width: 1440, height: 900 })
 const merchantCardFallback = page.locator('.merchant-board .item-card-image').first()
 if (await page.locator('.merchant-board .item-card-fallback').count() === 0) {
   await merchantCardFallback.evaluate((image) => { image.src = '/missing-item-card.webp' })
@@ -411,16 +450,53 @@ const merchantAnchorFallback = page.locator('.merchant-board .item-card-fallback
 const merchantFallbackSrc = await merchantAnchorFallback.locator('.item-card-image').getAttribute('src')
 const merchantFallbackName = await merchantAnchorFallback.locator('strong').textContent()
 const merchantFallbackFace = await merchantAnchorFallback.count()
-const merchantShape = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, buttons: document.querySelectorAll('.merchant-board button').length, figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0 }))
+const accessibleGoldPrices = await page.getByLabel('Relics').getByRole('button', { name: /Gold/ }).count()
+const merchantShape = await page.evaluate(() => {
+  const board = document.querySelector('.merchant-board')
+  const shelfItems = [...document.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')]
+  const boardStyle = board ? getComputedStyle(board) : null
+  return {
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    boardScrollable: !boardStyle || ['auto', 'scroll'].includes(boardStyle.overflowX) || ['auto', 'scroll'].includes(boardStyle.overflowY),
+    buttons: document.querySelectorAll('.merchant-board button').length,
+    figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0,
+    shelfWidth: Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
+    cardWidth: document.querySelector('.merchant-card .card')?.getBoundingClientRect().width ?? 0,
+    exposedTooltips: document.querySelectorAll('.merchant-tooltip:not([aria-hidden="true"])').length,
+  }
+})
 check('four-player Merchant is game-framed, responsive, and keyboard reachable', () => {
-  assert(!merchantShape.overflow)
-  assert(merchantShape.buttons >= 9)
-  assert(merchantShape.figure > 200)
+  assert(!merchantShape.overflow, 'merchant overflows the viewport')
+  assert(!merchantShape.boardScrollable, 'merchant inventory rug is scrollable')
+  assert(merchantShape.buttons >= 9, `merchant exposes only ${merchantShape.buttons} actions`)
+  assert(merchantShape.figure > 200, `merchant figure is only ${merchantShape.figure}px wide`)
+  assert(merchantShape.shelfWidth >= 100, `merchant shelf scans are only ${merchantShape.shelfWidth}px wide`)
+  assert(Math.abs(merchantShape.shelfWidth - merchantShape.cardWidth) <= 10,
+    `merchant shelf scans (${merchantShape.shelfWidth}px) do not match cards (${merchantShape.cardWidth}px)`)
+  assertEqual(merchantShape.exposedTooltips, 0, 'merchant tooltips duplicate their button accessible names')
 })
 check('missing local item scans fall back to a full generated card face', () => {
   assertEqual(merchantFallbackSrc, '/assets/relic-icons/anchor.png')
   assertEqual(merchantFallbackName, 'Anchor')
   assertEqual(merchantFallbackFace, 1)
+})
+check('Merchant prices expose their Gold unit', () => assert(accessibleGoldPrices > 0))
+check('Merchant keeps its fixed rug and Leave action inside a 1280×720 desktop', () => {
+  assert(merchant720.bottom <= merchant720.viewport + 1, `merchant ends at ${merchant720.bottom}px in ${merchant720.viewport}px`)
+  assert(merchant720.leaveBottom <= merchant720.viewport + 1, `Leave merchant ends at ${merchant720.leaveBottom}px`)
+})
+check('Merchant keeps card-sized merchandise and every shelf price visible at 1024×600', () => {
+  assert(merchant600.stageBottom <= merchant600.viewport + 1, `merchant ends at ${merchant600.stageBottom}px in ${merchant600.viewport}px`)
+  assert(Math.abs(merchant600.itemWidth - merchant600.cardWidth) <= 10,
+    `merchant shelf scans (${merchant600.itemWidth}px) do not match cards (${merchant600.cardWidth}px)`)
+  assert(merchant600.pricesVisible, 'merchant clipped a relic or potion price at 1024×600')
+})
+check('Merchant keeps merchandise card-sized without horizontal overflow at 390×844', () => {
+  assert(Math.abs(merchant390.itemWidth - merchant390.cardWidth) <= 10,
+    `merchant shelf scans (${merchant390.itemWidth}px) do not match cards (${merchant390.cardWidth}px)`)
+  assert(!merchant390.overflow, 'merchant overflows a 390px viewport')
+  assert(merchant390.removalRatio > 0.9, `card removal uses only ${merchant390.removalRatio * 100}% of the mobile rug`)
+  assert(merchant390.detailVisible, 'touch shoppers cannot read item descriptions')
 })
 await page.keyboard.press('Tab')
 const focused = await page.locator(':focus-visible').count()
@@ -452,6 +528,7 @@ await page.evaluate(() => {
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /Card Removal Service/ }).click()
 await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 const brokePartyControlsDisabled = await page.waitForFunction(() => {
   const buttons = [...document.querySelectorAll('button')]
@@ -459,6 +536,7 @@ const brokePartyControlsDisabled = await page.waitForFunction(() => {
     buttons.some((button) => button.textContent?.includes('Remove') && button.disabled)
 }).then((handle) => handle.jsonValue())
 check('Merchant disables purchases and removal when the whole party is broke', () => assert(brokePartyControlsDisabled))
+await page.getByRole('button', { name: 'Cancel' }).click()
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -482,6 +560,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const localDeckSize = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck.length)
+await page.getByRole('button', { name: /Card Removal Service/ }).click()
 await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 await page.getByRole('button', { name: /Remove/ }).click()
 await page.waitForFunction((size) => window.__STS_DEBUG__.getRun().players[0].deck.length === size - 1, localDeckSize)
@@ -1547,6 +1626,7 @@ const pendingMerchantLeaveFrame = await ann.getByRole('button', { name: /Leave m
 await ann.screenshot({ path: join(outDir, 'merchant-4p-funded-online.png'), fullPage: true })
 const competingBuyerDisabled = await bo.getByRole('button', { name: /Anchor/ }).isDisabled()
 await bo.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
+const teammateRemovalDisabled = await bo.getByRole('button', { name: /Card Removal Service/ }).isDisabled()
 await bo.getByRole('button', { name: /Anchor/ }).click()
 await ann.getByRole('button', { name: /Sold/ }).first().waitFor()
 await ann.reload({ waitUntil: 'networkidle' })
@@ -1563,6 +1643,7 @@ const privateSnapshot = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.c
 check('four-seat shared funding is buyer-authorized, atomic, and reconnect-stable', () => {
   assert(insufficientMerchantDisabled, 'Merchant accepted a new pledge the party could not complete')
   assert(competingBuyerDisabled, 'shared Merchant offer remained enabled for a competing buyer')
+  assert(teammateRemovalDisabled, 'a teammate could open an empty redacted-deck removal picker')
   assertEqual(pendingMerchantLeaveDisabled, true)
   assert(pendingMerchantLeaveFrame, 'funded Merchant clipped its disabled leave action')
   assert(liveRoom.run.players[0].relics.some((relic) => relic.defId === 'anchor'))
@@ -1601,12 +1682,48 @@ liveRoom.run.ascension = 4
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], gold: 0, potions: ['swift_potion', 'blood_potion'] }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await ann.setViewportSize({ width: 1280, height: 720 })
+await ann.getByRole('button', { name: /Fire Potion/ }).click()
 const merchantReplacement = ann.getByRole('group', { name: 'Replace potion' })
 await merchantReplacement.getByRole('button', { name: /Swift Potion/ }).click()
+const selectedReplacement = merchantReplacement.getByRole('button', { name: /Swift Potion/, pressed: true })
+await selectedReplacement.waitFor()
+const replacementSelectedColor = await selectedReplacement.evaluate((button) => getComputedStyle(button).color)
+const firePotionConfirm = ann.getByRole('button', { name: 'Confirm Fire Potion' })
+const competingPotionKey = `${onlineSeats[1].playerId}/potion/0`
+liveRoom.merchantPledges = { [competingPotionKey]: {
+  buyerId: onlineSeats[1].playerId, section: 'potion', slot: 0, payments: { [onlineSeats[1].playerId]: 0 },
+} }
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.waitForFunction(() => document.querySelector('.merchant-potion-dialog__confirm')?.disabled)
+const reservedPotionConfirmDisabled = await firePotionConfirm.isDisabled()
+liveRoom.merchantPledges = undefined
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.waitForFunction(() => !document.querySelector('.merchant-potion-dialog__confirm')?.disabled)
+liveRoom.run.roomState.potions[0] = null
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('dialog', { name: 'Choose a potion to replace' }).waitFor({ state: 'hidden' })
+const completedPotionClosedReplacement = await merchantReplacement.count()
+liveRoom.run.roomState.potions[0] = 'fire_potion'
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('button', { name: /Fire Potion/ }).click()
+await merchantReplacement.getByRole('button', { name: /Swift Potion/ }).click()
+await merchantReplacement.getByRole('button', { name: /Swift Potion/, pressed: true }).waitFor()
 const merchantReplacementCards = await merchantReplacement.locator('.item-card-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+const replacementGeometry = await ann.evaluate(() => {
+  const stage = document.querySelector('.merchant-stage')
+  const title = document.querySelector('#merchant-title')?.getBoundingClientRect()
+  const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave merchant'))?.getBoundingClientRect()
+  return { stageScroll: stage?.scrollTop ?? -1, titleTop: title?.top ?? -1, leaveBottom: leave?.bottom ?? Infinity, viewport: innerHeight }
+})
 await ann.screenshot({ path: join(outDir, 'merchant-potion-replacement.png'), fullPage: true })
-await ann.getByRole('button', { name: /Fire Potion/ }).click()
+await firePotionConfirm.click()
+await ann.setViewportSize({ width: 1280, height: 800 })
 const potionContributor = onlinePages[2]
 await potionContributor.reload({ waitUntil: 'networkidle' })
 await potionContributor.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
@@ -1619,14 +1736,23 @@ check('Merchant reconnect preserves the buyer-authorized potion replacement for 
   assert(reconnectPotionEnabled, 'pending Potion funding required the contributor to guess the buyer replacement')
   assertEqual(contributorReplacementInputs, 0)
   assertDeepEqual(merchantReplacementCards, [true, true])
+  assert(reservedPotionConfirmDisabled, 'a competing buyer reservation left potion confirmation enabled')
+  assertEqual(completedPotionClosedReplacement, 0, 'a completed competing purchase left a dead replacement dialog open')
+  assertEqual(replacementSelectedColor, 'rgb(42, 28, 7)', 'selected potion text is low contrast on the gold plate')
+  assertEqual(replacementGeometry.stageScroll, 0, 'potion replacement scrolled the Merchant stage')
+  assert(replacementGeometry.titleTop >= 0, 'potion replacement hid the Merchant title')
+  assert(replacementGeometry.leaveBottom <= replacementGeometry.viewport + 1, 'potion replacement clipped Leave merchant')
   assert(liveRoom.run.players[0].potions.includes('fire_potion'))
   assert(!liveRoom.run.players[0].potions.includes('swift_potion'))
 })
 await ann.waitForFunction(() => document.querySelectorAll('.merchant-potion-discard button[aria-pressed="true"]').length === 0)
+await ann.getByRole('button', { name: /Swift Potion/ }).click()
 const stalePotionReplacement = await merchantReplacement.getByRole('button', { pressed: true }).count()
-const consecutivePotionDisabled = await ann.getByRole('button', { name: /Swift Potion/ }).isDisabled()
+const replacementConfirm = ann.getByRole('button', { name: 'Confirm Swift Potion' })
+const consecutivePotionDisabled = await replacementConfirm.isDisabled()
 await merchantReplacement.getByRole('button', { name: /Blood Potion/ }).click()
-const consecutivePotionEnabled = await ann.getByRole('button', { name: /Swift Potion/ }).isEnabled()
+const consecutivePotionEnabled = await replacementConfirm.isEnabled()
+await ann.getByRole('dialog', { name: 'Choose a potion to replace' }).getByRole('button', { name: 'Cancel' }).click()
 check('Merchant clears a replacement after that Potion leaves the buyer inventory', () => {
   assertEqual(stalePotionReplacement, 0)
   assert(consecutivePotionDisabled)
@@ -1645,15 +1771,37 @@ liveRoom.merchantPledges = { [`remove/${onlineSeats[0].playerId}`]: { kind: 'rem
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
 await ann.locator('.connection--connected').waitFor()
+const removalContributor = onlinePages[2]
+await removalContributor.reload({ waitUntil: 'networkidle' })
+await removalContributor.locator('.connection--connected').waitFor()
+await removalContributor.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
+const pendingRemovalServiceEnabled = await removalContributor.getByRole('button', { name: /Card Removal Service/ }).isEnabled()
+await removalContributor.getByRole('button', { name: /Card Removal Service/ }).click()
+const pendingRemovalPledgeEnabled = await removalContributor.getByRole('button', { name: /Pledge/ }).isEnabled()
+await removalContributor.getByRole('dialog', { name: 'Choose a card to remove' }).getByRole('button', { name: 'Cancel' }).click()
+await ann.getByRole('button', { name: /Card Removal Service/ }).click()
 const removalGroup = ann.getByRole('group', { name: 'Card to remove' })
 const restoredRemovalSelectedCount = await removalGroup.getByRole('button', { pressed: true }).count()
 const restoredRemovalPledgedPressed = await removalGroup.getByRole('button').nth(pendingRemovalIndex).getAttribute('aria-pressed')
 const restoredRemovalLocked = await removalGroup.getByRole('button').nth(pendingRemovalIndex).getAttribute('aria-disabled')
 check('Merchant reconnect restores and locks the removal owner’s authorized card', () => {
+  assert(pendingRemovalServiceEnabled, 'a contributor could not open a funded removal')
+  assert(pendingRemovalPledgeEnabled, 'a contributor could not fund the pending removal')
   assertEqual(restoredRemovalSelectedCount, 1, 'exactly one card is marked selected')
   assertEqual(restoredRemovalPledgedPressed, 'true', 'the SPECIFIC pledged card (by position, not just by name) is the one selected')
   assertEqual(restoredRemovalLocked, 'true')
 })
+liveRoom.run.roomState.removalUsed.push(onlineSeats[0].playerId)
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('dialog', { name: 'Choose a card to remove' }).waitFor({ state: 'hidden' })
+const completedRemovalServiceDisabled = await ann.getByRole('button', { name: /Card Removal Service/ }).isDisabled()
+check('Merchant closes a stale removal picker when another client completes the service', () => {
+  assert(completedRemovalServiceDisabled)
+})
+liveRoom.run.roomState.removalUsed = liveRoom.run.roomState.removalUsed.filter((id) => id !== onlineSeats[0].playerId)
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
 liveRoom.merchantPledges = undefined
 liveRoom.version += 1
 
@@ -2046,8 +2194,10 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByText('Campaign journal').waitFor()
-await page.locator('details.game-settings > summary').click()
-await page.getByRole('button', { name: 'New run' }).click()
+page.once('dialog', (dialog) => dialog.accept())
+await page.keyboard.press('Escape')
+await page.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Return to main menu' }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
 await page.reload({ waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()

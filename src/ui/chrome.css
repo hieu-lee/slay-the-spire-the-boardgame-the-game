@@ -91,7 +91,6 @@ html { overflow-x: clip; }
 .sts-scope .room-screen,
 .sts-scope .between-combat,
 .sts-scope .campaign-end,
-.game-settings > .setup,
 .relic-actions > section,
 .relic-tip {
   clip-path: polygon(
@@ -368,7 +367,6 @@ html { overflow-x: clip; }
   .sts-scope .room-proceed,
   .sts-scope .combat__end-turn
 ):focus-visible,
-.game-settings > summary:focus-visible,
 .log > summary:focus-visible,
 .combat-log-drawer > summary:focus-visible,
 .online-lobby__settings > summary:focus-visible,
@@ -966,7 +964,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 /* Native <details> paints its own triangle in the platform's colour and font.
    Removing the marker is what lets the summary become a key. */
-.game-settings > summary,
 .relic-actions details > summary,
 .end-turn-order > summary,
 .log > summary,
@@ -977,7 +974,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   list-style: none;
 }
 
-.game-settings > summary::-webkit-details-marker,
 .relic-actions details > summary::-webkit-details-marker,
 .end-turn-order > summary::-webkit-details-marker,
 .log > summary::-webkit-details-marker,
@@ -988,7 +984,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   display: none;
 }
 
-.game-settings > summary,
 .log > summary,
 .online-lobby__settings > summary,
 .start-menu__meta > summary,
@@ -1020,7 +1015,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    lifts the plate under it — the identical trap this file already documents for
    gold a few hundred lines up. `--light-yellow` clears it, and the open state
    is unmistakable from the panel itself rather than from a second hue. */
-.game-settings > summary:hover,
 .log > summary:hover,
 .online-lobby__settings > summary:hover,
 .combat-log-drawer > summary:hover,
@@ -1029,7 +1023,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
 }
 
-.game-settings[open] > summary,
 .online-lobby__settings[open] > summary,
 .start-menu__meta[open] > summary,
 .combat-log-drawer[open] > summary,
@@ -1045,44 +1038,11 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    not know the syntax ignore the whole declaration, which leaves them exactly
    where they were before this line — no glyph is a smaller loss than a
    mispronounced one. */
-.game-settings > summary::before,
 .online-lobby__settings > summary::before { content: '☰' / ''; font-size: 1.05rem; }
 
 /* Inherits 0.65rem uppercase from `.start-menu__meta`; the key sets its own. */
 .start-menu__meta > summary { font-size: 0.8rem; letter-spacing: 0.08em; }
 .log > summary::before { content: '❧' / ''; font-size: 1rem; }
-
-/* The menu popover is a column of full-width keys, not a row of loose inputs. */
-.game-settings > .setup {
-  display: grid;
-  gap: 0.55rem;
-  top: calc(100% + 0.6rem);
-  width: min(22rem, calc(100vw - 2rem));
-  padding: 0.9rem;
-  border: 0;
-  background:
-    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 26%),
-    linear-gradient(180deg, var(--leather-lit), var(--leather) 62%, #120c0a);
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    inset 0 2px 0 rgb(217 180 91 / 0.28);
-  filter: drop-shadow(var(--hard-shadow-lg));
-  font-size: 0.9rem;
-  color: var(--cream);
-}
-
-.game-settings > .setup > label {
-  display: grid;
-  gap: 0.3rem;
-  justify-items: stretch;
-  color: var(--light-yellow);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.game-settings > .setup > button { width: 100%; }
 
 /* .run-modifiers had no stylesheet rules at all — raw browser chrome sitting
    inside an otherwise dressed panel. */
@@ -3146,10 +3106,6 @@ main.compendium .compendium__back:focus-visible {
   object-fit: contain;
 }
 
-.game-settings > .game-settings__summary::before {
-  content: none;
-}
-
 .game-settings__summary > img {
   width: 1.2rem;
   height: 1.2rem;
@@ -3406,4 +3362,345 @@ main.compendium .compendium__back:focus-visible {
   min-width: 15rem;
   margin-top: 0.4rem;
   font-size: 1.05rem;
+}
+
+/* ---------- settings: one modal from title, HUD, and pause ---------- */
+
+.game-settings.game-settings__summary {
+  display: grid;
+  flex: 0 0 2.6rem;
+  width: 2.6rem;
+  min-height: 2.6rem;
+  margin-left: 0;
+  padding: 0.28rem;
+  place-items: center;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), inset 0 -2px 0 rgb(0 0 0 / 0.45);
+  cursor: pointer;
+}
+
+.game-settings.game-settings__summary:hover { filter: brightness(1.16); }
+.game-settings.game-settings__summary > img { width: 100%; height: 100%; object-fit: contain; }
+
+.settings-dialog {
+  width: min(68rem, calc(100% - 2rem));
+  height: min(44rem, calc(100dvh - 2rem));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  color: var(--cream);
+  background: transparent;
+}
+
+.settings-dialog::backdrop {
+  background: rgb(5 7 8 / 82%);
+  backdrop-filter: blur(4px);
+}
+
+.settings-dialog__panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  padding: clamp(1rem, 3vw, 2.2rem);
+  background:
+    radial-gradient(circle at 50% 0, rgb(213 164 73 / 0.12), transparent 38%),
+    linear-gradient(145deg, #2d211a, #17110d 66%, #090706);
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 4px #090604, inset 0 0 5rem rgb(0 0 0 / 0.55);
+  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+}
+
+.settings-dialog__panel > header { display: flex; align-items: center; gap: 1rem; }
+.settings-dialog__panel > header h2 { margin: 0; color: var(--light-yellow); font-size: clamp(1.6rem, 3vw, 2.5rem); }
+.settings-dialog__back { min-width: 7rem; }
+
+.settings-dialog button {
+  min-height: 2.7rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--trim-dim);
+  color: var(--cream);
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate), var(--slate-dim));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 -2px 0 rgb(0 0 0 / 0.45);
+  font-family: 'Kreon', Georgia, serif;
+  cursor: pointer;
+}
+
+.settings-dialog button:hover,
+.settings-dialog button:focus-visible { color: var(--light-yellow); filter: brightness(1.12); }
+
+.settings-dialog nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 1rem 0;
+  border-block: 1px solid var(--trim-dim);
+}
+
+.settings-dialog nav button {
+  min-height: 3.4rem;
+  border: 0;
+  border-inline-end: 1px solid var(--trim-dim);
+  color: var(--cream);
+  background: rgb(0 0 0 / 0.18);
+  font: 700 1rem 'Kreon', Georgia, serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-dialog nav button:last-child { border-inline-end: 0; }
+.settings-dialog nav button[aria-pressed='true'] { color: #241807; background: linear-gradient(#f5d880, #b97c2d); }
+
+.settings-dialog__body { min-height: 0; overflow: auto; }
+.settings-dialog__body > section { display: grid; width: min(48rem, 100%); margin: 0 auto; gap: 0.8rem; }
+.settings-dialog__body h3 { margin: 0 0 0.6rem; color: var(--trim-lit); letter-spacing: 0.12em; text-transform: uppercase; }
+
+.settings-toggle,
+.settings-action,
+.settings-volume,
+.settings-select,
+.settings-party {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid rgb(217 180 91 / 0.3);
+  background: rgb(0 0 0 / 0.28);
+}
+
+.settings-toggle span,
+.settings-action span,
+.settings-volume > span { display: grid; gap: 0.18rem; }
+.settings-dialog small { color: var(--ink-dim); }
+.settings-toggle input { width: 1.5rem; height: 1.5rem; accent-color: #d19a3e; }
+.settings-volume { grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 1.3fr); }
+.settings-volume > span { grid-template-columns: 1fr auto; }
+.settings-volume output { color: var(--light-yellow); font-variant-numeric: tabular-nums; }
+.settings-volume input { width: 100%; accent-color: #d19a3e; }
+.settings-select select { min-width: 12rem; }
+.settings-party { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+.settings-party span { color: var(--cream); }
+.settings-dialog__error { color: var(--red-text); }
+.settings-dialog__reset { justify-self: center; min-width: 12rem; margin-top: 1rem; }
+
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+html[data-screen-shake='false'] :is(.seat--struck, .seat--struck-alt) .seat__portrait,
+html[data-screen-shake='false'] :is(.enemy--struck, .enemy--struck-alt) .enemy__portrait { animation: none; }
+
+html[data-high-contrast='true'] { --cream: #fff9e8; --ink-dim: #d8cdb7; --trim-dim: #d2aa55; }
+html[data-high-contrast='true'] .start-menu::before { background: rgb(0 0 0 / 0.72); }
+html[data-high-contrast='true'] .start-menu__nav button { color: #fff; }
+html[data-high-contrast='true'] .start-menu__nav button[data-selected='true'] { color: #fff36b; }
+html[data-high-contrast='true'] .start-menu__nav button:focus-visible { outline-color: #fff; }
+
+/* ---------- merchant: the original game's single fixed inventory rug ---------- */
+
+.sts-scope .merchant-stage {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: calc(100dvh - 6.6rem);
+  max-height: 780px;
+  min-height: min(34rem, calc(100dvh - 6.6rem));
+  padding: clamp(0.55rem, 1.5vw, 1rem);
+  overflow: clip;
+  background:
+    linear-gradient(90deg, transparent 0 8%, rgb(105 128 79 / 0.96) 8% 92%, transparent 92%),
+    linear-gradient(145deg, #171c17, #090b0a 70%);
+}
+
+.sts-scope .merchant-stage .room-banner { z-index: 2; margin-bottom: 0.35rem; }
+.sts-scope .merchant-stage .room-banner > span,
+.sts-scope .merchant-stage .room-banner > p { display: none; }
+.sts-scope .merchant-stage .room-banner h2 { margin: 0; font-size: clamp(1.65rem, 3vw, 2.4rem); }
+.sts-scope .merchant-buyer { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.sts-scope .merchant-figure { right: -1rem; top: 0; width: min(24vw, 290px); opacity: 0.93; }
+.sts-scope .merchant-greeting { top: 4.8rem; right: clamp(8rem, 19vw, 15rem); }
+
+.sts-scope .merchant-board {
+  --merchant-card-width: clamp(76px, 8vw, 108px);
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(9rem, 1fr);
+  grid-template-areas: 'cards colorless removal' 'relics potions removal';
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  width: min(1120px, 92%);
+  min-height: 0;
+  max-height: none;
+  padding: clamp(0.55rem, 1.3vw, 1rem);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 28px),
+    #697d50;
+  box-shadow: inset 0 0 0 3px #45543a, inset 0 0 4rem rgb(16 29 15 / 0.55), 0 1rem 2rem rgb(0 0 0 / 0.5);
+}
+
+.sts-scope .merchant-cards { grid-area: cards; }
+.sts-scope .merchant-cards--colorless { grid-area: colorless; }
+.sts-scope .merchant-shelf--relics { grid-area: relics; }
+.sts-scope .merchant-shelf--potions { grid-area: potions; }
+.sts-scope .merchant-removal { grid-area: removal; }
+
+.sts-scope .merchant-shelf,
+.sts-scope .merchant-cards,
+.sts-scope .merchant-removal {
+  min-width: 0;
+  min-height: 0;
+  padding: 0.3rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sts-scope .merchant-shelf h3,
+.sts-scope .merchant-cards h3 {
+  margin: 0;
+  color: #f1e7c7;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sts-scope .merchant-cards {
+  --card-width: var(--merchant-card-width);
+  grid-template-columns: repeat(3, minmax(0, var(--card-width)));
+  justify-content: center;
+  gap: clamp(0.35rem, 0.8vw, 0.75rem);
+}
+
+.sts-scope .merchant-cards--colorless { grid-template-columns: repeat(2, minmax(0, var(--card-width))); }
+.sts-scope .merchant-shelf { grid-template-columns: repeat(3, minmax(0, var(--merchant-card-width))); justify-content: center; gap: 0.35rem; }
+
+.sts-scope .merchant-board button.merchant-item:not(.merchant-removal button) {
+  position: relative;
+  width: var(--merchant-card-width);
+  min-width: 0;
+  min-height: 0;
+  padding: 0.2rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sts-scope .merchant-item > :is(.item-card-image, .item-card-fallback) { width: 100%; object-fit: contain; }
+.sts-scope .merchant-item > strong,
+.sts-scope .merchant-item > .room-item-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.sts-scope .room-price {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  margin-top: 0.1rem;
+  color: #f2dd9a;
+  font-weight: 800;
+  text-shadow: 1px 2px 0 #25301e;
+}
+
+.sts-scope .room-price img { width: 1.25rem; height: 1.25rem; object-fit: contain; }
+
+.sts-scope .merchant-sale {
+  position: absolute;
+  z-index: 2;
+  top: 0.15rem;
+  right: -0.25rem;
+  padding: 0.15rem 0.45rem;
+  color: #fff4db;
+  background: #c63d42;
+  box-shadow: 0 2px 0 #6c1d21;
+  rotate: 12deg;
+  text-transform: uppercase;
+}
+
+.sts-scope .merchant-tooltip {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 0.4rem);
+  display: none;
+  width: min(18rem, 70vw);
+  padding: 0.65rem;
+  translate: -50% 0;
+  color: var(--cream);
+  background: #17120f;
+  border: 1px solid var(--trim-lit);
+  box-shadow: var(--hard-shadow-lg);
+  text-align: left;
+}
+
+.sts-scope .merchant-tooltip > strong { position: static; display: block; width: auto; height: auto; clip-path: none; color: var(--light-yellow); }
+.sts-scope .merchant-item:is(:hover, :focus-visible) .merchant-tooltip { display: block; }
+
+.sts-scope .merchant-removal { display: grid; place-items: center; }
+.sts-scope .merchant-removal__service { display: grid; min-height: 12rem; place-items: center; align-content: center; gap: 0.5rem; }
+.sts-scope .merchant-removal__cards { display: grid; width: 4.2rem; aspect-ratio: 0.72; place-items: center; color: #b73932; background: #eee4c7; border: 0.35rem solid #d4bd87; box-shadow: -0.5rem 0.4rem 0 #44382d; font-size: 2rem; rotate: 7deg; }
+
+.merchant-removal-dialog,
+.merchant-potion-dialog { width: min(72rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 0; background: transparent; }
+.merchant-removal-dialog::backdrop,
+.merchant-potion-dialog::backdrop { background: rgb(4 5 4 / 0.86); backdrop-filter: blur(3px); }
+.merchant-removal-dialog .choice-modal__panel,
+.merchant-potion-dialog .choice-modal__panel { display: grid; gap: 1rem; padding: 1rem; }
+.merchant-removal-dialog header,
+.merchant-potion-dialog header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.merchant-removal-dialog header span,
+.merchant-potion-dialog header span { color: var(--trim-lit); letter-spacing: 0.12em; text-transform: uppercase; }
+.merchant-removal-dialog header h2,
+.merchant-potion-dialog header h2 { margin: 0.2rem 0 0; }
+.merchant-removal-dialog .campfire__deck { max-height: min(58vh, 34rem); overflow: auto; }
+.merchant-removal-dialog__confirm,
+.merchant-potion-dialog__confirm { justify-self: center; min-width: 16rem; }
+.merchant-potion-dialog .merchant-potion-discard { width: min(38rem, 100%); margin: 0 auto; }
+.sts-scope .merchant-potion-dialog .merchant-potion-discard button[aria-pressed='true'] { color: #2a1c07; transition: none; }
+
+.sts-scope .merchant-stage > .room-proceed { z-index: 2; margin-top: 0.35rem; }
+
+@media (min-width: 761px) and (max-height: 650px) {
+  .sts-scope .merchant-board { --merchant-card-width: clamp(64px, 7vw, 78px); padding-block: 0.4rem; }
+}
+
+@media (max-width: 760px) {
+  .settings-dialog { width: 100%; height: 100dvh; }
+  .settings-dialog__panel { clip-path: none; }
+  .settings-dialog__panel > header h2 { display: none; }
+  .settings-dialog nav button { min-height: 3rem; font-size: 0.78rem; }
+  .settings-volume { grid-template-columns: 1fr; }
+  .settings-toggle, .settings-action, .settings-select { grid-template-columns: minmax(0, 1fr) auto; }
+
+  .sts-scope .merchant-stage { display: block; height: auto; max-height: none; min-height: calc(100dvh - 4rem); overflow: auto; }
+  .sts-scope .merchant-board {
+    --merchant-card-width: clamp(74px, 24vw, 102px);
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: 'cards cards' 'colorless removal' 'relics relics' 'potions potions';
+    grid-template-rows: auto;
+    width: 100%;
+  }
+  .sts-scope .merchant-board:not(:has(.merchant-cards--colorless)) {
+    grid-template-areas: 'cards cards' 'removal removal' 'relics relics' 'potions potions';
+  }
+  .sts-scope .merchant-figure { opacity: 0.28; }
+  .sts-scope .merchant-item > strong,
+  .sts-scope .merchant-item > .room-item-text {
+    display: block;
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    font-size: 0.62rem;
+    line-height: 1.15;
+  }
+  .sts-scope .merchant-removal__service { min-height: 9rem; }
+  .sts-scope .merchant-tooltip { display: none !important; }
 }

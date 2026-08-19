@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { enemyDef } from '../game/enemies.ts'
 import type { CombatSfxRecipe } from './combat-sfx.ts'
+import { currentSfxVolume, SFX_STORAGE_KEY } from './game-settings.ts'
 
-export const SFX_STORAGE_KEY = 'sts-sfx-enabled'
+export { SFX_STORAGE_KEY }
 
 const SOUNDS = {
   ui: '/assets/sfx/ui.ogg',
@@ -38,17 +39,26 @@ function bossTrack(combat?: BossCombat | null) {
 }
 
 /** Loop the appropriate act theme while a boss combat is active. */
-export function useBossFightMusic(combat?: BossCombat | null, enabled = true) {
+export function useBossFightMusic(combat?: BossCombat | null, enabled = true, volume = 20) {
   const track = enabled ? bossTrack(combat) : undefined
+  const audio = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (!track) return
-    const audio = new Audio(track)
-    audio.loop = true
-    audio.volume = 0.2
-    void audio.play().catch(() => {})
-    return () => audio.pause()
+    const next = new Audio(track)
+    audio.current = next
+    next.loop = true
+    next.volume = volume / 100
+    void next.play().catch(() => {})
+    return () => {
+      next.pause()
+      if (audio.current === next) audio.current = null
+    }
   }, [track])
+
+  useEffect(() => {
+    if (audio.current) audio.current.volume = volume / 100
+  }, [volume])
 }
 
 export function useRunOutcomeSound(
@@ -94,16 +104,16 @@ export function installSoundEffects() {
 }
 
 export function playSoundEffect(sound: Sound) {
-  if (localStorage.getItem(SFX_STORAGE_KEY) === 'off') return
+  if (currentSfxVolume() === 0) return
   playSound(sound)
 }
 
 export function playCombatSound(recipe: CombatSfxRecipe): () => void {
-  if (localStorage.getItem(SFX_STORAGE_KEY) === 'off') return () => {}
+  if (currentSfxVolume() === 0) return () => {}
   const timers: number[] = []
   recipe.layers.forEach((layer) => {
     const play = () => {
-      if (localStorage.getItem(SFX_STORAGE_KEY) !== 'off') {
+      if (currentSfxVolume() > 0) {
         playSound(layer.sound, layer.volume, layer.rate, recipe.cue, layer.delayMs)
       }
     }
@@ -115,7 +125,7 @@ export function playCombatSound(recipe: CombatSfxRecipe): () => void {
 
 function playSound(sound: Sound, volume = 0.35, rate = 1, cue?: string, delayMs = 0) {
   const audio = new Audio(SOUNDS[sound])
-  audio.volume = volume
+  audio.volume = volume * currentSfxVolume()
   audio.playbackRate = rate
   audio.preservesPitch = false
   if (cue) audio.dataset.combatSfx = cue

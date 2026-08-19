@@ -360,15 +360,16 @@ export function useRoomSession() {
     })()
   }, [accept])
 
-  const forget = useCallback(() => {
+  const forget = useCallback((retireRecovery = false) => {
     generation.current += 1
     sessionStorage.removeItem(ACTIVE_KEY)
+    if (retireRecovery && credentials) setRecoveries(retire(credentials))
     setCredentials(null)
     setSnapshot(null)
     connectionRef.current = 'idle'
     setConnection('idle')
     setError('')
-  }, [])
+  }, [credentials])
 
   useEffect(() => {
     if (!credentials) return undefined

@@ -95,7 +95,7 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
 function Price({ value }: { value: number | null }) {
   return (
     <span className="room-price">
-      {value === null ? "Not for sale" : `◉ ${value}`}
+      {value === null ? "Sold" : <><img src="/assets/icons/gold.png" alt="" />{value}<span className="visually-hidden"> Gold</span></>}
     </span>
   );
 }
@@ -162,9 +162,15 @@ function MerchantScreen({
   const [buyerId, setBuyerId] = useState(player.id);
   const buyer = players.find((candidate) => candidate.id === buyerId) ?? player;
   const [removeUid, setRemoveUid] = useState("");
+  const [removalOpen, setRemovalOpen] = useState(false);
+  const removalDialog = useRef<HTMLDialogElement>(null);
+  const [potionReplacementSlot, setPotionReplacementSlot] = useState<number | null>(null);
+  const potionReplacementDialog = useRef<HTMLDialogElement>(null);
   const [discardPotionId, setDiscardPotionId] = useState("");
   const validDiscardPotionId = buyer.potions.includes(discardPotionId) ? discardPotionId : "";
   const buyerHasSozu = hasSozu(buyer);
+  const potionLimit = ascension >= 4 ? 2 : 3;
+  const removalUsed = room.removalUsed.includes(buyer.id);
   const removalCost = ascension >= 8 ? 4 : 3;
   const removalKey = `remove/${buyer.id}`;
   const removalPending = merchantPledges[removalKey];
@@ -206,9 +212,40 @@ function MerchantScreen({
   const canPledge = (funding: ReturnType<typeof pledge>) => merchantPledges[funding.key]
     ? additional(funding.remaining, funding.key, funding.mine) > 0
     : buyer.id === player.id && players.reduce((sum, candidate) => sum + unpledgedGold(candidate, funding.key), 0) >= funding.remaining;
+  const removalUnavailable = removalUsed || Boolean(onWithdraw && buyer.id !== player.id &&
+    (!removalPending || additional(removalRemaining, removalKey) <= 0));
   const sharedReserved = (section: MerchantPurchase["section"], slot: number, key: string) =>
     ["relic", "potion", "colorless"].includes(section) && Object.entries(merchantPledges).some(([pendingKey, pending]) =>
       pendingKey !== key && pending.section === section && pending.slot === slot);
+  const replacementPotionId = potionReplacementSlot === null ? null : room.potions[potionReplacementSlot];
+  const replacementPotionCost = replacementPotionId ? (potionDef(replacementPotionId).cost ?? null) : null;
+  const replacementPotionFunding = potionReplacementSlot === null || replacementPotionCost === null
+    ? null : pledge(buyer.id, "potion", potionReplacementSlot, replacementPotionCost);
+  const replacementPotionReserved = potionReplacementSlot !== null && replacementPotionFunding
+    ? sharedReserved("potion", potionReplacementSlot, replacementPotionFunding.key)
+    : false;
+  useEffect(() => {
+    const dialog = removalDialog.current;
+    if (!dialog) return;
+    if (removalOpen && !dialog.open) dialog.showModal();
+    else if (!removalOpen && dialog.open) dialog.close();
+  }, [removalOpen]);
+  useEffect(() => {
+    if (!removalUsed) return;
+    setRemovalOpen(false);
+    setRemoveUid("");
+  }, [removalUsed]);
+  useEffect(() => {
+    const dialog = potionReplacementDialog.current;
+    if (!dialog) return;
+    if (potionReplacementSlot !== null && !room.potions[potionReplacementSlot]) {
+      setPotionReplacementSlot(null);
+      setDiscardPotionId("");
+      return;
+    }
+    if (potionReplacementSlot !== null && !dialog.open) dialog.showModal();
+    else if (potionReplacementSlot === null && dialog.open) dialog.close();
+  }, [potionReplacementSlot, room.potions]);
   return (
     <section
       className="room-stage merchant-stage"
@@ -229,13 +266,13 @@ function MerchantScreen({
         </p>
         <label className="merchant-buyer">
           Shopping for
-          <select value={buyer.id} onChange={(event) => { setBuyerId(event.target.value); setRemoveUid(""); setDiscardPotionId(""); }}>
+          <select value={buyer.id} onChange={(event) => { setBuyerId(event.target.value); setRemoveUid(""); setDiscardPotionId(""); setRemovalOpen(false); setPotionReplacementSlot(null); }}>
             {players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
           </select>
         </label>
       </div>
       <div className="merchant-board">
-        <div className="merchant-shelf" aria-label="Relics">
+        <div className="merchant-shelf merchant-shelf--relics" aria-label="Relics">
           <h3>Relics</h3>
           {room.relics.map((id, slot) => {
             const cost = id
@@ -245,6 +282,7 @@ function MerchantScreen({
               cost === null ? null : pledge(buyer.id, "relic", slot, cost);
             return (
               <button
+                className="merchant-item"
                 key={slot}
                 type="button"
                 disabled={!id || !funding || !canPledge(funding) || sharedReserved("relic", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key])}
@@ -266,7 +304,8 @@ function MerchantScreen({
                     not, so buying here was a name-only guess. */}
                 {id ? <span className="room-item-text">{relicDef(id).text}</span> : null}
                 <Price value={id ? cost : null} />
-                {slot === 0 && id ? <small>Sale −1</small> : null}
+                {slot === 0 && id ? <small className="merchant-sale">Sale</small> : null}
+                {id ? <span className="merchant-tooltip" role="tooltip" aria-hidden="true"><strong>{relicDef(id).name}</strong>{relicDef(id).text}</span> : null}
                 {funding && funding.remaining < cost! ? (
                   <small>{funding.remaining} Gold still needed</small>
                 ) : null}
@@ -274,40 +313,45 @@ function MerchantScreen({
             );
           })}
         </div>
-        <div className="merchant-shelf" aria-label="Potions">
+        <div className="merchant-shelf merchant-shelf--potions" aria-label="Potions">
           <h3>Potions</h3>
           {room.potions.map((id, slot) => {
             const cost = id ? (potionDef(id).cost ?? null) : null;
             const funding = cost === null ? null : pledge(buyer.id, "potion", slot, cost);
             const pending = funding ? merchantPledges[funding.key] : undefined;
             const replacement = pending?.discardPotionId ?? validDiscardPotionId;
+            const beltFull = buyer.potions.length >= potionLimit;
             return (
               <button
+                className="merchant-item"
                 key={slot}
                 type="button"
-                disabled={buyerHasSozu || !id || !funding || !canPledge(funding) || sharedReserved("potion", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !pending) || (buyer.potions.length >= (ascension >= 4 ? 2 : 3) && !replacement)}
-                onClick={() =>
-                  id &&
-                  funding &&
-                  onPurchase({
+                disabled={buyerHasSozu || !id || !funding || !canPledge(funding) || sharedReserved("potion", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !pending) || (beltFull && !replacement && buyer.id !== player.id)}
+                onClick={() => {
+                  if (beltFull && !replacement) {
+                    setDiscardPotionId("");
+                    setPotionReplacementSlot(slot);
+                    return;
+                  }
+                  if (id && funding) onPurchase({
                     buyerId: buyer.id,
                     section: "potion",
                     slot,
                     payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
                     potionRecipientId: pending?.potionRecipientId ?? buyer.id,
                     discardPotionId: replacement || undefined,
-                  })
-                }
+                  });
+                }}
               >
                 {id ? <ItemImage kind="potion" id={id} card /> : <span className="room-item-icon">●</span>}
                 <strong>{id ? potionDef(id).name : "Sold"}</strong>
                 {id ? <span className="room-item-text">{potionDef(id).text}</span> : null}
                 <Price value={cost} />
                 {id && buyerHasSozu ? <small>Blocked by Sozu</small> : null}
+                {id ? <span className="merchant-tooltip" role="tooltip" aria-hidden="true"><strong>{potionDef(id).name}</strong>{potionDef(id).text}</span> : null}
               </button>
             );
           })}
-          {!buyerHasSozu && buyer.potions.length >= (ascension >= 4 ? 2 : 3) && buyer.id === player.id ? <fieldset className="merchant-potion-discard" aria-label="Replace potion"><legend>Replace potion</legend>{buyer.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={validDiscardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} card />{potionDef(id).name}</button>)}</fieldset> : null}
         </div>
         <div className="merchant-cards" aria-label={`${buyer.name}'s cards`}>
           <h3>{buyer.name} · Card Rewards</h3>
@@ -394,33 +438,62 @@ function MerchantScreen({
           </div>
         ) : null}
         <div className="merchant-removal">
-          <h3>Card Removal</h3>
-          <div className="campfire__deck" role="group" aria-label="Card to remove">
-            {buyer.deck
-              .filter((card) => card.defId !== "ascenders_bane")
-              .map((card) => (
-                <Card
-                  key={card.uid}
-                  card={card}
-                  playable={!removalPending?.cardUid}
-                  selected={removalUid === card.uid}
-                  onClick={() => setRemoveUid(card.uid)}
-                />
-              ))}
-          </div>
-          <button
-            type="button"
-            disabled={
-              (!removalPending && (!removeUid || Boolean(onWithdraw && buyer.id !== player.id) || players.reduce((sum, candidate) => sum + unpledgedGold(candidate, removalKey), 0) < removalRemaining)) ||
-              (additional(removalRemaining, removalKey) <= 0 && (onWithdraw ? buyer.id !== player.id || Boolean(removalPending) : true)) ||
-              room.removalUsed.includes(buyer.id)
-            }
-            onClick={() => onRemove(buyer.id, removalUid, pay(additional(removalRemaining, removalKey), removalKey))}
-          >
-            {removalPending ? `Pledge · ◉ ${additional(removalRemaining, removalKey)}` : `Remove · ◉ ${removalCost}`}
+          <button type="button" className="merchant-removal__service"
+            disabled={removalUnavailable} onClick={() => setRemovalOpen(true)}>
+            <span className="merchant-removal__cards" aria-hidden="true">▱</span>
+            <strong>Card Removal Service</strong>
+            <Price value={room.removalUsed.includes(buyer.id) ? null : removalCost} />
           </button>
         </div>
       </div>
+      <dialog ref={potionReplacementDialog} className="choice-modal merchant-potion-dialog" aria-labelledby="merchant-potion-title"
+        onCancel={(event) => { event.preventDefault(); setPotionReplacementSlot(null); setDiscardPotionId(""); }}>
+        <section className="choice-modal__panel">
+          <header><div><span>Potion belt full</span><h2 id="merchant-potion-title">Choose a potion to replace</h2></div>
+            <button type="button" onClick={() => { setPotionReplacementSlot(null); setDiscardPotionId(""); }}>Cancel</button></header>
+          <fieldset className="merchant-potion-discard" aria-label="Replace potion"><legend>Replace potion</legend>{buyer.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={validDiscardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} card />{potionDef(id).name}</button>)}</fieldset>
+          <button type="button" className="merchant-potion-dialog__confirm"
+            disabled={!validDiscardPotionId || !replacementPotionId || !replacementPotionFunding || replacementPotionReserved || !canPledge(replacementPotionFunding)}
+            onClick={() => {
+              if (potionReplacementSlot === null || !replacementPotionId || !replacementPotionFunding || replacementPotionReserved) return;
+              const pending = merchantPledges[replacementPotionFunding.key];
+              onPurchase({
+                buyerId: buyer.id,
+                section: "potion",
+                slot: potionReplacementSlot,
+                payments: pay(additional(replacementPotionFunding.remaining, replacementPotionFunding.key, replacementPotionFunding.mine), replacementPotionFunding.key),
+                potionRecipientId: pending?.potionRecipientId ?? buyer.id,
+                discardPotionId: validDiscardPotionId,
+              });
+              setPotionReplacementSlot(null);
+              setDiscardPotionId("");
+            }}>Confirm {replacementPotionId ? potionDef(replacementPotionId).name : "purchase"}</button>
+        </section>
+      </dialog>
+      <dialog ref={removalDialog} className="choice-modal merchant-removal-dialog" aria-labelledby="merchant-removal-title"
+        onCancel={(event) => { event.preventDefault(); setRemovalOpen(false); }}>
+        <section className="choice-modal__panel">
+          <header><div><span>Card Removal Service</span><h2 id="merchant-removal-title">Choose a card to remove</h2></div>
+            <button type="button" onClick={() => setRemovalOpen(false)}>Cancel</button></header>
+          <div className="campfire__deck" role="group" aria-label="Card to remove">
+            {buyer.deck.filter((card) => card.defId !== "ascenders_bane").map((card) => <Card key={card.uid}
+              card={card} playable={!removalPending?.cardUid} selected={removalUid === card.uid}
+              onClick={() => setRemoveUid(card.uid)} />)}
+          </div>
+          <button type="button" className="merchant-removal-dialog__confirm"
+            disabled={
+              (!removalPending && (!removeUid || Boolean(onWithdraw && buyer.id !== player.id) || players.reduce((sum, candidate) => sum + unpledgedGold(candidate, removalKey), 0) < removalRemaining)) ||
+              (additional(removalRemaining, removalKey) <= 0 && (onWithdraw ? buyer.id !== player.id || Boolean(removalPending) : true)) ||
+              removalUsed
+            }
+            onClick={() => {
+              onRemove(buyer.id, removalUid, pay(additional(removalRemaining, removalKey), removalKey));
+              setRemovalOpen(false);
+            }}>
+            {removalPending ? `Pledge · ◉ ${additional(removalRemaining, removalKey)}` : `Remove selected card · ◉ ${removalCost}`}
+          </button>
+        </section>
+      </dialog>
       {Object.entries(merchantPledges).some(
         ([, pending]) => player.id in pending.payments,
       ) ? (

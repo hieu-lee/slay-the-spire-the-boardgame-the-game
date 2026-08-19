@@ -35,6 +35,8 @@ import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
 import { eventCanStartCombat } from '../game/events.ts'
+import { SettingsDialog } from './SettingsDialog.tsx'
+import type { GameSettings } from './game-settings.ts'
 
 const CHARACTERS = [
   ['ironclad', 'Ironclad'],
@@ -45,8 +47,8 @@ const CHARACTERS = [
 
 type Props = {
   onLocal: () => void
-  sfxEnabled: boolean
-  onToggleSfx: () => void
+  settings: GameSettings
+  onSettings: (settings: GameSettings) => void
 }
 
 function playerForUi(player: VisiblePlayer): Player {
@@ -152,23 +154,28 @@ function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
   )
 }
 
-function RemoteAudio({ stream }: { stream: MediaStream }) {
+function RemoteAudio({ stream, volume }: { stream: MediaStream; volume: number }) {
   const audio = useRef<HTMLAudioElement>(null)
   useEffect(() => {
-    if (audio.current) audio.current.srcObject = stream
-  }, [stream])
+    if (audio.current) {
+      audio.current.srcObject = stream
+      audio.current.volume = volume / 100
+    }
+  }, [stream, volume])
   return <audio ref={audio} autoPlay playsInline />
 }
 
-function VoiceControls({ voice, seats, connected }: {
+function VoiceControls({ voice, seats, connected, volume, compact = false }: {
   voice: ReturnType<typeof useVoiceChat>
   seats: PublicSeat[]
   connected: boolean
+  volume: number
+  compact?: boolean
 }) {
-  if (!voice.available) return <span className="voice voice--unavailable">Voice unavailable</span>
+  if (!voice.available) return compact ? null : <span className="voice voice--unavailable">Voice unavailable</span>
   if (!voice.enabled) {
     return (
-      <div className="voice">
+      <div className={`voice${compact ? ' voice--compact' : ''}`}>
         <button type="button" disabled={!connected || voice.starting} onClick={voice.start}>
           {voice.starting ? 'Opening microphone…' : 'Join voice'}
         </button>
@@ -178,21 +185,21 @@ function VoiceControls({ voice, seats, connected }: {
   }
   const connectedPeers = Object.values(voice.peerStates).filter((state) => state === 'connected').length
   return (
-    <div className="voice" aria-label="Party voice">
+    <div className={`voice${compact ? ' voice--compact' : ''}`} aria-label="Party voice">
       {/* The peer count rides the Leave button rather than sitting beside it as
           a third element: it is a fact ABOUT the voice channel, and three
           separate controls in a row was what crowded this corner. */}
-      <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
-      <button type="button" onClick={voice.stop}>
+      <button type="button" aria-label={`Leave voice, ${connectedPeers} of ${Math.max(0, seats.length - 1)} peers connected`} onClick={voice.stop}>
         Leave voice <span className="voice__status">{connectedPeers}/{Math.max(0, seats.length - 1)}</span>
       </button>
+      <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
       {voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
-      {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} />)}
+      {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} volume={volume} />)}
     </div>
   )
 }
 
-export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
+export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const room = useRoomSession()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
@@ -200,9 +207,13 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
   const [achievementsOpen, setAchievementsOpen] = useState(false)
   const [compendiumOpen, setCompendiumOpen] = useState(false)
   const [soloGiveUpOpen, setSoloGiveUpOpen] = useState(false)
+  const [pauseOpen, setPauseOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
+  const pauseDialog = useRef<HTMLDialogElement>(null)
   const snapshot = room.snapshot
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
-  useBossFightMusic(snapshot?.run?.combat, sfxEnabled && room.connection === 'connected')
+  useBossFightMusic(snapshot?.run?.combat, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(
@@ -222,10 +233,33 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
 
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
-    if (room.connection !== 'connected' || (phase !== 'won' && phase !== 'lost')) return undefined
+    if (pauseOpen || settingsOpen || room.connection !== 'connected' || (phase !== 'won' && phase !== 'lost')) return undefined
     const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }), 900)
     return () => clearTimeout(timer)
-  }, [room.act, room.connection, snapshot?.run?.combat?.phase])
+  }, [pauseOpen, room.act, room.connection, settingsOpen, snapshot?.run?.combat?.phase])
+
+  useEffect(() => {
+    const dialog = pauseDialog.current
+    if (!dialog) return
+    if (pauseOpen && !dialog.open) dialog.showModal()
+    else if (!pauseOpen && dialog.open) dialog.close()
+  }, [pauseOpen, snapshot?.run])
+
+  useEffect(() => {
+    if (snapshot && !snapshot.run) setPauseOpen(false)
+  }, [snapshot?.run])
+
+  useEffect(() => {
+    if (!snapshot?.run || compendiumOpen || soloGiveUpOpen || snapshot.giveUpVote) return undefined
+    const pause = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
+      window.setTimeout(() => {
+        if (!event.defaultPrevented && !document.querySelector('dialog[open]')) setPauseOpen(true)
+      })
+    }
+    document.addEventListener('keydown', pause)
+    return () => document.removeEventListener('keydown', pause)
+  }, [compendiumOpen, snapshot?.giveUpVote, snapshot?.run, soloGiveUpOpen])
 
   useEffect(() => {
     previousRunPhase.current = runPhase
@@ -348,7 +382,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
             </select>
           </label>
           <details className="online-lobby__settings">
-            <summary>Settings</summary>
+            <summary>Run settings</summary>
             <label>
               Ascension
               <select disabled={!connected} value={snapshot.ascension} onChange={(event) => room.chooseAscension(Number(event.target.value))}>{Array.from({ length: snapshot.campaignProgress.highestAscension + 1 }, (_, level) => <option key={level}>{level}</option>)}</select>
@@ -366,9 +400,6 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
                 checked={snapshot.lastStand} onChange={(event) => room.chooseLastStandRule(event.target.checked)} />
               {!isPartyLeader ? <small>{partyLeader?.name ?? 'The party leader'} controls this rule.</small> : null}
             </label> : null}
-            <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-              Sound {sfxEnabled ? 'on' : 'off'}
-            </button>
             <fieldset disabled={!connected || !isPartyLeader} className="online-lobby__meta">
               <legend>Official run setup</legend>
               <MetaRunOptions
@@ -388,7 +419,8 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
               stacked between the room code and the seats, where they read as
               steps in setting the party up. */}
           <div className="online-lobby__aside">
-            <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} />
+            <VoiceControls voice={voice} seats={snapshot.seats} connected={connected} volume={settings.voiceVolume} />
+            <button type="button" onClick={() => setSettingsOpen(true)}>Settings</button>
             <button type="button" onClick={() => setAchievementsOpen(true)}>Achievements</button>
           </div>
 
@@ -400,6 +432,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           </button>
           {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
         </section>
+        <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={onSettings} />
       </main>
     )
   }
@@ -459,12 +492,20 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
           {viewer ? <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} /> : null}
         </div>
+        <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
+          volume={settings.voiceVolume} compact />
         {run.phase !== 'map' && run.phase !== 'setup' ? (
           <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}
-        <details className="game-settings">
-          <summary>Party</summary>
-          <div className="setup">
+        <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
+          onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
+          <img src="/assets/menu/settings-cog.png" alt="" />
+        </button>
+      </header>
+
+      <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}
+        onClose={() => { setSettingsOpen(false); if (settingsReturnToPause) setPauseOpen(true) }}
+        generalChildren={<>
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
             <ul>{run.meta.modifierIds.map((id) => {
@@ -472,21 +513,34 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
               return <li key={id}><strong>{modifier.name}</strong> — {modifier.rule}</li>
             })}</ul>
           </details> : null}
-          {snapshot.seats.map((seat) => <span className="pip" key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
-          <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'} />
-          <button className="sfx-toggle" type="button" data-sfx="none" aria-pressed={sfxEnabled} onClick={onToggleSfx}>
-            Sound {sfxEnabled ? 'on' : 'off'}
-          </button>
-          {run.phase === 'combat' ? <button type="button" onClick={() => setCompendiumOpen(true)}>Compendium</button> : null}
-          {run.phase === 'combat' ? <button type="button"
-            disabled={room.connection !== 'connected'}
-            onClick={() => snapshot.seats.length === 1
-              ? setSoloGiveUpOpen(true)
-              : room.act({ kind: 'giveUpVote', vote: 'start' })}>Give up</button> : null}
-          <button type="button" onClick={() => { voice.stop(); onLocal() }}>Solo table</button>
+          <div className="settings-party" aria-label="Party">
+            {snapshot.seats.map((seat) => <span key={seat.playerId}>{seat.name} {seat.connected ? '●' : '○'}</span>)}
           </div>
-        </details>
-      </header>
+        </>} />
+
+      <dialog ref={pauseDialog} className="choice-modal pause-menu" aria-labelledby="online-pause-title"
+        onCancel={(event) => { event.preventDefault(); setPauseOpen(false) }}>
+        <section className="choice-modal__panel">
+          <p>Game paused</p>
+          <h2 id="online-pause-title">Slay the Spire</h2>
+          <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
+          <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
+          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendiumOpen(true) }}>Compendium</button> : null}
+          {run.phase === 'combat' ? <button type="button" disabled={room.connection !== 'connected'} onClick={() => {
+            setPauseOpen(false)
+            if (snapshot.seats.length === 1) setSoloGiveUpOpen(true)
+            else void room.act({ kind: 'giveUpVote', vote: 'start' })
+          }}>Give up</button> : null}
+          <button type="button" onClick={() => {
+            if (!window.confirm('Leave this run and return to the main menu?')) return
+            setPauseOpen(false)
+            voice.stop()
+            void room.leave()
+            room.forget(true)
+            onLocal()
+          }}>Return to main menu</button>
+        </section>
+      </dialog>
 
       {run.phase === 'combat' && soloGiveUpOpen ? <GiveUpPanel
         players={run.players}
@@ -558,7 +612,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
           animateOpeningHand={animateOpeningHand}
           mutationsEnabled={!run.courier.offer && room.connection === 'connected' &&
             !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
-          autoAdvance={!run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
+          autoAdvance={!pauseOpen && !settingsOpen && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
