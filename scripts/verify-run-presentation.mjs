@@ -3,11 +3,21 @@
 // whether an animation fires at all, and it infers a transform from a shape the
 // engine does not label, so a regression there is silent — a bogus animation
 // over a reward screen, or none where a card really did change.
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { diffDeckMorphs, planMorphs } from '../src/ui/useCardMorphs.ts'
 import { deckHighlights } from '../src/ui/run-summary-data.ts'
+import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('run presentation')
+
+check('every event has its own full-screen background', () => {
+  const hashes = Object.keys(EVENT_DEFINITIONS).map((id) => createHash('sha256')
+    .update(readFileSync(new URL(`../public/assets/noncombat/events/${id}.webp`, import.meta.url)))
+    .digest('hex'))
+  assertEqual(new Set(hashes).size, hashes.length, 'event backgrounds must not reuse one generic scene')
+})
 
 // `diffDeckMorphs` never resolves a card definition, so its cases may use any
 // id. `deckHighlights` does resolve, so its cases must use REAL ids — `cardDef`
@@ -84,22 +94,31 @@ check('removing one card while upgrading another queues both animations', () => 
   assertEqual(found[1].from.uid, 'c2')
 })
 
-check('a multi-card swap is ignored rather than guessed at', () => {
-  // Pandora's Box replaces every starter at once; there is no honest pairing.
+check('a multi-card transform queues every changed card', () => {
   const after = [card('c7', 'anger'), card('c8', 'cleave'), card('c9', 'clash')]
-  assertEqual(diffDeckMorphs(base, after).length, 0)
+  const found = diffDeckMorphs(base, after)
+  assertEqual(found.length, 3)
+  assert(found.every((entry) => entry.kind === 'transform'))
+})
+
+check('transforms still queue when a later effect also gains a card', () => {
+  // Transmogriphier transforms two, then adds a Curse. Replacements are appended
+  // first by transformCard, so the surplus arrival is not paired as a transform.
+  const after = [card('c3', 'defend'), card('c7', 'anger'), card('c8', 'cleave'), card('c9', 'curse')]
+  const found = diffDeckMorphs(base, after)
+  assertEqual(found.length, 2)
+  assert(found.every((entry) => entry.kind === 'transform'))
+  assertDeepEqual(found.map((entry) => entry.to.uid), ['c7', 'c8'])
+})
+
+check('an armed transform plus gain animates both kinds in order', () => {
+  const after = [card('c2', 'strike'), card('c3', 'defend'), card('c7', 'anger'), card('c8', 'curse')]
+  const found = diffDeckMorphs(base, after, true)
+  assertDeepEqual(found.map((entry) => entry.kind), ['transform', 'gain'])
 })
 
 check('an unchanged deck reports nothing', () => {
   assertEqual(diffDeckMorphs(base, [...base]).length, 0)
-})
-
-check('switching to another seat is silent even though every uid differs', () => {
-  // `setViewer` swaps in a stranger's deck. Uids are unique run-wide, so every
-  // card counts as gone AND every card as arrived — far outside the
-  // exactly-one guard that gates the transform inference.
-  const other = [card('z1', 'strike'), card('z2', 'defend'), card('z3', 'bash')]
-  assertEqual(diffDeckMorphs(base, other).length, 0)
 })
 
 check('an upgrade alongside a swap does not also claim a transform', () => {

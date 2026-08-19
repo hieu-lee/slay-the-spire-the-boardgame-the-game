@@ -247,6 +247,7 @@ export function OnlineGame({ onLocal, sfxEnabled, onToggleSfx }: Props) {
     snapshot?.run?.players.find((seat) => seat.id === snapshot.you.playerId)?.deck ?? undefined,
     snapshot?.run?.campaign.runId,
     snapshot?.run?.phase,
+    snapshot?.you.playerId,
   )
 
   if (!snapshot && room.activeCode) {

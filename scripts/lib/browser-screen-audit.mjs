@@ -4,12 +4,26 @@ export function installScreenAudit(page) {
   const screenshot = page.screenshot.bind(page)
   page.screenshot = async (options = {}) => {
     const label = options.path ?? 'unnamed screenshot'
-    await page.waitForFunction(() => [...document.images].every((image) => {
-      const style = getComputedStyle(image)
-      const box = image.getBoundingClientRect()
-      const visible = style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 && box.width > 0 && box.height > 0
-      return !visible || image.complete && image.naturalWidth > 0
-    }), undefined, { timeout: 15_000 })
+    if (options.fullPage) await page.locator('img[loading="lazy"]').evaluateAll((images) => {
+      for (const image of images) image.loading = 'eager'
+    })
+    try {
+      await page.waitForFunction(() => [...document.images].every((image) => {
+        const style = getComputedStyle(image)
+        const box = image.getBoundingClientRect()
+        const visible = style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 && box.width > 0 && box.height > 0
+        return !visible || image.complete && image.naturalWidth > 0
+      }), undefined, { timeout: 15_000 })
+    } catch (error) {
+      const pending = await page.locator('img').evaluateAll((images) => images
+        .filter((image) => {
+          const style = getComputedStyle(image)
+          const box = image.getBoundingClientRect()
+          return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 && box.width > 0 && box.height > 0 && (!image.complete || image.naturalWidth === 0)
+        })
+        .map((image) => image.currentSrc || image.src))
+      throw new Error(`${label}: visible images did not load: ${pending.join(', ')}`, { cause: error })
+    }
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const issues = await page.evaluate(() => {
       const visible = (element) => {

@@ -280,7 +280,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, sfxEnabled, onToggleSfx, a
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
   // because it watches the deck rather than each of those call sites.
-  const morph = useCardMorphs(viewer?.deck, run.campaign.runId, run.phase)
+  const morph = useCardMorphs(viewer?.deck, run.campaign.runId, run.phase, viewerId)
   // The map is regenerated per act, so this counts the CURRENT act's climb, not
   // the run's. The summary labels it "Rooms this act" to match.
   const roomsCleared = Object.values(run.map.rooms).filter((room) => room.visited).length

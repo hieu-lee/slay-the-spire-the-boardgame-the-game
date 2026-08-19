@@ -15,14 +15,12 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  *
  * Upgrades are exact: same uid, `upgraded` went false to true.
  *
- * Transforms are inferred, because `transformCard` drops one uid and adds
- * another rather than editing in place — there is no field tying the two
- * together. The inference is deliberately narrow: exactly one card gone and
- * exactly one arrived in a single update. Gaining a card reward only adds,
- * removing at a campfire only subtracts, a status purge only subtracts, and
- * Pandora's Box swaps three for three — none of them trip it. A rule that ever
- * fired on a plain add would put a bogus animation over a reward screen, which
- * is worse than missing one, so it errs toward silence.
+ * Transforms are inferred, because `transformCard` drops one uid and appends
+ * its replacement rather than editing in place — there is no field tying the
+ * two together. Pairing departed cards with the first arrivals in order covers
+ * both one-card and multi-card transforms, including a transform followed by a
+ * Curse gain. Plain rewards only add and removals only subtract, so neither can
+ * be mistaken for a transform.
  *
  * Plain removals surface every departed card. They cannot be confused with a
  * transform because that shape also has an arrival.
@@ -33,12 +31,13 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * random card reward. A reward screen's pick was already shown as a `Card`
  * before the player chose it, so those adds stay silent unless armed.
  *
- * ponytail: one shape it cannot tell apart is the Exchange event's `trade-card`
+ * ponytail: shapes it cannot tell apart are the Exchange event's `trade-card`
  * (event-room.ts), which also drops one uid and adds one. From the viewer's own
  * deck that IS a card leaving and a card arriving, so the animation is right and
- * only the caption's verb is wrong. Distinguishing them needs the engine to say
- * which it did; not worth a field for one event's wording. Multi-card transforms
- * are missed when they also add replacements; pure removals still queue normally.
+ * only the caption's verb is wrong, and Pandora's Box's bulk replacement also
+ * has the same deck shape. Distinguishing those needs the engine to label the
+ * mutation; not worth plumbing metadata through every state boundary for two
+ * rare captions.
  */
 export function diffDeckMorphs(
   before: readonly CardInstance[],
@@ -59,19 +58,19 @@ export function diffDeckMorphs(
 
   const gone = before.filter((card) => !current.has(card.uid))
   const arrived = after.filter((card) => !previous.has(card.uid))
-  const transforms = gone.length === 1 && arrived.length === 1 && upgrades.length === 0
-    ? [{
+  const transforms = gone.length > 0 && arrived.length >= gone.length && upgrades.length === 0
+    ? gone.map((card, index) => ({
       kind: 'transform' as const,
-      from: gone[0]!,
-      to: arrived[0]!,
-      key: `transform-${gone[0]!.uid}-${arrived[0]!.uid}`,
-    }]
+      from: card,
+      to: arrived[index]!,
+      key: `transform-${card.uid}-${arrived[index]!.uid}`,
+    }))
     : []
   const removals = arrived.length === 0
     ? gone.map((card) => ({ kind: 'remove' as const, from: card, to: null, key: `remove-${card.uid}` }))
     : []
-  const gains = gainArmed && transforms.length === 0
-    ? arrived.map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
+  const gains = gainArmed
+    ? arrived.slice(transforms.length).map((card) => ({ kind: 'gain' as const, from: null, to: card, key: `gain-${card.uid}` }))
     : []
 
   return [...upgrades, ...transforms, ...removals, ...gains]
@@ -133,10 +132,12 @@ export function useCardMorphs(
   deck: readonly CardInstance[] | undefined,
   runId?: string,
   phase?: string,
+  scopeId?: string,
 ): { current: CardMorphRequest | null; dismiss: () => void; armGain: () => void } {
   const previous = useRef<readonly CardInstance[] | null>(null)
   const previousRun = useRef(runId)
   const previousPhase = useRef(phase)
+  const previousScope = useRef(scopeId)
   const [queue, setQueue] = useState<CardMorphRequest[]>([])
   // Set right before an action that may silently add a random card (Neow's
   // random Rare, an event's random card reward), consumed by the very next
@@ -147,18 +148,22 @@ export function useCardMorphs(
   const gainArmed = useRef(false)
 
   useEffect(() => {
-    const runChanged = previousRun.current !== runId
+    const runChanged = previousRun.current !== runId || previousScope.current !== scopeId
     const phaseChanged = previousPhase.current !== phase
     previousRun.current = runId
     previousPhase.current = phase
+    previousScope.current = scopeId
     const armed = gainArmed.current
-    gainArmed.current = false
 
     const plan = planMorphs(previous.current, deck, runChanged, phaseChanged, armed)
     previous.current = plan.baseline
+    // Online snapshots replace the deck array for unrelated room updates. Keep
+    // an armed random gain through those no-op snapshots; consume it only when
+    // this deck actually morphs or the viewer crosses a reset boundary.
+    if (runChanged || phaseChanged || plan.morphs.length > 0) gainArmed.current = false
     if (plan.mode === 'replace') setQueue(plan.morphs)
     else if (plan.mode === 'append') setQueue((pending) => [...pending, ...plan.morphs])
-  }, [deck, runId, phase])
+  }, [deck, runId, phase, scopeId])
 
   // Stable across renders, and it has to be: `CardMorph` keys its beat timers on
   // this callback, the overlay deliberately lets clicks through to the run

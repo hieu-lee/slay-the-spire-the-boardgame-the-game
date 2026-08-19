@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CARDS } from "../game/cards.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
 import type { EventDecision, EventRoomState } from "../game/event-room.ts";
@@ -553,6 +553,7 @@ function EventScreen({
   const focusedEventOption = useRef<HTMLButtonElement | null>(null);
   const eventOptions = useRef<HTMLDivElement>(null);
   const rewardOffers = room.rewardOffers?.[player.id];
+  const eventArt = { "--event-art": `url('/assets/noncombat/events/${room.card.id}.webp')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
   const pendingDecision = room.pendingDecisions?.[player.id];
@@ -714,11 +715,11 @@ function EventScreen({
     const remaining = eventPledge.cost - Object.values(eventPledge.payments).reduce((sum, amount) => sum + amount, 0);
     const mine = eventPledge.payments[player.id] ?? 0;
     const contribution = Math.min(Math.max(0, player.gold - mine), remaining);
-    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event payment</span><h2 id="event-title">{room.card.name}</h2><p>{remaining} Gold still needed. Each player authorizes only their own contribution.</p></div><button type="button" className="room-proceed" disabled={contribution <= 0} onClick={() => onEvent(eventPledge.actorId, { ...eventPledge.decision, payments: { [player.id]: mine + contribution } })}>Contribute ◉ {contribution}</button>{eventPledge.actorId === player.id && onCancelEventPayment ? <button type="button" onClick={onCancelEventPayment}>Cancel payment</button> : null}</div></section>;
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event payment</span><h2 id="event-title">{room.card.name}</h2><p>{remaining} Gold still needed. Each player authorizes only their own contribution.</p></div><button type="button" className="room-proceed" disabled={contribution <= 0} onClick={() => onEvent(eventPledge.actorId, { ...eventPledge.decision, payments: { [player.id]: mine + contribution } })}>Contribute ◉ {contribution}</button>{eventPledge.actorId === player.id && onCancelEventPayment ? <button type="button" onClick={onCancelEventPayment}>Cancel payment</button> : null}</div></section>;
   }
   if (pendingTrade) {
     const isTarget = pendingTrade.targetId === player.id;
-    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel">
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel">
       <div className="room-banner"><span>Event exchange</span><h2 id="event-title">{room.card.name}</h2>
         <p>{isTarget ? `${players.find((candidate) => candidate.id === pendingTrade.actorId)?.name ?? "A teammate"} offers ${pendingTrade.kind === "card" ? CARDS[pendingTrade.offeredId]?.name : relicDef(pendingTrade.offeredId).name}. Choose what to give back.` : "Waiting for your teammate to choose what they give back."}</p>
       </div>
@@ -775,7 +776,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicOptionLabel(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}</button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicOptionLabel(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}</button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-cards">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -789,12 +790,12 @@ function EventScreen({
       ...(room.rewardOffers?.[stagedBy]?.flat().map((id) => CARDS[id]?.name) ?? []),
       ...(room.itemOffers?.[stagedBy]?.map((offer) => offer.kind === "relic" ? relicDef(offer.id).name : potionDef(offer.id).name) ?? []),
     ];
-    return <section className="room-stage event-stage"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2>{room.card.name}</h2><p><strong>{players.find((candidate) => candidate.id === stagedBy)?.name ?? "A teammate"} revealed:</strong> {names.join(", ")}</p><p role="status">Waiting for that face-up reward to resolve…</p></div></div></section>;
+    return <section className="room-stage event-stage" style={eventArt}><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2>{room.card.name}</h2><p><strong>{players.find((candidate) => candidate.id === stagedBy)?.name ?? "A teammate"} revealed:</strong> {names.join(", ")}</p><p role="status">Waiting for that face-up reward to resolve…</p></div></div></section>;
   }
-  if (room.card.id === "lab" && room.labChoices?.[player.id] && !room.pendingRolls?.[player.id]) return <section className="room-stage event-stage"><div className="event-panel"><div className="room-banner"><span>Lab</span><h2>Potions collected</h2><p role="status">Waiting for every player to resolve their Potion.</p></div></div></section>;
+  if (room.card.id === "lab" && room.labChoices?.[player.id] && !room.pendingRolls?.[player.id]) return <section className="room-stage event-stage" style={eventArt}><div className="event-panel"><div className="room-banner"><span>Lab</span><h2>Potions collected</h2><p role="status">Waiting for every player to resolve their Potion.</p></div></div></section>;
   if (rewardOffers)
     return (
-      <section className="room-stage event-stage" aria-labelledby="event-title">
+      <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
         <div className="event-panel">
           <div className="room-banner">
             <span>Event reward</span>
@@ -842,7 +843,7 @@ function EventScreen({
     );
   const latestDie = room.dieRolls[player.id]?.at(-1);
   return (
-    <section className="room-stage event-stage" aria-labelledby="event-title">
+    <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
       <div className="event-art" aria-hidden="true" />
       <div className="event-panel">
         <div className="room-banner">

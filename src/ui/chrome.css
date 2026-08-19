@@ -1398,11 +1398,25 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .campfire__choices button > strong { font-size: 1rem; }
 
 .sts-scope .campfire__deck {
+  --card-width: clamp(7rem, 10vw, 9.5rem);
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: safe center;
   max-width: 100%;
-  max-height: 9.5rem;
-  overflow: auto;
-  padding: 0.35rem;
+  max-height: none;
+  min-height: calc(var(--card-width) * var(--card-ratio, 1.395) + 1.2rem);
+  overflow: auto hidden;
+  padding: 0.55rem 0.55rem 0.8rem;
   background: rgb(10 12 12 / 0.52);
+  overscroll-behavior-inline: contain;
+}
+
+/* Smith and Peace Pipe turn the choice cloud into the game's full card picker.
+   The old 43vh prompt plus a 9.5rem deck cap cut every card at mid-rules box. */
+.sts-scope .campfire__prompt:has(.campfire__deck) {
+  flex: 0 0 auto;
+  width: min(76rem, calc(100% - 2rem));
+  max-height: calc(100vh - 6.5rem);
 }
 
 .sts-scope .campfire__players {
@@ -1487,6 +1501,8 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
   .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
   .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
+  .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: calc(100vh - 4.5rem); }
+  .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
   .sts-scope .campfire__players { flex-basis: 16rem; min-height: 16rem; margin-top: 0; }
   .sts-scope .campfire__seat { width: 34%; }
   .sts-scope .campfire__seat > span { min-width: 7rem; padding-inline: 0.3rem; font-size: 0.72rem; }
@@ -1494,6 +1510,90 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   .sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 22%; }
   .sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { right: 22%; }
 }
+
+/* ---------- reward screen ---------- */
+
+/* The original game keeps rewards on one compact hanging sheet in the middle
+   of the room. This also fixes the solo screen stretching one player to nearly
+   the whole viewport before anything has been revealed. */
+.sts-scope .reward-screen {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 0.7rem;
+  padding: clamp(1rem, 3vh, 2rem) 1rem 5rem;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgb(34 49 52 / 0.9), rgb(7 9 10 / 0.88) 42%, rgb(3 4 5 / 0.98) 78%),
+    linear-gradient(180deg, #172024, #050708);
+}
+
+.sts-scope .reward-screen__title {
+  z-index: 1;
+  margin-bottom: 0;
+  padding: 0.55rem 3rem 0.75rem;
+  background: linear-gradient(180deg, #e7d5ad, #a99367);
+  border-color: #6d5b3a;
+  color: #29323a;
+  text-shadow: 0 1px 0 #f9edcf;
+  filter: drop-shadow(0 0.45rem 0.45rem rgb(0 0 0 / 0.65));
+}
+
+.sts-scope .reward-screen > .muted {
+  z-index: 2;
+  margin: 0;
+  color: #d7c9aa;
+}
+
+.sts-scope .reward-screen__players {
+  display: grid;
+  width: min(48rem, 100%);
+  grid-template-columns: 1fr;
+  gap: 0.7rem;
+  margin: 0 auto;
+  padding: 1.2rem clamp(0.75rem, 3vw, 2rem) 1.6rem;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.05), transparent 8% 92%, rgb(0 0 0 / 0.18)),
+    linear-gradient(180deg, #607579, #3d5055 76%, #27383d);
+  clip-path: polygon(2% 0, 98% 0, 100% 2%, 99% 98%, 92% 100%, 84% 98.5%, 74% 100%, 63% 98%, 52% 100%, 40% 98.4%, 29% 100%, 18% 98.2%, 7% 100%, 1% 97%);
+  box-shadow: inset 0 0 0 2px rgb(212 225 211 / 0.12), inset 0 0 3rem rgb(0 0 0 / 0.28);
+  filter: drop-shadow(0 1rem 1.2rem rgb(0 0 0 / 0.6));
+}
+
+.sts-scope .reward-screen__player {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.8rem;
+  border: 1px solid rgb(230 240 218 / 0.18);
+  background: rgb(22 31 33 / 0.28);
+}
+
+.sts-scope .reward-screen__player h3 { margin: 0; color: var(--light-yellow); }
+.sts-scope .reward-screen__player > p { margin: 0; }
+.sts-scope .reward-screen__unrevealed { min-height: 0; margin: 0; }
+.sts-scope .reward-screen__unrevealed button {
+  width: min(24rem, 100%);
+  min-height: 3.5rem;
+  padding-left: 3.25rem;
+  text-align: left;
+  background:
+    radial-gradient(circle at 1.65rem 50%, #e8e0ce 0 0.55rem, transparent 0.6rem),
+    linear-gradient(180deg, #61777c, #405459);
+  border-color: rgb(223 231 215 / 0.34);
+  color: #f4ead4;
+}
+
+.sts-scope .reward-screen__cards {
+  --card-width: clamp(7rem, 13vw, 10.5rem);
+  max-width: 100%;
+  overflow: auto hidden;
+  justify-content: safe center;
+  padding: 0.5rem 0 0.8rem;
+}
+
+.sts-scope .reward-screen__choice { flex-basis: var(--card-width); }
+.sts-scope .reward-screen__cards > .card { width: var(--card-width); }
+.sts-scope .reward-screen__collect { margin-top: 0.2rem; }
 
 /* ---------- room stages ---------- */
 
@@ -1535,7 +1635,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .event-stage {
   background:
     linear-gradient(90deg, transparent 0 42%, rgb(5 9 10 / 0.72) 64%, rgb(4 6 7 / 0.92)),
-    url('/assets/noncombat/event-stage.webp') center / cover no-repeat;
+    var(--event-art) center / cover no-repeat;
 }
 
 .sts-scope .event-art {
@@ -1566,10 +1666,16 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 /* Shop stock sits on wooden shelves; the generated merchant remains a
    character at the counter instead of a faded watermark behind a green form. */
 .sts-scope .merchant-stage {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) repeat(2, auto);
+  height: min(72vh, 760px);
+  overflow: hidden;
   background:
     radial-gradient(circle at 84% 30%, rgb(216 159 76 / 0.22), transparent 28%),
     linear-gradient(145deg, #2d211b 0%, #101516 68%, #070909 100%);
 }
+
+.sts-scope .merchant-stage .room-proceed { position: static; }
 
 .sts-scope .merchant-figure { z-index: 0; opacity: 0.96; }
 
@@ -1592,6 +1698,10 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 .sts-scope .merchant-board {
+  width: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
   background:
     repeating-linear-gradient(0deg, transparent 0 9.6rem, rgb(56 30 19 / 0.92) 9.6rem 10.1rem),
     linear-gradient(105deg, rgb(92 69 41 / 0.96), rgb(54 64 42 / 0.98) 40%, rgb(36 47 34 / 0.98));
@@ -1631,7 +1741,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     align-content: end;
     background:
       linear-gradient(180deg, transparent 0 32%, rgb(5 9 10 / 0.78) 58%, rgb(4 6 7 / 0.95)),
-      url('/assets/noncombat/event-stage.webp') 42% center / cover no-repeat;
+      var(--event-art) 42% center / cover no-repeat;
   }
   .sts-scope .event-art { min-height: 25vh; }
   .sts-scope .event-panel { max-height: 58vh; }

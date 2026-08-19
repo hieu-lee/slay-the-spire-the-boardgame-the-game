@@ -2059,6 +2059,7 @@ check('card rewards stay face down until each player reveals or skips', () => {
   assert(hiddenRewardRun.rewards.every((offer) => offer.choices === null), 'an offer leaked before reveal')
   assertEqual(revealButtons, 2)
 })
+await page.waitForTimeout(200)
 await shot('05e-card-rewards-hidden')
 while (await potionSkips.count()) await potionSkips.first().click()
 for (const player of hiddenRewardRun.players) {
