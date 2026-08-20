@@ -18,18 +18,6 @@ export function healthBand(hp: number, maxHp: number): 'healthy' | 'hurt' | 'cri
   return 'critical'
 }
 
-/**
- * Which flinch class to use this time.
- *
- * A CSS animation only restarts when the computed animation-name changes, so
- * two hits on the same target inside the window produced one flinch. The two
- * classes name different keyframes; alternating between them makes every blow
- * land visibly.
- */
-export function strikeClass(base: 'seat' | 'enemy', beat: number): string {
-  return beat % 2 === 0 ? `${base}--struck` : `${base}--struck-alt`
-}
-
 /** Stage geometry at full size, in rem: actor pitch, then the slack either end. */
 export const STAGE_GAP_REM = 10
 export const STAGE_MARGIN_REM = 4

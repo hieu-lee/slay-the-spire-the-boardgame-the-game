@@ -309,7 +309,10 @@ check('every live enemy runtime image path exists', () => {
 })
 
 check('bundled combat cutouts are high-resolution images with transparency', () => {
-  const expectedCharacters = ['defect.webp', 'ironclad.webp', 'silent.webp', 'watcher.webp']
+  const expectedCharacters = [
+    'defect.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
+    'silent-throw.webp', 'silent.webp', 'watcher-ready.webp', 'watcher-thrust.webp', 'watcher.webp',
+  ]
   assertDeepEqual(combatCharacterFiles.sort(), expectedCharacters, 'combat character cutout inventory')
   const files = [
     ...combatEnemyFiles.map((file) => join(combatEnemyRoot, file)),

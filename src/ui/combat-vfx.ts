@@ -80,6 +80,10 @@ const neutralStance = recipe('stance', 'cast', 'magic-burst', 'astral-cyan')
 const poison = recipe('poison', 'throw', 'silent-poison', 'venom-green')
 const shiv = recipe('shiv', 'lunge', 'silent-shiv', 'steel-green')
 
+export function shivVfxRecipe(): VfxRecipe {
+  return shiv
+}
+
 const CARD_OVERRIDES: Readonly<Record<string, VfxRecipe>> = {
   strike_ironclad: recipe('slash', 'lunge', 'ironclad-strike', 'ember-orange'),
   bash: recipe('blunt', 'lunge', 'ironclad-bash', 'impact-ochre'),

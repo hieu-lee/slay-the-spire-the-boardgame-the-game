@@ -723,6 +723,7 @@ try {
     sound.cue?.includes(':strike_ironclad:')))
   await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
   await a.locator('.connection--connected').waitFor()
+  const reconnectCorpseImmediate = await a.locator('.enemy--dead').count()
   const reconnectedCorpse = a.locator('.enemy--dead').first()
   await reconnectedCorpse.waitFor()
   const reconnectDeathMotion = await reconnectedCorpse.evaluate((enemy) => ({
@@ -738,6 +739,7 @@ try {
   const reconnectHistoricalVfx = await a.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`).count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
     assertEqual(reconnectDeathMotion.falling, false)
+    assertEqual(reconnectCorpseImmediate, 1, 'the restored corpse waited for historical weapon contact')
     assertEqual(reconnectDeathMotion.animation, 'none')
     assertEqual(reconnectWeakSounds, 0)
     assertDeepEqual(reconnectSounds, [])
@@ -780,16 +782,17 @@ try {
   liveHitEnemy.hp -= 1
   liveRoom.run.combat.players.find((player) => player.name === 'Bo').miracles = 1
   await roomAction(b, { kind: 'spendMiracle' })
-  const liveHit = a.locator('.enemy--struck, .enemy--struck-alt').first()
+  const liveHit = a.locator('.enemy:has(.hit-vfx)').first()
   await liveHit.waitFor()
   releaseStaleGet()
   await a.waitForTimeout(20)
   const liveHitAfterStaleGet = await liveHit.evaluate((enemy) =>
-    getComputedStyle(enemy.querySelector('.enemy__portrait')).animationName)
+    enemy.querySelector('.enemy__portrait')?.getAnimations()
+      .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0)
   await a.unroute(roomGetPattern)
   const staleGetFailures = failures.splice(staleFailureStart)
   check('a rejected stale REST snapshot does not cut short a newer socket hit', () => {
-    assert(liveHitAfterStaleGet.startsWith('struck-stage'), liveHitAfterStaleGet)
+    assert(liveHitAfterStaleGet > 0, 'the live hit flinch was cancelled by the stale response')
     assertEqual(staleGetFailures.length, 1)
     assert(staleGetFailures[0].includes('ERR_CONNECTION_RESET'), staleGetFailures[0])
   })

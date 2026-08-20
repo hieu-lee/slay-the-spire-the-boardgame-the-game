@@ -123,6 +123,10 @@ export function cardSfxRecipe(
   )
 }
 
+export function shivSfxRecipe(): CombatSfxRecipe {
+  return tunedRecipe('shiv:silent', FAMILY_LAYERS.shiv, CHARACTER_RATE.silent)
+}
+
 export function potionSfxRecipe(potionId: string): CombatSfxRecipe {
   const visual = potionVfxRecipe(potionId)
   const semantic = FAMILY_LAYERS[visual.family][0] ?? FAMILY_LAYERS.utility[0]!

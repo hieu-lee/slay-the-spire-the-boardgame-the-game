@@ -18,7 +18,6 @@ import {
   shouldAnimateOnlineOpeningHand,
   shouldDisarmCardFlight,
   stageScaleFor,
-  strikeClass,
 } from '../src/ui/board-signals.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
@@ -215,17 +214,6 @@ check('the health bands fall where they are documented', () => {
   assertEqual(healthBand(1, 10), 'critical', 'nearly gone')
   assertEqual(healthBand(0, 10), 'critical', 'gone')
   assertEqual(healthBand(0, 0), 'critical', 'and a zero maximum does not divide by zero')
-})
-
-check('the flinch alternates so a repeated hit re-animates', () => {
-  // A CSS animation only restarts when the computed animation-name changes, so
-  // consecutive hits must not produce the same class.
-  assert(strikeClass('seat', 0) !== strikeClass('seat', 1), 'consecutive hits must differ')
-  assertEqual(strikeClass('seat', 0), strikeClass('seat', 2), 'and then alternate back')
-  assert(
-    strikeClass('enemy', 1).startsWith('enemy--'),
-    'the base name follows the element it is applied to',
-  )
 })
 
 check('pending card UI survives only its owner copy transition', () => {
