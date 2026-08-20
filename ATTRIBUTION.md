@@ -49,8 +49,8 @@ each character card. These are original OpenAI Imagegen restorations visually gr
 in the corresponding locally synced illustration window; the UI supplies its own frame,
 title and rules text. Base and upgraded faces reuse the same illustration.
 
-`public/assets/combat/` contains the generated Act I combat stage and transparent actor
-cutouts for four characters and all 61 canonical enemy designs. These are original
+`public/assets/combat/` contains the generated Act I combat stage, transparent actor
+cutouts and alternate attack poses for four characters, plus all 61 canonical enemy designs. These are original
 AI-generated fan illustrations made with OpenAI Imagegen for this implementation. The
 new enemy batch was visually grounded in complete enemy cards from the official Slay the
 Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.

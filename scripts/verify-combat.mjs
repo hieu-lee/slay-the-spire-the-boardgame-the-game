@@ -218,6 +218,7 @@ check('presentation events resolve row, boss, and ally scopes', () => {
   ])
   state = playCard(state, 'p1', cleave.uid, { enemyUid: 'row-a', playerId: 'p1' })
   assertDeepEqual(state.presentationEvents.at(-1).enemyIds, ['row-a', 'row-b', 'boss'])
+  assertEqual(state.presentationEvents.at(-1).enemyRow, 0)
   assertDeepEqual(state.presentationEvents.at(-1).playerIds, [], 'the actor received a duplicate target overlay')
 
   const defend = instance('defend_ironclad', true)

@@ -2412,36 +2412,6 @@ button:disabled {
 
 /* ---------- feedback ---------- */
 
-/* A hit should be felt, not just recorded in a log. */
-@keyframes struck {
-  0% { transform: translateX(0); filter: brightness(1); }
-  20% { transform: translateX(-4px); filter: brightness(2.2) saturate(0.4); }
-  45% { transform: translateX(3px); }
-  70% { transform: translateX(-2px); }
-  100% { transform: translateX(0); filter: brightness(1); }
-}
-
-.enemy--struck,
-.seat--struck {
-  animation: struck 380ms var(--ease);
-}
-
-/* Identical to `struck`, under a different NAME on purpose. Swapping the class
-   is not enough to restart a CSS animation — the computed animation-name has
-   to change — so two blows inside the same window produced only one flinch. */
-.enemy--struck-alt,
-.seat--struck-alt {
-  animation: struck-again 380ms var(--ease);
-}
-
-@keyframes struck-again {
-  0% { transform: translateX(0); filter: brightness(1); }
-  20% { transform: translateX(-4px); filter: brightness(2.2) saturate(0.4); }
-  45% { transform: translateX(3px); }
-  70% { transform: translateX(-2px); }
-  100% { transform: translateX(0); filter: brightness(1); }
-}
-
 @keyframes card-draw {
   0% {
     opacity: 0;
@@ -2509,15 +2479,6 @@ button:disabled {
 
 @keyframes ui-pulse-again {
   45% { transform: translateY(-4px) scale(1.16); filter: brightness(1.65); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .enemy--struck,
-  .seat--struck,
-  .enemy--struck-alt,
-  .seat--struck-alt {
-    animation: none;
-  }
 }
 
 /* Intent sits ABOVE the creature, the way the video game telegraphs it, and
@@ -4157,6 +4118,21 @@ button:disabled {
   30%, 58% { opacity: 0.32; transform: translate(-3%, 0) scaleY(0.94); }
 }
 
+/* Weapon contact lands after travel, while skills, potions and self-targeted
+   effects keep their immediate presentation. The short burst fits in the
+   authoritative event lifetime even for the last staggered row projectile. */
+.combat-vfx.combat-vfx--attack-impact {
+  animation: combat-vfx-reveal 300ms var(--attack-impact-delay) ease-out both;
+}
+
+.combat-vfx.combat-vfx--attack-impact::before {
+  animation: combat-vfx-ring 300ms var(--attack-impact-delay) ease-out both;
+}
+
+.combat-vfx.combat-vfx--attack-impact::after {
+  animation: combat-vfx-streak 260ms var(--attack-impact-delay) ease-out both;
+}
+
 @keyframes mantra-ring {
   from { opacity: 0; transform: rotate(-100deg) scale(1.3); }
   35% { opacity: 1; }
@@ -4195,6 +4171,286 @@ button:disabled {
 @keyframes vfx-drink-again { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
 @keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
 @keyframes vfx-throw-again { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
+
+/* Character attacks use the authoritative event targets already rendered on
+   the board. The model moves; the button and its hit box stay in its lane. */
+.seat[class*='seat--attack-'] .seat__portrait > img {
+  animation-duration: 860ms;
+  animation-fill-mode: both;
+  animation-iteration-count: 1;
+  animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
+.seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
+.seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
+.seat--attack-defect .seat__portrait > img { animation-name: attack-defect; }
+
+.seat--attack-ironclad .character-attack--ironclad,
+.seat--attack-watcher .character-attack--watcher {
+  animation-duration: 860ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
+.seat--attack-watcher .character-attack--watcher { animation-name: attack-watcher-motion; }
+
+.seat--attack-watcher .stance-aura--calm {
+  animation: calm-aura 2.2s ease-in-out infinite, attack-watcher-aura 860ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
+}
+
+.seat--attack-watcher .stance-aura--wrath {
+  animation: wrath-aura 1.05s ease-in-out infinite, attack-watcher-aura 860ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
+}
+
+@keyframes attack-watcher-aura {
+  0%, 100% { translate: 0; }
+  18% { translate: -3% 1%; }
+  42%, 66% { translate: var(--attack-x) var(--attack-y); }
+  82% { translate: 14% 0; }
+}
+
+@keyframes attack-ironclad {
+  0%, 5%, 100% { opacity: 1; transform: translate(0) scale(1); }
+  10% { opacity: 0.35; transform: translate(-1%, 0) scale(0.99, 1.01); }
+  14%, 70% { opacity: 0; }
+  42%, 64% { transform: translate(var(--attack-x), var(--attack-y)); }
+  80% { opacity: 0.25; transform: translate(14%, 0) scale(0.98, 1.02); }
+  90% { opacity: 0.78; transform: translate(2%, 0) scale(1.01, 0.99); }
+}
+
+@keyframes attack-ironclad-motion {
+  0%, 10%, 100% { transform: translate(0) scale(1); }
+  18% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
+  43%, 48% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  55% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.06, 0.95); }
+  65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  80% { transform: translate(14%, 0) scale(0.97, 1.03); }
+  92% { transform: translate(2%, 0) scale(1.01, 0.99); }
+}
+
+@keyframes attack-watcher {
+  0%, 5%, 100% { opacity: 1; transform: translate(0) scale(1); }
+  10% { opacity: 0.35; transform: translate(-1%, 0) scale(0.99, 1.01); }
+  14%, 72% { opacity: 0; }
+  42%, 66% { transform: translate(var(--attack-x), var(--attack-y)); }
+  82% { opacity: 0.25; transform: translate(14%, 0) scale(0.98, 1.02); }
+  91% { opacity: 0.8; transform: translate(2%, 0) scale(1.01, 0.99); }
+}
+
+@keyframes attack-watcher-motion {
+  0%, 10%, 100% { transform: translate(0) scale(1); }
+  18% { transform: translate(-4%, 1%) scale(1.02, 0.98); }
+  43% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  54% { transform: translate(calc(var(--attack-x) + 5%), var(--attack-y)) scale(1.08, 0.94); }
+  66% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  82% { transform: translate(14%, 0) scale(0.97, 1.03); }
+  92% { transform: translate(2%, 0) scale(1.01, 0.99); }
+}
+
+@keyframes attack-silent {
+  0%, 10%, 100% { opacity: 1; transform: translate(0) rotate(0); }
+  18%, 72% { opacity: 0; }
+  22% { transform: translate(-3%, 1%) rotate(-4deg); }
+  46% { transform: translate(2%, -1%) rotate(5deg); }
+  78% { opacity: 1; transform: translate(-1%, 0) rotate(-2deg); }
+}
+
+@keyframes attack-defect {
+  0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+  28% { transform: translateY(3%) scale(0.96); filter: brightness(1.2); }
+  48% { transform: translateY(-4%) scale(1.045); filter: brightness(1.7) drop-shadow(0 0 0.8rem #65e9ff); }
+  68% { transform: translateY(-2%) scale(1.02); filter: brightness(1.25); }
+}
+
+.character-attack {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.character-attack--ironclad::before,
+.character-attack--watcher::before {
+  position: absolute;
+  z-index: 1;
+  top: 30%;
+  right: 35%;
+  width: 95%;
+  height: 34%;
+  background: repeating-linear-gradient(0deg, transparent 0 20%, rgb(255 237 177 / 0.65) 21% 25%, transparent 26% 40%);
+  content: '';
+  filter: blur(0.08rem);
+  opacity: 0;
+  transform-origin: right center;
+  animation: attack-speed-trail 860ms ease-in-out both;
+}
+
+.character-attack--watcher::before {
+  background: repeating-linear-gradient(0deg, transparent 0 20%, rgb(230 157 255 / 0.65) 21% 25%, transparent 26% 40%);
+}
+
+@keyframes attack-speed-trail {
+  0%, 20%, 43%, 67%, 100% { opacity: 0; transform: scaleX(0.25); }
+  32%, 78% { opacity: 0.72; transform: scaleX(1); }
+}
+
+.character-attack__swing {
+  position: absolute;
+  top: 12%;
+  left: 58%;
+  width: 72%;
+  aspect-ratio: 1;
+  border: 0.34rem solid transparent;
+  border-top-color: #fff2b1;
+  border-right-color: #ff9a3c;
+  border-radius: 50%;
+  filter: drop-shadow(0 0 0.35rem #ff6b28);
+  opacity: 0;
+  animation: attack-swing 430ms 390ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
+}
+
+@keyframes attack-swing {
+  from { opacity: 0; transform: rotate(-75deg) scale(0.55); }
+  32% { opacity: 1; }
+  to { opacity: 0; transform: rotate(52deg) scale(1.08); }
+}
+
+.character-attack__pose {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  opacity: 0;
+  will-change: opacity, transform, filter;
+}
+
+.character-attack__pose > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 860ms both; }
+.character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 860ms both; }
+.character-attack__pose--watcher-ready { animation: watcher-ready-pose 860ms both; }
+.character-attack__pose--watcher-thrust { animation: watcher-thrust-pose 860ms both; }
+.character-attack__pose--silent-throw { animation: silent-throw-pose 860ms both; }
+
+@keyframes ironclad-ready-pose {
+  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); filter: blur(0.1rem); }
+  12%, 39% { opacity: 1; transform: translate(0) rotate(0) scale(1); filter: blur(0); }
+  46% { opacity: 0.72; transform: translate(2%, -1%) rotate(1deg) scale(1.025); filter: blur(0.04rem); }
+}
+
+@keyframes ironclad-impact-pose {
+  0%, 40%, 82%, 100% { opacity: 0; transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); filter: blur(0.12rem); }
+  49% { opacity: 0.72; transform: translate(1%, 0) rotate(1deg) scale(1.035); filter: blur(0.04rem); }
+  56%, 66% { opacity: 1; transform: translate(3%, 1%) rotate(2deg) scale(1.06); filter: blur(0); }
+  75% { opacity: 0.5; transform: translate(0) rotate(0) scale(1); filter: blur(0.05rem); }
+}
+
+@keyframes watcher-ready-pose {
+  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-3%, 1%) scale(0.97); filter: blur(0.1rem); }
+  12%, 39% { opacity: 1; transform: translate(-1%, 0) scale(1); filter: blur(0); }
+  46% { opacity: 0.72; transform: translate(2%, 0) scale(1.025); filter: blur(0.04rem); }
+}
+
+@keyframes watcher-thrust-pose {
+  0%, 40%, 83%, 100% { opacity: 0; transform: translate(-4%, 0) scale(0.96); filter: blur(0.12rem); }
+  49% { opacity: 0.72; transform: translate(1%, 0) scale(1.04, 0.98); filter: blur(0.04rem); }
+  56%, 67% { opacity: 1; transform: translate(5%, 0) scale(1.08, 0.96); filter: blur(0); }
+  76% { opacity: 0.5; transform: translate(1%, 0) scale(1); filter: blur(0.05rem); }
+}
+
+.character-attack__thrust {
+  position: absolute;
+  z-index: 4;
+  top: 44%;
+  left: 54%;
+  width: 72%;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #fff, #dc7cff 68%, transparent);
+  filter: drop-shadow(0 0 0.38rem #a54cff);
+  opacity: 0;
+  transform-origin: left center;
+  animation: attack-watcher-thrust 300ms 410ms cubic-bezier(0.12, 0.82, 0.24, 1) both;
+}
+
+@keyframes attack-watcher-thrust {
+  from { opacity: 0; transform: scaleX(0.12); }
+  38% { opacity: 1; }
+  to { opacity: 0; transform: translateX(18%) scaleX(1.18); }
+}
+
+@keyframes silent-throw-pose {
+  0%, 10%, 78%, 100% { opacity: 0; transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
+  18% { opacity: 1; transform: translate(-2%, 0) rotate(-2deg) scale(1); }
+  48%, 68% { opacity: 1; transform: translate(2%, -1%) rotate(2deg) scale(1.03); }
+}
+
+.character-attack__dagger,
+.character-attack__bolt {
+  position: absolute;
+  z-index: 4;
+  top: 42%;
+  left: 64%;
+  width: 1.65rem;
+  height: 0.38rem;
+  background: linear-gradient(90deg, #315b45 0 25%, #eaffdd 26% 74%, #69d49a 75%);
+  clip-path: polygon(0 28%, 72% 28%, 100% 50%, 72% 72%, 0 72%, 14% 50%);
+  filter: drop-shadow(0 0 0.25rem #92ffc1);
+  opacity: 0;
+  animation: attack-projectile 560ms var(--attack-delay) cubic-bezier(0.2, 0.72, 0.25, 1) both;
+}
+
+.character-attack--silent .character-attack__dagger {
+  top: 28%;
+  left: 88%;
+  animation-duration: 330ms;
+  animation-delay: calc(150ms + var(--attack-delay));
+}
+
+.character-attack__bolt {
+  top: 38%;
+  left: 50%;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, white 0 12%, #70eeff 24%, #3b71ff 58%, transparent 70%);
+  clip-path: none;
+  filter: drop-shadow(0 0 0.45rem #4ee9ff) drop-shadow(-0.65rem 0 0.28rem #4e8fff);
+}
+
+@keyframes attack-projectile {
+  0% { opacity: 0; transform: translate(0) rotate(-14deg) scale(0.45); }
+  12% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--attack-target-x), var(--attack-target-y)) rotate(18deg) scale(1.05); }
+}
+
+.character-attack__core {
+  position: absolute;
+  z-index: 3;
+  top: 30%;
+  left: 47%;
+  width: 12%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, white 0 16%, #ffef78 28%, #ff7b24 50%, transparent 72%);
+  box-shadow: 0 0 0.8rem #64e8ff, 0 0 1.35rem #477cff;
+  animation: defect-core-charge 700ms ease-out both;
+}
+
+@keyframes defect-core-charge {
+  0%, 100% { opacity: 0; transform: scale(0.35); }
+  35% { opacity: 1; transform: scale(1.7); }
+  62% { opacity: 0.9; transform: scale(1.15); }
+}
 
 .enemy__row {
   position: absolute;
@@ -4269,39 +4525,6 @@ button:disabled {
   text-shadow: 0 1px 2px #000, 0 0 3px #000;
 }
 
-.seat--struck,
-.seat--struck-alt,
-.enemy--struck,
-.enemy--struck-alt {
-  animation: none;
-}
-
-.seat--struck .seat__portrait,
-.enemy--struck .enemy__portrait {
-  animation: struck-stage 380ms var(--ease);
-}
-
-.seat--struck-alt .seat__portrait,
-.enemy--struck-alt .enemy__portrait {
-  animation: struck-stage-again 380ms var(--ease);
-}
-
-@keyframes struck-stage {
-  0% { transform: translateX(0); filter: brightness(1); }
-  18% { transform: translateX(-7px) scale(0.98); filter: brightness(2.6) saturate(0.25); }
-  42% { transform: translateX(5px); }
-  68% { transform: translateX(-2px); }
-  100% { transform: translateX(0); filter: brightness(1); }
-}
-
-@keyframes struck-stage-again {
-  0% { transform: translateX(0); filter: brightness(1); }
-  18% { transform: translateX(-7px) scale(0.98); filter: brightness(2.6) saturate(0.25); }
-  42% { transform: translateX(5px); }
-  68% { transform: translateX(-2px); }
-  100% { transform: translateX(0); filter: brightness(1); }
-}
-
 .hit-vfx {
   position: absolute;
   z-index: 20;
@@ -4312,7 +4535,7 @@ button:disabled {
   pointer-events: none;
   background: center / contain no-repeat url('/assets/combat/vfx/hit-burst.webp');
   filter: drop-shadow(0 0 5px #ff923d);
-  animation: impact-bloom 380ms var(--ease) both;
+  animation: impact-bloom 380ms var(--hit-delay, 0ms) var(--ease) both;
 }
 
 .hit-vfx strong {
@@ -4323,7 +4546,7 @@ button:disabled {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 1.6rem;
   text-shadow: 0 2px 0 #641817, 0 0 5px #000;
-  animation: damage-float 520ms var(--ease) both;
+  animation: damage-float 520ms var(--hit-delay, 0ms) var(--ease) both;
 }
 
 @keyframes impact-bloom {
@@ -4633,10 +4856,6 @@ button:disabled {
   .enemy__portrait > .enemy__art--cutout,
   .seat__portrait::before,
   .enemy__portrait::before,
-  .seat--struck .seat__portrait,
-  .enemy--struck .enemy__portrait,
-  .seat--struck-alt .seat__portrait,
-  .enemy--struck-alt .enemy__portrait,
   .hit-vfx,
   .hit-vfx strong {
     animation: none;
@@ -4646,10 +4865,18 @@ button:disabled {
   .combat-vfx,
   .combat-vfx::before,
   .combat-vfx::after,
-  .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img {
+  .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img,
+  .seat[class*='seat--attack-'] .seat__portrait > img,
+  .seat--attack-ironclad .character-attack--ironclad,
+  .seat--attack-watcher .character-attack--watcher {
     animation: none;
     transform: none;
   }
+
+  .character-attack { display: none; }
+
+  .seat--attack-watcher .stance-aura--calm,
+  .seat--attack-watcher .stance-aura--wrath { animation: none; }
 
   .stance-aura--calm { opacity: 0.66; }
   .stance-aura--wrath { opacity: 0.78; }

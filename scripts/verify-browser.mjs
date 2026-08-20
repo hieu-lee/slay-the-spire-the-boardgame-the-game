@@ -8026,6 +8026,36 @@ async function publishPresentationEvent(event) {
   }, event)
 }
 
+async function publishDamagingPresentationEvent(
+  event,
+  targetIds,
+  lethal = false,
+  { blockLoss = 0, hpLoss = 1 } = {},
+) {
+  return page.evaluate(({ nextEvent, enemyIds, kill, blockLoss, hpLoss }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const history = run.combat.presentationEvents ?? []
+    const seq = history.reduce((latest, item) => Math.max(latest, item.seq), 1_000_000) + 1
+    for (const enemyId of enemyIds) {
+      const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+      if (!enemy) throw new Error(`damage presentation fixture lost ${enemyId}`)
+      enemy.block = Math.max(0, enemy.block - blockLoss)
+      enemy.hp = kill ? 0 : Math.max(1, enemy.hp - hpLoss)
+      enemy.dead = kill
+    }
+    run.combat.presentationEvents = [...history, { ...nextEvent, seq }].slice(-12)
+    debug.setRun(run)
+    return seq
+  }, {
+    nextEvent: event,
+    enemyIds: Array.isArray(targetIds) ? targetIds : [targetIds],
+    kill: lethal,
+    blockLoss,
+    hpLoss,
+  })
+}
+
 // Stance is visually carried by the Watcher now. It remains in the button's
 // accessible name, but the old floating CALM/WRATH text is gone.
 const watcherPlayerId = await page.evaluate(() => {
@@ -8073,6 +8103,27 @@ check('Watcher Calm and Wrath use distinct accessible portrait auras instead of 
 
 const vfxActor = () => page.locator('.combat-vfx--actor').last()
 const vfxTarget = () => page.locator('.enemy .combat-vfx--target').last()
+async function captureCombatAnimation(name, time = 300) {
+  await page.evaluate((currentTime) => {
+    for (const animation of document.getAnimations()) {
+      const name = animation.animationName ?? ''
+      if (name.startsWith('combat-vfx') || name.startsWith('vfx-') ||
+        name.startsWith('attack-') || name.endsWith('-pose') || name === 'defect-core-charge') {
+        animation.currentTime = currentTime
+        animation.pause()
+      }
+    }
+  }, time)
+  const attackImpactOpacity = await page.evaluate(() => {
+    const impact = [...document.querySelectorAll('.combat-vfx--attack-impact')].at(-1)
+    return impact ? Number(getComputedStyle(impact).opacity) : null
+  })
+  await page.screenshot({ path: join(animationReferenceDir, name), timeout: 15_000 })
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) if (animation.playState === 'paused') animation.play()
+  })
+  return { attackImpactOpacity }
+}
 const firstEnemyId = await page.locator('.enemy').first().getAttribute('data-enemy-id')
 const firstPlayerId = watcherPlayerId
 const secondPlayerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[1]?.id)
@@ -8106,6 +8157,7 @@ await publishPresentationEvent({
   enemyRow: rowTargetFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await vfxTarget().waitFor()
+await watcherSeat.locator('.character-attack--ironclad').waitFor()
 await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
   sound.cue === 'card:ironclad:strike_ironclad:base').length === 2)
 const strikeOverflow = await page.locator('.board').evaluate((board) => ({
@@ -8134,21 +8186,55 @@ const strikePresentation = await vfxTarget().evaluate((vfx) => ({
   actorOverlays: document.querySelectorAll('.seat .combat-vfx--actor[data-vfx-source="strike_ironclad"]').length,
   targets: document.querySelectorAll('.enemy .combat-vfx--target[data-vfx-source="strike_ironclad"]').length,
 }))
-strikePresentation.actorAnimation = await watcherSeat.locator('.seat__portrait > img').evaluate((image) =>
-  getComputedStyle(image).animationName)
-await page.evaluate(() => {
-  for (const animation of document.getAnimations()) {
-    if (animation.animationName.startsWith('combat-vfx') || animation.animationName.startsWith('vfx-')) {
-      animation.currentTime = 300
-      animation.pause()
-    }
+Object.assign(strikePresentation, await watcherSeat.evaluate((seat) => {
+  const attack = seat.querySelector('.character-attack--ironclad')
+  const swing = attack?.querySelector('.character-attack__swing')
+  const ready = attack?.querySelector('.character-attack__pose--ironclad-ready')
+  const impact = attack?.querySelector('.character-attack__pose--ironclad-impact')
+  return {
+    actorAnimation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+    attackTarget: seat.getAttribute('data-attack-target'),
+    attackTargetCount: Number(attack?.getAttribute('data-attack-target-count')),
+    attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
+    swingAnimation: swing ? getComputedStyle(swing).animationName : '',
+    readyAnimation: ready ? getComputedStyle(ready).animationName : '',
+    readyImage: ready?.querySelector('img')?.getAttribute('src') ?? '',
+    impactAnimation: impact ? getComputedStyle(impact).animationName : '',
+    impactImage: impact?.querySelector('img')?.getAttribute('src') ?? '',
   }
-})
-await page.screenshot({ path: join(animationReferenceDir, 'combat-personal-vfx.png'), timeout: 15_000 })
-await page.evaluate(() => {
-  for (const animation of document.getAnimations()) if (animation.playState === 'paused') animation.play()
-})
+}))
+const ironcladReadyFrame = await captureCombatAnimation('combat-attack-ironclad-ready.png', 150)
+const ironcladImpactFrame = await captureCombatAnimation('combat-attack-ironclad-impact.png', 500)
 await vfxTarget().waitFor({ state: 'detached' })
+
+const rowDashFixture = await page.evaluate(({ livingUid, corpseUid }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const living = run.combat.enemies.find((enemy) => enemy.uid === livingUid)
+  const corpse = run.combat.enemies.find((enemy) => enemy.uid === corpseUid)
+  if (!living || !corpse) throw new Error('row dash fixture lost an enemy')
+  Object.assign(corpse, { row: living.row, hp: Math.max(1, corpse.maxHp), dead: false })
+  debug.setRun(run)
+  const ids = run.combat.enemies.filter((enemy) => !enemy.isBoss && enemy.row === living.row)
+    .map((enemy) => enemy.uid)
+  return { ids, expected: ids[0], row: living.row }
+}, { livingUid: firstEnemyId, corpseUid: rowTargetFixture.corpseUid })
+await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"]:not(.enemy--dead)`).waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'cleave', enemyIds: [...rowDashFixture.ids].reverse(),
+  enemyRow: rowDashFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator('.character-attack--ironclad').waitFor()
+const rowDashTarget = await watcherSeat.getAttribute('data-attack-target')
+await vfxTarget().waitFor({ state: 'detached' })
+await page.evaluate((corpseUid) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const corpse = run.combat.enemies.find((enemy) => enemy.uid === corpseUid)
+  if (corpse) Object.assign(corpse, { hp: 0, dead: true })
+  debug.setRun(run)
+}, rowTargetFixture.corpseUid)
+await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"].enemy--dead`).waitFor()
 
 await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'bash', enemyIds: [firstEnemyId],
@@ -8183,6 +8269,60 @@ const zapPresentation = await vfxActor().evaluate((vfx) => ({
 }))
 await vfxActor().waitFor({ state: 'detached' })
 
+const defectStrikeSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: [firstEnemyId], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await vfxTarget().waitFor()
+await watcherSeat.locator('.character-attack--defect').waitFor()
+await page.waitForTimeout(450)
+const defectHit = page.locator(`.enemy[data-enemy-id="${firstEnemyId}"] .hit-vfx`).last()
+const earlyDefectFeedback = await defectHit.evaluate((hit) => Number(getComputedStyle(hit).opacity))
+await page.waitForFunction((enemyId) => {
+  const hits = document.querySelectorAll(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`)
+  const hit = hits[hits.length - 1]
+  return hit && Number(getComputedStyle(hit).opacity) > 0.5
+}, firstEnemyId)
+const defectAttack = await watcherSeat.evaluate((seat) => ({
+  animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  core: getComputedStyle(seat.querySelector('.character-attack__core')).animationName,
+  bolts: seat.querySelectorAll('.character-attack__bolt').length,
+  target: seat.querySelector('.character-attack__bolt')?.getAttribute('data-attack-target-id'),
+}))
+await captureCombatAnimation('combat-attack-defect.png', 380)
+check('Defect damage feedback lands with its emitted bolt', () => {
+  assertEqual(earlyDefectFeedback, 0)
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${defectStrikeSeq}"]`).waitFor({ state: 'detached' })
+
+const defectVolleyIds = await page.locator('.enemy').evaluateAll((enemies) =>
+  enemies.slice(0, 3).map((enemy) => enemy.getAttribute('data-enemy-id')).filter(Boolean))
+const defectVolleySeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: defectVolleyIds,
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.character-attack[data-attack-seq="${defectVolleySeq}"]`).waitFor()
+await page.waitForTimeout(50)
+const defectVolleyFollowupSeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.character-attack[data-attack-seq="${defectVolleyFollowupSeq}"]`).waitFor()
+await page.waitForTimeout(860)
+const lateDefectImpact = await page.locator(
+  `.enemy[data-enemy-id="${defectVolleyIds.at(-1)}"] .combat-vfx[data-vfx-seq="${defectVolleySeq}"]`,
+).count()
+await page.locator(`.combat-vfx[data-vfx-seq="${defectVolleyFollowupSeq}"]`).first().waitFor({ state: 'detached' })
+const supersededDefectReplay = await watcherSeat.locator(
+  `.character-attack[data-attack-seq="${defectVolleySeq}"]`,
+).count()
+check('multi-target Defect events live through the last staggered impact', () => {
+  assertEqual(defectVolleyIds.length, 3, 'the Defect lifetime fixture needs three targets')
+  assertEqual(lateDefectImpact, 1)
+  assertEqual(supersededDefectReplay, 0, 'a superseded volley replayed when the newer attack expired')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${defectVolleySeq}"]`).first().waitFor({ state: 'detached' })
+
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -8204,17 +8344,73 @@ const prayPresentation = await vfxActor().evaluate((vfx) => ({
 }))
 await vfxActor().waitFor({ state: 'detached' })
 
-await page.evaluate(() => {
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'eruption', enemyIds: [firstEnemyId], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+})
+await vfxTarget().waitFor()
+await watcherSeat.locator('.character-attack--watcher').waitFor()
+const watcherAttack = await watcherSeat.evaluate((seat) => ({
+  animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  target: seat.getAttribute('data-attack-target'),
+  ready: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-ready')).animationName,
+  readyImage: seat.querySelector('.character-attack__pose--watcher-ready img')?.getAttribute('src') ?? '',
+  thrust: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-thrust')).animationName,
+  thrustImage: seat.querySelector('.character-attack__pose--watcher-thrust img')?.getAttribute('src') ?? '',
+  thrustStreak: getComputedStyle(seat.querySelector('.character-attack__thrust')).animationName,
+  auraDash: seat.querySelector('.stance-aura')?.getAnimations()
+    .some((animation) => animation.animationName === 'attack-watcher-aura'),
+}))
+await captureCombatAnimation('combat-attack-watcher-ready.png', 150)
+await captureCombatAnimation('combat-attack-watcher-thrust.png', 520)
+await vfxTarget().waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
-  run.combat.players[0].character = 'silent'
+  Object.assign(run.combat.players[0], {
+    character: 'silent',
+    energy: 3,
+    cardPlayLocked: false,
+    hand: [{ uid: 'animation-dagger-spray', defId: 'dagger_spray', upgraded: false }],
+  })
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`Dagger Spray fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(10, enemy.maxHp), dead: false, block: 0 })
   debug.setRun(run)
+}, firstEnemyId)
+await watcherSeat.locator('.seat__portrait > img[src$="/silent.webp"]').waitFor()
+await page.waitForFunction((enemyId) => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.players[0].hand[0]?.uid === 'animation-dagger-spray' &&
+    combat.enemies.some((enemy) => enemy.uid === enemyId && !enemy.dead && enemy.hp >= 10)
+}, firstEnemyId)
+const daggerSprayBefore = (await readRun()).combat
+const daggerSprayTarget = daggerSprayBefore.enemies.find((enemy) => enemy.uid === firstEnemyId)
+if (!daggerSprayTarget) throw new Error('Dagger Spray animation fixture lost its enemy')
+const daggerSprayPageErrorsBefore = pageErrors.length
+await page.getByRole('button', { name: /^Dagger Spray,/ }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator(`.enemy[data-enemy-id="${daggerSprayTarget.uid}"]`).click()
+await watcherSeat.locator('.character-attack--silent').waitFor()
+const daggerSprayAfter = (await readRun()).combat
+const daggerSprayEvent = daggerSprayAfter.presentationEvents.at(-1)
+if (!daggerSprayEvent) throw new Error('Dagger Spray did not publish its animation event')
+check('real Dagger Spray resolves without crashing its Silent animation', () => {
+  assertEqual(pageErrors.length, daggerSprayPageErrorsBefore)
+  assert(!daggerSprayAfter.players[0].hand.some((card) => card.uid === 'animation-dagger-spray'))
+  assertEqual(daggerSprayEvent?.sourceId, 'dagger_spray')
+  assertEqual(daggerSprayEvent?.enemyRow, daggerSprayTarget.row)
+  assert(daggerSprayEvent?.enemyIds.includes(daggerSprayTarget.uid))
 })
+await page.locator(`.combat-vfx[data-vfx-seq="${daggerSprayEvent.seq}"]`).first().waitFor({ state: 'detached' })
+
 await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'predator', enemyIds: [firstEnemyId],
   playerIds: [secondPlayerId], upgraded: false, copied: false, energy: 2,
 })
 await vfxTarget().waitFor()
+await watcherSeat.locator('.character-attack--silent').waitFor()
 const mixedTargetPresentation = await page.evaluate(({ enemyId, playerId }) => ({
   enemyImpacts: document.querySelectorAll(
     `.enemy[data-enemy-id="${enemyId}"] .combat-vfx--target[data-vfx-source="predator"]`,
@@ -8223,11 +8419,103 @@ const mixedTargetPresentation = await page.evaluate(({ enemyId, playerId }) => (
     `.seat[data-player-id="${playerId}"] .combat-vfx--target[data-vfx-source="predator"]`,
   ).length,
 }), { enemyId: firstEnemyId, playerId: secondPlayerId })
+const silentAttack = await watcherSeat.evaluate((seat) => ({
+  animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  pose: getComputedStyle(seat.querySelector('.character-attack__pose--silent-throw')).animationName,
+  poseImage: seat.querySelector('.character-attack__pose--silent-throw img')?.getAttribute('src') ?? '',
+  daggers: seat.querySelectorAll('.character-attack__dagger').length,
+  target: seat.querySelector('.character-attack__dagger')?.getAttribute('data-attack-target-id'),
+  attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
+}))
+await captureCombatAnimation('combat-attack-silent.png', 330)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
   assertEqual(mixedTargetPresentation.allyImpacts, 0)
 })
 await vfxTarget().waitFor({ state: 'detached' })
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].shivs = 1
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Use Shiv' }).click()
+await page.waitForSelector('.enemy--targeted')
+await page.locator(`.enemy[data-enemy-id="${firstEnemyId}"]`).click()
+const standaloneShivVfx = page.locator('.combat-vfx[data-vfx-kind="shiv"]').last()
+await standaloneShivVfx.waitFor()
+const standaloneShivAttack = await watcherSeat.evaluate((seat) => ({
+  pose: seat.querySelectorAll('.character-attack__pose--silent-throw').length,
+  daggers: seat.querySelectorAll('.character-attack__dagger').length,
+}))
+check('spending Silent’s standalone Shiv uses her throw pose and dagger projectile', () => {
+  assertEqual(standaloneShivAttack.pose, 1)
+  assertEqual(standaloneShivAttack.daggers, 1)
+})
+await standaloneShivVfx.waitFor({ state: 'detached' })
+
+const poisonOnlySeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'deadly_poison', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${poisonOnlySeq}"]`).waitFor()
+const poisonOnlyAttackLayers = await watcherSeat.locator('.character-attack').count()
+check('poison-only Silent skills keep their target VFX without throwing a damage dagger', () => {
+  assertEqual(poisonOnlyAttackLayers, 0)
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${poisonOnlySeq}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyIds) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const enemy of run.combat.enemies) {
+    if (enemyIds.includes(enemy.uid)) Object.assign(enemy, { hp: Math.max(2, enemy.maxHp), dead: false })
+  }
+  debug.setRun(run)
+}, rowDashFixture.ids)
+await page.waitForTimeout(100)
+const silentVolleySeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'dagger_spray', enemyIds: rowDashFixture.ids,
+  enemyRow: rowDashFixture.row, playerIds: [], upgraded: false, copied: false, energy: 1,
+}, rowDashFixture.ids)
+await watcherSeat.locator(`.character-attack[data-attack-seq="${silentVolleySeq}"]`).waitFor()
+const silentVolley = watcherSeat.locator(`.character-attack[data-attack-seq="${silentVolleySeq}"]`)
+const silentVolleyTimings = await silentVolley.locator('.character-attack__dagger').evaluateAll((daggers) =>
+  daggers.map((dagger) => {
+    const style = getComputedStyle(dagger)
+    const duration = Number.parseFloat(style.animationDuration) * 1000
+    const delay = Number.parseFloat(style.animationDelay) * 1000
+    return { duration, delay, contact: duration + delay }
+  }))
+await page.waitForTimeout(430)
+const earlySilentHits = await Promise.all(rowDashFixture.ids.map((enemyId) =>
+  page.locator(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`).last()
+    .evaluate((hit) => Number(getComputedStyle(hit).opacity))))
+await page.waitForFunction((enemyId) => {
+  const hits = document.querySelectorAll(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`)
+  const hit = hits[hits.length - 1]
+  return hit && Number(getComputedStyle(hit).opacity) > 0.5
+}, rowDashFixture.ids[0])
+const staggeredSilentHits = await Promise.all(rowDashFixture.ids.map((enemyId) =>
+  page.locator(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`).last()
+    .evaluate((hit) => Number(getComputedStyle(hit).opacity))))
+await page.waitForFunction((enemyId) => {
+  const hits = document.querySelectorAll(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`)
+  const hit = hits[hits.length - 1]
+  return hit && Number(getComputedStyle(hit).opacity) > 0.5
+}, rowDashFixture.ids.at(-1))
+check('multi-target Silent daggers reach every enemy inside the contact window', () => {
+  assertEqual(silentVolleyTimings.length, rowDashFixture.ids.length)
+  assert(silentVolleyTimings[0].contact >= 430 && silentVolleyTimings[0].contact <= 520,
+    `first dagger contact is ${silentVolleyTimings[0].contact}ms`)
+  assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 700,
+    `a staggered dagger outlives contact: ${JSON.stringify(silentVolleyTimings)}`)
+  assertDeepEqual(earlySilentHits, rowDashFixture.ids.map(() => 0))
+  assert(staggeredSilentHits[0] > 0.5)
+  assertEqual(staggeredSilentHits.at(-1), 0, 'all hit feedback appeared before the staggered daggers landed')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${silentVolleySeq}"]`).first().waitFor({ state: 'detached' })
 
 await publishPresentationEvent({
   kind: 'potion', actorId: firstPlayerId, sourceId: 'fire_potion', enemyIds: [firstEnemyId], playerIds: [],
@@ -8246,7 +8534,21 @@ const personalSounds = await page.evaluate(() => window.__SFX_DETAILS__.filter((
 check('personal card and potion events render distinct authoritative recipes', () => {
   assertEqual(strikePresentation.family, 'slash')
   assertEqual(strikePresentation.motion, 'lunge')
-  assert(strikePresentation.actorAnimation.startsWith('vfx-lunge'), strikePresentation.actorAnimation)
+  assertEqual(strikePresentation.actorAnimation, 'attack-ironclad')
+  assertEqual(strikePresentation.attackTarget, firstEnemyId)
+  assertEqual(strikePresentation.attackTargetCount, 1)
+  assert(strikePresentation.attackX > 0, `Ironclad dash did not move toward its target: ${strikePresentation.attackX}`)
+  assertEqual(strikePresentation.swingAnimation, 'attack-swing')
+  assertEqual(strikePresentation.readyAnimation, 'ironclad-ready-pose')
+  assert(strikePresentation.readyImage.endsWith('/ironclad-ready.webp'), strikePresentation.readyImage)
+  assertEqual(strikePresentation.impactAnimation, 'ironclad-impact-pose')
+  assert(strikePresentation.impactImage.endsWith('/ironclad-impact.webp'), strikePresentation.impactImage)
+  assertEqual(ironcladReadyFrame.attackImpactOpacity, 0,
+    'enemy impact art fired while Ironclad was still preparing')
+  assert(ironcladImpactFrame.attackImpactOpacity > 0.5,
+    `enemy impact art was not visible at contact: ${ironcladImpactFrame.attackImpactOpacity}`)
+  assertEqual(rowDashTarget, rowDashFixture.expected,
+    'a row attack did not dash to the first enemy in that row')
   assertEqual(strikePresentation.actorOverlays, 0, 'hostile impact art belongs on the enemy, not the actor')
   assertEqual(strikePresentation.targets, 1)
   assert(strikePresentation.image.includes('ironclad-strike.webp'), strikePresentation.image)
@@ -8260,9 +8562,27 @@ check('personal card and potion events render distinct authoritative recipes', (
   assert(bashPresentation.image.includes('ironclad-bash.webp'), bashPresentation.image)
   assertEqual(zapPresentation.family, 'lightning')
   assert(zapPresentation.image.includes('lightning-channel.webp'), zapPresentation.image)
+  assertEqual(defectAttack.animation, 'attack-defect')
+  assertEqual(defectAttack.core, 'defect-core-charge')
+  assertEqual(defectAttack.bolts, 1)
+  assertEqual(defectAttack.target, firstEnemyId)
   assertEqual(prayPresentation.family, 'mantra')
   assertEqual(prayPresentation.tone, 'mantra-cyan')
   assert(prayPresentation.image.includes('watcher-pray.webp'), prayPresentation.image)
+  assertEqual(watcherAttack.animation, 'attack-watcher')
+  assertEqual(watcherAttack.target, firstEnemyId)
+  assertEqual(watcherAttack.ready, 'watcher-ready-pose')
+  assert(watcherAttack.readyImage.endsWith('/watcher-ready.webp'), watcherAttack.readyImage)
+  assertEqual(watcherAttack.thrust, 'watcher-thrust-pose')
+  assert(watcherAttack.thrustImage.endsWith('/watcher-thrust.webp'), watcherAttack.thrustImage)
+  assertEqual(watcherAttack.thrustStreak, 'attack-watcher-thrust')
+  assertEqual(watcherAttack.auraDash, true)
+  assertEqual(silentAttack.animation, 'attack-silent')
+  assertEqual(silentAttack.pose, 'silent-throw-pose')
+  assert(silentAttack.poseImage.endsWith('/silent-throw.webp'), silentAttack.poseImage)
+  assertEqual(silentAttack.daggers, 1)
+  assertEqual(silentAttack.target, firstEnemyId)
+  assert(silentAttack.attackX > 0, 'the Silent target offset fixture is invalid')
   assertEqual(potionPresentation.kind, 'potion')
   assertEqual(potionPresentation.family, 'projectile')
   assertEqual(potionPresentation.motion, 'throw')
@@ -8365,13 +8685,42 @@ await runSettings.getByLabel('Sound effects volume').fill('100')
 await runSettings.getByRole('button', { name: /Back/ }).click()
 await vfxTarget().waitFor({ state: 'detached' })
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'ironclad'
+  debug.setRun(run)
+})
+await watcherSeat.locator('.seat__portrait > img[src$="/ironclad.webp"]').waitFor()
+await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator('.character-attack--ironclad').waitFor()
+const rapidDefendSeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'defend_ironclad', enemyIds: [],
+  playerIds: [firstPlayerId], upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${rapidDefendSeq}"]`).waitFor()
+const rapidDefendMotion = await watcherSeat.evaluate((seat) => ({
+  attackLayers: seat.querySelectorAll('.character-attack').length,
+  animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+}))
+check('a newer non-attack motion replaces an older still-active attack', () => {
+  assertEqual(rapidDefendMotion.attackLayers, 0)
+  assert(rapidDefendMotion.animation.startsWith('vfx-recoil'), rapidDefendMotion.animation)
+})
 await vfxActor().waitFor({ state: 'detached' })
+
 const firstActorSeq = await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
   playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${firstActorSeq}"]`).waitFor()
+await watcherSeat.locator(`.character-attack[data-attack-seq="${firstActorSeq}"]`).waitFor()
 await watcherSeat.locator('.seat__portrait > img').evaluate((image) => image.setAttribute('data-restart-probe', 'old'))
+await watcherSeat.locator(`.character-attack[data-attack-seq="${firstActorSeq}"]`)
+  .evaluate((attack) => attack.setAttribute('data-restart-probe', 'old'))
 await publishPresentationEvent({
   kind: 'card', actorId: secondPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
   playerIds: [], upgraded: false, copied: false, energy: 1,
@@ -8381,12 +8730,403 @@ const secondActorSeq = await publishPresentationEvent({
   playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await watcherSeat.locator(`.seat__portrait > img[data-vfx-seq="${secondActorSeq}"]`).waitFor()
+await watcherSeat.locator(`.character-attack[data-attack-seq="${secondActorSeq}"]`).waitFor()
 const actorRestartMarker = await watcherSeat.locator('.seat__portrait > img').getAttribute('data-restart-probe')
+const attackRestartMarker = await watcherSeat.locator(`.character-attack[data-attack-seq="${secondActorSeq}"]`)
+  .getAttribute('data-restart-probe')
+const rapidAttackLayers = await watcherSeat.locator('.character-attack').count()
 check('interleaved teammate events cannot suppress a repeated actor motion', () => {
   assertEqual(firstActorSeq % 2, secondActorSeq % 2, 'the fixture did not reproduce equal global parity')
   assertEqual(actorRestartMarker, null, 'the repeated actor motion reused its stale portrait node')
+  assertEqual(attackRestartMarker, null, 'the repeated personal effect reused its stale animation node')
+  assertEqual(rapidAttackLayers, 2, 'a rapid same-actor attack replaced its predecessor')
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${secondActorSeq}"]`).waitFor({ state: 'detached' })
+
+const firstEnemyCard = page.locator(`.enemy[data-enemy-id="${firstEnemyId}"]`)
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`damage presentation fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(2, enemy.maxHp), dead: false })
+  debug.setRun(run)
+}, firstEnemyId)
+await firstEnemyCard.locator('.enemy__portrait').waitFor()
+await page.waitForTimeout(100)
+const preDamageHpLabel = await firstEnemyCard.locator('.bar__label').textContent()
+const damagingStrikeSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForTimeout(120)
+const earlyDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
+  hitOpacity: Number(getComputedStyle(enemy.querySelector('.hit-vfx')).opacity),
+  delay: getComputedStyle(enemy.querySelector('.hit-vfx')).animationDelay,
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+}))
+await page.waitForFunction((enemyId) => {
+  const hits = document.querySelectorAll(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`)
+  const hit = hits[hits.length - 1]
+  return hit && Number(getComputedStyle(hit).opacity) > 0.5
+}, firstEnemyId)
+const contactDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
+  flinches: enemy.querySelector('.enemy__portrait')?.getAnimations().length ?? 0,
+  damage: enemy.querySelector('.hit-vfx strong')?.textContent ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+}))
+check('real HP-loss feedback waits for Ironclad weapon contact', () => {
+  assertEqual(earlyDamageFeedback.hitOpacity, 0)
+  assertEqual(earlyDamageFeedback.delay, '0.5s')
+  assertEqual(earlyDamageFeedback.hp, preDamageHpLabel)
+  assert(contactDamageFeedback.flinches > 0, 'the enemy portrait did not flinch at contact')
+  assertEqual(contactDamageFeedback.damage, '1')
+  assert(contactDamageFeedback.hp !== preDamageHpLabel, 'the HP label did not update at weapon contact')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${damagingStrikeSeq}"]`).waitFor({ state: 'detached' })
+
+const reactionHpBefore = await firstEnemyCard.locator('.bar__label').textContent()
+const reactionEvents = await page.evaluate(({ enemyId, actorId }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'ironclad'
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`reaction-contact fixture lost ${enemyId}`)
+  enemy.hp = Math.max(3, enemy.hp) - 1
+  const history = run.combat.presentationEvents ?? []
+  const attackSeq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_000_000) + 1
+  const fairySeq = attackSeq + 1
+  run.combat.presentationEvents = [...history, {
+    seq: attackSeq, kind: 'card', actorId, sourceId: 'strike_ironclad', enemyIds: [enemyId],
+    playerIds: [], upgraded: false, copied: false, energy: 1,
+  }, {
+    seq: fairySeq, kind: 'potion', actorId, sourceId: 'fairy_in_a_bottle', enemyIds: [], playerIds: [actorId],
+  }].slice(-12)
+  debug.setRun(run)
+  return { attackSeq, fairySeq }
+}, { enemyId: firstEnemyId, actorId: firstPlayerId })
+await watcherSeat.locator(`.character-attack[data-attack-seq="${reactionEvents.attackSeq}"]`).waitFor()
+await page.waitForTimeout(120)
+const earlyReactionHp = await firstEnemyCard.locator('.bar__label').textContent()
+await page.waitForFunction(({ enemyId, hp }) => document.querySelector(
+  `.enemy[data-enemy-id="${enemyId}"] .bar__label`,
+)?.textContent !== hp, { enemyId: firstEnemyId, hp: reactionHpBefore })
+const contactReactionHp = await firstEnemyCard.locator('.bar__label').textContent()
+check('a synchronous Fairy reaction preserves its triggering attack and contact timing', () => {
+  assertEqual(earlyReactionHp, reactionHpBefore)
+  assert(contactReactionHp !== reactionHpBefore, 'the triggering Strike never reached contact')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${reactionEvents.fairySeq}"]`).first().waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`interleaved-contact fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(4, enemy.maxHp), dead: false, weak: 0 })
+  debug.setRun(run)
+}, firstEnemyId)
+await page.waitForTimeout(100)
+const interleavedHpBefore = await firstEnemyCard.locator('.bar__label').textContent()
+const interleavedSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForTimeout(100)
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`interleaved-contact fixture lost ${enemyId}`)
+  enemy.weak = 1
+  debug.setRun(run)
+}, firstEnemyId)
+await page.waitForTimeout(120)
+const earlyInterleavedPresentation = await firstEnemyCard.evaluate((enemy) => ({
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+  weak: enemy.querySelector('.token--weak')?.getAttribute('title') ?? '',
+}))
+await page.waitForFunction(({ enemyId, hp }) => document.querySelector(
+  `.enemy[data-enemy-id="${enemyId}"] .bar__label`,
+)?.textContent !== hp, { enemyId: firstEnemyId, hp: interleavedHpBefore })
+const contactInterleavedPresentation = await firstEnemyCard.evaluate((enemy) => ({
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+  weak: enemy.querySelector('.token--weak')?.getAttribute('title') ?? '',
+}))
+check('an unrelated enemy update cannot cancel pending weapon contact', () => {
+  assertDeepEqual(earlyInterleavedPresentation, { hp: interleavedHpBefore, weak: '' })
+  assert(contactInterleavedPresentation.hp !== interleavedHpBefore, 'airborne Strike damage stayed hidden')
+  assertEqual(contactInterleavedPresentation.weak, 'Weak 1')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${interleavedSeq}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'ironclad'
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`blocked-contact fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(4, enemy.maxHp), dead: false, block: 2 })
+  debug.setRun(run)
+}, firstEnemyId)
+await firstEnemyCard.locator('.token--block[title="Block 2"]').waitFor()
+const fullyBlockedHpBefore = await firstEnemyCard.locator('.bar__label').textContent()
+const fullyBlockedSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId, false, { blockLoss: 1, hpLoss: 0 })
+await page.waitForTimeout(120)
+const earlyFullyBlocked = await firstEnemyCard.evaluate((enemy) => ({
+  block: enemy.querySelector('.token--block')?.getAttribute('title') ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+}))
+await firstEnemyCard.locator('.token--block[title="Block 1"]').waitFor()
+check('fully blocked attacks spend Block only at weapon contact', () => {
+  assertDeepEqual(earlyFullyBlocked, { block: 'Block 2', hp: fullyBlockedHpBefore })
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${fullyBlockedSeq}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`partial-block fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(4, enemy.maxHp), dead: false, block: 1 })
+  debug.setRun(run)
+}, firstEnemyId)
+await firstEnemyCard.locator('.token--block[title="Block 1"]').waitFor()
+const partialBlockHpBefore = await firstEnemyCard.locator('.bar__label').textContent()
+const partialBlockSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId, false, { blockLoss: 1, hpLoss: 1 })
+await page.waitForTimeout(120)
+const earlyPartialBlock = await firstEnemyCard.evaluate((enemy) => ({
+  block: enemy.querySelector('.token--block')?.getAttribute('title') ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+}))
+await firstEnemyCard.locator('.token--block').waitFor({ state: 'detached' })
+const partialBlockHpAfter = await firstEnemyCard.locator('.bar__label').textContent()
+check('partially blocked attacks stage Block and HP together at contact', () => {
+  assertDeepEqual(earlyPartialBlock, { block: 'Block 1', hp: partialBlockHpBefore })
+  assert(partialBlockHpAfter !== partialBlockHpBefore, 'HP did not update with Block at contact')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${partialBlockSeq}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`rapid damage fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(3, enemy.maxHp), dead: false })
+  debug.setRun(run)
+}, firstEnemyId)
+await page.waitForTimeout(100)
+const rapidDamageSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForTimeout(70)
+const rapidDamageSeq2 = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForFunction((enemyId) => {
+  const portrait = document.querySelector(`.enemy[data-enemy-id="${enemyId}"] .enemy__portrait`)
+  return portrait && portrait.getAnimations().filter((animation) => animation.playState === 'running').length >= 2
+}, firstEnemyId)
+const rapidDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
+  bursts: enemy.querySelectorAll('.hit-vfx').length,
+  flinches: enemy.querySelector('.enemy__portrait')?.getAnimations()
+    .filter((animation) => animation.playState === 'running').length ?? 0,
+}))
+check('rapid same-target hits keep both impact bursts and portrait flinches', () => {
+  assertEqual(rapidDamageSeq2, rapidDamageSeq + 1)
+  assertEqual(rapidDamageFeedback.bursts, 2)
+  assert(rapidDamageFeedback.flinches >= 2)
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${rapidDamageSeq2}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'defect'
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`mixed-contact fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: Math.max(4, enemy.maxHp), dead: false })
+  debug.setRun(run)
+}, firstEnemyId)
+await page.waitForTimeout(100)
+const mixedContactSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForTimeout(10)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].character = 'ironclad'
+  debug.setRun(run)
+})
+const mixedContactSeq2 = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
+  playerIds: [], upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await page.waitForTimeout(650)
+const mixedContactHp = await firstEnemyCard.locator('.bar__label').textContent()
+const mixedContactActualHp = await page.evaluate((enemyId) => window.__STS_DEBUG__.getRun().combat.enemies
+  .find((enemy) => enemy.uid === enemyId)?.hp, firstEnemyId)
+check('a faster later hit cannot be overwritten by an older contact timer', () => {
+  assertEqual(mixedContactSeq2, mixedContactSeq + 1)
+  assert(mixedContactHp?.startsWith(`${mixedContactActualHp}/`), mixedContactHp ?? '')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${mixedContactSeq2}"]`).waitFor({ state: 'detached' })
+
+await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`lethal presentation fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: 1, dead: false })
+  debug.setRun(run)
+}, rowTargetFixture.corpseUid)
+const lethalEnemy = page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"]`)
+await lethalEnemy.waitFor()
+await page.waitForTimeout(100)
+const lethalEvents = await page.evaluate(({ enemyId, actorId }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`lethal reaction fixture lost ${enemyId}`)
+  Object.assign(enemy, { hp: 0, dead: true })
+  const history = run.combat.presentationEvents ?? []
+  const attackSeq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_000_000) + 1
+  const fairySeq = attackSeq + 1
+  run.combat.presentationEvents = [...history, {
+    seq: attackSeq, kind: 'card', actorId, sourceId: 'strike_ironclad', enemyIds: [enemyId],
+    playerIds: [], upgraded: false, copied: false, energy: 1,
+  }, {
+    seq: fairySeq, kind: 'potion', actorId, sourceId: 'fairy_in_a_bottle', enemyIds: [], playerIds: [actorId],
+  }].slice(-12)
+  debug.setRun(run)
+  return { attackSeq, fairySeq }
+}, { enemyId: rowTargetFixture.corpseUid, actorId: firstPlayerId })
+await lethalEnemy.locator('.enemy__portrait').waitFor()
+await page.waitForTimeout(120)
+const earlyLethalPresentation = await lethalEnemy.evaluate((enemy) => ({
+  dead: enemy.classList.contains('enemy--dead'),
+  disabled: enemy.disabled,
+  label: enemy.getAttribute('aria-label') ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+  defeated: enemy.querySelectorAll('.enemy__defeated').length,
+}))
+await lethalEnemy.evaluate((enemy) => new Promise((resolve) => {
+  if (enemy.classList.contains('enemy--dead')) return resolve(undefined)
+  const observer = new MutationObserver(() => {
+    if (!enemy.classList.contains('enemy--dead')) return
+    observer.disconnect()
+    resolve(undefined)
+  })
+  observer.observe(enemy, { attributes: true, attributeFilter: ['class'] })
+}))
+const lethalContactTiming = await lethalEnemy.evaluate((enemy) => {
+  const portrait = enemy.querySelector('.enemy__portrait')
+  return {
+    dead: enemy.classList.contains('enemy--dead'),
+    disabled: enemy.disabled,
+    label: enemy.getAttribute('aria-label') ?? '',
+    hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+    opacity: portrait ? Number(getComputedStyle(portrait).opacity) : 0,
+  }
+})
+check('lethal attack defeat art also waits for weapon contact', () => {
+  assertEqual(earlyLethalPresentation.dead, false)
+  assertEqual(earlyLethalPresentation.disabled, true, 'an authoritative corpse remained targetable')
+  assert(!earlyLethalPresentation.label.includes('defeated'), earlyLethalPresentation.label)
+  assert(earlyLethalPresentation.hp.startsWith('1/'), earlyLethalPresentation.hp)
+  assertEqual(earlyLethalPresentation.defeated, 0)
+  assertEqual(lethalContactTiming.dead, true)
+  assertEqual(lethalContactTiming.disabled, true)
+  assert(lethalContactTiming.label.includes('defeated'), lethalContactTiming.label)
+  assert(lethalContactTiming.hp.startsWith('0/'), lethalContactTiming.hp)
+  assert(lethalContactTiming.opacity > 0, 'the defeat transition did not begin at contact')
+})
+await page.waitForTimeout(450)
+const fallingAfterReactionExpiry = await lethalEnemy.evaluate((enemy) => enemy.classList.contains('enemy--falling'))
+check('a follow-up reaction cannot truncate the contact-timed defeat animation', () => {
+  assertEqual(fallingAfterReactionExpiry, true)
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${lethalEvents.attackSeq}"]`).waitFor({ state: 'detached' })
+await page.waitForFunction((enemyId) => !document.querySelector(
+  `.enemy[data-enemy-id="${enemyId}"]`,
+)?.classList.contains('enemy--falling'), rowTargetFixture.corpseUid)
+
+const rebirthOriginalEnemy = await page.evaluate((enemyId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`rebirth-contact fixture lost ${enemyId}`)
+  const original = structuredClone(enemy)
+  Object.assign(enemy, {
+    defId: 'the_champ', hp: 1, maxHp: 40, dead: false, block: 0, strength: 0,
+    weak: 0, vulnerable: 0, abilityUsed: false, actionIndex: 0, isBoss: true,
+  })
+  debug.setRun(run)
+  return original
+}, firstEnemyId)
+await firstEnemyCard.locator('.enemy__name', { hasText: 'The Champ' }).waitFor()
+const rebirthSeq = await page.evaluate(({ enemyId, actorId }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => candidate.uid === enemyId)
+  if (!enemy) throw new Error(`rebirth-contact fixture lost ${enemyId}`)
+  Object.assign(enemy, {
+    defId: 'the_champ_fury', hp: 40, maxHp: 40, dead: false, block: 0,
+    strength: 3, abilityUsed: true, actionIndex: 0, isBoss: true,
+  })
+  const history = run.combat.presentationEvents ?? []
+  const seq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_000_000) + 1
+  run.combat.presentationEvents = [...history, {
+    seq, kind: 'card', actorId, sourceId: 'strike_ironclad', enemyIds: [enemyId], playerIds: [],
+    upgraded: false, copied: false, energy: 1,
+  }].slice(-12)
+  debug.setRun(run)
+  return seq
+}, { enemyId: firstEnemyId, actorId: firstPlayerId })
+await page.waitForTimeout(120)
+const earlyRebirthPresentation = await firstEnemyCard.evaluate((enemy) => ({
+  name: enemy.querySelector('.enemy__name')?.textContent ?? '',
+  label: enemy.getAttribute('aria-label') ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+  strength: enemy.querySelector('.token--strength')?.getAttribute('title') ?? '',
+}))
+await firstEnemyCard.locator('.enemy__name', { hasText: 'The Champ — Fury' }).waitFor()
+const contactRebirthPresentation = await firstEnemyCard.evaluate((enemy) => ({
+  name: enemy.querySelector('.enemy__name')?.textContent ?? '',
+  label: enemy.getAttribute('aria-label') ?? '',
+  hp: enemy.querySelector('.bar__label')?.textContent ?? '',
+  strength: enemy.querySelector('.token--strength')?.getAttribute('title') ?? '',
+}))
+check('instant enemy rebirth swaps its complete visual state at weapon contact', () => {
+  assertEqual(earlyRebirthPresentation.name, 'The Champ')
+  assert(earlyRebirthPresentation.label.startsWith('The Champ,'), earlyRebirthPresentation.label)
+  assertEqual(earlyRebirthPresentation.hp, '1/40')
+  assertEqual(earlyRebirthPresentation.strength, '')
+  assertEqual(contactRebirthPresentation.name, 'The Champ — Fury')
+  assert(contactRebirthPresentation.label.startsWith('The Champ — Fury,'), contactRebirthPresentation.label)
+  assertEqual(contactRebirthPresentation.hp, '40/40')
+  assertEqual(contactRebirthPresentation.strength, 'Strength 3')
+})
+await page.locator(`.combat-vfx[data-vfx-seq="${rebirthSeq}"]`).waitFor({ state: 'detached' })
+await page.evaluate(({ enemyId, original }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const index = run.combat.enemies.findIndex((enemy) => enemy.uid === enemyId)
+  if (index < 0) throw new Error(`rebirth-contact restore lost ${enemyId}`)
+  run.combat.enemies[index] = original
+  debug.setRun(run)
+}, { enemyId: firstEnemyId, original: rebirthOriginalEnemy })
+await firstEnemyCard.locator('.enemy__name').waitFor()
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -8427,7 +9167,29 @@ check('reduced motion keeps static stance and action identity without movement',
     'different Potion tones rendered the same ring colour')
   assertEqual(reducedPersonalVfx.actorAnimation, 'none', 'the acting character still moves')
 })
+const reducedWatcherSeq = await publishDamagingPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'eruption', enemyIds: [firstEnemyId], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+}, firstEnemyId)
+await watcherSeat.locator(`.character-attack[data-attack-seq="${reducedWatcherSeq}"]`).waitFor({ state: 'attached' })
+await page.locator(`.combat-vfx--target[data-vfx-seq="${reducedWatcherSeq}"]`).waitFor({ state: 'attached' })
+await page.waitForTimeout(120)
+const reducedWatcherHp = await firstEnemyCard.locator('.bar__label').textContent()
+const reducedWatcherActualHp = await page.evaluate((enemyId) => window.__STS_DEBUG__.getRun().combat.enemies
+  .find((enemy) => enemy.uid === enemyId)?.hp, firstEnemyId)
+const reducedWatcherAttack = await watcherSeat.evaluate((seat) => ({
+  actorAnimation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  attackDisplay: getComputedStyle(seat.querySelector('.character-attack')).display,
+  auraAnimation: getComputedStyle(seat.querySelector('.stance-aura')).animationName,
+}))
+check('reduced motion also stops Watcher attack poses and aura dashes', () => {
+  assertEqual(reducedWatcherAttack.actorAnimation, 'none')
+  assertEqual(reducedWatcherAttack.attackDisplay, 'none')
+  assertEqual(reducedWatcherAttack.auraAnimation, 'none')
+  assert(reducedWatcherHp?.startsWith(`${reducedWatcherActualHp}/`), reducedWatcherHp ?? '')
+})
 await page.emulateMedia({ reducedMotion: 'no-preference' })
+await page.locator(`.combat-vfx[data-vfx-seq="${reducedWatcherSeq}"]`).waitFor({ state: 'detached' })
 await vfxActor().waitFor({ state: 'detached' })
 
 async function hurtViewer() {
@@ -8439,24 +9201,27 @@ async function hurtViewer() {
   })
 }
 
-// Two alternating classes, so a second hit inside the window restarts the
-// animation instead of leaving the class name unchanged.
-const FLINCHING = '.seat--struck, .seat--struck-alt'
+// Each hit gets its own additive Web Animation, so overlapping hits do not
+// replace one another's portrait flinch.
 async function flinchCount(expected) {
   await page
     .waitForFunction(
-      ({ want, selector }) => document.querySelectorAll(selector).length === want,
-      { want: expected, selector: FLINCHING },
+      (want) => [...document.querySelectorAll('.seat')].filter((seat) =>
+        seat.querySelector('.seat__portrait')?.getAnimations().some((animation) =>
+          animation.animationName === undefined && animation.playState === 'running')).length === want,
+      expected,
       { timeout: 2000 },
     )
     .catch(() => {})
-  return page.locator(FLINCHING).count()
+  return page.evaluate(() => [...document.querySelectorAll('.seat')].filter((seat) =>
+    seat.querySelector('.seat__portrait')?.getAnimations().some((animation) =>
+      animation.animationName === undefined && animation.playState === 'running')).length)
 }
 
 await hurtViewer()
 const flinchedAtOnce = await flinchCount(1)
 const hitMotion = await page.evaluate(() => {
-  const impact = document.querySelector('.seat--struck .hit-vfx, .seat--struck-alt .hit-vfx')
+  const impact = document.querySelector('.seat .hit-vfx')
   return impact ? {
     animation: getComputedStyle(impact).animationName,
     art: getComputedStyle(impact).backgroundImage,
@@ -8464,7 +9229,7 @@ const hitMotion = await page.evaluate(() => {
 })
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['struck-stage', 'struck-stage-again', 'impact-bloom', 'damage-float'].includes(animation.animationName)) {
+    if (animation.animationName === undefined || ['impact-bloom', 'damage-float'].includes(animation.animationName)) {
       animation.currentTime = 150
       animation.pause()
     }
@@ -8473,7 +9238,7 @@ await page.evaluate(() => {
 await page.screenshot({ path: join(outDir, '09b-combat-hit-animation.png'), timeout: 15_000 })
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['struck-stage', 'struck-stage-again', 'impact-bloom', 'damage-float'].includes(animation.animationName) &&
+    if ((animation.animationName === undefined || ['impact-bloom', 'damage-float'].includes(animation.animationName)) &&
       animation.playState === 'paused') animation.play()
   }
 })
@@ -8496,35 +9261,28 @@ check('a hit is felt, and keeps being felt for the rest of the combat', () => {
   assertEqual(flinchedAgain, 1, 'and flinch again on the next hit')
 })
 
-// Two blows landing inside the same 380ms window: the class has to CHANGE, or
-// the browser never restarts the animation and the second hit is not felt.
+// Two blows inside one flinch window must retain two independent additive animations.
 await flinchCount(0)
-await page.evaluate(() => {
-  window.__STS_FLINCHES__ = []
-  window.__STS_IMPACTS__ = 0
-  document.addEventListener('animationstart', (event) => {
-    if (event.animationName.startsWith('struck')) window.__STS_FLINCHES__.push(event.animationName)
-    if (event.animationName === 'impact-bloom') window.__STS_IMPACTS__ += 1
-  })
-})
+await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
 for (let i = 0; i < 2; i++) {
-  const before = await page.evaluate(() => window.__STS_FLINCHES__.length)
+  const before = await page.evaluate(() => document.querySelector('.seat .seat__portrait')?.getAnimations()
+    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0)
   await hurtViewer()
-  await page.waitForFunction((count) => window.__STS_FLINCHES__.length > count, before)
+  await page.waitForFunction((count) => (document.querySelector('.seat .seat__portrait')?.getAnimations()
+    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0) > count, before)
 }
 const beats = await page.evaluate(() => ({
-  count: window.__STS_FLINCHES__.length,
-  names: window.__STS_FLINCHES__,
-  impacts: window.__STS_IMPACTS__,
+  count: document.querySelector('.seat .seat__portrait')?.getAnimations()
+    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0,
+  impacts: document.querySelectorAll('.seat .hit-vfx').length,
 }))
 check('two hits in quick succession are both felt', () => {
   assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
   assert(beats.impacts >= 2, `expected at least two generated hit bursts, got ${beats.impacts}`)
-  assertEqual(new Set(beats.names).size, 2,
-    `the two flinches must use different animations to restart: ${beats.names.join(', ')}`)
 })
 
 await flinchCount(0)
+await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
 await hurtViewer()
 await flinchCount(1)
 await page.evaluate(() => {
@@ -8534,12 +9292,21 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 const concurrentFlinches = await flinchCount(2)
-const concurrentBursts = await page.locator('.seat--struck .hit-vfx, .seat--struck-alt .hit-vfx').count()
+const concurrentBursts = await page.locator('.seat .hit-vfx').count()
 check('rapid hits on different actors keep both signals alive', () => {
   assertEqual(concurrentFlinches, 2)
   assertEqual(concurrentBursts, 2)
 })
 await flinchCount(0)
+await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
+await hurtViewer()
+await flinchCount(1)
+await page.emulateMedia({ reducedMotion: 'reduce' })
+const reducedMotionCancelledFlinch = await flinchCount(0)
+check('enabling reduced motion cancels an already-running hit flinch', () => {
+  assertEqual(reducedMotionCancelledFlinch, 0)
+})
+await page.emulateMedia({ reducedMotion: 'no-preference' })
 
 // The enemy's remaining hit points are the number the whole turn is planned
 // around. Twice it fell below the fold at small sizes because the board was

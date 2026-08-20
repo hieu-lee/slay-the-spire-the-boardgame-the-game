@@ -150,11 +150,13 @@ type PresentationTargets = {
 export type CombatPresentationEvent = PresentationTargets & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
   | { kind: 'potion' }
+  | { kind: 'shiv' }
 )
 
 type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
   | { kind: 'potion' }
+  | { kind: 'shiv' }
 )
 
 export type PendingTrigger = {
@@ -294,10 +296,13 @@ function presentationTargets(
     ...(context.playerIds ?? []),
     context.switchWithPlayerId,
   ].filter((id): id is string => typeof id === 'string' && id !== actorId))]
+  const enemyRow = typeof context.enemyRow === 'number' && Number.isInteger(context.enemyRow)
+    ? context.enemyRow
+    : state.enemies.find((enemy) => enemy.uid === context.enemyUid)?.row
   return {
     enemyIds,
     playerIds,
-    ...(enemyScope === 'row' && Number.isInteger(context.enemyRow) ? { enemyRow: context.enemyRow! } : {}),
+    ...(enemyScope === 'row' && enemyRow !== undefined ? { enemyRow } : {}),
   }
 }
 
@@ -6534,6 +6539,13 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
   const next = clone(state)
   const actor = next.players.find((candidate) => candidate.id === playerId)!
   actor.shivs -= 1
+  addPresentationEvent(next, {
+    kind: 'shiv',
+    actorId: actor.id,
+    sourceId: 'shiv',
+    enemyIds: [enemyUid],
+    playerIds: [],
+  })
   next.log = [...next.log, `${actor.name} spends a Shiv`]
   applyEffect(
     next,

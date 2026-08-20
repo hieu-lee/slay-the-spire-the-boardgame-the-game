@@ -5,11 +5,11 @@ import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
 import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
 import type { Enemy, Player } from '../game/types.ts'
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
-import { healthBand, strikeClass } from './board-signals.ts'
+import { healthBand } from './board-signals.ts'
 import { revealDecodedImage } from './Card.tsx'
 
 type EnemyCardProps = {
@@ -20,13 +20,14 @@ type EnemyCardProps = {
   die: number
   targeted?: boolean
   disabled?: boolean
-  /** Just took damage: flinch, so the hit is felt and not merely recorded. */
-  struck?: boolean
-  hitDamage?: number
-  /** Which hit this is, so a second blow restarts the animation. */
-  beat?: number
+  hitBeats?: { beat: number; damage: number; delayMs: number }[]
   /** Just crossed from alive to dead: play the one-shot defeat animation. */
   falling?: boolean
+  /** Delay public HP/death presentation until the authoritative weapon arrives. */
+  visualContactMs?: number
+  visualEventSeq?: number
+  visualResetKey?: string
+  stageVisualDamage?: boolean
   /** Decorative, authoritative action effects aimed at this enemy. */
   vfx?: ReactNode
   stageIndex?: number
@@ -255,45 +256,106 @@ export function EnemyCard({
   die,
   targeted = false,
   disabled = false,
-  struck = false,
-  hitDamage,
-  beat = 0,
+  hitBeats = [],
   falling = false,
+  visualContactMs = 0,
+  visualEventSeq = -1,
+  visualResetKey = '',
+  stageVisualDamage = true,
   vfx,
   stageIndex = 0,
   rowLabel,
   defender,
   onClick,
 }: EnemyCardProps) {
-  const def = enemyDef(enemy.defId, enemy.ascension)
-  const actions = actionsForEnemy(enemy, die)
+  const [visibleEnemy, setVisibleEnemy] = useState(enemy)
+  const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const pendingVisuals = useRef(new Map<number, { eventSeq: number; enemy: Enemy }>())
+  const displayBeat = useRef(0)
+  const displayedEventSeq = useRef(visualEventSeq)
+  const visualSignature = JSON.stringify(enemy)
+  const priorActual = useRef({
+    signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
+  })
+  useEffect(() => {
+    const changed = visualSignature !== priorActual.current.signature
+    const newEvent = visualEventSeq > priorActual.current.eventSeq
+    const reset = visualResetKey !== priorActual.current.resetKey
+    priorActual.current = {
+      signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey,
+    }
+    if (reset || !stageVisualDamage) {
+      for (const timer of displayTimers.current.values()) clearTimeout(timer)
+      displayTimers.current.clear()
+      pendingVisuals.current.clear()
+      displayedEventSeq.current = visualEventSeq
+      setVisibleEnemy(enemy)
+      return
+    }
+    if (!changed) return
+    const delay = newEvent ? visualContactMs : 0
+    if (delay <= 0) {
+      const pendingBeat = [...pendingVisuals.current.keys()].at(-1)
+      if (pendingBeat !== undefined) {
+        const pending = pendingVisuals.current.get(pendingBeat)!
+        pendingVisuals.current.set(pendingBeat, {
+          eventSeq: Math.max(pending.eventSeq, visualEventSeq),
+          enemy,
+        })
+        return
+      }
+      for (const timer of displayTimers.current.values()) clearTimeout(timer)
+      displayTimers.current.clear()
+      pendingVisuals.current.clear()
+      displayedEventSeq.current = visualEventSeq
+      setVisibleEnemy(enemy)
+      return
+    }
+    const beat = ++displayBeat.current
+    pendingVisuals.current.set(beat, { eventSeq: visualEventSeq, enemy })
+    displayTimers.current.set(beat, setTimeout(() => {
+      displayTimers.current.delete(beat)
+      const pending = pendingVisuals.current.get(beat)
+      pendingVisuals.current.delete(beat)
+      if (!pending || pending.eventSeq < displayedEventSeq.current) return
+      displayedEventSeq.current = pending.eventSeq
+      setVisibleEnemy(pending.enemy)
+    }, delay))
+  }, [enemy, stageVisualDamage, visualContactMs, visualEventSeq, visualResetKey, visualSignature])
+  useEffect(() => () => {
+    for (const timer of displayTimers.current.values()) clearTimeout(timer)
+    pendingVisuals.current.clear()
+  }, [])
+  const def = enemyDef(visibleEnemy.defId, visibleEnemy.ascension)
+  const actualName = enemyDef(enemy.defId, enemy.ascension).name
+  const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
+  const actions = actionsForEnemy(visibleEnemy, die)
   const abilities = enemyAbilities(def)
   // Curiosity adds the defender's Power count to every hit, so it belongs in the
   // preview for the same reason Strength and Weak do.
   const curiosity = abilities.some((ability) => ability.kind === 'curiosity')
-  const mods = attackerModsOfEnemy(enemy)
+  const mods = attackerModsOfEnemy(visibleEnemy)
   const swing = (printed: number) => swingDamage(
     printed + (curiosity ? defender?.powers.length ?? 0 : 0),
     mods,
     { vulnerable: defender?.vulnerable ?? 0 },
   )
   const intent = actions.flatMap((action) => intentParts(action, swing))
-  if ((enemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
+  if ((visibleEnemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
     intent.push(...intentParts({ kind: 'actsLast' }, swing))
   }
   const abilityLabels = abilities.map((ability) => {
-    const text = displayedAbilityText(ability, enemy, def.id, die, false)
-    return `${text}${enemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
+    const text = displayedAbilityText(ability, visibleEnemy, def.id, die, false)
+    return `${text}${visibleEnemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
   })
-  const hpFraction = enemy.maxHp === 0 ? 0 : enemy.hp / enemy.maxHp
+  const hpFraction = visibleEnemy.maxHp === 0 ? 0 : visibleEnemy.hp / visibleEnemy.maxHp
 
   const className = [
     'enemy',
-    enemy.dead ? 'enemy--dead' : '',
-    falling ? 'enemy--falling' : '',
-    struck ? strikeClass('enemy', beat) : '',
+    visibleEnemy.dead ? 'enemy--dead' : '',
+    falling && visibleEnemy.dead ? 'enemy--falling' : '',
     targeted ? 'enemy--targeted' : '',
-    enemy.isBoss ? 'enemy--boss' : '',
+    visibleEnemy.isBoss ? 'enemy--boss' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -310,14 +372,14 @@ export function EnemyCard({
         ...(def.bossAct ? { backgroundImage: `linear-gradient(rgb(14 12 10 / 0.72), rgb(14 12 10 / 0.88)), url(/assets/backgrounds/boss-act-${def.bossAct}.webp)` } : {}),
       } as CSSProperties}
       disabled={enemy.dead || disabled}
-      onClick={() => onClick?.(enemy)}
-      aria-label={describeEnemy(enemy, label, intent, abilityLabels, rowLabel)}
+      onClick={() => { if (!enemy.dead) onClick?.(enemy) }}
+      aria-label={describeEnemy(visibleEnemy, visibleLabel, intent, abilityLabels, rowLabel)}
     >
       {/* A corpse telegraphing an attack it will never make is worse than no
           intent at all — it is read as a threat while choosing a target.
           p.13: the dead are flipped over until the end of combat. */}
       <span className="enemy__intent">
-        {enemy.dead ? (
+        {visibleEnemy.dead ? (
           // Not the `monster` icon: that same glyph badges LIVING enemies two
           // lines above, so a corpse wearing it still reads as a threat.
           <span className="enemy__defeated" aria-hidden="true">
@@ -342,25 +404,25 @@ export function EnemyCard({
           onClick={(event) => event.stopPropagation()}
         >
           {abilities.map((ability, index) => {
-            const spent = enemy.abilityUsed && (ability.kind === 'curlUp' ||
+            const spent = visibleEnemy.abilityUsed && (ability.kind === 'curlUp' ||
               (ability.kind === 'rebirth' && def.id === 'time_eater'))
             return (
               <span className={spent ? 'enemy__ability--spent' : undefined} key={`${ability.kind}-${index}`}>
                 {spent && ability.kind === 'curlUp'
                   ? 'Curl Up · spent'
-                  : displayedAbilityText(ability, enemy, def.id, die, true)}
+                  : displayedAbilityText(ability, visibleEnemy, def.id, die, true)}
               </span>
             )
           })}
         </span>
       ) : null}
 
-      {enemy.corpseExplosion ? (
-        <span className="enemy__attachment" title={`Corpse Explosion · ${enemy.corpseExplosion.damage} row damage on death`}>
-          <img src={cardImagePath(cardDef(enemy.corpseExplosion.card.defId), enemy.corpseExplosion.card.upgraded)} alt=""
+      {visibleEnemy.corpseExplosion ? (
+        <span className="enemy__attachment" title={`Corpse Explosion · ${visibleEnemy.corpseExplosion.damage} row damage on death`}>
+          <img src={cardImagePath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded)} alt=""
             onLoad={(event) => revealDecodedImage(event.currentTarget)}
             onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
-          <span>Corpse Explosion · {enemy.corpseExplosion.damage}</span>
+          <span>Corpse Explosion · {visibleEnemy.corpseExplosion.damage}</span>
         </span>
       ) : null}
 
@@ -383,32 +445,41 @@ export function EnemyCard({
           </span>
         ) : null}
         <span className="enemy__head">
-          <Icon name={enemy.isBoss ? 'boss' : 'monster'} size={16} />
+          <Icon name={visibleEnemy.isBoss ? 'boss' : 'monster'} size={16} />
           <span className="enemy__name">{def.name}</span>
         </span>
-        {struck ? <span className="hit-vfx" key={beat} aria-hidden="true"><strong>{hitDamage}</strong></span> : null}
+        {hitBeats.map((hit) => (
+          <span
+            className="hit-vfx"
+            key={hit.beat}
+            aria-hidden="true"
+            style={{ '--hit-delay': `${hit.delayMs}ms` } as CSSProperties}
+          >
+            <strong>{hit.damage}</strong>
+          </span>
+        ))}
       </span>
 
       <span className="bar" aria-hidden="true">
         <span
           className="bar__fill"
-          data-health={healthBand(enemy.hp, enemy.maxHp)}
+          data-health={healthBand(visibleEnemy.hp, visibleEnemy.maxHp)}
           style={{ width: `${Math.round(hpFraction * 100)}%` }}
         />
         <span className="bar__label">
-          {enemy.hp}/{enemy.maxHp}
+          {visibleEnemy.hp}/{visibleEnemy.maxHp}
         </span>
       </span>
 
       {/* A defeated enemy is flipped over (p.13), and its tokens go with it —
           a corpse still announcing "Poison 3" reads as a live threat. */}
-      {enemy.dead ? null : (
+      {visibleEnemy.dead ? null : (
       <TokenRow
-        block={enemy.block}
-        strength={enemy.strength}
-        vulnerable={enemy.vulnerable}
-        weak={enemy.weak}
-        poison={enemy.poison}
+        block={visibleEnemy.block}
+        strength={visibleEnemy.strength}
+        vulnerable={visibleEnemy.vulnerable}
+        weak={visibleEnemy.weak}
+        poison={visibleEnemy.poison}
       />
       )}
     </button>
