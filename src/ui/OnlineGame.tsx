@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CombatState } from '../game/combat.ts'
-import { ASCENSION_RULES, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
+import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
 import type { Room } from '../game/map.ts'
 import { ROOM_LABEL } from '../game/run.ts'
@@ -210,8 +210,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [pauseOpen, setPauseOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
+  const [giveUpStartPending, setGiveUpStartPending] = useState(false)
+  const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
   const snapshot = room.snapshot
+  const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
   useBossFightMusic(snapshot?.run?.combat, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
   const runPhase = snapshot?.run?.phase
@@ -233,10 +236,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
-    if (pauseOpen || settingsOpen || room.connection !== 'connected' || (phase !== 'won' && phase !== 'lost')) return undefined
+    if (pauseOpen || settingsOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote || room.connection !== 'connected' ||
+      (phase !== 'won' && phase !== 'lost')) return undefined
     const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }), 900)
     return () => clearTimeout(timer)
-  }, [pauseOpen, room.act, room.connection, settingsOpen, snapshot?.run?.combat?.phase])
+  }, [giveUpStartPending, giveUpVote, pauseOpen, room.act, room.connection, settingsOpen, snapshot?.run?.combat?.phase, soloGiveUpOpen])
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -250,7 +254,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   }, [snapshot?.run])
 
   useEffect(() => {
-    if (!snapshot?.run || compendiumOpen || soloGiveUpOpen || snapshot.giveUpVote) return undefined
+    if (soloGiveUpOpen && snapshot?.run && !canGiveUpRun(snapshot.run, snapshot.campaignProgress)) {
+      setSoloGiveUpOpen(false)
+    }
+  }, [snapshot?.campaignProgress, snapshot?.run, soloGiveUpOpen])
+
+  useEffect(() => {
+    if (!snapshot?.run || compendiumOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote) return undefined
     const pause = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
       window.setTimeout(() => {
@@ -259,15 +269,15 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     }
     document.addEventListener('keydown', pause)
     return () => document.removeEventListener('keydown', pause)
-  }, [compendiumOpen, snapshot?.giveUpVote, snapshot?.run, soloGiveUpOpen])
+  }, [compendiumOpen, giveUpStartPending, giveUpVote, snapshot?.run, soloGiveUpOpen])
 
   useEffect(() => {
     previousRunPhase.current = runPhase
   }, [runPhase])
 
   useEffect(() => {
-    if (snapshot?.giveUpVote) setCompendiumOpen(false)
-  }, [snapshot?.giveUpVote?.deadlineAt])
+    if (giveUpVote) setCompendiumOpen(false)
+  }, [giveUpVote?.deadlineAt])
 
   // MUST stay above the early returns below — this component bails out for the
   // reconnecting and entry screens, and a hook called after those would run on
@@ -440,6 +450,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const run = snapshot.run
   if (compendiumOpen) return <CompendiumScreen onBack={() => setCompendiumOpen(false)} backLabel="Back to fight" />
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
+  const canGiveUp = Boolean(viewer) && canGiveUpRun(run, snapshot.campaignProgress)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
   const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
     run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
@@ -526,10 +537,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
           {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendiumOpen(true) }}>Compendium</button> : null}
-          {run.phase === 'combat' ? <button type="button" disabled={room.connection !== 'connected'} onClick={() => {
+          {canGiveUp ? <button type="button" disabled={room.connection !== 'connected' || giveUpStartPending} onClick={() => {
             setPauseOpen(false)
-            if (snapshot.seats.length === 1) setSoloGiveUpOpen(true)
-            else void room.act({ kind: 'giveUpVote', vote: 'start' })
+            if (run.players.length === 1) setSoloGiveUpOpen(true)
+            else {
+              setGiveUpStartPending(true)
+              void room.act({ kind: 'giveUpVote', vote: 'start' }).finally(() => setGiveUpStartPending(false))
+            }
           }}>Give up</button> : null}
           <button type="button" onClick={() => {
             if (!window.confirm('Leave this run and return to the main menu?')) return
@@ -542,22 +556,26 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         </section>
       </dialog>
 
-      {run.phase === 'combat' && soloGiveUpOpen ? <GiveUpPanel
+      {soloGiveUpOpen && canGiveUp ? <GiveUpPanel
         players={run.players}
         playerId={snapshot.you.playerId}
         onVote={(yes) => {
           setSoloGiveUpOpen(false)
-          if (yes) void room.act({ kind: 'giveUpVote', vote: 'start' })
+          if (yes) {
+            setGiveUpStartPending(true)
+            void room.act({ kind: 'giveUpVote', vote: 'start' }).finally(() => setGiveUpStartPending(false))
+          }
         }}
         onCancel={() => setSoloGiveUpOpen(false)}
       /> : null}
-      {run.phase === 'combat' && snapshot.giveUpVote ? <GiveUpPanel
-        vote={snapshot.giveUpVote}
+      {giveUpVote ? <GiveUpPanel
+        vote={giveUpVote}
         players={run.players}
         playerId={snapshot.you.playerId}
         onVote={(yes) => room.act({
-          kind: 'giveUpVote', vote: yes ? 'yes' : 'no', deadlineAt: snapshot.giveUpVote!.deadlineAt,
+          kind: 'giveUpVote', vote: yes ? 'yes' : 'no', deadlineAt: giveUpVote.deadlineAt,
         })}
+        onExpire={() => setExpiredGiveUpDeadline(giveUpVote.deadlineAt)}
       /> : null}
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
@@ -582,8 +600,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}
-        aria-disabled={room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}>
+      <div className="online-mutations" inert={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}
+        aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard || undefined}>
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={combat}
@@ -610,9 +628,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           authoritativeRestoration={room.restorationEpoch}
           authoritativeConnected={room.connection === 'connected'}
           animateOpeningHand={animateOpeningHand}
-          mutationsEnabled={!run.courier.offer && room.connection === 'connected' &&
+          mutationsEnabled={!giveUpStartPending && !run.courier.offer && room.connection === 'connected' &&
             !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
-          autoAdvance={!pauseOpen && !settingsOpen && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
+          autoAdvance={!pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>

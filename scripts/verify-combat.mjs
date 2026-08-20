@@ -51,7 +51,9 @@ import {
   advanceAct,
   createRun,
   enterRoom,
+  finishRun,
   giveUpFight,
+  giveUpRun,
   resolveCampfire,
   resolveCardRewards,
   resolveCombat,
@@ -1624,6 +1626,24 @@ check('giving up ends only an active fight and records a party defeat immediatel
   assertEqual(surrenderedWithCourier.phase, 'defeat', 'an open Courier offer blocked surrender')
   assertEqual(surrenderedWithCourier.courier.offer, null)
   assert(giveUpFight(run) === run, 'giving up outside combat changed the run')
+  const abandoned = giveUpRun(run)
+  assertEqual(abandoned.phase, 'defeat', 'giving up from the map did not end the run')
+  assertEqual(abandoned.combat, null)
+  assert(abandoned.players.every((player) => player.dead && player.hp === 0))
+  assert(abandoned.log.some((line) => line === 'The party gives up.'))
+  const actBoundary = giveUpRun({ ...run, phase: 'victory' })
+  assertEqual(actBoundary.phase, 'defeat', 'giving up at a nonterminal Act boundary did not end the run')
+  const pending = {
+    ...run,
+    players: run.players.map((player, index) => index === 0
+      ? { ...player, relics: [...player.relics, { defId: 'war_paint', spent: false, pending: true }] }
+      : player),
+  }
+  const abandonedPending = giveUpRun(pending)
+  assert(!abandonedPending.players.some((player) => player.relics.some((relic) => relic.pending)),
+    'surrender retained an unresolved one-shot relic')
+  assertEqual(finishRun(abandonedPending).campaign.finalized, true,
+    'an abandoned relic choice blocked campaign finalization')
 })
 
 check('nothing else resolves once the last enemy is dead', () => {

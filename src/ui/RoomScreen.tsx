@@ -95,7 +95,7 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
 function Price({ value }: { value: number | null }) {
   return (
     <span className="room-price">
-      {value === null ? "Sold" : <><img src="/assets/icons/gold.png" alt="" />{value}<span className="visually-hidden"> Gold</span></>}
+      {value === null ? "Sold" : <><img src="/assets/relic-icons/old_coin.png" alt="" />{value}<span className="visually-hidden"> Gold</span></>}
     </span>
   );
 }

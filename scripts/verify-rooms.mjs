@@ -233,6 +233,20 @@ check('all eligible players must vote yes and the vote survives reconnect', () =
   assertEqual(snapshotFor(room, a.token).giveUpVote, undefined)
 })
 
+check('an open vote freezes queued actions and disconnect settlement', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.endTurnReady = { [a.playerId]: true }
+  room.run.courier.offer = { playerId: b.playerId, kind: 'potion', id: 'block_potion' }
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'start' })
+  const frozenRun = structuredClone(room.run)
+  let blocked
+  try { apply(room, a.token, { kind: 'endTurn' }) } catch (error) { blocked = error }
+  assertEqual(blocked?.name, 'RoomError', 'a normal action bypassed the open vote')
+  markDisconnected(room, b.token)
+  assertDeepEqual(room.run, frozenRun, 'disconnect cleanup mutated the run behind the vote')
+  assert(snapshotFor(room, a.token).giveUpVote, 'disconnect cleared the open vote')
+})
+
 check('a no vote and an expired deadline cannot surrender the fight', () => {
   const { room, a, b } = twoSeatRoom()
   apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
@@ -248,6 +262,27 @@ check('a no vote and an expired deadline cannot surrender the fight', () => {
   assertEqual(room.run.phase, 'combat', 'a late yes vote surrendered the party')
 })
 
+check('a vote disappears when another action ends the run', () => {
+  const { room, a } = twoSeatRoom()
+  room.run = { ...room.run, phase: 'map', combat: null }
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  assert(snapshotFor(room, a.token).giveUpVote)
+  room.run = { ...room.run, phase: 'defeat' }
+  assertEqual(snapshotFor(room, a.token).giveUpVote, undefined, 'a terminal run kept a stale give-up modal')
+})
+
+check('a run-wide vote stays active across room phase transitions', () => {
+  const { room, a } = twoSeatRoom()
+  const combat = room.run.combat
+  room.run = { ...room.run, phase: 'map', combat: null }
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const runId = snapshotFor(room, a.token).giveUpVote.runId
+  room.run = { ...room.run, phase: 'combat', combat }
+  assertEqual(snapshotFor(room, a.token).giveUpVote.runId, runId, 'the map vote vanished during combat')
+  room.run = { ...room.run, phase: 'reward', combat: null }
+  assertEqual(snapshotFor(room, a.token).giveUpVote.runId, runId, 'the map vote did not survive into rewards')
+})
+
 check('a one-seat online fight gives up immediately without a vote wait', () => {
   const room = createRoom(createStore(), { code: 'GIVEUP' })
   const seat = joinRoom(room, { name: 'Ann', character: 'ironclad' })
@@ -259,11 +294,76 @@ check('a one-seat online fight gives up immediately without a vote wait', () => 
   room.endTurnOrder = ['stale']
   room.startTurnCombatId = room.run.combat.combatId
   room.startTurnOrder = ['stale']
+  room.campfireChoices = { [seat.playerId]: { kind: 'rest' } }
+  room.rewardChoices = { [seat.playerId]: null }
+  room.rewardConfirmed = { [seat.playerId]: true }
+  room.merchantPledges = { stale: { buyerId: seat.playerId, payments: {} } }
+  room.eventPledge = { actorId: seat.playerId }
   apply(room, seat.token, { kind: 'giveUpVote', vote: 'start' })
   assertEqual(room.run.phase, 'defeat')
-  for (const key of ['cardPreviews', 'endTurnReady', 'endTurnAbilities', 'endTurnOrder', 'startTurnCombatId', 'startTurnOrder']) {
+  for (const key of ['cardPreviews', 'endTurnReady', 'endTurnAbilities', 'endTurnOrder', 'startTurnCombatId', 'startTurnOrder',
+    'campfireChoices', 'rewardChoices', 'rewardConfirmed', 'merchantPledges', 'eventPledge']) {
     assertEqual(room[key], undefined, `one-seat surrender retained ${key}`)
   }
+})
+
+check('all players can give up together from the map and an Act boundary', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run = { ...room.run, phase: 'map', combat: null }
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const { deadlineAt } = snapshotFor(room, a.token).giveUpVote
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt })
+  assertEqual(room.run.phase, 'map', 'one vote ended the shared run')
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt })
+  assertEqual(room.run.phase, 'defeat')
+  assert(room.run.log.includes('The party gives up.'))
+
+  room.run = { ...room.run, phase: 'victory', act: 1, campaign: { ...room.run.campaign, finalized: false } }
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const boundaryVote = snapshotFor(room, a.token).giveUpVote
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: boundaryVote.deadlineAt })
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: boundaryVote.deadlineAt })
+  assertEqual(room.run.phase, 'defeat', 'the party could not give up between Acts')
+})
+
+check('a pending Catch Up reservation cannot vote in another party run', () => {
+  const room = createRoom(createStore(), { code: 'GIVEPN' })
+  const leader = joinRoom(room, { name: 'Ann', character: 'ironclad' })
+  startRun(room, leader.token, { seed: 21 })
+  finishNeow(room)
+  room.run.act = 2
+  room.run.map = { ...room.run.map, act: 2, position: null }
+  const pending = joinRoom(room, { name: 'Bo', character: 'silent', connected: false })
+  let refused
+  try { apply(room, pending.token, { kind: 'giveUpVote', vote: 'start' }) } catch (error) { refused = error }
+  assertEqual(refused?.name, 'RoomError')
+  assertEqual(room.run.phase, 'map', 'a reserved Catch Up seat surrendered the active run')
+  apply(room, leader.token, { kind: 'giveUpVote', vote: 'start' })
+  assert(!room.seats.some((seat) => seat.pendingCatchUp), 'surrender retained a pending Catch Up reservation')
+  apply(room, leader.token, { kind: 'finishRun' })
+  assertEqual(room.run.campaign.finalized, true, 'a Catch Up reservation blocked surrender finalization')
+})
+
+check('pending Catch Up viewers never receive another party give-up vote', () => {
+  const { room, a } = twoSeatRoom()
+  room.run = { ...room.run, act: 2, phase: 'map', combat: null, map: { ...room.run.map, act: 2, position: null } }
+  const pending = joinRoom(room, { name: 'Cy', character: 'defect', connected: false })
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  assert(snapshotFor(room, a.token).giveUpVote, 'active players did not receive their give-up vote')
+  assertEqual(snapshotFor(room, pending.token).giveUpVote, undefined,
+    'an ineligible Catch Up reservation received the give-up vote')
+})
+
+check('a player completing Catch Up joins an open run-wide vote', () => {
+  const { room, a } = twoSeatRoom()
+  room.run = { ...room.run, act: 2, phase: 'map', combat: null, map: { ...room.run.map, act: 2, position: null } }
+  apply(room, a.token, { kind: 'giveUpVote', vote: 'start' })
+  const pending = joinRoom(room, { name: 'Cy', character: 'defect', connected: false })
+  joinRoom(room, { token: pending.token, connected: true })
+  const vote = snapshotFor(room, pending.token).giveUpVote
+  assert(vote.eligiblePlayerIds.includes(pending.playerId), 'the Catch Up player was excluded from the open vote')
+  apply(room, pending.token, { kind: 'giveUpVote', vote: 'yes', deadlineAt: vote.deadlineAt })
+  assertEqual(snapshotFor(room, a.token).giveUpVote.votes[pending.playerId], true)
 })
 
 check('fallen Last Stand players still vote before a multiplayer fight is given up', () => {

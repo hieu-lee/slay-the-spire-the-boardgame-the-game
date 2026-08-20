@@ -1958,6 +1958,45 @@ export function giveUpFight(state: RunState): RunState {
   })
 }
 
+export function canGiveUpRun(state: {
+  phase: RunPhase
+  act: number
+  lastStand: boolean
+  players: readonly { dead: boolean }[]
+  campaign: { finalized: boolean; keys: SpireKeys }
+  combat: Pick<CombatState, 'phase'> | null
+}, campaignProgress: Pick<CampaignProgress, 'actIV'>): boolean {
+  if (state.phase === 'defeat' || victoryIsTerminal(state, campaignProgress)) return false
+  return state.phase !== 'combat' || Boolean(state.combat && state.combat.phase !== 'won' && state.combat.phase !== 'lost')
+}
+
+/** End an active run from any screen. Combat surrender keeps its existing fold-back path. */
+export function giveUpRun(state: RunState): RunState {
+  if (!canGiveUpRun(state, state.campaignProgress)) return state
+  const surrendered: RunState = state.phase === 'combat' ? giveUpFight(state) : {
+    ...state,
+    phase: 'defeat',
+    neow: null,
+    players: state.players.map((player) => ({ ...player, hp: 0, dead: true })),
+    combat: null,
+    pendingBossDefId: null,
+    rewards: [],
+    rewardDestination: null,
+    roomState: null,
+    eventCombat: null,
+    courier: { ...state.courier, offer: null },
+    setup: null,
+    log: [...state.log, 'The party gives up.'],
+  }
+  return {
+    ...surrendered,
+    players: surrendered.players.map((player) => ({
+      ...player,
+      relics: player.relics.filter((relic) => !relic.pending),
+    })),
+  }
+}
+
 /** Swap or move one player between combats (rulebook p.13). */
 export function switchBetweenCombatRow(state: RunState, playerId: string, row: number): RunState {
   const canSwitch = state.phase === 'map' || state.phase === 'room' ||

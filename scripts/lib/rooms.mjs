@@ -53,7 +53,8 @@ import {
   enterRoom,
   finishRun,
   finishMerchant,
-  giveUpFight,
+  giveUpRun,
+  canGiveUpRun,
   faceOf,
   hasPendingRelicAcquisition,
   leaveRoom,
@@ -292,7 +293,7 @@ export function joinRoom(room, { name, character, token: existing, random, conne
     room.version += 1
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
-    if (connectionChanged) {
+    if (connectionChanged && !activeGiveUpVote(room)) {
       settleCampfire(room)
       if (room.run?.phase !== 'neow') settlePendingRelics(room)
       settleReward(room)
@@ -412,6 +413,7 @@ export function markDisconnected(room, seatToken) {
   if (!seat) return snapshotFor(room, seatToken)
   seat.connected = false
   room.version += 1
+  if (activeGiveUpVote(room)) return snapshotFor(room, seatToken)
   cancelImpossibleDisconnectedPledges(room)
   // The party may have been waiting on exactly this player. Dropping without
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
@@ -635,27 +637,35 @@ function neowRewardChoice(action) {
 
 function activeGiveUpVote(room, now = Date.now()) {
   const vote = room.giveUpVote
-  return vote && vote.combatId === room.run?.combat?.combatId && vote.deadlineAt > now
-    ? vote
+  return room.run && canGiveUpRun(room.run, room.run.campaignProgress) &&
+    vote && vote.runId === room.run.campaign.runId && vote.deadlineAt > now
+    ? { ...vote, eligiblePlayerIds: room.run.players.map((player) => player.id) }
     : undefined
 }
 
 function finishGiveUp(room) {
-  room.run = giveUpFight(room.run)
+  room.run = giveUpRun(room.run)
   room.giveUpVote = undefined
   room.courierPledge = undefined
   room.cardPreviews = undefined
   room.endTurnReady = undefined
+  room.campfireChoices = undefined
+  room.rewardChoices = undefined
+  room.rewardConfirmed = undefined
+  room.merchantPledges = undefined
+  room.eventPledge = undefined
+  room.seats = room.seats.filter((seat) => !seat.pendingCatchUp)
   clearEndTurnOrdering(room)
   clearStartTurnPlan(room)
 }
 
 function applyGiveUpVote(room, seat, action, seatToken) {
-  const combat = room.run?.combat
-  if (room.run?.phase !== 'combat' || !combat || combat.phase === 'won' || combat.phase === 'lost') {
-    fail('There is no active fight to give up')
+  const run = room.run
+  if (!run || !canGiveUpRun(run, run.campaignProgress)) {
+    fail('There is no active run to give up')
   }
-  const eligiblePlayerIds = combat.players.map((player) => player.id)
+  const eligiblePlayerIds = run.players.map((player) => player.id)
+  if (!eligiblePlayerIds.includes(seat.playerId)) fail('Only active run players can vote to give up')
   const current = activeGiveUpVote(room)
   if (action.vote === 'start') {
     if (Object.keys(action).some((key) => key !== 'kind' && key !== 'vote')) fail('Invalid give-up vote')
@@ -664,7 +674,7 @@ function applyGiveUpVote(room, seat, action, seatToken) {
       finishGiveUp(room)
     } else {
       room.giveUpVote = {
-        combatId: combat.combatId,
+        runId: run.campaign.runId,
         deadlineAt: Date.now() + GIVE_UP_TIMEOUT_MS,
         eligiblePlayerIds,
         votes: {},
@@ -739,6 +749,8 @@ function neowAction(room, seat, action, seatToken) {
 export function apply(room, seatToken, action) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
+  if (action?.kind === 'giveUpVote') return applyGiveUpVote(room, seat, action, seatToken)
+  if (activeGiveUpVote(room)) fail('Resolve the give-up vote first')
   const pendingCatchUp = room.seats.filter((candidate) => candidate.pendingCatchUp)
   const cancelsPendingCatchUp = pendingCatchUp.length > 0 && seat === room.seats[0] && action?.kind === 'enterRoom'
   if (pendingCatchUp.length > 0 && room.run.phase !== 'neow') {
@@ -756,8 +768,6 @@ export function apply(room, seatToken, action) {
   if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
     fail('Finish the pending Relic acquisition first')
   }
-  if (action?.kind === 'giveUpVote') return applyGiveUpVote(room, seat, action, seatToken)
-
   const staged = room.cardPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
@@ -2586,7 +2596,7 @@ export function snapshotFor(room, seatToken) {
         : { optionIds: [room.eventPledge.optionId] },
     } : undefined,
     eventCanSkip: viewerId !== null && run ? canSkipEvent(run, viewerId) : false,
-    giveUpVote: giveUpVote ? {
+    giveUpVote: giveUpVote && viewerId && giveUpVote.eligiblePlayerIds.includes(viewerId) ? {
       ...structuredClone(giveUpVote),
       remainingMs: Math.max(0, giveUpVote.deadlineAt - Date.now()),
     } : undefined,

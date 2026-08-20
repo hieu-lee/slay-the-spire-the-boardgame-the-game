@@ -193,7 +193,7 @@ export type RoomSnapshot = {
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
   eventCanSkip: boolean
   giveUpVote?: {
-    combatId: string
+    runId: string
     deadlineAt: number
     remainingMs: number
     receivedAt?: number

@@ -645,6 +645,11 @@ try {
   await a.waitForTimeout(1_100)
   const onlineSettingsFrozen = await snapshot(a)
   await Promise.all([a, b].map((page) => page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()))
+  await a.press('body', 'Escape')
+  const finishedCombatPause = a.getByRole('dialog', { name: 'Slay the Spire' })
+  await finishedCombatPause.waitFor()
+  const finishedCombatGiveUpCount = await finishedCombatPause.getByRole('button', { name: 'Give up' }).count()
+  await finishedCombatPause.getByRole('button', { name: 'Resume' }).click()
   liveRoom.run.combat = onlineSettingsFreezeRestore
   liveRoom.version += 1
   rooms.publishRoom(code)
@@ -652,6 +657,7 @@ try {
   check('online Settings freezes authoritative combat completion', () => {
     assertEqual(onlineSettingsFrozen.run.phase, 'combat')
     assertEqual(onlineSettingsFrozen.run.combat.phase, 'won')
+    assertEqual(finishedCombatGiveUpCount, 0, 'a completed online combat offered a no-op Give up action')
   })
 
   const onlineRunBeforeCompendium = await snapshot(a)
@@ -668,6 +674,81 @@ try {
   })
 
   const giveUpRestore = structuredClone(liveRoom.run)
+
+  liveRoom.run = { ...liveRoom.run, phase: 'map', combat: null }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([a.locator('.map').waitFor(), b.locator('.map').waitFor()])
+  await a.press('body', 'Escape')
+  const mapGiveUpPause = a.getByRole('dialog', { name: 'Slay the Spire' })
+  await mapGiveUpPause.waitFor()
+  let releaseMapGiveUpStart
+  let resolveMapGiveUpStartIntercepted
+  const mapGiveUpStartIntercepted = new Promise((resolve) => { resolveMapGiveUpStartIntercepted = resolve })
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    await new Promise((resolveRelease) => {
+      releaseMapGiveUpStart = resolveRelease
+      resolveMapGiveUpStartIntercepted()
+    })
+    await route.continue()
+  }, { times: 1 })
+  await mapGiveUpPause.getByRole('button', { name: 'Give up' }).click()
+  await mapGiveUpStartIntercepted
+  const mapMutationsFrozen = await a.locator('.online-mutations').evaluate((element) => element.inert)
+  releaseMapGiveUpStart()
+  const mapGiveUpPanel = a.getByRole('dialog', { name: 'Give up this run?' })
+  await mapGiveUpPanel.waitFor()
+  liveRoom.giveUpVote.deadlineAt = Date.now() + 250
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await mapGiveUpPanel.waitFor({ state: 'hidden' })
+  liveRoom.run = giveUpRestore
+  liveRoom.giveUpVote = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await Promise.all([a.reload({ waitUntil: 'domcontentloaded' }), b.reload({ waitUntil: 'domcontentloaded' })])
+  await Promise.all([a.locator('.connection--connected').waitFor(), b.locator('.connection--connected').waitFor()])
+  await Promise.all([a.locator('.app-shell--online .combat').waitFor(), b.locator('.app-shell--online .combat').waitFor()])
+
+  const soloGiveUpPage = installScreenAudit(await cContext.newPage())
+  soloGiveUpPage.on('pageerror', (error) => failures.push(String(error)))
+  soloGiveUpPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
+  await enterOnline(soloGiveUpPage, 'Solo', 'defect', undefined, 'solo-give-up')
+  const soloGiveUpCode = (await credentials(soloGiveUpPage)).code
+  await soloGiveUpPage.getByRole('button', { name: 'Enter the Spire' }).click()
+  await soloGiveUpPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+  const soloGiveUpRoom = rooms.store.rooms.get(soloGiveUpCode)
+  bypassRoomNeow(soloGiveUpRoom)
+  await soloGiveUpPage.locator('.room--reachable').first().click()
+  await soloGiveUpPage.locator('.combat').waitFor()
+  await soloGiveUpPage.press('body', 'Escape')
+  const soloGiveUpPause = soloGiveUpPage.getByRole('dialog', { name: 'Slay the Spire' })
+  await soloGiveUpPause.waitFor()
+  soloGiveUpRoom.run.combat.phase = 'enemy'
+  soloGiveUpRoom.version += 1
+  rooms.publishRoom(soloGiveUpCode)
+  await soloGiveUpPage.locator('.combat[data-phase="enemy"]').waitFor()
+  await soloGiveUpPause.getByRole('button', { name: 'Give up' }).click()
+  const soloGiveUpPanel = soloGiveUpPage.getByRole('dialog', { name: 'Give up this run?' })
+  await soloGiveUpPanel.waitFor()
+  let releaseSoloGiveUp
+  let resolveSoloGiveUpIntercepted
+  const soloGiveUpIntercepted = new Promise((resolve) => { resolveSoloGiveUpIntercepted = resolve })
+  await soloGiveUpPage.route(`**/api/rooms/${soloGiveUpCode}/action`, async (route) => {
+    await new Promise((resolveRelease) => {
+      releaseSoloGiveUp = resolveRelease
+      resolveSoloGiveUpIntercepted()
+    })
+    await route.continue()
+  }, { times: 1 })
+  await soloGiveUpPanel.getByRole('button', { name: 'Yes, give up' }).click()
+  await soloGiveUpIntercepted
+  await soloGiveUpPage.waitForTimeout(1_100)
+  const soloGiveUpFrozenPhase = soloGiveUpRoom.run.combat.phase
+  releaseSoloGiveUp()
+  await soloGiveUpPage.getByRole('heading', { name: 'The party has fallen' }).waitFor()
+  await soloGiveUpPage.close()
+
   await a.evaluate(() => {
     const actualNow = Date.now
     window.__RESTORE_DATE_NOW__ = () => { Date.now = actualNow }
@@ -677,19 +758,35 @@ try {
   await b.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
   await b.locator('.compendium').waitFor()
   await a.press('body', 'Escape')
-  await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Give up' }).click()
-  const aGiveUp = a.getByRole('dialog', { name: 'Give up this fight?' })
-  const bGiveUp = b.getByRole('dialog', { name: 'Give up this fight?' })
+  const giveUpPause = a.getByRole('dialog', { name: 'Slay the Spire' })
+  await giveUpPause.waitFor()
+  liveRoom.run.combat.phase = 'enemy'
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.locator('.combat[data-phase="enemy"]').waitFor()
+  let releaseGiveUpStart
+  let resolveGiveUpStartIntercepted
+  const giveUpStartIntercepted = new Promise((resolve) => { resolveGiveUpStartIntercepted = resolve })
+  await a.route(`**/api/rooms/${code}/action`, async (route) => {
+    await new Promise((resolveRelease) => {
+      releaseGiveUpStart = resolveRelease
+      resolveGiveUpStartIntercepted()
+    })
+    await route.continue()
+  }, { times: 1 })
+  await giveUpPause.getByRole('button', { name: 'Give up' }).click()
+  await giveUpStartIntercepted
+  await a.waitForTimeout(1_100)
+  const giveUpStartFrozen = structuredClone(liveRoom.run.combat)
+  releaseGiveUpStart()
+  const aGiveUp = a.getByRole('dialog', { name: 'Give up this run?' })
+  const bGiveUp = b.getByRole('dialog', { name: 'Give up this run?' })
   await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
   const compendiumInterruptedByVote = await b.locator('.compendium').count()
   liveRoom.giveUpVote.deadlineAt = Date.now() + 250
   liveRoom.version += 1
   rooms.publishRoom(code)
   await Promise.all([aGiveUp.waitFor({ state: 'hidden' }), bGiveUp.waitFor({ state: 'hidden' })])
-  liveRoom.giveUpVote = undefined
-  liveRoom.version += 1
-  rooms.publishRoom(code)
-  await a.waitForFunction(() => !document.querySelector('.give-up-panel'))
   await a.press('body', 'Escape')
   await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Give up' }).click()
   await Promise.all([aGiveUp.waitFor(), bGiveUp.waitFor()])
@@ -704,12 +801,17 @@ try {
   await bGiveUp.getByText('Ann: Yes').waitFor()
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()
-  const restoredGiveUp = b.getByRole('dialog', { name: 'Give up this fight?' })
+  const restoredGiveUp = b.getByRole('dialog', { name: 'Give up this run?' })
   await restoredGiveUp.getByText('Ann: Yes').waitFor()
   await restoredGiveUp.getByRole('button', { name: 'Yes, give up' }).click()
   await Promise.all([a.getByRole('heading', { name: 'The party has fallen' }).waitFor(),
     b.getByRole('heading', { name: 'The party has fallen' }).waitFor()])
   const surrenderedOnlineRun = await snapshot(a)
+  await a.press('body', 'Escape')
+  const terminalPause = a.getByRole('dialog', { name: 'Slay the Spire' })
+  await terminalPause.waitFor()
+  const terminalGiveUpCount = await terminalPause.getByRole('button', { name: 'Give up' }).count()
+  await terminalPause.getByRole('button', { name: 'Resume' }).click()
   await a.evaluate(() => window.__RESTORE_DATE_NOW__())
   liveRoom.run = giveUpRestore
   liveRoom.giveUpVote = undefined
@@ -717,6 +819,9 @@ try {
   rooms.publishRoom(code)
   await Promise.all([a.locator('.app-shell--online .combat').waitFor(), b.locator('.app-shell--online .combat').waitFor()])
   check('online Give up restarts after expiry and is a reconnect-safe unanimous 10-second vote', () => {
+    assertEqual(mapMutationsFrozen, true, 'map controls stayed active while vote creation was pending')
+    assertEqual(soloGiveUpFrozenPhase, 'enemy', 'solo combat advanced while surrender was pending')
+    assertEqual(giveUpStartFrozen.phase, 'enemy', 'combat advanced while the give-up vote request was in flight')
     assert(/^\d+s remaining$/.test(giveUpDeadlineLabel), `missing give-up deadline: ${giveUpDeadlineLabel}`)
     assertEqual(compendiumInterruptedByVote, 0, 'an incoming give-up vote stayed hidden behind Compendium')
     assert(giveUpBounds.modal, 'the give-up vote was not modal')
@@ -724,6 +829,7 @@ try {
       giveUpBounds.top >= 0 && giveUpBounds.bottom <= giveUpBounds.height,
     `give-up panel leaves the viewport: ${JSON.stringify(giveUpBounds)}`)
     assertEqual(surrenderedOnlineRun.run.phase, 'defeat')
+    assertEqual(terminalGiveUpCount, 0, 'terminal online pause offered a no-op Give up action')
   })
 
   // Hold authentication after the reconnect GET has completed, then kill an

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 export type GiveUpVote = {
-  combatId: string
+  runId: string
   deadlineAt: number
   remainingMs: number
   receivedAt?: number
@@ -9,12 +9,13 @@ export type GiveUpVote = {
   votes: Record<string, boolean>
 }
 
-export function GiveUpPanel({ vote, players, playerId, onVote, onCancel }: {
+export function GiveUpPanel({ vote, players, playerId, onVote, onCancel, onExpire }: {
   vote?: GiveUpVote
   players: { id: string; name: string }[]
   playerId: string
   onVote: (yes: boolean) => void
   onCancel?: () => void
+  onExpire?: () => void
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [remaining, setRemaining] = useState(() => vote
@@ -34,6 +35,7 @@ export function GiveUpPanel({ vote, players, playerId, onVote, onCancel }: {
       const next = Math.max(0, vote.remainingMs - (performance.now() - receivedAt))
       setRemaining(next)
       if (next === 0 && timer !== undefined) {
+        onExpire?.()
         clearInterval(timer)
         timer = undefined
       }
@@ -41,7 +43,7 @@ export function GiveUpPanel({ vote, players, playerId, onVote, onCancel }: {
     timer = window.setInterval(update, 100)
     update()
     return () => { if (timer !== undefined) clearInterval(timer) }
-  }, [vote?.deadlineAt])
+  }, [onExpire, vote?.deadlineAt])
 
   if (remaining === 0) return null
   const eligible = vote?.eligiblePlayerIds ?? [playerId]
@@ -50,7 +52,7 @@ export function GiveUpPanel({ vote, players, playerId, onVote, onCancel }: {
     <dialog ref={dialogRef} className="choice-modal give-up-panel" aria-labelledby="give-up-title"
       onCancel={(event) => { event.preventDefault(); onCancel?.() }}>
       <section className="choice-modal__panel">
-        <h2 id="give-up-title">Give up this fight?</h2>
+        <h2 id="give-up-title">Give up this run?</h2>
         {vote ? <>
           <p role="timer">{Math.ceil((remaining ?? 0) / 1000)}s remaining</p>
           <ul>{eligible.map((id) => {

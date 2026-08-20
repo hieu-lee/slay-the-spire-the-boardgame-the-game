@@ -3,6 +3,7 @@ import type { CombatState } from '../game/combat.ts'
 import {
   advanceAct,
   advanceQuickSetup,
+  canGiveUpRun,
   canSkipEvent,
   chooseNeow,
   decideCourier,
@@ -14,7 +15,7 @@ import {
   leaveRoom,
   finishMerchant,
   finishRun,
-  giveUpFight,
+  giveUpRun,
   purchaseAtMerchant,
   removeAtCurrentMerchant,
   resolveCampfire,
@@ -178,6 +179,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
+  const canGiveUp = canGiveUpRun(run, run.campaignProgress)
 
   /** The settings the run in progress was actually built from. */
   const [built, setBuilt] = useState({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} as RunMetaOptions })
@@ -210,6 +212,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       if (timer !== undefined) clearTimeout(timer)
     }
   }, [active, compendium, giveUpOpen, open])
+
+  useEffect(() => {
+    if (giveUpOpen && !canGiveUp) setGiveUpOpen(false)
+  }, [canGiveUp, giveUpOpen])
 
   function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters, nextMeta: RunMetaOptions = metaOptions) {
     const nextCharacters = legalCharacters(selected)
@@ -378,11 +384,11 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           </label> : null}
         </>} />
 
-      {giveUpOpen && run.phase === 'combat' ? <GiveUpPanel
+      {giveUpOpen && canGiveUp ? <GiveUpPanel
         players={run.players} playerId={viewerId}
         onVote={(yes) => {
           setGiveUpOpen(false)
-          if (yes) setRun((current) => giveUpFight(current))
+          if (yes) setRun((current) => giveUpRun(current))
         }}
         onCancel={() => setGiveUpOpen(false)}
       /> : null}
@@ -395,7 +401,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
           {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button> : null}
-          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
+          {canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
             if (!window.confirm('Abandon this run and return to the main menu?')) return
             setPauseOpen(false)
@@ -408,7 +414,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
-          autoAdvance={!pauseOpen && !settingsOpen && !run.courier.offer}
+          autoAdvance={!pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}
