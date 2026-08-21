@@ -580,7 +580,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         onVote={(yes) => room.act({
           kind: 'giveUpVote', vote: yes ? 'yes' : 'no', deadlineAt: giveUpVote.deadlineAt,
         })}
-        onExpire={() => setExpiredGiveUpDeadline(giveUpVote.deadlineAt)}
+        onExpire={() => {
+          setExpiredGiveUpDeadline(giveUpVote.deadlineAt)
+          const retryPlayerId = snapshot.seats.find((seat) => seat.connected && snapshot.merchantReady?.includes(seat.playerId))?.playerId
+          if (run.phase === 'room' && run.roomState?.kind === 'merchant' && Object.keys(snapshot.merchantPledges ?? {}).length === 0 && retryPlayerId === snapshot.you.playerId) {
+            void room.act({ kind: 'merchantFinish' })
+          }
+        }}
       /> : null}
 
       {room.connection !== 'connected' ? <p className="online-banner">Reconnecting… your seat is preserved.</p> : null}
@@ -752,6 +758,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           ascension={run.ascension}
           onPurchase={(purchase) => room.act({ kind: 'merchantPurchase', purchase })}
           onRemove={(playerId, cardUid, payments) => room.act({ kind: 'merchantRemove', playerId, cardUid, payments })}
+          onResumeMerchant={() => room.act({ kind: 'merchantResume' })}
           onFinishMerchant={() => room.act({ kind: 'merchantFinish' })}
           onRelic={(playerId, decision) => room.act({ kind: 'relicReward', playerId, decision })}
           onEvent={(playerId, decision) => room.act({ kind: 'event', playerId, decision })}
@@ -759,6 +766,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           onSkipEvent={(playerId) => room.act({ kind: 'eventSkip', playerId })}
           sapphireAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.sapphire}
           merchantPledges={snapshot.merchantPledges}
+          merchantReady={snapshot.merchantReady}
+          connectedPlayerIds={snapshot.seats.filter((seat) => seat.connected).map((seat) => seat.playerId)}
           onWithdraw={(key) => room.act({ kind: 'merchantWithdraw', key })}
           eventForwardRooms={Object.values(run.map.rooms).filter((candidate) => candidate.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((candidate) => ({ id: candidate.id, label: `Floor ${candidate.row + 1} · ${candidate.hidden ? 'Unknown' : ROOM_LABEL[candidate.kind]}` }))}
           eventPledge={snapshot.eventPledge}

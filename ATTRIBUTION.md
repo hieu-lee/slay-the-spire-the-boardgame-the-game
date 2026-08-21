@@ -33,7 +33,7 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat stage, actor cutouts, animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
-| Merchant room illustration (`public/assets/noncombat/merchant.webp`) | original OpenAI Imagegen fan illustration created for this implementation |
+| Merchant scene and character assets (`public/assets/noncombat/merchant/`) | OpenAI Imagegen fan illustrations visually grounded in user-provided gameplay references and this implementation's generated combat character cutouts |
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |

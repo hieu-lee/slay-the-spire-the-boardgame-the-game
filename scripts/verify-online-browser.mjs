@@ -3651,9 +3651,9 @@ try {
     removalUsed: [], purchasedCards: {} }
   liveRoom.version += 1
   rooms.publishRoom(code)
-  await ownerGame.locator('.merchant-stage').waitFor()
+  await ownerGame.locator('.merchant-arrival').waitFor()
   const onlineStacked = await ownerGame.evaluate((shell) => ({
-    merchant: shell.querySelectorAll('.merchant-stage').length,
+    merchant: shell.querySelectorAll('.merchant-stage, .merchant-arrival').length,
     campfire: shell.querySelectorAll('.campfire').length,
   }))
   check('an open online room interaction does not stack with the campfire screen', () => {
@@ -3678,6 +3678,7 @@ try {
     removalUsed: [], purchasedCards: {} }
   liveRoom.version += 1
   rooms.publishRoom(code)
+  await ownerGame.getByRole('button', { name: 'Enter merchant shop' }).click()
   await ownerGame.locator('.merchant-stage').waitFor()
   await roomAction(a, { kind: 'merchantPurchase', purchase: {
     buyerId: annRun.id, section: 'relic', slot: 0, payments: { [annRun.id]: 7 },
@@ -3685,16 +3686,16 @@ try {
   await ownerGame.getByRole('heading', { name: 'Resolve War Paint' }).waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve War Paint' }).waitFor()
   const pendingMerchantOwner = await ownerGame.evaluate((shell) => ({
-    merchant: shell.querySelectorAll('.merchant-stage').length,
+    merchant: shell.querySelectorAll('.merchant-stage, .merchant-arrival').length,
     campfire: shell.querySelectorAll('.campfire').length,
     resolver: [...shell.querySelectorAll('.room-screen > h2')]
       .filter((heading) => heading.textContent === 'Resolve War Paint').length,
   }))
-  const pendingMerchantTeammate = await teammateGame.locator('.merchant-stage').count()
+  const pendingMerchantTeammate = await teammateGame.locator('.merchant-stage, .merchant-arrival').count()
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve War Paint' }).waitFor()
-  const pendingMerchantAfterReconnect = await teammateGame.locator('.merchant-stage').count()
+  const pendingMerchantAfterReconnect = await teammateGame.locator('.merchant-stage, .merchant-arrival').count()
   check('an online Merchant Relic acquisition hides room actions through teammate reconnect', () => {
     assertEqual(pendingMerchantOwner.merchant, 0, 'the owner kept the Merchant behind the Relic resolver')
     assertEqual(pendingMerchantOwner.campfire, 0, 'the owner kept a Campfire behind the Relic resolver')

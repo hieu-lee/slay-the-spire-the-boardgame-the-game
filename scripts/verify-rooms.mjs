@@ -7467,7 +7467,7 @@ check('Merchant rejects impossible purchases before storing partial funding', ()
   assertEqual(room.version, version)
 })
 
-check('Merchant cannot close while an authorized purchase still needs contributions', () => {
+check('Merchant waits for every connected player and cannot proceed with pending contributions', () => {
   const { room, a, b } = atMerchantRoom()
   apply(room, a.token, { kind: 'merchantPurchase', purchase: { buyerId: a.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 1 } } })
   let closed
@@ -7476,11 +7476,60 @@ check('Merchant cannot close while an authorized purchase still needs contributi
   assertEqual(room.run.roomState.kind, 'merchant')
   assert(room.merchantPledges[`${a.playerId}/relic/0`])
   apply(room, a.token, { kind: 'merchantWithdraw', key: `${a.playerId}/relic/0` })
-  let foreign
-  try { apply(room, b.token, { kind: 'merchantFinish' }) } catch (error) { foreign = error }
-  assertEqual(foreign?.name, 'RoomError')
+  apply(room, b.token, { kind: 'merchantFinish' })
+  assertEqual(room.run.phase, 'room')
+  assertDeepEqual(snapshotFor(room, a.token).merchantReady, [b.playerId])
   apply(room, a.token, { kind: 'merchantFinish' })
   assertEqual(room.run.phase, 'map')
+})
+
+check('Merchant rechecks a ready quorum when another player disconnects', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, { kind: 'merchantFinish' })
+  assertEqual(room.run.phase, 'room')
+  markDisconnected(room, b.token)
+  assertEqual(room.run.phase, 'map', 'the ready connected player remained stranded at the Merchant')
+  assertEqual(room.merchantReady, undefined)
+})
+
+check('Merchant shopping resets readiness and a viable disconnected pledge can still finish', () => {
+  const direct = atMerchantRoom()
+  apply(direct.room, direct.a.token, { kind: 'merchantFinish' })
+  apply(direct.room, direct.a.token, { kind: 'merchantPurchase', purchase: {
+    buyerId: direct.a.playerId, section: 'relic', slot: 0, payments: { [direct.a.playerId]: 5 },
+  } })
+  assertEqual(direct.room.merchantReady, undefined, 'a ready player stayed ready after buying')
+
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, { kind: 'merchantFinish' })
+  apply(room, b.token, { kind: 'merchantPurchase', purchase: {
+    buyerId: b.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 1 },
+  } })
+  markDisconnected(room, b.token)
+  assert(room.merchantPledges?.[`${b.playerId}/relic/0`], 'a viable disconnected pledge was canceled')
+  apply(room, a.token, { kind: 'merchantResume' })
+  assertEqual(room.merchantReady, undefined, 'resuming the shop kept the player ready')
+  apply(room, a.token, { kind: 'merchantPurchase', purchase: {
+    buyerId: b.playerId, section: 'relic', slot: 0, payments: { [a.playerId]: 4 },
+  } })
+  apply(room, a.token, { kind: 'merchantFinish' })
+  assertEqual(room.run.phase, 'map', 'the connected player remained stranded after finishing the pledge')
+})
+
+check('Merchant freezes readiness during a Give Up vote, cancels impossible pledges, then settles after expiry', () => {
+  const { room, a, b } = atMerchantRoom()
+  apply(room, a.token, { kind: 'merchantFinish' })
+  apply(room, b.token, { kind: 'merchantPurchase', purchase: { buyerId: b.playerId, section: 'relic', slot: 0, payments: { [b.playerId]: 1 } } })
+  room.run.players.find((player) => player.id === a.playerId).gold = 0
+  apply(room, b.token, { kind: 'giveUpVote', vote: 'start' })
+  const deadlineAt = room.giveUpVote.deadlineAt
+  markDisconnected(room, b.token)
+  assertEqual(room.run.phase, 'room', 'the Merchant advanced during an active Give Up vote')
+  assertEqual(room.giveUpVote.deadlineAt, deadlineAt, 'disconnecting canceled the active Give Up vote')
+  assertEqual(room.merchantPledges?.[`${b.playerId}/relic/0`], undefined, 'an impossible disconnected pledge survived')
+  room.giveUpVote.deadlineAt = Date.now() - 1
+  apply(room, a.token, { kind: 'merchantFinish' })
+  assertEqual(room.run.phase, 'map', 'the ready connected player remained stranded after the vote expired')
 })
 
 check('Merchant rejects overfunding and freezes potion recipient metadata', () => {

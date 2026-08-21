@@ -294,6 +294,7 @@ export function joinRoom(room, { name, character, token: existing, random, conne
     // They may be the last answer the table was waiting on, or the first one
     // back to a decision that stalled while nobody was connected.
     if (connectionChanged && !activeGiveUpVote(room)) {
+      settleMerchantReady(room)
       settleCampfire(room)
       if (room.run?.phase !== 'neow') settlePendingRelics(room)
       settleReward(room)
@@ -413,8 +414,10 @@ export function markDisconnected(room, seatToken) {
   if (!seat) return snapshotFor(room, seatToken)
   seat.connected = false
   room.version += 1
-  if (activeGiveUpVote(room)) return snapshotFor(room, seatToken)
-  cancelImpossibleDisconnectedPledges(room)
+  const voting = activeGiveUpVote(room)
+  cancelImpossibleDisconnectedPledges(room, Boolean(voting))
+  if (voting) return snapshotFor(room, seatToken)
+  settleMerchantReady(room)
   // The party may have been waiting on exactly this player. Dropping without
   // re-checking stranded the campfire: `leaveRoom` stays refused, and the room
   // only unstuck if someone re-sent a choice they had already made.
@@ -653,6 +656,7 @@ function finishGiveUp(room) {
   room.rewardChoices = undefined
   room.rewardConfirmed = undefined
   room.merchantPledges = undefined
+  room.merchantReady = undefined
   room.eventPledge = undefined
   room.seats = room.seats.filter((seat) => !seat.pendingCatchUp)
   clearEndTurnOrdering(room)
@@ -943,6 +947,7 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'merchantPurchase') return merchantPurchase(room, seat, action, seatToken)
   if (action?.kind === 'merchantRemove') return merchantRemove(room, seat, action, seatToken)
   if (action?.kind === 'merchantWithdraw') return merchantWithdraw(room, seat, action, seatToken)
+  if (action?.kind === 'merchantResume') return merchantResume(room, seat, seatToken)
   if (action?.kind === 'merchantFinish') return merchantFinish(room, seat, seatToken)
   if (action?.kind === 'courierReveal') return courierReveal(room, seat, action, seatToken)
   if (action?.kind === 'courierResolve') return courierResolve(room, seat, action, seatToken)
@@ -1008,6 +1013,7 @@ export function apply(room, seatToken, action) {
     room.rewardChoices = undefined
     room.rewardConfirmed = undefined
     room.merchantPledges = undefined
+    room.merchantReady = undefined
     room.eventPledge = undefined
   }
   settleDisconnectedRewards(room)
@@ -1031,14 +1037,21 @@ function merchantPlayers(run) {
     : run.players
 }
 
-function cancelImpossibleDisconnectedPledges(room) {
+function resetMerchantReady(room, playerId) {
+  if (!room.merchantReady?.includes(playerId)) return false
+  room.merchantReady = room.merchantReady.filter((id) => id !== playerId)
+  if (room.merchantReady.length === 0) room.merchantReady = undefined
+  return true
+}
+
+function cancelImpossibleDisconnectedPledges(room, merchantOnly = false) {
   const connected = new Set(room.seats.filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
   const available = (players, payments, reserved = () => 0) =>
     Object.entries(payments ?? {}).reduce((sum, [id, amount]) => connected.has(id) ? sum : sum + amount, 0) +
     players.filter((player) => connected.has(player.id) && !player.dead).reduce((sum, player) => sum + Math.max(0, player.gold - reserved(player.id)), 0)
 
   const offer = room.run?.courier?.offer
-  if (offer && !connected.has(offer.playerId)) {
+  if (!merchantOnly && offer && !connected.has(offer.playerId)) {
     const cost = courierCost(offer)
     if (!room.courierPledge || cost === null || available(room.run.combat?.players ?? [], room.courierPledge.payments) < cost) {
       const next = decideCourier(room.run, offer.playerId, 'discard')
@@ -1056,6 +1069,8 @@ function cancelImpossibleDisconnectedPledges(room) {
       delete room.merchantPledges[key]
     }
   }
+
+  if (merchantOnly) return
 
   const event = room.eventPledge
   if (event && !connected.has(event.actorId) && available(room.run.players, event.payments) < event.cost) {
@@ -1120,6 +1135,7 @@ function merchantPurchase(room, seat, action, seatToken) {
     delete room.merchantPledges[key]
     settlePendingRelics(room)
   }
+  resetMerchantReady(room, seat.playerId)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -1161,6 +1177,7 @@ function merchantRemove(room, seat, action, seatToken) {
     room.merchantPledges = { ...room.merchantPledges }
     delete room.merchantPledges[key]
   }
+  resetMerchantReady(room, seat.playerId)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
@@ -1173,22 +1190,46 @@ function merchantWithdraw(room, seat, action, seatToken) {
   room.merchantPledges = { ...room.merchantPledges }
   if (Object.keys(payments).length === 0 || pending.buyerId === seat.playerId) delete room.merchantPledges[action.key]
   else room.merchantPledges[action.key] = { ...pending, payments }
+  resetMerchantReady(room, seat.playerId)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
+function merchantResume(room, seat, seatToken) {
+  const run = room.run
+  if (run?.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
+  if (!merchantPlayers(run).some((player) => player.id === seat.playerId)) fail('Only active players visit this Merchant')
+  const changed = resetMerchantReady(room, seat.playerId)
+  if (changed) room.version += 1
+  return { changed, snapshot: snapshotFor(room, seatToken) }
+}
+
 function merchantFinish(room, seat, seatToken) {
-  const catchUp = room.run?.setup?.kind === 'catch-up'
-  if (catchUp ? !room.run.setup.playerIds.includes(seat.playerId) : seat.playerId !== room.seats[0]?.playerId) {
-    fail(catchUp ? 'A Catch Up player closes the Merchant' : 'The party leader closes the Merchant')
-  }
+  const run = room.run
+  if (run?.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
+  const connected = new Set(room.seats.filter((candidate) => candidate.connected !== false).map((candidate) => candidate.playerId))
+  const visitors = merchantPlayers(run).map((player) => player.id)
+  const eligible = visitors.filter((id) => connected.has(id))
+  if (!eligible.includes(seat.playerId)) fail(run.setup?.kind === 'catch-up' ? 'Only Catch Up players visit this Merchant' : 'Only active players visit this Merchant')
   if (Object.keys(room.merchantPledges ?? {}).length > 0) fail('Resolve or cancel pending Merchant contributions first')
-  const next = finishMerchant(room.run)
-  if (next === room.run) fail('The party is not at a Merchant')
-  room.run = next
-  room.merchantPledges = undefined
+  room.merchantReady = [...new Set([...(room.merchantReady ?? []), seat.playerId])].filter((id) => visitors.includes(id))
+  settleMerchantReady(room)
   room.version += 1
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
+}
+
+function settleMerchantReady(room) {
+  const run = room.run
+  if (run?.phase !== 'room' || run.roomState?.kind !== 'merchant' || Object.keys(room.merchantPledges ?? {}).length > 0) return false
+  const connected = new Set(room.seats.filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
+  const eligible = merchantPlayers(run).map((player) => player.id).filter((id) => connected.has(id))
+  if (eligible.length === 0 || !eligible.every((id) => room.merchantReady?.includes(id))) return false
+  const next = finishMerchant(run)
+  if (next === run) return false
+  room.run = next
+  room.merchantPledges = undefined
+  room.merchantReady = undefined
+  return true
 }
 
 function courierReveal(room, seat, action, seatToken) {
@@ -2585,6 +2626,7 @@ export function snapshotFor(room, seatToken) {
       ...structuredClone(pledge),
       cardUid: pledge.kind === 'removal' && pledge.buyerId !== viewerId ? undefined : pledge.cardUid,
     }])),
+    merchantReady: [...(room.merchantReady ?? [])],
     courierPledge: room.courierPledge ? structuredClone(room.courierPledge) : undefined,
     eventPledge: room.eventPledge ? {
       actorId: room.eventPledge.actorId,

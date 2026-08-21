@@ -29,10 +29,13 @@ type Props = {
     payments: Record<string, number>,
   ) => void;
   onFinishMerchant: () => void;
+  onResumeMerchant?: () => void;
   onRelic: (playerId: string, decision: TreasureDecision) => void;
   onEvent: (playerId: string, decision: EventDecision) => void;
   sapphireAvailable?: boolean;
   merchantPledges?: PropsPledgeMap;
+  merchantReady?: string[];
+  connectedPlayerIds?: string[];
   onWithdraw?: (key: string) => void;
   eventForwardRooms?: { id: string; label: string }[];
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision };
@@ -156,7 +159,10 @@ function MerchantScreen({
   onPurchase,
   onRemove,
   onFinishMerchant,
+  onResumeMerchant,
   merchantPledges = {},
+  merchantReady = [],
+  connectedPlayerIds,
   onWithdraw,
 }: Props & { room: MerchantState }) {
   const player =
@@ -169,6 +175,24 @@ function MerchantScreen({
   const [potionReplacementSlot, setPotionReplacementSlot] = useState<number | null>(null);
   const potionReplacementDialog = useRef<HTMLDialogElement>(null);
   const [discardPotionId, setDiscardPotionId] = useState("");
+  const [shopOpen, setShopOpen] = useState(false);
+  const [localReady, setLocalReady] = useState<string[]>([]);
+  const [point, setPoint] = useState<{ key: number; x: number; y: number; angle: number } | null>(null);
+  const merchantStage = useRef<HTMLElement>(null);
+  const pointKey = useRef(0);
+  const visitors = players.filter((candidate) => Object.hasOwn(room.cards, candidate.id));
+  const eligiblePlayers = visitors.filter((candidate) => !connectedPlayerIds || connectedPlayerIds.includes(candidate.id));
+  const ready = onWithdraw ? merchantReady : localReady;
+  const readyCount = ready.filter((id) => eligiblePlayers.some((candidate) => candidate.id === id)).length;
+  const pointAt = (target: HTMLElement | null) => {
+    const stage = merchantStage.current;
+    if (!stage || !target) return;
+    const frame = stage.getBoundingClientRect();
+    const item = target.getBoundingClientRect();
+    const x = item.left - frame.left + stage.scrollLeft + item.width / 2;
+    setPoint({ key: pointKey.current += 1, x, y: item.top - frame.top + stage.scrollTop + item.height * 0.55, angle: (x / frame.width - 0.5) * 10 });
+  };
+  const pointAtTarget = (id: string) => pointAt(merchantStage.current?.querySelector<HTMLElement>(`[data-merchant-target="${id}"]`) ?? null);
   const validDiscardPotionId = buyer.potions.includes(discardPotionId) ? discardPotionId : "";
   const buyerHasSozu = hasSozu(buyer);
   const potionLimit = ascension >= 4 ? 2 : 3;
@@ -248,17 +272,47 @@ function MerchantScreen({
     if (potionReplacementSlot !== null && !dialog.open) dialog.showModal();
     else if (potionReplacementSlot === null && dialog.open) dialog.close();
   }, [potionReplacementSlot, room.potions]);
+  if (!shopOpen) {
+    const proceed = () => {
+      if (ready.includes(player.id)) return;
+      if (onWithdraw) return onFinishMerchant();
+      const next = [...ready, player.id];
+      setLocalReady(next);
+      if (eligiblePlayers.every((candidate) => next.includes(candidate.id))) onFinishMerchant();
+    };
+    return (
+      <section className="merchant-arrival" aria-labelledby="merchant-arrival-title">
+        <div className="merchant-arrival__party" aria-label="Party at the merchant">
+          {eligiblePlayers.map((candidate) => (
+            <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
+              <img src={`/assets/noncombat/merchant/characters/${candidate.character}-standing.webp`} alt="" />
+            </figure>
+          ))}
+        </div>
+        <button type="button" className="merchant-arrival__merchant" onClick={() => {
+          setShopOpen(true);
+          if (onResumeMerchant) onResumeMerchant();
+          else if (ready.includes(player.id)) setLocalReady((current) => current.filter((id) => id !== player.id));
+        }} aria-label="Enter merchant shop">
+          <img src="/assets/noncombat/merchant/merchant-seated.webp" alt="The Merchant sits behind a spread of wares" />
+        </button>
+        <div className="merchant-arrival__title">
+          <span>Merchant</span>
+          <h2 id="merchant-arrival-title">The Merchant</h2>
+          <p>Visit the Merchant, then proceed when every traveler is ready.</p>
+        </div>
+        <button type="button" className="room-proceed" disabled={ready.includes(player.id) || Object.keys(merchantPledges).length > 0} onClick={proceed}>
+          {ready.includes(player.id) ? `Waiting for party · ${readyCount}/${eligiblePlayers.length}` : `Proceed · ${readyCount}/${eligiblePlayers.length} ready`}
+        </button>
+      </section>
+    );
+  }
   return (
     <section
-      className="room-stage merchant-stage"
+      ref={merchantStage}
+      className="room-stage merchant-stage merchant-shop-stage"
       aria-labelledby="merchant-title"
     >
-      <img
-        className="merchant-figure"
-        src="/assets/noncombat/merchant.webp"
-        alt="A traveling merchant welcomes the party"
-      />
-      <p className="merchant-greeting" aria-hidden="true">Welcome! I have just what you need.</p>
       <div className="room-banner">
         <span>Welcome, traveler</span>
         <h2 id="merchant-title">The Merchant</h2>
@@ -285,19 +339,21 @@ function MerchantScreen({
             return (
               <button
                 className="merchant-item"
+                data-merchant-target={`relic-${slot}`}
                 key={slot}
                 type="button"
                 disabled={!id || !funding || !canPledge(funding) || sharedReserved("relic", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key])}
-                onClick={() =>
-                  id &&
-                  funding &&
-                  onPurchase({
-                    buyerId: buyer.id,
-                    section: "relic",
-                    slot,
-                    payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                  })
-                }
+                onClick={(event) => {
+                  if (id && funding) {
+                    pointAt(event.currentTarget);
+                    onPurchase({
+                      buyerId: buyer.id,
+                      section: "relic",
+                      slot,
+                      payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
+                    });
+                  }
+                }}
               >
                 {/* An icon, not a card face: the digital game lays its stock on
                     the rug as icons and puts the rules in a hover tip. The name
@@ -327,23 +383,27 @@ function MerchantScreen({
             return (
               <button
                 className="merchant-item"
+                data-merchant-target={`potion-${slot}`}
                 key={slot}
                 type="button"
                 disabled={buyerHasSozu || !id || !funding || !canPledge(funding) || sharedReserved("potion", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !pending) || (beltFull && !replacement && buyer.id !== player.id)}
-                onClick={() => {
+                onClick={(event) => {
                   if (beltFull && !replacement) {
                     setDiscardPotionId("");
                     setPotionReplacementSlot(slot);
                     return;
                   }
-                  if (id && funding) onPurchase({
-                    buyerId: buyer.id,
-                    section: "potion",
-                    slot,
-                    payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                    potionRecipientId: pending?.potionRecipientId ?? buyer.id,
-                    discardPotionId: replacement || undefined,
-                  });
+                  if (id && funding) {
+                    pointAt(event.currentTarget);
+                    onPurchase({
+                      buyerId: buyer.id,
+                      section: "potion",
+                      slot,
+                      payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
+                      potionRecipientId: pending?.potionRecipientId ?? buyer.id,
+                      discardPotionId: replacement || undefined,
+                    });
+                  }
                 }}
               >
                 {id ? <ItemImage kind="potion" id={id} /> : <span className="room-item-icon">●</span>}
@@ -379,20 +439,21 @@ function MerchantScreen({
               // energy cost — but nothing on it says what the shop charges. The
               // name repeats in the group label so the group has an identifying
               // one; the price is the part that would otherwise be lost.
-              <div className="merchant-card" key={slot} role="group"
+              <div className="merchant-card" key={slot} role="group" data-merchant-target={`card-${slot}`}
                 aria-label={id ? `${card?.name ?? 'Card'}, ${cost} Gold` : 'Sold'}>
                 {id ? (
                   <Card
                     card={{ uid: `merchant-card-${buyer.id}-${slot}`, defId: id, upgraded: false }}
                     playable={!blocked}
-                    onClick={() =>
+                    onClick={() => {
+                      pointAtTarget(`card-${slot}`);
                       onPurchase({
                         buyerId: buyer.id,
                         section: "card",
                         slot,
                         payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                      })
-                    }
+                      });
+                    }}
                   />
                 ) : (
                   <p className="merchant-card__sold">Sold</p>
@@ -418,20 +479,21 @@ function MerchantScreen({
               const blocked = !id || !canPledge(funding) || sharedReserved("colorless", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key]);
               return (
                 // Same reason as the card shelf above.
-                <div className="merchant-card" key={slot} role="group"
+                <div className="merchant-card" key={slot} role="group" data-merchant-target={`colorless-${slot}`}
                   aria-label={id ? `${card?.name ?? 'Card'}, ${cost} Gold` : 'Sold'}>
                   {id ? (
                     <Card
                       card={{ uid: `merchant-colorless-${buyer.id}-${slot}`, defId: id, upgraded: false }}
                       playable={!blocked}
-                      onClick={() =>
+                      onClick={() => {
+                        pointAtTarget(`colorless-${slot}`);
                         onPurchase({
                           buyerId: buyer.id,
                           section: "colorless",
                           slot,
                           payments: pay(additional(funding.remaining, funding.key, funding.mine), funding.key),
-                        })
-                      }
+                        });
+                      }}
                     />
                   ) : (
                     <p className="merchant-card__sold">Sold</p>
@@ -442,7 +504,7 @@ function MerchantScreen({
             })}
           </div>
         ) : null}
-        <div className="merchant-removal">
+        <div className="merchant-removal" data-merchant-target="removal">
           <button type="button" className="merchant-removal__service"
             disabled={removalUnavailable} onClick={() => setRemovalOpen(true)}>
             <span className="merchant-removal__cards" aria-hidden="true">▱</span>
@@ -451,6 +513,8 @@ function MerchantScreen({
           </button>
         </div>
       </div>
+      {point ? <img key={point.key} className="merchant-hand" src="/assets/noncombat/merchant/merchant-hand.webp" alt="" aria-hidden="true"
+        style={{ "--merchant-point-x": `${point.x}px`, "--merchant-point-y": `${point.y}px`, "--merchant-point-angle": `${point.angle}deg` } as CSSProperties} /> : null}
       <dialog ref={potionReplacementDialog} className="choice-modal merchant-potion-dialog" aria-labelledby="merchant-potion-title"
         onCancel={(event) => { event.preventDefault(); setPotionReplacementSlot(null); setDiscardPotionId(""); }}>
         <section className="choice-modal__panel">
@@ -470,6 +534,7 @@ function MerchantScreen({
                 potionRecipientId: pending?.potionRecipientId ?? buyer.id,
                 discardPotionId: validDiscardPotionId,
               });
+              pointAtTarget(`potion-${potionReplacementSlot}`);
               setPotionReplacementSlot(null);
               setDiscardPotionId("");
             }}>Confirm {replacementPotionId ? potionDef(replacementPotionId).name : "purchase"}</button>
@@ -493,6 +558,7 @@ function MerchantScreen({
             }
             onClick={() => {
               onRemove(buyer.id, removalUid, pay(additional(removalRemaining, removalKey), removalKey));
+              pointAtTarget("removal");
               setRemovalOpen(false);
             }}>
             {removalPending ? `Pledge · ◉ ${additional(removalRemaining, removalKey)}` : `Remove selected card · ◉ ${removalCost}`}
@@ -518,8 +584,8 @@ function MerchantScreen({
             ))}
         </div>
       ) : null}
-      <button type="button" className="room-proceed" disabled={Object.keys(merchantPledges).length > 0 || Boolean(onWithdraw && player.id !== players[0]?.id)} onClick={onFinishMerchant}>
-        ← Leave merchant
+      <button type="button" className="room-proceed" onClick={() => setShopOpen(false)}>
+        ← Leave shop
       </button>
     </section>
   );

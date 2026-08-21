@@ -189,6 +189,7 @@ export type RoomSnapshot = {
   }
   cardChoicePlayerId?: string
   merchantPledges?: Record<string, { buyerId: string; section?: string; slot?: number; kind?: 'removal'; cardUid?: string; potionRecipientId?: string; discardPotionId?: string; payments: Record<string, number> }>
+  merchantReady?: string[]
   courierPledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> }
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
   eventCanSkip: boolean

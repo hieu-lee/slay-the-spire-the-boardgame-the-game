@@ -61,6 +61,12 @@ async function setRoom(kind) {
   }, kind)
 }
 
+async function openMerchantShop(target = page) {
+  const enter = target.getByRole('button', { name: 'Enter merchant shop' })
+  if (await enter.count()) await enter.click()
+  await target.getByLabel('Shopping for').waitFor()
+}
+
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 
@@ -395,19 +401,107 @@ await page.setViewportSize({ width: 1440, height: 900 })
 
 await setRoom('merchant')
 await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
+await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
+await page.locator('.merchant-arrival__party img').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+const arrivalCharacters = await page.locator('.merchant-arrival__party img').count()
+const arrivalCharacterNames = await page.locator('.merchant-arrival__party figcaption').count()
+const arrivalMerchant = await page.getByRole('button', { name: 'Enter merchant shop' }).count()
+const arrivalBrowseButton = await page.getByText('Browse wares').count()
+const arrivalLayout = await page.locator('.merchant-arrival').evaluate((stage) => {
+  const frame = stage.getBoundingClientRect()
+  const party = stage.querySelector('.merchant-arrival__party')?.getBoundingClientRect()
+  const merchant = stage.querySelector('.merchant-arrival__merchant')?.getBoundingClientRect()
+  const feet = [...stage.querySelectorAll('.merchant-arrival__party img')].map((image) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d')
+    context.drawImage(image, 0, 0)
+    const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data
+    let opaqueBottom = canvas.height
+    outer: for (let y = canvas.height - 1; y >= 0; y -= 1) {
+      for (let x = 0; x < canvas.width; x += 1) if (alpha[(y * canvas.width + x) * 4 + 3] >= 16) {
+        opaqueBottom = y + 1
+        break outer
+      }
+    }
+    const box = image.getBoundingClientRect()
+    return box.top + opaqueBottom / canvas.height * box.height
+  })
+  return {
+    partyOnRug: Boolean(party && party.right <= frame.left + frame.width * 0.52 && party.bottom <= frame.bottom - frame.height * 0.1),
+    merchantScale: merchant ? merchant.width / frame.width : 1,
+    merchantOnRug: Boolean(merchant && (merchant.left + merchant.width / 2 - frame.left) / frame.width > 0.58 &&
+      (merchant.left + merchant.width / 2 - frame.left) / frame.width < 0.82 && merchant.bottom < frame.bottom - frame.height * 0.12),
+    feetOffset: Math.max(...feet) - Math.min(...feet),
+    feetHeight: (Math.max(...feet) - frame.top) / frame.height,
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-desktop.png'), fullPage: true })
+await page.setViewportSize({ width: 390, height: 844 })
+const mobileArrival = await page.locator('.merchant-arrival').evaluate((stage) => {
+  const frame = stage.getBoundingClientRect()
+  const proceed = stage.querySelector('.room-proceed')?.getBoundingClientRect()
+  const party = stage.querySelector('.merchant-arrival__party')?.getBoundingClientRect()
+  const merchant = stage.querySelector('.merchant-arrival__merchant')?.getBoundingClientRect()
+  return {
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    proceedVisible: Boolean(proceed && proceed.bottom <= frame.bottom + 1 && proceed.right <= frame.right + 1),
+    actorsSeparate: Boolean(party && merchant && party.right <= merchant.left + 1),
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-mobile.png'), fullPage: true })
+const landscapeArrivals = []
+for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }]) {
+  await page.setViewportSize(size)
+  landscapeArrivals.push({ ...size, ...await page.locator('.merchant-arrival').evaluate((stage) => {
+    const title = stage.querySelector('.merchant-arrival__title')?.getBoundingClientRect()
+    const proceed = stage.querySelector('.room-proceed')?.getBoundingClientRect()
+    const overlap = title ? [...stage.querySelectorAll('.merchant-arrival__party img')].reduce((largest, image) => {
+      const actor = image.getBoundingClientRect()
+      return Math.max(largest, Math.max(0, Math.min(title.right, actor.right) - Math.max(title.left, actor.left))
+        * Math.max(0, Math.min(title.bottom, actor.bottom) - Math.max(title.top, actor.top)))
+    }, 0) : Infinity
+    const frame = stage.getBoundingClientRect()
+    return {
+      overlap,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      proceedVisible: Boolean(proceed && proceed.bottom <= frame.bottom + 1 && proceed.right <= frame.right + 1),
+    }
+  }) })
+  await page.screenshot({ path: join(outDir, `merchant-arrival-4p-${size.width}x${size.height}.png`), fullPage: true })
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+check('Merchant map entry opens the arrival scene with the whole party', () => {
+  assertEqual(arrivalCharacters, 4)
+  assertEqual(arrivalCharacterNames, 0, 'character names still appear below the standing assets')
+  assertEqual(arrivalMerchant, 1)
+  assertEqual(arrivalBrowseButton, 0, 'the redundant Browse wares control is still visible')
+  assert(arrivalLayout.partyOnRug, 'the party is not grouped on the circular carpet')
+  assert(arrivalLayout.feetOffset < 2, `the heroes' feet differ by ${arrivalLayout.feetOffset}px`)
+  assert(arrivalLayout.feetHeight < 0.81, 'the heroes stand below the carpet center')
+  assert(arrivalLayout.merchantScale < 0.18, 'the seated Merchant dominates the room')
+  assert(arrivalLayout.merchantOnRug, 'the seated Merchant is not positioned on the green carpet')
+  assert(!mobileArrival.overflow && mobileArrival.proceedVisible, 'the mobile Merchant arrival is clipped')
+  assert(mobileArrival.actorsSeparate, 'the mobile party overlaps the seated Merchant')
+  for (const sample of landscapeArrivals) {
+    assert(sample.overlap <= 1, `the Merchant title overlaps the party by ${sample.overlap}px² at ${sample.width}×${sample.height}`)
+    assert(!sample.overflow && sample.proceedVisible, `the Merchant arrival is clipped at ${sample.width}×${sample.height}`)
+  }
+})
+await openMerchantShop()
 await page.getByLabel('Shopping for').selectOption('p1')
 await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
-await page.locator('.merchant-figure').waitFor()
 await page.screenshot({ path: join(outDir, 'merchant-4p-desktop.png'), fullPage: true })
 await page.setViewportSize({ width: 1280, height: 720 })
-const merchant720 = await page.locator('.merchant-stage').evaluate((stage) => {
+const merchant720 = await page.locator('.merchant-shop-stage').evaluate((stage) => {
   const box = stage.getBoundingClientRect()
   const leave = stage.querySelector('.room-proceed')?.getBoundingClientRect()
   return { bottom: box.bottom, viewport: innerHeight, leaveBottom: leave?.bottom ?? Infinity }
 })
 await page.screenshot({ path: join(outDir, 'merchant-4p-1280x720.png'), fullPage: true })
 await page.setViewportSize({ width: 1024, height: 600 })
-const merchant600 = await page.locator('.merchant-stage').evaluate((stage) => {
+const merchant600 = await page.locator('.merchant-shop-stage').evaluate((stage) => {
   const stageBox = stage.getBoundingClientRect()
   const shelfItems = [...stage.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
   const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
@@ -453,6 +547,30 @@ const merchant390 = await page.locator('.merchant-stage').evaluate((stage) => {
   }
 })
 await page.screenshot({ path: join(outDir, 'merchant-4p-390x844.png'), fullPage: true })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0] = { ...run.players[0], gold: 12 }
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 390, height: 600 })
+const mobilePotion = page.locator('[data-merchant-target="potion-2"]')
+await mobilePotion.scrollIntoViewIfNeeded()
+await mobilePotion.click()
+const mobileMerchantHand = await page.locator('.merchant-hand').evaluate((hand) => {
+  const stage = hand.closest('.merchant-shop-stage')
+  const target = stage?.querySelector('[data-merchant-target="potion-2"]')
+  if (!stage || !target) return null
+  const frame = stage.getBoundingClientRect()
+  const item = target.getBoundingClientRect()
+  const expectedY = item.top - frame.top + stage.scrollTop + item.height * 0.55
+  return {
+    position: getComputedStyle(hand).position,
+    yError: Math.abs(Number.parseFloat(hand.style.getPropertyValue('--merchant-point-y')) - expectedY),
+    scrolled: scrollY > 0 || stage.scrollTop > 0,
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-purchase-hand-mobile.png') })
 await page.setViewportSize({ width: 1440, height: 900 })
 
 // A real pointerless context, not just a narrow window: Playwright reports
@@ -491,6 +609,7 @@ async function measureTouchShelf(width, height, holdsPotion) {
         removalUsed: [], purchasedCards: {} }
       window.__STS_DEBUG__.setRun(run)
     }, holdsPotion)
+    await openMerchantShop(page)
     await page.locator('.merchant-shelf--relics .merchant-item').first().waitFor({ timeout: 120_000 })
     const shape = await page.locator('.merchant-shelf--relics .merchant-item').first().evaluate((tile) => {
       const name = tile.querySelector('strong')
@@ -653,6 +772,7 @@ async function stockShop(page, { belt, colorless, broke }) {
       removalUsed: [], purchasedCards: {} }
     window.__STS_DEBUG__.setRun(run)
   }, { holdsPotion: belt, stocksColorless: colorless, isBroke: Boolean(broke) })
+  await openMerchantShop(page)
   await page.locator('.merchant-shelf--relics .merchant-item').first().waitFor({ timeout: 120_000 })
 }
 
@@ -718,13 +838,6 @@ function measureRug() {
         .map((tile) => tile.getBoundingClientRect().width))
     return widths.length ? Math.round(Math.max(...widths) - Math.min(...widths)) : 0
   })()
-  // The merchant's flavour bubble belongs above the cloth. It is absolutely
-  // positioned, so nothing stops it landing ON the rug — and it did, on every
-  // window short enough to trim the banner it was supposed to sit beside.
-  const greeting = document.querySelector('.merchant-greeting')?.getBoundingClientRect()
-  const greetingOverRug = greeting && greeting.height > 0
-    ? Math.max(0, Math.round(greeting.bottom - board.getBoundingClientRect().top))
-    : 0
   // A card on the rug exists to be read. The shared card face caps its rules text
   // at 0.49rem whatever the card's width, so a wider card bought a bigger picture
   // and type that was still under 7px; the shop overrides that ramp, and the
@@ -794,7 +907,7 @@ function measureRug() {
   const stageOverflow = Math.round(stage.scrollHeight - stage.clientHeight)
   const stageScrolls = ['auto', 'scroll', 'overlay'].includes(getComputedStyle(stage).overflowY)
   return { buriedControls, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
-    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread, greetingOverRug, buriedByOpenLog,
+    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread, buriedByOpenLog,
     overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
     cardRulesFont, cardRulesClipped, cardFaceWidth, colorlessCardWidth, discountMarked,
     sideways: Math.round(board.scrollWidth - board.clientWidth) + Math.round(stage.scrollWidth - stage.clientWidth) }
@@ -1031,12 +1144,12 @@ const stackedRoomScreens = await page.evaluate(() => {
   // NOT `.room-screen`: the relic-resolve panel uses that class too, so counting
   // it hid the blank room this assertion exists to catch. Only the three things a
   // room branch can actually mount.
-  const roomScreens = () => document.querySelectorAll('.campfire, .room-stage').length
+  const roomScreens = () => document.querySelectorAll('.campfire, .room-stage, .merchant-arrival').length
   return (async () => {
     await settle()
     const counts = {
       campfire: document.querySelectorAll('.campfire').length,
-      merchant: document.querySelectorAll('.merchant-stage').length,
+      merchant: document.querySelectorAll('.merchant-stage, .merchant-arrival').length,
       mounted: roomScreens(),
     }
     // A pending Relic has its own resolver. No underlying room action may remain
@@ -1122,6 +1235,7 @@ check('the boss relic picker offers three readable, hittable choices', () => {
 // A Sold relic and a Sold potion are stocked here too: with all six slots filled
 // the `.room-item-icon` half of the shelf-icon selector never rendered, so the
 // rule giving a Sold glyph the icon module was never measured by anything.
+await openMerchantShop()
 const colorlessOverlap = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -1343,8 +1457,6 @@ for (const shopCase of shopCases) {
     assertEqual(shopCase.sideways, 0, `${where}: the rug overflowed sideways by ${shopCase.sideways}px`)
     assertEqual(shopCase.overlapCount, 0,
       `${where}: ${shopCase.overlapCount} overlapping rug element(s): ${shopCase.overlaps.join(' ')}`)
-    assertEqual(shopCase.greetingOverRug, 0,
-      `${where}: the merchant's greeting overlapped the rug by ${shopCase.greetingOverRug}px`)
     if (shopCase.colorless) {
       assert(Math.abs(shopCase.colorlessCardWidth - shopCase.cardFaceWidth) <= 2,
         `${where}: Colorless cards are ${shopCase.colorlessCardWidth}px against ${shopCase.cardFaceWidth}px for the character row`)
@@ -1469,7 +1581,7 @@ const merchantShape = await page.evaluate(() => {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     boardScrollable: !boardStyle || ['auto', 'scroll'].includes(boardStyle.overflowX) || ['auto', 'scroll'].includes(boardStyle.overflowY),
     buttons: document.querySelectorAll('.merchant-board button').length,
-    figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0,
+    oldFigures: document.querySelectorAll('.merchant-figure').length,
     shelfIconCount: shelfItems.length,
     shelfWidth: Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
     shelfIconSpread: Math.max(...shelfItems.map((item) => item.getBoundingClientRect().width))
@@ -1482,7 +1594,7 @@ check('four-player Merchant is game-framed, responsive, and keyboard reachable',
   assert(!merchantShape.overflow, 'merchant overflows the viewport')
   assert(!merchantShape.boardScrollable, 'merchant inventory rug is scrollable')
   assert(merchantShape.buttons >= 9, `merchant exposes only ${merchantShape.buttons} actions`)
-  assert(merchantShape.figure > 200, `merchant figure is only ${merchantShape.figure}px wide`)
+  assertEqual(merchantShape.oldFigures, 0, 'the old merchant figure is still rendered')
   assertEqual(merchantShape.shelfIconCount, 6, 'the shelves did not render six icons')
   assert(merchantShape.shelfWidth >= 34, `merchant shelf icons are only ${merchantShape.shelfWidth}px wide`)
   assert(merchantShape.shelfIconSpread <= 2, `merchant shelf icons differ by ${merchantShape.shelfIconSpread}px`)
@@ -1524,6 +1636,11 @@ check('Merchant keeps legible shelf icons without horizontal overflow at 390×84
   assert(merchant390.removalRatio > 0.9, `card removal uses only ${merchant390.removalRatio * 100}% of the mobile rug`)
   assert(merchant390.detailVisible, 'touch shoppers cannot read item descriptions')
 })
+check('Merchant hand stays attached to a purchased item after mobile scrolling', () => {
+  assert(mobileMerchantHand?.scrolled, 'mobile purchase did not exercise a scrolled Merchant')
+  assertEqual(mobileMerchantHand?.position, 'absolute')
+  assert((mobileMerchantHand?.yError ?? Infinity) < 3, `Merchant hand missed the scrolled item by ${mobileMerchantHand?.yError}px`)
+})
 await page.keyboard.press('Tab')
 const focused = await page.locator(':focus-visible').count()
 check('Merchant exposes visible keyboard focus', () => assert(focused))
@@ -1548,6 +1665,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await setRoom('merchant')
+await openMerchantShop()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -1571,14 +1689,24 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /Anchor/ }).click()
+await page.locator('.merchant-hand').evaluate((image) => image.decode())
+const merchantHand = await page.locator('.merchant-hand').evaluate((image) => ({
+  src: image.getAttribute('src'),
+  loaded: image.naturalWidth > 0,
+  height: image.getBoundingClientRect().height,
+}))
+await page.screenshot({ path: join(outDir, 'merchant-purchase-hand.png'), fullPage: true })
 await page.getByRole('button', { name: /Sold/ }).first().waitFor()
 const sharedPurchaseRun = await page.evaluate(() => window.__STS_DEBUG__.getRun())
 check('local co-op Merchant spends an exact shared-Gold payment', () => {
   assert(sharedPurchaseRun.players[0].relics.some((relic) => relic.defId === 'anchor'))
   assertEqual(sharedPurchaseRun.players[1].gold, 0)
+  assertEqual(merchantHand.src, '/assets/noncombat/merchant/merchant-hand.webp')
+  assert(merchantHand.loaded && merchantHand.height > 500, 'the Merchant hand cannot reach the inventory')
 })
 
 await setRoom('merchant')
+await openMerchantShop()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -1590,9 +1718,35 @@ await page.getByRole('button', { name: /Card Removal Service/ }).click()
 await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 await page.getByRole('button', { name: /Remove/ }).click()
 await page.waitForFunction((size) => window.__STS_DEBUG__.getRun().players[0].deck.length === size - 1, localDeckSize)
+const removalHand = await page.locator('.merchant-hand').evaluate((hand) => {
+  const stage = hand.closest('.merchant-shop-stage')
+  const target = stage?.querySelector('[data-merchant-target="removal"]')
+  if (!stage || !target) return null
+  const frame = stage.getBoundingClientRect()
+  const item = target.getBoundingClientRect()
+  return Math.abs(Number.parseFloat(hand.style.getPropertyValue('--merchant-point-y'))
+    - (item.top - frame.top + stage.scrollTop + item.height * 0.55))
+})
+await page.screenshot({ path: join(outDir, 'merchant-removal-hand.png'), fullPage: true })
 const removalPayerGold = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[1].gold)
-check('local co-op card removal can use shared Gold', () => assertEqual(removalPayerGold, 0))
+check('local co-op card removal can use shared Gold and triggers the Merchant hand', () => {
+  assertEqual(removalPayerGold, 0)
+  assert((removalHand ?? Infinity) < 3, `Merchant hand missed card removal by ${removalHand}px`)
+})
 
+await page.getByRole('button', { name: /Leave shop/ }).click()
+for (const id of ['p1', 'p2', 'p3']) {
+  await page.evaluate((playerId) => window.__STS_DEBUG__.setViewer(playerId), id)
+  await page.getByRole('button', { name: /Proceed/ }).click()
+  await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
+}
+const waitingReady = await page.getByRole('button', { name: /Waiting for party/ }).textContent()
+await page.evaluate(() => window.__STS_DEBUG__.setViewer('p4'))
+await page.getByRole('button', { name: /Proceed/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+check('leaving the shop returns to the arrival scene and local play waits for every traveler', () => assert(waitingReady?.includes('3/4')))
+
+await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
 await setRoom('treasure')
 await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
 await page.screenshot({ path: join(outDir, 'treasure-4p-desktop.png'), fullPage: true })
@@ -1766,6 +1920,7 @@ await page.getByText('These rewards are face-up').waitFor()
 const revealedPotions = await page.locator('.event-cards > fieldset > legend').allTextContents()
 const passControls = await page.getByLabel('Pass to', { exact: true }).count()
 const replacementControls = await page.getByLabel('Replace', { exact: true }).count()
+await page.locator('fieldset[aria-label="Replace"] .item-card-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
 const replacementCardImages = await page.locator('fieldset[aria-label="Replace"] .item-card-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 for (const fieldset of await page.locator('.event-cards > fieldset').all()) await fieldset.getByRole('button', { name: 'Take' }).click()
@@ -2858,6 +3013,7 @@ for (const seat of onlineSeats) {
   onlinePage.on('pageerror', (error) => failures.push(String(error)))
   await onlinePage.goto(base, { waitUntil: 'networkidle' })
   await onlinePage.getByRole('heading', { name: 'The Merchant' }).waitFor()
+  await openMerchantShop(onlinePage)
   onlineContexts.push(context)
   onlinePages.push(onlinePage)
 }
@@ -2865,18 +3021,22 @@ const [ann, bo] = onlinePages
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: index === 0 ? 1 : 0 }))
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 const insufficientMerchantDisabled = await ann.getByRole('button', { name: /Anchor/ }).isDisabled()
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: [1, 4, 12, 12][index] }))
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 await ann.getByRole('button', { name: /Anchor/ }).click()
 await ann.getByRole('button', { name: 'Cancel relic purchase and return all contributions' }).waitFor()
-const pendingMerchantLeaveDisabled = await ann.getByRole('button', { name: /Leave merchant/ }).isDisabled()
-const pendingMerchantLeaveFrame = await ann.getByRole('button', { name: /Leave merchant/ }).evaluate((button) => {
-  const frame = button.closest('.room-stage')?.getBoundingClientRect()
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+const pendingMerchantLeaveDisabled = await ann.getByRole('button', { name: /Proceed/ }).isDisabled()
+const pendingMerchantLeaveFrame = await ann.getByRole('button', { name: /Proceed/ }).evaluate((button) => {
+  const frame = button.closest('.merchant-arrival')?.getBoundingClientRect()
   const bounds = button.getBoundingClientRect()
   return Boolean(frame && bounds.width > 120 && bounds.left >= frame.left && bounds.right <= frame.right)
 })
+await openMerchantShop(ann)
 await ann.screenshot({ path: join(outDir, 'merchant-4p-funded-online.png'), fullPage: true })
 const competingBuyerDisabled = await bo.getByRole('button', { name: /Anchor/ }).isDisabled()
 await bo.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
@@ -2884,12 +3044,13 @@ const teammateRemovalDisabled = await bo.getByRole('button', { name: /Card Remov
 await bo.getByRole('button', { name: /Anchor/ }).click()
 await ann.getByRole('button', { name: /Sold/ }).first().waitFor()
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 await ann.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await ann.getByRole('button', { name: /Sold/ }).first().waitFor()
 await bo.setViewportSize({ width: 1280, height: 800 })
 await bo.screenshot({ path: join(outDir, 'merchant-4p-reconnect-compact-desktop.png'), fullPage: true })
 const compactOnline = await bo.evaluate(() => {
-  const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave merchant'))
+  const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave shop'))
   const stage = document.querySelector('.room-stage')?.getBoundingClientRect()
   return { width: document.documentElement.scrollWidth, viewport: innerWidth, leave: Boolean(leave), contained: Boolean(stage && leave && stage.bottom >= leave.getBoundingClientRect().bottom - 1), wide: [...document.querySelectorAll('*')].filter((element) => element.getBoundingClientRect().right > innerWidth + 1).slice(0, 4).map((element) => `${element.tagName}.${element.className}:${Math.round(element.getBoundingClientRect().right)}`) }
 })
@@ -2914,8 +3075,10 @@ liveRoom.run.players[2] = { ...liveRoom.run.players[2], gold: 5 }
 liveRoom.version += 1
 const cyMerchant = onlinePages[2]
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 await ann.getByRole('button', { name: /Happy Flower/ }).click()
 await cyMerchant.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(cyMerchant)
 await cyMerchant.locator('.connection--connected').waitFor()
 await cyMerchant.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
 await cyMerchant.getByRole('button', { name: /Happy Flower/ }).click()
@@ -2936,6 +3099,7 @@ liveRoom.run.ascension = 4
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], gold: 0, potions: ['swift_potion', 'blood_potion'] }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 await ann.setViewportSize({ width: 1280, height: 720 })
 await ann.getByRole('button', { name: /Fire Potion/ }).click()
 const merchantReplacement = ann.getByRole('group', { name: 'Replace potion' })
@@ -2972,9 +3136,9 @@ await merchantReplacement.getByRole('button', { name: /Swift Potion/, pressed: t
 const merchantReplacementCards = await merchantReplacement.locator('.item-icon-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 const replacementGeometry = await ann.evaluate(() => {
-  const stage = document.querySelector('.merchant-stage')
+  const stage = document.querySelector('.merchant-shop-stage')
   const title = document.querySelector('#merchant-title')?.getBoundingClientRect()
-  const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave merchant'))?.getBoundingClientRect()
+  const leave = [...document.querySelectorAll('button')].find((button) => button.textContent?.includes('Leave shop'))?.getBoundingClientRect()
   return { stageScroll: stage?.scrollTop ?? -1, titleTop: title?.top ?? -1, leaveBottom: leave?.bottom ?? Infinity, viewport: innerHeight }
 })
 await ann.screenshot({ path: join(outDir, 'merchant-potion-replacement.png'), fullPage: true })
@@ -2982,6 +3146,7 @@ await firePotionConfirm.click()
 await ann.setViewportSize({ width: 1280, height: 800 })
 const potionContributor = onlinePages[2]
 await potionContributor.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(potionContributor)
 await potionContributor.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
 const pendingPotion = potionContributor.getByRole('button', { name: /Fire Potion/ })
 const reconnectPotionEnabled = await pendingPotion.isEnabled()
@@ -2997,7 +3162,7 @@ check('Merchant reconnect preserves the buyer-authorized potion replacement for 
   assertEqual(replacementSelectedColor, 'rgb(42, 28, 7)', 'selected potion text is low contrast on the gold plate')
   assertEqual(replacementGeometry.stageScroll, 0, 'potion replacement scrolled the Merchant stage')
   assert(replacementGeometry.titleTop >= 0, 'potion replacement hid the Merchant title')
-  assert(replacementGeometry.leaveBottom <= replacementGeometry.viewport + 1, 'potion replacement clipped Leave merchant')
+  assert(replacementGeometry.leaveBottom <= replacementGeometry.viewport + 1, 'potion replacement clipped Leave shop')
   assert(liveRoom.run.players[0].potions.includes('fire_potion'))
   assert(!liveRoom.run.players[0].potions.includes('swift_potion'))
 })
@@ -3026,9 +3191,11 @@ const pendingRemovalCard = removableDeck[pendingRemovalIndex]
 liveRoom.merchantPledges = { [`remove/${onlineSeats[0].playerId}`]: { kind: 'removal', buyerId: onlineSeats[0].playerId, cardUid: pendingRemovalCard.uid, payments: { [onlineSeats[0].playerId]: 1 } } }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 await ann.locator('.connection--connected').waitFor()
 const removalContributor = onlinePages[2]
 await removalContributor.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(removalContributor)
 await removalContributor.locator('.connection--connected').waitFor()
 await removalContributor.getByLabel('Shopping for').selectOption(onlineSeats[0].playerId)
 const pendingRemovalServiceEnabled = await removalContributor.getByRole('button', { name: /Card Removal Service/ }).isEnabled()
@@ -3064,6 +3231,7 @@ liveRoom.version += 1
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], relics: [...liveRoom.run.players[0].relics, { defId: 'sozu', spent: false }] }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await openMerchantShop(ann)
 const onlinePotionButtons = ann.locator('.merchant-shelf[aria-label="Potions"] button')
 await ann.getByText('Blocked by Sozu').first().waitFor()
 const onlineSozuMerchantDisabled = await onlinePotionButtons.evaluateAll((buttons) => buttons.every((button) => button.disabled))
@@ -3074,6 +3242,88 @@ check('online Merchant disables every Potion purchase for a Sozu recipient', () 
 })
 liveRoom.run.players[0] = { ...liveRoom.run.players[0], relics: liveRoom.run.players[0].relics.filter((relic) => relic.defId !== 'sozu') }
 liveRoom.version += 1
+
+liveRoom.seats[3].connected = false
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+await ann.getByRole('button', { name: /0\/3 ready/ }).waitFor()
+const disconnectedMerchantCharacters = await ann.locator('.merchant-arrival__party img').count()
+liveRoom.seats[3].connected = true
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('button', { name: /0\/4 ready/ }).waitFor()
+await openMerchantShop(ann)
+check('online Merchant arrival matches its connected-player quorum', () => {
+  assertEqual(disconnectedMerchantCharacters, 3)
+})
+
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+liveRoom.merchantReady = [onlineSeats[0].playerId]
+liveRoom.version += 1
+const staleResume = ann.waitForResponse((response) =>
+  response.url().endsWith(`/api/rooms/${create.snapshot.code}/action`) && response.request().postData()?.includes('merchantResume'))
+await Promise.all([staleResume, ann.getByRole('button', { name: 'Enter merchant shop' }).click()])
+const staleMerchantReadyCleared = !liveRoom.merchantReady?.includes(onlineSeats[0].playerId)
+check('online Merchant re-entry clears readiness even before the finish snapshot arrives', () => {
+  assert(staleMerchantReadyCleared, 'stale arrival state skipped the idempotent Merchant resume')
+})
+
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+const pendingVotePledgeKey = `${onlineSeats[1].playerId}/relic/0`
+liveRoom.merchantReady = [onlineSeats[0].playerId]
+liveRoom.merchantPledges = { [pendingVotePledgeKey]: {
+  buyerId: onlineSeats[1].playerId, section: 'relic', slot: 0, payments: { [onlineSeats[1].playerId]: 1 },
+} }
+liveRoom.giveUpVote = {
+  runId: liveRoom.run.campaign.runId,
+  deadlineAt: Date.now() + 750,
+  eligiblePlayerIds: liveRoom.run.players.map((player) => player.id),
+  votes: {},
+}
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+const merchantGiveUp = ann.getByRole('dialog', { name: 'Give up this run?' })
+await merchantGiveUp.waitFor()
+await merchantGiveUp.waitFor({ state: 'hidden' })
+await ann.waitForTimeout(300)
+const merchantExpiryError = await ann.locator('.online-error').allTextContents()
+check('Merchant Give Up expiry preserves pending contributions without a retry error', () => {
+  assertEqual(liveRoom.run.phase, 'room')
+  assert(liveRoom.merchantPledges?.[pendingVotePledgeKey], 'Give Up expiry lost a pending Merchant contribution')
+  assertDeepEqual(merchantExpiryError, [])
+})
+liveRoom.giveUpVote = undefined
+liveRoom.merchantPledges = undefined
+liveRoom.merchantReady = undefined
+liveRoom.version += 1
+rooms.publishRoom(create.snapshot.code)
+await openMerchantShop(ann)
+
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+await ann.getByRole('button', { name: /Proceed/ }).click()
+await ann.getByRole('button', { name: /Waiting for party/ }).waitFor()
+await ann.getByRole('button', { name: 'Enter merchant shop' }).click()
+await ann.getByLabel('Shopping for').waitFor()
+await ann.getByRole('button', { name: /Leave shop/ }).click()
+await ann.getByRole('button', { name: /Proceed/ }).waitFor()
+const resumedMerchant = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.code}`, { headers: { 'x-room-token': onlineSeats[0].token } }).then((response) => response.json())
+await ann.getByRole('button', { name: /Proceed/ }).click()
+await ann.getByRole('button', { name: /Waiting for party/ }).waitFor()
+for (const voter of onlinePages.slice(1, 3)) {
+  await voter.getByRole('button', { name: /Leave shop/ }).click()
+  await voter.getByRole('button', { name: /Proceed/ }).click()
+  await voter.getByRole('button', { name: /Waiting for party/ }).waitFor()
+}
+const onlineMerchantReady = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.code}`, { headers: { 'x-room-token': onlineSeats[0].token } }).then((response) => response.json())
+await onlinePages[3].getByRole('button', { name: /Leave shop/ }).click()
+await onlinePages[3].getByRole('button', { name: /Proceed/ }).click()
+await onlinePages[3].locator('.map').waitFor()
+check('online Merchant proceed is unanimous and reconnect-visible', () => {
+  assert(!resumedMerchant.merchantReady.includes(onlineSeats[0].playerId), 'resuming the shop kept Ann ready')
+  assertDeepEqual(onlineMerchantReady.merchantReady, onlineSeats.slice(0, 3).map((seat) => seat.playerId))
+  assertEqual(liveRoom.run.phase, 'map')
+})
 
 liveRoom.run.phase = 'reward'
 liveRoom.run.roomState = null
