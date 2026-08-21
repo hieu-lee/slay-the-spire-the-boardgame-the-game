@@ -50,7 +50,7 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
         {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, heldIndex) =>
           <button type="button" key={`${held}:${heldIndex}`} onClick={() => {
             onUse(id, held); setReplacing(null)
-          }}><ItemImage kind="potion" id={held} card />Replace {potionDef(held).name}</button>)}
+          }}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
       </div> : null}
       <button type="button" aria-label={`Give ${potionDef(id).name}`} disabled={recipients.length === 0}
         aria-expanded={recipients.length > 0

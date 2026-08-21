@@ -3831,7 +3831,7 @@ try {
   }))
   check('revealed Potion rewards are shared without foreign controls', () => {
     assertEqual(foreignPotionGain, 0)
-    assert(onlinePotionCardLoaded, 'the revealed Potion omitted its physical card artwork')
+    assert(onlinePotionCardLoaded, 'the revealed Potion omitted its icon artwork')
     assert(compactPotionLayout.scrollWidth <= compactPotionLayout.width,
       'the outside Potion controls overflow the compact desktop viewport')
     assert(compactPotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
@@ -4034,18 +4034,18 @@ try {
   const duplicateBrewTargets = await fourPages[0].locator('.outside-potions__targets').count()
   const expandedBrewButtons = await brewUses.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute('aria-expanded')))
-  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('.outside-potions__targets .item-card-image')]
+  await fourPages[0].waitForFunction(() => [...document.querySelectorAll('.outside-potions__targets .item-icon-image')]
     .every((image) => image.complete && image.naturalWidth > 0))
   const brewReplacementStyles = await fourPages[0].locator('.outside-potions__targets button').evaluateAll((buttons) =>
     buttons.map((button) => ({ label: button.textContent?.trim(), color: getComputedStyle(button).color,
       background: getComputedStyle(button).backgroundColor })))
-  const brewReplacementCards = await fourPages[0].locator('.outside-potions__targets .item-card-image')
+  const brewReplacementIcons = await fourPages[0].locator('.outside-potions__targets .item-icon-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   await fourPages[0].screenshot({ path: join(outDir, '09-outside-potion-replacement.png'), fullPage: true })
   check('duplicate Entropic Brews open one replacement group', () => {
     assertEqual(duplicateBrewTargets, 1)
     assertDeepEqual(expandedBrewButtons, ['true', 'false'])
-    assertDeepEqual(brewReplacementCards, [true])
+    assertDeepEqual(brewReplacementIcons, [true])
     assert(brewReplacementStyles.every((style) => contrastRatio(style) >= 4.5),
       `Potion replacement contrast failed: ${JSON.stringify(brewReplacementStyles)}`)
   })

@@ -21,7 +21,7 @@ export function RewardItem({ kind, id, title, note, children }: {
   children?: ReactNode
 }) {
   return (
-    <div className={`reward-item reward-screen__${kind}`}>
+    <div className={`reward-item reward-screen__${kind}`} role="group" aria-label={title}>
       {/* Art only, no `card`: a generated card face prints the item's own name and
           rules, and this row prints both again beside it at a readable size — so
           the face was a second, unreadable copy (its rules text landed near 7px)
