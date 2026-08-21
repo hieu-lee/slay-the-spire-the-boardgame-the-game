@@ -3661,6 +3661,28 @@ try {
     assertEqual(onlineStacked.campfire, 0, 'the campfire screen rendered on top of an open online Merchant')
   })
 
+  // The online shell stacks rooms in a column flex, which can squeeze a room the local
+  // shell leaves at full height — and a squeezed Merchant room slides its controls onto
+  // the actors, so tapping the Merchant would proceed past him instead of opening shop.
+  await a.setViewportSize({ width: 844, height: 390 })
+  const onlineArrival = await ownerGame.evaluate((shell) => {
+    const stage = shell.querySelector('.merchant-arrival')
+    const frame = stage.getBoundingClientRect()
+    const seat = stage.querySelector('.merchant-arrival__merchant')
+    const seatBox = seat.getBoundingClientRect()
+    return {
+      shrunk: frame.height < stage.parentElement.getBoundingClientRect().height - 1,
+      seatReachable: [0.5, 0.75, 0.95].every((depth) => seat.contains(
+        document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height * depth))),
+    }
+  })
+  await a.setViewportSize({ width: 1440, height: 900 })
+  check('the online Merchant arrival keeps its full height on a short screen', () => {
+    assert(!onlineArrival.shrunk, 'the online shell squeezed the Merchant arrival')
+    assert(onlineArrival.seatReachable, 'a control covers the seated Merchant online, so tapping him misfires')
+    assert(onlineArrival.titleOverlap <= 1, `the online Merchant title overlaps the party by ${onlineArrival.titleOverlap}px²`)
+  })
+
   // A normal Merchant purchase can create a mandatory acquisition without
   // closing the shop. The resolver must be the only actionable room surface for
   // its owner, and the shop must stay hidden for a teammate after reconnect.

@@ -282,20 +282,24 @@ function MerchantScreen({
     };
     return (
       <section className="merchant-arrival" aria-labelledby="merchant-arrival-title">
-        <div className="merchant-arrival__party" aria-label="Party at the merchant">
-          {eligiblePlayers.map((candidate) => (
-            <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
-              <img src={`/assets/noncombat/merchant/characters/${candidate.character}-standing.webp`} alt="" />
-            </figure>
-          ))}
+        {/* The scene box matches the backdrop art's projected rectangle, so the party
+            and the Merchant keep their carpets at every viewport aspect ratio. */}
+        <div className="merchant-arrival__scene">
+          <div className="merchant-arrival__party" aria-label="Party at the merchant">
+            {eligiblePlayers.map((candidate) => (
+              <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
+                <img src={`/assets/noncombat/merchant/characters/${candidate.character}-standing.webp`} alt="" />
+              </figure>
+            ))}
+          </div>
+          <button type="button" className="merchant-arrival__merchant" onClick={() => {
+            setShopOpen(true);
+            if (onResumeMerchant) onResumeMerchant();
+            else if (ready.includes(player.id)) setLocalReady((current) => current.filter((id) => id !== player.id));
+          }} aria-label="Enter merchant shop">
+            <img src="/assets/noncombat/merchant/merchant-seated.webp" alt="The Merchant sits behind a spread of wares" />
+          </button>
         </div>
-        <button type="button" className="merchant-arrival__merchant" onClick={() => {
-          setShopOpen(true);
-          if (onResumeMerchant) onResumeMerchant();
-          else if (ready.includes(player.id)) setLocalReady((current) => current.filter((id) => id !== player.id));
-        }} aria-label="Enter merchant shop">
-          <img src="/assets/noncombat/merchant/merchant-seated.webp" alt="The Merchant sits behind a spread of wares" />
-        </button>
         <div className="merchant-arrival__title">
           <span>Merchant</span>
           <h2 id="merchant-arrival-title">The Merchant</h2>

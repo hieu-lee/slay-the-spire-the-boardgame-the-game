@@ -936,6 +936,13 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   margin-bottom: 0.75rem;
 }
 
+/* The implicit column takes its width from the widest item, and the full-bleed header
+   above contributes 50vw of max-content — so past roughly 2736px the column outgrows
+   the centred 1400px shell and every `50% - 50vw` break-out inside it lands off centre,
+   carrying the header, the potion belt and the Settings gear off the right edge. Pin the
+   column to the shell so the break-outs measure against a centred box. */
+.app-shell { grid-template-columns: minmax(0, 1fr); }
+
 /* styles.css gives the combat HUD its own taller slab and a GEORGIA h1, at a
    higher specificity than the rule above — so the header changed typeface the
    instant a fight started, which is the "two people built this" tell. The
@@ -1692,14 +1699,85 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 /* ---------- merchant arrival and shop ---------- */
 
+/* The backdrop is projected onto `.merchant-arrival__scene`, and the party and the
+   Merchant are placed in percentages of that box, so both actors stay glued to their
+   carpets whatever the viewport aspect ratio. `--scene-span` is the slice of art width
+   that must stay on screen — both carpets plus a margin — and `--scene-focus` is the
+   art column held at the middle of the frame, set between the carpets rather than at
+   the art's centre so that slice is as wide as possible. Once a container is too tall
+   to cover the slice the scene letterboxes over the blurred filler instead of cropping
+   a carpet away. */
 .sts-scope .merchant-arrival {
+  --scene-art: url('/assets/noncombat/merchant/background.webp');
+  --scene-ar: 1.7758;
+  --scene-basis: 100cqw;
+  --scene-span: 0.68;
+  --scene-focus: 45.45%;
+  --scene-focus-y: 50%;
+  --party-x: 30.75%;
+  --party-y: 73%;
+  --party-width: 33.6%;
+  --merchant-x: 70.6%;
+  --merchant-y: 71.8%;
+  --merchant-width: 12.7%;
+  /* `--scene-fill` is 1 / (2 × the smaller side of `--scene-focus`): an off-centre
+     focus needs that much extra width before the art still reaches both edges. */
+  --scene-fill: 1.105;
+  --scene-width: min(
+    max(calc(var(--scene-basis) * var(--scene-fill)), calc(100cqh * var(--scene-ar))),
+    calc(var(--scene-basis) / var(--scene-span))
+  );
+  --scene-half-height: calc(var(--scene-width) / var(--scene-ar) / 2);
   position: relative;
-  min-height: calc(100dvh - 4.8rem);
-  overflow: hidden;
+  container-type: size;
+  /* A definite height, not `min-height`: `100cqh` reads 0 on an auto-height size
+     container, and every child of the scene is absolutely positioned anyway. The
+     online shell stacks rooms in a column flex, where that height is the main size —
+     and size containment floors the automatic minimum at 0 — so without the shrink
+     guard the room would collapse and drop Proceed onto the Merchant. */
+  height: calc(100dvh - 4.8rem);
+  flex-shrink: 0;
+  /* `clip`, not `hidden`: the scene deliberately overflows this box, and a hidden
+     overflow would make it a scroll container that focus moves — returning from the
+     shop would scroll the room and leave it offset with no way back. */
+  overflow: clip;
+  background: #0a0508;
+}
+
+/* The same art at the same width, smeared vertically, blurred and dimmed towards the
+   edges, so the bands above and below a letterboxed scene read as curtains carrying
+   its colours rather than as a cut-off image. */
+.sts-scope .merchant-arrival::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 50%;
+  width: var(--scene-width);
+  height: 100%;
+  background:
+    linear-gradient(180deg, #07040a, rgb(7 4 10 / 0.25) 42% 58%, #07040a),
+    var(--scene-art) center / 100% 100% no-repeat;
+  filter: blur(1.75rem) brightness(0.72);
+  transform: translateX(calc(-1 * var(--scene-focus))) scale(1.06);
+  pointer-events: none;
+}
+
+.sts-scope .merchant-arrival__scene {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: var(--scene-width);
+  aspect-ratio: var(--scene-ar);
+  transform: translate(calc(-1 * var(--scene-focus)), calc(-1 * var(--scene-focus-y)));
   background:
     linear-gradient(180deg, rgb(4 5 9 / 0.08), rgb(4 2 5 / 0.4)),
-    url('/assets/noncombat/merchant/background.webp') center / cover no-repeat;
-  box-shadow: inset 0 0 5rem rgb(0 0 0 / 0.68);
+    var(--scene-art) center / 100% 100% no-repeat;
+  /* The vignette rides the art, and the outer shadow settles the letterboxed band
+     into its blurred surround on portrait screens. */
+  box-shadow: inset 0 0 5rem rgb(0 0 0 / 0.68), 0 0 3rem rgb(0 0 0 / 0.55);
+  pointer-events: none;
 }
 
 .sts-scope .merchant-arrival__title {
@@ -1722,32 +1800,37 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .merchant-arrival__party {
   position: absolute;
   z-index: 2;
-  left: 4%;
-  bottom: 24%;
+  left: var(--party-x);
+  top: var(--party-y);
   display: flex;
-  width: min(40vw, 39rem);
-  height: 42%;
+  width: var(--party-width);
   align-items: end;
   justify-content: center;
+  transform: translate(-50%, -100%);
 }
 
 .sts-scope .merchant-arrival__party figure {
   position: relative;
-  width: min(25%, 11rem);
+  width: 25%;
   margin: 0 -1%;
   filter: drop-shadow(0 1rem 0.8rem rgb(0 0 0 / 0.7));
 }
 
-.sts-scope .merchant-arrival__party img { display: block; width: 100%; max-height: 60vh; object-fit: contain; }
-.sts-scope .merchant-arrival__party figure[data-character='ironclad'] img,
-.sts-scope .merchant-arrival__party figure[data-character='silent'] img { transform: translateY(1%); }
-.sts-scope .merchant-arrival__party figure[data-character='defect'] img { transform: translateY(8.3%); }
+.sts-scope .merchant-arrival__party img { display: block; width: 100%; }
+/* Each standing asset leaves a different transparent gap under its feet; pushing
+   every sprite down by its own gap lands the whole party on one floor line. */
+.sts-scope .merchant-arrival__party figure[data-character='ironclad'] img { transform: translateY(2.8%); }
+.sts-scope .merchant-arrival__party figure[data-character='silent'] img { transform: translateY(2.86%); }
+.sts-scope .merchant-arrival__party figure[data-character='defect'] img { transform: translateY(10.09%); }
+.sts-scope .merchant-arrival__party figure[data-character='watcher'] img { transform: translateY(1.76%); }
 .sts-scope .merchant-arrival__merchant {
   position: absolute;
   z-index: 3;
-  right: 23.8%;
-  bottom: 28.5%;
-  width: min(14.58vw, 12.96rem);
+  left: var(--merchant-x);
+  top: var(--merchant-y);
+  width: var(--merchant-width);
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
   padding: 0;
   color: #fff2cd;
   background: transparent;
@@ -1761,27 +1844,25 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 .sts-scope .merchant-arrival__merchant:focus-visible { outline: 4px solid #ffd166; outline-offset: 0.4rem; }
 .sts-scope .merchant-arrival > .room-proceed { position: absolute; z-index: 5; right: 1rem; bottom: 1rem; margin: 0; }
 
+/* Wide art is the same room pulled back, so its carpets sit at different fractions
+   and its props read smaller — anchors and actor widths are retuned, not reused. */
 @media (min-width: 1401px) {
   .sts-scope .merchant-arrival {
-    isolation: isolate;
-    overflow: visible;
-    background: none;
-    box-shadow: none;
-  }
-
-  .sts-scope .merchant-arrival::before {
-    content: '';
-    position: absolute;
-    z-index: 0;
-    inset-block: 0;
-    left: 50%;
+    --scene-art: url('/assets/noncombat/merchant/background-wide.webp');
+    --scene-ar: 2.3681;
+    --scene-span: 0.45;
+    --scene-focus: 52%;
+    --scene-fill: 1.045;
+    --party-x: 43.7%;
+    --party-y: 64.5%;
+    --party-width: 18.4%;
+    --merchant-x: 66.7%;
+    --merchant-y: 66.3%;
+    --merchant-width: 7.19%;
+    /* Break out of the shell's column so the wide art meets both screen edges. The
+       scene is clipped to this box, so nothing paints past the window. */
     width: 100vw;
-    transform: translateX(-50%);
-    background:
-      linear-gradient(180deg, rgb(4 5 9 / 0.08), rgb(4 2 5 / 0.4)),
-      url('/assets/noncombat/merchant/background-wide.webp') center / cover no-repeat;
-    box-shadow: inset 0 0 5rem rgb(0 0 0 / 0.68);
-    pointer-events: none;
+    margin-inline: calc(50% - 50vw);
   }
 }
 
@@ -1810,22 +1891,38 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 }
 
 @media (max-width: 760px) {
-  .sts-scope .merchant-arrival { min-height: calc(100dvh - 4rem); }
+  .sts-scope .merchant-arrival { height: calc(100dvh - 4rem); }
   .sts-scope .merchant-arrival__title { top: 0.6rem; left: 0.6rem; max-width: calc(100% - 1.2rem); }
   .sts-scope .merchant-arrival__title p { display: none; }
-  .sts-scope .merchant-arrival__party { left: 1%; bottom: 7.5rem; width: 58vw; height: 38%; }
-  .sts-scope .merchant-arrival__party figure { width: 30%; margin: 0 -3%; }
-  .sts-scope .merchant-arrival__merchant { right: 7.3%; bottom: 10rem; width: 23.4vw; }
   .sts-scope .merchant-arrival > .room-proceed { right: 0.6rem; bottom: 0.6rem; }
   .sts-scope .merchant-hand { height: 105vh; }
 }
 
+/* A portrait window is far taller than the art it can show, so the room reads as a band
+   of scene in a dark frame. Hang the title and Proceed off the band's own edges — parked
+   in the stage's corners they float in the filler and the band looks like a cut-off
+   image rather than the framed stage it is. */
+@media (orientation: portrait) {
+  .sts-scope .merchant-arrival__title {
+    top: auto;
+    bottom: calc(50% + var(--scene-half-height) + 0.75rem);
+  }
+
+  .sts-scope .merchant-arrival > .room-proceed {
+    top: calc(50% + var(--scene-half-height) + 0.75rem);
+    bottom: auto;
+  }
+}
+
 @media (max-height: 520px) {
-  .sts-scope .merchant-arrival__title { top: 0.5rem; left: 0.75rem; max-width: 52%; padding: 0.45rem 0.7rem; }
+  /* Short frames crop the art tightly, so hold a lower row of the room in the middle:
+     that lifts the floor line clear of the Proceed button parked bottom right. */
+  .sts-scope .merchant-arrival { --scene-focus-y: 60%; }
+  /* `bottom: auto` undoes the portrait block above: a frame this short has no room to
+     hang the plaque over the band, and leaving both edges set would stretch it. */
+  .sts-scope .merchant-arrival__title { top: 0.5rem; bottom: auto; left: 0.75rem; max-width: 52%; padding: 0.45rem 0.7rem; }
   .sts-scope .merchant-arrival__title h2 { font-size: clamp(1.35rem, 7vh, 1.85rem); }
   .sts-scope .merchant-arrival__title p { display: none; }
-  .sts-scope .merchant-arrival__party { bottom: 3rem; height: 46%; }
-  .sts-scope .merchant-arrival__merchant { bottom: 4.5rem; width: min(14.58vw, 8rem); }
 }
 
 @media (max-height: 820px) and (min-width: 761px) {

@@ -408,9 +408,6 @@ const arrivalCharacterNames = await page.locator('.merchant-arrival__party figca
 const arrivalMerchant = await page.getByRole('button', { name: 'Enter merchant shop' }).count()
 const arrivalBrowseButton = await page.getByText('Browse wares').count()
 const arrivalLayout = await page.locator('.merchant-arrival').evaluate((stage) => {
-  const frame = stage.getBoundingClientRect()
-  const party = stage.querySelector('.merchant-arrival__party')?.getBoundingClientRect()
-  const merchant = stage.querySelector('.merchant-arrival__merchant')?.getBoundingClientRect()
   const feet = [...stage.querySelectorAll('.merchant-arrival__party img')].map((image) => {
     const canvas = document.createElement('canvas')
     canvas.width = image.naturalWidth
@@ -429,59 +426,96 @@ const arrivalLayout = await page.locator('.merchant-arrival').evaluate((stage) =
     return box.top + opaqueBottom / canvas.height * box.height
   })
   return {
-    partyOnRug: Boolean(party && party.right <= frame.left + frame.width * 0.52 && party.bottom <= frame.bottom - frame.height * 0.1),
-    merchantScale: merchant ? merchant.width / frame.width : 1,
-    merchantOnRug: Boolean(merchant && (merchant.left + merchant.width / 2 - frame.left) / frame.width > 0.58 &&
-      (merchant.left + merchant.width / 2 - frame.left) / frame.width < 0.82 && merchant.bottom < frame.bottom - frame.height * 0.12),
     feetOffset: Math.max(...feet) - Math.min(...feet),
-    feetHeight: (Math.max(...feet) - frame.top) / frame.height,
+    // How far the drawn feet sit from the party box's bottom edge, which the viewport
+    // sweep treats as the floor line.
+    feetOffBoxBottom: Math.abs(Math.max(...feet)
+      - stage.querySelector('.merchant-arrival__party').getBoundingClientRect().bottom),
   }
 })
 await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-desktop.png'), fullPage: true })
-await page.setViewportSize({ width: 2560, height: 1440 })
-const ultrawideArrival = await page.locator('.merchant-arrival').evaluate((stage) => {
-  const frame = stage.getBoundingClientRect()
-  const backdrop = getComputedStyle(stage, '::before')
-  const width = Number.parseFloat(backdrop.width)
-  const left = frame.left + frame.width / 2 - width / 2
-  return {
-    coversViewport: left <= 0.5 && left + width >= innerWidth - 0.5,
-    correctArt: backdrop.backgroundImage.includes('background-wide.webp'),
-    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  }
-})
-await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-ultrawide.png'), fullPage: true })
-await page.setViewportSize({ width: 390, height: 844 })
-const mobileArrival = await page.locator('.merchant-arrival').evaluate((stage) => {
-  const frame = stage.getBoundingClientRect()
-  const proceed = stage.querySelector('.room-proceed')?.getBoundingClientRect()
-  const party = stage.querySelector('.merchant-arrival__party')?.getBoundingClientRect()
-  const merchant = stage.querySelector('.merchant-arrival__merchant')?.getBoundingClientRect()
-  return {
-    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    proceedVisible: Boolean(proceed && proceed.bottom <= frame.bottom + 1 && proceed.right <= frame.right + 1),
-    actorsSeparate: Boolean(party && merchant && party.right <= merchant.left + 1),
-  }
-})
-await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-mobile.png'), fullPage: true })
-const landscapeArrivals = []
-for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }]) {
-  await page.setViewportSize(size)
-  landscapeArrivals.push({ ...size, ...await page.locator('.merchant-arrival').evaluate((stage) => {
-    const title = stage.querySelector('.merchant-arrival__title')?.getBoundingClientRect()
+
+/* The carpets, as fractions of each backdrop, plus the card-free slice of the green
+   one the Merchant has to sit in. Both actors are placed in this same art space, so
+   every viewport has to land them inside these boxes — that is the whole point of the
+   projected scene. `background-wide.webp` frames the room wider, hence its own boxes. */
+const CARPETS = {
+  'background.webp': { rug: [0.12, 0.495, 0.57, 0.88], seat: [0.63, 0.79, 0.60, 0.79] },
+  'background-wide.webp': { rug: [0.335, 0.54, 0.555, 0.73], seat: [0.62, 0.735, 0.58, 0.72] },
+}
+/** Transparent margins of merchant-seated.webp, so the seat check reads the drawn Merchant. */
+const SEATED_INSET = { left: 0.1394, right: 0.0329, bottom: 0.0407 }
+async function readArrivalAnchors() {
+  return page.locator('.merchant-arrival').evaluate((stage) => {
+    const frame = stage.getBoundingClientRect()
+    const scene = stage.querySelector('.merchant-arrival__scene')
+    const box = scene.getBoundingClientRect()
+    const art = /([^/]+\.webp)/.exec(getComputedStyle(scene).backgroundImage)?.[1]
+    // Sideways, the stage can itself escape the window, so measure against both; the
+    // page scrolls vertically, so down the stage is the only frame that clips.
+    const visible = (rect) => rect.left >= Math.max(frame.left, 0) - 1
+      && rect.right <= Math.min(frame.right, innerWidth) + 1
+      && rect.top >= frame.top - 1 && rect.bottom <= frame.bottom + 1
+    const inArtSpace = (element) => {
+      const rect = element.getBoundingClientRect()
+      return {
+        left: (rect.left - box.left) / box.width,
+        right: (rect.right - box.left) / box.width,
+        top: (rect.top - box.top) / box.height,
+        bottom: (rect.bottom - box.top) / box.height,
+        onScreen: visible(rect),
+        scale: rect.width / innerWidth,
+      }
+    }
+    const seat = stage.querySelector('.merchant-arrival__merchant')
+    const seatBox = seat.getBoundingClientRect()
+    // The lower body is where the Proceed button, parked bottom right, tends to land.
+    const seatHits = [0.5, 0.75, 0.95].map((depth) => {
+      const hit = document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height * depth)
+      return seat.contains(hit)
+    })
+    // Each sprite is pushed down by its own transparent gap, which lands the drawn feet
+    // on the party box's own bottom edge — so that edge is the floor line.
+    const feetLine = stage.querySelector('.merchant-arrival__party').getBoundingClientRect().bottom
     const proceed = stage.querySelector('.room-proceed')?.getBoundingClientRect()
-    const overlap = title ? [...stage.querySelectorAll('.merchant-arrival__party img')].reduce((largest, image) => {
+    const title = stage.querySelector('.merchant-arrival__title')?.getBoundingClientRect()
+    const titleOverlap = title ? [...stage.querySelectorAll('.merchant-arrival__party img')].reduce((largest, image) => {
       const actor = image.getBoundingClientRect()
       return Math.max(largest, Math.max(0, Math.min(title.right, actor.right) - Math.max(title.left, actor.left))
         * Math.max(0, Math.min(title.bottom, actor.bottom) - Math.max(title.top, actor.top)))
     }, 0) : Infinity
-    const frame = stage.getBoundingClientRect()
     return {
-      overlap,
+      art,
+      party: inArtSpace(stage.querySelector('.merchant-arrival__party')),
+      merchant: inArtSpace(seat),
+      feetLine: (feetLine - box.top) / box.height,
+      seatReachable: seatHits.every(Boolean),
+      backdropCoversFrame: box.left <= Math.max(frame.left, 0) + 0.5
+        && box.right >= Math.min(frame.right, innerWidth) - 0.5,
+      // The scene overflows the stage on purpose; the stage must clip it, not scroll it,
+      // or focus moving into the shop and back would leave the room permanently offset.
+      scrollable: (() => {
+        stage.scrollTop = 64
+        stage.scrollLeft = 64
+        const scrolled = stage.scrollTop !== 0 || stage.scrollLeft !== 0
+        stage.scrollTop = 0
+        stage.scrollLeft = 0
+        return scrolled
+      })(),
+      titleOverlap,
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-      proceedVisible: Boolean(proceed && proceed.bottom <= frame.bottom + 1 && proceed.right <= frame.right + 1),
+      proceedVisible: Boolean(proceed && visible(proceed)),
     }
-  }) })
+  })
+}
+const arrivalAnchors = []
+for (const size of [
+  { width: 3440, height: 1440 }, { width: 2560, height: 1440 }, { width: 1920, height: 1080 },
+  { width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1000, height: 900 },
+  { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 667, height: 375 },
+]) {
+  await page.setViewportSize(size)
+  arrivalAnchors.push({ ...size, ...await readArrivalAnchors() })
   await page.screenshot({ path: join(outDir, `merchant-arrival-4p-${size.width}x${size.height}.png`), fullPage: true })
 }
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -490,18 +524,38 @@ check('Merchant map entry opens the arrival scene with the whole party', () => {
   assertEqual(arrivalCharacterNames, 0, 'character names still appear below the standing assets')
   assertEqual(arrivalMerchant, 1)
   assertEqual(arrivalBrowseButton, 0, 'the redundant Browse wares control is still visible')
-  assert(arrivalLayout.partyOnRug, 'the party is not grouped on the circular carpet')
   assert(arrivalLayout.feetOffset < 2, `the heroes' feet differ by ${arrivalLayout.feetOffset}px`)
-  assert(arrivalLayout.feetHeight < 0.81, 'the heroes stand below the carpet center')
-  assert(arrivalLayout.merchantScale < 0.18, 'the seated Merchant dominates the room')
-  assert(arrivalLayout.merchantOnRug, 'the seated Merchant is not positioned on the green carpet')
-  assert(ultrawideArrival.coversViewport && ultrawideArrival.correctArt && !ultrawideArrival.overflow,
-    'the ultrawide Merchant backdrop leaves a visible side gap')
-  assert(!mobileArrival.overflow && mobileArrival.proceedVisible, 'the mobile Merchant arrival is clipped')
-  assert(mobileArrival.actorsSeparate, 'the mobile party overlaps the seated Merchant')
-  for (const sample of landscapeArrivals) {
-    assert(sample.overlap <= 1, `the Merchant title overlaps the party by ${sample.overlap}px² at ${sample.width}×${sample.height}`)
-    assert(!sample.overflow && sample.proceedVisible, `the Merchant arrival is clipped at ${sample.width}×${sample.height}`)
+  assert(arrivalLayout.feetOffBoxBottom < 2,
+    `the drawn feet sit ${arrivalLayout.feetOffBoxBottom}px off the party box's floor line`)
+  for (const sample of arrivalAnchors) {
+    const where = `${sample.width}×${sample.height}`
+    const carpets = CARPETS[sample.art]
+    assert(carpets, `the Merchant arrival uses an unknown backdrop (${sample.art}) at ${where}`)
+    assert(sample.width >= 1401 ? sample.art === 'background-wide.webp' : sample.art === 'background.webp',
+      `the Merchant arrival uses ${sample.art} at ${where}`)
+    const [rugLeft, rugRight, rugTop, rugBottom] = carpets.rug
+    assert(sample.party.left >= rugLeft && sample.party.right <= rugRight,
+      `the party stands off the circular carpet at ${where} (${sample.party.left.toFixed(3)}–${sample.party.right.toFixed(3)})`)
+    assert(sample.feetLine >= rugTop && sample.feetLine <= rugBottom,
+      `the heroes' feet miss the circular carpet at ${where} (${sample.feetLine.toFixed(3)})`)
+    const [seatLeft, seatRight, seatFloorTop, seatFloorBottom] = carpets.seat
+    const seatWidth = sample.merchant.right - sample.merchant.left
+    const drawnLeft = sample.merchant.left + seatWidth * SEATED_INSET.left
+    const drawnRight = sample.merchant.right - seatWidth * SEATED_INSET.right
+    const drawnBottom = sample.merchant.bottom
+      - (sample.merchant.bottom - sample.merchant.top) * SEATED_INSET.bottom
+    assert(drawnLeft >= seatLeft && drawnRight <= seatRight,
+      `the seated Merchant leaves the clear strip of the green carpet at ${where} (${drawnLeft.toFixed(3)}–${drawnRight.toFixed(3)})`)
+    assert(drawnBottom >= seatFloorTop && drawnBottom <= seatFloorBottom,
+      `the seated Merchant sits off the green carpet at ${where} (${drawnBottom.toFixed(3)})`)
+    assert(sample.merchant.scale < 0.22,
+      `the seated Merchant fills ${(sample.merchant.scale * 100).toFixed(0)}% of the window at ${where}`)
+    assert(sample.party.onScreen && sample.merchant.onScreen, `the Merchant arrival crops an actor at ${where}`)
+    assert(sample.seatReachable, `a control covers the seated Merchant at ${where}, so tapping him misfires`)
+    assert(!sample.scrollable, `the Merchant arrival scrolls its own backdrop at ${where}`)
+    assert(sample.backdropCoversFrame, `the Merchant backdrop leaves a visible side gap at ${where}`)
+    assert(sample.titleOverlap <= 1, `the Merchant title overlaps the party by ${sample.titleOverlap}px² at ${where}`)
+    assert(!sample.overflow && sample.proceedVisible, `the Merchant arrival is clipped at ${where}`)
   }
 })
 await openMerchantShop()
