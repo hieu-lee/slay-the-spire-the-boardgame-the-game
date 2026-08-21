@@ -213,6 +213,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const [giveUpStartPending, setGiveUpStartPending] = useState(false)
   const [expiredGiveUpDeadline, setExpiredGiveUpDeadline] = useState<number | null>(null)
   const pauseDialog = useRef<HTMLDialogElement>(null)
+  const runShell = useRef<HTMLElement>(null)
   const snapshot = room.snapshot
   const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected')
@@ -236,11 +237,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   useEffect(() => {
     const phase = snapshot?.run?.combat?.phase
-    if (pauseOpen || settingsOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote || room.connection !== 'connected' ||
+    if (compendiumOpen || pauseOpen || settingsOpen || giveUpStartPending || soloGiveUpOpen || giveUpVote || room.connection !== 'connected' ||
       (phase !== 'won' && phase !== 'lost')) return undefined
     const timer = setTimeout(() => room.act({ kind: 'resolveCombat' }), 900)
     return () => clearTimeout(timer)
-  }, [giveUpStartPending, giveUpVote, pauseOpen, room.act, room.connection, settingsOpen, snapshot?.run?.combat?.phase, soloGiveUpOpen])
+  }, [compendiumOpen, giveUpStartPending, giveUpVote, pauseOpen, room.act, room.connection, settingsOpen, snapshot?.run?.combat?.phase, soloGiveUpOpen])
 
   useEffect(() => {
     const dialog = pauseDialog.current
@@ -448,7 +449,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   }
 
   const run = snapshot.run
-  if (compendiumOpen) return <CompendiumScreen onBack={() => setCompendiumOpen(false)} backLabel="Back to fight" />
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const canGiveUp = Boolean(viewer) && canGiveUpRun(run, snapshot.campaignProgress)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
@@ -490,7 +490,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   } satisfies CombatState : null
 
   return (
-    <main className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}`}>
+    <>
+    <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined} className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">
@@ -536,7 +537,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           <h2 id="online-pause-title">Slay the Spire</h2>
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
-          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendiumOpen(true) }}>Compendium</button> : null}
+          <button type="button" onClick={() => { setPauseOpen(false); setCompendiumOpen(true) }}>Compendium</button>
           {canGiveUp ? <button type="button" disabled={room.connection !== 'connected' || giveUpStartPending} onClick={() => {
             setPauseOpen(false)
             if (run.players.length === 1) setSoloGiveUpOpen(true)
@@ -630,7 +631,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           animateOpeningHand={animateOpeningHand}
           mutationsEnabled={!giveUpStartPending && !run.courier.offer && room.connection === 'connected' &&
             !foreignCardChoice && !foreignTrigger && !foreignStartTurnDiscard}
-          autoAdvance={!pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
+          autoAdvance={!compendiumOpen && !pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
@@ -807,5 +808,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
+    {compendiumOpen ? <CompendiumScreen onBack={() => {
+      setCompendiumOpen(false)
+      requestAnimationFrame(() => runShell.current?.focus())
+    }} backLabel="Back to run" /> : null}
+    </>
   )
 }

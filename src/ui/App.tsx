@@ -176,6 +176,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
   const pauseDialog = useRef<HTMLDialogElement>(null)
+  const runShell = useRef<HTMLElement>(null)
   const [achievements, setAchievements] = useState(false)
   const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(seedText))).modifiers, [seedText])
   const metaOptions: RunMetaOptions = { mode, modifiers: customModifierIds, quickStartAct }
@@ -267,12 +268,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // A finished combat folds back into the run on its own; the player should not
   // have to click through a screen that only says "you won".
   useEffect(() => {
-    if (open && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+    if (open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
       const timer = setTimeout(() => setRun((current) => resolveCombat(current)), 900)
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [open, pauseOpen, run.combat, settingsOpen])
+  }, [compendium, open, pauseOpen, run.combat, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
@@ -296,8 +297,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     })
   }
 
-  if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} backLabel={open ? 'Back to fight' : undefined} />
   if (!open) {
+    if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
     if (achievements) return <AchievementsScreen onBack={() => setAchievements(false)} />
     return <StartMenu
       characters={characters}
@@ -336,7 +337,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   }
 
   return (
-    <main className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}`}>
+    <>
+    <main ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">
@@ -400,7 +402,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           <h2 id="pause-menu-title">Slay the Spire</h2>
           <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
           <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
-          {run.phase === 'combat' ? <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button> : null}
+          <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button>
           {canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
           <button type="button" onClick={() => {
             if (!window.confirm('Abandon this run and return to the main menu?')) return
@@ -414,7 +416,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
           viewerId={viewerId}
-          autoAdvance={!pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
+          autoAdvance={!compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}
@@ -605,5 +607,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           before its text changes for the change to be announced. */}
       <CardMorphAnnouncement request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
+    {compendium ? <CompendiumScreen onBack={() => {
+      setCompendium(false)
+      requestAnimationFrame(() => runShell.current?.focus())
+    }} backLabel="Back to run" /> : null}
+    </>
   )
 }

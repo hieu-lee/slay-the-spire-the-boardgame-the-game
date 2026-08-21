@@ -841,7 +841,7 @@ await page.locator('.compendium').waitFor()
 await page.getByPlaceholder('Search').fill('Bash')
 await page.getByLabel('View upgrades').check()
 const fightCompendiumUpgrade = await page.locator('.compendium-card img').first().getAttribute('src')
-await page.getByRole('button', { name: 'Back to fight' }).click()
+await page.getByRole('button', { name: 'Back to run' }).click()
 await page.locator('.combat').waitFor()
 const runAfterFightCompendium = await readRun()
 check('fight settings can inspect upgraded cards and resume the unchanged run', () => {
@@ -908,6 +908,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat
 check('Escape owns the Act-boundary return flow without exposing a local catch-up setup', () => {
   assert(boundaryPauseActions.some((label) => label.trim() === 'Return to main menu'))
   assert(boundaryPauseActions.some((label) => label.trim() === 'Give up'))
+  assert(boundaryPauseActions.some((label) => label.trim() === 'Compendium'))
   assertEqual(surrenderedFromMap.phase, 'defeat')
   assertEqual(activeRunId, (activeRun.campaign.runId))
   assertEqual(localCatchUpPanel, 0, 'Single Player exposed a local add-player path')

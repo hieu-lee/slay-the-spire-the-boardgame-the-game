@@ -625,6 +625,8 @@ function EventScreen({
   const focusedEvent = useRef("");
   const focusedEventOption = useRef<HTMLButtonElement | null>(null);
   const eventOptions = useRef<HTMLDivElement>(null);
+  // The Compendium overlay can replay effects; only a real Event-stage change clears its draft.
+  const draftStages = useRef<Record<string, string>>({});
   const rewardOffers = room.rewardOffers?.[player.id];
   const eventArt = { "--event-art": `url('/assets/noncombat/events/${room.card.id}.webp')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
@@ -635,7 +637,10 @@ function EventScreen({
   const [rewardIndexes, setRewardIndexes] = useState<number[]>(() =>
     Array(room.rewardOffers?.[player.id]?.length ?? 0).fill(-2),
   );
+  const eventDraftStage = `${player.id}/${room.card.instanceId}`;
   useEffect(() => {
+    if (draftStages.current.event === eventDraftStage) return;
+    draftStages.current.event = eventDraftStage;
     setCards([]);
     setRelicId("");
     setPotionIndexes([]);
@@ -647,16 +652,21 @@ function EventScreen({
     setSelectedOptions([]);
     setRewardSources([]);
     setRareRewardSources([]);
-  }, [player.id, room.card.instanceId]);
+  }, [eventDraftStage]);
+  const itemDraftStage = `${eventDraftStage}/${itemOfferStage}`;
   useEffect(() => {
+    if (draftStages.current.item === itemDraftStage) return;
+    draftStages.current.item = itemDraftStage;
     setRewardItemChoices(Array(itemOffers?.length ?? 0).fill(''));
     setPotionRecipientIds(Array(itemOffers?.filter((offer) => offer.kind === 'potion').length ?? 0).fill(''));
     setPotionReplacementIds(Array(itemOffers?.filter((offer) => offer.kind === 'potion').length ?? 0).fill(null));
-  }, [itemOfferStage, player.id]);
-  useEffect(
-    () => setRewardIndexes(Array(rewardOffers?.length ?? 0).fill(-2)),
-    [rewardOfferStage],
-  );
+  }, [itemDraftStage]);
+  const rewardDraftStage = `${eventDraftStage}/${rewardOfferStage}`;
+  useEffect(() => {
+    if (draftStages.current.reward === rewardDraftStage) return;
+    draftStages.current.reward = rewardDraftStage;
+    setRewardIndexes(Array(rewardOffers?.length ?? 0).fill(-2));
+  }, [rewardDraftStage]);
   const pendingDie = room.pendingRolls?.[player.id]?.at(-1);
   const eventStage = `${room.card.instanceId}/${player.id}/${pendingDie ?? ""}/${JSON.stringify(pendingDecision ?? null)}`;
   useEffect(() => {
@@ -688,8 +698,18 @@ function EventScreen({
   const availableRareSources = room.availableRewardSources?.rare ?? [];
   const availableCardSourcesKey = availableCardSources.join(",");
   const availableRareSourcesKey = availableRareSources.join(",");
-  useEffect(() => setRewardSources([]), [availableCardSourcesKey]);
-  useEffect(() => setRareRewardSources([]), [availableRareSourcesKey]);
+  const cardSourcesDraftStage = `${eventDraftStage}/${availableCardSourcesKey}`;
+  const rareSourcesDraftStage = `${eventDraftStage}/${availableRareSourcesKey}`;
+  useEffect(() => {
+    if (draftStages.current.cardSources === cardSourcesDraftStage) return;
+    draftStages.current.cardSources = cardSourcesDraftStage;
+    setRewardSources([]);
+  }, [cardSourcesDraftStage]);
+  useEffect(() => {
+    if (draftStages.current.rareSources === rareSourcesDraftStage) return;
+    draftStages.current.rareSources = rareSourcesDraftStage;
+    setRareRewardSources([]);
+  }, [rareSourcesDraftStage]);
   const selectedChoiceEffects = selectedOptions.flatMap((id) =>
     activeEffects(room.card.options.find((choice) => choice.id === id)?.effects ?? []),
   );

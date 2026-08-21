@@ -600,16 +600,51 @@ await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
 await page.locator('.room-stage').evaluate((element) => { element.scrollTop = 0 })
 await page.mouse.move(0, 0)
 await page.locator('.card-morph').waitFor({ state: 'detached' })
+const draftedEventCard = page.locator('.event-cards--deck .card').first()
+await draftedEventCard.click()
+const draftedEventCardBeforeCompendium = await draftedEventCard.getAttribute('aria-pressed')
+const eventRunBeforeCompendium = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+await page.keyboard.press('Escape')
+const eventPause = page.getByRole('dialog', { name: 'Slay the Spire' })
+await eventPause.waitFor()
+const eventPauseActions = await eventPause.getByRole('button').allTextContents()
+await eventPause.getByRole('button', { name: 'Compendium' }).click()
+await page.locator('.compendium').waitFor()
+const draftedEventCardDuringCompendium = await draftedEventCard.getAttribute('aria-pressed')
+await page.getByRole('button', { name: 'Back to run' }).click()
+await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
+await page.waitForFunction(() => document.activeElement?.matches('.app-shell'))
+const eventRunAfterCompendium = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
+const draftedEventCardPreserved = await draftedEventCard.getAttribute('aria-pressed')
 await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), fullPage: true })
 const eventShape = await page.evaluate(() => {
-  const stage = document.querySelector('.room-stage')?.getBoundingClientRect()
+  const panel = document.querySelector('.event-panel')
+  if (panel) panel.scrollTop = panel.scrollHeight
+  const stage = panel?.getBoundingClientRect()
   const last = [...document.querySelectorAll('.event-options button')].at(-1)?.getBoundingClientRect()
-  return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, options: document.querySelectorAll('.event-options button').length, contained: Boolean(stage && last && stage.bottom >= last.bottom - 1) }
+  const picker = document.querySelector('.event-cards--deck')
+  const card = picker?.querySelector('.card')
+  return {
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    options: document.querySelectorAll('.event-options button').length,
+    contained: Boolean(stage && last && stage.bottom >= last.bottom - 1),
+    cardHeight: card?.getBoundingClientRect().height ?? 0,
+    pickerHeight: picker?.getBoundingClientRect().height ?? 0,
+    pickerScrollsVertically: Boolean(picker && picker.scrollHeight > picker.clientHeight + 1),
+  }
 })
 check('Event hierarchy remains usable on compact desktop and does not demand irrelevant cards', () => {
+  assertDeepEqual(eventRunAfterCompendium, eventRunBeforeCompendium)
+  assertEqual(draftedEventCardBeforeCompendium, 'true', 'the Event card was not staged before opening Compendium')
+  assertEqual(draftedEventCardDuringCompendium, 'true', 'opening Compendium unmounted the staged Event card')
+  assertEqual(draftedEventCardPreserved, 'true', 'opening Compendium cleared the staged Event card')
+  assert(eventPauseActions.some((label) => label.trim() === 'Compendium'), 'the Event pause menu hid the Compendium')
   assert(!eventShape.overflow)
   assertEqual(eventShape.options, 4)
   assert(eventShape.contained, 'the final Event choice escaped the compact desktop room frame')
+  assert(eventShape.cardHeight > 0 && eventShape.pickerHeight >= eventShape.cardHeight,
+    `the Event picker is shorter than one card: ${JSON.stringify(eventShape)}`)
+  assertEqual(eventShape.pickerScrollsVertically, false, 'the Event deck is trapped in a nested vertical scroller')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

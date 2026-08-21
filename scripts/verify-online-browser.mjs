@@ -665,7 +665,7 @@ try {
   await a.getByRole('dialog', { name: 'Slay the Spire' }).getByRole('button', { name: 'Compendium' }).click()
   await a.locator('.compendium').waitFor()
   await a.getByLabel('View upgrades').check()
-  await a.getByRole('button', { name: 'Back to fight' }).click()
+  await a.getByRole('button', { name: 'Back to run' }).click()
   await a.locator('.app-shell--online .combat').waitFor()
   const onlineRunAfterCompendium = await snapshot(a)
   check('online fight settings can inspect upgrades without mutating the shared run', () => {
@@ -679,6 +679,20 @@ try {
   liveRoom.version += 1
   rooms.publishRoom(code)
   await Promise.all([a.locator('.map').waitFor(), b.locator('.map').waitFor()])
+  const onlineMapBeforeCompendium = await snapshot(a)
+  await a.press('body', 'Escape')
+  const mapPause = a.getByRole('dialog', { name: 'Slay the Spire' })
+  await mapPause.waitFor()
+  await mapPause.getByRole('button', { name: 'Compendium' }).click()
+  await a.locator('.compendium').waitFor()
+  const onlineMapMountedBehindCompendium = await a.evaluate(() => ({
+    map: document.querySelectorAll('.app-shell--online .map').length,
+    display: getComputedStyle(document.querySelector('.app-shell--online')).display,
+  }))
+  await a.getByRole('button', { name: 'Back to run' }).click()
+  await a.locator('.map').waitFor()
+  await a.waitForFunction(() => document.activeElement?.matches('.app-shell--online'))
+  const onlineMapAfterCompendium = await snapshot(a)
   await a.press('body', 'Escape')
   const mapGiveUpPause = a.getByRole('dialog', { name: 'Slay the Spire' })
   await mapGiveUpPause.waitFor()
@@ -819,6 +833,9 @@ try {
   rooms.publishRoom(code)
   await Promise.all([a.locator('.app-shell--online .combat').waitFor(), b.locator('.app-shell--online .combat').waitFor()])
   check('online Give up restarts after expiry and is a reconnect-safe unanimous 10-second vote', () => {
+    assertDeepEqual(onlineMapMountedBehindCompendium, { map: 1, display: 'none' })
+    assertEqual(onlineMapAfterCompendium.version, onlineMapBeforeCompendium.version)
+    assertDeepEqual(onlineMapAfterCompendium.run, onlineMapBeforeCompendium.run)
     assertEqual(mapMutationsFrozen, true, 'map controls stayed active while vote creation was pending')
     assertEqual(soloGiveUpFrozenPhase, 'enemy', 'solo combat advanced while surrender was pending')
     assertEqual(giveUpStartFrozen.phase, 'enemy', 'combat advanced while the give-up vote request was in flight')
