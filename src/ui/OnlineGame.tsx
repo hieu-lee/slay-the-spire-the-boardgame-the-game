@@ -22,6 +22,7 @@ import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
 import type { SummarySeat } from './RunSummary.tsx'
 import { RelicResolvePanel } from './RelicResolvePanel.tsx'
+import { wingBootLabel } from './wing-boots.ts'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
 import { NeowScreen } from './NeowScreen.tsx'
@@ -452,6 +453,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const canGiveUp = Boolean(viewer) && canGiveUpRun(run, snapshot.campaignProgress)
   const pendingAcquisition = hasPendingRelicAcquisition(run)
+  // Derived once: the map prompt needs the list twice, for the guard and for the
+  // labels, and each label compares against the whole set.
+  const wingTargets = wingChoices(run.map, viewer)
   const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
     run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
   const roomsCleared = Object.values(run.map.rooms).filter((mapRoom) => mapRoom.visited).length
@@ -646,9 +650,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}
         onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
-        {!pendingAcquisition && wingChoices(run.map, viewer).length > 0 ? <section className="room-screen"><strong>Wing Boots</strong>
-          {wingChoices(run.map, viewer).map((target) => <button type="button" key={target.id}
-            onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>Ignore paths to {target.kind}</button>)}
+        {!pendingAcquisition && wingTargets.length > 0 ? <section className="room-screen map-prompt"><strong>Wing Boots</strong>
+          {wingTargets.map((target) => <button type="button" key={target.id}
+            onClick={() => room.act({ kind: 'enterRoom', roomId: target.id, useWingBoots: true })}>
+            {wingBootLabel(target, wingTargets, run.map)}
+          </button>)}
         </section> : null}</> : null}
       {!pendingAcquisition && viewer && canSwitchRowsHere &&
       run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
@@ -730,13 +736,15 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             onClick={() => room.act({ kind: 'startPendingBoss' })}>Face the next boss</button>
         </section>
       ) : null}
-      {run.phase === 'room' && roomKind === 'campfire' && viewer ? (
+      {run.phase === 'room' && roomKind === 'campfire' && viewer
+        && !pendingAcquisition && !run.roomState ? (
         <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats.filter((seat) => !run.players.find((candidate) => candidate.id === seat.playerId)?.dead)} onAction={room.act}
           rubyAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.ruby}
           restAllowed={!run.meta.modifierIds.includes('night_terrors')} />
       ) : null}
       {waitingForCatchUpMerchant ? <section className="room-screen" role="status">Waiting for the Catch Up players to finish their Merchant visit.</section> : null}
-      {run.phase === 'room' && run.roomState && viewer && !waitingForCatchUpMerchant ? (
+      {run.phase === 'room' && run.roomState && viewer
+        && !pendingAcquisition && !waitingForCatchUpMerchant ? (
         <RoomScreen
           room={run.roomState}
           players={run.players.map(playerForUi)}
@@ -752,13 +760,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           sapphireAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.sapphire}
           merchantPledges={snapshot.merchantPledges}
           onWithdraw={(key) => room.act({ kind: 'merchantWithdraw', key })}
-          eventForwardRooms={Object.values(run.map.rooms).filter((candidate) => candidate.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((candidate) => ({ id: candidate.id, label: `Floor ${candidate.row + 1} · ${ROOM_LABEL[candidate.kind]}` }))}
+          eventForwardRooms={Object.values(run.map.rooms).filter((candidate) => candidate.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((candidate) => ({ id: candidate.id, label: `Floor ${candidate.row + 1} · ${candidate.hidden ? 'Unknown' : ROOM_LABEL[candidate.kind]}` }))}
           eventPledge={snapshot.eventPledge}
           onCancelEventPayment={() => room.act({ kind: 'eventCancel' })}
           onArmCardGain={morph.armGain}
         />
       ) : null}
-      {run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (
+      {run.phase === 'room' && roomKind !== 'campfire' && !pendingAcquisition && !run.roomState ? (
         <section className="room-screen">
           <h2>{roomKind ?? 'room'}</h2>
           <button type="button" onClick={() => room.act({ kind: 'leaveRoom' })}>Back to the map</button>

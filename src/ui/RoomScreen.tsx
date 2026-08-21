@@ -92,10 +92,12 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
   return slots.slice(0, eligible.size);
 }
 
-function Price({ value }: { value: number | null }) {
+function Price({ value, sale = false }: { value: number | null; sale?: boolean }) {
   return (
-    <span className="room-price">
-      {value === null ? "Sold" : <><img src="/assets/relic-icons/old_coin.png" alt="" />{value}<span className="visually-hidden"> Gold</span></>}
+    <span className={`room-price${sale ? " room-price--sale" : ""}`}>
+      {value === null ? "Sold" : <>{sale ? <span className="room-price__sale-mark" aria-hidden="true">%</span> : null}
+        <img src="/assets/relic-icons/old_coin.png" alt="" />{value}
+        <span className="visually-hidden"> Gold{sale ? ", on sale" : ""}</span></>}
     </span>
   );
 }
@@ -297,14 +299,15 @@ function MerchantScreen({
                   })
                 }
               >
-                {id ? <ItemImage kind="relic" id={id} card /> : <span className="room-item-icon">◆</span>}
-                <strong>{id ? relicDef(id).name : "Sold"}</strong>
-                {/* A shopper cannot price a relic they cannot read. The reward
-                    and treasure screens already printed this; the shelf did
-                    not, so buying here was a name-only guess. */}
+                {/* An icon, not a card face: the digital game lays its stock on
+                    the rug as icons and puts the rules in a hover tip. The name
+                    and rules still ride along in the accessible name, in the tip
+                    on a pointer, and printed under the icon on touch — a shopper
+                    cannot price a relic they cannot read. */}
+                {id ? <ItemImage kind="relic" id={id} /> : <span className="room-item-icon">◆</span>}
+                {id ? <strong>{relicDef(id).name}</strong> : null}
                 {id ? <span className="room-item-text">{relicDef(id).text}</span> : null}
-                <Price value={id ? cost : null} />
-                {slot === 0 && id ? <small className="merchant-sale">Sale</small> : null}
+                <Price value={id ? cost : null} sale={slot === 0 && Boolean(id)} />
                 {id ? <span className="merchant-tooltip" role="tooltip" aria-hidden="true"><strong>{relicDef(id).name}</strong>{relicDef(id).text}</span> : null}
                 {funding && funding.remaining < cost! ? (
                   <small>{funding.remaining} Gold still needed</small>
@@ -343,8 +346,8 @@ function MerchantScreen({
                   });
                 }}
               >
-                {id ? <ItemImage kind="potion" id={id} card /> : <span className="room-item-icon">●</span>}
-                <strong>{id ? potionDef(id).name : "Sold"}</strong>
+                {id ? <ItemImage kind="potion" id={id} /> : <span className="room-item-icon">●</span>}
+                {id ? <strong>{potionDef(id).name}</strong> : null}
                 {id ? <span className="room-item-text">{potionDef(id).text}</span> : null}
                 <Price value={cost} />
                 {id && buyerHasSozu ? <small>Blocked by Sozu</small> : null}
@@ -394,7 +397,9 @@ function MerchantScreen({
                 ) : (
                   <p className="merchant-card__sold">Sold</p>
                 )}
-                <Price value={id ? cost : null} />
+                {/* No price under a sold slot: the plate already says "Sold", and
+                    `Price` prints the same word again for a null value. */}
+                {id ? <Price value={cost} /> : null}
               </div>
             );
           })}
@@ -431,7 +436,7 @@ function MerchantScreen({
                   ) : (
                     <p className="merchant-card__sold">Sold</p>
                   )}
-                  <Price value={id ? cost : null} />
+                  {id ? <Price value={cost} /> : null}
                 </div>
               );
             })}
@@ -451,7 +456,7 @@ function MerchantScreen({
         <section className="choice-modal__panel">
           <header><div><span>Potion belt full</span><h2 id="merchant-potion-title">Choose a potion to replace</h2></div>
             <button type="button" onClick={() => { setPotionReplacementSlot(null); setDiscardPotionId(""); }}>Cancel</button></header>
-          <fieldset className="merchant-potion-discard" aria-label="Replace potion"><legend>Replace potion</legend>{buyer.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={validDiscardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} card />{potionDef(id).name}</button>)}</fieldset>
+          <fieldset className="merchant-potion-discard" aria-label="Replace potion"><legend>Replace potion</legend>{buyer.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={validDiscardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset>
           <button type="button" className="merchant-potion-dialog__confirm"
             disabled={!validDiscardPotionId || !replacementPotionId || !replacementPotionFunding || replacementPotionReserved || !canPledge(replacementPotionFunding)}
             onClick={() => {
@@ -514,7 +519,7 @@ function MerchantScreen({
         </div>
       ) : null}
       <button type="button" className="room-proceed" disabled={Object.keys(merchantPledges).length > 0 || Boolean(onWithdraw && player.id !== players[0]?.id)} onClick={onFinishMerchant}>
-        Leave merchant →
+        ← Leave merchant
       </button>
     </section>
   );

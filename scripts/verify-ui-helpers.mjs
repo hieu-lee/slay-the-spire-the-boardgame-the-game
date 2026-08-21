@@ -19,6 +19,7 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from '../src/ui/board-signals.ts'
+import { wingBootLabel } from '../src/ui/wing-boots.ts'
 import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
@@ -198,6 +199,52 @@ check('all physical potions have distinct audible cues', () => {
     'the potion deck does not collapse to generic drink audio')
 })
 
+
+// Both of this helper's rules are silent when they break: identical buttons look
+// like a rendering quirk, and a leaked room kind looks like a correct label.
+check('Wing Boots labels separate same-kind rooms and never name a hidden one', () => {
+  // The caller's room objects and the MAP's copies are deliberately different
+  // objects. The local prompt passes UNREDACTED rooms straight from
+  // `wingBootChoices` alongside a REDACTED `visibleMap`, so a helper that read
+  // `room.hidden` instead of asking the map would leak the true kind — and a
+  // fixture that reused one object for both could not tell the two apart.
+  const room = (id, kind) => ({ id, kind, row: 1, exits: [] })
+  const map = (rooms, veiled = false) => ({
+    rows: [['a0'], rooms.map((entry) => entry.id)],
+    rooms: Object.fromEntries(rooms.map((entry) => [entry.id,
+      veiled ? { ...entry, kind: 'encounter', hidden: true } : { ...entry }])),
+  })
+
+  // One of a kind: no positional suffix, because there is nothing to tell apart.
+  const single = [room('r1', 'merchant'), room('r2', 'campfire')]
+  assertEqual(wingBootLabel(single[1], single, map(single)), 'Ignore paths to Campfire')
+
+  // Two merchants on the row: both say where they sit, counting from the left,
+  // and the lane is the room's index in the ROW, not in the offered subset.
+  const twin = [room('r1', 'merchant'), room('r2', 'campfire'), room('r3', 'merchant')]
+  const offered = [twin[0], twin[2]]
+  assertEqual(wingBootLabel(twin[0], offered, map(twin)), 'Ignore paths to Merchant · 1 from the left')
+  assertEqual(wingBootLabel(twin[2], offered, map(twin)), 'Ignore paths to Merchant · 3 from the left')
+  assertEqual(wingBootLabel(twin[1], twin, map(twin)), 'Ignore paths to Campfire')
+
+  // A redacted room must never print its kind, on either side of the wire: the
+  // local map is unredacted (printing `kind` would leak it) and the online map
+  // has already been rewritten to `encounter` (printing it would be a lie).
+  // The rooms still carry their TRUE kind, exactly as the local caller hands
+  // them over; only the map knows they are hidden.
+  const veiled = [room('r1', 'merchant'), room('r2', 'elite')]
+  const veiledMap = map(veiled, true)
+  assertEqual(wingBootLabel(veiled[0], veiled, veiledMap), 'Ignore paths to Unknown room · 1 from the left')
+  assertEqual(wingBootLabel(veiled[1], veiled, veiledMap), 'Ignore paths to Unknown room · 2 from the left')
+
+  // A room the map has forgotten degrades to no suffix rather than throwing.
+  // AMBIGUOUS on purpose: a lone choice never reads the lane at all, so a
+  // single-element array left the `lane > 0` guard unexercised.
+  const orphan = room('gone', 'treasure')
+  const twin2 = room('kept', 'treasure')
+  const partial = { rows: [['kept']], rooms: { kept: { ...twin2 }, gone: { ...orphan } } }
+  assertEqual(wingBootLabel(orphan, [orphan, twin2], partial), 'Ignore paths to Treasure')
+})
 
 suite('board feedback helpers')
 

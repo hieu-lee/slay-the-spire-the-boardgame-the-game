@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { cardDef } from '../game/cards.ts'
 import type { CardRewardOffer, RewardSource } from '../game/run.ts'
 import type { PotionRewardDecision } from '../game/run.ts'
@@ -6,6 +6,40 @@ import { potionDef, relicDef } from '../game/relics.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { ItemImage } from './ItemImage.tsx'
+
+/**
+ * One reward on its own row: item art, then what it is, then what you can do
+ * about it. Both reward screens draw every relic and potion offer through this
+ * so the rows line up as a list instead of each growing its own panel.
+ */
+export function RewardItem({ kind, id, title, note, children }: {
+  kind: 'relic' | 'potion'
+  /** Omitted while the reward is still face down. */
+  id?: string
+  title: string
+  note?: string
+  children?: ReactNode
+}) {
+  return (
+    <div className={`reward-item reward-screen__${kind}`}>
+      {/* Art only, no `card`: a generated card face prints the item's own name and
+          rules, and this row prints both again beside it at a readable size — so
+          the face was a second, unreadable copy (its rules text landed near 7px)
+          and it forced the row to a card's aspect, which is what pushed a
+          two-reward screen past the fold. */}
+      {id
+        ? <ItemImage kind={kind} id={id} />
+        : <span className="reward-item__facedown" aria-hidden="true">{kind === 'relic' ? '◆' : '●'}</span>}
+      <div className="reward-item__body">
+        <strong>{title}</strong>
+        <span className="room-item-text">
+          {id ? (kind === 'relic' ? relicDef(id).text : potionDef(id).text) : note}
+        </span>
+      </div>
+      <div className="reward-item__actions">{children}</div>
+    </div>
+  )
+}
 
 type RewardScreenProps = {
   players: Player[]
@@ -31,7 +65,11 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
   return (
     <section className="reward-screen">
       <h2 className="reward-screen__title">Rewards!</h2>
-      <p className="muted">Choose one revealed card for each player, or skip it.</p>
+      {/* Only when there IS a card to choose: a relic-only, potion-only or boss
+          Relic screen printed card-reward instructions with no cards on it. */}
+      {rewards.some((offer) => offer.cardReward)
+        ? <p className="muted">Choose one revealed card for each player, or skip it.</p>
+        : null}
       <div className="reward-screen__players">
         {rewards.map((offer) => {
           const player = players.find((candidate) => candidate.id === offer.playerId)
@@ -40,33 +78,42 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
           return (
             <div className="reward-screen__player" key={player.id}>
               <h3>{player.name}</h3>
-              {offer.relic === null ? <p><button type="button" onClick={() => onRelic(player.id, 'reveal')}>Reveal Relic</button>{' '}
-                <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip Relic unseen</button></p>
-                : typeof offer.relic === 'string' ? <div className="reward-screen__relic"><strong>{relicDef(offer.relic).name}</strong>
-                  <ItemImage kind="relic" id={offer.relic} card />
-                  <span className="room-item-text">{relicDef(offer.relic).text}</span><button type="button" onClick={() => onRelic(player.id, 'gain')}>Gain Relic</button>
-                  <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip</button></div> : null}
-              {Array.isArray(offer.bossRelics) ? <div className="reward-screen__relic"><strong>Choose a boss Relic</strong>
-                {offer.bossRelics.map((id) => <button type="button" key={id} onClick={() => onBossRelic(player.id, id)}><ItemImage kind="relic" id={id} card />{relicDef(id).name} — {relicDef(id).text}</button>)}
+              {offer.relic === null ? (
+                <RewardItem kind="relic" title="Relic reward" note="Still face down.">
+                  <button type="button" onClick={() => onRelic(player.id, 'reveal')}>Reveal Relic</button>
+                  <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip Relic unseen</button>
+                </RewardItem>
+              ) : typeof offer.relic === 'string' ? (
+                <RewardItem kind="relic" id={offer.relic} title={relicDef(offer.relic).name}>
+                  <button type="button" onClick={() => onRelic(player.id, 'gain')}>Gain Relic</button>
+                  <button className="reward-screen__skip" type="button" onClick={() => onRelic(player.id, 'skip')}>Skip</button>
+                </RewardItem>
+              ) : null}
+              {Array.isArray(offer.bossRelics) ? <div className="reward-boss">
+                <strong>Choose a boss Relic</strong>
+                <div className="reward-boss__row">
+                  {offer.bossRelics.map((id) => <button className="reward-boss__pick" type="button" key={id} onClick={() => onBossRelic(player.id, id)}>
+                    <ItemImage kind="relic" id={id} /><strong>{relicDef(id).name}</strong>
+                    <span className="room-item-text">{relicDef(id).text}</span></button>)}
+                </div>
                 <button className="reward-screen__skip" type="button" onClick={() => onBossRelic(player.id, null)}>Skip</button></div> : null}
               {offer.potion === null ? (
-                <p><button type="button" onClick={() => onRevealPotion(player.id)}>Reveal Potion</button>{' '}
-                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip Potion unseen</button></p>
+                <RewardItem kind="potion" title="Potion reward" note="Still face down.">
+                  <button type="button" onClick={() => onRevealPotion(player.id)}>Reveal Potion</button>
+                  <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip Potion unseen</button>
+                </RewardItem>
               ) : typeof offer.potion === 'string' ? (
-                <div className="reward-screen__potion">
-                  <strong>{potionDef(offer.potion).name}</strong>
-                  <ItemImage kind="potion" id={offer.potion} card />
-                  <span className="room-item-text">{potionDef(offer.potion).text}</span>
+                <RewardItem kind="potion" id={offer.potion} title={potionDef(offer.potion).name}>
                   <button type="button" disabled={player.potions.length >= potionLimit || player.relics.some((relic) => relic.defId === 'sozu')}
                     onClick={() => onPotion(player.id, { kind: 'gain' })}>Gain</button>
                   <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip</button>
                   {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
                     disabled={player.relics.some((relic) => relic.defId === 'sozu')}
-                    onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}><ItemImage kind="potion" id={held} card />Replace {potionDef(held).name}</button>)}
+                    onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
                   {players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit &&
                     !target.relics.some((relic) => relic.defId === 'sozu')).map((target) =>
                     <button type="button" key={target.id} onClick={() => onPotion(player.id, { kind: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
-                </div>
+                </RewardItem>
               ) : null}
               {offer.transformReward ? <div className="reward-screen__transform">
                 <strong>Transform a card</strong>

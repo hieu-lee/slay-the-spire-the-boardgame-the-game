@@ -409,29 +409,44 @@ await page.screenshot({ path: join(outDir, 'merchant-4p-1280x720.png'), fullPage
 await page.setViewportSize({ width: 1024, height: 600 })
 const merchant600 = await page.locator('.merchant-stage').evaluate((stage) => {
   const stageBox = stage.getBoundingClientRect()
-  const shelfItems = [...stage.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')]
+  const shelfItems = [...stage.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
   const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
   const prices = [...stage.querySelectorAll('.merchant-shelf .room-price')].map((price) => price.getBoundingClientRect())
+  const widths = shelfItems.map((item) => item.getBoundingClientRect().width)
   return {
+    iconCount: shelfItems.length,
     stageBottom: stageBox.bottom,
     viewport: innerHeight,
-    itemWidth: Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
+    itemWidth: Math.min(...widths),
+    iconSpread: Math.max(...widths) - Math.min(...widths),
     cardWidth: card?.width ?? 0,
-    pricesVisible: prices.every((price) => price.height > 0 && price.top >= stageBox.top && price.bottom <= stageBox.bottom + 1),
+    iconsSmallerThanCards: card ? Math.min(...widths) < card.width : false,
+    // Scrolled to the end, the last price must be on screen. A four-seat shop at
+    // 600px tall does not fit at a readable card size, so the guarantee HERE is
+    // reachability rather than "never scrolls"; the desktop shop cases in the
+    // sweep below are the ones that assert no scroll at all.
+    lastPriceBelow: (() => {
+      const before = stage.scrollTop
+      stage.scrollTop = stage.scrollHeight
+      const last = [...stage.querySelectorAll('.merchant-shelf--potions .room-price')].at(-1)?.getBoundingClientRect()
+      const below = last ? Math.round(last.bottom - stage.getBoundingClientRect().bottom) : 0
+      stage.scrollTop = before
+      return below
+    })(),
   }
 })
 await page.mouse.move(0, 0)
 await page.screenshot({ path: join(outDir, 'merchant-4p-1024x600.png'), fullPage: true })
 await page.setViewportSize({ width: 390, height: 844 })
 const merchant390 = await page.locator('.merchant-stage').evaluate((stage) => {
-  const shelfItem = stage.querySelector('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')?.getBoundingClientRect()
-  const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
+  const shelfItem = stage.querySelector('.merchant-shelf .merchant-item > .item-icon-image')?.getBoundingClientRect()
+  const mobileCard = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
   const board = stage.querySelector('.merchant-board')?.getBoundingClientRect()
   const removal = stage.querySelector('.merchant-removal')?.getBoundingClientRect()
   const detail = stage.querySelector('.merchant-shelf .room-item-text')
   return {
     itemWidth: shelfItem?.width ?? 0,
-    cardWidth: card?.width ?? 0,
+    iconsSmallerThanCards: Boolean(shelfItem && mobileCard && shelfItem.width < mobileCard.width),
     removalRatio: board && removal ? removal.width / board.width : 0,
     detailVisible: detail ? getComputedStyle(detail).position === 'static' && detail.getBoundingClientRect().height > 0 : false,
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -439,28 +454,1026 @@ const merchant390 = await page.locator('.merchant-stage').evaluate((stage) => {
 })
 await page.screenshot({ path: join(outDir, 'merchant-4p-390x844.png'), fullPage: true })
 await page.setViewportSize({ width: 1440, height: 900 })
-const merchantCardFallback = page.locator('.merchant-board .item-card-image').first()
-if (await page.locator('.merchant-board .item-card-fallback').count() === 0) {
-  await merchantCardFallback.evaluate((image) => { image.src = '/missing-item-card.webp' })
-  await page.waitForFunction(() => document.querySelector('.merchant-board .item-card-image')
-    ?.getAttribute('src') === '/assets/relic-icons/anchor.png')
+
+// A real pointerless context, not just a narrow window: Playwright reports
+// `hover: hover` at any viewport size, so a width-only pass never exercises the
+// `(hover: none)` branch. Two viewports, because they catch different things —
+// the tall one has room to spare and proves the prose prints and the tip hides;
+// the SHORT one with a potion belt is where the prose-bearing tiles actually
+// overflowed the stage and spilled text into the neighbouring track.
+async function measureTouchShelf(width, height, holdsPotion) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true })
+  // Audited like every other page here: these contexts take screenshots too, and
+  // unwrapped they would not fail on a shelf icon that never loaded.
+  const page = installScreenAudit(await context.newPage())
+  try {
+    page.setDefaultTimeout(120_000)
+    page.setDefaultNavigationTimeout(120_000)
+    await page.goto(base, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+    await page.getByRole('button', { name: 'Embark' }).click()
+    await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow', undefined, { timeout: 120_000 })
+    await page.evaluate((belt) => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      run.phase = 'room'
+      run.neow = null
+      run.players = run.players.map((player) => ({ ...player, gold: 40, potions: belt ? ['fire_potion'] : [] }))
+      // A Sold slot beside a stocked one, and a Colorless pile. This is the
+      // context where the shelf's tracks are WIDER than the icon module — the
+      // tiles carry prose here — so it is the only place a percentage-sized icon
+      // or Sold glyph diverges from a module-sized one. A fully stocked fixture
+      // rendered no `.room-item-icon` at all and left that rule unmeasured.
+      run.roomState = { kind: 'merchant', relics: ['anchor', '', 'akabeko'],
+        potions: ['fire_potion', '', 'blood_potion'],
+        colorless: ['dramatic_entrance', 'apotheosis', 'finesse'],
+        cards: Object.fromEntries(run.players.map((player) => [player.id,
+          { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+        removalUsed: [], purchasedCards: {} }
+      window.__STS_DEBUG__.setRun(run)
+    }, holdsPotion)
+    await page.locator('.merchant-shelf--relics .merchant-item').first().waitFor({ timeout: 120_000 })
+    const shape = await page.locator('.merchant-shelf--relics .merchant-item').first().evaluate((tile) => {
+      const name = tile.querySelector('strong')
+      const rules = tile.querySelector('.room-item-text')
+      return {
+        coarse: matchMedia('(hover: none)').matches,
+        nameVisible: Boolean(name) && getComputedStyle(name).position === 'static' && name.getBoundingClientRect().height > 0,
+        rulesVisible: Boolean(rules) && getComputedStyle(rules).position === 'static' && rules.getBoundingClientRect().height > 0,
+        rulesText: rules?.textContent?.trim() ?? '',
+      }
+    })
+    // Tabbed to, not `.focus()`ed: `:focus-visible` is the only state a
+    // pointerless device can use to trigger the tip's reveal rule, and a
+    // programmatic focus never matches it.
+    for (let tab = 0; tab < 60; tab += 1) {
+      if (await page.evaluate(() => document.activeElement
+        ?.closest('.merchant-shelf--relics .merchant-item') !== null)) break
+      await page.keyboard.press('Tab')
+    }
+    const focused = await page.evaluate(() => {
+      const tile = document.activeElement?.closest('.merchant-shelf--relics .merchant-item')
+      if (!tile) return { focusVisible: false, tipHidden: false }
+      const tip = tile.querySelector('.merchant-tooltip')
+      return {
+        focusVisible: tile.matches(':focus-visible'),
+        tipHidden: !tip || getComputedStyle(tip).display === 'none',
+      }
+    })
+    const stage = await page.locator('.merchant-stage').evaluate((element) => ({
+      overflow: Math.round(element.scrollHeight - element.clientHeight),
+      // "Prices below the fold" measured directly, because the container's own
+      // scroll height does not say WHICH content is lost — the stage may scroll
+      // for reasons that have nothing to do with the prices. How far the LAST
+      // potion price sits past the stage's bottom edge is the thing that actually
+      // went wrong. The pointerless module's own floors are asserted separately,
+      // by `smallestIcon` and `smallestCardFace` below.
+      // Reachability, not "does it scroll". Past a point the stock genuinely
+      // exceeds a 600px window, and the choice is a scroll or cards too small to
+      // read — the defect to prevent is stock a player cannot GET to. So the rug
+      // is scrolled to its end and the last potion price must then be on screen.
+      lastPriceBelow: (() => {
+        const before = element.scrollTop
+        element.scrollTop = element.scrollHeight
+        const prices = [...document.querySelectorAll('.merchant-shelf--potions .room-price')]
+        const last = prices.at(-1)?.getBoundingClientRect()
+        const below = last ? Math.round(last.bottom - element.getBoundingClientRect().bottom) : 0
+        element.scrollTop = before
+        return below
+      })(),
+      smallestIcon: Math.round(Math.min(...[...document.querySelectorAll(
+        '.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
+        .map((icon) => icon.getBoundingClientRect().width), Infinity)),
+      soldGlyphs: document.querySelectorAll('.merchant-shelf .merchant-item > .room-item-icon').length,
+      // `order` puts each tile's price back under its art. Without it a tile
+      // carrying more prose — or a Sold slot carrying none — pushes its own price
+      // down and the shelf's prices stop sharing a baseline.
+      priceSpread: ['relics', 'potions'].reduce((worst, shelf) => {
+        const tops = [...document.querySelectorAll(`.merchant-shelf--${shelf} .room-price`)]
+          .map((price) => Math.round(price.getBoundingClientRect().top))
+        return tops.length ? Math.max(worst, Math.max(...tops) - Math.min(...tops)) : worst
+      }, 0),
+      // The prose-carrying tracks must stay equal within a shelf AND between the
+      // two shelves, which share one grid column. Sized to their own content they
+      // came out 111/99/182 against 57/55/57 and nothing lined up.
+      tileSpread: (() => {
+        const widths = ['relics', 'potions'].map((shelf) =>
+          [...document.querySelectorAll(`.merchant-shelf--${shelf} .merchant-item`)]
+            .map((tile) => tile.getBoundingClientRect().width))
+        const all = widths.flat()
+        return all.length ? Math.round(Math.max(...all) - Math.min(...all)) : 0
+      })(),
+      // Each group's heading must start where its own first item starts. On wide
+      // prose-carrying tracks the art centres itself, which left the shelf
+      // headings hanging some 60px left of the stock they label.
+      headingOffset: [...document.querySelectorAll('.merchant-shelf, .merchant-cards')].reduce((worst, group) => {
+        const heading = group.querySelector('h3')?.getBoundingClientRect()
+        const art = group.querySelector('.item-icon-image, .room-item-icon, .card')?.getBoundingClientRect()
+        return heading && art ? Math.max(worst, Math.round(Math.abs(art.left - heading.left))) : worst
+      }, 0),
+      // Art and Sold glyphs measured together: on these wide tracks a glyph sized
+      // in percent takes the TRACK's width, not the module's, and its price then
+      // floats away from the prices beside it.
+      iconSpread: (() => {
+        const widths = [...document.querySelectorAll(
+          '.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
+          .map((icon) => icon.getBoundingClientRect().width)
+        return widths.length ? Math.round(Math.max(...widths) - Math.min(...widths)) : -1
+      })(),
+      smallestCardFace: Math.round(Math.min(...[...document.querySelectorAll('.merchant-cards .card')]
+        .map((face) => face.getBoundingClientRect().width), Infinity)),
+      // Printed text must stay inside its own track; an icon-width track let the
+      // first tile's rules spill into its neighbour.
+      spill: [...document.querySelectorAll('.merchant-shelf .merchant-item')].reduce((worst, tile) => {
+        const box = tile.getBoundingClientRect()
+        return [...tile.querySelectorAll('.room-item-text, .room-price, strong')].reduce((inner, kid) => {
+          const rect = kid.getBoundingClientRect()
+          return rect.width > 0
+            ? Math.max(inner, Math.round(rect.right - box.right), Math.round(box.left - rect.left))
+            : inner
+        }, worst)
+      }, 0),
+    }))
+    await page.screenshot({ path: join(outDir, `merchant-touch-${width}x${height}.png`), fullPage: true })
+    return { ...shape, ...focused, ...stage }
+  } finally {
+    await context.close()
+  }
 }
-await page.screenshot({ path: join(outDir, 'merchant-item-card-fallback.png'), fullPage: true })
-const merchantAnchorFallback = page.locator('.merchant-board .item-card-fallback').filter({ hasText: 'Anchor' })
-const merchantFallbackSrc = await merchantAnchorFallback.locator('.item-card-image').getAttribute('src')
-const merchantFallbackName = await merchantAnchorFallback.locator('strong').textContent()
-const merchantFallbackFace = await merchantAnchorFallback.count()
+
+const touchShelf = await measureTouchShelf(800, 1180, false)
+// Short, and holding a potion: the belt takes height from the stage exactly
+// where the prose-bearing tiles need it.
+const touchShelfShort = await measureTouchShelf(1024, 600, true)
+
+// A sweep, because the shop's failures were never at ONE viewport in ONE state.
+// Each of these combinations hid a real bug from every check above: the potion
+// belt takes a band out of the stage, the Colorless pile adds the tallest row,
+// and a short window is where the rug ran out of room and started painting over
+// the Leave banner — burying the potion prices and stopping three tiles taking
+// clicks, all while the stage reported no overflow at all.
+// Booting a run costs a navigation, two clicks and a wait, so only the cases that
+// genuinely need a different CONTEXT get one — `hasTouch`/`isMobile` cannot be
+// changed on a live context, while a viewport can. The pointer cases therefore
+// share one page and just resize, which is five fewer boots in a suite whose
+// browser lane runs two at a time.
+async function openRun(context) {
+  const page = installScreenAudit(await context.newPage())
+  page.setDefaultTimeout(120_000)
+  page.setDefaultNavigationTimeout(120_000)
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await page.getByRole('button', { name: 'Embark' }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow', undefined, { timeout: 120_000 })
+  return page
+}
+
+async function stockShop(page, { belt, colorless, broke }) {
+  await page.evaluate(({ holdsPotion, stocksColorless, isBroke }) => {
+    const run = structuredClone(window.__STS_DEBUG__.getRun())
+    run.phase = 'room'
+    run.neow = null
+    // `isBroke` matters: a disabled tile's tint out-specifies the sale colour, so
+    // an unaffordable discount lost the only marker it has.
+    run.players = run.players.map((player) => ({ ...player, gold: isBroke ? 0 : 40, potions: holdsPotion ? ['fire_potion'] : [] }))
+    // A real run's log, not a fresh one's: the open panel grows with the run, and
+    // with three entries it covered nothing, so its size caps went unmeasured.
+    run.log = Array.from({ length: 30 }, (_, index) => `The party does something noteworthy, entry ${index + 1}.`)
+    // FULLY stocked, deliberately. A Sold slot prints no rules line, so a
+    // fixture with two of them makes the rug shorter than a real shop's and hid
+    // the overflow these cases exist to catch. The Sold-slot rendering is
+    // measured by the pointerless shelf pass instead.
+    run.roomState = { kind: 'merchant', relics: ['anchor', 'happy_flower', 'akabeko'],
+      potions: ['fire_potion', 'swift_potion', 'blood_potion'],
+      // One Colorless slot SOLD, so every case renders a Sold plate beside two card
+      // faces. The plates only overlap once the module reaches its ceiling, and a
+      // fully stocked pile never drew one for the sweep to measure.
+      colorless: stocksColorless ? ['dramatic_entrance', '', 'finesse'] : [],
+      cards: Object.fromEntries(run.players.map((player) => [player.id,
+        { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+      removalUsed: [], purchasedCards: {} }
+    window.__STS_DEBUG__.setRun(run)
+  }, { holdsPotion: belt, stocksColorless: colorless, isBroke: Boolean(broke) })
+  await page.locator('.merchant-shelf--relics .merchant-item').first().waitFor({ timeout: 120_000 })
+}
+
+function measureRug() {
+  const stage = document.querySelector('.merchant-stage')
+  const board = document.querySelector('.merchant-board')
+  // Every control and price must be the topmost thing at its own centre where
+  // it SITS — scrolled just into view, not hunted for a position that happens
+  // to free it. Nothing here floats over the rug, so anything covering it is
+  // the rug covering itself, and a player has no reason to think a tile that
+  // does nothing would start working after a scroll.
+  const topmost = (selector) => [...board.querySelectorAll(selector)].filter((element) => {
+    const first = element.getBoundingClientRect()
+    if (first.width < 4 || first.height < 4) return false
+    element.scrollIntoView({ block: 'nearest' })
+    const box = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return !(hit && (hit === element || element.contains(hit) || hit.contains(element)))
+  }).length
+  const buriedControls = topmost('button')
+  const buriedPrices = topmost('.room-price')
+  const buriedCards = topmost('.card')
+  const leave = document.querySelector('.merchant-stage > .room-proceed')
+  leave.scrollIntoView({ block: 'nearest' })
+  const leaveBox = leave.getBoundingClientRect()
+  const leaveOwns = [0.1, 0.5, 0.9].every((across) => {
+    const hit = document.elementFromPoint(leaveBox.left + leaveBox.width * across, leaveBox.top + leaveBox.height / 2)
+    return Boolean(hit && (hit === leave || leave.contains(hit)))
+  })
+  // The rug must not reach into the Leave banner's own row. When the rug's row
+  // could be squeezed below its content the rug simply overflowed it and
+  // painted into that band — the banner then covered the stock underneath,
+  // and because the banner still owned its own pixels every hit-test on the
+  // banner passed while the prices behind it were unreadable.
+  const rugIntoLeave = Math.round(board.getBoundingClientRect().bottom - leaveBox.top)
+  stage.scrollTop = stage.scrollHeight
+  const lastPrice = [...board.querySelectorAll('.merchant-shelf--potions .room-price')].at(-1)?.getBoundingClientRect()
+  const lastPriceBelow = lastPrice ? Math.round(lastPrice.bottom - stage.getBoundingClientRect().bottom) : 0
+  // Scrolled to the end, the way out must be fully on screen. If the stage
+  // ever clipped instead of scrolling, this is the control that got cut off.
+  const scrolledLeave = leave.getBoundingClientRect()
+  const stageEnd = stage.getBoundingClientRect()
+  const leaveReachable = scrolledLeave.bottom <= stageEnd.bottom + 1 && scrolledLeave.top >= stageEnd.top - 1
+  stage.scrollTop = 0
+  const boardBox = board.getBoundingClientRect()
+  const clipped = [...board.querySelectorAll('.card, .merchant-card__sold, .item-icon-image, .room-item-icon, .room-price')]
+    .reduce((worst, element) => {
+      const box = element.getBoundingClientRect()
+      return box.width > 2
+        ? Math.max(worst, Math.round(box.right - boardBox.right), Math.round(boardBox.left - box.left))
+        : worst
+    }, 0)
+  // When there IS more rug than window, the player must be able to scroll it.
+  // `overflow: hidden` still moves under `scrollTop`, so measuring a scroll
+  // says nothing — only the property does. `clip` and `hidden` both leave the
+  // stock below the fold with no wheel, no drag and no scrollbar.
+  // The two stock rows share a grid column, so their tiles must share a width —
+  // at every width, not just the pointerless desktop one. Sized to their own
+  // content the relic tiles came out 99px against the potions' 56px on a phone.
+  const shelfTileSpread = (() => {
+    const widths = ['relics', 'potions'].flatMap((shelf) =>
+      [...board.querySelectorAll(`.merchant-shelf--${shelf} .merchant-item`)]
+        .map((tile) => tile.getBoundingClientRect().width))
+    return widths.length ? Math.round(Math.max(...widths) - Math.min(...widths)) : 0
+  })()
+  // The merchant's flavour bubble belongs above the cloth. It is absolutely
+  // positioned, so nothing stops it landing ON the rug — and it did, on every
+  // window short enough to trim the banner it was supposed to sit beside.
+  const greeting = document.querySelector('.merchant-greeting')?.getBoundingClientRect()
+  const greetingOverRug = greeting && greeting.height > 0
+    ? Math.max(0, Math.round(greeting.bottom - board.getBoundingClientRect().top))
+    : 0
+  // A card on the rug exists to be read. The shared card face caps its rules text
+  // at 0.49rem whatever the card's width, so a wider card bought a bigger picture
+  // and type that was still under 7px; the shop overrides that ramp, and the
+  // override is worth nothing if the taller text then clips.
+  const cardRules = [...board.querySelectorAll('.merchant-cards .card-face__rules')]
+  const cardRulesFont = cardRules.length ? parseFloat(getComputedStyle(cardRules[0]).fontSize) : 0
+  const cardRulesClipped = cardRules.filter((panel) => panel.scrollHeight > panel.clientHeight + 1).length
+  const cardFaceWidth = Math.round(board.querySelector('.merchant-cards .card')?.getBoundingClientRect().width ?? 0)
+  // Both card rows draw at ONE size. The rug's three `auto` columns want more than
+  // a capped board can give, so the Colorless pile — which lives in one column —
+  // used to collapse to its zero minimum and render a quarter smaller than the
+  // character row, which escapes by spanning all three.
+  const colorlessCardWidth = Math.round(
+    board.querySelector('.merchant-cards--colorless .card')?.getBoundingClientRect().width ?? 0)
+  // The discounted slot's only visual marker is its price colour, now that the
+  // chip that used to sit on the art is gone. Compared against a full-price
+  // sibling, because "is it blue" is not a thing a test should hard-code.
+  const salePrice = board.querySelector('.merchant-shelf--relics .room-price--sale')
+  const plainPrice = [...board.querySelectorAll('.merchant-shelf--relics .room-price')]
+    .find((price) => !price.classList.contains('room-price--sale'))
+  const saleMark = salePrice?.querySelector('.room-price__sale-mark')
+  const discountMarked = Boolean(salePrice) && Boolean(plainPrice) && Boolean(saleMark)
+    && saleMark.getBoundingClientRect().width > 0
+    && getComputedStyle(salePrice).color !== getComputedStyle(plainPrice).color
+  // Pairwise overlap, in the SWEEP and not only in the single 1440x900 fixture:
+  // the Sold plates only overlap once the module reaches its clamp ceiling, which
+  // is the one place the narrow fixture never looked.
+  const overlapBoxes = [...board.querySelectorAll(
+    'h3, .room-price, .card, .merchant-card__sold, .item-icon-image, .room-item-icon')]
+    .map((element) => ({ element, box: element.getBoundingClientRect() }))
+    .filter((entry) => entry.box.width > 2 && entry.box.height > 2)
+  const overlapPairs = []
+  for (let i = 0; i < overlapBoxes.length; i += 1) for (let j = i + 1; j < overlapBoxes.length; j += 1) {
+    const a = overlapBoxes[i], b = overlapBoxes[j]
+    if (a.element.contains(b.element) || b.element.contains(a.element)) continue
+    if (!(a.box.right <= b.box.left + 1 || b.box.right <= a.box.left + 1
+      || a.box.bottom <= b.box.top + 1 || b.box.bottom <= a.box.top + 1)) {
+      overlapPairs.push(`${(a.element.className || a.element.tagName).toString().split(' ')[0]}/${(b.element.className || b.element.tagName).toString().split(' ')[0]}`)
+    }
+  }
+  // On a phone the stage takes every pixel below the header, less the belt's band.
+  // The desktop belt height carries the same specificity and sits later in the
+  // file, so unscoped it silently stole 42px of stage from a phone holding a potion.
+  // With the log's panel OPEN. No fixture had ever opened it, so its size caps and
+  // its dock could both be deleted with every check green — and an open panel is a
+  // normal state, not an edge case. Measured over the whole STAGE, since the panel
+  // can reach the Leave banner as well as the rug.
+  const logPanel = document.querySelector('details.log')
+  const buriedByOpenLog = (() => {
+    if (!logPanel) return 0
+    const wasOpen = logPanel.open
+    logPanel.open = true
+    const covered = [...stage.querySelectorAll('button, .room-price')].filter((element) => {
+      const box = element.getBoundingClientRect()
+      if (box.width < 4 || box.height < 4) return false
+      return !['nearest', 'start', 'end'].some((block) => {
+        element.scrollIntoView({ block })
+        const spot = element.getBoundingClientRect()
+        const hit = document.elementFromPoint(spot.left + spot.width / 2, spot.top + spot.height / 2)
+        return Boolean(hit && (hit === element || element.contains(hit) || hit.contains(element)))
+      })
+    }).length
+    logPanel.open = wasOpen
+    return covered
+  })()
+  const stageHeight = stage.clientHeight
+  const stageOverflow = Math.round(stage.scrollHeight - stage.clientHeight)
+  const stageScrolls = ['auto', 'scroll', 'overlay'].includes(getComputedStyle(stage).overflowY)
+  return { buriedControls, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
+    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread, greetingOverRug, buriedByOpenLog,
+    overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
+    cardRulesFont, cardRulesClipped, cardFaceWidth, colorlessCardWidth, discountMarked,
+    sideways: Math.round(board.scrollWidth - board.clientWidth) + Math.round(stage.scrollWidth - stage.clientWidth) }
+}
+
+// The pointerless rows are not decoration: every tile prints a name and a rules
+// line there, which roughly doubles tile height, and that is the state where the
+// rug ran out of room and painted over the Leave banner.
+const SHOP_CASES = [
+  // Tall enough to leave the short-window trim behind, so the BASE module — the
+  // container-query derivation every other regime is a variation on — is the one
+  // under test. Swapping its `100cqh` for `100vh` overflows these by 154px while
+  // every shorter case stays green.
+  { width: 1440, height: 900, belt: true, colorless: true },
+  { width: 1600, height: 1000, belt: true, colorless: true },
+  // Tall and narrow, where the module's own `13vw` term binds and its height term
+  // does not — the case that stranded a dead band under the rug.
+  { width: 820, height: 1400, belt: true, colorless: true },
+  // Tall and narrow enough that the module is limited by WIDTH, which is where the
+  // rug's three columns stopped fitting and squeezed the Colorless pile.
+  { width: 900, height: 1600, belt: true, colorless: true },
+  // Tall AND wide enough to drive the module to its 176px clamp ceiling, which no
+  // other case reaches — the ceiling is where the card-text ramp meets its cap.
+  { width: 1920, height: 1200, belt: true, colorless: true },
+  { width: 1280, height: 720, belt: true, colorless: true },
+  { width: 1024, height: 600, belt: true, colorless: true },
+  // The pointerless regime's binding case, per its own comment: tall enough that
+  // its fixed cost decides the module rather than the clamp floor.
+  { width: 1440, height: 900, belt: true, colorless: true, touch: true },
+  { width: 1024, height: 600, belt: true, colorless: true, touch: true },
+  { width: 900, height: 620, belt: true, colorless: true },
+  { width: 900, height: 620, belt: true, colorless: true, touch: true },
+  { width: 900, height: 620, belt: false, colorless: true },
+  { width: 390, height: 844, belt: true, colorless: true },
+  { width: 390, height: 844, belt: false, colorless: true },
+  // Broke: every tile disabled, which is where the discount marker was lost.
+  { width: 1440, height: 900, belt: false, colorless: true, broke: true },
+]
+const shopCases = []
+const pointerContext = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const pointerPage = await openRun(pointerContext)
+try {
+  for (const shopCase of SHOP_CASES) {
+    if (shopCase.touch) {
+      const context = await browser.newContext({
+        viewport: { width: shopCase.width, height: shopCase.height }, hasTouch: true, isMobile: true })
+      try {
+        const page = await openRun(context)
+        await stockShop(page, shopCase)
+        shopCases.push({ ...shopCase, ...await page.evaluate(measureRug) })
+      } finally {
+        await context.close()
+      }
+      continue
+    }
+    await pointerPage.setViewportSize({ width: shopCase.width, height: shopCase.height })
+    await stockShop(pointerPage, shopCase)
+    shopCases.push({ ...shopCase, ...await pointerPage.evaluate(measureRug) })
+  }
+} finally {
+  await pointerContext.close()
+}
+
+// The three room branches in App.tsx are meant to be mutually exclusive, and the
+// campfire branch used to test only the room's KIND — so a campfire tile with an
+// interaction still open mounted both screens, stacked. Reviewers disagreed on
+// which flows can still reach that state, so this is written as the invariant it
+// is: whatever the route in, only one room screen may ever be mounted.
+// The Wing Boots prompt is one of the three surfaces this work re-cut and had no
+// check at all: dropping its class entirely changed nothing. It is a STRIP — one
+// full-width button per destination read as a dialog and cost the map a third of
+// its band, pushing the bottom rows of nodes below the fold.
+const wingPrompt = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  run.phase = 'map'
+  run.neow = null
+  run.roomState = null
+  // A room whose next row holds something its own exits do not reach.
+  // TWO or more destinations, or the strip cannot be told from a stack: with one
+  // option every button trivially shares one row and the check cannot fail.
+  let from = null
+  let offPath = []
+  for (const row of run.map.rows.slice(0, -1)) {
+    for (const candidate of row) {
+      const exits = run.map.rooms[candidate].exits
+      const next = run.map.rows[run.map.rooms[candidate].row + 1] ?? []
+      const unreached = next.filter((id) => !exits.includes(id))
+      if (unreached.length > offPath.length) {
+        from = candidate
+        offPath = unreached
+      }
+    }
+  }
+  if (offPath.length < 2) return { reachable: false }
+  run.map.position = from
+  run.map.rooms[from] = { ...run.map.rooms[from], visited: true }
+  run.players = run.players.map((player) => ({ ...player, row: run.map.rooms[from].row,
+    relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
+  debug.setRun(run)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  // With the log's panel OPEN, and at a phone width too. The prompt is a bottom
+  // strip, so an open panel landed straight on its destinations — a real click on
+  // a Wing Boots option timed out with the run still on the map.
+  const openLog = document.querySelector('details.log')
+  if (openLog) openLog.open = true
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const prompt = document.querySelector('.map-prompt')
+  const map = document.querySelector('.map')
+  const options = [...(prompt?.querySelectorAll('button') ?? [])]
+  const measured = {
+    reachable: true,
+    rendered: Boolean(prompt),
+    height: prompt ? Math.round(prompt.getBoundingClientRect().height) : 0,
+    options: options.length,
+    // Every destination must be clickable at its own centre, and the buttons must
+    // sit on ONE row beside the label rather than stacking.
+    hittable: options.every((option) => {
+      const box = option.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return Boolean(hit && (hit === option || option.contains(hit)))
+    }),
+    rows: new Set(options.map((option) => Math.round(option.getBoundingClientRect().top))).size,
+    coveredByLog: openLog ? options.filter((option) => {
+      const box = option.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return Boolean(hit && (hit === openLog || openLog.contains(hit)))
+    }).length : 0,
+    // Nothing on the map may be unreachable once the prompt takes its share.
+    // Scrolled in FIRST and then hit-tested: a node still half below the map's
+    // fold has its centre outside the map's clip, where the prompt sits — which
+    // reads as "the prompt covers the map" and is only ever a scroll away.
+    unreachableNodes: [...document.querySelectorAll('.room')].filter((node) => {
+      node.scrollIntoView({ block: 'center' })
+      const box = node.getBoundingClientRect()
+      const band = map.getBoundingClientRect()
+      if (box.bottom > band.bottom + 1 || box.top < band.top - 1) return true
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return !(hit && (hit === node || node.contains(hit) || hit.contains(node)))
+    }).length,
+  }
+  debug.setRun(before)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  return measured
+})
+// The same prompt at a PHONE width, for the log-coverage half. The strip's shape
+// assertions above are desktop figures, but the collision the dock prevents only
+// happens where the panel and the strip share the bottom of the screen.
+await page.setViewportSize({ width: 390, height: 844 })
+const wingPromptPhone = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  run.phase = 'map'
+  run.neow = null
+  run.roomState = null
+  run.log = Array.from({ length: 30 }, (_, index) => `Entry number ${index + 1} of the run log.`)
+  let from = null
+  let offPath = []
+  for (const row of run.map.rows.slice(0, -1)) {
+    for (const candidate of row) {
+      const room = run.map.rooms[candidate]
+      const next = run.map.rows[room.row + 1] ?? []
+      const unreached = next.filter((id) => !room.exits.includes(id))
+      if (unreached.length > offPath.length) {
+        from = candidate
+        offPath = unreached
+      }
+    }
+  }
+  if (offPath.length < 1) return { reachable: false }
+  run.map.position = from
+  run.map.rooms[from] = { ...run.map.rooms[from], visited: true }
+  run.players = run.players.map((player) => ({ ...player, row: run.map.rooms[from].row,
+    relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
+  debug.setRun(run)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const log = document.querySelector('details.log')
+  if (log) log.open = true
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const options = [...(document.querySelectorAll('.map-prompt button') ?? [])]
+  const measured = {
+    reachable: true,
+    options: options.length,
+    coveredByLog: log ? options.filter((option) => {
+      const box = option.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return Boolean(hit && (hit === log || log.contains(hit)))
+    }).length : 0,
+  }
+  if (log) log.open = false
+  debug.setRun(before)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  return measured
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+check('a phone Wing Boots prompt stays clear of the open run log', () => {
+  assert(wingPromptPhone.reachable, 'the phone map fixture offered no off-path room')
+  assert(wingPromptPhone.options >= 1, 'the phone prompt offered no destination')
+  assertEqual(wingPromptPhone.coveredByLog, 0,
+    `${wingPromptPhone.coveredByLog} of ${wingPromptPhone.options} destination(s) sat under the open run log`)
+})
+
+check('the Wing Boots prompt is a strip that leaves the map usable', () => {
+  assert(wingPrompt.reachable, 'the map fixture offered no off-path room to walk to')
+  assert(wingPrompt.rendered, 'the Wing Boots prompt did not render')
+  assert(wingPrompt.options >= 2,
+    `the prompt offered ${wingPrompt.options} destination(s); two are needed to tell a strip from a stack`)
+  assert(wingPrompt.hittable, 'a Wing Boots destination was not clickable at its own centre')
+  assertEqual(wingPrompt.coveredByLog, 0,
+    `${wingPrompt.coveredByLog} Wing Boots destination(s) sat under the open run log`)
+  assertEqual(wingPrompt.rows, 1, `the prompt stacked its ${wingPrompt.options} options over ${wingPrompt.rows} rows`)
+  assert(wingPrompt.height <= 80, `the prompt is ${wingPrompt.height}px tall, which is a panel rather than a strip`)
+  assertEqual(wingPrompt.unreachableNodes, 0, `${wingPrompt.unreachableNodes} map node(s) became unreachable`)
+})
+
+const stackedRoomScreens = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  run.phase = 'room'
+  run.neow = null
+  const roomId = run.map.rows[0][0]
+  run.map.position = roomId
+  run.map.rooms[roomId].kind = 'campfire'
+  run.roomState = { kind: 'merchant', relics: ['anchor', 'happy_flower', 'akabeko'],
+    potions: ['fire_potion', 'swift_potion', 'blood_potion'], colorless: [],
+    cards: Object.fromEntries(run.players.map((player) => [player.id,
+      { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+    removalUsed: [], purchasedCards: {} }
+  debug.setRun(run)
+  const settle = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  // NOT `.room-screen`: the relic-resolve panel uses that class too, so counting
+  // it hid the blank room this assertion exists to catch. Only the three things a
+  // room branch can actually mount.
+  const roomScreens = () => document.querySelectorAll('.campfire, .room-stage').length
+  return (async () => {
+    await settle()
+    const counts = {
+      campfire: document.querySelectorAll('.campfire').length,
+      merchant: document.querySelectorAll('.merchant-stage').length,
+      mounted: roomScreens(),
+    }
+    // A pending Relic has its own resolver. No underlying room action may remain
+    // mounted: resolveCampfire does not guard pending acquisitions and could move
+    // the run back to the map while leaving the Relic unresolved.
+    const pending = structuredClone(run)
+    // What `hasPendingRelicAcquisition` actually reads: a relic awaiting its
+    // owner's choice. Setting an invented `pendingAcquisition` field instead left
+    // this assertion unable to fail.
+    pending.players[0].relics = [...pending.players[0].relics, { defId: 'akabeko', pending: true }]
+    debug.setRun(pending)
+    await settle()
+    counts.whilePendingAcquisition = roomScreens()
+    counts.relicResolvers = [...document.querySelectorAll('.room-screen > h2')]
+      .filter((heading) => /^Resolve /.test(heading.textContent ?? '')).length
+    debug.setRun(before)
+    await settle()
+    return counts
+  })()
+})
+// The boss-relic picker is its own markup (`.reward-boss`) and moved out of
+// `.reward-screen__relic`, which is what the other reward checks select — so
+// until now no browser suite touched it at all.
+const bossRelicShape = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  run.phase = 'reward'
+  run.neow = null
+  run.roomState = null
+  run.rewardDestination = 'map'
+  run.rewards = [{ playerId: run.players[0].id, cardReward: false, choices: null, upgraded: false,
+    potion: false, bossRelics: ['snecko_eye', 'pandoras_box', 'tiny_house'] }]
+  debug.setRun(run)
+  return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const picks = [...document.querySelectorAll('.reward-boss__pick')]
+    const widths = picks.map((pick) => Math.round(pick.getBoundingClientRect().width))
+    const screen = document.querySelector('.reward-screen')?.getBoundingClientRect()
+    const result = {
+      picks: picks.length,
+      // A boss-relic screen offers no card, so the card-reward instruction must
+      // not be printed on it.
+      cardInstructions: [...document.querySelectorAll('.reward-screen > p.muted')]
+        .filter((line) => /revealed card/i.test(line.textContent ?? '')).length,
+      spread: widths.length ? Math.max(...widths) - Math.min(...widths) : -1,
+      // Each pick must name the relic AND its rules, since the art carries neither.
+      named: picks.every((pick) => /\w/.test(pick.querySelector(':scope > strong')?.textContent ?? '')
+        && (pick.querySelector(':scope > .room-item-text')?.textContent ?? '').length > 8),
+      inside: screen ? picks.every((pick) => {
+        const box = pick.getBoundingClientRect()
+        return box.left >= screen.left - 1 && box.right <= screen.right + 1
+      }) : false,
+      hittable: picks.every((pick) => {
+        const box = pick.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return Boolean(hit && (pick === hit || pick.contains(hit)))
+      }),
+      // The art has to be sized for THIS tile. The picker draws bare icons, and
+      // the app's global icon size is 1.8rem — which left a 28px relic adrift in
+      // a 218px pick until the picker sized it itself.
+      art: Math.round(Math.min(...picks.map((pick) =>
+        pick.querySelector('.item-icon-image')?.getBoundingClientRect().width ?? 0), Infinity)),
+    }
+    debug.setRun(before)
+    done(result)
+  })))
+})
+check('the boss relic picker offers three readable, hittable choices', () => {
+  assertEqual(bossRelicShape.picks, 3, 'the boss relic picker did not render three choices')
+  assert(bossRelicShape.spread <= 2, `boss relic picks differ in width by ${bossRelicShape.spread}px`)
+  assert(bossRelicShape.named, 'a boss relic pick omitted its name or its rules')
+  assert(bossRelicShape.inside, 'a boss relic pick escaped the reward screen')
+  assert(bossRelicShape.hittable, 'a boss relic pick was not clickable at its own centre')
+  assert(bossRelicShape.art >= 56, `boss relic art is only ${bossRelicShape.art}px wide`)
+  assertEqual(bossRelicShape.cardInstructions, 0,
+    'a boss-relic screen printed card-reward instructions with no cards on it')
+})
+// The merchant fixtures all passed `colorless: []`, so no check ever rendered the
+// Colorless pile — which is how card faces painting over the row beneath stayed
+// invisible to this suite. THREE cards, because that is what `createMerchant`
+// draws; a two-card fixture also hid the pile's own track being one short, which
+// wrapped the third card onto a row of its own and put it under the Leave banner.
+// A Sold relic and a Sold potion are stocked here too: with all six slots filled
+// the `.room-item-icon` half of the shelf-icon selector never rendered, so the
+// rule giving a Sold glyph the icon module was never measured by anything.
+const colorlessOverlap = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  run.phase = 'room'
+  run.neow = null
+  run.players = run.players.map((player) => ({ ...player, gold: 40 }))
+  // Slot 0 STOCKED and slot 1 Sold, on both shelves. Both halves are needed for
+  // the icon-spread assertion to be able to fail at all: slot 0 is the discounted
+  // one, and its price chip is what makes a tile's min-content wider than the
+  // icon module — which is the only condition under which a percentage-sized
+  // glyph diverges from a module-sized one. Sold in slot 1 renders the
+  // `.room-item-icon` half of the shelf-icon selector, which a fully stocked
+  // fixture never produced.
+  run.roomState = { kind: 'merchant', relics: ['anchor', '', 'akabeko'],
+    potions: ['fire_potion', '', 'blood_potion'],
+    // One CARD slot empty as well: a Sold plate only renders for an empty card
+    // slot, so a shelf-only sold fixture never produced one and never measured it.
+    colorless: ['dramatic_entrance', '', 'finesse'],
+    cards: Object.fromEntries(run.players.map((player) => [player.id,
+      { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+    removalUsed: [], purchasedCards: {} }
+  debug.setRun(run)
+  return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const boxes = [...document.querySelectorAll(
+      '.merchant-board h3, .merchant-board .room-price, .merchant-board .card, .merchant-board .merchant-card__sold, .merchant-board .item-icon-image')]
+      .map((element) => ({ element, box: element.getBoundingClientRect() }))
+      .filter((entry) => entry.box.width > 2 && entry.box.height > 2)
+    const pairs = []
+    for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i], b = boxes[j]
+      if (a.element.contains(b.element) || b.element.contains(a.element)) continue
+      if (!(a.box.right <= b.box.left + 1 || b.box.right <= a.box.left + 1
+        || a.box.bottom <= b.box.top + 1 || b.box.bottom <= a.box.top + 1)) {
+        pairs.push(`${(a.element.className || a.element.tagName).toString().split(' ')[0]}/${(b.element.className || b.element.tagName).toString().split(' ')[0]}`)
+      }
+    }
+    // Two faces and one Sold plate, since the fixture empties a card slot on
+    // purpose — the pile is still three slots wide.
+    const colorlessCards = document.querySelectorAll('.merchant-cards--colorless .card').length
+    const colorlessSlots = document.querySelectorAll(
+      '.merchant-cards--colorless .card, .merchant-cards--colorless .merchant-card__sold').length
+    const board = document.querySelector('.merchant-board')
+    const boardBox = board.getBoundingClientRect()
+    const stage = document.querySelector('.merchant-stage')
+    // The rug is the window's width and cannot scroll sideways, so anything
+    // past its content box is cut off rather than reachable.
+    const clipped = [...board.querySelectorAll('.card, .item-icon-image, .room-item-icon, .room-price')]
+      .reduce((worst, element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 2
+          ? Math.max(worst, Math.round(box.right - boardBox.right), Math.round(boardBox.left - box.left))
+          : worst
+      }, 0)
+    const sideways = Math.round(board.scrollWidth - board.clientWidth)
+      + Math.round(stage.scrollWidth - stage.clientWidth)
+    // A price can be buried while its own tile's centre is still clear, so a
+    // hit-test on the buttons alone does not cover it.
+    const buried = [...board.querySelectorAll('.room-price, .card')].filter((element) => {
+      const box = element.getBoundingClientRect()
+      if (box.width < 3 || box.height < 3) return false
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return !(hit && (hit === element || element.contains(hit) || hit.contains(element)))
+    }).length
+    // Only the COUNT here. Icon widths are asserted in the pointerless pass
+    // instead: at this viewport the icon module is wider than a tile's prose and
+    // price, so every track pins to the module and a spread assertion here could
+    // not fail however the icons were sized.
+    const soldGlyphs = board.querySelectorAll('.merchant-shelf .merchant-item > .room-item-icon').length
+    // A sold CARD slot used to say "Sold" twice — once on the plate, once as the
+    // price beneath it, which `Price` prints for a null value.
+    const soldWordsPerSlot = [...board.querySelectorAll('.merchant-cards .merchant-card')]
+      .map((slot) => (slot.textContent ?? '').match(/Sold/g)?.length ?? 0)
+    // Restore the shop the checks below expect — an explicit fixture, not the
+    // captured snapshot, which could be mid-transition and left them without the
+    // Anchor relic they hover.
+    debug.setRun({ ...before, phase: 'room', neow: null,
+      players: before.players.map((player) => ({ ...player, gold: 40 })),
+      roomState: { kind: 'merchant', relics: ['anchor', 'happy_flower', 'akabeko'],
+        potions: ['fire_potion', 'swift_potion', 'blood_potion'], colorless: [],
+        cards: Object.fromEntries(before.players.map((player) => [player.id,
+          { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+        removalUsed: [], purchasedCards: {} } })
+    done({ colorlessCards, colorlessSlots, soldWordsPerSlot, pairs: pairs.slice(0, 4), count: pairs.length,
+      clipped, sideways, buried, soldGlyphs })
+  })))
+})
+// The hover tip is the ONLY way a pointer user reads a bare-icon relic, and the
+// stage scrolls — so the stage clips. A tip centred on a tile is far wider than
+// the tile, and on an edge column it was cut off mid-sentence, losing the item's
+// name and the start of its rules. Every column on both shelves, at three widths:
+// the shelves move from hard left to right of centre depending on whether a
+// Colorless pile is in stock, so one viewport does not exercise the placement.
+const shelfTips = []
+for (const [tipWidth, tipHeight] of [[1024, 600], [900, 620], [1440, 900]]) {
+  await page.setViewportSize({ width: tipWidth, height: tipHeight })
+  for (const shelf of ['relics', 'potions']) {
+  for (let column = 0; column < 3; column += 1) {
+    const tile = page.locator(`.merchant-shelf--${shelf} .merchant-item`).nth(column)
+    if (await tile.count() === 0) continue
+    // Guarded: if the rug ever overflows onto the Leave banner again, the banner
+    // intercepts this hover and a 30s timeout kills the process before `report()`
+    // — losing every check, including the ones that name that exact regression.
+    try {
+      await tile.hover({ timeout: 5_000 })
+    } catch {
+      shelfTips.push({ label: `${tipWidth}x${tipHeight} ${shelf}#${column}`, shown: false, past: 0 })
+      continue
+    }
+    shelfTips.push(await tile.evaluate((element, label) => {
+      const tip = element.querySelector('.merchant-tooltip')
+      const stage = element.closest('.merchant-stage').getBoundingClientRect()
+      if (!tip || getComputedStyle(tip).display === 'none') return { label, shown: false, past: 0 }
+      const box = tip.getBoundingClientRect()
+      return {
+        label,
+        shown: box.width > 0 && box.height > 0,
+        // How far the tip escapes the stage on either side.
+        past: Math.max(0, Math.round(stage.left - box.left), Math.round(box.right - stage.right)),
+        // The tip must not be the thing under its own centre — it covers the
+        // tiles around it, and while it was hittable it ate their clicks.
+        swallows: (() => {
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+          return Boolean(hit && (hit === tip || tip.contains(hit)))
+        })(),
+        // Wherever the tip overlaps another SECTION of the rug, the tip must be
+        // on top. A hovered tile is a stacking context (its own `filter`), so the
+        // tip's `z-index` counts for nothing against the TILE's siblings — an
+        // opaque later section, the removal plaque or the shelf below, paints
+        // straight over the text a player is reading. Which section it reaches
+        // depends on the seat count, so this takes whichever one it overlaps
+        // rather than naming the plaque. Pointer events are briefly restored
+        // because paint order is the question, not hittability.
+        neighbour: (() => {
+          const own = element.closest('.merchant-shelf, .merchant-cards, .merchant-removal')
+          const sections = [...document.querySelectorAll(
+            '.merchant-board > .merchant-shelf, .merchant-board > .merchant-cards, .merchant-board > .merchant-removal')]
+            .filter((section) => section !== own)
+          for (const section of sections) {
+            const other = section.getBoundingClientRect()
+            const overlapX = Math.min(box.right, other.right) - Math.max(box.left, other.left)
+            const overlapY = Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top)
+            if (overlapX <= 4 || overlapY <= 4) continue
+            const previous = tip.style.pointerEvents
+            tip.style.pointerEvents = 'auto'
+            const hit = document.elementFromPoint(
+              Math.max(box.left, other.left) + overlapX / 2,
+              Math.max(box.top, other.top) + overlapY / 2)
+            tip.style.pointerEvents = previous
+            return { over: (section.className || '').toString().split(' ')[0],
+              onTop: Boolean(hit && (hit === tip || tip.contains(hit))) }
+          }
+          return null
+        })(),
+        where: `tip ${Math.round(box.left)}..${Math.round(box.right)} tile ${Math.round(element.getBoundingClientRect().left)}..${Math.round(element.getBoundingClientRect().right)} stage ${Math.round(stage.left)}..${Math.round(stage.right)}`,
+      }
+    }, `${tipWidth}x${tipHeight} ${shelf}#${column}`))
+    }
+  }
+}
+await page.mouse.move(0, 0)
+await page.setViewportSize({ width: 1440, height: 900 })
+check('every shelf hover tip stays inside the stage that clips it', () => {
+  assertEqual(shelfTips.length, 18, `only ${shelfTips.length} shelf tiles were hovered`)
+  // At least one tip must actually reach the plaque, or the paint-order assertion
+  // above is vacuous.
+  assert(shelfTips.some((tip) => tip.neighbour),
+    'no hover tip overlapped another section of the rug, so paint order went untested')
+  for (const tip of shelfTips) {
+    assert(tip.shown, `the ${tip.label} tile showed no hover tip on a pointer device`)
+    assertEqual(tip.past, 0, `the ${tip.label} hover tip escaped the stage by ${tip.past}px — ${tip.where}`)
+    assert(!tip.swallows, `the ${tip.label} hover tip took the hit-test at its own centre`)
+    assert(!tip.neighbour || tip.neighbour.onTop,
+      `the ${tip.label} hover tip was painted over by the ${tip.neighbour?.over} it overlaps`)
+  }
+})
+// ONE check per viewport, not one for all twelve. `assert` throws on the first
+// failure, so a single bundled check reported the first bad case and hid the
+// other eleven — and every later assertion within that case too.
+check('the shop reports a measurement for every stocked state', () => {
+  assertEqual(shopCases.length, SHOP_CASES.length, 'a shop case did not report its measurements')
+})
+for (const shopCase of shopCases) {
+  const where = `${shopCase.width}x${shopCase.height}${shopCase.touch ? ' touch' : ''}${shopCase.belt ? ' belt' : ''}${shopCase.colorless ? ' colorless' : ''}`
+  check(`the shop keeps ${where} reachable, aligned and legible`, () => {
+    assertEqual(shopCase.buriedControls, 0, `${where}: ${shopCase.buriedControls} shop control(s) buried`)
+    assertEqual(shopCase.buriedPrices, 0, `${where}: ${shopCase.buriedPrices} price(s) buried`)
+    assertEqual(shopCase.buriedCards, 0, `${where}: ${shopCase.buriedCards} card face(s) buried`)
+    assert(shopCase.leaveOwns, `${where}: Leave merchant was not clickable across its width`)
+    assert(shopCase.rugIntoLeave <= 4,
+      `${where}: the rug reached ${shopCase.rugIntoLeave}px into the Leave banner's row`)
+    assert(shopCase.leaveReachable, `${where}: Leave merchant could not be scrolled fully into the stage`)
+    if (shopCase.width <= 760) {
+      // 844 less the 4rem header, less the belt's reserved band when one is held.
+      // Both arms are exercised: SHOP_CASES carries a phone case with and without
+      // a potion, so the no-belt figure is not dead.
+      const expected = shopCase.belt ? 730 : 780
+      assert(shopCase.stageHeight >= expected - 2,
+        `${where}: the phone stage took only ${shopCase.stageHeight}px of the ${expected}px below the header`)
+    }
+    if (shopCase.width >= 761) {
+      assertEqual(shopCase.buriedByOpenLog, 0,
+        `${where}: ${shopCase.buriedByOpenLog} control(s) unreachable with the run log open`)
+    }
+    assert(shopCase.stageScrolls,
+      `${where}: the rug cannot be scrolled, so anything below the fold is lost`)
+    // A pointer desktop window tall enough for the rug must not scroll AT ALL —
+    // that is what the height trims buy, and asserting only "it CAN scroll" left
+    // them unmeasured. The genuinely tight cases are excluded by name, so a new
+    // overflow somewhere roomy cannot hide behind them.
+    // Touch included. Excluding it left the pointerless regime's fixed cost
+    // undefendable — it could be moved from 355 to 100 with every check green.
+    if (shopCase.width >= 761 && shopCase.height >= 700) {
+      assertEqual(shopCase.stageOverflow, 0, `${where}: the rug overflowed its stage by ${shopCase.stageOverflow}px`)
+    }
+    assert(shopCase.lastPriceBelow <= 0,
+      `${where}: the last potion price stayed ${shopCase.lastPriceBelow}px below the fold even scrolled to the end`)
+    assert(shopCase.clipped <= 1, `${where}: stock hung ${shopCase.clipped}px past the rug's edge`)
+    assertEqual(shopCase.sideways, 0, `${where}: the rug overflowed sideways by ${shopCase.sideways}px`)
+    assertEqual(shopCase.overlapCount, 0,
+      `${where}: ${shopCase.overlapCount} overlapping rug element(s): ${shopCase.overlaps.join(' ')}`)
+    assertEqual(shopCase.greetingOverRug, 0,
+      `${where}: the merchant's greeting overlapped the rug by ${shopCase.greetingOverRug}px`)
+    if (shopCase.colorless) {
+      assert(Math.abs(shopCase.colorlessCardWidth - shopCase.cardFaceWidth) <= 2,
+        `${where}: Colorless cards are ${shopCase.colorlessCardWidth}px against ${shopCase.cardFaceWidth}px for the character row`)
+    }
+    assert(shopCase.discountMarked,
+      `${where}: the discounted relic's price is not distinguished from a full-price one`)
+    assertEqual(shopCase.cardRulesClipped, 0,
+      `${where}: ${shopCase.cardRulesClipped} card face(s) clipped their own rules text`)
+    // Tied to the card's width rather than a flat pixel bar: a 76px card on a
+    // cramped window cannot carry 10px type, but the RAMP must still be the
+    // shop's own and not the 0.49rem-capped shared one.
+    // Bounded by the ramp's own cap as well as the card's width: the cap is
+    // deliberate — above it the wordiest card in the pool clips its panel — so a
+    // pure ratio bar contradicted it the moment the module reached its ceiling.
+    // A roomy pointer window must not leave the cards on their clamp FLOOR: that
+    // is what a regime re-using the untrimmed fixed cost looks like, and nothing
+    // else here bounds unused rug height.
+    if (!shopCase.touch && shopCase.width >= 1280 && shopCase.height >= 700) {
+      assert(shopCase.cardFaceWidth > 76,
+        `${where}: card faces sat on their ${shopCase.cardFaceWidth}px floor on a window with room to spare`)
+    }
+    // A phone has its own module, and it too was bounded only from ABOVE: the rule
+    // could be shrunk to a 44px ceiling, or moved back onto the stage where the
+    // board's own declaration shadows it, with every check still green.
+    // The widest case exists to reach the module's 176px ceiling, so it has to
+    // assert the module actually GOT there — the ceiling could be cut to 96px with
+    // every other bound still satisfied.
+    if (!shopCase.touch && shopCase.width >= 1900 && shopCase.height >= 1100) {
+      assert(shopCase.cardFaceWidth >= 160,
+        `${where}: card faces reached only ${shopCase.cardFaceWidth}px on the widest window`)
+    }
+    if (shopCase.width <= 430) {
+      assert(shopCase.cardFaceWidth >= 92,
+        `${where}: phone card faces are only ${shopCase.cardFaceWidth}px wide`)
+    }
+    // Below 830px the rug stacks one section per row, which is what lets a narrow
+    // window keep a readable card: squeezed into three columns instead, the same
+    // window draws them at about 92px.
+    if (shopCase.width > 430 && shopCase.width <= 830) {
+      assert(shopCase.cardFaceWidth >= 100,
+        `${where}: narrow-window card faces are only ${shopCase.cardFaceWidth}px wide`)
+    }
+    assert(shopCase.cardRulesFont >= Math.min(shopCase.cardFaceWidth * 0.068, 11.2),
+      `${where}: card rules text is ${shopCase.cardRulesFont.toFixed(2)}px on a ${shopCase.cardFaceWidth}px card`)
+    assert(shopCase.shelfTileSpread <= 2,
+      `${where}: shelf tiles differ in width by ${shopCase.shelfTileSpread}px, so the stock rows do not line up`)
+  })
+}
+check('the shop lays out a full Colorless pile without overlapping or clipping', () => {
+  assertEqual(colorlessOverlap.colorlessSlots, 3, 'the Colorless pile did not render three slots')
+  assertEqual(colorlessOverlap.colorlessCards, 2,
+    'the fixture should leave exactly one Colorless slot sold, so its plate is measured too')
+  assertEqual(colorlessOverlap.count, 0,
+    `${colorlessOverlap.count} overlapping rug elements: ${colorlessOverlap.pairs.join(' ')}`)
+  assert(colorlessOverlap.clipped <= 1, `stock hung ${colorlessOverlap.clipped}px past the rug's edge`)
+  assertEqual(colorlessOverlap.sideways, 0, `the rug overflowed sideways by ${colorlessOverlap.sideways}px`)
+  assertEqual(colorlessOverlap.buried, 0, `${colorlessOverlap.buried} price(s) or card face(s) were buried`)
+  assertEqual(colorlessOverlap.soldGlyphs, 2, 'the Sold-slot glyphs did not render, so nothing measured them')
+  assert(colorlessOverlap.soldWordsPerSlot.every((count) => count <= 1),
+    `a sold card slot printed "Sold" ${Math.max(...colorlessOverlap.soldWordsPerSlot)} times`)
+})
+check('a campfire tile with an open room interaction mounts exactly one screen', () => {
+  assertEqual(stackedRoomScreens.merchant, 1, 'the open Merchant did not render')
+  assertEqual(stackedRoomScreens.campfire, 0, 'the campfire screen rendered on top of an open Merchant')
+  assertEqual(stackedRoomScreens.mounted, 1, 'exactly one room screen must mount')
+  assertEqual(stackedRoomScreens.whilePendingAcquisition, 0,
+    'a pending acquisition left an underlying room action mounted')
+  assertEqual(stackedRoomScreens.relicResolvers, 1,
+    'a pending acquisition did not mount exactly one Relic resolver')
+})
+check('a pointerless shopper reads shelf rules without hovering', () => {
+  for (const [label, shelf] of [['tall', touchShelf], ['short with a belt', touchShelfShort]]) {
+    assert(shelf.coarse, `touch context (${label}) still reports a hover-capable pointer`)
+    assert(shelf.nameVisible, `touch shelf tile hides its item name (${label})`)
+    assert(shelf.rulesVisible, `touch shelf tile hides its item rules (${label})`)
+    assert(/gain 2 Block/i.test(shelf.rulesText), `touch shelf rules read "${shelf.rulesText}" (${label})`)
+    assert(shelf.focusVisible, `focusing the shelf tile did not reach :focus-visible (${label})`)
+    assert(shelf.tipHidden, `the tooltip still shows on a touch device (${label})`)
+    assert(shelf.lastPriceBelow <= 0,
+      `the last potion price sat ${shelf.lastPriceBelow}px below the stage on a pointerless device (${label})`)
+    // The prose these tiles print is paid for by shrinking the stock, so both
+    // floors are asserted here: an icon shrank to 23px unnoticed, and the card
+    // faces — which print no fallback text at all — to 38px.
+    assert(shelf.smallestIcon >= 30, `pointerless shelf icons shrank to ${shelf.smallestIcon}px (${label})`)
+    assertEqual(shelf.soldGlyphs, 2, `the Sold-slot glyphs did not render, so their sizing is untested (${label})`)
+    assert(shelf.headingOffset <= 2,
+      `a shelf heading sat ${shelf.headingOffset}px from its first item (${label})`)
+    assert(shelf.priceSpread <= 2,
+      `pointerless shelf prices differ in baseline by ${shelf.priceSpread}px (${label})`)
+    assert(shelf.tileSpread <= 2,
+      `pointerless shelf tiles differ in width by ${shelf.tileSpread}px (${label})`)
+    assert(shelf.iconSpread <= 2,
+      `pointerless shelf icons — Sold glyphs included — differ by ${shelf.iconSpread}px (${label})`)
+    assert(shelf.smallestCardFace >= 72,
+      `pointerless card faces shrank to ${shelf.smallestCardFace}px (${label})`)
+    assertEqual(shelf.spill, 0, `a shelf tile printed its text outside its own track (${label})`)
+  }
+})
+const merchantAnchorNamed = await page.getByLabel('Relics')
+  .getByRole('button', { name: /Anchor.*gain 2 Block/i }).count()
+const merchantAnchorPriced = await page.getByLabel('Relics')
+  .getByRole('button', { name: /Anchor.*5 Gold, on sale/i }).count()
+await page.getByLabel('Relics').getByRole('button', { name: /^Anchor/ }).hover()
+const merchantAnchorTip = await page.locator('.merchant-shelf--relics .merchant-item').first().evaluate((tile) => {
+  const tip = tile.querySelector('.merchant-tooltip')
+  if (!tip) return { shown: false, text: '' }
+  const box = tip.getBoundingClientRect()
+  return {
+    shown: getComputedStyle(tip).display !== 'none' && box.width > 0 && box.height > 0
+      && box.left >= -1 && box.right <= innerWidth + 1 && box.top >= -1 && box.bottom <= innerHeight + 1,
+    text: tip.textContent ?? '',
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-shelf-tooltip.png'), fullPage: true })
+await page.mouse.move(0, 0)
 const accessibleGoldPrices = await page.getByLabel('Relics').getByRole('button', { name: /Gold/ }).count()
 const merchantShape = await page.evaluate(() => {
   const board = document.querySelector('.merchant-board')
-  const shelfItems = [...document.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-card-image, .item-card-fallback)')]
+  const shelfItems = [...document.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
   const boardStyle = board ? getComputedStyle(board) : null
   return {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     boardScrollable: !boardStyle || ['auto', 'scroll'].includes(boardStyle.overflowX) || ['auto', 'scroll'].includes(boardStyle.overflowY),
     buttons: document.querySelectorAll('.merchant-board button').length,
     figure: document.querySelector('.merchant-figure')?.getBoundingClientRect().width ?? 0,
+    shelfIconCount: shelfItems.length,
     shelfWidth: Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
+    shelfIconSpread: Math.max(...shelfItems.map((item) => item.getBoundingClientRect().width))
+      - Math.min(...shelfItems.map((item) => item.getBoundingClientRect().width)),
     cardWidth: document.querySelector('.merchant-card .card')?.getBoundingClientRect().width ?? 0,
     exposedTooltips: document.querySelectorAll('.merchant-tooltip:not([aria-hidden="true"])').length,
   }
@@ -470,30 +1483,43 @@ check('four-player Merchant is game-framed, responsive, and keyboard reachable',
   assert(!merchantShape.boardScrollable, 'merchant inventory rug is scrollable')
   assert(merchantShape.buttons >= 9, `merchant exposes only ${merchantShape.buttons} actions`)
   assert(merchantShape.figure > 200, `merchant figure is only ${merchantShape.figure}px wide`)
-  assert(merchantShape.shelfWidth >= 100, `merchant shelf scans are only ${merchantShape.shelfWidth}px wide`)
-  assert(Math.abs(merchantShape.shelfWidth - merchantShape.cardWidth) <= 10,
-    `merchant shelf scans (${merchantShape.shelfWidth}px) do not match cards (${merchantShape.cardWidth}px)`)
+  assertEqual(merchantShape.shelfIconCount, 6, 'the shelves did not render six icons')
+  assert(merchantShape.shelfWidth >= 34, `merchant shelf icons are only ${merchantShape.shelfWidth}px wide`)
+  assert(merchantShape.shelfIconSpread <= 2, `merchant shelf icons differ by ${merchantShape.shelfIconSpread}px`)
+  assert(merchantShape.shelfWidth < merchantShape.cardWidth,
+    `shelf icons (${merchantShape.shelfWidth}px) should read smaller than card faces (${merchantShape.cardWidth}px)`)
   assertEqual(merchantShape.exposedTooltips, 0, 'merchant tooltips duplicate their button accessible names')
 })
-check('missing local item scans fall back to a full generated card face', () => {
-  assertEqual(merchantFallbackSrc, '/assets/relic-icons/anchor.png')
-  assertEqual(merchantFallbackName, 'Anchor')
-  assertEqual(merchantFallbackFace, 1)
+check('shop shelf items stay readable without a card face', () => {
+  // The icons print no rules, so this is the guarantee that replaces the card
+  // face: the rules are in the button's accessible name, the price and its sale
+  // state are too, and a pointer gets a tip that is fully on screen.
+  assertEqual(merchantAnchorNamed, 1, 'shop relic button does not name its rules')
+  assertEqual(merchantAnchorPriced, 1, 'shop relic button does not name its price and sale state')
+  assert(merchantAnchorTip.shown, 'hovering a shop relic showed no tooltip')
+  assert(/Anchor/.test(merchantAnchorTip.text) && /gain 2 Block/i.test(merchantAnchorTip.text),
+    `shop relic tooltip reads "${merchantAnchorTip.text}"`)
 })
 check('Merchant prices expose their Gold unit', () => assert(accessibleGoldPrices > 0))
 check('Merchant keeps its fixed rug and Leave action inside a 1280×720 desktop', () => {
   assert(merchant720.bottom <= merchant720.viewport + 1, `merchant ends at ${merchant720.bottom}px in ${merchant720.viewport}px`)
   assert(merchant720.leaveBottom <= merchant720.viewport + 1, `Leave merchant ends at ${merchant720.leaveBottom}px`)
 })
-check('Merchant keeps card-sized merchandise and every shelf price visible at 1024×600', () => {
+check('Merchant keeps uniform shelf icons and every shelf price visible at 1024×600', () => {
   assert(merchant600.stageBottom <= merchant600.viewport + 1, `merchant ends at ${merchant600.stageBottom}px in ${merchant600.viewport}px`)
-  assert(Math.abs(merchant600.itemWidth - merchant600.cardWidth) <= 10,
-    `merchant shelf scans (${merchant600.itemWidth}px) do not match cards (${merchant600.cardWidth}px)`)
-  assert(merchant600.pricesVisible, 'merchant clipped a relic or potion price at 1024×600')
+  assertEqual(merchant600.iconCount, 6, 'the shelves did not render six icons at 1024x600')
+  assert(merchant600.itemWidth >= 30, `merchant shelf icons are only ${merchant600.itemWidth}px wide`)
+  assert(merchant600.iconSpread <= 2, `merchant shelf icons differ by ${merchant600.iconSpread}px`)
+  assert(merchant600.iconsSmallerThanCards,
+    `shelf icons (${merchant600.itemWidth}px) should read smaller than card faces (${merchant600.cardWidth}px)`)
+  // The regression this locks down: a short window used to push the potion row
+  // past the stage, and `overflow: clip` then made those prices unreachable.
+  assert(merchant600.lastPriceBelow <= 0,
+    `the last potion price stayed ${merchant600.lastPriceBelow}px below the fold at 1024×600 even scrolled to the end`)
 })
-check('Merchant keeps merchandise card-sized without horizontal overflow at 390×844', () => {
-  assert(Math.abs(merchant390.itemWidth - merchant390.cardWidth) <= 10,
-    `merchant shelf scans (${merchant390.itemWidth}px) do not match cards (${merchant390.cardWidth}px)`)
+check('Merchant keeps legible shelf icons without horizontal overflow at 390×844', () => {
+  assert(merchant390.itemWidth >= 30, `merchant shelf icons are only ${merchant390.itemWidth}px wide`)
+  assert(merchant390.iconsSmallerThanCards, 'mobile shelf art grew back to card size')
   assert(!merchant390.overflow, 'merchant overflows a 390px viewport')
   assert(merchant390.removalRatio > 0.9, `card removal uses only ${merchant390.removalRatio * 100}% of the mobile rug`)
   assert(merchant390.detailVisible, 'touch shoppers cannot read item descriptions')
@@ -572,9 +1598,40 @@ await page.getByRole('heading', { name: 'Choose a Relic' }).waitFor()
 await page.screenshot({ path: join(outDir, 'treasure-4p-desktop.png'), fullPage: true })
 const treasureName = await page.locator('.treasure-relic > strong').textContent()
 const takeRelicButtons = await page.getByRole('button', { name: /Take relic/ }).count()
+// `public/assets/cards/` is gitignored, so on a fresh checkout `ItemImage`'s
+// GENERATED face is the only renderer a relic or potion card ever gets. Treasure
+// is where that face is still drawn at a size a player reads it at — the shop and
+// the reward rows draw bare icons now, and the reward "Replace" keys draw a 1.4rem
+// icon, which is far too small to prove anything about a card face.
+const treasureFallback = page.locator('.treasure-relic > .item-card-fallback')
+if (await treasureFallback.count() === 0) {
+  await page.locator('.treasure-relic > .item-card-image')
+    .evaluate((image) => { image.src = '/missing-item-card.webp' })
+}
+await treasureFallback.waitFor()
+const treasureFallbackShape = await treasureFallback.evaluate((node) => ({
+  name: node.querySelector('strong')?.textContent?.trim() ?? '',
+  kind: node.querySelector('small')?.textContent?.trim() ?? '',
+  rules: node.querySelector('span')?.textContent?.trim() ?? '',
+  icon: node.querySelector('.item-card-image')?.getAttribute('src') ?? '',
+  hidden: node.getAttribute('aria-hidden'),
+  width: Math.round(node.getBoundingClientRect().width),
+}))
 check('Treasure gives the active seat one dominant face-up relic choice', () => {
   assertEqual(treasureName, 'Anchor')
   assertEqual(takeRelicButtons, 1)
+})
+check('a missing item scan falls back to a generated card face that still prints the item', () => {
+  assert(treasureFallbackShape.name.length > 0, 'generated face printed no name')
+  assert(treasureFallbackShape.rules.length > 0, 'generated face printed no rules')
+  assertEqual(treasureFallbackShape.kind, 'Relic')
+  assert(treasureFallbackShape.icon.startsWith('/assets/relic-icons/'),
+    `generated face used icon "${treasureFallbackShape.icon}"`)
+  // Drawn at a size the printed text can actually be read at, not as a thumbnail.
+  assert(treasureFallbackShape.width >= 96,
+    `generated face rendered only ${treasureFallbackShape.width}px wide`)
+  // The surrounding panel already names the relic, so the drawn face is decorative.
+  assertEqual(treasureFallbackShape.hidden, 'true')
 })
 
 await page.evaluate(() => {
@@ -1205,13 +2262,171 @@ const localRewardSelectionReconciled = await localRewardSources.evaluate((group)
   checked: group.querySelectorAll('input:checked').length,
   disabled: group.querySelector('button')?.disabled,
 }))
-const localRewardReplacementCards = await page.locator('.reward-screen__players > :first-child .reward-screen__potion button .item-card-image')
+// Icons, not card faces: a 1.4rem card face was a 22px thumbnail whose own
+// printed name clipped to two letters, so these keys draw bare art like the row.
+const localRewardReplacementCards = await page.locator('.reward-screen__players > :first-child .reward-screen__potion button .item-icon-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+// The potion belt is a STRIP, and this is the surface that proves it: the reward
+// panel sizes to its content, so the shell's tall row used to land on the belt
+// and stretch a 62px band to fill the window, pushing the panel down with it.
+// The shop cannot show this — its stage has a definite height either way.
+// Reward rows share their columns, so a relic row's keys and a potion row's keys
+// (which carry a Replace key per held potion) line up. Each row used to be its own
+// grid sized against its own text, which put them up to 263px apart.
+const rewardColumns = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const staged = structuredClone(before)
+  // A relic row AND a potion row, with potions held so the potion row carries an
+  // extra Replace key per potion — that asymmetry is what pulled the rows apart.
+  staged.players = staged.players.map((player) => ({ ...player, potions: ['swift_potion', 'blood_potion'] }))
+  staged.rewards = [{ playerId: staged.players[0].id, cardReward: false, choices: null, upgraded: false,
+    potion: 'fire_potion', relic: 'akabeko' }]
+  debug.setRun(staged)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const actions = [...document.querySelectorAll('.reward-item__actions')].map((box) => {
+    const rect = box.getBoundingClientRect()
+    return { left: Math.round(rect.left), width: Math.round(rect.width) }
+  })
+  const first = document.querySelector('.reward-item')
+  const art = first?.querySelector('.item-icon-image, .reward-item__facedown')?.getBoundingClientRect()
+  const body = first?.querySelector('.reward-item__body')?.getBoundingClientRect()
+  const firstActions = first?.querySelector('.reward-item__actions')?.getBoundingClientRect()
+  const measured = {
+    rows: actions.length,
+    artWidth: art ? Math.round(art.width) : 0,
+    actionsRightOfBody: Boolean(body && firstActions && firstActions.left >= body.right - 1),
+    leftSpread: actions.length ? Math.max(...actions.map((a) => a.left)) - Math.min(...actions.map((a) => a.left)) : 0,
+    widthSpread: actions.length ? Math.max(...actions.map((a) => a.width)) - Math.min(...actions.map((a) => a.width)) : 0,
+  }
+  debug.setRun(before)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  return measured
+})
+const beltGeometry = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const run = structuredClone(before)
+  // The bar renders the VIEWER's potions, so every seat gets one — which seat is
+  // being viewed here depends on everything above. `betweenCombat` is the phase
+  // that exposes the shell's row assignment: its panel sizes to its content, so a
+  // tall row landing on the belt has somewhere to stretch into.
+  run.players = run.players.map((player) => ({ ...player, potions: ['fire_potion'] }))
+  run.phase = 'betweenCombat'
+  run.rewards = []
+  run.roomState = null
+  debug.setRun(run)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const belt = document.querySelector('.outside-potions')
+  const panel = document.querySelector('.room-screen, .reward-screen, .room-stage')
+  const measured = {
+    belt: belt ? Math.round(belt.getBoundingClientRect().height) : 0,
+    panelTop: panel ? Math.round(panel.getBoundingClientRect().top) : 0,
+    viewport: window.innerHeight,
+  }
+  debug.setRun(before)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  return measured
+})
+// The only control that finishes the reward screen. `.reward-screen` is its own
+// scroller, so on a reward carrying two items AND a card choice this sat below
+// the panel's fold with no affordance — the run read as stuck.
+// Measured at a SHORT window: at 1440x900 this reward fits well enough that the
+// sticky bar never parks on a card, so the check could not fail there.
+await page.setViewportSize({ width: 1024, height: 600 })
+const rewardCollect = await page.evaluate(async () => {
+  const debug = window.__STS_DEBUG__
+  const before = structuredClone(debug.getRun())
+  const staged = structuredClone(before)
+  staged.players = staged.players.map((player) => ({ ...player, potions: ['swift_potion', 'blood_potion'] }))
+  staged.rewards = [{ playerId: staged.players[0].id, cardReward: true,
+    choices: ['twin_strike', 'second_wind', 'limit_break'], upgraded: true,
+    potion: 'fire_potion', relic: 'akabeko' }]
+  debug.setRun(staged)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  const panel = document.querySelector('.reward-screen')
+  const collect = document.querySelector('.reward-screen__collect')
+  const measured = collect && panel ? (() => {
+    const panelBox = panel.getBoundingClientRect()
+    const box = collect.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return {
+      rendered: true,
+      // Without scrolling first: it has to be reachable the moment the screen opens.
+      inside: box.bottom <= panelBox.bottom + 1 && box.top >= panelBox.top - 1,
+      // And the FIRST child must not be above the panel's top edge. A panel that
+      // overflows and is centred rather than `safe center`-ed pushes its own title
+      // out of the scrollport, where no scroll position can reach it.
+      firstChildAbove: (() => {
+        const first = panel.firstElementChild?.getBoundingClientRect()
+        return first ? Math.round(panelBox.top - first.top) : 0
+      })(),
+      hittable: Boolean(hit && (hit === collect || collect.contains(hit))),
+      scrolls: panel.scrollHeight - panel.clientHeight,
+      barOffBottom: Math.round(panelBox.bottom - box.bottom),
+      choices: document.querySelectorAll('.reward-screen__cards .card').length,
+      // The reward screen shares the shop's card-text ramp but feeds a different
+      // card width through it, and no check selected it: deleting the reward half
+      // of the override left every check green.
+      cardRulesFont: (() => {
+        const rules = document.querySelector('.reward-screen__cards .card-face__rules')
+        return rules ? parseFloat(getComputedStyle(rules).fontSize) : 0
+      })(),
+      cardWidth: Math.round(document.querySelector('.reward-screen__cards .card')?.getBoundingClientRect().width ?? 0),
+      cardRulesClipped: [...document.querySelectorAll('.reward-screen__cards .card-face__rules')]
+        .filter((panel) => panel.scrollHeight > panel.clientHeight + 1).length,
+    }
+  })() : { rendered: false }
+  debug.setRun(before)
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  return measured
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+check('the reward screen keeps its collect control on screen', () => {
+  assert(rewardCollect.rendered, 'the collect control did not render')
+  assert(rewardCollect.scrolls > 0, 'this reward fits without scrolling, so the check proves nothing')
+  assert(rewardCollect.inside, 'the collect control sat outside the reward panel on load')
+  assert(rewardCollect.hittable, 'the collect control was not clickable at its own centre')
+  assert(rewardCollect.choices >= 3, `only ${rewardCollect.choices} card choice(s) rendered to test against`)
+  assertEqual(rewardCollect.cardRulesClipped, 0,
+    `${rewardCollect.cardRulesClipped} reward card face(s) clipped their own rules text`)
+  assert(rewardCollect.cardRulesFont >= Math.min(rewardCollect.cardWidth * 0.068, 11.2),
+    `reward card rules text is ${rewardCollect.cardRulesFont.toFixed(2)}px on a ${rewardCollect.cardWidth}px card`)
+  // The collect bar sits ON the panel's bottom edge, not floating above the rows:
+  // a `padding-bottom` on the scroller lifts a sticky inset by that much.
+  assert(rewardCollect.barOffBottom <= 4,
+    `the collect bar floated ${rewardCollect.barOffBottom}px above the panel's bottom edge`)
+  assert(rewardCollect.firstChildAbove <= 1,
+    `the reward panel's first row sat ${rewardCollect.firstChildAbove}px above its own top edge, out of reach`)
+})
+
+check('reward rows share one set of columns', () => {
+  // Shape first. Deleting `subgrid` collapses each row to a single stacked column,
+  // which lines every action box up at the same left edge and the same width — so
+  // the spreads below read 0 for the worst regression there is.
+  // A LOWER bound too, set between the two: the art fills its column at 39px, and
+  // without `width: 100%` it falls back to the app's global 1.8rem icon at 29px,
+  // which the upper bound alone happily allowed.
+  assert(rewardColumns.artWidth >= 34 && rewardColumns.artWidth <= 72,
+    `the row's art column is ${rewardColumns.artWidth}px, so the row is not laid out in columns`)
+  assert(rewardColumns.actionsRightOfBody,
+    'a row put its actions below its name instead of beside it')
+  assert(rewardColumns.rows >= 2, `only ${rewardColumns.rows} reward row(s) to compare`)
+  assertEqual(rewardColumns.leftSpread, 0, `reward action columns start ${rewardColumns.leftSpread}px apart`)
+  assertEqual(rewardColumns.widthSpread, 0, `reward action columns differ in width by ${rewardColumns.widthSpread}px`)
+})
+check('the potion belt stays a strip instead of taking the shell\'s tall row', () => {
+  assert(beltGeometry.belt > 0, 'the potion belt did not render for a party holding potions')
+  assert(beltGeometry.belt <= 96, `the potion belt stretched to ${beltGeometry.belt}px`)
+  assert(beltGeometry.panelTop < beltGeometry.viewport / 2,
+    `the reward panel started ${beltGeometry.panelTop}px down a ${beltGeometry.viewport}px window`)
+})
 check('local Prismatic reward selections reconcile when a teammate exhausts a source', () => {
   assertEqual(localRewardSelectionReconciled.checked, 2)
   assert(localRewardSelectionReconciled.disabled)
   assertDeepEqual(localRewardReplacementCards, [true, true, true])
 })
+
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'courier-auto-advance-lock'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 1)
@@ -1224,6 +2439,10 @@ await page.evaluate(() => {
   run.itemDecks.relics = ['anchor', ...run.itemDecks.relics.filter((id) => id !== 'anchor')]
   debug.setRun(run)
 })
+// Cursor parked first: left where a previous screen put it, the map slides under
+// it during scroll-into-view, a row-1 node takes `:hover`, and its tooltip covers
+// the row-0 node this clicks — a 30s timeout that kills the run before `report()`.
+await page.mouse.move(0, 0)
 await page.locator('.room--reachable').click()
 await page.getByRole('complementary', { name: 'The Courier' }).waitFor()
 await page.evaluate(() => {
@@ -1748,7 +2967,9 @@ rooms.publishRoom(create.snapshot.code)
 await ann.getByRole('button', { name: /Fire Potion/ }).click()
 await merchantReplacement.getByRole('button', { name: /Swift Potion/ }).click()
 await merchantReplacement.getByRole('button', { name: /Swift Potion/, pressed: true }).waitFor()
-const merchantReplacementCards = await merchantReplacement.locator('.item-card-image')
+// Icons, not card faces: the replacement tiles print the potion's name beside
+// the art, so a generated card face repeated that name in unreadable type.
+const merchantReplacementCards = await merchantReplacement.locator('.item-icon-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 const replacementGeometry = await ann.evaluate(() => {
   const stage = document.querySelector('.merchant-stage')

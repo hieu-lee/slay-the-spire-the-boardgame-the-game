@@ -3013,11 +3013,10 @@ button:disabled {
 }
 
 .reward-screen__unrevealed {
-  min-height: 190px;
+  /* The centring this used to set is gone rather than relocated: the reveal and
+     skip keys are a banner now, and a banner is stretched by the grid's own
+     default. chrome.css owns its `min-height`, `margin` and `gap`. */
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 10px;
 }
 
 .reward-screen__unrevealed button {
@@ -3063,19 +3062,6 @@ button:disabled {
   text-shadow: 0 0 8px #bc7e24;
 }
 
-.reward-screen__relic,
-.reward-screen__potion {
-  display: grid;
-  gap: 10px;
-  margin: 12px auto;
-  padding: 16px;
-  max-width: 520px;
-  border: 1px solid rgb(205 167 106 / 70%);
-  background: radial-gradient(circle at 50% 0, rgb(205 151 56 / 22%), rgb(10 9 8 / 82%));
-  box-shadow: 0 0 18px rgb(205 151 56 / 14%);
-}
-
-.reward-screen__player > p > button,
 .reward-screen__relic button,
 .reward-screen__potion button {
   min-height: 46px;
@@ -3086,8 +3072,6 @@ button:disabled {
   background: var(--bg-raised);
 }
 
-.reward-screen__player > p > button:hover:not(:disabled),
-.reward-screen__player > p > button:focus-visible,
 .reward-screen__relic button:hover:not(:disabled),
 .reward-screen__relic button:focus-visible,
 .reward-screen__potion button:hover:not(:disabled),
@@ -3096,7 +3080,6 @@ button:disabled {
   background: #3a2d20;
 }
 
-.reward-screen__player > p > button:disabled,
 .reward-screen__relic button:disabled,
 .reward-screen__potion button:disabled {
   color: #a99d87;
@@ -3171,6 +3154,10 @@ button:disabled {
 }
 
 .reward-screen__upgrade {
+  /* Its own, not inherited from a `.reward-screen__player > p` rule: this <p>
+     is the only paragraph left in a reward panel, and without this the UA's 1em
+     block margin grew an upgraded-card panel by 25px. */
+  margin: 0;
   color: var(--gold);
   font-size: 0.78rem;
   letter-spacing: 0.08em;
@@ -3352,11 +3339,6 @@ button:disabled {
 
 .merchant-board button:disabled { cursor: not-allowed; }
 .merchant-board button strong, .merchant-board button small, .merchant-board button span { display: block; }
-.room-item-icon { color: #f5bb50; font-size: 2rem; }
-.room-price { margin-top: .45rem; color: #ffd269; font-weight: 800; }
-.merchant-removal { grid-column: 1 / -1; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding: 1rem; background: #1d2727aa; border-radius: 8px; }
-.merchant-removal h3 { margin: 0 auto 0 0; }
-.merchant-removal select { max-width: 280px; }
 .merchant-pledges { max-width: 1100px; margin: .8rem auto 0; padding: .8rem; background: #10181ed9; border: 1px solid #846839; border-radius: 8px; }
 .merchant-pledges h3 { margin: 0 0 .5rem; }
 .merchant-pledges button { margin-right: .5rem; padding: .55rem .8rem; color: #fff1c4; background: #263638; border: 1px solid #d2ad5b; border-radius: 5px; }
@@ -3376,17 +3358,6 @@ button:disabled {
   font: 700 1.1rem Georgia, serif;
 }
 .room-proceed:disabled { opacity: .45; filter: grayscale(.7); cursor: not-allowed; }
-
-@media (max-width: 1100px), (max-height: 740px) {
-  .merchant-stage .room-proceed { position: static; }
-}
-
-@media (max-width: 700px) {
-  .merchant-board { grid-template-columns: minmax(0, 1fr); padding: 0.75rem; border-width: 6px; }
-  .merchant-shelf, .merchant-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .merchant-board button { min-width: 0; padding-inline: 0.4rem; }
-  .merchant-figure { right: 0; }
-}
 
 .treasure-stage { text-align: center; }
 .treasure-relic { max-width: 430px; margin: 3rem auto; padding: 2rem; background: radial-gradient(circle, #177c7a, #073131 68%, transparent 70%); }
