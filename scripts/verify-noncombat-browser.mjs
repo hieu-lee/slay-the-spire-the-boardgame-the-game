@@ -199,9 +199,20 @@ await page.evaluate(() => {
   run.neow.players.p1.redReward = { kind: 'potion', choices: ['fire_potion'], cardsDrawn: ['fire_potion'] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => [...document.querySelectorAll('.neow-offer--potion button .item-card-image')]
-  .every((image) => image.naturalWidth > 0) && document.querySelectorAll('.neow-offer--potion button .item-card-image').length === 3)
-const localNeowReplacementCards = await page.locator('.neow-offer--potion button .item-card-image').count()
+await page.waitForFunction(() => [...document.querySelectorAll('.neow-offer--potion button .item-icon-image')]
+  .every((image) => image.naturalWidth > 0) && document.querySelectorAll('.neow-offer--potion button .item-icon-image').length === 3)
+const localNeowPotionLayout = await page.locator('.neow-offer--potion').evaluate((offer) => {
+  const box = offer.getBoundingClientRect()
+  return {
+    width: Math.round(box.width), height: Math.round(box.height),
+    icons: offer.querySelectorAll('.item-icon-image').length,
+    cardFaces: offer.querySelectorAll('.item-card-image').length,
+    groupName: offer.querySelector('[role="group"]')?.getAttribute('aria-label'),
+    owner: document.querySelector('.neow-action__owner > span')?.textContent,
+    tallestButton: Math.max(...[...offer.querySelectorAll('button')].map((button) => button.getBoundingClientRect().height)),
+  }
+})
+await page.screenshot({ path: join(outDir, 'neow-potion-reward-desktop.png'), fullPage: true })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   debug.setViewer('p1')
@@ -216,7 +227,15 @@ check('solo Neow dialogue stays on-screen beside Neow', () => {
 })
 
 check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))
-check('Neow potion replacement choices use physical card art', () => assertEqual(localNeowReplacementCards, 3))
+check('Neow Potion rewards use the compact icon reward sheet', () => {
+  assertEqual(localNeowPotionLayout.icons, 4)
+  assertEqual(localNeowPotionLayout.cardFaces, 0)
+  assertEqual(localNeowPotionLayout.groupName, 'Fire Potion')
+  assertEqual(localNeowPotionLayout.owner, 'Ironclad')
+  assert(localNeowPotionLayout.width <= 640, `Potion sheet is ${localNeowPotionLayout.width}px wide`)
+  assert(localNeowPotionLayout.height <= 320, `Potion sheet is ${localNeowPotionLayout.height}px tall`)
+  assert(localNeowPotionLayout.tallestButton <= 60, `Potion action is ${localNeowPotionLayout.tallestButton}px tall`)
+})
 
 check('meta setup, achievements, and compact title layout survive real local navigation', () => {
   assertEqual(localAchievementCount, 19)
@@ -1932,19 +1951,28 @@ const buyTwo = page.getByRole('button', { name: /\[Buy 2\]/ })
 await buyTwo.focus()
 await buyTwo.press('Enter')
 await page.getByText('These rewards are face-up').waitFor()
-const revealedPotions = await page.locator('.event-cards > fieldset > legend').allTextContents()
+const revealedPotions = await page.locator('.event-items .reward-item__body > strong').allTextContents()
 const passControls = await page.getByLabel('Pass to', { exact: true }).count()
 const replacementControls = await page.getByLabel('Replace', { exact: true }).count()
-await page.locator('fieldset[aria-label="Replace"] .item-card-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
-const replacementCardImages = await page.locator('fieldset[aria-label="Replace"] .item-card-image')
+await page.locator('fieldset[aria-label="Replace"] .item-icon-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+const replacementIcons = await page.locator('fieldset[aria-label="Replace"] .item-icon-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-for (const fieldset of await page.locator('.event-cards > fieldset').all()) await fieldset.getByRole('button', { name: 'Take' }).click()
+const eventPotionCardFaces = await page.locator('.event-items .reward-screen__potion .item-card-image').count()
+const eventPotionGroups = await page.locator('.event-items .reward-screen__potion[role="group"]').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label')))
+await page.locator('.event-stage').evaluate(async (stage) => {
+  await Promise.all(stage.getAnimations({ subtree: true }).map((animation) => animation.finished))
+})
+if (await page.locator('.card-morph').count()) await page.locator('.card-morph').waitFor({ state: 'detached' })
+await page.screenshot({ path: join(outDir, 'event-potion-rewards.png'), fullPage: true })
+for (const item of await page.locator('.event-items .reward-item').all()) await item.getByRole('button', { name: 'Take' }).click()
 const overCapacityResolveDisabled = await page.getByRole('button', { name: /Resolve rewards/ }).isDisabled()
 check('revealed A4 Potion rewards expose take, skip, pass, and replacement controls', () => {
   assertEqual(revealedPotions.length, 2)
   assertEqual(passControls, 2)
   assertEqual(replacementControls, 2)
-  assertDeepEqual(replacementCardImages, [true, true])
+  assertDeepEqual(replacementIcons, [true, true])
+  assertEqual(eventPotionCardFaces, 0)
+  assertDeepEqual(eventPotionGroups, revealedPotions)
   assertEqual(new Set(revealedPotions).size, 2)
   assert(overCapacityResolveDisabled, 'two taken Potions enabled with only one free A4 slot')
 })
@@ -2150,11 +2178,12 @@ await page.evaluate(() => {
 })
 const joustRelic = page.locator('fieldset').filter({ hasText: 'Your relic' }).getByRole('button').first()
 await page.waitForFunction(() => {
-  const images = [...document.querySelectorAll('fieldset .item-card-image')]
+  const images = [...document.querySelectorAll('fieldset .item-card-image, fieldset .item-icon-image')]
   return images.length >= 2 && images.every((image) => image.complete && image.naturalWidth > 0)
 })
-const joustItemCards = await page.locator('fieldset').filter({ hasText: /Your relic|Your potions/ })
-  .locator('.item-card-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+const joustItemImages = await page.locator('fieldset').filter({ hasText: /Your relic|Your potions/ })
+  .locator('.item-card-image, .item-icon-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
+const joustPotionCardFaces = await page.getByRole('group', { name: 'Your potions' }).locator('.item-card-image').count()
 await joustRelic.click()
 const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
 await joustRelic.click()
@@ -2164,7 +2193,8 @@ await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
 const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
 check('The Joust enables its printed Relic and Potion alternatives at zero Gold', () => {
   assert(zeroGoldRelicBetEnabled)
-  assertDeepEqual(joustItemCards, [true, true])
+  assertDeepEqual(joustItemImages, [true, true])
+  assertEqual(joustPotionCardFaces, 0)
   assertEqual(clearedJoustRelic, 'false')
   assert(zeroGoldBetAfterClearing)
   assert(zeroGoldPotionBetEnabled)
@@ -2702,14 +2732,14 @@ await page.evaluate(() => {
 })
 const courierReplacement = page.getByRole('group', { name: 'Replace Potion' })
 await courierReplacement.waitFor()
-const courierReplacementCards = await courierReplacement.locator('.item-card-image')
+const courierReplacementIcons = await courierReplacement.locator('.item-icon-image')
   .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 await courierReplacement.getByRole('button', { name: /Swift Potion/ }).click()
 await page.screenshot({ path: join(outDir, 'courier-potion-replacement.png'), fullPage: true })
 const courierReplacementSelected = await courierReplacement.getByRole('button', { name: /Swift Potion/ }).getAttribute('aria-pressed')
 await page.getByRole('button', { name: 'Discard offer' }).click()
-check('Courier potion replacement uses selectable physical card art', () => {
-  assertDeepEqual(courierReplacementCards, [true, true, true])
+check('Courier potion replacement uses compact selectable icons', () => {
+  assertDeepEqual(courierReplacementIcons, [true, true, true])
   assertEqual(courierReplacementSelected, 'true')
 })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -3664,7 +3694,7 @@ const lockedSelectors = {
   relic: await lockedRelic.locator('img').getAttribute('src'), relicDisabled: await lockedRelic.isDisabled(),
   target: await lockedTarget.inputValue(), targetDisabled: await lockedTarget.isDisabled(),
 }
-await stagedPage.locator('.event-stage fieldset').filter({ hasText: 'Anchor' }).getByRole('button', { name: 'Take' }).click()
+await stagedPage.locator('.event-stage .reward-item').filter({ hasText: 'Anchor' }).getByRole('button', { name: 'Take' }).click()
 await stagedPage.getByRole('button', { name: /Resolve rewards/ }).click()
 await stagedPage.waitForFunction(() => Boolean(document.querySelector('.event-stage [role="status"]')))
 check('Event reconnect restores and resolves the authoritative locked selectors', () => {

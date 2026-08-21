@@ -9,6 +9,7 @@ import type { CardInstance, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { IconValue } from './Icon.tsx'
 import { ItemImage } from './ItemImage.tsx'
+import { RewardItem } from './RewardScreen.tsx'
 
 type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'character' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
   deck: CardInstance[] | null
@@ -76,25 +77,23 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     const potionId = offer.choices[0]
     const blocked = player.relics.some((relic) => relic.defId === 'sozu')
     const limit = potionLimit
-    return <div className="neow-offer neow-offer--potion">
-      <h3>{potionId ? potionDef(potionId).name : 'Empty Potion supply'}</h3>
-      {potionId ? <ItemImage kind="potion" id={potionId} card /> : null}
-      {/* The relic offer twenty lines down prints its text; this one did not, so
-          the first potion of the run was the one item in the game accepted blind. */}
-      {potionId ? <p className="room-item-text">{potionDef(potionId).text}</p> : null}
-      {potionId ? <>
-        <button type="button" disabled={!enabled || blocked || player.potions.length >= limit}
-          onClick={() => onResolve({ kind: 'gain' })}>Take Potion</button>
-        {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
-          disabled={!enabled || blocked} onClick={() => onResolve({ kind: 'replace', potionId: held })}>
-          <ItemImage kind="potion" id={held} card /> Replace {potionDef(held).name}
-        </button>)}
-        {players.filter((candidate) => candidate.id !== player.id && !candidate.relics.some((relic) => relic.defId === 'sozu') && candidate.potions.length < limit)
-          .map((candidate) => <button type="button" key={candidate.id} disabled={!enabled}
-            onClick={() => onResolve({ kind: 'pass', playerId: candidate.id })}>Pass to {candidate.name}</button>)}
-      </> : null}
-      <button type="button" className="neow-offer__skip" disabled={!enabled}
-        onClick={() => onResolve({ kind: 'skip' })}>Skip Potion</button>
+    return <div className="neow-offer neow-offer--potion item-offer-list">
+      <RewardItem kind="potion" id={potionId} title={potionId ? potionDef(potionId).name : 'Empty Potion supply'}
+        note={potionId ? undefined : 'No Potion remains in the supply.'}>
+        {potionId ? <>
+          <button type="button" disabled={!enabled || blocked || player.potions.length >= limit}
+            onClick={() => onResolve({ kind: 'gain' })}>Take</button>
+          {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
+            disabled={!enabled || blocked} onClick={() => onResolve({ kind: 'replace', potionId: held })}>
+            <ItemImage kind="potion" id={held} /> Replace {potionDef(held).name}
+          </button>)}
+          {players.filter((candidate) => candidate.id !== player.id && !candidate.relics.some((relic) => relic.defId === 'sozu') && candidate.potions.length < limit)
+            .map((candidate) => <button type="button" key={candidate.id} disabled={!enabled}
+              onClick={() => onResolve({ kind: 'pass', playerId: candidate.id })}>Pass to {candidate.name}</button>)}
+        </> : null}
+        <button type="button" className="neow-offer__skip" disabled={!enabled}
+          onClick={() => onResolve({ kind: 'skip' })}>Skip</button>
+      </RewardItem>
     </div>
   }
 

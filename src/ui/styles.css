@@ -241,7 +241,6 @@
 .neow-face > button,
 .neow-options > button,
 .neow-offer__actions > button,
-.neow-offer--potion > button,
 .neow-card-choice > button {
   min-height: 44px;
   color: #f8edd6;
@@ -255,12 +254,10 @@
 .neow-face > button:hover:not(:disabled),
 .neow-options > button:hover:not(:disabled),
 .neow-offer__actions > button:hover:not(:disabled),
-.neow-offer--potion > button:hover:not(:disabled),
 .neow-card-choice > button:hover:not(:disabled),
 .neow-face > button:focus-visible,
 .neow-options > button:focus-visible,
 .neow-offer__actions > button:focus-visible,
-.neow-offer--potion > button:focus-visible,
 .neow-card-choice > button:focus-visible {
   color: #fff8e8;
   background: linear-gradient(#426475, #204151);
@@ -271,7 +268,6 @@
 .neow-face > button:disabled,
 .neow-options > button:disabled,
 .neow-offer__actions > button:disabled,
-.neow-offer--potion > button:disabled,
 .neow-card-choice > button:disabled {
   color: #a9a49a;
   background: #292d2f;
@@ -337,7 +333,7 @@
 .neow-source-choice label { display: inline-flex; min-height: 2.75rem; align-items: center; gap: .35rem; }
 .neow-offer__cards { display: flex; align-items: flex-start; gap: .7rem; padding: .6rem .2rem; overflow-x: auto; scroll-snap-type: x proximity; }
 .neow-offer__cards .card { flex: 0 0 min(210px, 65vw); scroll-snap-align: center; }
-.neow-offer__actions, .neow-offer--potion { display: flex; flex-wrap: wrap; gap: .55rem; }
+.neow-offer__actions { display: flex; flex-wrap: wrap; gap: .55rem; }
 .neow-offer button, .neow-options button, .neow-card-choice > button { min-height: 44px; }
 .neow-offer__actions button { flex: 1 1 10rem; }
 .neow-offer__skip { margin-left: auto; }
@@ -407,7 +403,7 @@
   gap: .4rem;
 }
 
-.courier-panel .item-replacement .item-card-image { width: min(5rem, 100%); }
+.courier-panel .item-replacement .item-icon-image { width: 2rem; height: 2rem; }
 
 .courier-panel button {
   border: 1px solid #d8a84b;
@@ -3132,8 +3128,9 @@ button:disabled {
   gap: 6px;
 }
 
-.outside-potions__targets .item-card-image {
+.outside-potions__targets .item-icon-image {
   width: 1.5rem;
+  height: 1.5rem;
   margin: 0;
 }
 
@@ -3298,7 +3295,7 @@ button:disabled {
   gap: .5rem;
 }
 
-.merchant-potion-discard .item-card-image { width: min(7rem, 100%); }
+.merchant-potion-discard .item-icon-image { width: 2rem; height: 2rem; }
 
 .merchant-board button, .event-options button, .treasure-actions button {
   min-height: 88px;
