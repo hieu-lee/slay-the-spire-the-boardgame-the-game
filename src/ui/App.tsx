@@ -78,6 +78,7 @@ import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
 import { installSoundEffects, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { useGameSettings } from './game-settings.ts'
+import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
@@ -282,6 +283,11 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // the run's. The summary labels it "Rooms this act" to match.
   const roomsCleared = Object.values(run.map.rooms).filter((room) => room.visited).length
   const pendingAcquisition = hasPendingRelicAcquisition(run)
+  // Derived once per render: `visibleMap` rebuilds the room table (and clones
+  // every room under Uncertain Future), and the map phase asked for it four
+  // times — twice in one `MapScreen` line, then again per Wing Boots option.
+  const seenMap = visibleMap(run)
+  const wingChoices = wingBootChoices(run, viewerId)
   const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
     run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
@@ -359,7 +365,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           ) : null}
         </div>
         {run.phase !== 'map' && run.phase !== 'setup' ? (
-          <MapOverlay map={visibleMap(run)} act={run.act} bossDefId={run.actBossDefId} />
+          <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}
         <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
           onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
@@ -465,14 +471,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
       {!allocatingCampaignMarks && run.phase === 'map' ? (
         <>
-          <MapScreen map={visibleMap(run)} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: visibleMap(run) })} blocked={pendingAcquisition}
+          <MapScreen map={seenMap} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: seenMap })} blocked={pendingAcquisition}
             bossDefId={run.actBossDefId}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
-          {!pendingAcquisition && wingBootChoices(run, viewerId).length > 0 ? <section className="room-screen">
+          {!pendingAcquisition && wingChoices.length > 0 ? <section className="room-screen map-prompt">
             <strong>Wing Boots</strong>
-            {wingBootChoices(run, viewerId).map((room) => <button type="button" key={room.id}
+            {wingChoices.map((room) => <button type="button" key={room.id}
               onClick={() => setRun((current) => enterRoom(current, room.id, viewerId))}>
-              Ignore paths to {visibleMap(run).rooms[room.id]?.hidden ? 'unknown room' : room.kind}
+              {wingBootLabel(room, wingChoices, seenMap)}
             </button>)}
           </section> : null}
         </>
@@ -522,7 +528,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {!allocatingCampaignMarks && run.phase === 'room' && roomKind === 'campfire' ? (
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room'
+        && roomKind === 'campfire' && !run.roomState ? (
         <CampfireScreen
           players={run.players}
           rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
@@ -545,7 +552,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           eventCanSkip={canSkipEvent(run, viewerId)}
           onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
           sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
-          eventForwardRooms={Object.values(visibleMap(run).rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${room.hidden ? 'Unknown' : ROOM_LABEL[room.kind]}` }))}
+          eventForwardRooms={Object.values(seenMap.rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${room.hidden ? 'Unknown' : ROOM_LABEL[room.kind]}` }))}
           onArmCardGain={morph.armGain}
         />
       ) : null}

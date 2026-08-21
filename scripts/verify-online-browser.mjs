@@ -3567,6 +3567,138 @@ try {
     assertEqual(livingCampfirePortraits, 1)
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
   })
+  // The online Wing Boots prompt, which had no coverage at all: dropping the
+  // `map-prompt` class or swapping `wingBootLabel` for the room's raw `kind` both
+  // passed. The raw kind is the redaction leak the helper exists to stop — the
+  // ONLINE map is rewritten to `encounter` for a hidden room, so reading it prints
+  // a confident lie — and the campfire branch below is the other uncovered guard.
+  liveRoom.run = structuredClone(itemBaseline)
+  // Whichever room offers the most destinations its own exits do not reach.
+  let wingFrom = null
+  let wingOffPath = []
+  for (const row of liveRoom.run.map.rows.slice(0, -1)) {
+    for (const candidate of row) {
+      const room = liveRoom.run.map.rooms[candidate]
+      const next = liveRoom.run.map.rows[room.row + 1] ?? []
+      const unreached = next.filter((id) => !room.exits.includes(id))
+      if (unreached.length > wingOffPath.length) {
+        wingFrom = candidate
+        wingOffPath = unreached
+      }
+    }
+  }
+  liveRoom.run.phase = 'map'
+  liveRoom.run.combat = null
+  liveRoom.run.roomState = null
+  liveRoom.run.map.position = wingFrom
+  liveRoom.run.map.rooms[wingFrom] = { ...liveRoom.run.map.rooms[wingFrom], visited: true }
+  for (const target of wingOffPath) {
+    liveRoom.run.map.rooms[target] = { ...liveRoom.run.map.rooms[target], hidden: true }
+  }
+  liveRoom.run.players = liveRoom.run.players.map((player) => ({
+    ...player, row: liveRoom.run.map.rooms[wingFrom].row, dead: false,
+    relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  // The wait is guarded: without the strip class the locator never resolves, and a
+  // bare `waitFor` would kill the run on a timeout instead of failing this check.
+  const onlineWingPrompt = wingOffPath.length > 0
+    ? await (async () => {
+      try {
+        await ownerGame.locator('.map-prompt').waitFor({ timeout: 10_000 })
+      } catch {
+        return { strip: false, labels: [] }
+      }
+      return ownerGame.locator('.map-prompt').evaluate((prompt) => ({
+        // What the class CAUSES, not the class itself: a locator that found
+        // `.map-prompt` obviously has it, so asserting the name proved nothing.
+        strip: getComputedStyle(prompt).flexDirection === 'row',
+        labels: [...prompt.querySelectorAll('button')].map((button) => button.textContent?.trim() ?? ''),
+      }))
+    })()
+    : { skipped: true, labels: [] }
+  // The online campfire guard had no coverage: dropping `!run.roomState` kept both
+  // suites green. A campfire tile carrying an open room interaction must mount ONE
+  // screen, not the campfire stacked on top of the shop.
+  liveRoom.run = structuredClone(itemBaseline)
+  const stackedRoomId = liveRoom.run.map.rows[0][0]
+  liveRoom.run.phase = 'room'
+  liveRoom.run.combat = null
+  liveRoom.run.map.position = stackedRoomId
+  liveRoom.run.map.rooms[stackedRoomId].kind = 'campfire'
+  liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, dead: false, gold: 40 }))
+  liveRoom.run.roomState = { kind: 'merchant', relics: ['anchor', 'happy_flower', 'akabeko'],
+    potions: ['fire_potion', 'swift_potion', 'blood_potion'], colorless: [],
+    cards: Object.fromEntries(liveRoom.run.players.map((player) => [player.id,
+      { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+    removalUsed: [], purchasedCards: {} }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await ownerGame.locator('.merchant-stage').waitFor()
+  const onlineStacked = await ownerGame.evaluate((shell) => ({
+    merchant: shell.querySelectorAll('.merchant-stage').length,
+    campfire: shell.querySelectorAll('.campfire').length,
+  }))
+  check('an open online room interaction does not stack with the campfire screen', () => {
+    assertEqual(onlineStacked.merchant, 1, 'the open online Merchant did not render')
+    assertEqual(onlineStacked.campfire, 0, 'the campfire screen rendered on top of an open online Merchant')
+  })
+
+  // A normal Merchant purchase can create a mandatory acquisition without
+  // closing the shop. The resolver must be the only actionable room surface for
+  // its owner, and the shop must stay hidden for a teammate after reconnect.
+  liveRoom.run = structuredClone(itemBaseline)
+  const pendingMerchantRoomId = liveRoom.run.map.rows[0][0]
+  liveRoom.run.phase = 'room'
+  liveRoom.run.combat = null
+  liveRoom.run.map.position = pendingMerchantRoomId
+  liveRoom.run.map.rooms[pendingMerchantRoomId].kind = 'merchant'
+  liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, dead: false, gold: 100 }))
+  liveRoom.run.roomState = { kind: 'merchant', relics: ['war_paint', 'happy_flower', 'akabeko'],
+    potions: ['fire_potion', 'swift_potion', 'blood_potion'], colorless: [],
+    cards: Object.fromEntries(liveRoom.run.players.map((player) => [player.id,
+      { choices: ['twin_strike', 'second_wind', 'limit_break'], cardsDrawn: [], raresDrawn: [] }])),
+    removalUsed: [], purchasedCards: {} }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await ownerGame.locator('.merchant-stage').waitFor()
+  await roomAction(a, { kind: 'merchantPurchase', purchase: {
+    buyerId: annRun.id, section: 'relic', slot: 0, payments: { [annRun.id]: 7 },
+  } })
+  await ownerGame.getByRole('heading', { name: 'Resolve War Paint' }).waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve War Paint' }).waitFor()
+  const pendingMerchantOwner = await ownerGame.evaluate((shell) => ({
+    merchant: shell.querySelectorAll('.merchant-stage').length,
+    campfire: shell.querySelectorAll('.campfire').length,
+    resolver: [...shell.querySelectorAll('.room-screen > h2')]
+      .filter((heading) => heading.textContent === 'Resolve War Paint').length,
+  }))
+  const pendingMerchantTeammate = await teammateGame.locator('.merchant-stage').count()
+  await b.reload({ waitUntil: 'domcontentloaded' })
+  await b.locator('.connection--connected').waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve War Paint' }).waitFor()
+  const pendingMerchantAfterReconnect = await teammateGame.locator('.merchant-stage').count()
+  check('an online Merchant Relic acquisition hides room actions through teammate reconnect', () => {
+    assertEqual(pendingMerchantOwner.merchant, 0, 'the owner kept the Merchant behind the Relic resolver')
+    assertEqual(pendingMerchantOwner.campfire, 0, 'the owner kept a Campfire behind the Relic resolver')
+    assertEqual(pendingMerchantOwner.resolver, 1, 'the owner did not receive exactly one Relic resolver')
+    assertEqual(pendingMerchantTeammate, 0, 'the teammate kept the Merchant during the pending Relic')
+    assertEqual(pendingMerchantAfterReconnect, 0, 'the teammate reconnect restored the blocked Merchant')
+  })
+
+  check('the online Wing Boots prompt names a hidden room without revealing it', () => {
+    assert(!onlineWingPrompt.skipped, 'the online map fixture offered no off-path room to walk to')
+    assert(onlineWingPrompt.strip, 'the online prompt was a stacked panel rather than a strip')
+    assert(onlineWingPrompt.labels.length > 0, 'the online prompt offered no destination')
+    for (const label of onlineWingPrompt.labels) {
+      // The online map rewrites a hidden room's kind to `encounter`, so reading
+      // `room.kind` here would print "Encounter" for a room the player has not
+      // seen — a confident lie rather than a leak, and wrong either way.
+      assert(/^Ignore paths to Unknown room/.test(label),
+        `an online Wing Boots destination read "${label}" for a room the map is still hiding`)
+    }
+  })
+
   liveRoom.run = structuredClone(itemBaseline)
   liveRoom.campfireChoices = undefined
   rooms.publishRoom(code)
@@ -3646,13 +3778,13 @@ try {
       potion: null, relic: false, bossRelics: false }],
   })
   await roomAction(a, { kind: 'potionReward', choice: 'reveal' })
-  await a.locator('.reward-screen__potion').waitFor()
-  await b.locator('.reward-screen__potion').waitFor()
+  await a.locator('.reward-screen__potion > .item-icon-image').waitFor()
+  await b.locator('.reward-screen__potion > .item-icon-image').waitFor()
   await a.locator('.reward-screen').evaluate(async (screen) => {
     await Promise.all(screen.getAnimations({ subtree: true }).map((animation) => animation.finished))
   })
   const foreignPotionGain = await b.locator('.reward-screen__potion').getByRole('button', { name: 'Gain' }).count()
-  const onlinePotionCardLoaded = await a.locator('.reward-screen__potion .item-card-image')
+  const onlinePotionCardLoaded = await a.locator('.reward-screen__potion > .item-icon-image')
     .evaluateAll((images) => images.length > 0 && images.every((image) => image.naturalWidth > 0))
   const compactPotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
@@ -3676,7 +3808,7 @@ try {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
   assertEqual(skippedPotionStatus, 200, 'the revealed Potion skip was refused')
-  await a.locator('.reward-screen__potion').waitFor({ state: 'hidden' })
+  await a.locator('.reward-screen__potion > .item-icon-image').waitFor({ state: 'hidden' })
 
   const annCards = liveRoom.run.players.find((player) => player.id === annRun.id)
   annCards.cardRewards = ['golden_ticket', 'anger', 'shrug_it_off']
@@ -4030,7 +4162,9 @@ try {
   rooms.publishRoom(fourCode)
   await fourPages[0].getByRole('button', { name: 'Reveal Relic' }).waitFor()
   await fourPages[0].getByRole('button', { name: 'Reveal Potion' }).waitFor()
-  const unrevealedRewardStyles = await fourPages[0].locator('.reward-screen__player > p > button:not(:disabled)')
+  // The relic and potion offers are rows now, not paragraphs: their keys live in
+  // the row's own actions column.
+  const unrevealedRewardStyles = await fourPages[0].locator('.reward-item__actions > button:not(:disabled)')
     .evaluateAll((buttons) => buttons.map((button) => ({
       label: button.textContent?.trim(),
       height: button.getBoundingClientRect().height,
@@ -4054,13 +4188,13 @@ try {
   await fourPages[0].getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
   const teammatePotionControls = await fourPages[1].locator('.reward-screen__potion button').count()
   const revealedItemImages = await fourPages[0].locator([
-    '.reward-screen__relic > .item-card-image',
-    '.reward-screen__relic > .item-card-fallback > .item-card-image',
-    '.reward-screen__potion > .item-card-image',
-    '.reward-screen__potion > .item-card-fallback > .item-card-image',
+    '.reward-screen__relic > .item-icon-image',
+    '.reward-screen__potion > .item-icon-image',
   ].join(', '))
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-  const heldPotionCards = await fourPages[0].locator('.reward-screen__potion button .item-card-image')
+  // Icons, not card faces: a 1.4rem card face rendered as a 22px thumbnail whose
+  // own printed name clipped to two letters, so these keys draw bare art.
+  const heldPotionCards = await fourPages[0].locator('.reward-screen__potion button .item-icon-image')
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   const freshRewardChoice = (await snapshot(fourPages[0])).rewardChoice
   check('the four-player Golden Ticket fixture starts genuinely undecided', () => {
@@ -4084,8 +4218,7 @@ try {
   })
   await fourPages[0].locator('.reward-screen__relic').scrollIntoViewIfNeeded()
   await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-revealed-items.png'), fullPage: true })
-  await fourPages[0].getByText('Golden Ticket · Rare').scrollIntoViewIfNeeded()
-  await fourPages[0].screenshot({ path: join(outDir, '09-four-player-compact-desktop-items.png'), fullPage: true })
+  await fourPages[0].locator('.reward-screen').screenshot({ path: join(outDir, '09-four-player-compact-desktop-items.png') })
   await roomAction(fourPages[0], { kind: 'relicReward', choice: 'gain' })
   await fourPages[0].getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await fourPages[1].getByRole('status').filter({ hasText: 'Waiting for Iris to resolve Astrolabe' }).waitFor()

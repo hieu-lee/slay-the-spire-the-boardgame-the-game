@@ -14,6 +14,14 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
 }) {
   const id = useId()
   const dialog = useRef<HTMLDialogElement>(null)
+  /**
+   * How many reopen-driven `close` events are still owed, so a reopen is never
+   * read as the player leaving settings. A COUNT, not a flag: `close()` fires
+   * its event from a queued task, so two reopens before the first event is
+   * delivered would leave a flag consumed once and the second close honoured —
+   * which would shut the menu the moment fullscreen was entered and left again.
+   */
+  const suppressedCloses = useRef(0)
   const [tab, setTab] = useState<Tab>('general')
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [fullscreenError, setFullscreenError] = useState('')
@@ -26,7 +34,20 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
   }, [open])
 
   useEffect(() => {
-    const update = () => setFullscreen(Boolean(document.fullscreenElement))
+    const update = () => {
+      setFullscreen(Boolean(document.fullscreenElement))
+      // The top layer paints in the order elements joined it, and the fullscreen
+      // element joins after this dialog already did — so <html> and its opaque
+      // ::backdrop cover the settings menu the moment fullscreen is entered.
+      // Closing and reopening moves the dialog back to the end of the layer.
+      const node = dialog.current
+      if (!node?.open) return
+      const focused = document.activeElement
+      suppressedCloses.current += 1
+      node.close()
+      node.showModal()
+      if (focused instanceof HTMLElement && node.contains(focused)) focused.focus()
+    }
     document.addEventListener('fullscreenchange', update)
     return () => document.removeEventListener('fullscreenchange', update)
   }, [])
@@ -44,7 +65,8 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
 
   return (
     <dialog ref={dialog} className="settings-dialog" aria-labelledby={`${id}-title`}
-      onCancel={(event) => { event.preventDefault(); onClose() }} onClose={onClose}>
+      onCancel={(event) => { event.preventDefault(); onClose() }}
+      onClose={() => { if (suppressedCloses.current > 0) suppressedCloses.current -= 1; else onClose() }}>
       <section className="settings-dialog__panel">
         <header>
           <button type="button" className="settings-dialog__back" onClick={onClose}>← Back</button>

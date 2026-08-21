@@ -309,6 +309,61 @@ const selectedSettingsTab = await settingsDialog.getByRole('button', { pressed: 
 const videoSettingsPanel = await settingsDialog.getByRole('tabpanel', { name: 'video' }).count()
 const videoSettings = await settingsDialog.textContent()
 const fullscreenAction = await settingsDialog.getByRole('button', { name: 'Enter fullscreen' }).count()
+// Entering fullscreen puts <html> in the top layer AFTER this dialog, so its
+// opaque ::backdrop painted straight over the settings menu. SettingsDialog
+// reopens the dialog on `fullscreenchange` to put it back on top. Headless
+// cannot really go fullscreen, so the event is dispatched directly — that is the
+// exact handler, and its failure mode (the menu vanishing, or shutting itself
+// because the reopen's own close event leaked) is otherwise silent.
+const fullscreenSurvives = await page.evaluate(async () => {
+  const dialog = document.querySelector('dialog.settings-dialog')
+  // Instrumented, because headless never really enters fullscreen: nothing ever
+  // covers the dialog here, so "is it still painted" has no failing
+  // configuration and passed even with the whole reopen deleted. What must be
+  // asserted is the reopen ITSELF — a close immediately followed by a showModal,
+  // which is what puts the dialog back at the end of the top layer.
+  const calls = []
+  const nativeClose = dialog.close.bind(dialog)
+  const nativeShow = dialog.showModal.bind(dialog)
+  dialog.close = (...args) => { calls.push('close'); return nativeClose(...args) }
+  dialog.showModal = (...args) => { calls.push('showModal'); return nativeShow(...args) }
+  document.dispatchEvent(new Event('fullscreenchange'))
+  document.dispatchEvent(new Event('fullscreenchange'))
+  await new Promise((done) => setTimeout(done, 80))
+  const afterTwoInOneTask = dialog.open
+  dialog.close = nativeClose
+  dialog.showModal = nativeShow
+  // A real native close, to leave a leftover suppression somewhere to show.
+  // Nothing is asserted on `dialog.open` afterwards: `close()` clears it
+  // synchronously whether or not React's handler swallowed the event, so it reads
+  // the same either way. What a leak actually costs is state divergence — React
+  // still believes the menu is open — and that only shows on the NEXT open.
+  nativeClose()
+  await new Promise((done) => setTimeout(done, 60))
+  return {
+    reopened: calls.join(',') === 'close,showModal,close,showModal',
+    calls: calls.join(','),
+    afterTwoInOneTask,
+  }
+})
+// Under a leaked suppression React never learns the menu closed, so asking for
+// it again is a no-op and the player is left with a button that does nothing.
+await page.getByRole('button', { name: 'Settings' }).click()
+const settingsReopens = await page.evaluate(async () => {
+  await new Promise((done) => setTimeout(done, 80))
+  return document.querySelector('dialog.settings-dialog').open
+})
+// Asserted HERE, not with the other fullscreen checks further down: under a
+// leaked suppression the menu never opens, and every settings step after this
+// point dies on a locator timeout before that check would have been reached.
+check('a genuine close leaves the settings menu able to reopen', () => {
+  assert(settingsReopens,
+    'after a genuine close the Settings button no longer reopened the menu')
+})
+// Opened directly if the click could not, so the rest of the settings flow still
+// reports its own results instead of collapsing behind this one failure.
+if (!settingsReopens) await page.evaluate(() => document.querySelector('dialog.settings-dialog').showModal())
+await settingsDialog.getByRole('button', { name: 'video' }).click()
 await settingsDialog.getByLabel('High-contrast UI').check()
 const highContrastRoot = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--cream').trim())
 const highContrastTitleControl = await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => getComputedStyle(button).color)
@@ -777,6 +832,14 @@ const openingMapTip = await page.evaluate(() => {
   const mapBox = map.getBoundingClientRect()
   const tipBox = tip.getBoundingClientRect()
   return { contained: tipBox.bottom <= mapBox.bottom + 1 }
+})
+check('entering fullscreen re-enters the settings menu into the top layer', () => {
+  assert(fullscreenSurvives.reopened,
+    `a fullscreen change did not close-and-reopen the dialog: saw "${fullscreenSurvives.calls}"`)
+  // Two events in one task is the case a boolean flag cannot survive: it is
+  // consumed once, so the second reopen's close is honoured and the menu shuts.
+  assert(fullscreenSurvives.afterTwoInOneTask,
+    'two fullscreen changes in one task closed the settings menu')
 })
 check('the opening map node tooltip has room below it', () => {
   assert(openingMapTip.contained, 'the opening Encounter tooltip was clipped below the map')
