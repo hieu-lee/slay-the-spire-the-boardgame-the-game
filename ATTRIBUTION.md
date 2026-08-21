@@ -19,11 +19,12 @@ against the published rules.
 
 ## Artwork
 
-Publisher card scans, rulebook icons, and eleven Act I reference crops are fetched locally
-and remain gitignored:
+Optimized publisher card, relic, and potion scans are bundled so a fresh clone has complete card
+faces. Rulebook icons, source-resolution scans, and eleven Act I reference crops remain local and
+gitignored:
 
 ```bash
-pnpm sync:assets     # optional card faces, icons, and reference Act I enemy crops
+pnpm sync:assets     # refresh card faces; add optional icons and Act I enemy crops
 ```
 
 | What | Where it comes from |
@@ -39,10 +40,9 @@ pnpm sync:assets     # optional card faces, icons, and reference Act I enemy cro
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |
 | UI, card and combat sound effects | `80 CC0 RPG SFX` by rubberduck, released under CC0 on OpenGameArt |
 
-The sync scripts keep card scans, rulebook icons, source-resolution working files, and
-unused enemy variants out of version control. Runtime enemy artwork is the committed
-transparent combat-cutout inventory; the enemy sync only regenerates eleven optional
-Act I reference crops.
+The sync scripts keep rulebook icons, source-resolution working files, and unused enemy variants
+out of version control. Optimized card scans and runtime enemy artwork are committed; the enemy
+sync only regenerates eleven optional Act I reference crops.
 
 `public/assets/card-art/` contains one committed, text-free generated illustration for
 each character card. These are original OpenAI Imagegen restorations visually grounded

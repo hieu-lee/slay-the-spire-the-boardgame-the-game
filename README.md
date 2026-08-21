@@ -7,7 +7,6 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for the provenance of the limited bundled a
 
 ```bash
 pnpm install
-pnpm sync:assets     # optional: fetch publisher scans and rulebook assets
 pnpm dev             # play at http://localhost:5180
 ```
 
@@ -21,15 +20,15 @@ person. For the authoritative room server, voice chat, and Cloudflare Tunnel set
 
 ## Assets
 
-The repository includes original generated combat art for the four characters, all 61 canonical
-enemy designs and stages, plus 251 text-free character-card illustrations. Every runtime enemy
-asset is a high-resolution transparent full-body cutout. Optional publisher card scans, rulebook
-icons, and eleven Act I reference crops are fetched locally by `pnpm sync:assets`.
+The repository includes optimized card, relic, and potion scans; original generated combat art
+for the four characters, all 61 canonical enemy designs and stages; and 251 text-free
+character-card illustrations. Every asset needed to play is included in a fresh clone. Optional
+rulebook icons and eleven Act I reference crops are fetched locally by `pnpm sync:assets`.
 
 | Group | Source | Needs |
 | --- | --- | --- |
 | Native character-card illustrations | original OpenAI Imagegen illustrations | committed WebP files |
-| Card, relic and potion scans | a third-party card browser | network, `ffmpeg`, `cwebp` |
+| Card, relic and potion scans | a third-party card browser | committed WebP files |
 | Keyword and token icons | the official rulebook PDF | `docs/reference/STS_KS_Rulebook.pdf`, PyMuPDF, Pillow |
 | Enemy reference crops | enemy card scans in the same PDF | optional local sync only |
 | Combat stage and cutouts | original OpenAI Imagegen illustrations | 61 committed enemy WebP files |
@@ -48,10 +47,8 @@ curl -L https://contentiongames.com/_images/STS_KS_Rulebook.pdf \
 On Debian or Ubuntu: `apt install ffmpeg webp`. Each sync script checks for what it
 needs and tells you what is missing rather than failing halfway through.
 
-Run `pnpm sync:assets` to add optional publisher card faces, official HUD symbols, and the
-eleven local Act I reference crops described in [ATTRIBUTION.md](ATTRIBUTION.md).
-Without that local pack, character cards still use their committed illustration, native frame,
-title, cost, type, and rules text.
+Run `pnpm sync:assets` only to refresh the bundled scans or add optional official HUD symbols
+and the eleven local Act I reference crops described in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ## Layout
 
