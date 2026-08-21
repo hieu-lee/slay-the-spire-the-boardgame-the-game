@@ -1221,6 +1221,44 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
 
 .relic-actions > section:empty { display: none; }
 
+/* Charon's Ashes, Blue Candle and Runic Pyramid drop a full hand picker
+   (.campfire__deck) into this panel to choose a card to Exhaust. With 5+
+   cards in hand only two and a half showed, and — the actual defect —
+   scrolling to the rest was dead: a grid item's automatic minimum size
+   defaults to roughly its own content size (`min-width: auto`), which beats
+   the `stretch` alignment that would otherwise let the <details> above the
+   deck shrink down to the single implicit column's real (`max-width`-
+   clamped) size. So `.campfire__deck` — despite having its own
+   `overflow-x: auto` for exactly this situation — never actually became
+   narrower than its own cards, its scrollbar had nothing to do, and the
+   excess was simply clipped past the panel's chamfered edge with no way to
+   reach it, at any hand size, at any viewport.
+   `min-width: 0` on that <details> removes the floor, letting it (and the
+   deck inside it) shrink to fit the column the panel already clamps to —
+   which is `max-width: min(26rem, calc(100vw - 2rem))` above, LEFT
+   UNCHANGED here on purpose. Widening it instead (tried and rejected: two
+   review rounds) either stretched every OTHER relic sharing this same
+   single-column grid to match (a plain "Use The Abacus" icon button
+   ballooning to fill the wider column) or pushed the panel's left-anchored
+   right edge into the right-anchored battle-log drawer's territory
+   (`.combat-log-drawer`, `src/ui/styles.css`) at ordinary desktop widths,
+   silently eating its clicks since this panel sits on top of it (z-index 70
+   vs 15). Keeping the existing cap means the same handful of cards shows
+   at a glance as before the fix — the deck's OWN horizontal scroller (now
+   actually reachable) is how the rest of a large hand gets seen, the same
+   pattern already used for every other case a card row cannot fully fit.
+   `justify-self: start` on every OTHER child stops THEM from stretching to
+   fill the shrink-capable deck row's column now that `min-width: 0` makes
+   that column's own sizing dependent on the deck rather than on whichever
+   sibling used to be widest. */
+.relic-actions > section:has(.campfire__deck) > details {
+  min-width: 0;
+}
+
+.relic-actions > section:has(.campfire__deck) > :not(details:has(.campfire__deck)) {
+  justify-self: start;
+}
+
 /* The per-relic sub-disclosures inside the panel. styles.css gives these a 1px
    box with `border-radius: 5px`, which put a rounded web card inside a chamfered
    frame and left the native triangle showing — the exact "ugly dropdown" this
