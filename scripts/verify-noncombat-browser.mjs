@@ -438,6 +438,19 @@ const arrivalLayout = await page.locator('.merchant-arrival').evaluate((stage) =
   }
 })
 await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-desktop.png'), fullPage: true })
+await page.setViewportSize({ width: 2560, height: 1440 })
+const ultrawideArrival = await page.locator('.merchant-arrival').evaluate((stage) => {
+  const frame = stage.getBoundingClientRect()
+  const backdrop = getComputedStyle(stage, '::before')
+  const width = Number.parseFloat(backdrop.width)
+  const left = frame.left + frame.width / 2 - width / 2
+  return {
+    coversViewport: left <= 0.5 && left + width >= innerWidth - 0.5,
+    correctArt: backdrop.backgroundImage.includes('background-wide.webp'),
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }
+})
+await page.screenshot({ path: join(outDir, 'merchant-arrival-4p-ultrawide.png'), fullPage: true })
 await page.setViewportSize({ width: 390, height: 844 })
 const mobileArrival = await page.locator('.merchant-arrival').evaluate((stage) => {
   const frame = stage.getBoundingClientRect()
@@ -482,6 +495,8 @@ check('Merchant map entry opens the arrival scene with the whole party', () => {
   assert(arrivalLayout.feetHeight < 0.81, 'the heroes stand below the carpet center')
   assert(arrivalLayout.merchantScale < 0.18, 'the seated Merchant dominates the room')
   assert(arrivalLayout.merchantOnRug, 'the seated Merchant is not positioned on the green carpet')
+  assert(ultrawideArrival.coversViewport && ultrawideArrival.correctArt && !ultrawideArrival.overflow,
+    'the ultrawide Merchant backdrop leaves a visible side gap')
   assert(!mobileArrival.overflow && mobileArrival.proceedVisible, 'the mobile Merchant arrival is clipped')
   assert(mobileArrival.actorsSeparate, 'the mobile party overlaps the seated Merchant')
   for (const sample of landscapeArrivals) {
