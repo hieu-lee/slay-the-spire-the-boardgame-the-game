@@ -3670,10 +3670,17 @@ try {
     const frame = stage.getBoundingClientRect()
     const seat = stage.querySelector('.merchant-arrival__merchant')
     const seatBox = seat.getBoundingClientRect()
+    const title = stage.querySelector('.merchant-arrival__title')?.getBoundingClientRect()
+    const titleOverlap = title ? [...stage.querySelectorAll('.merchant-arrival__party img')].reduce((largest, image) => {
+      const actor = image.getBoundingClientRect()
+      return Math.max(largest, Math.max(0, Math.min(title.right, actor.right) - Math.max(title.left, actor.left))
+        * Math.max(0, Math.min(title.bottom, actor.bottom) - Math.max(title.top, actor.top)))
+    }, 0) : Infinity
     return {
       shrunk: frame.height < stage.parentElement.getBoundingClientRect().height - 1,
       seatReachable: [0.5, 0.75, 0.95].every((depth) => seat.contains(
         document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height * depth))),
+      titleOverlap,
     }
   })
   await a.setViewportSize({ width: 1440, height: 900 })

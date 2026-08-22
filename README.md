@@ -66,6 +66,8 @@ The asset verifier requires Python 3 and Pillow for pixel-level transparency che
 
 ```bash
 pnpm verify              # every scripts/verify-*.mjs, headless
+pnpm verify:changed      # only checks affected by uncommitted files (vs HEAD)
+node scripts/verify-all.mjs --changed=origin/master  # affected branch checks since a base ref
 pnpm verify:browser      # drives the real app in Chromium, writes screenshots
 node scripts/verify-rng.mjs   # or run one directly
 ```

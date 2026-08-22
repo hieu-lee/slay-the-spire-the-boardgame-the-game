@@ -1,5 +1,5 @@
 // Runs every scripts/verify-*.mjs (except this one) and reports a summary.
-// Usage: node scripts/verify-all.mjs [--jobs=N] [--heavy=N] [filter...]
+// Usage: node scripts/verify-all.mjs [--changed[=ref]] [--jobs=N] [--heavy=N] [filter...]
 //
 // The pool used to treat a pure-logic script and a full browser suite as equal
 // cost. A browser suite boots its own Vite AND its own Chromium, so several at
@@ -7,11 +7,12 @@
 // to be that, each passing on its own moments later. The browser suites get their
 // own narrow lane now; the cheap scripts still fill the wide one, so wall time is
 // unchanged (the heavy ones dominate it either way) and the false failures stop.
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { cpus } from 'node:os'
+import { affectedVerifiers, browserScript, changedPaths, mergeBase, needsTypecheck, requiresFullSuite } from './lib/affected-verifiers.mjs'
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
@@ -37,22 +38,63 @@ const requestedHeavyJobs = count('--heavy', 1)
 // browser contention back under a flag whose whole purpose is to prevent it.
 const jobs = count('--jobs', Math.max(1, Math.min(8, cpus().length - 1)))
 const filters = args.filter((a) => !a.startsWith('--'))
+const changedArg = args.find((a) => a === '--changed' || a.startsWith('--changed='))
+const listOnly = args.includes('--list')
+if (changedArg && filters.length) {
+  console.error('--changed cannot be combined with script filters')
+  process.exit(2)
+}
 
-const scripts = readdirSync(scriptsDir)
+let scripts = readdirSync(scriptsDir)
   .filter((f) => f.startsWith('verify-') && f.endsWith('.mjs') && f !== 'verify-all.mjs')
   .filter((f) => filters.length === 0 || filters.some((needle) => f.includes(needle)))
   .sort()
+let changedFiles = []
+
+if (changedArg) {
+  const base = changedArg.includes('=') ? changedArg.slice(changedArg.indexOf('=') + 1) : 'HEAD'
+  if (!base) {
+    console.error('--changed needs a git ref after =')
+    process.exit(2)
+  }
+  const root = join(scriptsDir, '..')
+  let comparison
+  try { comparison = mergeBase(root, base) }
+  catch (error) {
+    console.error(error.message)
+    process.exit(2)
+  }
+  const diff = spawnSync('git', ['diff', '--name-status', '-z', comparison, '--'], { cwd: root, encoding: 'utf8' })
+  const untracked = spawnSync('git', ['ls-files', '-z', '--others', '--exclude-standard'], { cwd: join(scriptsDir, '..'), encoding: 'utf8' })
+  if (diff.status !== 0 || untracked.status !== 0) {
+    console.error((diff.stderr || untracked.stderr).trim())
+    process.exit(2)
+  }
+  changedFiles = [...new Set([...changedPaths(diff.stdout), ...untracked.stdout.split('\0').filter(Boolean)])]
+  scripts = requiresFullSuite(diff.stdout) ? scripts : affectedVerifiers(root, changedFiles, scripts)
+  console.log(changedFiles.length ? `changed: ${changedFiles.join(', ')}` : 'no changed files')
+}
 
 if (scripts.length === 0) {
+  if (changedArg) process.exit(0)
   console.error('no verify scripts matched')
   process.exit(1)
 }
 
+if (listOnly) {
+  console.log(scripts.join('\n'))
+  process.exit(0)
+}
+
+if (changedArg && needsTypecheck(changedFiles)) {
+  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const typecheck = spawnSync(command, ['typecheck'], { cwd: join(scriptsDir, '..'), stdio: 'inherit' })
+  if (typecheck.status !== 0) process.exit(typecheck.status ?? 1)
+}
+
 // Detected, not hard-coded, so a new browser suite is classified on its own.
-const drivesABrowser = (script) => {
-  // Anchored to an import at the start of a line, so a script that merely mentions
-  // playwright in a comment does not get sent to the narrow browser lane.
-  try { return /^import .*from 'playwright'|^const .*require\('playwright'\)/m.test(readFileSync(join(scriptsDir, script), 'utf8')) }
+const isBrowser = (script) => {
+  try { return browserScript(script, join(scriptsDir, '..')) }
   catch { return false }
 }
 
@@ -70,7 +112,7 @@ function run(script) {
 // twice.
 const heavyQueue = []
 const lightQueue = []
-for (const script of scripts) (drivesABrowser(script) ? heavyQueue : lightQueue).push(script)
+for (const script of scripts) (isBrowser(script) ? heavyQueue : lightQueue).push(script)
 const results = []
 
 const lane = (queue) => async () => {
