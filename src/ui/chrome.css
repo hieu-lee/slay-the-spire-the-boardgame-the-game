@@ -69,6 +69,15 @@
   --ease-lerp: cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+body:has(.sts-scope),
+.sts-scope {
+  cursor: url('/assets/ui/cursor.png') 8 4, auto;
+}
+
+.sts-scope :is(button:not(:disabled), a, summary, label, [role='button']) {
+  cursor: url('/assets/ui/cursor.png') 8 4, pointer;
+}
+
 /* The full-bleed bands below (the HUD, the map, the campfire) size themselves
    with `100vw` so they reach the window edge rather than stopping at the
    shell's 1400px column. `100vw` counts the classic scrollbar gutter, though,

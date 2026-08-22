@@ -23,6 +23,11 @@ type CardProps = {
   /** Position in the fan, -1 (leftmost) to 1 (rightmost), 0 in the middle. */
   fan?: number
   onClick?: (card: CardInstance) => void
+  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
+  onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
+  onPointerUp?: React.PointerEventHandler<HTMLButtonElement>
+  onPointerCancel?: React.PointerEventHandler<HTMLButtonElement>
+  onLostPointerCapture?: React.PointerEventHandler<HTMLButtonElement>
 }
 
 /** Show an optional publisher scan only after Chromium can decode its pixels. */
@@ -354,6 +359,11 @@ export function Card({
   picked = false,
   fan = 0,
   onClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onLostPointerCapture,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const className = [
@@ -381,6 +391,11 @@ export function Card({
         '--fan-lift': `${Math.abs(fan) * 14}px`,
       } as React.CSSProperties}
       aria-disabled={!playable}
+      onPointerDown={playable ? onPointerDown : undefined}
+      onPointerMove={playable ? onPointerMove : undefined}
+      onPointerUp={playable ? onPointerUp : undefined}
+      onPointerCancel={playable ? onPointerCancel : undefined}
+      onLostPointerCapture={playable ? onLostPointerCapture : undefined}
       onClick={(event) => {
         if (!playable) {
           event.preventDefault()
@@ -396,6 +411,7 @@ export function Card({
         className="card__art"
         src={cardImagePath(def, card.upgraded)}
         alt=""
+        draggable={false}
         loading="lazy"
         onLoad={(event) => revealDecodedImage(event.currentTarget)}
         onError={(event) => {

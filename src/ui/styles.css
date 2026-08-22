@@ -2383,6 +2383,7 @@ button.pile:hover { filter: brightness(1.15); }
   transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
   transform-origin: 50% 130%;
   margin-inline: -0.9rem;
+  touch-action: pan-x pinch-zoom;
   transition:
     transform var(--motion-fast) var(--ease),
     filter var(--motion-fast) var(--ease);
@@ -2394,6 +2395,49 @@ button.pile:hover { filter: brightness(1.15); }
   transform: translateY(-20px) scale(1.07);
   z-index: 6;
 }
+
+.hand .card--dragging { opacity: 0.18; }
+
+.card-drag {
+  position: fixed;
+  z-index: 122;
+  width: calc(var(--card-width) * 1.12);
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(var(--drag-turn)) scale(1.12);
+  filter: drop-shadow(0 1.2rem 1rem rgb(0 0 0 / 0.78));
+  transition: top 80ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 80ms linear;
+}
+
+.card-drag .card { width: 100%; transform: none; }
+
+.card-target-arrow {
+  position: fixed;
+  z-index: 121;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.card-target-arrow path { fill: #c72d34; }
+.card-target-arrow__shadow,
+.card-target-arrow__line {
+  fill: none !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.card-target-arrow__shadow { stroke: rgb(12 8 9 / 0.88); stroke-width: 13; }
+.card-target-arrow__line {
+  stroke: #d82d39;
+  stroke-width: 8;
+  stroke-dasharray: 5 11;
+  marker-end: url('#card-target-arrowhead');
+  filter: drop-shadow(0 0 4px #ff7b52);
+  animation: card-target-flow 360ms linear infinite;
+}
+
+@keyframes card-target-flow { to { stroke-dashoffset: -16; } }
 
 /* ---------- feedback ---------- */
 
@@ -2426,18 +2470,70 @@ button.pile:hover { filter: brightness(1.15); }
   --flight-x: 0vw;
   --flight-y: -44vh;
   --flight-turn: 0deg;
+  --flight-trace: #e74b38;
+  --trail-x: -60%;
+  --trail-mid-x: -20%;
   position: fixed;
   z-index: 120;
   left: 50%;
   bottom: 1.2rem;
   width: var(--card-width);
+  isolation: isolate;
   pointer-events: none;
-  animation: card-resolve 680ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  animation: card-resolve 980ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
 }
 
-.card-flight--draw { --flight-x: -38vw; --flight-y: -3rem; --flight-turn: -16deg; }
+.card-flight--draw {
+  --flight-x: -38vw;
+  --flight-y: -3rem;
+  --flight-turn: -16deg;
+  --trail-x: 60%;
+  --trail-mid-x: 20%;
+}
 .card-flight--discard { --flight-x: 43vw; --flight-y: -3rem; --flight-turn: 9deg; }
 .card-flight--exhaust { --flight-x: 47vw; --flight-y: -3rem; --flight-turn: -18deg; }
+.card-flight--ironclad { --flight-trace: #e74b38; }
+.card-flight--silent { --flight-trace: #54ca68; }
+.card-flight--defect { --flight-trace: #42aef5; }
+.card-flight--watcher { --flight-trace: #a35ce5; }
+
+.card-flight::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: 45%;
+  width: 14rem;
+  height: 4rem;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 80% 48%, color-mix(in srgb, var(--flight-trace) 88%, white) 0 10%, transparent 34%),
+    radial-gradient(ellipse at 58% 30%, color-mix(in srgb, var(--flight-trace) 92%, transparent) 0 16%, transparent 44%),
+    radial-gradient(ellipse at 34% 68%, color-mix(in srgb, var(--flight-trace) 78%, transparent) 0 14%, transparent 48%),
+    radial-gradient(ellipse at 12% 40%, color-mix(in srgb, var(--flight-trace) 56%, transparent) 0 10%, transparent 42%);
+  filter: blur(2.5px) drop-shadow(0 0 10px var(--flight-trace));
+  transform-origin: right center;
+  animation: card-flight-smoke 980ms ease-out both;
+}
+
+.card-flight::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+  background: color-mix(in srgb, var(--flight-trace) 72%, transparent);
+  box-shadow: -18px -7px 0 color-mix(in srgb, var(--flight-trace) 62%, transparent),
+    -35px 7px 0 color-mix(in srgb, var(--flight-trace) 48%, transparent),
+    -52px -4px 0 color-mix(in srgb, var(--flight-trace) 38%, transparent),
+    -70px 8px 0 color-mix(in srgb, var(--flight-trace) 28%, transparent);
+  filter: blur(2px);
+  animation: card-flight-motes 980ms ease-out both;
+}
 
 .card-flight .card {
   width: 100%;
@@ -2447,12 +2543,25 @@ button.pile:hover { filter: brightness(1.15); }
 
 @keyframes card-resolve {
   0% { opacity: 1; transform: translate3d(-50%, 0, 0) rotate(-5deg) scale(0.88); }
-  45% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.28); }
-  68% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.28); filter: brightness(1.25); }
+  18% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.58); }
+  34%, 66% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.05); }
+  76% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(0.32); }
   100% {
-    opacity: 0;
-    transform: translate3d(calc(-50% + var(--flight-x)), var(--flight-y), 0) rotate(var(--flight-turn)) scale(0.3);
+    opacity: 0.45;
+    transform: translate3d(calc(-50% + var(--flight-x)), var(--flight-y), 0) rotate(var(--flight-turn)) scale(0.22);
   }
+}
+
+@keyframes card-flight-smoke {
+  0%, 74% { opacity: 0; transform: translateX(0) scaleX(0.2); }
+  84% { opacity: 1; transform: translateX(var(--trail-mid-x)) scaleX(0.88); }
+  100% { opacity: 0; transform: translateX(var(--trail-x)) scaleX(1.45); }
+}
+
+@keyframes card-flight-motes {
+  0%, 75% { opacity: 0; transform: translate(0, -50%) scale(0.4); }
+  86% { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(var(--trail-x), -1.2rem) scale(1.5); }
 }
 
 .motion-pulse-0 { animation: ui-pulse 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -4804,6 +4913,8 @@ button.pile:hover { filter: brightness(1.15); }
 
 @media (prefers-reduced-motion: reduce) {
   .hand .card { transition: none; }
+  .card-drag { transition: none; }
+  .card-target-arrow__line { animation: none; }
 
   .hand .card--drawn,
   .card-flight,

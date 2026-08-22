@@ -1541,33 +1541,35 @@ check('Distilled Chaos replaces stale card targeting with its forced card', () =
   assert(stagedAfterPotion.includes('Bash'), `wrong forced card remained staged: ${stagedAfterPotion}`)
 })
 await page.locator('.enemy').first().click()
-await page.waitForFunction(() => document.querySelector('.card-flight'))
-const cardPlayMotion = await page.locator('.card-flight').evaluate((flight) => ({
+const committedCardFlight = page.locator('.card-flight').filter({ hasText: 'Bash' }).last()
+await committedCardFlight.waitFor()
+const cardPlayMotion = await committedCardFlight.evaluate((flight) => ({
   animation: getComputedStyle(flight).animationName,
   destination: [...flight.classList].find((name) => name.startsWith('card-flight--')),
 }))
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
     if (animation.animationName === 'card-resolve') {
-      animation.currentTime = 330
+      animation.currentTime = 500
       animation.pause()
     }
   }
 })
 await page.screenshot({ path: join(animationReferenceDir, 'combat-card-play.png'), timeout: 15_000 })
 const cardPlayLanding = await page.evaluate(() => {
-  const animation = document.getAnimations().find((candidate) => candidate.animationName === 'card-resolve')
+  const flight = [...document.querySelectorAll('.card-flight')].at(-1)
+  const animation = flight?.getAnimations().find((candidate) => candidate.animationName === 'card-resolve')
   if (!animation) return null
-  animation.currentTime = 679
-  const flight = document.querySelector('.card-flight')?.getBoundingClientRect()
+  animation.currentTime = 979
+  const flightRect = flight?.getBoundingClientRect()
   const pile = document.querySelector('[data-pile="discard"]')?.getBoundingClientRect()
-  if (!flight || !pile) return null
+  if (!flightRect || !pile) return null
   return {
     distance: Math.hypot(
-      flight.left + flight.width / 2 - (pile.left + pile.width / 2),
-      flight.top + flight.height / 2 - (pile.top + pile.height / 2),
+      flightRect.left + flightRect.width / 2 - (pile.left + pile.width / 2),
+      flightRect.top + flightRect.height / 2 - (pile.top + pile.height / 2),
     ),
-    flightX: flight.left + flight.width / 2,
+    flightX: flightRect.left + flightRect.width / 2,
     pileX: pile.left + pile.width / 2,
     viewportWidth: innerWidth,
   }
@@ -1586,6 +1588,382 @@ check('a committed card holds above combat before resolving to its pile', () => 
     'the discard flight went toward the right-side pile')
   assert(cardPlayLanding.distance < 140, `the discard flight missed its pile by ${cardPlayLanding.distance}px`)
 })
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'drag-cleave', defId: 'cleave', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1, block: 0,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  for (const enemy of next.combat.enemies) Object.assign(enemy, {
+    hp: 5, maxHp: 5, block: 0, dead: false, row: player.row, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedRowCard = page.getByRole('button', { name: /^Cleave, cost 1,/ })
+const draggedEnemy = page.locator('.enemy').first()
+await draggedRowCard.hover()
+let draggedCardBox = await draggedRowCard.boundingBox()
+let draggedEnemyBox = await draggedEnemy.boundingBox()
+assert(draggedCardBox && draggedEnemyBox, 'drag fixtures are visible')
+assertEqual(await draggedRowCard.getAttribute('aria-disabled'), 'false', 'dragged Cleave is playable')
+await page.mouse.move(draggedCardBox.x + draggedCardBox.width / 2,
+  draggedCardBox.y + draggedCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedCardBox.x - 180, draggedCardBox.y - 130, { steps: 8 })
+await page.mouse.up()
+await page.waitForFunction(() => !document.querySelector('.card-drag'))
+const cancelledDrag = await readState()
+assertEqual(cancelledDrag.players[0].hand[0]?.uid, 'drag-cleave', 'a targeted drag released off-target cancels')
+assertEqual(cancelledDrag.players[0].energy, 1, 'a cancelled targeted drag spends no energy')
+await page.mouse.move(draggedCardBox.x + draggedCardBox.width / 2,
+  draggedCardBox.y + draggedCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedEnemyBox.x + draggedEnemyBox.width / 2,
+  draggedEnemyBox.y + draggedEnemyBox.height / 2, { steps: 8 })
+await page.waitForFunction(() => document.querySelector('.card-drag'))
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.players[0].hand = []
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForFunction(() => !document.querySelector('.card-drag') && !document.querySelector('.card-target-arrow'))
+await page.mouse.up()
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'drag-cleave', defId: 'cleave', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1, block: 0,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  for (const enemy of next.combat.enemies) Object.assign(enemy, {
+    hp: 5, maxHp: 5, block: 0, dead: false, row: player.row, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await draggedRowCard.hover()
+draggedCardBox = await draggedRowCard.boundingBox()
+draggedEnemyBox = await draggedEnemy.boundingBox()
+assert(draggedCardBox && draggedEnemyBox, 'restored drag fixtures are visible')
+await page.mouse.move(draggedCardBox.x + draggedCardBox.width / 2,
+  draggedCardBox.y + draggedCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedEnemyBox.x + draggedEnemyBox.width / 2,
+  draggedEnemyBox.y + draggedEnemyBox.height / 2, { steps: 12 })
+await page.waitForFunction(() => document.querySelector('.card-drag') &&
+  document.querySelector('.card-target-arrow') && document.querySelector('.enemy--targeted'))
+assertEqual(await page.locator('.enemy--targeted').count(), 2, 'a row drag highlights every affected enemy')
+const cardDragVisual = await page.evaluate(() => ({
+  cursor: getComputedStyle(document.querySelector('.combat')).cursor,
+  arrow: getComputedStyle(document.querySelector('.card-target-arrow__line')).strokeDasharray,
+  touchAction: getComputedStyle(document.querySelector('.hand .card')).touchAction,
+}))
+await shot('03a-card-drag-target')
+await page.mouse.up()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
+  .some((card) => card.uid === 'drag-cleave'))
+const draggedAttack = await readState()
+check('a row attack drags to an enemy row with the game cursor and targeting arc', () => {
+  assert(cardDragVisual.cursor.includes('/assets/ui/cursor.png'), cardDragVisual.cursor)
+  assert(cardDragVisual.arrow !== 'none', cardDragVisual.arrow)
+  assert(cardDragVisual.touchAction.includes('pan-x'), cardDragVisual.touchAction)
+  assertEqual(draggedAttack.players[0].energy, 0)
+  assertDeepEqual(draggedAttack.enemies.map((enemy) => enemy.hp), [3, 3])
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'drag-cleave-boss', defId: 'cleave', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 3)
+  for (const [index, enemy] of next.combat.enemies.entries()) Object.assign(enemy, {
+    hp: 5, maxHp: 5, block: 0, dead: false,
+    row: index === 2 ? player.row + 1 : player.row, isBoss: index === 2,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const bossRowCard = page.getByRole('button', { name: /^Cleave, cost 1,/ })
+const bossTarget = page.locator('.enemy:not(.enemy--boss)').first()
+await bossRowCard.hover()
+const bossRowCardBox = await bossRowCard.boundingBox()
+const bossTargetBox = await bossTarget.boundingBox()
+assert(bossRowCardBox && bossTargetBox, 'boss row-target fixtures are visible')
+await page.mouse.move(bossRowCardBox.x + bossRowCardBox.width / 2,
+  bossRowCardBox.y + bossRowCardBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(bossTargetBox.x + bossTargetBox.width / 2,
+  bossTargetBox.y + bossTargetBox.height / 2, { steps: 10 })
+await page.waitForFunction(() => document.querySelectorAll('.enemy--targeted').length === 3)
+await page.mouse.up()
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'drag-strike', defId: 'strike_ironclad', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  for (const enemy of next.combat.enemies) Object.assign(enemy, {
+    hp: 5, maxHp: 5, block: 0, dead: false, row: player.row, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedStrike = page.getByRole('button', { name: /^Strike, cost 1,/ })
+await draggedStrike.hover()
+const draggedStrikeBox = await draggedStrike.boundingBox()
+const draggedSeatBox = await page.locator('.seat').first().boundingBox()
+assert(draggedStrikeBox && draggedSeatBox, 'single-target row-background fixtures are visible')
+await page.mouse.move(draggedStrikeBox.x + draggedStrikeBox.width / 2,
+  draggedStrikeBox.y + draggedStrikeBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedSeatBox.x + draggedSeatBox.width / 2,
+  draggedSeatBox.y + draggedSeatBox.height / 2, { steps: 10 })
+await page.mouse.up()
+await page.waitForFunction(() => !document.querySelector('.card-drag'))
+const cancelledSingleTarget = await readState()
+assertEqual(cancelledSingleTarget.players[0].hand[0]?.uid, 'drag-strike',
+  'a single-target attack released on row background cancels')
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    character: 'watcher',
+    hand: [{ uid: 'drag-ragnarok', defId: 'ragnarok', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 3,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  for (const enemy of next.combat.enemies) Object.assign(enemy, {
+    hp: 9, maxHp: 9, block: 0, dead: false, row: player.row, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedRagnarok = page.getByRole('button', { name: /^Ragnarok, cost 3,/ })
+const ragnarokEnemy = page.locator('.enemy').first()
+await draggedRagnarok.hover()
+const ragnarokBox = await draggedRagnarok.boundingBox()
+const ragnarokEnemyBox = await ragnarokEnemy.boundingBox()
+assert(ragnarokBox && ragnarokEnemyBox, 'multi-target drag fixtures are visible')
+await page.mouse.move(ragnarokBox.x + ragnarokBox.width / 2, ragnarokBox.y + ragnarokBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(ragnarokEnemyBox.x + ragnarokEnemyBox.width / 2,
+  ragnarokEnemyBox.y + ragnarokEnemyBox.height / 2, { steps: 10 })
+await page.waitForFunction(() => document.querySelector('.enemy--targeted'))
+await page.mouse.up()
+await new Promise((resolve) => setTimeout(resolve, 100))
+const ragnarokPrompts = await page.locator('.prompt').allTextContents()
+assert(ragnarokPrompts.some((text) => text.includes('target 2/5')), JSON.stringify(ragnarokPrompts))
+assertEqual((await readState()).players[0].energy, 3, 'Ragnarok keeps waiting after its first dragged target')
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'drag-defend', defId: 'defend_ironclad', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1, block: 0,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedDefend = page.getByRole('button', { name: /^Defend, cost 1,/ })
+await draggedDefend.hover()
+const draggedDefendBox = await draggedDefend.boundingBox()
+assert(draggedDefendBox, 'dragged Defend is visible')
+assertEqual(await draggedDefend.getAttribute('aria-disabled'), 'false', 'dragged Defend is playable')
+await page.mouse.move(draggedDefendBox.x + draggedDefendBox.width / 2,
+  draggedDefendBox.y + draggedDefendBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedDefendBox.x + draggedDefendBox.width / 2,
+  draggedDefendBox.y - 130, { steps: 10 })
+await page.waitForFunction(() => document.querySelector('.card-drag') && !document.querySelector('.card-target-arrow'))
+await page.mouse.up()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
+  .some((card) => card.uid === 'drag-defend'))
+const draggedDefense = await readState()
+check('an untargeted defensive card plays by dragging above the hand', () => {
+  assertEqual(draggedDefense.players[0].block, 1)
+  assertEqual(draggedDefense.players[0].energy, 0)
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [
+      { uid: 'choice-survivor', defId: 'survivor', upgraded: false },
+      { uid: 'choice-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], energy: 2, block: 0,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Survivor, cost 1,/ }).click()
+const discardChoice = page.getByRole('button', { name: /^Strike, cost 1,/ })
+await discardChoice.hover()
+const discardChoiceBox = await discardChoice.boundingBox()
+assert(discardChoiceBox, 'discard-choice card is visible')
+await page.mouse.move(discardChoiceBox.x + discardChoiceBox.width / 2,
+  discardChoiceBox.y + discardChoiceBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(discardChoiceBox.x + discardChoiceBox.width / 2,
+  discardChoiceBox.y - 130, { steps: 8 })
+await new Promise((resolve) => setTimeout(resolve, 100))
+assertEqual(await page.locator('.card-drag').count(), 0, 'a hand-choice card does not start play-dragging')
+await page.mouse.up()
+await discardChoice.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
+  .some((card) => card.uid === 'choice-strike'))
+const resolvedHandChoice = await readState()
+assertEqual(resolvedHandChoice.players[0].energy, 1, 'the hand-choice card remains clickable')
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    character: 'watcher',
+    hand: [{ uid: 'drag-flex', defId: 'flex', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedFlex = page.getByRole('button', { name: /^Flex, cost 0,/ })
+await draggedFlex.hover()
+const draggedFlexBox = await draggedFlex.boundingBox()
+assert(draggedFlexBox, 'dragged Flex is visible')
+assertEqual(await draggedFlex.getAttribute('aria-disabled'), 'false', 'dragged Flex is playable')
+await page.mouse.move(draggedFlexBox.x + draggedFlexBox.width / 2,
+  draggedFlexBox.y + draggedFlexBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedFlexBox.x + draggedFlexBox.width / 2,
+  draggedFlexBox.y - 130, { steps: 10 })
+await page.mouse.up()
+await page.waitForFunction(() => document.querySelector('.card-flight--exhaust'))
+const exhaustFlight = await page.locator('.card-flight--exhaust').evaluate((flight) => ({
+  childAnimation: getComputedStyle(flight.querySelector('.card')).animationName,
+  trailAnimation: getComputedStyle(flight, '::before').animationName,
+  traceColor: getComputedStyle(flight).getPropertyValue('--flight-trace').trim(),
+  countInFlight: document.querySelector('[data-pile="exhaust"] .pile__count')?.textContent,
+}))
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+      animation.currentTime = 500
+      animation.pause()
+    }
+  }
+})
+await shot('03b-card-center-hold')
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) {
+    if (['card-resolve', 'card-flight-smoke', 'card-flight-motes'].includes(animation.animationName)) {
+      animation.currentTime = 850
+    }
+  }
+})
+await shot('03c-card-smoke-flight')
+await page.evaluate(() => {
+  for (const animation of document.getAnimations()) if (animation.playState === 'paused') animation.play()
+})
+await page.waitForFunction(() => !document.querySelector('.card-flight--exhaust'))
+const exhaustLanding = await page.locator('[data-pile="exhaust"]').evaluate((pile) => ({
+  count: pile.querySelector('.pile__count')?.textContent,
+  animation: getComputedStyle(pile).animationName,
+}))
+const draggedSpecial = await readState()
+const tracePalette = await page.evaluate(() => {
+  const probe = document.createElement('div')
+  probe.className = 'card-flight'
+  document.body.append(probe)
+  const colors = Object.fromEntries(['ironclad', 'silent', 'defect', 'watcher'].map((character) => {
+    probe.className = `card-flight card-flight--${character}`
+    return [character, getComputedStyle(probe).getPropertyValue('--flight-trace').trim()]
+  }))
+  probe.remove()
+  return colors
+})
+check('an Exhausting special-effect card settles, shrinks, smokes, and lands in Exhaust', () => {
+  assertDeepEqual(draggedSpecial.players[0].exhaust.map((card) => card.uid), ['drag-flex'])
+  assertEqual(exhaustFlight.childAnimation, 'none')
+  assertEqual(exhaustFlight.trailAnimation, 'card-flight-smoke')
+  assertEqual(exhaustFlight.traceColor, '#a35ce5')
+  assertEqual(exhaustFlight.countInFlight, '0')
+  assertEqual(exhaustLanding.count, '1')
+  assert(exhaustLanding.animation.startsWith('ui-pulse'), exhaustLanding.animation)
+  assertDeepEqual(tracePalette, {
+    ironclad: '#e74b38', silent: '#54ca68', defect: '#42aef5', watcher: '#a35ce5',
+  })
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    character: 'defect',
+    hand: [
+      { uid: 'rapid-flex-1', defId: 'flex', upgraded: false },
+      { uid: 'rapid-flex-2', defId: 'flex', upgraded: false },
+    ],
+    draw: [], discard: [], exhaust: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const rapidFlexes = page.locator('.hand').getByRole('button', { name: /^Flex, cost 0,/ })
+await rapidFlexes.first().click()
+await page.waitForFunction(() => document.querySelectorAll('.card-flight--exhaust').length === 1)
+await new Promise((resolve) => setTimeout(resolve, 150))
+await rapidFlexes.first().click()
+await page.waitForFunction(() => document.querySelectorAll('.card-flight--exhaust').length === 2)
+assertEqual(await page.locator('[data-pile="exhaust"] .pile__count').textContent(), '0',
+  'overlapping flights hold both landing counts')
+await page.waitForFunction(() => document.querySelectorAll('.card-flight--exhaust').length === 1 &&
+  document.querySelector('[data-pile="exhaust"] .pile__count')?.textContent === '1')
+await page.waitForFunction(() => document.querySelectorAll('.card-flight--exhaust').length === 0 &&
+  document.querySelector('[data-pile="exhaust"] .pile__count')?.textContent === '2')
+
+await page.emulateMedia({ reducedMotion: 'reduce' })
+await page.waitForFunction(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    hand: [{ uid: 'reduced-flex', defId: 'flex', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 0,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('.hand').getByRole('button', { name: /^Flex, cost 0,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].exhaust
+  .some((card) => card.uid === 'reduced-flex'))
+assertEqual(await page.locator('.card-flight').count(), 0, 'reduced motion creates no hidden delayed flight')
+assertEqual(await page.locator('[data-pile="exhaust"] .pile__count').textContent(), '1',
+  'reduced motion updates the pile count immediately')
+await page.emulateMedia({ reducedMotion: 'no-preference' })
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const player = next.combat.players[0]

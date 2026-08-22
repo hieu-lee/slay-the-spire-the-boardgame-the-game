@@ -148,6 +148,18 @@ type CardFlight = {
   card: CardInstance
   destination: ReturnType<typeof cardMotionDestination>
 }
+type CardDrag = {
+  card: CardInstance
+  pointerId: number
+  startX: number
+  startY: number
+  x: number
+  y: number
+  targetUid: string | null
+  needsEnemy: boolean
+  hitsRow: boolean
+}
+type CardDragStart = Omit<CardDrag, 'targetUid'> & { element: HTMLButtonElement }
 type MotionSnapshot = {
   hand: readonly CardInstance[]
   energy: number
@@ -226,6 +238,7 @@ function CombatVfx({
   attackContactMs?: number
 }) {
   const { event, recipe } = active
+
   return (
     <span
       className={[
@@ -1020,14 +1033,17 @@ export function CombatScreen({
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const armedCardFlight = useRef<CardInstance | null>(null)
+  const cardDragStart = useRef<CardDragStart | null>(null)
+  const suppressCardClick = useRef<string | null>(null)
   const motionBaseline = useRef<MotionSnapshot | null>(null)
   const motionRestoration = useRef(authoritativeRestoration)
   const motionConnected = useRef(authoritativeConnected)
   const motionViewer = useRef(viewerId)
-  const motionTimers = useRef(new Map<MotionKey | 'flight', ReturnType<typeof setTimeout>>())
+  const motionTimers = useRef(new Map<MotionKey | `flight:${number}`, ReturnType<typeof setTimeout>>())
   const flightBeat = useRef(0)
   const [drawnCards, setDrawnCards] = useState<Set<string>>(new Set())
-  const [cardFlight, setCardFlight] = useState<CardFlight | null>(null)
+  const [cardFlights, setCardFlights] = useState<CardFlight[]>([])
+  const [cardDrag, setCardDrag] = useState<CardDrag | null>(null)
   const [motionActive, setMotionActive] = useState<Set<MotionKey>>(new Set())
   const [motionBeats, setMotionBeats] = useState<Record<MotionKey, number>>({
     energy: 0,
@@ -1035,6 +1051,28 @@ export function CombatScreen({
     discard: 0,
     exhaust: 0,
   })
+
+  function pulseMotion(keys: MotionKey[]) {
+    if (keys.length === 0) return
+    setMotionBeats((current) => {
+      const updated = { ...current }
+      for (const key of keys) updated[key] += 1
+      return updated
+    })
+    setMotionActive((current) => new Set([...current, ...keys]))
+    for (const key of keys) {
+      const prior = motionTimers.current.get(key)
+      if (prior) clearTimeout(prior)
+      motionTimers.current.set(key, setTimeout(() => {
+        motionTimers.current.delete(key)
+        setMotionActive((current) => {
+          const updated = new Set(current)
+          updated.delete(key)
+          return updated
+        })
+      }, 420))
+    }
+  }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
   const viewerHasSozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
@@ -1093,6 +1131,15 @@ export function CombatScreen({
   )
   const livePresentationEvents = usePresentationEvents(state, authoritativeRestoration, authoritativeConnected)
   const reducedMotion = useReducedMotion()
+  useEffect(() => {
+    if (!reducedMotion) return
+    for (const [key, timer] of motionTimers.current) {
+      if (!key.startsWith('flight:')) continue
+      clearTimeout(timer)
+      motionTimers.current.delete(key)
+    }
+    setCardFlights([])
+  }, [reducedMotion])
   const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}`
   usePersonalCombatSoundEffects(
     state,
@@ -1214,6 +1261,9 @@ export function CombatScreen({
     motionViewer.current = viewerId
     const before = motionBaseline.current
     motionBaseline.current = next
+    const activeDrag = cardDragStart.current
+    if (activeDrag && (restored || !next.hand.some((card) => card.uid === activeDrag.card.uid) ||
+      !cardCanStartDrag(activeDrag.card))) clearCardDrag()
 
     if (!before) {
       if (animateOpeningHand && next.hand.length > 0) {
@@ -1227,7 +1277,7 @@ export function CombatScreen({
       for (const timer of motionTimers.current.values()) clearTimeout(timer)
       motionTimers.current.clear()
       setDrawnCards((current) => current.size === 0 ? current : new Set())
-      setCardFlight(null)
+      setCardFlights([])
       setMotionActive((current) => current.size === 0 ? current : new Set())
       return
     }
@@ -1238,55 +1288,39 @@ export function CombatScreen({
     }
 
     const armed = armedCardFlight.current
+    let landing: MotionKey | null = null
     if (armed && before.hand.some((card) => card.uid === armed.uid) &&
       !next.hand.some((card) => card.uid === armed.uid)) {
+      const destination = cardMotionDestination(
+        armed.uid,
+        viewer,
+        faceOf(cardDef(armed.defId), armed.upgraded).toDrawTop === true,
+      )
+      landing = !reducedMotion && destination !== 'stage' ? destination : null
       flightBeat.current += 1
-      setCardFlight({
-        beat: flightBeat.current,
-        card: armed,
-        destination: cardMotionDestination(
-          armed.uid,
-          viewer,
-          faceOf(cardDef(armed.defId), armed.upgraded).toDrawTop === true,
-        ),
-      })
+      const beat = flightBeat.current
+      if (!reducedMotion) setCardFlights((current) => [...current, { beat, card: armed, destination }])
       armedCardFlight.current = null
-      const prior = motionTimers.current.get('flight')
-      if (prior) clearTimeout(prior)
-      motionTimers.current.set('flight', setTimeout(() => {
-        motionTimers.current.delete('flight')
-        setCardFlight(null)
-      }, 680))
+      if (!reducedMotion) {
+        const timerKey = `flight:${beat}` as const
+        motionTimers.current.set(timerKey, setTimeout(() => {
+          motionTimers.current.delete(timerKey)
+          setCardFlights((current) => current.filter((flight) => flight.beat !== beat))
+          if (landing) pulseMotion([landing])
+        }, 980))
+      }
     } else if (state.phase !== 'player' && state.phase !== 'copy') {
       armedCardFlight.current = null
     }
 
     const changed: MotionKey[] = []
     if (before.energy !== next.energy) changed.push('energy')
-    if (before.draw !== next.draw) changed.push('draw')
-    if (before.discard !== next.discard) changed.push('discard')
-    if (before.exhaust !== next.exhaust) changed.push('exhaust')
-    if (changed.length > 0) {
-      setMotionBeats((current) => {
-        const updated = { ...current }
-        for (const key of changed) updated[key] += 1
-        return updated
-      })
-      setMotionActive((current) => new Set([...current, ...changed]))
-      for (const key of changed) {
-        const prior = motionTimers.current.get(key)
-        if (prior) clearTimeout(prior)
-        motionTimers.current.set(key, setTimeout(() => {
-          motionTimers.current.delete(key)
-          setMotionActive((current) => {
-            const updated = new Set(current)
-            updated.delete(key)
-            return updated
-          })
-        }, 420))
-      }
-    }
-  }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, drawCount, state, viewer])
+    if (before.draw !== next.draw && landing !== 'draw') changed.push('draw')
+    if (before.discard !== next.discard && landing !== 'discard') changed.push('discard')
+    if (before.exhaust !== next.exhaust && landing !== 'exhaust') changed.push('exhaust')
+    pulseMotion(changed)
+  }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, drawCount, miracleOnCard,
+    orderingStage, pending, pendingTrigger, reducedMotion, state, usingCard, viewer])
 
   // Keep this timer in its own effect so React development Strict Mode can
   // clean up and restart it without leaving the animation class stuck on.
@@ -2800,7 +2834,7 @@ export function CombatScreen({
     })
   }
 
-  function onCardClick(card: CardInstance) {
+  function onCardClick(card: CardInstance, draggedEnemyUid: string | null = null) {
     if (cardActionPending.current || orderingStage || pendingTrigger) return
     setPendingPowerUid(null)
     setSpendingShiv(false)
@@ -2847,6 +2881,10 @@ export function CombatScreen({
     const def = faceOf(cardDef(card.defId), card.upgraded)
     if (cardNeedsChoicePreview(def, state, viewer!)) {
       if (cardNeedsEnemy(def, viewer!, false)) {
+        if (draggedEnemyUid) {
+          requestChoicePreview(card, draggedEnemyUid)
+          return
+        }
         const next = pendingFor(card, null, state, viewer!)
         setPending({ ...next, choice: null })
         return
@@ -2854,19 +2892,92 @@ export function CombatScreen({
       requestChoicePreview(card)
       return
     }
-    const next = pendingFor(card, null, state, viewer!)
-    setPending(next)
-    // Only resolve on the spot when there is genuinely nothing left to pick —
-    // including a cost the hand is too small to pay anything towards.
-    const owed = next.choice && next.choice.kind !== 'discardAny' && next.choice.kind !== 'exhaustAny'
-      ? Math.min(next.choice.amount, next.choiceCards?.length ??
-        Math.max(0, viewer!.hand.length - Number(next.cardInHand)))
-      : 0
-    if (next.choice?.kind !== 'discardAny' && next.choice?.kind !== 'exhaustAny' &&
-      !next.needsEnemy && !next.needsAlly &&
-      next.playerIds.length >= next.playerChoices && !next.needsSwitch && owed === 0 &&
-      (def.cost !== 'X' || next.energySpent !== null) &&
-      !def.modes && !nextEvokeChoice(def, viewer!, next.evokeSlots, undefined, next.effectEnergy ?? 0)) commit(next)
+    let next = pendingFor(card, null, state, viewer!)
+    if (draggedEnemyUid) {
+      if (cardNeedsEnemy(def, viewer!, false)) next = { ...next, enemyUid: draggedEnemyUid }
+      else if (next.enemyChoices > 0 || def.modes) next = { ...next, enemyUids: [draggedEnemyUid] }
+      else if (next.spentShivs + next.overflowShivs > 0) next = { ...next, shivEnemyUids: [draggedEnemyUid] }
+    }
+    stageOrCommit(next)
+  }
+
+  function dragTargetAt(x: number, y: number, hitsRow: boolean): string | null {
+    const hit = document.elementFromPoint(x, y)
+    const enemy = hit?.closest<HTMLElement>('.enemy') ?? (hitsRow
+      ? hit?.closest<HTMLElement>('.row')?.querySelector<HTMLElement>('.enemy:not(.enemy--dead)')
+      : null)
+    const uid = enemy?.dataset.enemyId
+    return uid && state.enemies.some((candidate) => candidate.uid === uid && !candidate.dead) ? uid : null
+  }
+
+  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || !cardCanStartDrag(card)) return
+    const def = faceOf(cardDef(card.defId), card.upgraded)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    cardDragStart.current = {
+      card, pointerId: event.pointerId,
+      startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
+      needsEnemy: pendingFor(card, null, state, viewer!).needsEnemy,
+      hitsRow: def.target === 'row',
+      element: event.currentTarget,
+    }
+  }
+
+  function onCardPointerMove(event: React.PointerEvent<HTMLElement>) {
+    const start = cardDragStart.current
+    if (!start || start.pointerId !== event.pointerId) return
+    if (!cardDrag && Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
+    setCardDrag({
+      card: start.card,
+      pointerId: start.pointerId,
+      startX: start.startX,
+      startY: start.startY,
+      x: event.clientX,
+      y: event.clientY,
+      targetUid: start.needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null,
+      needsEnemy: start.needsEnemy,
+      hitsRow: start.hitsRow,
+    })
+  }
+
+  function cardCanStartDrag(card: CardInstance) {
+    return !usingCard && !pending && !pendingTrigger && !orderingStage && state.phase === 'player' &&
+      !forcedCard && !distilled && !relicScry && canAfford(state, viewer!, card, miracleOnCard, drawCount)
+  }
+
+  function clearCardDrag() {
+    cardDragStart.current = null
+    setCardDrag(null)
+  }
+
+  function finishCardDrag(event: React.PointerEvent<HTMLElement>) {
+    const start = cardDragStart.current
+    if (!start || start.pointerId !== event.pointerId) return
+    const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
+    const lifted = event.clientY < start.startY - 36
+    const needsEnemy = cardDrag?.needsEnemy ?? start.needsEnemy
+    const targetUid = needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null
+    clearCardDrag()
+    if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
+    if (!moved) return
+    suppressCardClick.current = start.card.uid
+    setTimeout(() => {
+      if (suppressCardClick.current === start.card.uid) suppressCardClick.current = null
+    }, 0)
+    if (lifted && (!needsEnemy || targetUid)) onCardClick(start.card, targetUid)
+  }
+
+  function cancelCardDrag(event: React.PointerEvent<HTMLElement>) {
+    if (cardDragStart.current?.pointerId !== event.pointerId) return
+    clearCardDrag()
+  }
+
+  function activateCard(card: CardInstance) {
+    if (suppressCardClick.current === card.uid) {
+      suppressCardClick.current = null
+      return
+    }
+    onCardClick(card)
   }
 
   // Distilled Chaos already asks which card to play. Requiring a second click
@@ -3023,7 +3134,7 @@ export function CombatScreen({
       enemyChoices > state.enemies.filter((enemy) => !enemy.dead).length) return
     const playerChoices = cardPlayerChoiceCount(pendingDef, mode)
     stageOrCommit({
-      ...pending, mode, enemyChoices, playerChoices, enemyUids: [],
+      ...pending, mode, enemyChoices, playerChoices, enemyUids: pending.enemyUids.slice(0, enemyChoices),
       needsEnemy: cardNeedsEnemy(selectedDef, viewer!, false, pending.effectEnergy ?? undefined) || enemyChoices > 0,
       playerIds: state.players.filter((player) => !player.dead).length === 1
         ? Array(playerChoices).fill(viewer!.id)
@@ -3190,6 +3301,13 @@ export function CombatScreen({
           : switchChoiceReady
             ? 'Choose another player to switch rows with, or keep rows'
           : null)
+  const draggedEnemy = cardDrag?.targetUid
+    ? state.enemies.find((enemy) => enemy.uid === cardDrag.targetUid)
+    : undefined
+  const cardDragTargetRow = cardDrag?.hitsRow ? draggedEnemy?.row : undefined
+  const displayedPileCount = (kind: 'draw' | 'discard' | 'exhaust', count: number) =>
+    Math.max(0, count - cardFlights.filter((flight) => flight.destination === kind).length)
+  const drawPileCount = drawCount ?? viewer.draw.length
 
   return (
     <div className="combat" data-phase={state.phase}>
@@ -3917,7 +4035,9 @@ export function CombatScreen({
                 // anything to the person looking at the screen is their own.
                 defender={viewer}
                 disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
-                targeted={(isStartTurnEnemyTarget(enemy.uid) ||
+                targeted={(cardDrag?.targetUid === enemy.uid ||
+                  cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
+                  isStartTurnEnemyTarget(enemy.uid) ||
                   (pendingTrigger?.playerId === viewer.id &&
                     pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
                   ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
@@ -4231,7 +4351,9 @@ export function CombatScreen({
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       defender={occupant}
                       disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
-                      targeted={(isStartTurnEnemyTarget(enemy.uid) ||
+                      targeted={(cardDrag?.targetUid === enemy.uid ||
+                        cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
+                        isStartTurnEnemyTarget(enemy.uid) ||
                         (pendingTrigger?.playerId === viewer.id &&
                           pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
                         ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
@@ -4274,7 +4396,7 @@ export function CombatScreen({
             ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}
             data-pile="draw" title="Draw pile">
             <img className="pile__stack" src="/assets/combat/piles/draw.webp" alt="" />
-            <span className="pile__count" aria-hidden="true">{drawCount ?? viewer.draw.length}</span>
+            <span className="pile__count" aria-hidden="true">{displayedPileCount('draw', drawPileCount)}</span>
             <span className="visually-hidden">Draw pile, {drawCount ?? viewer.draw.length} cards</span>
           </span>
           <span className="pile-group">
@@ -4286,7 +4408,7 @@ export function CombatScreen({
                 triggerClassName={['pile', motionActive.has(kind)
                   ? `motion-pulse-${motionBeats[kind] % 2}` : ''].filter(Boolean).join(' ')}>
                 <img className="pile__stack" src={`/assets/combat/piles/${kind}.webp`} alt="" />
-                <span className="pile__count" aria-hidden="true">{cards.length}</span>
+                <span className="pile__count" aria-hidden="true">{displayedPileCount(kind, cards.length)}</span>
               </CardCollectionOverlay>
             ))}
           </span>
@@ -4300,7 +4422,8 @@ export function CombatScreen({
           {viewer.hand.map((card, index) => (
             <Card
               key={card.uid}
-              className={drawnCards.has(card.uid) ? 'card--drawn' : undefined}
+              className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
+                cardDrag?.card.uid === card.uid ? 'card--dragging' : ''].filter(Boolean).join(' ') || undefined}
               style={{ '--deal-index': index } as React.CSSProperties}
               fan={fanOf(index, viewer.hand.length)}
               card={card}
@@ -4326,21 +4449,49 @@ export function CombatScreen({
               }
               selected={pending?.card.uid === card.uid}
               picked={pending?.picked.includes(card.uid) === true}
-              onClick={onCardClick}
+              onClick={activateCard}
+              onPointerDown={(event) => onCardPointerDown(card, event)}
+              onPointerMove={onCardPointerMove}
+              onPointerUp={finishCardDrag}
+              onPointerCancel={cancelCardDrag}
+              onLostPointerCapture={cancelCardDrag}
             />
           ))}
         </div></div>
       </footer>
-      {cardFlight ? (
+      {cardDrag ? (
+        <>
+          {cardDrag.needsEnemy ? (
+            <svg className="card-target-arrow" aria-hidden="true">
+              <defs>
+                <marker id="card-target-arrowhead" markerUnits="userSpaceOnUse"
+                  markerWidth="22" markerHeight="22" refX="18" refY="11" orient="auto">
+                  <path d="M 0 0 L 22 11 L 0 22 Z" />
+                </marker>
+              </defs>
+              <path className="card-target-arrow__shadow" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
+              <path className="card-target-arrow__line" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
+            </svg>
+          ) : null}
+          <div className="card-drag" style={{
+            left: cardDrag.startX,
+            top: Math.max(cardDrag.y + 120, cardDrag.startY - 90),
+            '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
+          } as React.CSSProperties} aria-hidden="true" inert>
+            <Card card={cardDrag.card} playable={false} />
+          </div>
+        </>
+      ) : null}
+      {cardFlights.map((flight) => (
         <div
-          className={`card-flight card-flight--${cardFlight.destination}`}
-          key={cardFlight.beat}
+          className={`card-flight card-flight--${flight.destination} card-flight--${viewer.character}`}
+          key={flight.beat}
           aria-hidden="true"
           inert
         >
-          <Card card={cardFlight.card} playable={false} />
+          <Card card={flight.card} playable={false} />
         </div>
-      ) : null}
+      ))}
     </div>
   )
 }
