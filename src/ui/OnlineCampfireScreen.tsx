@@ -70,9 +70,8 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
       </div> : <p className="campfire__spectator" role="status">Your climb has ended. You are watching the surviving party choose.</p>}
       </div>
       <div className="campfire__players" aria-label="Party around the campfire">
-        {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} data-ready={decided.includes(seat.playerId)} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
+        {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
           <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
-          <span><strong>{seat.name}</strong><small>{seat.connected ? (decided.includes(seat.playerId) ? 'Ready' : 'Choosing…') : 'Reconnecting…'}</small></span>
         </div>)}
       </div>
       {alive ? <button

@@ -139,7 +139,6 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
             onClick={() => setFocusedId(seat.id)}
           >
             <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
-            <span><strong>{seat.name}</strong><small>{seat.hp}/{seat.maxHp} HP · {status}</small></span>
           </button>
         })}
       </div>
