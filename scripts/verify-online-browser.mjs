@@ -3585,6 +3585,62 @@ try {
     assertEqual(livingCampfirePortraits, 1)
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
   })
+  await ownerGame.getByRole('button', { name: /Smith/ }).click()
+  await ownerGame.locator('.campfire__deck--smith .card').first().click()
+  const compactOnlineSmith = []
+  for (const viewport of [{ width: 1244, height: 409 }, { width: 320, height: 568 }, { width: 320, height: 601 }]) {
+    await a.setViewportSize(viewport)
+    await a.waitForTimeout(60)
+    compactOnlineSmith.push({ ...viewport, ...await ownerGame.locator('.campfire').evaluate((campfire) => {
+      const prompt = campfire.querySelector('.campfire__prompt')
+      const card = campfire.querySelector('.campfire__deck--smith .card')
+      const leave = campfire.querySelector('.campfire__leave')
+      const promptBox = prompt?.getBoundingClientRect()
+      const cardBox = card?.getBoundingClientRect()
+      const leaveBox = leave?.getBoundingClientRect()
+      const leaveOverlaps = (element, clip) => {
+        const box = element.getBoundingClientRect()
+        const visible = clip ? {
+          left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right),
+          top: Math.max(box.top, clip.top), bottom: Math.min(box.bottom, clip.bottom),
+        } : box
+        return Boolean(leaveBox && visible.left < visible.right && visible.top < visible.bottom &&
+          leaveBox.left < visible.right && leaveBox.right > visible.left && leaveBox.top < visible.bottom && leaveBox.bottom > visible.top)
+      }
+      return {
+        panels: prompt?.querySelectorAll('.campfire__preview').length ?? 0,
+        saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
+        decorativeSeats: [...campfire.querySelectorAll('div.campfire__seat')]
+          .filter((seat) => getComputedStyle(seat).display !== 'none' && seat.getBoundingClientRect().height > 0).length,
+        documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+        documentHeight: document.documentElement.scrollHeight,
+        viewportHeight: document.documentElement.clientHeight,
+        deckScrollsHorizontally: Boolean(card?.parentElement && card.parentElement.scrollWidth > card.parentElement.clientWidth + 1),
+        cardHeight: cardBox?.height ?? 0,
+        visibleCardHeight: promptBox && cardBox
+          ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
+        leaveOverlapsCards: [...campfire.querySelectorAll('.campfire__deck .card')]
+          .filter((candidate) => leaveOverlaps(candidate, promptBox)).length,
+        leaveOverlapsChoices: [...campfire.querySelectorAll('.campfire__choices button')]
+          .filter((choice) => leaveOverlaps(choice)).length,
+      }
+    }) })
+    if (viewport.width === 320) await a.screenshot({ path: join(outDir, '08-compact-online-smith.png'), fullPage: true })
+  }
+  check('online Smith keeps a compact full-card picker without an upgrade preview', () => {
+    for (const shape of compactOnlineSmith) {
+      assertEqual(shape.panels, 0)
+      assert(!shape.saysBecomes)
+      assertEqual(shape.decorativeSeats, 0, `decorative online seats consume picker height: ${JSON.stringify(shape)}`)
+      assert(!shape.documentScrolls, `the online page scrolls: ${JSON.stringify(shape)}`)
+      assert(!shape.deckScrollsHorizontally, `the online deck scrolls sideways: ${JSON.stringify(shape)}`)
+      assert(shape.visibleCardHeight >= shape.cardHeight - 1,
+        `the online picker clips the first card: ${JSON.stringify(shape)}`)
+      assertEqual(shape.leaveOverlapsCards, 0, `the online leave action covers a card: ${JSON.stringify(shape)}`)
+      assertEqual(shape.leaveOverlapsChoices, 0, `the online leave action covers a choice: ${JSON.stringify(shape)}`)
+    }
+  })
+  await a.setViewportSize({ width: 1440, height: 900 })
   // The online Wing Boots prompt, which had no coverage at all: dropping the
   // `map-prompt` class or swapping `wingBootLabel` for the room's raw `kind` both
   // passed. The raw kind is the redaction leak the helper exists to stop — the

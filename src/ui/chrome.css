@@ -1477,19 +1477,108 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   overscroll-behavior-inline: contain;
 }
 
-/* Smith and Peace Pipe turn the choice cloud into the game's full card picker.
-   The old 43vh prompt plus a 9.5rem deck cap cut every card at mid-rules box.
-   The `100% - ...` term is the one that actually matters: it stops the grown
-   prompt from reaching down into `.campfire__players`, which sits at a fixed
-   spot regardless of the prompt's height (see the comment on `.campfire`) —
-   without it the two absolutely-positioned boxes don't know about each other
-   and the deck view can paint right over the seated party at ordinary
-   desktop window heights, not just cramped ones. `calc(100vh - 6.5rem)` is
-   kept as an outer cap for the rare case `.campfire` itself is taller than
-   the viewport (its own min-height floor, see above). */
+.sts-scope .campfire__prompt .campfire__deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, var(--card-width));
+  justify-content: center;
+  overflow: visible;
+}
+
+/* Smith and Peace Pipe turn the choice cloud into the game's full card picker. */
 .sts-scope .campfire__prompt:has(.campfire__deck) {
   width: min(76rem, calc(100% - 2rem));
-  max-height: min(calc(100vh - 6.5rem), calc(100% - var(--campfire-floor-reserve) - 2.5rem));
+  max-height: calc(100% - 2rem);
+}
+
+/* Card choice replaces the seated scene in the original game. Give that picker
+   the scene's height, wrap complete cards, and keep only its one outer scroll. */
+.sts-scope .campfire:has(.campfire__deck) {
+  min-height: calc(100dvh - 5rem);
+}
+
+.sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__players,
+.sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__players,
+.sts-scope .campfire:has(.campfire__deck--smith):not(:has(.campfire__deck--smith .card--selected)) .campfire__players {
+  display: none;
+}
+
+/* Once Smith is picked, or while optional Peace Pipe removal is open, reserve
+   one responsive seat strip so local parties can always move to the next player. */
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected),
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) {
+  --campfire-switcher-height: clamp(4rem, 12vh, 12rem);
+}
+
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
+  max-height: calc(100% - var(--campfire-switcher-height) - 0.75rem);
+}
+
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__players,
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__players {
+  z-index: 6;
+  bottom: 0.25rem;
+  height: var(--campfire-switcher-height);
+}
+
+.sts-scope .campfire:has(.campfire__deck) .campfire__leave:disabled { display: none; }
+
+.sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button {
+  flex-direction: row;
+  min-width: 7rem;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button > img { display: none; }
+
+@media (max-height: 600px) {
+  .sts-scope .campfire__prompt:has(.campfire__deck--smith .card--selected) h2,
+  .sts-scope .campfire__prompt:has(.campfire__deck--remove) h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) { top: 0.5rem; bottom: auto; }
+}
+
+@media (max-height: 600px) and (min-width: 701px) {
+  .sts-scope .campfire__prompt:has(.campfire__deck) .campfire__name {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) { min-height: 100%; }
+  .sts-scope:has(.campfire .campfire__deck) .log { display: none; }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__prompt {
+    top: 3.5rem;
+    max-height: calc(100% - 4rem);
+  }
+
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
+    max-height: calc(100% - var(--campfire-switcher-height) - 3.75rem);
+  }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    max-width: 40%;
+  }
+
+  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__prompt,
+  .sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__prompt {
+    max-height: calc(100% - 8rem);
+  }
 }
 
 .sts-scope .campfire__players {
@@ -1562,7 +1651,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
   .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
   .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
-  .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: min(calc(100vh - 4.5rem), calc(100% - var(--campfire-floor-reserve) - 2.5rem)); }
+  .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: calc(100% - 0.5rem); }
   .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
   /* `bottom: 4.5rem`, not `0`: the floating Run Log tab sits fixed at the
      viewport's bottom-left on mobile, and a seat pinned flush to the very
@@ -2982,8 +3071,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    cannot play and wrong for the only moment the card IS the screen — the
    upgraded face was landing centre-stage on a near-black veil, desaturated and
    at 60% brightness. Worse under reduced motion, which skips straight to that
-   frame and shows nothing else. styles.css already makes exactly this exception
-   for `.campfire__preview`; the morph is the same situation. */
+   frame and shows nothing else. The morph therefore needs the exception here. */
 .card-morph .card--unplayable { filter: none; }
 
 .card-morph__slot {

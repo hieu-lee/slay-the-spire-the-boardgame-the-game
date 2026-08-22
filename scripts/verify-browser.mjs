@@ -10398,14 +10398,16 @@ check('the energy count is readable on its disc', () => {
     `the energy count and icon are ${energyContrast.pairCenterOffset}px off-centre`)
 })
 
-const energyDrawGap = await page.evaluate(() => {
+const energyDrawStack = await page.evaluate(() => {
   const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
   const draw = document.querySelector('[data-pile="draw"]')?.getBoundingClientRect()
-  return energy && draw ? draw.left - energy.right : null
+  return energy && draw ? { leftOffset: draw.left - energy.left, gap: draw.top - energy.bottom } : null
 })
-check('the draw pile does not clip the energy orb', () => {
-  assert(energyDrawGap !== null, 'expected the energy and draw controls')
-  assert(energyDrawGap >= 8, `the draw pile has only ${energyDrawGap}px clearance from energy`)
+check('the draw pile sits directly below the raised energy orb', () => {
+  assert(energyDrawStack !== null, 'expected the energy and draw controls')
+  assert(Math.abs(energyDrawStack.leftOffset) <= 1,
+    `the draw pile is ${energyDrawStack.leftOffset}px sideways from the energy orb`)
+  assert(energyDrawStack.gap >= 8, `the draw pile has only ${energyDrawStack.gap}px clearance below the energy orb`)
 })
 
 // Four players is the maximum the box supports and the layout most likely to
@@ -11524,12 +11526,140 @@ await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
 await campfireSeats.nth(1).click()
 await campfirePrompt.getByRole('button', { name: /Smith/ }).click()
 await page.waitForSelector('.campfire__deck .card')
-await shot('12-campfire')
+await page.setViewportSize({ width: 1244, height: 409 })
+await page.waitForTimeout(60)
+const compactSmithPicker = await page.evaluate(() => {
+  const prompt = document.querySelector('.campfire__prompt')
+  const deck = document.querySelector('.campfire__deck')
+  const promptBox = prompt?.getBoundingClientRect()
+  const cardBoxes = [...(deck?.querySelectorAll('.card') ?? [])].map((card) => card.getBoundingClientRect())
+  const firstTop = cardBoxes[0]?.top
+  const firstRow = cardBoxes.filter((box) => firstTop !== undefined && Math.abs(box.top - firstTop) <= 1)
+  const playerName = document.querySelector('.campfire__name')
+  const playerNameBox = playerName?.getBoundingClientRect()
+  const leave = document.querySelector('.campfire__leave')
+  const leaveBox = leave?.getBoundingClientRect()
+  const leaveVisible = Boolean(leave && getComputedStyle(leave).display !== 'none')
+  return {
+    documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+    promptScrolls: Boolean(prompt && prompt.scrollHeight > prompt.clientHeight + 1),
+    deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
+    firstRowCards: firstRow.length,
+    playerContextVisible: Boolean(playerNameBox && playerNameBox.width > 1 && playerNameBox.height > 1),
+    clippedFirstRowCards: promptBox
+      ? firstRow.filter((box) => box.top < promptBox.top - 1 || box.bottom > promptBox.bottom + 1).length
+      : firstRow.length,
+    leaveOverlapsFirstRow: Boolean(leaveVisible && leaveBox && firstRow.some((box) =>
+      leaveBox.left < box.right && leaveBox.right > box.left && leaveBox.top < box.bottom && leaveBox.bottom > box.top)),
+  }
+})
+check('the compact Smith picker shows full card rows with only one scroll surface', () => {
+  assert(!compactSmithPicker.documentScrolls, `the page itself scrolls: ${JSON.stringify(compactSmithPicker)}`)
+  assert(compactSmithPicker.promptScrolls, 'the compact picker should own the one necessary scrollbar')
+  assert(!compactSmithPicker.deckScrollsHorizontally, `the card grid scrolls sideways: ${JSON.stringify(compactSmithPicker)}`)
+  assert(compactSmithPicker.playerContextVisible, `the active player's context is hidden: ${JSON.stringify(compactSmithPicker)}`)
+  assert(compactSmithPicker.firstRowCards > 0 && compactSmithPicker.clippedFirstRowCards === 0,
+    `the first row is clipped: ${JSON.stringify(compactSmithPicker)}`)
+  assert(!compactSmithPicker.leaveOverlapsFirstRow,
+    `the leave control covers a card: ${JSON.stringify(compactSmithPicker)}`)
+})
+await shot('12a-compact-campfire-smith')
 await page.locator('.campfire__deck .card').first().click()
+await page.waitForSelector('.campfire__deck--smith .card--selected')
+const compactSmithPicked = []
+for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521 }, { width: 320, height: 568 }]) {
+  await page.setViewportSize(viewport)
+  await page.waitForTimeout(60)
+  compactSmithPicked.push({ ...viewport, ...await page.evaluate(() => {
+    const prompt = document.querySelector('.campfire__prompt')
+    const deck = document.querySelector('.campfire__deck')
+    const card = deck?.querySelector('.card')
+    const seat = document.querySelector('.campfire__seat--2')
+    const seatImage = seat?.querySelector('img')
+    const promptBox = prompt?.getBoundingClientRect()
+    const cardBox = card?.getBoundingClientRect()
+    const seatBox = seatImage?.getBoundingClientRect()
+    const hit = seatBox && document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height / 2)
+    return {
+      documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+      deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
+      promptHeight: promptBox?.height ?? 0,
+      cardHeight: cardBox?.height ?? 0,
+      visibleCardHeight: promptBox && cardBox
+        ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
+      previewCount: document.querySelectorAll('.campfire__preview').length,
+      saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
+      seatReachable: Boolean(seat && seatBox && seatBox.width > 0 && seatBox.height > 0 && hit && (hit === seat || seat.contains(hit))),
+    }
+  }) })
+}
+check('selecting a Smith card on a compact screen keeps the picker and next player reachable', () => {
+  for (const shape of compactSmithPicked) {
+    assert(!shape.documentScrolls, `the selected picker made the page scroll: ${JSON.stringify(shape)}`)
+    assert(!shape.deckScrollsHorizontally, `the selected grid scrolls sideways: ${JSON.stringify(shape)}`)
+    assert(shape.visibleCardHeight >= shape.cardHeight - 1,
+      `the selected picker clips the first card: ${JSON.stringify(shape)}`)
+    assertEqual(shape.previewCount, 0, `the removed upgrade preview returned: ${JSON.stringify(shape)}`)
+    assert(!shape.saysBecomes, `the removed "Becomes" copy returned: ${JSON.stringify(shape)}`)
+    assert(shape.seatReachable, `the next player seat is unreachable: ${JSON.stringify(shape)}`)
+  }
+})
 for (const index of [2, 3]) {
   await campfireSeats.nth(index).click()
   await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
 }
+await campfireSeats.nth(1).click()
+await page.waitForSelector('.campfire__deck--smith .card--selected')
+const compactReadySmith = await page.evaluate(() => {
+  const leave = document.querySelector('.campfire__leave')
+  const prompt = document.querySelector('.campfire__prompt')
+  const headerControls = [...document.querySelectorAll('.app-shell__header button, .app-shell__header .pip, .app-shell__header h1')]
+  const leaveBox = leave?.getBoundingClientRect()
+  const promptBox = prompt?.getBoundingClientRect()
+  const overlaps = (element, clip) => {
+    const box = element.getBoundingClientRect()
+    const visible = clip ? {
+      left: Math.max(box.left, clip.left), right: Math.min(box.right, clip.right),
+      top: Math.max(box.top, clip.top), bottom: Math.min(box.bottom, clip.bottom),
+    } : box
+    return Boolean(leaveBox && visible.left < visible.right && visible.top < visible.bottom &&
+      leaveBox.left < visible.right && leaveBox.right > visible.left && leaveBox.top < visible.bottom && leaveBox.bottom > visible.top)
+  }
+  return {
+    leaveEnabled: leave instanceof HTMLButtonElement && !leave.disabled,
+    cardOverlaps: [...document.querySelectorAll('.campfire__deck .card')].filter((card) => overlaps(card, promptBox)).length,
+    choiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => overlaps(choice)).length,
+    seatOverlaps: [...document.querySelectorAll('button.campfire__seat')].filter((seat) => overlaps(seat)).length,
+    reachablePortraits: [...document.querySelectorAll('button.campfire__seat > img')].filter((portrait) => {
+      const box = portrait.getBoundingClientRect()
+      const seat = portrait.parentElement
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return box.width > 0 && box.height > 0 && Boolean(seat && hit && (hit === seat || seat.contains(hit)))
+    }).length,
+    seatCount: document.querySelectorAll('button.campfire__seat').length,
+    logVisible: Boolean(document.querySelector('.log') && getComputedStyle(document.querySelector('.log')).display !== 'none'),
+    headerChoiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => {
+      const box = choice.getBoundingClientRect()
+      return headerControls.some((control) => {
+        const controlBox = control.getBoundingClientRect()
+        return controlBox.width > 0 && controlBox.height > 0 && controlBox.left < box.right &&
+          controlBox.right > box.left && controlBox.top < box.bottom && controlBox.bottom > box.top
+      })
+    }).length,
+  }
+})
+await shot('12b-compact-ready-campfire')
+check('the enabled compact Campfire leave control stays clear of cards, choices, and player seats', () => {
+  assert(compactReadySmith.leaveEnabled, `the ready party cannot leave: ${JSON.stringify(compactReadySmith)}`)
+  assertEqual(compactReadySmith.cardOverlaps, 0, JSON.stringify(compactReadySmith))
+  assertEqual(compactReadySmith.choiceOverlaps, 0, JSON.stringify(compactReadySmith))
+  assertEqual(compactReadySmith.seatOverlaps, 0, JSON.stringify(compactReadySmith))
+  assertEqual(compactReadySmith.reachablePortraits, compactReadySmith.seatCount, JSON.stringify(compactReadySmith))
+  assert(!compactReadySmith.logVisible, `the Run Log covers the compact party strip: ${JSON.stringify(compactReadySmith)}`)
+  assertEqual(compactReadySmith.headerChoiceOverlaps, 0, `the run header covers a Campfire choice: ${JSON.stringify(compactReadySmith)}`)
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+await shot('12-campfire')
 const leaveLockedAfter = await page.locator('.campfire__leave').isDisabled()
 await page.locator('.campfire__leave').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
@@ -11545,6 +11675,77 @@ check('Rest heals and Smith upgrades, and the party returns to the map', () => {
     1,
     'and upgrades exactly one card',
   )
+})
+
+// Peace Pipe uses the same full-card picker as Smith but has no upgrade preview.
+// A selected removal must still return the local party switcher so another
+// player can finish their campfire choice.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire-peace-pipe'))
+await bypassNeow()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.map.position = run.map.rows[run.map.rows.length - 2][0]
+  run.players[0].relics.push({ defId: 'peace_pipe', spent: false })
+  debug.setRun(run)
+})
+await page.waitForSelector('.campfire')
+await page.locator('.campfire__seat').first().click()
+await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
+const peacePipeSkipSeat = await page.locator('.campfire__seat').nth(1).evaluate((seat) => {
+  const box = seat.getBoundingClientRect()
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
+})
+await page.locator('.campfire__deck--remove .card').first().click()
+const peacePipeNextSeat = await page.locator('.campfire__seat').nth(1).evaluate((seat) => {
+  const box = seat.getBoundingClientRect()
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
+})
+check('Peace Pipe keeps the local player switcher available with or without a removal', () => {
+  assert(peacePipeSkipSeat, 'the next player seat is hidden or covered before the optional removal is chosen')
+  assert(peacePipeNextSeat, 'the next player seat stayed hidden or covered after a Peace Pipe choice')
+})
+
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-solo'))
+await bypassNeow()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.map.position = run.map.rows[run.map.rows.length - 2][0]
+  debug.setRun(run)
+})
+await page.waitForSelector('.campfire')
+await page.locator('.campfire__seat').click()
+await page.locator('.campfire__prompt').getByRole('button', { name: /Smith/ }).click()
+await page.locator('.campfire__deck--smith .card').first().click()
+await page.setViewportSize({ width: 320, height: 568 })
+await page.waitForTimeout(60)
+const compactSoloSmith = await page.evaluate(() => {
+  const prompt = document.querySelector('.campfire__prompt')
+  const deck = document.querySelector('.campfire__deck--smith')
+  const card = deck?.querySelector('.card')
+  const cardBox = card?.getBoundingClientRect()
+  const promptBox = prompt?.getBoundingClientRect()
+  const players = document.querySelector('.campfire__players')
+  return {
+    playersVisible: Boolean(players && getComputedStyle(players).display !== 'none'),
+    documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+    deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
+    cardHeight: cardBox?.height ?? 0,
+    visibleCardHeight: promptBox && cardBox
+      ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
+  }
+})
+check('a compact solo Smith picker uses the full scene instead of reserving a player switcher', () => {
+  assert(!compactSoloSmith.playersVisible, `the solo portrait still consumes picker height: ${JSON.stringify(compactSoloSmith)}`)
+  assert(!compactSoloSmith.documentScrolls, `the solo picker makes the page scroll: ${JSON.stringify(compactSoloSmith)}`)
+  assert(!compactSoloSmith.deckScrollsHorizontally, `the solo picker scrolls sideways: ${JSON.stringify(compactSoloSmith)}`)
+  assert(compactSoloSmith.visibleCardHeight >= compactSoloSmith.cardHeight - 1,
+    `the solo picker clips its first card: ${JSON.stringify(compactSoloSmith)}`)
 })
 
 // A card whose width is unbounded turns aspect-ratio into runaway height. This

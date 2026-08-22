@@ -2993,11 +2993,6 @@ button.pile:hover { filter: brightness(1.15); }
   max-width: 460px;
 }
 
-.campfire__picked {
-  font-size: 0.75rem;
-  color: var(--gold);
-}
-
 .campfire__leave {
   border-color: var(--gold);
   color: var(--gold);
@@ -3297,28 +3292,6 @@ button.pile:hover { filter: brightness(1.15); }
 .row--viewer {
   border-color: rgb(215 169 75 / 0.45);
   background: linear-gradient(to right, rgb(215 169 75 / 0.05), transparent 40%), var(--bg-panel);
-}
-
-.campfire__preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  background: rgb(215 169 75 / 0.08);
-}
-
-.campfire__preview-label {
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--gold);
-}
-
-.campfire__preview .card--unplayable {
-  filter: none;
 }
 
 /* ---------- non-combat rooms ---------- */
@@ -4767,7 +4740,7 @@ button.pile:hover { filter: brightness(1.15); }
   position: absolute;
   z-index: 8;
   left: clamp(0.75rem, 2vw, 2rem);
-  bottom: 2.8rem;
+  bottom: 4.1rem;
   width: 4.25rem;
   height: 4.25rem;
   border: 3px solid #7b3122;
@@ -4799,7 +4772,10 @@ button.pile:hover { filter: brightness(1.15); }
   text-shadow: 0 2px 2px #000;
 }
 
-.pile[data-pile='draw'] { left: clamp(6.5rem, 8vw, 8rem); }
+.pile[data-pile='draw'] {
+  left: clamp(0.75rem, 2vw, 2rem);
+  bottom: 0.6rem;
+}
 
 .hand-area .pile-group {
   position: absolute;
@@ -4895,7 +4871,7 @@ button.pile:hover { filter: brightness(1.15); }
   }
 
   .pip--energy {
-    bottom: 1.9rem;
+    bottom: 4rem;
     width: 3.4rem;
     height: 3.4rem;
   }

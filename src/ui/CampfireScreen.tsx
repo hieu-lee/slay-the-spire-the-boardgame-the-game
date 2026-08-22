@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { cardDef, faceOf } from '../game/cards.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
@@ -33,7 +32,6 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const upgradable = player?.deck.filter(canUpgradeCard) ?? []
   const restBlocked = coffee || !restAllowed
   const blocked = restBlocked && (hammer || upgradable.length === 0)
-  const chosenCard = upgradable.find((card) => card.uid === decision?.cardUid)
   const settled = living.every((player) => {
     const decision = decisions[player.id]
     if (!decision) return false
@@ -83,7 +81,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                 </button>
           </div>
 
-          {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck">
+          {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck campfire__deck--remove">
                 {player.deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card}
                   selected={decision.removeCardUid === card.uid}
                   onClick={() => setDecisions((current) => ({ ...current, [player.id]: {
@@ -91,38 +89,21 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                   } }))} />)}
               </div> : null}
 
-          {decision?.choice === 'smith' ? (
-                <>
-                  <div className="campfire__deck">
-                    {upgradable.map((card) => (
-                      <Card
-                        key={card.uid}
-                        card={card}
-                        selected={decision.cardUid === card.uid}
-                        onClick={() =>
-                          setDecisions((current) => ({
-                            ...current,
-                            [player.id]: { choice: 'smith', cardUid: card.uid },
-                          }))
-                        }
-                      />
-                    ))}
-                  </div>
-
-                  {/* The upgraded face gets its own panel rather than replacing
-                      the card in the list, where swapping it in place read as
-                      "this card was always upgraded". */}
-                  {chosenCard ? (
-                    <div className="campfire__preview">
-                      <span className="campfire__preview-label">Becomes</span>
-                      <Card card={{ ...chosenCard, upgraded: true }} playable={false} />
-                      <span className="campfire__picked">
-                        {faceOf(cardDef(chosenCard.defId), true).name}
-                      </span>
-                    </div>
-                  ) : null}
-                </>
-          ) : null}
+          {decision?.choice === 'smith' ? <div className="campfire__deck campfire__deck--smith">
+            {upgradable.map((card) => (
+              <Card
+                key={card.uid}
+                card={card}
+                selected={decision.cardUid === card.uid}
+                onClick={() =>
+                  setDecisions((current) => ({
+                    ...current,
+                    [player.id]: { choice: 'smith', cardUid: card.uid },
+                  }))
+                }
+              />
+            ))}
+          </div> : null}
         </div> : null}
       </div>
 
