@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { assetPath } from '../game/assets.ts'
 import { enemyDef } from '../game/enemies.ts'
 import type { CombatSfxRecipe } from './combat-sfx.ts'
 import { currentSfxVolume, SFX_STORAGE_KEY } from './game-settings.ts'
@@ -6,27 +7,27 @@ import { currentSfxVolume, SFX_STORAGE_KEY } from './game-settings.ts'
 export { SFX_STORAGE_KEY }
 
 const SOUNDS = {
-  ui: '/assets/sfx/ui.ogg',
-  card: '/assets/sfx/card.ogg',
-  draw: '/assets/sfx/draw.ogg',
-  attack: '/assets/sfx/attack.ogg',
-  magic: '/assets/sfx/magic.ogg',
-  enemy: '/assets/sfx/enemy-hit.ogg',
-  hurt: '/assets/sfx/player-hit.ogg',
-  block: '/assets/sfx/block.ogg',
-  heal: '/assets/sfx/heal.ogg',
-  weak: '/assets/sfx/weak.ogg',
-  win: '/assets/sfx/victory.ogg',
-  lose: '/assets/sfx/defeat.ogg',
+  ui: assetPath('sfx/ui.ogg'),
+  card: assetPath('sfx/card.ogg'),
+  draw: assetPath('sfx/draw.ogg'),
+  attack: assetPath('sfx/attack.ogg'),
+  magic: assetPath('sfx/magic.ogg'),
+  enemy: assetPath('sfx/enemy-hit.ogg'),
+  hurt: assetPath('sfx/player-hit.ogg'),
+  block: assetPath('sfx/block.ogg'),
+  heal: assetPath('sfx/heal.ogg'),
+  weak: assetPath('sfx/weak.ogg'),
+  win: assetPath('sfx/victory.ogg'),
+  lose: assetPath('sfx/defeat.ogg'),
 } as const
 
 type Sound = keyof typeof SOUNDS
 
 const BOSS_TRACKS = {
-  1: '/assets/bgm/the-guardian-emerges.mp3',
-  2: '/assets/bgm/battle-with-the-champ.mp3',
-  3: '/assets/bgm/the-awakened-one.mp3',
-  4: '/assets/bgm/the-heart.mp3',
+  1: assetPath('bgm/the-guardian-emerges.mp3'),
+  2: assetPath('bgm/battle-with-the-champ.mp3'),
+  3: assetPath('bgm/the-awakened-one.mp3'),
+  4: assetPath('bgm/the-heart.mp3'),
 } as const
 
 type BossCombat = { phase: string; enemies: readonly { defId: string; ascension?: number; isBoss: boolean }[] }

@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { cardImagePath, enemyImagePath } from '../game/assets.ts'
+import { assetPath, cardImagePath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
@@ -369,7 +369,7 @@ export function EnemyCard({
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
-        ...(def.bossAct ? { backgroundImage: `linear-gradient(rgb(14 12 10 / 0.72), rgb(14 12 10 / 0.88)), url(/assets/backgrounds/boss-act-${def.bossAct}.webp)` } : {}),
+        ...(def.bossAct ? { backgroundImage: `linear-gradient(rgb(14 12 10 / 0.72), rgb(14 12 10 / 0.88)), url(${assetPath(`backgrounds/boss-act-${def.bossAct}.webp`)})` } : {}),
       } as CSSProperties}
       disabled={enemy.dead || disabled}
       onClick={() => { if (!enemy.dead) onClick?.(enemy) }}

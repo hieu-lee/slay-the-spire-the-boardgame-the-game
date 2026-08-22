@@ -7,9 +7,12 @@ import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
 
+/** Public asset URL under Vite's current deployment base. */
+export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
+
 /** Where the sync script writes, and where the client reads from. */
-export const CARD_ASSET_ROOT = '/assets/cards'
-export const CARD_ART_ROOT = '/assets/card-art'
+export const CARD_ASSET_ROOT = assetPath('cards')
+export const CARD_ART_ROOT = assetPath('card-art')
 
 const POOL_TIERS: Record<string, string> = {
   colorless: 'colourless',
@@ -34,8 +37,8 @@ export function potionCardImagePath(def: PotionDef): string {
   return `${CARD_ASSET_ROOT}/potions__${name}.webp`
 }
 
-export const relicIconPath = (id: string) => `/assets/relic-icons/${id}.png`
-export const potionIconPath = (id: string) => `/assets/potion-icons/${id}.png`
+export const relicIconPath = (id: string) => assetPath(`relic-icons/${id}.png`)
+export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
 /**
  * The tier directory a card's scan lives in. Player cards are filed by rarity:
@@ -73,5 +76,5 @@ export function cardArtPath(def: CardDef): string {
 
 export function enemyImagePath(def: EnemyDef): string {
   const artId = def.artId ?? def.id
-  return `/assets/combat/enemies/${artId}.webp`
+  return assetPath(`combat/enemies/${artId}.webp`)
 }

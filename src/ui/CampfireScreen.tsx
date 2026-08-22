@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
@@ -58,7 +59,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'rest' } }))
                   }
                 >
-                  <img src="/assets/noncombat/campfire/rest.webp" alt="" />
+                  <img src={assetPath('noncombat/campfire/rest.webp')} alt="" />
                   <strong>Rest</strong>
                   <span className="muted"> +{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
@@ -75,7 +76,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                     setDecisions((current) => ({ ...current, [player.id]: { choice: 'smith' } }))
                   }
                 >
-                  <img src="/assets/noncombat/campfire/smith.webp" alt="" />
+                  <img src={assetPath('noncombat/campfire/smith.webp')} alt="" />
                   <strong>Smith</strong>
                   <span className="muted"> upgrade</span>
                 </button>
@@ -119,7 +120,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
             aria-pressed={seat.id === player?.id}
             onClick={() => setFocusedId(seat.id)}
           >
-            <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
+            <img src={assetPath(`noncombat/campfire/${seat.character}-back.webp`)} alt="" />
           </button>
         })}
       </div>

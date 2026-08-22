@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
+
+const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 
 type StartMenuProps = {
   characters: readonly CharacterId[]
@@ -20,7 +23,7 @@ type StartMenuProps = {
   onCustomModifier: (id: DailyModifierId, enabled: boolean) => void
   onQuickStartAct: (act: 1 | 2 | 3 | 4) => void
   onStart: () => void
-  onOnline: () => void
+  onOnline?: () => void
   onCompendium: () => void
   onAchievements: () => void
   settings: GameSettings
@@ -84,8 +87,9 @@ export function StartMenu({
         <button type="button" aria-label="Single Player" data-selected={selection === 'Single Player'}
           onFocus={() => setSelection('Single Player')} onMouseEnter={() => setSelection('Single Player')}
           onClick={() => setChoosingCharacter(true)}>Single Player</button>
-        <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
+        {!SINGLE_PLAYER_ONLY && onOnline ? <button type="button" aria-label="Play online" data-selected={selection === 'Multiplayer'}
           onFocus={() => setSelection('Multiplayer')} onMouseEnter={() => setSelection('Multiplayer')} onClick={onOnline}>Multiplayer</button>
+          : null}
         <button type="button" aria-label="Compendium" data-selected={selection === 'Compendium'}
           onFocus={() => setSelection('Compendium')} onMouseEnter={() => setSelection('Compendium')} onClick={onCompendium}>Compendium</button>
         <button type="button" aria-label="Achievements" data-selected={selection === 'Achievements'}
@@ -100,12 +104,12 @@ export function StartMenu({
           <p>{HERO_COPY[hero.id]}</p>
           <small>Ascension {ascension}</small>
         </div>
-        <img className="start-menu__character-hero" src={`/assets/combat/characters/${hero.id}.webp`} alt={hero.name} />
+        <img className="start-menu__character-hero" src={assetPath(`combat/characters/${hero.id}.webp`)} alt={hero.name} />
         <div className="start-menu__character-roster" aria-label="Characters">
           {HEROES.map((candidate) => <button type="button" key={candidate.id}
             aria-label={candidate.name} aria-pressed={candidate.id === hero.id}
             onClick={() => onCharacter(0, candidate.id)}>
-            <img src={`/assets/combat/characters/${candidate.id}.webp`} alt="" />
+            <img src={assetPath(`combat/characters/${candidate.id}.webp`)} alt="" />
             <span>{candidate.name}</span>
           </button>)}
         </div>
@@ -140,7 +144,7 @@ export function StartMenu({
           {characters.slice(0, 1).map((character, seat) => {
             const hero = HEROES.find((candidate) => candidate.id === character) ?? HEROES[0]!
             return <label key={seat} title={`Player ${seat + 1}: ${hero.name}`}>
-              <img src={`/assets/combat/characters/${hero.id}.webp`} alt="" />
+              <img src={assetPath(`combat/characters/${hero.id}.webp`)} alt="" />
               <span>P{seat + 1}</span>
               <select aria-label={`Player ${seat + 1} character`} value={character}
                 onChange={(event) => onCharacter(seat, event.target.value as CharacterId)}>

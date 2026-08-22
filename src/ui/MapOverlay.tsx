@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import type { SpireMap } from '../game/map.ts'
 import { MapScreen } from './MapScreen.tsx'
 
@@ -37,7 +38,7 @@ export function MapOverlay({ map, act, bossDefId }: MapOverlayProps) {
   return (
     <>
       <button className="map-peek__open" type="button" aria-label="Map" onClick={() => setOpen(true)}>
-        <img src="/assets/menu/map-scroll.png" alt="" />
+        <img src={assetPath('menu/map-scroll.png')} alt="" />
       </button>
       <dialog className="map-peek" ref={dialogRef} onClose={() => setOpen(false)} aria-label={`Act ${act} map`}>
         <div className="map-peek__panel">

@@ -1,0 +1,55 @@
+name: Deploy single-player game
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/single-player-pages.yml
+      - index.html
+      - package.json
+      - pnpm-lock.yaml
+      - public/**
+      - scripts/check-single-player-build.mjs
+      - src/**
+      - tsconfig.json
+      - vite.config.ts
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: single-player-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          VITE_SINGLE_PLAYER: "true"
+      - run: pnpm verify:single-player-build
+      - name: Sync single-player branch
+        run: git push origin HEAD:refs/heads/hieu-lee/single-player-master
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

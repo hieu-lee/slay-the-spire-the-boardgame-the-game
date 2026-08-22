@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CARDS } from "../game/cards.ts";
+import { assetPath } from "../game/assets.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
 import type { EventDecision, EventRoomState } from "../game/event-room.ts";
 import type {
@@ -100,7 +101,7 @@ function Price({ value, sale = false }: { value: number | null; sale?: boolean }
   return (
     <span className={`room-price${sale ? " room-price--sale" : ""}`}>
       {value === null ? "Sold" : <>{sale ? <span className="room-price__sale-mark" aria-hidden="true">%</span> : null}
-        <img src="/assets/relic-icons/old_coin.png" alt="" />{value}
+        <img src={assetPath("relic-icons/old_coin.png")} alt="" />{value}
         <span className="visually-hidden"> Gold{sale ? ", on sale" : ""}</span></>}
     </span>
   );
@@ -289,7 +290,7 @@ function MerchantScreen({
           <div className="merchant-arrival__party" aria-label="Party at the merchant">
             {eligiblePlayers.map((candidate) => (
               <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
-                <img src={`/assets/noncombat/merchant/characters/${candidate.character}-standing.webp`} alt="" />
+                <img src={assetPath(`noncombat/merchant/characters/${candidate.character}-standing.webp`)} alt="" />
               </figure>
             ))}
           </div>
@@ -298,7 +299,7 @@ function MerchantScreen({
             if (onResumeMerchant) onResumeMerchant();
             else if (ready.includes(player.id)) setLocalReady((current) => current.filter((id) => id !== player.id));
           }} aria-label="Enter merchant shop">
-            <img src="/assets/noncombat/merchant/merchant-seated.webp" alt="The Merchant sits behind a spread of wares" />
+            <img src={assetPath("noncombat/merchant/merchant-seated.webp")} alt="The Merchant sits behind a spread of wares" />
           </button>
         </div>
         <div className="merchant-arrival__title">
@@ -518,7 +519,7 @@ function MerchantScreen({
           </button>
         </div>
       </div>
-      {point ? <img key={point.key} className="merchant-hand" src="/assets/noncombat/merchant/merchant-hand.webp" alt="" aria-hidden="true"
+      {point ? <img key={point.key} className="merchant-hand" src={assetPath("noncombat/merchant/merchant-hand.webp")} alt="" aria-hidden="true"
         style={{ "--merchant-point-x": `${point.x}px`, "--merchant-point-y": `${point.y}px`, "--merchant-point-angle": `${point.angle}deg` } as CSSProperties} /> : null}
       <dialog ref={potionReplacementDialog} className="choice-modal merchant-potion-dialog" aria-labelledby="merchant-potion-title"
         onCancel={(event) => { event.preventDefault(); setPotionReplacementSlot(null); setDiscardPotionId(""); }}>
@@ -704,7 +705,7 @@ function EventScreen({
   // The Compendium overlay can replay effects; only a real Event-stage change clears its draft.
   const draftStages = useRef<Record<string, string>>({});
   const rewardOffers = room.rewardOffers?.[player.id];
-  const eventArt = { "--event-art": `url('/assets/noncombat/events/${room.card.id}.webp')` } as CSSProperties;
+  const eventArt = { "--event-art": `url('${assetPath(`noncombat/events/${room.card.id}.webp`)}')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
   const pendingDecision = room.pendingDecisions?.[player.id];

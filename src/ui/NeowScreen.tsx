@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { assetPath } from '../game/assets.ts'
 import { cardDef } from '../game/cards.ts'
 import type { NeowCard, NeowDecision, NeowImmediateReward, NeowPlayerState, NeowRewardOffer } from '../game/neow.ts'
 import { neowCard } from '../game/neow.ts'
@@ -160,8 +161,8 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
   return <section className="neow-screen" aria-labelledby="neow-title">
-    <img className="neow-screen__neow" src="/assets/neow/neow.webp" alt="Neow" />
-    <img className="neow-screen__hero" src={`/assets/combat/characters/${viewer.character}.webp`} alt={viewer.name} />
+    <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" />
+    <img className="neow-screen__hero" src={assetPath(`combat/characters/${viewer.character}.webp`)} alt={viewer.name} />
     <header className="neow-screen__header">
       <h2 id="neow-title">Neow’s Blessing</h2>
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>

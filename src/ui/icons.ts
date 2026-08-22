@@ -1,6 +1,8 @@
 // Icon names and helpers, kept free of JSX so the verify scripts can import
 // them directly through Node's type stripping, which cannot parse .tsx.
 
+import { assetPath } from '../game/assets.ts'
+
 export type IconName =
   | 'attack'
   | 'block'
@@ -76,5 +78,5 @@ export function dieIcon(value: number): IconName {
   return `die${face}` as IconName
 }
 
-export const iconPath = (name: IconName): string => `/assets/icons/${name}.png`
-export const statusIconPath = (name: StatusIconName): string => `/assets/status-icons/${name}.png`
+export const iconPath = (name: IconName): string => assetPath(`icons/${name}.png`)
+export const statusIconPath = (name: StatusIconName): string => assetPath(`status-icons/${name}.png`)

@@ -3,7 +3,7 @@ import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { Amount, CardDef, Effect } from '../game/cards.ts'
-import { cardImagePath } from '../game/assets.ts'
+import { assetPath, cardImagePath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
@@ -287,7 +287,7 @@ export function PowerGlyph({ def }: { def: CardDef }) {
   return (
     <img
       className="icon icon--status"
-      src={POWER_ICONS.has(def.id) ? `/assets/power-icons/${def.id}.png` : statusIconPath(fallback)}
+      src={POWER_ICONS.has(def.id) ? assetPath(`power-icons/${def.id}.png`) : statusIconPath(fallback)}
       width="22"
       height="22"
       alt=""

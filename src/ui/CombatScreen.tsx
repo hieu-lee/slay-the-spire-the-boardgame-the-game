@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
-import { potionIconPath, relicIconPath } from '../game/assets.ts'
+import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
 import type { CardDef, Effect } from '../game/cards.ts'
 import {
   activatePower,
@@ -4154,7 +4154,7 @@ export function CombatScreen({
                         ) : null}
                         <img
                           key={`${occupant.character}-${characterAttack?.active.event.seq ?? latestActorVfx?.event.seq ?? 'idle'}`}
-                          src={`/assets/combat/characters/${occupant.character}.webp`}
+                          src={assetPath(`combat/characters/${occupant.character}.webp`)}
                           data-vfx-seq={latestActorVfx?.event.seq}
                           alt=""
                           onError={(event) => { event.currentTarget.style.display = 'none' }}
@@ -4173,25 +4173,25 @@ export function CombatScreen({
                             {occupant.character === 'ironclad' ? (
                               <>
                                 <span className="character-attack__pose character-attack__pose--ironclad-ready">
-                                  <img src="/assets/combat/characters/ironclad-ready.webp" alt="" />
+                                  <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
                                 </span>
                                 <span className="character-attack__pose character-attack__pose--ironclad-impact">
-                                  <img src="/assets/combat/characters/ironclad-impact.webp" alt="" />
+                                  <img src={assetPath('combat/characters/ironclad-impact.webp')} alt="" />
                                 </span>
                               </>
                             ) : null}
                             {occupant.character === 'silent' ? (
                               <span className="character-attack__pose character-attack__pose--silent-throw">
-                                <img src="/assets/combat/characters/silent-throw.webp" alt="" />
+                                <img src={assetPath('combat/characters/silent-throw.webp')} alt="" />
                               </span>
                             ) : null}
                             {occupant.character === 'watcher' ? (
                               <>
                                 <span className="character-attack__pose character-attack__pose--watcher-ready">
-                                  <img src="/assets/combat/characters/watcher-ready.webp" alt="" />
+                                  <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
                                 </span>
                                 <span className="character-attack__pose character-attack__pose--watcher-thrust">
-                                  <img src="/assets/combat/characters/watcher-thrust.webp" alt="" />
+                                  <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
                                 </span>
                                 <span className="character-attack__thrust" />
                               </>
@@ -4395,7 +4395,7 @@ export function CombatScreen({
           <span className={['pile', motionActive.has('draw')
             ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}
             data-pile="draw" title="Draw pile">
-            <img className="pile__stack" src="/assets/combat/piles/draw.webp" alt="" />
+            <img className="pile__stack" src={assetPath('combat/piles/draw.webp')} alt="" />
             <span className="pile__count" aria-hidden="true">{displayedPileCount('draw', drawPileCount)}</span>
             <span className="visually-hidden">Draw pile, {drawCount ?? viewer.draw.length} cards</span>
           </span>
@@ -4407,7 +4407,7 @@ export function CombatScreen({
               <CardCollectionOverlay key={kind} cards={cards} label={label} dataPile={kind}
                 triggerClassName={['pile', motionActive.has(kind)
                   ? `motion-pulse-${motionBeats[kind] % 2}` : ''].filter(Boolean).join(' ')}>
-                <img className="pile__stack" src={`/assets/combat/piles/${kind}.webp`} alt="" />
+                <img className="pile__stack" src={assetPath(`combat/piles/${kind}.webp`)} alt="" />
                 <span className="pile__count" aria-hidden="true">{displayedPileCount(kind, cards.length)}</span>
               </CardCollectionOverlay>
             ))}

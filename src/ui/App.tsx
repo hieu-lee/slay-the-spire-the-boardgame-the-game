@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { CombatState } from '../game/combat.ts'
+import { assetPath } from '../game/assets.ts'
 import {
   advanceAct,
   advanceQuickSetup,
@@ -82,8 +83,9 @@ import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
 import type { GameSettings } from './game-settings.ts'
 
+const SINGLE_PLAYER_ONLY = import.meta.env.VITE_SINGLE_PLAYER === 'true'
 const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
-const OnlineGame = lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
+const OnlineGame = SINGLE_PLAYER_ONLY ? null : lazy(() => import('./OnlineGame.tsx').then((module) => ({ default: module.OnlineGame })))
 const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
 const AchievementsScreen = lazy(() => import('./AchievementsScreen.tsx').then((module) => ({ default: module.AchievementsScreen })))
 
@@ -135,17 +137,17 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 }
 
 export function App() {
-  const [online, setOnline] = useState(hasRoomSession)
+  const [online, setOnline] = useState(() => !SINGLE_PLAYER_ONLY && hasRoomSession())
   const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
   useEffect(() => settings.sfxVolume > 0 ? installSoundEffects() : undefined, [settings.sfxVolume])
   return (
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       <div className="game-mode" hidden={online}>
-        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={() => setOnline(true)}
+        <LocalGame open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
           settings={settings} onSettings={setSettings} active={!online} />
       </div>
-      {online ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
+      {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
     </Suspense>
   )
 }
@@ -154,7 +156,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   open: boolean
   onOpen: () => void
   onClose: () => void
-  onOnline: () => void
+  onOnline?: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
   active: boolean
@@ -369,7 +371,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </div>
         {viewer ? (
           <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
-            <img src="/assets/menu/current-deck.webp" alt="" />
+            <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>
         ) : null}
@@ -378,7 +380,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         ) : null}
         <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
           onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
-          <img src="/assets/menu/settings-cog.png" alt="" />
+          <img src={assetPath('menu/settings-cog.png')} alt="" />
         </button>
       </header>
 

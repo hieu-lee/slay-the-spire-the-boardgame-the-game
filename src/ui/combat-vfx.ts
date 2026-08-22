@@ -1,4 +1,5 @@
 import { CARDS, faceOf, type CardDef, type Effect } from '../game/cards.ts'
+import { assetPath } from '../game/assets.ts'
 import { POTIONS } from '../game/relics.ts'
 import type { CharacterId } from '../game/types.ts'
 
@@ -236,5 +237,5 @@ export function potionVfxRecipe(potionId: string): VfxRecipe {
 }
 
 export function vfxAssetPath(recipe: Pick<VfxRecipe, 'asset'>): string {
-  return `/assets/combat/vfx/actions/${recipe.asset}.webp`
+  return assetPath(`combat/vfx/actions/${recipe.asset}.webp`)
 }

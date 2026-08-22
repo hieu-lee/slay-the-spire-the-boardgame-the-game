@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  base: process.env.VITE_SINGLE_PLAYER === 'true' ? './' : '/',
   plugins: [react()],
   server: {
     // Vite 7 rejects requests whose Host header it does not recognise, which
