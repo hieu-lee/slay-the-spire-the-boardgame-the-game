@@ -13,6 +13,7 @@ import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
+import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
@@ -510,6 +511,12 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         </div>
         <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
           volume={settings.voiceVolume} compact />
+        {viewer?.deck ? (
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
+            <img src="/assets/menu/current-deck.webp" alt="" />
+            <span aria-hidden="true">{viewer.deck.length}</span>
+          </CardCollectionOverlay>
+        ) : null}
         {run.phase !== 'map' && run.phase !== 'setup' ? (
           <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}

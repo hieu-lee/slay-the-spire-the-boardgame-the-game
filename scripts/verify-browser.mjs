@@ -1774,6 +1774,16 @@ if (originalViewport) await page.setViewportSize(originalViewport)
 // The map, read from inside a fight. This is where a party decides what its
 // deck is FOR, so the act's boss has to be legible without leaving the combat.
 const bossDuringCombat = (await readRun()).actBossDefId
+const deckButton = await page.getByRole('button', { name: /^Current deck,/ }).evaluate((button) => {
+  const icon = button.querySelector('img')
+  const style = getComputedStyle(button)
+  return {
+    source: icon?.getAttribute('src'),
+    loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0,
+    border: style.borderWidth,
+    background: style.backgroundImage,
+  }
+})
 const mapButtonIcon = await page.getByRole('button', { name: 'Map' }).locator('img').evaluate((image) => ({
   source: image.getAttribute('src'), loaded: image.complete && image.naturalWidth > 0,
 }))
@@ -1785,9 +1795,14 @@ const mapButtonPlacement = await page.evaluate(() => {
 })
 const settingsButton = await page.locator('.game-settings').evaluate((summary) => {
   const icon = summary.querySelector('img')
-  return { label: summary.getAttribute('aria-label'), text: summary.textContent?.trim(), source: icon?.getAttribute('src'), loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0 }
+  const style = getComputedStyle(summary)
+  return { label: summary.getAttribute('aria-label'), text: summary.textContent?.trim(), source: icon?.getAttribute('src'), loaded: icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0, border: style.borderWidth, background: style.backgroundImage }
 })
-check('the combat map button uses the map-scroll icon', () => {
+check('the combat header uses icon-only deck, map, and settings controls', () => {
+  assertEqual(deckButton.source, '/assets/menu/current-deck.webp')
+  assert(deckButton.loaded, 'the current-deck icon did not load')
+  assertEqual(deckButton.border, '0px')
+  assertEqual(deckButton.background, 'none')
   assertEqual(mapButtonIcon.source, '/assets/menu/map-scroll.png')
   assert(mapButtonIcon.loaded, 'the map-scroll icon did not load')
   assertEqual(mapButtonBackground, 'none')
@@ -1797,7 +1812,17 @@ check('the combat map button uses the map-scroll icon', () => {
   assertEqual(settingsButton.text, '')
   assertEqual(settingsButton.source, '/assets/menu/settings-cog.png')
   assert(settingsButton.loaded, 'the settings-cog icon did not load')
+  assertEqual(settingsButton.border, '0px')
+  assertEqual(settingsButton.background, 'none')
 })
+await page.getByRole('button', { name: /^Current deck,/ }).click()
+const currentDeckDialog = page.getByRole('dialog', { name: 'Current deck' })
+await currentDeckDialog.waitFor()
+const currentDeckCardCount = await currentDeckDialog.locator('.card').count()
+check('the current-deck control opens the read-only card viewer', () => {
+  assert(currentDeckCardCount > 0, 'the current deck rendered no cards')
+})
+await currentDeckDialog.getByRole('button', { name: 'Close' }).click()
 await page.getByRole('button', { name: 'Map' }).click()
 await page.locator('.map-peek[open] .room').first().waitFor()
 const peekBossNode = page.locator('.map-peek .room--boss').first()
@@ -5833,6 +5858,15 @@ check('Fiend Fire+ Exhausts the whole hand and lands a separate Strength-modifie
   assertEqual(fiendFire.players[0].block, 4)
   assertEqual(fiendFire.players[0].energy, 2)
 })
+await page.locator('[data-pile="exhaust"]').click()
+const exhaustPileDialog = page.getByRole('dialog', { name: 'Exhaust pile' })
+await exhaustPileDialog.waitFor()
+const exhaustedCardTitles = await exhaustPileDialog.locator('.card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('title')))
+check('the Exhaust pile opens the same read-only card viewer', () => {
+  assertDeepEqual(exhaustedCardTitles, ['Strike', 'Sentinel', 'Fiend Fire+'])
+})
+await exhaustPileDialog.getByRole('button', { name: 'Close' }).click()
 await shot('06zj-fiend-fire-resolved')
 
 await page.evaluate(() => {
@@ -6329,12 +6363,17 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].ener
 await page.getByRole('button', { name: /^Streamline\+, cost 0,/ }).click()
 await page.locator('.enemy').first().click()
 const discountedPlay = await readState()
-const discountedDiscardTop = await page.locator('.pile__top').filter({ hasText: 'Streamline+' }).textContent()
+await page.locator('[data-pile="discard"]').click()
+const discardPileDialog = page.getByRole('dialog', { name: 'Discard pile' })
+await discardPileDialog.waitFor()
+const discountedDiscardTitles = await discardPileDialog.locator('.card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('title')))
 check('discounted attacks spend their current cost and still resolve', () => {
   assertEqual(discountedPlay.players[0].energy, 0)
   assertEqual(discountedPlay.players[0].hand.length, 0)
-  assertEqual(discountedDiscardTop, '0 · Streamline+')
+  assertEqual(discountedDiscardTitles.at(-1), 'Streamline+')
 })
+await discardPileDialog.getByRole('button', { name: 'Close' }).click()
 await shot('07g-power-discounted-attacks')
 
 await page.evaluate(() => {
@@ -9981,6 +10020,16 @@ check('the energy count is readable on its disc', () => {
     `the energy count and icon are ${energyContrast.pairCenterOffset}px off-centre`)
 })
 
+const energyDrawGap = await page.evaluate(() => {
+  const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
+  const draw = document.querySelector('[data-pile="draw"]')?.getBoundingClientRect()
+  return energy && draw ? draw.left - energy.right : null
+})
+check('the draw pile does not clip the energy orb', () => {
+  assert(energyDrawGap !== null, 'expected the energy and draw controls')
+  assert(energyDrawGap >= 8, `the draw pile has only ${energyDrawGap}px clearance from energy`)
+})
+
 // Four players is the maximum the box supports and the layout most likely to
 // break, so it gets its own capture.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'four-player'))
@@ -10724,21 +10773,20 @@ check('Retain cards are excluded from the top-discard choice', () => {
 await page.getByLabel('Top discard for Ironclad').selectOption('end-deflect')
 await confirmAllDiscards()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'enemy')
-await page.waitForFunction(() => document.querySelector('.pile__top')?.textContent?.includes('Deflect'))
-const compactPileTop = await page.locator('.pile__top').first().evaluate((element) => {
+const compactDiscardPile = await page.locator('[data-pile="discard"]').evaluate((element) => {
   const box = element.getBoundingClientRect()
   return {
-    text: element.textContent ?? '',
     visible: box.width > 0 && box.height > 0,
     onScreen: box.left >= 0 && box.right <= window.innerWidth,
+    namedTopCardCount: document.querySelectorAll('.pile__top').length,
   }
 })
-check('the top discard card and cost are visible on minimum desktop screens', () => {
-  assert(compactPileTop.visible, 'the top card should be painted')
-  assert(compactPileTop.onScreen, 'the top card should fit on screen')
-  assert(/0 · Deflect/.test(compactPileTop.text), `expected Deflect and its cost, got ${compactPileTop.text}`)
+check('compact pile icons fit without painting a clipping-prone card name', () => {
+  assert(compactDiscardPile.visible, 'the discard pile should be painted')
+  assert(compactDiscardPile.onScreen, 'the discard pile should fit on screen')
+  assertEqual(compactDiscardPile.namedTopCardCount, 0)
 })
-await shot('15-compact-desktop-discard-top')
+await shot('15-compact-desktop-discard-pile')
 
 // A card keeps its uid when it cycles through the deck. A top-card choice from
 // one turn must not silently select that same card when it comes back later.

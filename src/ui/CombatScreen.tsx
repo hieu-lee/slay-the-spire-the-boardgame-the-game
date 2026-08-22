@@ -91,6 +91,7 @@ import {
   stageScaleFor,
 } from './board-signals.ts'
 import { playCombatSound, playSoundEffect } from './sfx.ts'
+import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 
 type CombatScreenProps = {
   state: CombatState
@@ -462,19 +463,6 @@ function cardShivsOnPlay(def: CardDef, discarded = 0): number {
   return def.type === 'power' && def.trigger && def.resolvesOnPlay !== true
     ? 0
     : gainedShivs(def.effects, discarded)
-}
-
-/**
- * The name and cost of the card on top of a face-up pile.
- *
- * The end of the array is the top: piles are stored bottom-first, and the most
- * recently discarded card is the one a card like Steam Barrier reads.
- */
-function topOf(pile: readonly CardInstance[], powers: readonly CardInstance[], lostHpThisCombat: boolean): string | null {
-  const top = pile.at(-1)
-  if (!top) return null
-  const def = faceOf(cardDef(top.defId), top.upgraded)
-  return `${def.unplayable ? '—' : cardCost(def, powers, lostHpThisCombat)} · ${def.name}`
 }
 
 /** Rows are the board's spatial unit: one per player, enemies sit in them. */
@@ -4282,39 +4270,26 @@ export function CombatScreen({
           ].filter(Boolean).join(' ')} title="Energy">
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
-          {/* The piles read as stacks of cards with a count, not as three
-              labelled fields. Their names live in the tooltip and the label. */}
-          {/* A hidden span rather than aria-label: `aria-label` is prohibited
-              on a generic role, so Chrome honoured it and other engines
-              dropped it — leaving the row announcing "3 Energy 5 0 0". */}
-          {(
-            [
-              ['draw', 'Draw pile', drawCount ?? viewer.draw.length, null],
-              // Both of these are face UP on the table, so their top card is
-              // public and worth naming. On the discard pile it is not even
-              // decoration: Steam Barrier's Block depends on what that card
-              // costs, and there was no way to tell in advance whether the card
-              // in hand was worth 1 Block or 2. The draw pile gets no such name
-              // -- it is face down to everyone, its owner included, which is
-              // why the room layer redacts it.
-              ['discard', 'Discard pile', viewer.discard.length, topOf(viewer.discard, viewer.powers, viewer.lostHpThisCombat)],
-              ['exhaust', 'Exhaust pile', viewer.exhaust.length, topOf(viewer.exhaust, viewer.powers, viewer.lostHpThisCombat)],
-            ] as const
-          ).map(([kind, label, count, top]) => (
-            <span className={[
-              'pile',
-              motionActive.has(kind) ? `motion-pulse-${motionBeats[kind] % 2}` : '',
-            ].filter(Boolean).join(' ')} data-pile={kind} key={kind} title={top ? `${label} — ${top} on top` : label}>
-              <span className={`pile__stack pile__stack--${kind}`} aria-hidden="true" />
-              <span className="pile__count" aria-hidden="true">
-                {count}
-              </span>
-              {top ? <span className="pile__top" aria-hidden="true">{top}</span> : null}
-              <span className="visually-hidden">
-                {top ? `${label}, ${count}, ${top} on top` : `${label}, ${count}`}
-              </span>
-            </span>
-          ))}
+          <span className={['pile', motionActive.has('draw')
+            ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}
+            data-pile="draw" title="Draw pile">
+            <img className="pile__stack" src="/assets/combat/piles/draw.webp" alt="" />
+            <span className="pile__count" aria-hidden="true">{drawCount ?? viewer.draw.length}</span>
+            <span className="visually-hidden">Draw pile, {drawCount ?? viewer.draw.length} cards</span>
+          </span>
+          <span className="pile-group">
+            {([
+              ['discard', 'Discard pile', viewer.discard],
+              ['exhaust', 'Exhaust pile', viewer.exhaust],
+            ] as const).map(([kind, label, cards]) => (
+              <CardCollectionOverlay key={kind} cards={cards} label={label} dataPile={kind}
+                triggerClassName={['pile', motionActive.has(kind)
+                  ? `motion-pulse-${motionBeats[kind] % 2}` : ''].filter(Boolean).join(' ')}>
+                <img className="pile__stack" src={`/assets/combat/piles/${kind}.webp`} alt="" />
+                <span className="pile__count" aria-hidden="true">{cards.length}</span>
+              </CardCollectionOverlay>
+            ))}
+          </span>
         </div>
         {/* Fanned, the way a hand is actually held: each card tilted and
             lifted by its distance from the middle. The angle is set here

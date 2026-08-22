@@ -2332,64 +2332,49 @@ button:disabled {
 /* Each pile is a little stack of cards with a number on it — the same object
    it is on the table, rather than a labelled field. */
 .pile {
-  display: inline-flex;
+  position: relative;
+  display: inline-grid;
   align-items: center;
-  gap: 0.3rem;
+  min-width: 2.8rem;
+  min-height: 2.6rem;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--ink-dim);
+  cursor: default;
 }
 
 .pile__stack {
-  position: relative;
-  width: 15px;
-  height: 21px;
-  border-radius: 2px;
-  border: 1px solid rgb(214 176 96 / 0.5);
-  background: linear-gradient(160deg, rgb(72 58 44 / 0.95), rgb(30 24 20 / 0.95));
-  box-shadow:
-    2px -2px 0 -1px rgb(30 24 20 / 0.95),
-    2px -2px 0 rgb(214 176 96 / 0.35);
-}
-
-/* Shape, not just hue: face-down draw stack, face-up discard, a single spent
-   card for exhaust. Three identical rectangles in three shades of brown told
-   the player nothing. */
-.pile__stack--draw::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 1px;
-  border: 1px dashed rgb(214 176 96 / 0.45);
-}
-
-.pile__stack--discard {
-  border-color: rgb(160 120 80 / 0.6);
-  background: linear-gradient(160deg, rgb(120 92 64 / 0.95), rgb(58 44 32 / 0.95));
-  box-shadow:
-    2px -2px 0 -1px rgb(30 24 20 / 0.95),
-    2px -2px 0 rgb(160 120 80 / 0.35);
-}
-
-.pile__stack--exhaust {
-  border-color: rgb(120 100 96 / 0.5);
-  border-style: dashed;
-  background: linear-gradient(160deg, rgb(48 40 38 / 0.9), rgb(22 18 18 / 0.9));
-  box-shadow: none;
-  transform: rotate(-8deg);
+  grid-area: 1 / 1;
+  width: 2.55rem;
+  height: 2.55rem;
+  object-fit: contain;
 }
 
 .pile__count {
-  font-size: 0.9rem;
+  z-index: 1;
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: end;
+  min-width: 1.25rem;
+  padding: 0.02rem 0.22rem;
+  border-radius: 999px;
+  color: #fff7db;
+  background: #b43b25;
+  box-shadow: 0 1px 2px #000;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  line-height: 1.15;
+  text-align: center;
 }
 
-.pile__top {
-  max-width: 9rem;
-  overflow: hidden;
-  color: var(--ink-dim);
-  font-size: 0.68rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+button.pile { cursor: pointer; }
+button.pile:hover { filter: brightness(1.15); }
+
+.pile-group {
+  display: inline-flex;
+  gap: 0.9rem;
+  margin-left: 0.8rem;
 }
 
 /* A card sits in the fan at an angle set by its distance from the middle, and
@@ -4645,7 +4630,9 @@ button:disabled {
 
 .hand-area .card,
 .hand-area .pile,
-.hand-area .pip {
+.hand-area .pip,
+.hand-area .card-collection,
+.hand-area .card-collection button {
   pointer-events: auto;
 }
 
@@ -4703,9 +4690,20 @@ button:disabled {
   text-shadow: 0 2px 2px #000;
 }
 
-.pile:nth-child(2) { left: clamp(1rem, 2.3vw, 2.3rem); }
-.pile:nth-child(3) { right: clamp(4.2rem, 7vw, 7rem); }
-.pile:nth-child(4) { right: clamp(0.9rem, 2vw, 2rem); }
+.pile[data-pile='draw'] { left: clamp(6.5rem, 8vw, 8rem); }
+
+.hand-area .pile-group {
+  position: absolute;
+  z-index: 8;
+  right: clamp(0.9rem, 2vw, 2rem);
+  bottom: 1rem;
+  margin-left: 0;
+}
+
+.hand-area .pile-group .pile {
+  position: relative;
+  bottom: auto;
+}
 
 .hand {
   position: relative;
@@ -4801,8 +4799,7 @@ button:disabled {
     font-size: 0.8rem;
   }
 
-  .pile:nth-child(3) { right: 3.8rem; }
-  .pile:nth-child(4) { right: 0.6rem; }
+  .hand-area .pile-group { right: 0.6rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

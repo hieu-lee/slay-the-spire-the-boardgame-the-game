@@ -39,6 +39,7 @@ const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
 const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatActionVfxRoot = join(combatVfxRoot, 'actions')
+const combatPileRoot = join(publicRoot, 'assets/combat/piles')
 const combatStageRoot = join(publicRoot, 'assets/combat')
 const statusIconRoot = join(publicRoot, 'assets/status-icons')
 const powerIconRoot = join(publicRoot, 'assets/power-icons')
@@ -58,6 +59,7 @@ const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const combatActionVfxFiles = listing(combatActionVfxRoot, '.webp')
+const combatPileFiles = listing(combatPileRoot, '.webp')
 const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
 const relicIconFiles = listing(relicIconRoot, '.png')
@@ -358,6 +360,25 @@ print(json.dumps(faults))
   assert(pixelFaults.length === 0, `combat cutouts have opaque backgrounds:\n    ${pixelFaults.join('\n    ')}`)
 })
 
+check('combat pile and current-deck icons are high-resolution transparent images', () => {
+  assertDeepEqual(combatPileFiles.sort(), ['discard.webp', 'draw.webp', 'exhaust.webp'])
+  const files = [
+    ...combatPileFiles.map((file) => join(combatPileRoot, file)),
+    join(menuRoot, 'current-deck.webp'),
+  ]
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect pile icons')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded pile icon count')
+  for (const block of inspected) {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    const height = Number(block.match(/  Height: (\d+)/)?.[1])
+    assert(width >= 1000 && height >= 1000, `${file} is only ${width}x${height}`)
+    assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
+  }
+})
+
 check('combat animation effects are complete, transparent, and compact', () => {
   const expected = [
     'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
@@ -547,6 +568,7 @@ check('every artwork file fully decodes', () => {
     [combatEnemyRoot, 'webp', combatEnemyFiles.length],
     [combatCharacterRoot, 'webp', combatCharacterFiles.length],
     [combatVfxRoot, 'webp', combatVfxFiles.length],
+    [combatPileRoot, 'webp', combatPileFiles.length],
     [combatStageRoot, 'webp', existsSync(join(combatStageRoot, 'stage-act-1.webp')) ? 1 : 0],
     [iconRoot, 'png', iconFiles.length],
     [statusIconRoot, 'png', statusIconFiles.length],

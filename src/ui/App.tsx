@@ -57,6 +57,7 @@ import type { CampaignProgress } from '../game/campaign.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { MapScreen } from './MapScreen.tsx'
 import { MapOverlay } from './MapOverlay.tsx'
+import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
 import { relicDef } from '../game/relics.ts'
@@ -366,6 +367,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
             </>
           ) : null}
         </div>
+        {viewer ? (
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
+            <img src="/assets/menu/current-deck.webp" alt="" />
+            <span aria-hidden="true">{viewer.deck.length}</span>
+          </CardCollectionOverlay>
+        ) : null}
         {run.phase !== 'map' && run.phase !== 'setup' ? (
           <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
         ) : null}

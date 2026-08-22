@@ -2719,19 +2719,20 @@ try {
   liveRoom.run.combat.enemies = unloadRestore.enemies
 
   const onlineHeaderControls = await a.locator('.app-shell--online .app-shell__header').evaluate((header) =>
-    [...header.querySelectorAll(':scope > .voice button, :scope > .map-peek__open, :scope > .game-settings')]
-      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim()))
-  check('online run controls keep voice, map, and icon-only settings in the requested order', () => {
-    assertDeepEqual(onlineHeaderControls, ['Join voice', 'Map', 'Settings'])
+    [...header.querySelectorAll(':scope > .voice button, :scope > .deck-peek__open, :scope > .map-peek__open, :scope > .game-settings')]
+      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim())
+      .map((label) => label?.startsWith('Current deck,') ? 'Current deck' : label))
+  check('online run controls keep voice, deck, map, and icon-only settings in the requested order', () => {
+    assertDeepEqual(onlineHeaderControls, ['Join voice', 'Current deck', 'Map', 'Settings'])
   })
   await a.getByRole('button', { name: 'Join voice' }).click()
   await a.getByRole('button', { name: 'Leave voice' }).waitFor()
   const joinedOnlineHeaderControls = await a.locator('.app-shell--online .app-shell__header').evaluate((header) =>
-    [...header.querySelectorAll(':scope > .voice button, :scope > .map-peek__open, :scope > .game-settings')]
+    [...header.querySelectorAll(':scope > .voice button, :scope > .deck-peek__open, :scope > .map-peek__open, :scope > .game-settings')]
       .map((control) => control.getAttribute('aria-label') || control.textContent?.trim())
-      .map((label) => label?.startsWith('Leave voice,') ? 'Leave voice' : label))
-  check('joined online run controls add Leave voice and Mute ahead of Map and Settings', () => {
-    assertDeepEqual(joinedOnlineHeaderControls, ['Leave voice', 'Mute', 'Map', 'Settings'])
+      .map((label) => label?.startsWith('Leave voice,') ? 'Leave voice' : label?.startsWith('Current deck,') ? 'Current deck' : label))
+  check('joined online run controls add Leave voice and Mute ahead of deck, Map, and Settings', () => {
+    assertDeepEqual(joinedOnlineHeaderControls, ['Leave voice', 'Mute', 'Current deck', 'Map', 'Settings'])
   })
   await a.getByRole('button', { name: 'Leave voice' }).click()
 
