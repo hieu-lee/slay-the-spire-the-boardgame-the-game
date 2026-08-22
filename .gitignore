@@ -27,8 +27,7 @@ src/**/*.d.ts
 /*.webp
 artifacts/
 
-# Source-resolution card scans, rulebook icons, and enemy reference crops stay local.
-# Runtime enemy cutouts are bundled under public/assets/combat.
+# Source-resolution card scans and enemy reference crops stay local.
+# Runtime icons and enemy cutouts are bundled under public/assets.
 public/assets/cards-hd/
-public/assets/icons/
 public/assets/enemies/

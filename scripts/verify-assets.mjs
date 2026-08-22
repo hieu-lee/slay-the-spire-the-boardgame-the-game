@@ -2,9 +2,9 @@
 // every image path must be a safe, normalised browser path. A missing asset is
 // otherwise invisible until it renders as a broken box in a real game.
 //
-// Publisher card scans, rulebook icons, and reference crops remain optional
-// local syncs. Runtime illustrations and combat cutouts are committed and
-// required by the unconditional inventories below.
+// Publisher card scans and reference crops remain optional local syncs.
+// Runtime icons, illustrations, and combat cutouts are committed and required
+// by the unconditional inventories below.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -265,7 +265,6 @@ check('no stale card images linger from an older naming scheme', () => {
 })
 
 check('every icon the UI can render exists on disk', () => {
-  if (iconFiles.length === 0) return // not synced
   const missing = REQUIRED_ICONS.filter((name) => !iconFiles.includes(`${name}.png`))
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
 })
