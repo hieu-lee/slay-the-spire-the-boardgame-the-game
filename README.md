@@ -22,14 +22,14 @@ person. For the authoritative room server, voice chat, and Cloudflare Tunnel set
 
 The repository includes optimized card, relic, and potion scans; original generated combat art
 for the four characters, all 61 canonical enemy designs and stages; and 251 text-free
-character-card illustrations. Every asset needed to play is included in a fresh clone. Optional
-rulebook icons and eleven Act I reference crops are fetched locally by `pnpm sync:assets`.
+character-card illustrations. Every asset needed to play, including the optimized rulebook icons,
+is included in a fresh clone. Eleven optional Act I reference crops are fetched by `pnpm sync:assets`.
 
 | Group | Source | Needs |
 | --- | --- | --- |
 | Native character-card illustrations | original OpenAI Imagegen illustrations | committed WebP files |
 | Card, relic and potion scans | a third-party card browser | committed WebP files |
-| Keyword and token icons | the official rulebook PDF | `docs/reference/STS_KS_Rulebook.pdf`, PyMuPDF, Pillow |
+| Keyword and token icons | the official rulebook PDF | committed transparent PNG files; PDF, PyMuPDF, and Pillow to refresh |
 | Enemy reference crops | enemy card scans in the same PDF | optional local sync only |
 | Combat stage and cutouts | original OpenAI Imagegen illustrations | 61 committed enemy WebP files |
 | Combat status and Power pictograms | original OpenAI Imagegen illustrations | committed transparent PNG files |
@@ -47,8 +47,8 @@ curl -L https://contentiongames.com/_images/STS_KS_Rulebook.pdf \
 On Debian or Ubuntu: `apt install ffmpeg webp`. Each sync script checks for what it
 needs and tells you what is missing rather than failing halfway through.
 
-Run `pnpm sync:assets` only to refresh the bundled scans or add optional official HUD symbols
-and the eleven local Act I reference crops described in [ATTRIBUTION.md](ATTRIBUTION.md).
+Run `pnpm sync:assets` only to refresh the bundled scans and official HUD symbols or add the
+eleven optional local Act I reference crops described in [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ## Layout
 
