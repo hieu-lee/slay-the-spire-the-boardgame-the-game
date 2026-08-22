@@ -156,10 +156,12 @@ type CardDrag = {
   x: number
   y: number
   targetUid: string | null
+  targetPlayerId: string | null
   needsEnemy: boolean
+  needsPlayer: boolean
   hitsRow: boolean
 }
-type CardDragStart = Omit<CardDrag, 'targetUid'> & { element: HTMLButtonElement }
+type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & { element: HTMLButtonElement }
 type MotionSnapshot = {
   hand: readonly CardInstance[]
   energy: number
@@ -2834,7 +2836,11 @@ export function CombatScreen({
     })
   }
 
-  function onCardClick(card: CardInstance, draggedEnemyUid: string | null = null) {
+  function onCardClick(
+    card: CardInstance,
+    draggedEnemyUid: string | null = null,
+    draggedPlayerId: string | null = null,
+  ) {
     if (cardActionPending.current || orderingStage || pendingTrigger) return
     setPendingPowerUid(null)
     setSpendingShiv(false)
@@ -2898,6 +2904,10 @@ export function CombatScreen({
       else if (next.enemyChoices > 0 || def.modes) next = { ...next, enemyUids: [draggedEnemyUid] }
       else if (next.spentShivs + next.overflowShivs > 0) next = { ...next, shivEnemyUids: [draggedEnemyUid] }
     }
+    if (draggedPlayerId) {
+      if (next.playerChoices > 0) next = { ...next, playerIds: [draggedPlayerId] }
+      else if (next.needsAlly) next = { ...next, playerId: draggedPlayerId }
+    }
     stageOrCommit(next)
   }
 
@@ -2910,14 +2920,21 @@ export function CombatScreen({
     return uid && state.enemies.some((candidate) => candidate.uid === uid && !candidate.dead) ? uid : null
   }
 
+  function dragPlayerAt(x: number, y: number): string | null {
+    const id = document.elementFromPoint(x, y)?.closest<HTMLElement>('.seat')?.dataset.playerId
+    return id && state.players.some((candidate) => candidate.id === id && !candidate.dead) ? id : null
+  }
+
   function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || !cardCanStartDrag(card)) return
     const def = faceOf(cardDef(card.defId), card.upgraded)
+    const pending = pendingFor(card, null, state, viewer!)
     event.currentTarget.setPointerCapture(event.pointerId)
     cardDragStart.current = {
       card, pointerId: event.pointerId,
       startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
-      needsEnemy: pendingFor(card, null, state, viewer!).needsEnemy,
+      needsEnemy: pending.needsEnemy,
+      needsPlayer: !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0),
       hitsRow: def.target === 'row',
       element: event.currentTarget,
     }
@@ -2935,7 +2952,9 @@ export function CombatScreen({
       x: event.clientX,
       y: event.clientY,
       targetUid: start.needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null,
+      targetPlayerId: start.needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null,
       needsEnemy: start.needsEnemy,
+      needsPlayer: start.needsPlayer,
       hitsRow: start.hitsRow,
     })
   }
@@ -2954,9 +2973,11 @@ export function CombatScreen({
     const start = cardDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
     const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
-    const lifted = event.clientY < start.startY - 36
+    const lifted = event.clientY < start.startY - 10
     const needsEnemy = cardDrag?.needsEnemy ?? start.needsEnemy
+    const needsPlayer = cardDrag?.needsPlayer ?? start.needsPlayer
     const targetUid = needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null
+    const targetPlayerId = needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null
     clearCardDrag()
     if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
     if (!moved) return
@@ -2964,7 +2985,9 @@ export function CombatScreen({
     setTimeout(() => {
       if (suppressCardClick.current === start.card.uid) suppressCardClick.current = null
     }, 0)
-    if (lifted && (!needsEnemy || targetUid)) onCardClick(start.card, targetUid)
+    if (lifted && (!needsEnemy || targetUid) && (!needsPlayer || targetPlayerId)) {
+      onCardClick(start.card, targetUid, targetPlayerId)
+    }
   }
 
   function cancelCardDrag(event: React.PointerEvent<HTMLElement>) {
@@ -3386,7 +3409,7 @@ export function CombatScreen({
               !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.shivs > 0 ? (
                 <button
                   type="button"
-                  className={`combat__shiv-action${spendingShiv ? ' is-chosen' : ''}`}
+                  className={spendingShiv ? 'is-chosen' : undefined}
                   disabled={Boolean(pending?.choiceCards)}
                   aria-label="Use Shiv"
                   aria-pressed={spendingShiv}
@@ -4129,12 +4152,14 @@ export function CombatScreen({
                           ? `seat--vfx-${latestActorVfx.recipe.actorMotion} seat--vfx-beat-${latestActorVfx.event.seq % 2}`
                           : '',
                         (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
+                          cardDrag?.needsPlayer ||
                           (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
                           (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
                           (switchChoiceReady && occupant.id !== viewerId))
                         )
                           ? 'seat--targetable'
                           : '',
+                        cardDrag?.targetPlayerId === occupant.id ? 'seat--targeted' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
@@ -4461,7 +4486,7 @@ export function CombatScreen({
       </footer>
       {cardDrag ? (
         <>
-          {cardDrag.needsEnemy ? (
+          {cardDrag.needsEnemy || cardDrag.needsPlayer ? (
             <svg className="card-target-arrow" aria-hidden="true">
               <defs>
                 <marker id="card-target-arrowhead" markerUnits="userSpaceOnUse"
