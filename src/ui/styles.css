@@ -1258,12 +1258,7 @@ button:disabled {
   filter: drop-shadow(0 0 0.18rem rgb(245 227 180 / 0.85));
 }
 
-.combat__actions .combat__shiv-action .icon {
-  width: 4.2rem;
-  height: 4.2rem;
-}
-
-.combat__actions .combat__shiv-action.is-chosen {
+.sts-scope .combat__actions button.is-chosen {
   box-shadow: 0 0 0 0.15rem var(--trim-lit), 0 0 0.7rem rgb(246 197 89 / 0.8);
 }
 
@@ -3790,6 +3785,10 @@ button.pile:hover { filter: brightness(1.15); }
   outline-offset: 2px;
 }
 
+.seat--targeted {
+  filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
+}
+
 .seat__portrait {
   position: relative;
   display: grid;
@@ -3888,7 +3887,6 @@ button.pile:hover { filter: brightness(1.15); }
   border: 0;
   transform: translateY(-3px);
   filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
-  cursor: pointer;
   animation: none;
 }
 

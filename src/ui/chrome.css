@@ -69,15 +69,6 @@
   --ease-lerp: cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
-body:has(.sts-scope),
-.sts-scope {
-  cursor: url('/assets/ui/cursor.png') 8 4, auto;
-}
-
-.sts-scope :is(button:not(:disabled), a, summary, label, [role='button']) {
-  cursor: url('/assets/ui/cursor.png') 8 4, pointer;
-}
-
 /* The full-bleed bands below (the HUD, the map, the campfire) size themselves
    with `100vw` so they reach the window edge rather than stopping at the
    shell's 1400px column. `100vw` counts the classic scrollbar gutter, though,
@@ -742,7 +733,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    `position: fixed` was tried first and rejected: `fixed` cannot see the bar,
    so the box fell to its static position over the header — at 600px it covered
    the title and gold outright. */
-@media (max-width: 47.99rem) {
+@media (max-width: 50rem) {
   .run-status { position: relative; }
   .relic-bar { position: static; }
 
@@ -3031,6 +3022,102 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   min-height: max(42rem, 100%, calc(100dvh - 5rem));
 }
 
+/* The original game keeps Neow's choices as a narrow stack between the hero
+   and Neow, then turns card rewards into a centred, darkened card stage. */
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action:not(.neow-action--offer) {
+  right: auto;
+  bottom: 1.25rem;
+  left: max(34%, 17.75rem);
+  width: min(34rem, calc(100% - 2rem));
+  padding: 0.5rem 0;
+  background: transparent;
+  transform: translateX(-50%);
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action__owner {
+  justify-content: center;
+  text-align: center;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action__owner > span:first-child {
+  display: none;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-screen__progress {
+  display: none;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options {
+  grid-template-columns: 1fr;
+  gap: 0.28rem;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options button {
+  grid-template-columns: 1fr;
+  min-height: 2.9rem;
+  text-align: center;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options button > span {
+  display: none;
+}
+
+.sts-scope .neow-action--offer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  padding: 1rem;
+  overflow-x: hidden;
+  background: radial-gradient(circle at 50% 42%, rgb(17 24 27 / 0.88), rgb(3 5 6 / 0.97));
+}
+
+.sts-scope .neow-action--offer .neow-action__owner {
+  z-index: 1;
+  justify-content: center;
+  gap: 0.75rem;
+  width: min(42rem, 100%);
+  margin: 0 auto -0.3rem;
+  padding: 0.65rem 2rem 0.85rem;
+  background: linear-gradient(180deg, #eadcb8, #aa986d);
+  clip-path: polygon(7% 0, 93% 0, 100% 45%, 93% 100%, 7% 100%, 0 52%);
+  filter: drop-shadow(0 0.5rem 0.5rem rgb(0 0 0 / 0.65));
+}
+
+.sts-scope .neow-action--offer .neow-action__owner > span {
+  color: #654719;
+  font-size: 0.8rem;
+}
+
+.sts-scope .neow-action--offer .neow-action__owner h3 {
+  color: #29323a;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  text-shadow: 0 1px 0 #fff1cf;
+}
+
+.sts-scope .neow-action--offer .neow-offer:not(.neow-offer--potion) {
+  min-width: 0;
+  width: 100%;
+}
+
+.sts-scope .neow-action--offer .neow-offer > :is(h3, p) {
+  text-align: center;
+}
+
+.sts-scope .neow-action--offer .neow-offer__cards {
+  --card-width: clamp(100px, 25vh, 180px);
+}
+
+.sts-scope .neow-action--offer .neow-offer__actions {
+  width: min(32rem, calc(100% - 2rem));
+  margin: 0.5rem auto 0;
+}
+
+@media (max-width: 36rem) {
+  .sts-scope .neow-screen:has(.neow-face--solo) .neow-action:not(.neow-action--offer) {
+    left: 50%;
+  }
+}
+
 /* ---------- a card becoming another card ---------- */
 
 /* Full-bleed, above everything, and inert: `pointer-events: none` because this
@@ -3370,28 +3457,6 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
   padding: 1rem;
   border: 0;
   background: rgb(3 5 6 / 0.82);
-}
-
-.sts-scope .neow-action--offer:has(.neow-offer--potion) .neow-action__owner {
-  z-index: 1;
-  justify-content: center;
-  gap: 0.75rem;
-  width: min(42rem, 100%);
-  margin: 0 0 -0.3rem;
-  padding: 0.65rem 2rem 0.85rem;
-  background: linear-gradient(180deg, #eadcb8, #aa986d);
-  clip-path: polygon(7% 0, 93% 0, 100% 45%, 93% 100%, 7% 100%, 0 52%);
-  filter: drop-shadow(0 0.5rem 0.5rem rgb(0 0 0 / 0.65));
-}
-
-.sts-scope .neow-action--offer:has(.neow-offer--potion) .neow-action__owner > span {
-  color: #654719;
-  font-size: 0.8rem;
-}
-.sts-scope .neow-action--offer:has(.neow-offer--potion) .neow-action__owner h3 {
-  color: #29323a;
-  font-size: clamp(1.35rem, 3vw, 2rem);
-  text-shadow: 0 1px 0 #fff1cf;
 }
 
 .sts-scope .neow-offer--potion {
@@ -5057,4 +5122,15 @@ html[data-high-contrast='true'] .start-menu__nav button:focus-visible { outline-
 
   .sts-scope .merchant-shelf h3,
   .sts-scope .merchant-cards h3 { font-size: 0.6rem; }
+}
+
+/* Keep the game's cursor after surface-specific hover rules. Several of those
+   rules set `cursor: pointer`, so declaring this near the top was not enough. */
+body:has(.sts-scope),
+.sts-scope {
+  cursor: url('/assets/ui/cursor.png') 8 4, auto;
+}
+
+.sts-scope :is(button:not(:disabled), a, summary, label, [role='button']) {
+  cursor: url('/assets/ui/cursor.png') 8 4, pointer;
 }

@@ -175,6 +175,34 @@ const soloNeowLayout = await page.evaluate(() => {
     gap: neow && speech ? Math.max(0, neow.left - speech.right, speech.left - neow.right) : Infinity,
     viewportWidth: innerWidth }
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const progress = Object.values(run.neow.players)[0]
+  Object.assign(progress, {
+    redGoldPending: false, redRewardPending: false, redReward: null, reward: null,
+    blueOption: null, pendingEffect: null, done: false,
+  })
+  debug.setRun(run)
+})
+await page.locator('.neow-options').waitFor()
+const soloNeowBoundaryLayouts = []
+for (const width of [768, 800, 801]) {
+  await page.setViewportSize({ width, height: 900 })
+  await page.locator('.neow-options button').first().hover()
+  await page.waitForTimeout(200)
+  soloNeowBoundaryLayouts.push(await page.evaluate(() => {
+    const stage = document.querySelector('.neow-screen')?.getBoundingClientRect()
+    const action = document.querySelector('.neow-action')?.getBoundingClientRect()
+    const option = document.querySelector('.neow-options button')?.getBoundingClientRect()
+    return stage && action && option ? {
+      actionLeft: action.left, actionRight: action.right,
+      optionLeft: option.left, optionRight: option.right,
+      stageLeft: stage.left, stageRight: stage.right,
+    } : null
+  }))
+}
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'catch-up-solo-ui'))
 await page.waitForFunction(() => Object.keys(window.__STS_DEBUG__.getRun().neow.players).length === 2)
 await page.evaluate(() => {
@@ -224,6 +252,10 @@ suite('non-combat browser')
 check('solo Neow dialogue stays on-screen beside Neow', () => {
   assert(soloNeowLayout.speechLeft >= 0 && soloNeowLayout.speechRight <= soloNeowLayout.viewportWidth)
   assert(soloNeowLayout.gap <= 16, `Neow dialogue gap is ${soloNeowLayout.gap}px`)
+  assert(soloNeowBoundaryLayouts.every((layout) => layout &&
+    layout.actionLeft >= layout.stageLeft && layout.actionRight <= layout.stageRight &&
+    layout.optionLeft >= layout.stageLeft && layout.optionRight <= layout.stageRight),
+  `solo Neow choices clip near the compact breakpoint: ${JSON.stringify(soloNeowBoundaryLayouts)}`)
 })
 
 check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))
@@ -316,7 +348,15 @@ assertEqual(await page.getByRole('button', { name: 'Reveal Card Reward' }).count
 assertEqual(await page.getByRole('button', { name: 'Skip unseen' }).count(), 0, 'revealed reward still offered unseen skip')
 const publicRedNames = await page.locator('.neow-face--active .neow-face__reveal').textContent()
 await page.getByRole('button', { name: 'Skip reward' }).click()
-await page.getByRole('button', { name: 'Confirm reward' }).click()
+const neowConfirmReward = page.getByRole('button', { name: 'Confirm reward' })
+await neowConfirmReward.hover()
+const hoveredNeowReward = await page.locator('.neow-action--offer').evaluate((offer) => ({
+  overflowX: getComputedStyle(offer).overflowX,
+  scrollWidth: offer.scrollWidth,
+  clientWidth: offer.clientWidth,
+  actionWidth: offer.querySelector('.neow-offer__actions')?.getBoundingClientRect().width,
+}))
+await neowConfirmReward.click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redRewardPending === false)
 const firstBlessing = page.locator('.neow-options button').first()
 await firstBlessing.click()
@@ -391,6 +431,11 @@ check('local Neow exposes every public face and keeps hot-seat ownership explici
   assert(exhaustedPrismaticRevealDisabled && exhaustedPrismaticSkipEnabled,
     'exhausted Prismatic Neow supply did not disable Reveal while preserving skip')
   assert(publicRedNames?.includes('Face-up:'), 'revealed reward was not public')
+  assertEqual(hoveredNeowReward.overflowX, 'hidden')
+  assert(hoveredNeowReward.scrollWidth <= hoveredNeowReward.clientWidth,
+    `hovering Confirm reward overflowed ${hoveredNeowReward.scrollWidth}px into ${hoveredNeowReward.clientWidth}px`)
+  assert((hoveredNeowReward.actionWidth ?? Infinity) <= 512,
+    `Neow reward actions stretched to ${hoveredNeowReward.actionWidth}px`)
   assertEqual(hotSeatOwner, 'Silent')
   assert(localPendingRelicLock, 'another seat\'s pending War Paint left local Neow choices enabled')
   assert(!localNeowCompact.overflow, 'Neow overflowed the compact desktop viewport')

@@ -1662,6 +1662,7 @@ await page.waitForFunction(() => document.querySelector('.card-drag') &&
 assertEqual(await page.locator('.enemy--targeted').count(), 2, 'a row drag highlights every affected enemy')
 const cardDragVisual = await page.evaluate(() => ({
   cursor: getComputedStyle(document.querySelector('.combat')).cursor,
+  targetCursor: getComputedStyle(document.querySelector('.enemy--targeted')).cursor,
   arrow: getComputedStyle(document.querySelector('.card-target-arrow__line')).strokeDasharray,
   touchAction: getComputedStyle(document.querySelector('.hand .card')).touchAction,
 }))
@@ -1672,6 +1673,7 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].disc
 const draggedAttack = await readState()
 check('a row attack drags to an enemy row with the game cursor and targeting arc', () => {
   assert(cardDragVisual.cursor.includes('/assets/ui/cursor.png'), cardDragVisual.cursor)
+  assert(cardDragVisual.targetCursor.includes('/assets/ui/cursor.png'), cardDragVisual.targetCursor)
   assert(cardDragVisual.arrow !== 'none', cardDragVisual.arrow)
   assert(cardDragVisual.touchAction.includes('pan-x'), cardDragVisual.touchAction)
   assertEqual(draggedAttack.players[0].energy, 0)
@@ -1771,6 +1773,48 @@ await new Promise((resolve) => setTimeout(resolve, 100))
 const ragnarokPrompts = await page.locator('.prompt').allTextContents()
 assert(ragnarokPrompts.some((text) => text.includes('target 2/5')), JSON.stringify(ragnarokPrompts))
 assertEqual((await readState()).players[0].energy, 3, 'Ragnarok keeps waiting after its first dragged target')
+const stagedRagnarokTarget = page.locator('.enemy--targeted').first()
+await stagedRagnarokTarget.hover()
+const stagedTargetCursor = await stagedRagnarokTarget.evaluate((enemy) => getComputedStyle(enemy).cursor)
+assert(stagedTargetCursor.includes('/assets/ui/cursor.png'), stagedTargetCursor)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    character: 'silent',
+    hand: [{ uid: 'drag-bouncing-flask', defId: 'bouncing_flask', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 2,
+  })
+  next.combat.enemies = next.combat.enemies.slice(0, 2)
+  for (const enemy of next.combat.enemies) Object.assign(enemy, {
+    hp: 5, maxHp: 5, block: 0, poison: 0, dead: false, row: player.row, isBoss: false,
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedFlask = page.getByRole('button', { name: /^Bouncing Flask, cost 2,/ })
+const flaskTargets = page.locator('.enemy')
+await draggedFlask.hover()
+const draggedFlaskBox = await draggedFlask.boundingBox()
+const firstFlaskTargetBox = await flaskTargets.first().boundingBox()
+assert(draggedFlaskBox && firstFlaskTargetBox, 'Bouncing Flask drag fixtures are visible')
+await page.mouse.move(draggedFlaskBox.x + draggedFlaskBox.width / 2,
+  draggedFlaskBox.y + draggedFlaskBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(firstFlaskTargetBox.x + firstFlaskTargetBox.width / 2,
+  firstFlaskTargetBox.y + firstFlaskTargetBox.height / 2, { steps: 10 })
+await page.mouse.up()
+await page.locator('.prompt').filter({ hasText: 'token target 2/2' }).waitFor()
+await flaskTargets.nth(1).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
+  .some((card) => card.uid === 'drag-bouncing-flask'))
+const draggedFlaskState = await readState()
+check('a repeated-target card starts with a drag and finishes its remaining targets', () => {
+  assertDeepEqual(draggedFlaskState.enemies.map((enemy) => enemy.poison), [1, 1])
+  assertEqual(draggedFlaskState.players[0].energy, 0)
+})
 
 await page.evaluate((run) => {
   const next = structuredClone(run)
@@ -1792,7 +1836,7 @@ await page.mouse.move(draggedDefendBox.x + draggedDefendBox.width / 2,
   draggedDefendBox.y + draggedDefendBox.height / 2)
 await page.mouse.down()
 await page.mouse.move(draggedDefendBox.x + draggedDefendBox.width / 2,
-  draggedDefendBox.y - 130, { steps: 10 })
+  draggedDefendBox.y - 24, { steps: 5 })
 await page.waitForFunction(() => document.querySelector('.card-drag') && !document.querySelector('.card-target-arrow'))
 await page.mouse.up()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
@@ -1801,6 +1845,47 @@ const draggedDefense = await readState()
 check('an untargeted defensive card plays by dragging above the hand', () => {
   assertEqual(draggedDefense.players[0].block, 1)
   assertEqual(draggedDefense.players[0].energy, 0)
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const ally = structuredClone(player)
+  Object.assign(next.combat, { phase: 'player', pendingDistilled: undefined, pendingCardCopy: undefined,
+    pendingTriggers: [], startTurnProgress: undefined })
+  Object.assign(player, {
+    character: 'silent',
+    hand: [{ uid: 'drag-dodge-roll', defId: 'dodge_and_roll', upgraded: false }],
+    draw: [], discard: [], exhaust: [], energy: 1, block: 0,
+  })
+  Object.assign(ally, {
+    id: 'drag-ally', name: 'Defect', character: 'defect', row: player.row + 1,
+    hand: [], draw: [], discard: [], exhaust: [], energy: 0, block: 0, dead: false,
+  })
+  next.combat.players = [player, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const draggedDodge = page.getByRole('button', { name: /^Dodge and Roll, cost 1,/ })
+const draggedAlly = page.locator('.seat[data-player-id="drag-ally"]')
+await draggedDodge.hover()
+const draggedDodgeBox = await draggedDodge.boundingBox()
+const draggedAllyBox = await draggedAlly.boundingBox()
+assert(draggedDodgeBox && draggedAllyBox, 'defensive target drag fixtures are visible')
+await page.mouse.move(draggedDodgeBox.x + draggedDodgeBox.width / 2,
+  draggedDodgeBox.y + draggedDodgeBox.height / 2)
+await page.mouse.down()
+await page.mouse.move(draggedAllyBox.x + draggedAllyBox.width / 2,
+  draggedAllyBox.y + draggedAllyBox.height / 2, { steps: 10 })
+await page.waitForFunction(() => document.querySelector('.seat--targeted') && document.querySelector('.card-target-arrow'))
+await page.mouse.up()
+await page.locator('.prompt').filter({ hasText: 'Block recipient 2/2' }).waitFor()
+await page.locator('.seat[data-player-id="p1"]').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
+  .some((card) => card.uid === 'drag-dodge-roll'))
+const draggedDefenseTargets = await readState()
+check('a defensive multi-target card drags to players with the targeting arc', () => {
+  assertDeepEqual(draggedDefenseTargets.players.map((player) => player.block), [1, 1])
+  assertEqual(draggedDefenseTargets.players[0].energy, 0)
 })
 
 await page.evaluate((run) => {
@@ -7009,7 +7094,7 @@ await page.evaluate(() => {
       { uid: 'ui-envenom', defId: 'envenom', upgraded: true },
       { uid: 'ui-choke', defId: 'choke', upgraded: true },
     ],
-    draw: [], discard: [], exhaust: [], powers: [], energy: 6, block: 0, shivs: 1,
+    draw: [], discard: [], exhaust: [], powers: [], potions: ['fire_potion'], energy: 6, block: 0, shivs: 1,
     shivDamageBonus: 0, cardBlockBonus: 0, hitPoison: 0,
   })
   run.combat.enemies = run.combat.enemies.map((enemy, index) => ({
@@ -7044,12 +7129,21 @@ const shivUseVisual = await page.getByRole('button', { name: 'Use Shiv' }).evalu
   text: button.textContent?.trim(),
   icon: button.querySelector('img')?.getAttribute('src'),
   iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
+  width: button.getBoundingClientRect().width,
+  height: button.getBoundingClientRect().height,
   boxShadow: getComputedStyle(button).boxShadow,
+}))
+const potionUseVisual = await page.getByRole('button', { name: 'Use Fire Potion' }).evaluate((button) => ({
+  iconWidth: button.querySelector('img')?.getBoundingClientRect().width,
+  width: button.getBoundingClientRect().width,
+  height: button.getBoundingClientRect().height,
 }))
 check('Shiv use controls render only the Shiv icon', () => {
   assertEqual(shivUseVisual.text, '')
   assert(shivUseVisual.icon?.includes('/assets/status-icons/shiv.png'), shivUseVisual.icon)
-  assert(shivUseVisual.iconWidth && shivUseVisual.iconWidth >= 66, shivUseVisual.iconWidth)
+  assertEqual(shivUseVisual.iconWidth, potionUseVisual.iconWidth)
+  assertEqual(shivUseVisual.width, potionUseVisual.width)
+  assertEqual(shivUseVisual.height, potionUseVisual.height)
 })
 await page.getByRole('button', { name: 'Use Shiv' }).click()
 await page.mouse.move(0, 0)
