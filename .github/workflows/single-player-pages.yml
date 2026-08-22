@@ -2,12 +2,16 @@ name: Deploy single-player game
 
 on:
   push:
-    branches: [master]
+    branches:
+      - master
+      - hieu-lee/single-player-master
     paths:
+      - .env
       - .github/workflows/single-player-pages.yml
       - index.html
       - package.json
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - public/**
       - scripts/check-single-player-build.mjs
       - src/**
@@ -33,8 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: master
+          ref: hieu-lee/single-player-master
           fetch-depth: 0
+      - name: Merge master while keeping branch config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          git merge --no-commit --no-ff origin/master
+          git restore --source=HEAD --staged --worktree -- \
+            .env .github/workflows/single-player-pages.yml
+          if git rev-parse --verify MERGE_HEAD >/dev/null 2>&1; then
+            git commit --no-edit
+          fi
+          git push origin HEAD:refs/heads/hieu-lee/single-player-master
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -42,11 +58,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-        env:
-          VITE_SINGLE_PLAYER: "true"
       - run: pnpm verify:single-player-build
-      - name: Sync single-player branch
-        run: git push origin HEAD:refs/heads/hieu-lee/single-player-master
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
