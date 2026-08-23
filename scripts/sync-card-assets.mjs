@@ -11,13 +11,19 @@
 //   node scripts/sync-card-assets.mjs --force --characters # upgrade existing character cards
 //   node scripts/sync-card-assets.mjs --width=480 --quality=74 # override export settings
 //   node scripts/sync-card-assets.mjs --limit=20  # sample, for a quick check
-import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outRoot = join(repoRoot, 'public/assets/cards')
+// Every card surface but the compendium's full-screen zoom paints a card at
+// 250 CSS px or less. Decoded image memory is width x height x 4 bytes
+// regardless, so shipping only the 744px scan meant a ten-card deck viewer put
+// 48 MB of texture on a phone GPU. See CARD_THUMB_ROOT in src/game/assets.ts.
+const thumbRoot = join(repoRoot, 'public/assets/cards-sm')
+export const THUMB_WIDTH = 448
 const SOURCE = 'https://rustywolf.github.io/sts/assets/images'
 
 const args = process.argv.slice(2)
@@ -73,6 +79,7 @@ for (const entry of index) {
 const selected = limit > 0 ? jobs.slice(0, limit) : jobs
 
 mkdirSync(outRoot, { recursive: true })
+mkdirSync(thumbRoot, { recursive: true })
 
 function run(command, commandArgs) {
   return new Promise((resolvePromise) => {
@@ -84,10 +91,64 @@ function run(command, commandArgs) {
   })
 }
 
+/**
+ * Writes the thumbnail tier beside a finished full-size scan.
+ *
+ * Never an upscale: the non-character scans are already exported at 320px, so
+ * their thumbnail is the file itself, copied so that every card resolves under
+ * `cards-sm/` and `cardThumbPath` needs no per-card exceptions.
+ */
+async function writeThumb(key, source) {
+  const thumb = join(thumbRoot, `${key}.webp`)
+  const [width] = webpSize(source)
+  if (width > 0 && width <= THUMB_WIDTH) {
+    writeFileSync(thumb, readFileSync(source))
+    return null
+  }
+  const scaled = join(thumbRoot, `.${key}.scaled.png`)
+  const decoded = join(thumbRoot, `.${key}.full.png`)
+  const dump = await run('dwebp', ['-quiet', source, '-o', decoded])
+  if (dump.code !== 0) return dump.stderr.trim() || 'dwebp failed'
+  const scale = await run('ffmpeg', [
+    '-v', 'error', '-y', '-i', decoded, '-vf', `scale=${THUMB_WIDTH}:-1:flags=lanczos`, scaled,
+  ])
+  rmSync(decoded, { force: true })
+  if (scale.code !== 0) return scale.stderr.trim() || 'ffmpeg thumbnail scale failed'
+  const encode = await run('cwebp', ['-quiet', '-q', '74', '-alpha_q', '100', scaled, '-o', thumb])
+  rmSync(scaled, { force: true })
+  if (encode.code !== 0) {
+    rmSync(thumb, { force: true })
+    return encode.stderr.trim() || 'cwebp thumbnail failed'
+  }
+  return null
+}
+
+/** Pixel size of a WebP, read from its header rather than by shelling out. */
+function webpSize(file) {
+  const bytes = readFileSync(file)
+  if (bytes.length < 30) return [0, 0]
+  const chunk = bytes.subarray(12, 16).toString()
+  if (chunk === 'VP8X') {
+    return [(bytes.readUIntLE(24, 3) & 0xffffff) + 1, (bytes.readUIntLE(27, 3) & 0xffffff) + 1]
+  }
+  if (chunk === 'VP8 ') return [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff]
+  if (chunk === 'VP8L') {
+    const packed = bytes.readUInt32LE(21)
+    return [(packed & 0x3fff) + 1, ((packed >> 14) & 0x3fff) + 1]
+  }
+  return [0, 0]
+}
+
 async function fetchOne({ entry, upgraded }) {
   const key = assetKey(entry, upgraded)
   const target = join(outRoot, `${key}.webp`)
-  if (!force && existsSync(target) && statSync(target).size > 0) return { key, skipped: true }
+  const thumb = join(thumbRoot, `${key}.webp`)
+  if (!force && existsSync(target) && statSync(target).size > 0) {
+    // A tree synced before the thumbnail tier existed still needs one.
+    if (existsSync(thumb) && statSync(thumb).size > 0) return { key, skipped: true }
+    const error = await writeThumb(key, target)
+    return error ? { key, error } : { key, bytes: statSync(thumb).size }
+  }
 
   const master = join(repoRoot, 'public/assets/cards-hd', `${key}.png`)
   const hasMaster = existsSync(master)
@@ -126,6 +187,11 @@ async function fetchOne({ entry, upgraded }) {
     rmSync(target, { force: true })
     return { key, error: encode.stderr.trim() || 'cwebp failed' }
   }
+  const thumbError = await writeThumb(key, target)
+  if (thumbError) {
+    rmSync(target, { force: true })
+    return { key, error: thumbError }
+  }
   return { key, bytes: statSync(target).size }
 }
 
@@ -142,6 +208,23 @@ await Promise.all(
     }
   }),
 )
+
+// The generated status scans (curses__burn and friends) are not index entries,
+// so no job above covers them. The invariant is per FILE, not per job: every
+// scan under cards/ has a thumbnail, or `cardThumbPath` resolves to a 404.
+for (const file of readdirSync(outRoot).filter((name) => name.endsWith('.webp'))) {
+  const key = file.slice(0, -'.webp'.length)
+  const thumb = join(thumbRoot, file)
+  if (existsSync(thumb) && statSync(thumb).size > 0) continue
+  const error = await writeThumb(key, join(outRoot, file))
+  results.push(error ? { key, error } : { key, bytes: statSync(thumb).size })
+}
+
+// A kill between the scale and the encode leaves a dot-prefixed PNG behind, and
+// a stray one is easy to commit by accident. Nothing reads them.
+for (const file of readdirSync(thumbRoot).filter((name) => name.startsWith('.'))) {
+  rmSync(join(thumbRoot, file), { force: true })
+}
 
 const errors = results.filter((r) => r.error)
 const written = results.filter((r) => r.bytes)

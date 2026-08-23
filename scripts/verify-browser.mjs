@@ -135,6 +135,16 @@ async function bypassNeow() {
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map' && !document.querySelector('.neow-screen'))
 }
 
+/**
+ * The width `artWidth` should see for a character-card scan.
+ *
+ * The hand, the deck viewer and every other gameplay surface read the 448px
+ * thumbnail tier (see CARD_THUMB_ROOT), so "upscaled" no longer means 744px on
+ * screen. It still separates the two source tiers: a character scan thumbnails
+ * to 448, and the 320px relic/potion/curse exports thumbnail to themselves.
+ */
+const UPSCALED_ART_WIDTH = 448
+
 async function artWidth(card) {
   const image = card.locator(artSynced
     ? ':scope > img.card__art'
@@ -522,12 +532,26 @@ await page.getByPlaceholder('Search').fill('')
 await page.getByRole('button', { name: 'Curses' }).click()
 await page.getByPlaceholder('Search').fill('Clumsy')
 const curseUpgradeSource = await page.locator('.compendium-card img').first().getAttribute('src')
-const curseImageVisible = !artSynced || await page.locator('.compendium-card > img').first().evaluate((img) =>
-  img.complete && img.naturalWidth > 0 && getComputedStyle(img).visibility === 'visible')
+// Waited for, not sampled. The grid reads the 448px thumbnail tier and the zoom
+// reads the full scan, so neither warms the other's cache any more, and a bare
+// read here races the decode that `revealDecodedImage` reveals the image on.
+// Resolved to a boolean rather than thrown, so a failure still reports which
+// image stayed hidden instead of a bare Playwright timeout.
+const scanIsPainted = async (selector) => {
+  if (!artSynced) return true
+  return page.waitForFunction((target) => {
+    const image = document.querySelector(target)
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0 &&
+      getComputedStyle(image).visibility === 'visible'
+  }, selector).then(() => true, () => false)
+}
+const curseImageVisible = await scanIsPainted('.compendium-card > img')
 await page.getByRole('button', { name: 'Statuses' }).click()
 await page.getByPlaceholder('Search').fill('Daze')
 const dazeLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
 await page.locator('.compendium-card').first().click()
+await page.locator('.compendium__detail-card').waitFor()
+await scanIsPainted('.compendium__detail-card > img')
 const statusDetailAsset = await page.locator('.compendium__detail-card').evaluate((card) => ({
   source: card.querySelector(':scope > img')?.getAttribute('src'),
   visible: (() => {
@@ -989,7 +1013,7 @@ await page.evaluate(() => {
   Object.assign(run.combat.players[0], { block: 1, strength: 1 })
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')?.naturalWidth === 1024)
+await page.waitForFunction(() => document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')?.naturalWidth === 341)
 const combatAppearance = await page.evaluate(() => {
   const image = document.querySelector('.enemy__art--cutout[src$="/sentry.webp"]')
   const strip = document.querySelector('.row__seat .seat__status-strip')
@@ -1003,7 +1027,7 @@ const combatAppearance = await page.evaluate(() => {
 })
 await shot('02b-sentry-cutout-and-status')
 check('Sentry uses a transparent full-body cutout and character status clears HP', () => {
-  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [1024, 1536])
+  assertDeepEqual([combatAppearance.naturalWidth, combatAppearance.naturalHeight], [341, 512])
   assertEqual(combatAppearance.statusOverlapsHp, false)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
@@ -7231,7 +7255,7 @@ const simmeringCard = await page.getByRole('button', { name: /^Simmering Fury\+,
   artWidth: card.querySelector('img')?.naturalWidth ?? 0,
 }))
 check('Simmering Fury+ renders sharp art and complete spoken rules', () => {
-  if (artSynced) assert(simmeringCard.artWidth >= 700, `expected upscaled art, got ${simmeringCard.artWidth}px`)
+  if (artSynced) assert(simmeringCard.artWidth >= UPSCALED_ART_WIDTH, `expected upscaled art, got ${simmeringCard.artWidth}px`)
   assert(simmeringCard.label.includes('Attacks deal +2 damage while in Wrath'), simmeringCard.label)
 })
 await shot('07q-simmering-fury-ready')
@@ -7262,7 +7286,7 @@ await page.evaluate(() => {
 const likeWaterCard = page.getByRole('button', { name: /^Like Water\+,/ })
 await likeWaterCard.waitFor()
 const likeWaterArtWidth = await artWidth(likeWaterCard)
-if (artSynced) assert(likeWaterArtWidth >= 700, `expected upscaled Like Water art, got ${likeWaterArtWidth}px`)
+if (artSynced) assert(likeWaterArtWidth >= UPSCALED_ART_WIDTH, `expected upscaled Like Water art, got ${likeWaterArtWidth}px`)
 await likeWaterCard.click()
 const likeWaterPowerLabel = await page.getByRole('button', { name: /^Like Water\+?:/ }).getAttribute('aria-label')
 check('Like Water+ exposes its Calm end-of-turn Block accessibly', () => {
@@ -7296,7 +7320,7 @@ await page.evaluate(() => {
 const battleHymnCard = page.getByRole('button', { name: /^Battle Hymn\+,/ })
 await battleHymnCard.waitFor()
 const battleHymnArtWidth = await artWidth(battleHymnCard)
-if (artSynced) assert(battleHymnArtWidth >= 700, `expected upscaled Battle Hymn art, got ${battleHymnArtWidth}px`)
+if (artSynced) assert(battleHymnArtWidth >= UPSCALED_ART_WIDTH, `expected upscaled Battle Hymn art, got ${battleHymnArtWidth}px`)
 await battleHymnCard.click()
 const battleHymnPowerLabel = await page.getByRole('button', { name: /^Battle Hymn\+?:/ }).getAttribute('aria-label')
 const battleHymnUseVisual = await page.getByRole('button', { name: 'Use Battle Hymn+' }).evaluate((button) => ({
@@ -7340,7 +7364,7 @@ await page.evaluate(() => {
 const mentalFortressCard = page.getByRole('button', { name: /^Mental Fortress\+,/ })
 await mentalFortressCard.waitFor()
 const mentalFortressArtWidth = await artWidth(mentalFortressCard)
-if (artSynced) assert(mentalFortressArtWidth >= 700, `expected upscaled Mental Fortress art, got ${mentalFortressArtWidth}px`)
+if (artSynced) assert(mentalFortressArtWidth >= UPSCALED_ART_WIDTH, `expected upscaled Mental Fortress art, got ${mentalFortressArtWidth}px`)
 await mentalFortressCard.click()
 const mentalFortressPowerLabel = await page.getByRole('button', { name: /^Mental Fortress\+?:/ }).getAttribute('aria-label')
 check('Mental Fortress+ exposes its stance trigger accessibly', () => {
@@ -7380,7 +7404,7 @@ await page.evaluate(() => {
 const rushdownCard = page.getByRole('button', { name: /^Rushdown\+,/ })
 await rushdownCard.waitFor()
 const rushdownArtWidth = await artWidth(rushdownCard)
-if (artSynced) assert(rushdownArtWidth >= 700, `expected upscaled Rushdown art, got ${rushdownArtWidth}px`)
+if (artSynced) assert(rushdownArtWidth >= UPSCALED_ART_WIDTH, `expected upscaled Rushdown art, got ${rushdownArtWidth}px`)
 await rushdownCard.click()
 const rushdownPowerLabel = await page.getByRole('button', { name: /^Rushdown\+?:/ }).getAttribute('aria-label')
 check('Rushdown+ exposes its once-per-turn Wrath draw accessibly', () => {
@@ -7434,7 +7458,7 @@ await nirvanaCard.waitFor()
 const watcherBatchArt = await Promise.all([
   artWidth(nirvanaCard), artWidth(indignation.first()), artWidth(innerPeace.first()),
 ])
-if (artSynced) assert(watcherBatchArt.every((width) => width >= 700),
+if (artSynced) assert(watcherBatchArt.every((width) => width >= UPSCALED_ART_WIDTH),
   `expected upscaled Watcher batch art, got ${watcherBatchArt.join(', ')}px`)
 await shot('07w-watcher-stance-scry-batch')
 await nirvanaCard.click()
@@ -7502,7 +7526,7 @@ await page.evaluate(() => {
 })
 const foresightCard = page.getByRole('button', { name: /^Foresight\+,/ })
 await foresightCard.waitFor()
-if (artSynced) assert(await artWidth(foresightCard) >= 700, 'expected upscaled Foresight art')
+if (artSynced) assert(await artWidth(foresightCard) >= UPSCALED_ART_WIDTH, 'expected upscaled Foresight art')
 await foresightCard.click()
 const foresightPowerLabel = await page.getByRole('button', { name: /^Foresight\+:/ }).getAttribute('aria-label')
 check('Foresight+ exposes its pre-draw Scry accessibly', () => {
@@ -12104,7 +12128,7 @@ const berserkCard = page.getByRole('button', { name: /^Berserk\+,/ })
 const juggernautCard = page.getByRole('button', { name: /^Juggernaut\+,/ })
 await berserkCard.waitFor()
 const ironcladRareArt = await Promise.all([artWidth(berserkCard), artWidth(juggernautCard)])
-if (artSynced) assert(ironcladRareArt.every((width) => width >= 700),
+if (artSynced) assert(ironcladRareArt.every((width) => width >= UPSCALED_ART_WIDTH),
   `expected upscaled Ironclad rare art, got ${ironcladRareArt.join(', ')}px`)
 const berserkLabel = await berserkCard.getAttribute('aria-label')
 const juggernautLabel = await juggernautCard.getAttribute('aria-label')
@@ -12178,7 +12202,7 @@ const thousandCutsCard = page.getByRole('button', { name: /^A Thousand Cuts\+,/ 
 const malaiseCard = page.getByRole('button', { name: /^Malaise\+, cost X,/ })
 await thousandCutsCard.waitFor()
 const silentRareArt = await Promise.all([artWidth(thousandCutsCard), artWidth(malaiseCard)])
-if (artSynced) assert(silentRareArt.every((width) => width >= 700),
+if (artSynced) assert(silentRareArt.every((width) => width >= UPSCALED_ART_WIDTH),
   `expected upscaled Silent rare art, got ${silentRareArt.join(', ')}px`)
 const thousandCutsLabel = await thousandCutsCard.getAttribute('aria-label')
 const malaiseLabel = await malaiseCard.getAttribute('aria-label')
@@ -12231,7 +12255,7 @@ await page.evaluate(() => {
 })
 const burstCard = page.getByRole('button', { name: /^Burst\+,/ })
 const burstLabel = await burstCard.getAttribute('aria-label')
-if (artSynced) assert(await artWidth(burstCard) >= 700)
+if (artSynced) assert(await artWidth(burstCard) >= UPSCALED_ART_WIDTH)
 check('Burst+ announces the physical copy restriction and separate Skill copy', () => {
   assert(burstLabel.includes('next Skill this turn is played twice'))
   assert(burstLabel.includes('Burst cannot be copied or played twice'))
@@ -12274,7 +12298,7 @@ await page.evaluate(() => {
 })
 const bulletTimeCard = page.getByRole('button', { name: /^Bullet Time\+, cost 2,/ })
 const bulletTimeLabel = await bulletTimeCard.getAttribute('aria-label')
-if (artSynced) assert(await artWidth(bulletTimeCard) >= 700)
+if (artSynced) assert(await artWidth(bulletTimeCard) >= UPSCALED_ART_WIDTH)
 check('Bullet Time+ announces its printed draw lock and hand-only discount', () => {
   assert(bulletTimeLabel.includes('cannot draw more cards this turn'))
   assert(bulletTimeLabel.includes('cards currently in your hand cost 0 this turn'))
@@ -12327,7 +12351,7 @@ await page.evaluate(() => {
 })
 const corpseExplosionCard = page.getByRole('button', { name: /^Corpse Explosion\+, cost 2,/ })
 const corpseExplosionLabel = await corpseExplosionCard.getAttribute('aria-label')
-if (artSynced) assert(await artWidth(corpseExplosionCard) >= 700)
+if (artSynced) assert(await artWidth(corpseExplosionCard) >= UPSCALED_ART_WIDTH)
 check('Corpse Explosion+ uses sharp art and announces its attached row detonation', () => {
   assert(corpseExplosionLabel.includes('3 Poison'))
   assert(corpseExplosionLabel.includes('10 damage to its row'))
@@ -12340,7 +12364,7 @@ const attachmentWidth = artSynced
   ? await attachedEnemy.locator('.enemy__attachment img').evaluate((img) => img.naturalWidth)
   : 0
 check('Corpse Explosion remains visibly attached as a face-up high-resolution card', () => {
-  if (artSynced) assert(attachmentWidth >= 700)
+  if (artSynced) assert(attachmentWidth >= UPSCALED_ART_WIDTH)
 })
 await shot('16l-silent-corpse-explosion-attached')
 await page.getByRole('button', { name: /^Strike\+,/ }).click()

@@ -34,7 +34,7 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat stage, actor cutouts, animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
-| Die-face icons (`public/assets/icons/die*.png`) | original OpenAI Imagegen fan assets, upscaled and standardized from this implementation's prior die icons |
+| Die-face icons (`public/assets/icons/die*.png`) | original OpenAI Imagegen fan assets, regenerated and standardized from this implementation's prior die icons |
 | Combat pile and current-deck HUD icons (`public/assets/combat/piles/`, `public/assets/menu/current-deck.webp`) | OpenAI Imagegen fan assets extracted or visually grounded from user-supplied gameplay screenshots; the Exhaust pile was generated from the extracted draw and discard references |
 | Merchant scene and character assets (`public/assets/noncombat/merchant/`) | OpenAI Imagegen fan illustrations visually grounded in user-provided gameplay references and this implementation's generated combat character cutouts |
 | Event backgrounds (`public/assets/noncombat/events/`) | OpenAI Imagegen fan illustrations, individually outpainted from this implementation's prior generated event scenes for panoramic full-screen presentation |
@@ -47,13 +47,21 @@ The sync scripts keep the rulebook PDF, source-resolution working files, and unu
 out of version control. Optimized card scans, rulebook icons, and runtime enemy artwork are
 committed; the enemy sync only regenerates eleven optional Act I reference crops.
 
+`public/assets/cards-sm/` is not separate artwork: it is the same optimized scans as
+`public/assets/cards/`, re-exported at 448 px. Every card surface but the compendium's
+full-screen zoom reads it, because decoded image memory is a function of the file's pixel
+size and not of how small the card is on screen.
+
 `public/assets/card-art/` contains one committed, text-free generated illustration for
 each character card. These are original OpenAI Imagegen restorations visually grounded
 in the corresponding locally synced illustration window; the UI supplies its own frame,
 title and rules text. Base and upgraded faces reuse the same illustration.
 
 `public/assets/combat/` contains the generated Act I combat stage, transparent actor
-cutouts and alternate attack poses for four characters, plus all 61 canonical enemy designs. These are original
+cutouts and alternate attack poses for four characters, plus all 61 canonical enemy designs.
+Each character has two exports of one illustration: `<id>-hero.webp` at full resolution for
+the character-select and Neow scenes, and `<id>.webp` at 512 px for the combat seat and the
+roster and lobby thumbnails. These are original
 AI-generated fan illustrations made with OpenAI Imagegen for this implementation. The
 new enemy batch was visually grounded in complete enemy cards from the official Slay the
 Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.

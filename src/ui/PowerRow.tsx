@@ -3,7 +3,7 @@ import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { Amount, CardDef, Effect } from '../game/cards.ts'
-import { assetPath, cardImagePath } from '../game/assets.ts'
+import { assetPath, cardThumbPath } from '../game/assets.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { StatusIconName } from './Icon.tsx'
 import { statusIconPath } from './icons.ts'
@@ -145,7 +145,7 @@ export function PowerRow({ powers }: PowerRowProps) {
     claimTheOnlyZoom(close.current, pinned)
     setZoom({
       uid: card.uid,
-      src: cardImagePath(cardDef(card.defId), card.upgraded),
+      src: cardThumbPath(cardDef(card.defId), card.upgraded),
       def: faceOf(cardDef(card.defId), card.upgraded),
       description,
       x,

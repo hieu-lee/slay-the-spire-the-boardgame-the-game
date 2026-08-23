@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { assetPath } from '../game/assets.ts'
+import { assetPath, characterHeroArt } from '../game/assets.ts'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
@@ -104,7 +104,7 @@ export function StartMenu({
           <p>{HERO_COPY[hero.id]}</p>
           <small>Ascension {ascension}</small>
         </div>
-        <img className="start-menu__character-hero" src={assetPath(`combat/characters/${hero.id}.webp`)} alt={hero.name} />
+        <img className="start-menu__character-hero" src={assetPath(characterHeroArt(hero.id))} alt={hero.name} />
         <div className="start-menu__character-roster" aria-label="Characters">
           {HEROES.map((candidate) => <button type="button" key={candidate.id}
             aria-label={candidate.name} aria-pressed={candidate.id === hero.id}

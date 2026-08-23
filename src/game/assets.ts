@@ -12,6 +12,16 @@ export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL 
 
 /** Where the sync script writes, and where the client reads from. */
 export const CARD_ASSET_ROOT = assetPath('cards')
+/**
+ * The same scans at 448px, which is every card surface but the compendium's
+ * zoom. Decoded image memory is width x height x 4 bytes no matter how small
+ * the element is, so a full 744x1039 scan costs 3 MB of texture to paint a
+ * 130px hand card — and opening the deck viewer on a ten-card starter deck
+ * alone put 48 MB of it on a phone GPU, which iOS answers by evicting and
+ * re-decoding mid-scroll. 448px covers the widest non-zoom surface (the 250px
+ * card-reveal moment) at a phone's device pixel ratio.
+ */
+export const CARD_THUMB_ROOT = assetPath('cards-sm')
 export const CARD_ART_ROOT = assetPath('card-art')
 
 const POOL_TIERS: Record<string, string> = {
@@ -65,8 +75,19 @@ export function tierOf(def: CardDef): string {
  * card is physically the reverse side rather than a recolour.
  */
 export function cardImagePath(def: CardDef, upgraded: boolean): string {
-  const key = `${tierOf(def)}/${slugify(def.name)}${upgraded ? '+' : ''}`.replace(/\//g, '__')
-  return `${CARD_ASSET_ROOT}/${key}.webp`
+  return `${CARD_ASSET_ROOT}/${cardAssetKey(def, upgraded)}.webp`
+}
+
+/**
+ * The 448px scan. Prefer this everywhere except the compendium's full-screen
+ * zoom, which is the one surface that paints a card larger than 448px.
+ */
+export function cardThumbPath(def: CardDef, upgraded: boolean): string {
+  return `${CARD_THUMB_ROOT}/${cardAssetKey(def, upgraded)}.webp`
+}
+
+function cardAssetKey(def: CardDef, upgraded: boolean): string {
+  return `${tierOf(def)}/${slugify(def.name)}${upgraded ? '+' : ''}`.replace(/\//g, '__')
 }
 
 /** Committed, text-free artwork shared by the base and upgraded CSS faces. */
@@ -77,4 +98,20 @@ export function cardArtPath(def: CardDef): string {
 export function enemyImagePath(def: EnemyDef): string {
   const artId = def.artId ?? def.id
   return assetPath(`combat/enemies/${artId}.webp`)
+}
+
+/**
+ * The full-resolution cutout, for the two surfaces that paint a character
+ * several hundred pixels tall: the character-select hero and the Neow scene.
+ *
+ * Everything else — the combat seat, the roster thumbnails, the lobby seat
+ * list — reads `combat/characters/<id>.webp`, which is the same art at 512px.
+ * That split is the point of having two files rather than a `srcset`: an
+ * `<img srcset>` is allowed to reuse a larger candidate the browser already
+ * holds, and the character-select hero puts one in the cache before combat
+ * ever starts, so every seat inherited a 6 MB decode to draw a 145px
+ * thumbnail. Distinct URLs cannot be substituted for each other.
+ */
+export function characterHeroArt(character: string): string {
+  return `combat/characters/${character}-hero.webp`
 }
