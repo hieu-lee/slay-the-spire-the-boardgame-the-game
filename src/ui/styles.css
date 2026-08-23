@@ -4793,7 +4793,7 @@ button.pile:hover { filter: brightness(1.15); }
   z-index: 5;
   align-items: flex-end;
   min-height: calc(var(--card-width) * var(--card-ratio));
-  padding: 1rem 20.5rem 0.2rem 8.5rem;
+  padding: 1rem 20.5rem 1.5rem 8.5rem;
   /* `overflow-x: auto` from the base layout forces a declared visible Y axis
      to compute as auto too, clipping card crowns and hover lifts. Desktop hands
      overlap to fit, so both axes can stay visible. */

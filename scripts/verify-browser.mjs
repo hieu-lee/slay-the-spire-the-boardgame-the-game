@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium, devices, webkit } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 import { combatRowLabel, STALE_END_TURN_ORDER } from '../src/game/combat.ts'
@@ -54,20 +54,23 @@ page.setDefaultNavigationTimeout(30_000)
 const consoleErrors = []
 const pageErrors = []
 const requestFailures = []
-page.on('console', (message) => {
-  if (message.type() === 'error') consoleErrors.push(message.text())
-})
-page.on('pageerror', (error) => pageErrors.push(String(error)))
-page.on('requestfailed', (request) =>
-  request.failure()?.errorText !== 'net::ERR_ABORTED' || !request.url().includes('/assets/bgm/')
-    ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
-    : undefined,
-)
-page.on('response', (response) => {
-  if (response.status() >= 400 && response.url().startsWith(base)) {
-    requestFailures.push(`${response.status()} ${response.url()}`)
-  }
-})
+const auditErrors = (currentPage) => {
+  currentPage.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  currentPage.on('pageerror', (error) => pageErrors.push(String(error)))
+  currentPage.on('requestfailed', (request) =>
+    request.failure()?.errorText !== 'net::ERR_ABORTED' || !request.url().includes('/assets/bgm/')
+      ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
+      : undefined,
+  )
+  currentPage.on('response', (response) => {
+    if (response.status() >= 400 && response.url().startsWith(base)) {
+      requestFailures.push(`${response.status()} ${response.url()}`)
+    }
+  })
+}
+auditErrors(page)
 
 await page.addInitScript(() => {
   window.__SFX_PLAYS__ = []
@@ -12986,6 +12989,93 @@ const abandonedFinishedCombat = await readRun()
 check('returning to the menu does not resume a paused completed-combat transition', () => {
   assertEqual(abandonedFinishedCombat.phase, 'combat')
   assertEqual(abandonedFinishedCombat.combat.phase, 'won')
+})
+
+// Landscape phones use a desktop layout viewport and let the browser scale it
+// uniformly. This keeps one UI instead of a second mobile combat layout.
+const phoneLayouts = []
+const webkitBrowser = await webkit.launch({ headless: !headed })
+for (const [engineName, phoneBrowser, deviceName] of [
+  ['Chromium', browser, 'iPhone SE landscape'],
+  ['Chromium', browser, 'iPhone 15 Pro Max landscape'],
+  ['WebKit', webkitBrowser, 'iPhone SE landscape'],
+  ['WebKit', webkitBrowser, 'iPhone 15 Pro Max landscape'],
+]) {
+  const phoneContext = await phoneBrowser.newContext({ ...devices[deviceName] })
+  const phonePage = installScreenAudit(await phoneContext.newPage())
+  auditErrors(phonePage)
+  const tap = async (locator) => {
+    if (engineName === 'Chromium') return locator.tap()
+    const box = await locator.boundingBox()
+    assert(box, `${engineName} could not locate the touch target`)
+    const viewport = await phonePage.evaluate(() => ({
+      left: visualViewport.offsetLeft, top: visualViewport.offsetTop, scale: visualViewport.scale,
+    }))
+    await phonePage.touchscreen.tap(
+      (box.x + box.width / 2 - viewport.left) * viewport.scale,
+      (box.y + box.height / 2 - viewport.top) * viewport.scale,
+    )
+  }
+  await phonePage.goto(base, { waitUntil: 'networkidle' })
+  await tap(phonePage.getByRole('button', { name: 'Single Player' }))
+  await tap(phonePage.getByRole('button', { name: 'Ironclad' }))
+  await tap(phonePage.getByRole('button', { name: 'Embark' }))
+  await phonePage.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+  await phonePage.locator('.combat').waitFor()
+  await phonePage.waitForFunction(() => [...document.querySelectorAll('.hand .card')].every((card) =>
+    card.getAnimations().every((animation) => animation.playState === 'finished')))
+  const layout = await phonePage.evaluate(() => {
+    const visible = (selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return false
+      const box = element.getBoundingClientRect()
+      return box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1
+    }
+    const cards = [...document.querySelectorAll('.hand .card')]
+    return {
+      width: innerWidth,
+      height: innerHeight,
+      horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      requiredRegions: ['.app-shell__header', '.combat__bar', '.board', '.row--viewer', '.hand-area', '.combat__end-turn']
+        .every(visible),
+      cardCount: cards.length,
+      clippedCards: cards.filter((card) => {
+        const box = card.getBoundingClientRect()
+        return box.left < -1 || box.right > innerWidth + 1 || box.top < -1 || box.bottom > innerHeight + 1
+      }).length,
+      mobileRules: matchMedia('(max-width: 760px)').matches || matchMedia('(max-height: 600px)').matches,
+    }
+  })
+  await phonePage.screenshot({ path: join(outDir, `phone-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`), scale: 'css' })
+  phoneLayouts.push({ deviceName: `${engineName} ${deviceName}`, ...layout })
+
+  if (deviceName === 'iPhone SE landscape') {
+    const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
+    const attackIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
+      .findIndex((card) => card.defId.startsWith('strike')))
+    assert(attackIndex >= 0, 'phone fixture needs an attack card')
+    await tap(phonePage.locator('.hand .card').nth(attackIndex))
+    await tap(phonePage.locator('.enemy--targeted').first())
+    await phonePage.waitForFunction((count) => window.__STS_DEBUG__.getState().players[0].hand.length < count, before)
+
+    await phonePage.setViewportSize({ width: 320, height: 568 })
+    await phonePage.waitForFunction(() => innerWidth === 320 && innerHeight === 568)
+    await phonePage.setViewportSize({ width: 568, height: 320 })
+    await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
+  }
+  await phoneContext.close()
+}
+await webkitBrowser.close()
+check('landscape phones render and play the complete desktop combat UI', () => {
+  for (const layout of phoneLayouts) {
+    assert(layout.width >= 1280 && layout.height >= 700, `${layout.deviceName}: ${layout.width}x${layout.height}`)
+    assert(!layout.mobileRules, `${layout.deviceName}: mobile CSS is active`)
+    assert(!layout.horizontalOverflow, `${layout.deviceName}: document overflows horizontally`)
+    assert(layout.requiredRegions, `${layout.deviceName}: required combat information is missing or clipped`)
+    assert(layout.cardCount > 0, `${layout.deviceName}: hand is missing`)
+    assertEqual(layout.clippedCards, 0, `${layout.deviceName}: clipped cards`)
+  }
 })
 
 writeFileSync(

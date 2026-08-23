@@ -2,7 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <script>
+      const phone = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) <= 500
+      let viewport
+      let landscape
+      let landscapeWidth = 1280
+      const fitDesktopViewport = () => {
+        const nextLandscape = matchMedia('(orientation: landscape)').matches
+        if (viewport && nextLandscape === landscape) return
+        if (phone && nextLandscape) {
+          landscapeWidth = Math.max(1280, Math.round(innerWidth / innerHeight * 720))
+        }
+        landscape = nextLandscape
+        viewport?.remove()
+        viewport = document.createElement('meta')
+        viewport.name = 'viewport'
+        viewport.content = phone && landscape
+          ? `width=${landscapeWidth}`
+          : 'width=device-width, initial-scale=1, viewport-fit=cover'
+        document.head.append(viewport)
+      }
+      fitDesktopViewport()
+      if (phone) addEventListener('resize', fitDesktopViewport, { passive: true })
+    </script>
     <link rel="preload" href="/assets/combat/vfx/hit-burst.webp" as="image" type="image/webp" />
     <link rel="preload" href="/assets/combat/vfx/death-ash.webp" as="image" type="image/webp" />
     <link rel="preload" href="/assets/combat/vfx/death-ring.webp" as="image" type="image/webp" />
