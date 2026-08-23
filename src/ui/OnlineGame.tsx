@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
@@ -296,6 +296,28 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
     snapshot?.run?.phase,
     snapshot?.you.playerId,
   )
+  const visibleCombat = snapshot?.run?.combat
+  const combat = useMemo(() => visibleCombat ? {
+    ...visibleCombat,
+    rng: { seed: 0, calls: 0 },
+    discardedThisTurn: [],
+    stanceChangedThisTurn: [],
+    playedCardsThisTurn: visibleCombat.playedCardsThisTurn ?? [],
+    potionDeck: [],
+    potionLimit: visibleCombat.potionLimit,
+    lastStand: visibleCombat.lastStand,
+    summonSupply: {},
+    pendingSummons: visibleCombat.pendingSummons ?? [],
+    pendingDistilled: visibleCombat.pendingDistilled ? {
+      ...visibleCombat.pendingDistilled,
+      cards: visibleCombat.pendingDistilled.cards ?? [],
+    } : undefined,
+    pendingRelicScry: visibleCombat.pendingRelicScry ? {
+      ...visibleCombat.pendingRelicScry,
+      cards: visibleCombat.pendingRelicScry.cards ?? [],
+    } : undefined,
+    players: visibleCombat.players.map(playerForUi),
+  } satisfies CombatState : null, [visibleCombat])
 
   if (!snapshot && room.activeCode) {
     return (
@@ -472,28 +494,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
   const waitingForCatchUpMerchant = run.phase === 'room' && run.roomState?.kind === 'merchant' &&
     run.setup?.kind === 'catch-up' && !run.setup.playerIds.includes(snapshot.you.playerId)
-  const combat = run.combat ? {
-    ...run.combat,
-    rng: { seed: 0, calls: 0 },
-    discardedThisTurn: [],
-    stanceChangedThisTurn: [],
-    playedCardsThisTurn: run.combat.playedCardsThisTurn ?? [],
-    potionDeck: [],
-    potionLimit: run.combat.potionLimit,
-    lastStand: run.combat.lastStand,
-    summonSupply: {},
-    pendingSummons: run.combat.pendingSummons ?? [],
-    pendingDistilled: run.combat.pendingDistilled ? {
-      ...run.combat.pendingDistilled,
-      cards: run.combat.pendingDistilled.cards ?? [],
-    } : undefined,
-    pendingRelicScry: run.combat.pendingRelicScry ? {
-      ...run.combat.pendingRelicScry,
-      cards: run.combat.pendingRelicScry.cards ?? [],
-    } : undefined,
-    players: run.combat.players.map(playerForUi),
-  } satisfies CombatState : null
-
   return (
     <>
     <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined} className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>

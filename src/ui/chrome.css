@@ -5127,6 +5127,35 @@ html[data-high-contrast='true'] .start-menu__nav button:focus-visible { outline-
   .sts-scope .merchant-cards h3 { font-size: 0.6rem; }
 }
 
+/* The mobile combat tier also applies to non-combat scenes. Avoid full-viewport
+   blur passes and perpetual map compositing on phone-class GPUs. */
+html[data-mobile-performance='true'] .map-peek::backdrop,
+html[data-mobile-performance='true'] .settings-dialog::backdrop,
+html[data-mobile-performance='true'] .merchant-removal-dialog::backdrop,
+html[data-mobile-performance='true'] .merchant-potion-dialog::backdrop,
+html[data-mobile-performance='true'] .sts-scope .event-panel {
+  backdrop-filter: none;
+}
+
+html[data-mobile-performance='true'] .sts-scope .merchant-arrival::before {
+  left: 0;
+  width: 100%;
+  background: linear-gradient(180deg, #07040a, rgb(7 4 10 / 0.25) 42% 58%, #07040a);
+  filter: none;
+  transform: none;
+}
+
+html[data-mobile-performance='true'] .sts-scope.online-lobby {
+  background-attachment: scroll;
+}
+
+html[data-mobile-performance='true'] .map__path--live,
+html[data-mobile-performance='true'] .map .room--reachable,
+html[data-mobile-performance='true'] .map .room--here::after,
+html[data-mobile-performance='true'] .map .room--reachable::before {
+  animation: none;
+}
+
 /* Keep the game's cursor after surface-specific hover rules. Several of those
    rules set `cursor: pointer`, so declaring this near the top was not enough. */
 body:has(.sts-scope),

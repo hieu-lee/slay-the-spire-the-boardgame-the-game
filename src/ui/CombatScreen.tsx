@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
 import type { CardDef, Effect } from '../game/cards.ts'
@@ -218,14 +218,26 @@ function latestTargetPresentationEvent(
   return undefined
 }
 
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false)
+function useReducedEffects(): boolean {
+  const prefersReducedEffects = () =>
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    document.documentElement.dataset.reducedMotion === 'true' ||
+    document.documentElement.dataset.mobilePerformance === 'true'
+  const [reduced, setReduced] = useState(prefersReducedEffects)
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = () => setReduced(query.matches)
+    const sync = () => setReduced(prefersReducedEffects())
+    const observer = new MutationObserver(sync)
     sync()
     query.addEventListener('change', sync)
-    return () => query.removeEventListener('change', sync)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-reduced-motion', 'data-mobile-performance'],
+    })
+    return () => {
+      query.removeEventListener('change', sync)
+      observer.disconnect()
+    }
   }, [])
   return reduced
 }
@@ -610,6 +622,7 @@ function useStruck(
   state: CombatState,
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
+  reducedEffects = false,
 ): {
   hits: Map<string, { beat: number; damage: number; delayMs: number }[]>
 } {
@@ -670,7 +683,9 @@ function useStruck(
       const token = `${id}:${beat}`
       nextBeats.current.set(id, beat)
       const targetPresentation = latestTargetPresentationEvent(newPresentations, id)
-      const delay = characterAttackContactMs(state, id, targetPresentation ?? newPresentation)
+      const delay = reducedEffects
+        ? 0
+        : characterAttackContactMs(state, id, targetPresentation ?? newPresentation)
       setHits((current) => {
         const next = new Map(current)
         next.set(id, [...(next.get(id) ?? []), { beat, damage: amount, delayMs: delay }])
@@ -678,7 +693,7 @@ function useStruck(
       })
       const flinch = () => {
         timers.current.delete(`${token}:flinch`)
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        if (reducedEffects) return
         const escaped = CSS.escape(id)
         const portrait = document.querySelector<HTMLElement>(
           `.enemy[data-enemy-id="${escaped}"] .enemy__portrait, ` +
@@ -709,7 +724,7 @@ function useStruck(
         })
       }, delay + 520))
     }
-  }, [authoritativeConnected, authoritativeRestoration, state])
+  }, [authoritativeConnected, authoritativeRestoration, reducedEffects, state])
 
   useEffect(() => () => {
     for (const timer of timers.current.values()) clearTimeout(timer)
@@ -718,15 +733,15 @@ function useStruck(
   }, [])
 
   useEffect(() => {
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const cancel = () => {
-      if (!reducedMotion.matches) return
-      for (const animation of flinches.current) animation.cancel()
-      flinches.current.clear()
+    if (!reducedEffects) return
+    for (const [key, timer] of timers.current) {
+      if (!key.endsWith(':flinch')) continue
+      clearTimeout(timer)
+      timers.current.delete(key)
     }
-    reducedMotion.addEventListener('change', cancel)
-    return () => reducedMotion.removeEventListener('change', cancel)
-  }, [])
+    for (const animation of flinches.current) animation.cancel()
+    flinches.current.clear()
+  }, [reducedEffects])
 
   return { hits }
 }
@@ -881,7 +896,10 @@ function usePresentationEvents(
       if (prior) clearTimeout(prior)
       const lastTarget = event.enemyIds.at(-1)
       const lifetime = Math.max(900, lastTarget
-        ? characterAttackContactMs(state, lastTarget, event) + 320
+        // The target burst runs for 300ms after contact. Leave one frame-budget
+        // margin for a busy mobile renderer so the event cannot unmount before
+        // the delayed final impact paints.
+        ? characterAttackContactMs(state, lastTarget, event) + 420
         : 0)
       timers.current.set(event.seq, setTimeout(() => {
         timers.current.delete(event.seq)
@@ -954,7 +972,7 @@ function usePersonalCombatSoundEffects(
   }, [])
 }
 
-export function CombatScreen({
+function CombatScreenView({
   state,
   viewerId,
   onChange,
@@ -1019,6 +1037,7 @@ export function CombatScreen({
   const [resolvingStartTurnScry, setResolvingStartTurnScry] = useState(false)
   const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
   const [stageScale, setStageScale] = useState(1)
+  const reducedMotion = useReducedEffects()
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -1036,6 +1055,12 @@ export function CombatScreen({
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const armedCardFlight = useRef<CardInstance | null>(null)
   const cardDragStart = useRef<CardDragStart | null>(null)
+  const cardDragLive = useRef<CardDrag | null>(null)
+  const cardDragFrame = useRef<number | null>(null)
+  const cardDragMove = useRef<{ x: number; y: number } | null>(null)
+  const cardDragOverlay = useRef<HTMLDivElement | null>(null)
+  const cardDragArrow = useRef<SVGPathElement | null>(null)
+  const cardDragArrowShadow = useRef<SVGPathElement | null>(null)
   const suppressCardClick = useRef<string | null>(null)
   const motionBaseline = useRef<MotionSnapshot | null>(null)
   const motionRestoration = useRef(authoritativeRestoration)
@@ -1055,7 +1080,7 @@ export function CombatScreen({
   })
 
   function pulseMotion(keys: MotionKey[]) {
-    if (keys.length === 0) return
+    if (reducedMotion || keys.length === 0) return
     setMotionBeats((current) => {
       const updated = { ...current }
       for (const key of keys) updated[key] += 1
@@ -1125,22 +1150,27 @@ export function CombatScreen({
     `${ability.evokeChoice?.options.map((option) => `${option.slot}:${option.orb}`).join(',') ?? ''}:` +
     `${savedStartTurnEnemyTargets?.[ability.id] ?? ''}`).join('\0') + `\0${savedStartChoiceKey}`
 
-  const { hits } = useStruck(state, authoritativeRestoration, authoritativeConnected)
+  const { hits } = useStruck(
+    state,
+    authoritativeRestoration,
+    authoritativeConnected,
+    reducedMotion,
+  )
   const falling = useFalling(
     state,
     authoritativeRestoration,
     authoritativeConnected,
   )
   const livePresentationEvents = usePresentationEvents(state, authoritativeRestoration, authoritativeConnected)
-  const reducedMotion = useReducedMotion()
   useEffect(() => {
     if (!reducedMotion) return
     for (const [key, timer] of motionTimers.current) {
-      if (!key.startsWith('flight:')) continue
       clearTimeout(timer)
       motionTimers.current.delete(key)
     }
-    setCardFlights([])
+    setCardFlights((current) => current.length === 0 ? current : [])
+    setDrawnCards((current) => current.size === 0 ? current : new Set())
+    setMotionActive((current) => current.size === 0 ? current : new Set())
   }, [reducedMotion])
   const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}`
   usePersonalCombatSoundEffects(
@@ -1176,7 +1206,7 @@ export function CombatScreen({
   useLayoutEffect(() => {
     const board = boardRef.current
     if (!board) return
-    if (!activeVfx.some(isCharacterAttack)) {
+    if (reducedMotion || !activeVfx.some(isCharacterAttack)) {
       setCharacterAttacks((current) => Object.keys(current).length === 0 ? current : {})
       return
     }
@@ -1239,7 +1269,7 @@ export function CombatScreen({
       })
     }
     setCharacterAttacks(next)
-  }, [activeVfx, stageScale, state.enemies, state.players])
+  }, [activeVfx, reducedMotion, stageScale, state.enemies, state.players])
   useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
   // Animate only changes witnessed while this combat is live. A reconnect or
@@ -1268,7 +1298,7 @@ export function CombatScreen({
       !cardCanStartDrag(activeDrag.card))) clearCardDrag()
 
     if (!before) {
-      if (animateOpeningHand && next.hand.length > 0) {
+      if (!reducedMotion && animateOpeningHand && next.hand.length > 0) {
         setDrawnCards(new Set(next.hand.map((card) => card.uid)))
       }
       return
@@ -1285,7 +1315,7 @@ export function CombatScreen({
     }
 
     const arrivals = drawnCardUids(before.hand, next.hand)
-    if (arrivals.length > 0) {
+    if (!reducedMotion && arrivals.length > 0) {
       setDrawnCards((current) => new Set([...current, ...arrivals]))
     }
 
@@ -1337,6 +1367,7 @@ export function CombatScreen({
 
   useEffect(() => () => {
     for (const timer of motionTimers.current.values()) clearTimeout(timer)
+    if (cardDragFrame.current !== null) cancelAnimationFrame(cardDragFrame.current)
   }, [])
 
   // Unknown delivery with the item still visible stays locked until a causally
@@ -2943,19 +2974,45 @@ export function CombatScreen({
   function onCardPointerMove(event: React.PointerEvent<HTMLElement>) {
     const start = cardDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
-    if (!cardDrag && Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
-    setCardDrag({
-      card: start.card,
-      pointerId: start.pointerId,
-      startX: start.startX,
-      startY: start.startY,
-      x: event.clientX,
-      y: event.clientY,
-      targetUid: start.needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null,
-      targetPlayerId: start.needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null,
-      needsEnemy: start.needsEnemy,
-      needsPlayer: start.needsPlayer,
-      hitsRow: start.hitsRow,
+    if (!cardDragLive.current &&
+      Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
+    cardDragMove.current = { x: event.clientX, y: event.clientY }
+    if (cardDragFrame.current !== null) return
+    cardDragFrame.current = requestAnimationFrame(() => {
+      cardDragFrame.current = null
+      const active = cardDragStart.current
+      const move = cardDragMove.current
+      if (!active || !move) return
+      const next: CardDrag = {
+        card: active.card,
+        pointerId: active.pointerId,
+        startX: active.startX,
+        startY: active.startY,
+        x: move.x,
+        y: move.y,
+        targetUid: active.needsEnemy ? dragTargetAt(move.x, move.y, active.hitsRow) : null,
+        targetPlayerId: active.needsPlayer ? dragPlayerAt(move.x, move.y) : null,
+        needsEnemy: active.needsEnemy,
+        needsPlayer: active.needsPlayer,
+        hitsRow: active.hitsRow,
+      }
+      const previous = cardDragLive.current
+      cardDragLive.current = next
+      const path = `M ${next.startX} ${next.startY - 45} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
+      cardDragArrow.current?.setAttribute('d', path)
+      cardDragArrowShadow.current?.setAttribute('d', path)
+      if (cardDragOverlay.current) {
+        cardDragOverlay.current.style.setProperty(
+          '--drag-y',
+          `${Math.max(0, next.y - next.startY + 210)}px`,
+        )
+        cardDragOverlay.current.style.setProperty(
+          '--drag-turn',
+          `${Math.max(-8, Math.min(8, (next.x - next.startX) / 24))}deg`,
+        )
+      }
+      if (!previous || previous.targetUid !== next.targetUid ||
+        previous.targetPlayerId !== next.targetPlayerId) setCardDrag(next)
     })
   }
 
@@ -2966,6 +3023,10 @@ export function CombatScreen({
 
   function clearCardDrag() {
     cardDragStart.current = null
+    cardDragLive.current = null
+    cardDragMove.current = null
+    if (cardDragFrame.current !== null) cancelAnimationFrame(cardDragFrame.current)
+    cardDragFrame.current = null
     setCardDrag(null)
   }
 
@@ -2974,8 +3035,8 @@ export function CombatScreen({
     if (!start || start.pointerId !== event.pointerId) return
     const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
     const lifted = event.clientY < start.startY - 10
-    const needsEnemy = cardDrag?.needsEnemy ?? start.needsEnemy
-    const needsPlayer = cardDrag?.needsPlayer ?? start.needsPlayer
+    const needsEnemy = cardDragLive.current?.needsEnemy ?? start.needsEnemy
+    const needsPlayer = cardDragLive.current?.needsPlayer ?? start.needsPlayer
     const targetUid = needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null
     const targetPlayerId = needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null
     clearCardDrag()
@@ -4039,7 +4100,7 @@ export function CombatScreen({
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
                 falling={falling.has(enemy.uid)}
-                visualContactMs={characterAttackContactMs(state, enemy.uid,
+                visualContactMs={reducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
                   latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}
                 visualEventSeq={latestTargetPresentationEvent(state.presentationEvents, enemy.uid)?.seq}
                 visualResetKey={visualResetKey}
@@ -4050,7 +4111,9 @@ export function CombatScreen({
                     key={active.event.seq}
                     active={active}
                     role="target"
-                    attackContactMs={characterAttackContactMs(state, enemy.uid, active.event)}
+                    attackContactMs={reducedMotion
+                      ? 0
+                      : characterAttackContactMs(state, enemy.uid, active.event)}
                   />
                 ))}
                 stageIndex={stageEnemies.length + index}
@@ -4358,7 +4421,7 @@ export function CombatScreen({
                       label={enemyLabel(state.enemies, enemy)}
                       die={state.die}
                       falling={falling.has(enemy.uid)}
-                      visualContactMs={characterAttackContactMs(state, enemy.uid,
+                      visualContactMs={reducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
                         latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}
                       visualEventSeq={latestTargetPresentationEvent(state.presentationEvents, enemy.uid)?.seq}
                       visualResetKey={visualResetKey}
@@ -4369,7 +4432,9 @@ export function CombatScreen({
                           key={active.event.seq}
                           active={active}
                           role="target"
-                          attackContactMs={characterAttackContactMs(state, enemy.uid, active.event)}
+                          attackContactMs={reducedMotion
+                            ? 0
+                            : characterAttackContactMs(state, enemy.uid, active.event)}
                         />
                       ))}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
@@ -4494,13 +4559,14 @@ export function CombatScreen({
                   <path d="M 0 0 L 22 11 L 0 22 Z" />
                 </marker>
               </defs>
-              <path className="card-target-arrow__shadow" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
-              <path className="card-target-arrow__line" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
+              <path ref={cardDragArrowShadow} className="card-target-arrow__shadow" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
+              <path ref={cardDragArrow} className="card-target-arrow__line" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
             </svg>
           ) : null}
-          <div className="card-drag" style={{
+          <div ref={cardDragOverlay} className="card-drag" style={{
             left: cardDrag.startX,
-            top: Math.max(cardDrag.y + 120, cardDrag.startY - 90),
+            top: cardDrag.startY - 90,
+            '--drag-y': `${Math.max(0, cardDrag.y - cardDrag.startY + 210)}px`,
             '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
           } as React.CSSProperties} aria-hidden="true" inert>
             <Card card={cardDrag.card} playable={false} />
@@ -4520,3 +4586,5 @@ export function CombatScreen({
     </div>
   )
 }
+
+export const CombatScreen = memo(CombatScreenView)

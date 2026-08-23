@@ -1,4 +1,5 @@
 import type React from 'react'
+import { useEffect, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
@@ -31,10 +32,20 @@ type CardProps = {
 }
 
 /** Show an optional publisher scan only after Chromium can decode its pixels. */
-export function revealDecodedImage(image: HTMLImageElement) {
+export function revealDecodedImage(image: HTMLImageElement, options?: {
+  isCurrent?: () => boolean
+  onDecodeError?: () => void
+}) {
   void image.decode().then(
-    () => { image.style.visibility = 'visible' },
-    () => { image.style.visibility = 'hidden' },
+    () => {
+      if (options?.isCurrent && !options.isCurrent()) return
+      image.style.visibility = 'visible'
+    },
+    () => {
+      if (options?.isCurrent && !options.isCurrent()) return
+      image.style.visibility = 'hidden'
+      options?.onDecodeError?.()
+    },
   )
 }
 
@@ -289,8 +300,13 @@ function handEndOfTurnText(effect: HandEndOfTurnEffect): string {
   }
 }
 
+const rulesTextCache = new Map<string, string>()
+
 export function cardRulesText(def: CardDef): string {
-  return [
+  const cacheKey = `${def.id}\0${def.name}`
+  const cached = rulesTextCache.get(cacheKey)
+  if (cached !== undefined) return cached
+  const rules = [
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
     // safe from it, which is the opposite of the rule.
@@ -331,6 +347,8 @@ export function cardRulesText(def: CardDef): string {
   ]
     .filter(Boolean)
     .join(', ')
+  rulesTextCache.set(cacheKey, rules)
+  return rules
 }
 
 export function cardPlayText(def: CardDef, cost = def.cost): string {
@@ -366,6 +384,9 @@ export function Card({
   onLostPointerCapture,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
+  const scan = cardImagePath(def, card.upgraded)
+  const [scanUnavailable, setScanUnavailable] = useState(false)
+  useEffect(() => setScanUnavailable(false), [scan])
   const className = [
     'card',
     extraClassName ?? '',
@@ -409,18 +430,27 @@ export function Card({
     >
       <img
         className="card__art"
-        src={cardImagePath(def, card.upgraded)}
+        src={scan}
         alt=""
         draggable={false}
         loading="lazy"
-        onLoad={(event) => revealDecodedImage(event.currentTarget)}
+        decoding="async"
+        onLoad={(event) => {
+          const image = event.currentTarget
+          revealDecodedImage(image, {
+            isCurrent: () => image.isConnected && image.getAttribute('src') === scan,
+            onDecodeError: () => setScanUnavailable(true),
+          })
+        }}
         onError={(event) => {
+          if (event.currentTarget.getAttribute('src') !== scan) return
           // Some source-set cards have no scan. Fall back to the card frame
           // rather than showing a broken image.
           event.currentTarget.style.visibility = 'hidden'
+          setScanUnavailable(true)
         }}
       />
-      <CardFace def={def} cost={cost} rules={cardRulesText(def)} />
+      <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
         // `accessibleName` already says "affects a whole row" — announced here as

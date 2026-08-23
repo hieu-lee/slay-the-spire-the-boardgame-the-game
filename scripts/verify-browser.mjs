@@ -60,7 +60,7 @@ const auditErrors = (currentPage) => {
   })
   currentPage.on('pageerror', (error) => pageErrors.push(String(error)))
   currentPage.on('requestfailed', (request) =>
-    request.failure()?.errorText !== 'net::ERR_ABORTED' || !request.url().includes('/assets/bgm/')
+    request.failure()?.errorText !== 'net::ERR_ABORTED' || !/\/assets\/(?:bgm|sfx)\//.test(request.url())
       ? requestFailures.push(`${request.url()} ${request.failure()?.errorText ?? ''}`)
       : undefined,
   )
@@ -2141,16 +2141,24 @@ check('Distilled Chaos stays hidden while a mandatory trigger needs its row', ()
   assertEqual(triggerRowsOutsideDistilled, 2)
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
-await page.waitForFunction(() => [...document.querySelectorAll('.card > .card-face > .card-face__illustration')]
-  .every((image) => image.complete && image.naturalWidth > 0))
+await page.waitForFunction((expectFallback) => {
+  const images = [...document.querySelectorAll('.card > .card-face > img.card-face__illustration')]
+  return !expectFallback || (images.length > 0 &&
+    images.every((image) => image.complete && image.naturalWidth > 0))
+}, !artSynced)
 
 // Card art must actually load; a broken path renders an empty box that no state
 // assertion would catch.
 const artStatus = await page.evaluate(() =>
-  [...document.querySelectorAll('.card > .card-face > .card-face__illustration')].map((img) => ({
-    src: img.getAttribute('src'),
-    ok: img.complete && img.naturalWidth > 0,
-  })),
+  [...document.querySelectorAll('.card > .card-face > img.card-face__illustration')].map((img) => {
+    const scan = img.closest('.card')?.querySelector(':scope > .card__art')
+    return {
+      src: img.getAttribute('src'),
+      ok: img.complete && img.naturalWidth > 0,
+      scanUnavailable: scan instanceof HTMLImageElement &&
+        (scan.naturalWidth === 0 || getComputedStyle(scan).visibility === 'hidden'),
+    }
+  }),
 )
 // A missing file under public/ is served by Vite's SPA fallback as 200 + HTML,
 // so a network-status check cannot see it. Only naturalWidth tells the truth.
@@ -2166,12 +2174,14 @@ check('every enemy portrait on screen actually loaded', () => {
   assert(broken.length === 0, `broken enemy art: ${broken.map((b) => b.src).join(', ')}`)
 })
 
-check('every repo-native card illustration in hand actually loaded', () => {
-  assert(artStatus.length > 0, 'expected cards to be rendered')
+check('repo-native card illustrations load only when a scan is unavailable', () => {
+  if (!artSynced) assert(artStatus.length > 0, 'expected fallback cards to be rendered')
   const broken = artStatus.filter((entry) => !entry.ok)
   assert(broken.length === 0, `broken card art: ${broken.map((b) => b.src).join(', ')}`)
   assert(artStatus.every((entry) => entry.src?.startsWith('/assets/card-art/')),
     `a native face used the wrong asset root: ${artStatus.map((entry) => entry.src).join(', ')}`)
+  assert(artStatus.every((entry) => entry.scanUnavailable),
+    'a fallback illustration decoded while its publisher scan was available')
 })
 
 const nativeFace = await page.locator('.hand .card').first().evaluate((card) => {
@@ -8584,7 +8594,7 @@ await page.evaluate(() => {
   run.combat.players[0].orbs = [null, null, null]
   debug.setRun(run)
 })
-await page.waitForTimeout(900)
+await page.waitForFunction(() => !document.querySelector('.character-attack'))
 
 const idleMotion = await page.evaluate(() => {
   const seatPortrait = document.querySelector('.seat:not(.seat--dead) .seat__portrait')
@@ -9774,7 +9784,6 @@ const reducedWatcherSeq = await publishDamagingPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'eruption', enemyIds: [firstEnemyId], playerIds: [],
   upgraded: false, copied: false, energy: 1,
 }, firstEnemyId)
-await watcherSeat.locator(`.character-attack[data-attack-seq="${reducedWatcherSeq}"]`).waitFor({ state: 'attached' })
 await page.locator(`.combat-vfx--target[data-vfx-seq="${reducedWatcherSeq}"]`).waitFor({ state: 'attached' })
 await page.waitForTimeout(120)
 const reducedWatcherHp = await firstEnemyCard.locator('.bar__label').textContent()
@@ -9782,12 +9791,12 @@ const reducedWatcherActualHp = await page.evaluate((enemyId) => window.__STS_DEB
   .find((enemy) => enemy.uid === enemyId)?.hp, firstEnemyId)
 const reducedWatcherAttack = await watcherSeat.evaluate((seat) => ({
   actorAnimation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
-  attackDisplay: getComputedStyle(seat.querySelector('.character-attack')).display,
+  attackCount: seat.querySelectorAll('.character-attack').length,
   auraAnimation: getComputedStyle(seat.querySelector('.stance-aura')).animationName,
 }))
-check('reduced motion also stops Watcher attack poses and aura dashes', () => {
+check('reduced motion omits Watcher attack poses and stops aura dashes', () => {
   assertEqual(reducedWatcherAttack.actorAnimation, 'none')
-  assertEqual(reducedWatcherAttack.attackDisplay, 'none')
+  assertEqual(reducedWatcherAttack.attackCount, 0)
   assertEqual(reducedWatcherAttack.auraAnimation, 'none')
   assert(reducedWatcherHp?.startsWith(`${reducedWatcherActualHp}/`), reducedWatcherHp ?? '')
 })
@@ -12998,6 +13007,7 @@ const webkitBrowser = await webkit.launch({ headless: !headed })
 for (const [engineName, phoneBrowser, deviceName] of [
   ['Chromium', browser, 'iPhone SE landscape'],
   ['Chromium', browser, 'iPhone 15 Pro Max landscape'],
+  ['Chromium', browser, 'Pixel 7 landscape'],
   ['WebKit', webkitBrowser, 'iPhone SE landscape'],
   ['WebKit', webkitBrowser, 'iPhone 15 Pro Max landscape'],
 ]) {
@@ -13033,6 +13043,13 @@ for (const [engineName, phoneBrowser, deviceName] of [
       return box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1
     }
     const cards = [...document.querySelectorAll('.hand .card')]
+    const cardProbe = cards[0]
+    cardProbe?.classList.add('card--unplayable')
+    const unplayableOpacity = cardProbe ? Number(getComputedStyle(cardProbe).opacity) : 1
+    cardProbe?.classList.remove('card--unplayable')
+    cardProbe?.classList.add('card--selected')
+    const selectedOutline = cardProbe ? getComputedStyle(cardProbe).outlineStyle : 'none'
+    cardProbe?.classList.remove('card--selected')
     return {
       width: innerWidth,
       height: innerHeight,
@@ -13040,6 +13057,14 @@ for (const [engineName, phoneBrowser, deviceName] of [
       requiredRegions: ['.app-shell__header', '.combat__bar', '.board', '.row--viewer', '.hand-area', '.combat__end-turn']
         .every(visible),
       cardCount: cards.length,
+      fallbackIllustrations: document.querySelectorAll('.hand .card-face__illustration:is(img)').length,
+      mobilePerformance: document.documentElement.dataset.mobilePerformance === 'true',
+      ambientAnimations: [...document.querySelectorAll(
+        '.seat__portrait > img, .enemy__portrait > .enemy__art--cutout, .stance-aura',
+      )].some((element) => element.getAnimations().some((animation) =>
+        animation.effect?.getTiming().iterations === Infinity)),
+      unplayableOpacity,
+      selectedOutline,
       clippedCards: cards.filter((card) => {
         const box = card.getBoundingClientRect()
         return box.left < -1 || box.right > innerWidth + 1 || box.top < -1 || box.bottom > innerHeight + 1
@@ -13047,8 +13072,24 @@ for (const [engineName, phoneBrowser, deviceName] of [
       mobileRules: matchMedia('(max-width: 760px)').matches || matchMedia('(max-height: 600px)').matches,
     }
   })
+  await tap(phonePage.getByRole('button', { name: 'Map' }))
+  const mapDialog = phonePage.getByRole('dialog', { name: /Act .* map/ })
+  await mapDialog.waitFor()
+  Object.assign(layout, await mapDialog.evaluate((dialog) => ({
+    mapBackdropFilter: getComputedStyle(dialog, '::backdrop').backdropFilter,
+    mapHerePresent: Boolean(document.querySelector('.map .room--here')),
+    mapHereAnimation: document.querySelector('.map .room--here')
+      ? getComputedStyle(document.querySelector('.map .room--here'), '::after').animationName
+      : 'none',
+  })))
+  await tap(mapDialog.getByRole('button', { name: 'Close' }))
+  await tap(phonePage.getByRole('button', { name: 'Settings' }))
+  const settingsDialog = phonePage.getByRole('dialog', { name: 'Settings' })
+  await settingsDialog.waitFor()
+  layout.settingsBackdropFilter = await settingsDialog.evaluate((dialog) =>
+    getComputedStyle(dialog, '::backdrop').backdropFilter)
+  await tap(settingsDialog.getByRole('button', { name: /Back/ }))
   await phonePage.screenshot({ path: join(outDir, `phone-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`), scale: 'css' })
-  phoneLayouts.push({ deviceName: `${engineName} ${deviceName}`, ...layout })
 
   if (deviceName === 'iPhone SE landscape') {
     const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
@@ -13063,7 +13104,105 @@ for (const [engineName, phoneBrowser, deviceName] of [
     await phonePage.waitForFunction(() => innerWidth === 320 && innerHeight === 568)
     await phonePage.setViewportSize({ width: 568, height: 320 })
     await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
+  } else {
+    const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
+    const attackIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
+      .findIndex((card) => card.defId.startsWith('strike')))
+    assert(attackIndex >= 0, 'mobile drag fixture needs an attack card')
+    const card = phonePage.locator('.hand .card').nth(attackIndex)
+    const enemy = phonePage.locator('.enemy:not(.enemy--dead)').first()
+    const cardBox = await card.boundingBox()
+    const enemyBox = await enemy.boundingBox()
+    assert(cardBox && enemyBox, `${engineName} ${deviceName}: mobile drag fixtures are not visible`)
+    const startX = cardBox.x + cardBox.width / 2
+    const startY = cardBox.y + cardBox.height / 2
+    const realTouch = engineName === 'Chromium' && deviceName === 'Pixel 7 landscape'
+    const cdp = realTouch ? await phoneContext.newCDPSession(phonePage) : null
+    let pointer = { x: startX, y: startY }
+    const touchPoint = (point) => ({
+      x: point.x,
+      y: point.y,
+      id: 1,
+      radiusX: 1,
+      radiusY: 1,
+    })
+    const pointerDown = async () => {
+      if (cdp) {
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchStart', touchPoints: [touchPoint(pointer)],
+        })
+      } else {
+        await phonePage.mouse.move(pointer.x, pointer.y)
+        await phonePage.mouse.down()
+      }
+    }
+    const pointerMove = async (x, y, steps) => {
+      if (cdp) {
+        const from = pointer
+        for (let step = 1; step <= steps; step += 1) {
+          const point = {
+            x: from.x + (x - from.x) * step / steps,
+            y: from.y + (y - from.y) * step / steps,
+          }
+          await cdp.send('Input.dispatchTouchEvent', {
+            type: 'touchMove', touchPoints: [touchPoint(point)],
+          })
+        }
+      } else await phonePage.mouse.move(x, y, { steps })
+      pointer = { x, y }
+    }
+    const pointerUp = async (cancel = false) => {
+      if (cdp) {
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: cancel ? 'touchCancel' : 'touchEnd', touchPoints: [],
+        })
+      } else await phonePage.mouse.up()
+    }
+    await pointerDown()
+    const previewX = realTouch ? startX : startX - 24
+    await pointerMove(previewX, startY - 35, 3)
+    await phonePage.locator('.card-drag').waitFor()
+    const firstTransform = await phonePage.locator('.card-drag').evaluate((preview) =>
+      getComputedStyle(preview).transform)
+    await pointerMove(realTouch ? startX : startX - 48, startY - 75, 3)
+    await phonePage.evaluate(() => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const secondTransform = await phonePage.locator('.card-drag').evaluate((preview) =>
+      getComputedStyle(preview).transform)
+    await pointerMove(enemyBox.x + enemyBox.width / 2, enemyBox.y + enemyBox.height / 2, 8)
+    await phonePage.locator('.enemy--targeted').first().waitFor()
+    const targetOutline = await phonePage.locator('.enemy--targeted').first().evaluate((target) =>
+      getComputedStyle(target).outlineStyle)
+    await pointerUp()
+    await phonePage.waitForFunction((count) =>
+      window.__STS_DEBUG__.getState().players[0].hand.length < count, before)
+    let cancellationCleared = true
+    if (cdp) {
+      const cancelIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
+        .findIndex((held) => held.defId.startsWith('strike')))
+      assert(cancelIndex >= 0, 'mobile pointer-cancel fixture needs a second attack card')
+      const cancelCard = phonePage.locator('.hand .card').nth(cancelIndex)
+      const cancelBox = await cancelCard.boundingBox()
+      assert(cancelBox, 'mobile pointer-cancel card is not visible')
+      pointer = { x: cancelBox.x + cancelBox.width / 2, y: cancelBox.y + cancelBox.height / 2 }
+      await pointerDown()
+      await pointerMove(pointer.x, pointer.y - 35, 3)
+      await phonePage.locator('.card-drag').waitFor()
+      await pointerUp(true)
+      await phonePage.locator('.card-drag').waitFor({ state: 'detached' })
+      cancellationCleared = await phonePage.evaluate((count) =>
+        window.__STS_DEBUG__.getState().players[0].hand.length === count, before - 1)
+      await cdp.detach()
+    }
+    layout.drag = {
+      previewMoved: firstTransform !== secondTransform,
+      targetOutline,
+      played: true,
+      realTouch,
+      cancellationCleared,
+    }
   }
+  phoneLayouts.push({ deviceName: `${engineName} ${deviceName}`, ...layout })
   await phoneContext.close()
 }
 await webkitBrowser.close()
@@ -13074,6 +13213,23 @@ check('landscape phones render and play the complete desktop combat UI', () => {
     assert(!layout.horizontalOverflow, `${layout.deviceName}: document overflows horizontally`)
     assert(layout.requiredRegions, `${layout.deviceName}: required combat information is missing or clipped`)
     assert(layout.cardCount > 0, `${layout.deviceName}: hand is missing`)
+    assertEqual(layout.fallbackIllustrations, 0, `${layout.deviceName}: hidden fallback card art was decoded`)
+    assert(layout.mobilePerformance, `${layout.deviceName}: mobile performance mode is inactive`)
+    assert(!layout.ambientAnimations, `${layout.deviceName}: ambient combat animations are still running`)
+    assert(layout.unplayableOpacity < 0.8, `${layout.deviceName}: unplayable cards lost their visual cue`)
+    assert(layout.selectedOutline !== 'none', `${layout.deviceName}: selected cards lost their outline`)
+    assert(layout.mapBackdropFilter === 'none', `${layout.deviceName}: map backdrop still blurs`)
+    assert(layout.settingsBackdropFilter === 'none', `${layout.deviceName}: settings backdrop still blurs`)
+    assert(layout.mapHerePresent, `${layout.deviceName}: map location probe is missing`)
+    assert(layout.mapHereAnimation === 'none', `${layout.deviceName}: map location ring still animates`)
+    if (layout.drag) {
+      assert(layout.drag.previewMoved, `${layout.deviceName}: same-target drag preview did not move`)
+      assert(layout.drag.targetOutline !== 'none', `${layout.deviceName}: drag target feedback is invisible`)
+      assert(layout.drag.played, `${layout.deviceName}: dragging a card did not play it`)
+      if (layout.drag.realTouch) {
+        assert(layout.drag.cancellationCleared, `${layout.deviceName}: pointer cancellation changed the hand`)
+      }
+    }
     assertEqual(layout.clippedCards, 0, `${layout.deviceName}: clipped cards`)
   }
 })

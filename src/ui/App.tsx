@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CombatState } from '../game/combat.ts'
 import { assetPath } from '../game/assets.ts'
 import {
@@ -171,6 +171,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
+  const updateCombat = useCallback((next: CombatState) => {
+    setRun((current) => ({ ...current, combat: next }))
+  }, [])
   useRunOutcomeSound(run)
   useBossFightMusic(run.combat, active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
@@ -285,13 +288,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const morph = useCardMorphs(viewer?.deck, run.campaign.runId, run.phase, viewerId)
   // The map is regenerated per act, so this counts the CURRENT act's climb, not
   // the run's. The summary labels it "Rooms this act" to match.
-  const roomsCleared = Object.values(run.map.rooms).filter((room) => room.visited).length
+  const roomsCleared = useMemo(
+    () => Object.values(run.map.rooms).filter((room) => room.visited).length,
+    [run.map.rooms],
+  )
   const pendingAcquisition = hasPendingRelicAcquisition(run)
   // Derived once per render: `visibleMap` rebuilds the room table (and clones
   // every room under Uncertain Future), and the map phase asked for it four
   // times — twice in one `MapScreen` line, then again per Wing Boots option.
-  const seenMap = visibleMap(run)
-  const wingChoices = wingBootChoices(run, viewerId)
+  const seenMap = useMemo(() => visibleMap(run), [run])
+  const wingChoices = useMemo(() => wingBootChoices(run, viewerId), [run, viewerId])
+  const pendingPreview = useMemo(() => pendingRelicPreview(run, viewerId), [run, viewerId])
   const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
     run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
   const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
@@ -435,7 +442,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
             run.combat.players.some((player) => player.id === viewerId && player.relics.some((relic) => relic.defId === 'the_courier'))}
           mutationsEnabled={!run.courier.offer}
-          onChange={(next: CombatState) => setRun((current) => ({ ...current, combat: next }))}
+          onChange={updateCombat}
         /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
       {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
@@ -446,8 +453,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onUse={(potionId, replacePotionId) => setRun((current) =>
             usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
       ) : null}
-      {pendingRelicPreview(run, viewerId) ? <RelicResolvePanel key={pendingRelicPreview(run, viewerId)!.relicId}
-        pending={pendingRelicPreview(run, viewerId)!}
+      {pendingPreview ? <RelicResolvePanel key={pendingPreview.relicId}
+        pending={pendingPreview}
         deck={viewer?.deck ?? []} onResolve={(cardUids, rewardIndices) => setRun((current) =>
           resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
       {run.phase !== 'neow' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
