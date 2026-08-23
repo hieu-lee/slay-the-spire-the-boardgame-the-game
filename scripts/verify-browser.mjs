@@ -13043,6 +13043,13 @@ for (const [engineName, phoneBrowser, deviceName] of [
       return box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1
     }
     const cards = [...document.querySelectorAll('.hand .card')]
+    const cardProbe = cards[0]
+    cardProbe?.classList.add('card--unplayable')
+    const unplayableOpacity = cardProbe ? Number(getComputedStyle(cardProbe).opacity) : 1
+    cardProbe?.classList.remove('card--unplayable')
+    cardProbe?.classList.add('card--selected')
+    const selectedOutline = cardProbe ? getComputedStyle(cardProbe).outlineStyle : 'none'
+    cardProbe?.classList.remove('card--selected')
     return {
       width: innerWidth,
       height: innerHeight,
@@ -13056,6 +13063,8 @@ for (const [engineName, phoneBrowser, deviceName] of [
         '.seat__portrait > img, .enemy__portrait > .enemy__art--cutout, .stance-aura',
       )].some((element) => element.getAnimations().some((animation) =>
         animation.effect?.getTiming().iterations === Infinity)),
+      unplayableOpacity,
+      selectedOutline,
       clippedCards: cards.filter((card) => {
         const box = card.getBoundingClientRect()
         return box.left < -1 || box.right > innerWidth + 1 || box.top < -1 || box.bottom > innerHeight + 1
@@ -13063,6 +13072,23 @@ for (const [engineName, phoneBrowser, deviceName] of [
       mobileRules: matchMedia('(max-width: 760px)').matches || matchMedia('(max-height: 600px)').matches,
     }
   })
+  await tap(phonePage.getByRole('button', { name: 'Map' }))
+  const mapDialog = phonePage.getByRole('dialog', { name: /Act .* map/ })
+  await mapDialog.waitFor()
+  Object.assign(layout, await mapDialog.evaluate((dialog) => ({
+    mapBackdropFilter: getComputedStyle(dialog, '::backdrop').backdropFilter,
+    mapHerePresent: Boolean(document.querySelector('.map .room--here')),
+    mapHereAnimation: document.querySelector('.map .room--here')
+      ? getComputedStyle(document.querySelector('.map .room--here'), '::after').animationName
+      : 'none',
+  })))
+  await tap(mapDialog.getByRole('button', { name: 'Close' }))
+  await tap(phonePage.getByRole('button', { name: 'Settings' }))
+  const settingsDialog = phonePage.getByRole('dialog', { name: 'Settings' })
+  await settingsDialog.waitFor()
+  layout.settingsBackdropFilter = await settingsDialog.evaluate((dialog) =>
+    getComputedStyle(dialog, '::backdrop').backdropFilter)
+  await tap(settingsDialog.getByRole('button', { name: /Back/ }))
   await phonePage.screenshot({ path: join(outDir, `phone-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`), scale: 'css' })
 
   if (deviceName === 'iPhone SE landscape') {
@@ -13133,11 +13159,12 @@ for (const [engineName, phoneBrowser, deviceName] of [
       } else await phonePage.mouse.up()
     }
     await pointerDown()
-    await pointerMove(startX - 24, startY - 35, 3)
+    const previewX = realTouch ? startX : startX - 24
+    await pointerMove(previewX, startY - 35, 3)
     await phonePage.locator('.card-drag').waitFor()
     const firstTransform = await phonePage.locator('.card-drag').evaluate((preview) =>
       getComputedStyle(preview).transform)
-    await pointerMove(startX - 48, startY - 75, 3)
+    await pointerMove(realTouch ? startX : startX - 48, startY - 75, 3)
     await phonePage.evaluate(() => new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const secondTransform = await phonePage.locator('.card-drag').evaluate((preview) =>
@@ -13159,7 +13186,7 @@ for (const [engineName, phoneBrowser, deviceName] of [
       assert(cancelBox, 'mobile pointer-cancel card is not visible')
       pointer = { x: cancelBox.x + cancelBox.width / 2, y: cancelBox.y + cancelBox.height / 2 }
       await pointerDown()
-      await pointerMove(pointer.x - 24, pointer.y - 35, 3)
+      await pointerMove(pointer.x, pointer.y - 35, 3)
       await phonePage.locator('.card-drag').waitFor()
       await pointerUp(true)
       await phonePage.locator('.card-drag').waitFor({ state: 'detached' })
@@ -13189,6 +13216,12 @@ check('landscape phones render and play the complete desktop combat UI', () => {
     assertEqual(layout.fallbackIllustrations, 0, `${layout.deviceName}: hidden fallback card art was decoded`)
     assert(layout.mobilePerformance, `${layout.deviceName}: mobile performance mode is inactive`)
     assert(!layout.ambientAnimations, `${layout.deviceName}: ambient combat animations are still running`)
+    assert(layout.unplayableOpacity < 0.8, `${layout.deviceName}: unplayable cards lost their visual cue`)
+    assert(layout.selectedOutline !== 'none', `${layout.deviceName}: selected cards lost their outline`)
+    assert(layout.mapBackdropFilter === 'none', `${layout.deviceName}: map backdrop still blurs`)
+    assert(layout.settingsBackdropFilter === 'none', `${layout.deviceName}: settings backdrop still blurs`)
+    assert(layout.mapHerePresent, `${layout.deviceName}: map location probe is missing`)
+    assert(layout.mapHereAnimation === 'none', `${layout.deviceName}: map location ring still animates`)
     if (layout.drag) {
       assert(layout.drag.previewMoved, `${layout.deviceName}: same-target drag preview did not move`)
       assert(layout.drag.targetOutline !== 'none', `${layout.deviceName}: drag target feedback is invisible`)

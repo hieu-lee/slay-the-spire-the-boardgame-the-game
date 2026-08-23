@@ -4894,7 +4894,8 @@ html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
 html[data-mobile-performance='true'] .stance-aura,
 html[data-mobile-performance='true'] .hand .card--drawn,
 html[data-mobile-performance='true'] .motion-pulse-0,
-html[data-mobile-performance='true'] .motion-pulse-1 {
+html[data-mobile-performance='true'] .motion-pulse-1,
+html[data-mobile-performance='true'] .seat--targetable {
   animation: none;
 }
 
@@ -4914,7 +4915,8 @@ html[data-mobile-performance='true'] .stance-aura,
 html[data-mobile-performance='true'] .combat-vfx,
 html[data-mobile-performance='true'] .hit-vfx,
 html[data-mobile-performance='true'] .card-drag,
-html[data-mobile-performance='true'] .card-target-arrow__line {
+html[data-mobile-performance='true'] .card-target-arrow__line,
+html[data-mobile-performance='true'] .hand .card {
   filter: none;
 }
 
@@ -4928,12 +4930,27 @@ html[data-mobile-performance='true'] .card-target-arrow__line {
 
 html[data-mobile-performance='true'] .hand .card {
   transition: none;
+  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
+}
+
+html[data-mobile-performance='true'] .hand .card--unplayable {
+  opacity: 0.55;
+}
+
+html[data-mobile-performance='true'] .hand .card--selected {
+  outline: 2px solid #62e6ff;
+  outline-offset: 1px;
+  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
 }
 
 html[data-mobile-performance='true'] .seat--targeted,
 html[data-mobile-performance='true'] .enemy--targeted {
   outline: 3px solid #65e8ff;
   outline-offset: 3px;
+}
+
+html[data-mobile-performance='true'] .choice-modal::backdrop {
+  backdrop-filter: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
