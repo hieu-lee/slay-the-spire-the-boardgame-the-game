@@ -6,12 +6,16 @@ type CardFaceProps = {
   cost?: number | 'X'
   rules: string
   className?: string
+  /** The full scan normally covers this fallback art; defer its decode until the scan fails. */
+  illustration?: boolean
 }
 
 /** Repo-native card face shown underneath an optional publisher scan. */
-export function CardFace({ def, cost = def.cost, rules, className = '' }: CardFaceProps) {
+export function CardFace({
+  def, cost = def.cost, rules, className = '', illustration = true,
+}: CardFaceProps) {
   const shownCost = def.unplayable ? '—' : cost
-  const hasIllustration = ['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner)
+  const hasIllustration = illustration && ['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner)
   return (
     <span
       className={['card-face', 'card__fallback', `card-face--${def.owner}`, `card-face--${def.rarity}`, className]

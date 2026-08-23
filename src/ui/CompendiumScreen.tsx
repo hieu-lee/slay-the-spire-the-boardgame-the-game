@@ -21,6 +21,30 @@ const POOLS: { id: Pool; label: string; sigil: string }[] = [
 
 const CARDS_BY_NAME = Object.values(CARDS).sort((a, b) => a.name.localeCompare(b.name))
 
+function ScannedCardFace({ def, upgraded }: { def: CardDef; upgraded: boolean }) {
+  const src = cardImagePath(def, upgraded)
+  const [scanUnavailable, setScanUnavailable] = useState(false)
+  useEffect(() => setScanUnavailable(false), [src])
+  return (
+    <>
+      <img src={src} alt="" loading="lazy" decoding="async"
+        onLoad={(event) => {
+          const image = event.currentTarget
+          revealDecodedImage(image, {
+            isCurrent: () => image.isConnected && image.getAttribute('src') === src,
+            onDecodeError: () => setScanUnavailable(true),
+          })
+        }}
+        onError={(event) => {
+          if (event.currentTarget.getAttribute('src') !== src) return
+          event.currentTarget.style.visibility = 'hidden'
+          setScanUnavailable(true)
+        }} />
+      <CardFace def={def} rules={cardPlayText(def)} illustration={scanUnavailable} />
+    </>
+  )
+}
+
 export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { onBack: () => void; backLabel?: string }) {
   const [pool, setPool] = useState<Pool>('all')
   const [search, setSearch] = useState('')
@@ -117,15 +141,11 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
           {cards.map((card) => {
             const showUpgrade = upgraded && Boolean(card.upgrade)
             const face = faceOf(card, showUpgrade)
-            const playText = cardPlayText(face)
             return (
               <button type="button" className={`compendium-card compendium-card--${card.owner}`}
                 key={card.id} onClick={() => setSelected(card)}
                 aria-label={`${cardAccessibleName(face)}, ${face.rarity}`}>
-                <img src={cardImagePath(face, showUpgrade)} alt="" loading="lazy"
-                  onLoad={(event) => revealDecodedImage(event.currentTarget)}
-                  onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
-                <CardFace def={face} rules={playText} />
+                <ScannedCardFace def={face} upgraded={showUpgrade} />
               </button>
             )
           })}
@@ -139,11 +159,8 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
           onClose={() => setSelected(null)}>
           <button type="button" onClick={() => detailRef.current?.close()} aria-label="Close card detail">×</button>
           <span className="compendium__detail-card">
-                <img src={cardImagePath(selectedFace, upgraded && Boolean(selected?.upgrade))} alt=""
-                  onLoad={(event) => revealDecodedImage(event.currentTarget)}
-                  onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
-                <CardFace def={selectedFace} rules={cardPlayText(selectedFace)} />
-              </span>
+            <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} />
+          </span>
         </dialog>
       ) : null}
     </main>

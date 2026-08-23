@@ -898,7 +898,7 @@ button:disabled {
 .achievement-card > span { margin-top: .55rem; overflow: auto; line-height: 1.35; }
 .compendium__empty { margin: 4rem auto; color: #d5c6a8; font-size: 1.1rem; text-align: center; }
 
-.compendium-card { --card-width: 13rem; position: relative; width: 100%; max-width: 13rem; aspect-ratio: 744 / 1039; justify-self: center; padding: 0; overflow: hidden; border: 2px solid #5d4b3f; border-radius: 0.55rem; background: linear-gradient(#4d1d23, #21191a); box-shadow: 0 0.55rem 0.55rem rgb(0 0 0 / 0.7); transition: transform var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease); }
+.compendium-card { --card-width: 13rem; position: relative; width: 100%; max-width: 13rem; aspect-ratio: 744 / 1039; justify-self: center; padding: 0; overflow: hidden; border: 2px solid #5d4b3f; border-radius: 0.55rem; background: linear-gradient(#4d1d23, #21191a); box-shadow: 0 0.55rem 0.55rem rgb(0 0 0 / 0.7); content-visibility: auto; contain-intrinsic-size: auto 13rem 18.15rem; transition: transform var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease); }
 .compendium-card:hover,
 .compendium-card:focus-visible { z-index: 2; transform: translateY(-0.35rem) scale(1.04); filter: brightness(1.12); }
 .compendium-card > img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
@@ -2398,9 +2398,9 @@ button.pile:hover { filter: brightness(1.15); }
   z-index: 122;
   width: calc(var(--card-width) * 1.12);
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(var(--drag-turn)) scale(1.12);
+  transform: translate3d(-50%, calc(-50% + var(--drag-y, 0px)), 0) rotate(var(--drag-turn)) scale(1.12);
   filter: drop-shadow(0 1.2rem 1rem rgb(0 0 0 / 0.78));
-  transition: top 80ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 80ms linear;
+  will-change: transform;
 }
 
 .card-drag .card { width: 100%; transform: none; }
@@ -4883,6 +4883,57 @@ button.pile:hover { filter: brightness(1.15); }
   }
 
   .hand-area .pile-group { right: 0.6rem; }
+}
+
+/* Phones use a scaled desktop combat board in landscape. Persistent filtered
+   layers are disproportionately expensive there, so keep the readable art and
+   short action overlay while dropping ambient and multi-layer effects. */
+html[data-mobile-performance='true'] .power::after,
+html[data-mobile-performance='true'] .seat__portrait > img,
+html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
+html[data-mobile-performance='true'] .stance-aura,
+html[data-mobile-performance='true'] .hand .card--drawn,
+html[data-mobile-performance='true'] .motion-pulse-0,
+html[data-mobile-performance='true'] .motion-pulse-1 {
+  animation: none;
+}
+
+html[data-mobile-performance='true'] .seat__portrait::before,
+html[data-mobile-performance='true'] .enemy__portrait::before,
+html[data-mobile-performance='true'] .character-attack,
+html[data-mobile-performance='true'] .combat-vfx::before,
+html[data-mobile-performance='true'] .combat-vfx::after {
+  display: none;
+}
+
+html[data-mobile-performance='true'] .seat,
+html[data-mobile-performance='true'] .enemy,
+html[data-mobile-performance='true'] .seat__portrait > img,
+html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
+html[data-mobile-performance='true'] .stance-aura,
+html[data-mobile-performance='true'] .combat-vfx,
+html[data-mobile-performance='true'] .hit-vfx,
+html[data-mobile-performance='true'] .card-drag,
+html[data-mobile-performance='true'] .card-target-arrow__line {
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .combat-vfx {
+  mix-blend-mode: normal;
+}
+
+html[data-mobile-performance='true'] .card-target-arrow__line {
+  animation: none;
+}
+
+html[data-mobile-performance='true'] .hand .card {
+  transition: none;
+}
+
+html[data-mobile-performance='true'] .seat--targeted,
+html[data-mobile-performance='true'] .enemy--targeted {
+  outline: 3px solid #65e8ff;
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
