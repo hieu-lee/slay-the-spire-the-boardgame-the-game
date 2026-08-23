@@ -36,6 +36,7 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | Combat stage, actor cutouts, animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Combat pile and current-deck HUD icons (`public/assets/combat/piles/`, `public/assets/menu/current-deck.webp`) | OpenAI Imagegen fan assets extracted or visually grounded from user-supplied gameplay screenshots; the Exhaust pile was generated from the extracted draw and discard references |
 | Merchant scene and character assets (`public/assets/noncombat/merchant/`) | OpenAI Imagegen fan illustrations visually grounded in user-provided gameplay references and this implementation's generated combat character cutouts |
+| Event backgrounds (`public/assets/noncombat/events/`) | OpenAI Imagegen fan illustrations, individually outpainted from this implementation's prior generated event scenes for panoramic full-screen presentation |
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
 | Kreon typeface | Julia Petretta and the Kreon Project Authors, SIL Open Font License 1.1 |

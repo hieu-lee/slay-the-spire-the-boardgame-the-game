@@ -3012,7 +3012,7 @@ button.pile:hover { filter: brightness(1.15); }
   background:
     radial-gradient(circle at 50% 12%, rgb(205 151 56 / 18%), transparent 38%),
     linear-gradient(180deg, #1d1811, #100e0b);
-  border: 1px solid var(--edge);
+  border: 0;
   animation: reward-reveal 180ms ease-out;
 }
 

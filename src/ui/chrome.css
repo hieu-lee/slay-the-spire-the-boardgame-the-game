@@ -115,11 +115,7 @@ html { overflow-x: clip; }
     linear-gradient(180deg, rgb(217 180 91 / 0.16), transparent 30%),
     linear-gradient(180deg, var(--leather-lit), var(--leather) 62%, #120c0a);
   background-blend-mode: overlay, normal, normal;
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    inset 0 3px 0 rgb(217 180 91 / 0.22),
-    inset 0 0 3rem rgb(0 0 0 / 0.6);
+  box-shadow: inset 0 0 3rem rgb(0 0 0 / 0.6);
   color: var(--cream);
   filter: drop-shadow(var(--hard-shadow-lg));
 }
@@ -1778,11 +1774,7 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
     calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%,
     0 calc(100% - var(--chamfer)), 0 var(--chamfer)
   );
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    inset 0 3px 0 rgb(217 180 91 / 0.2),
-    inset 0 0 70px rgb(0 0 0 / 0.7);
+  box-shadow: inset 0 0 70px rgb(0 0 0 / 0.7);
   filter: drop-shadow(var(--hard-shadow-lg));
 }
 
@@ -1803,6 +1795,12 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    mark beside a form. The same stage is decorative; event rules remain the
    only source of truth and stay in the choice panel. */
 .sts-scope .event-stage {
+  align-self: stretch;
+  width: 100vw;
+  min-height: 100%;
+  margin-inline: calc(50% - 50vw);
+  clip-path: none;
+  filter: none;
   background:
     linear-gradient(90deg, transparent 0 42%, rgb(5 9 10 / 0.72) 64%, rgb(4 6 7 / 0.92)),
     var(--event-art) center / cover no-repeat;
@@ -2955,6 +2953,11 @@ input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outli
    whale.) The scene's own rule below carries the rest, including the one case
    `100%` cannot cover; read it before changing either. */
 .app-shell--neow {
+  padding-bottom: 0;
+  gap: 0;
+}
+
+.app-shell--event {
   padding-bottom: 0;
   gap: 0;
 }
