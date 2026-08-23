@@ -13,9 +13,11 @@ import { CARDS, faceOf } from '../src/game/cards.ts'
 import {
   cardArtPath,
   cardImagePath,
+  cardThumbPath,
   enemyImagePath,
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
+  CARD_THUMB_ROOT,
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
@@ -32,6 +34,7 @@ const listing = (dir, extension) =>
   existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith(extension)) : []
 
 const cardRoot = join(publicRoot, 'assets/cards')
+const cardThumbRoot = join(publicRoot, 'assets/cards-sm')
 const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
@@ -50,6 +53,7 @@ const fontRoot = join(publicRoot, 'assets/fonts')
 const sfxRoot = join(publicRoot, 'assets/sfx')
 
 const cardFiles = listing(cardRoot, '.webp')
+const cardThumbFiles = listing(cardThumbRoot, '.webp')
 const CARD_ART_OWNERS = ['ironclad', 'silent', 'defect', 'watcher']
 const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
   listing(join(cardArtRoot, owner), '.webp').map((file) => `${owner}/${file}`))
@@ -66,6 +70,41 @@ const relicIconFiles = listing(relicIconRoot, '.png')
 const potionIconFiles = listing(potionIconRoot, '.png')
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
+
+/**
+ * Longest-edge [floor, cap] in pixels for the runtime art below, as
+ * `[floor, cap]` pairs.
+ *
+ * The cap matters as much as the floor. Decoded image memory is width x height
+ * x 4 bytes regardless of how small the element is on screen, and iOS Safari
+ * evicts and re-decodes under pressure — which is a stutter, not a slow load.
+ * A 1326x1187 pile icon painted into a 41px box cost 6 MB of texture to draw
+ * 41 pixels; the combat screen alone held 59 MB that way. Each cap below is
+ * the widest CSS box the asset is ever painted into, times three for a
+ * DPR-3 screen, rounded up to a power of two.
+ *
+ *   pile stacks / current deck  .pile__stack, 2.55rem       -> 41 CSS px
+ *   enemy cutouts               .enemy__portrait             -> 146 CSS px
+ *   die faces                   Icon size={26}               -> 26 CSS px
+ *
+ * The enemy figure is measured, not read off a rule: `.row__enemies` declares
+ * `minmax(190px, 250px)` columns, but a later unconditional
+ * `.row__enemies { display: contents }` takes the enemies out of that grid, so
+ * the portrait is sized by `.enemy` under `.board` instead. Measured at 146 CSS
+ * px across seven viewports from 900x600 to 3440x1440 and one to four enemies.
+ *
+ * Character cutouts keep their full resolution: the character-select hero
+ * paints one at `max-height: 62vh`.
+ */
+const PILE_ICON_EDGE = [160, 256]
+const ENEMY_CUTOUT_EDGE = [256, 512]
+/** Only the `-hero` pair, painted by the character-select and Neow scenes. */
+const CHARACTER_HERO_EDGE = [700, 1536]
+/** Every other character cutout: combat seats, roster thumbs, lobby seats. */
+const CHARACTER_CUTOUT_EDGE = [256, 512]
+const DIE_ICON_EDGE = 128
+/** Matches THUMB_WIDTH in scripts/sync-card-assets.mjs. */
+const CARD_THUMB_WIDTH = 448
 
 /** Every icon name Icon.tsx can render. */
 const REQUIRED_ICONS = [
@@ -195,15 +234,55 @@ check('generated status scans decode at the shipped card resolution', () => {
   assertDeepEqual(faults, [], 'generated status scan faults')
 })
 
+// Every gameplay surface reads the thumbnail tier: the hand, the deck viewer,
+// the reward and merchant rows, the compendium grid. A card missing from it
+// renders as a broken image, and one left at full resolution silently puts the
+// 3 MB decode back — which is the whole reason the tier exists.
+check('every card scan has a thumbnail inside the decode budget', () => {
+  if (cardFiles.length === 0) return // not synced
+  assertDeepEqual(
+    cardFiles.filter((file) => !cardThumbFiles.includes(file)), [],
+    'card scans without a thumbnail — re-run `pnpm sync:cards`',
+  )
+  assertDeepEqual(
+    cardThumbFiles.filter((file) => !cardFiles.includes(file)), [],
+    'stale thumbnails with no scan behind them',
+  )
+  const files = cardThumbFiles.map((file) => join(cardThumbRoot, file))
+  const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'could not inspect card thumbnails')
+  const inspected = result.stdout.split(/^File: /m).slice(1)
+  assertEqual(inspected.length, files.length, 'decoded card thumbnail count')
+  const faults = inspected.flatMap((block) => {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const width = Number(block.match(/  Width: (\d+)/)?.[1])
+    return width > 0 && width <= CARD_THUMB_WIDTH ? [] : [`${file} is ${width}px wide`]
+  })
+  assertDeepEqual(faults, [], `card thumbnails over ${CARD_THUMB_WIDTH}px`)
+  const bytes = files.reduce((sum, file) => sum + statSync(file).size, 0)
+  assert(bytes < 16 * 1024 * 1024, `card thumbnails total ${(bytes / 1048576).toFixed(1)} MB`)
+})
+
 // Path shape is checked even without artwork, since it is pure code.
 check('image paths are safe, normalised browser paths', () => {
   for (const def of Object.values(CARDS)) {
-    const path = cardImagePath(def, false)
-    assert(path.startsWith(`${CARD_ASSET_ROOT}/`), `${def.id}: path must live under the asset root`)
-    assert(!path.includes('\\'), `${def.id}: no backslashes in a browser path`)
-    assert(!path.includes('..'), `${def.id}: no parent traversal`)
-    assert(!/%[0-9a-f]{2}/i.test(path), `${def.id}: paths must not be percent-encoded`)
-    assert(path === path.trim(), `${def.id}: no surrounding whitespace`)
+    for (const [root, path] of [
+      [CARD_ASSET_ROOT, cardImagePath(def, false)],
+      [CARD_THUMB_ROOT, cardThumbPath(def, false)],
+    ]) {
+      assert(path.startsWith(`${root}/`), `${def.id}: path must live under the asset root`)
+      assert(!path.includes('\\'), `${def.id}: no backslashes in a browser path`)
+      assert(!path.includes('..'), `${def.id}: no parent traversal`)
+      assert(!/%[0-9a-f]{2}/i.test(path), `${def.id}: paths must not be percent-encoded`)
+      assert(path === path.trim(), `${def.id}: no surrounding whitespace`)
+    }
+    // The two tiers are the same scan at two sizes; a key that drifted between
+    // them would render one card's art on another card's face.
+    assertEqual(
+      cardThumbPath(def, false).slice(CARD_THUMB_ROOT.length),
+      cardImagePath(def, false).slice(CARD_ASSET_ROOT.length),
+      `${def.id}: thumbnail and scan keys disagree`,
+    )
   }
 })
 
@@ -269,6 +348,22 @@ check('every icon the UI can render exists on disk', () => {
   assert(missing.length === 0, `missing icons — re-run \`pnpm sync:icons\`: ${missing.join(', ')}`)
 })
 
+// The die faces are regenerated art rather than rulebook crops, so they do not
+// inherit the 96px export the other icons come out of sync-icons.mjs at. They
+// still only ever paint into a 26 CSS px box; shipping them at generator
+// resolution cost 800 KB and 4 MB of decoded texture each, per die shown.
+check('die faces stay inside the icon decode budget', () => {
+  const dice = iconFiles.filter((file) => /^die[1-6]\.png$/.test(file))
+  assertEqual(dice.length, 6, 'die face inventory')
+  for (const file of dice) {
+    const bytes = readFileSync(join(iconRoot, file))
+    const width = bytes.readUInt32BE(16)
+    const height = bytes.readUInt32BE(20)
+    assert(Math.max(width, height) <= DIE_ICON_EDGE,
+      `${file} is ${width}x${height}, over the ${DIE_ICON_EDGE}px cap`)
+  }
+})
+
 // Publisher crops are an optional local sync. Keep its mapping honest without
 // making a clean clone depend on a portrait for every printed enemy variant.
 check('the optional enemy art table names only real enemies', () => {
@@ -309,26 +404,35 @@ check('every live enemy runtime image path exists', () => {
   assert(missing.length === 0, `missing runtime enemy images:\n    ${missing.join('\n    ')}`)
 })
 
-check('bundled combat cutouts are high-resolution images with transparency', () => {
+check('bundled combat cutouts are sized for their render box, with transparency', () => {
   const expectedCharacters = [
-    'defect.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
-    'silent-throw.webp', 'silent.webp', 'watcher-ready.webp', 'watcher-thrust.webp', 'watcher.webp',
+    'defect-hero.webp', 'defect.webp', 'ironclad-hero.webp', 'ironclad-impact.webp',
+    'ironclad-ready.webp', 'ironclad.webp', 'silent-hero.webp', 'silent-throw.webp',
+    'silent.webp', 'watcher-hero.webp', 'watcher-ready.webp', 'watcher-thrust.webp',
+    'watcher.webp',
   ]
   assertDeepEqual(combatCharacterFiles.sort(), expectedCharacters, 'combat character cutout inventory')
+  const enemyPaths = combatEnemyFiles.map((file) => join(combatEnemyRoot, file))
   const files = [
-    ...combatEnemyFiles.map((file) => join(combatEnemyRoot, file)),
+    ...enemyPaths,
     ...combatCharacterFiles.map((file) => join(combatCharacterRoot, file)),
   ]
+  const enemyPathSet = new Set(enemyPaths)
   const result = spawnSync('webpinfo', ['-summary', ...files], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'could not inspect combat cutouts')
   const inspected = result.stdout.split(/^File: /m).slice(1)
   assertEqual(inspected.length, files.length, 'webpinfo should inspect every combat cutout')
   const faults = inspected.flatMap((block) => {
-    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    const path = block.slice(0, block.indexOf('\n')).trim()
+    const file = path.split('/').pop()
     const width = Number(block.match(/  Width: (\d+)/)?.[1])
     const height = Number(block.match(/  Height: (\d+)/)?.[1])
     const alpha = /Alpha:\s+1/.test(block)
-    const resolution = Math.min(width, height) >= 400 && Math.max(width, height) >= 700
+    const [floor, cap] = enemyPathSet.has(path) ? ENEMY_CUTOUT_EDGE
+      : file.endsWith('-hero.webp') ? CHARACTER_HERO_EDGE
+      : CHARACTER_CUTOUT_EDGE
+    const resolution = Math.min(width, height) >= floor / 2 &&
+      Math.max(width, height) >= floor && Math.max(width, height) <= cap
     return resolution && alpha ? [] : [`${file} is ${width}x${height}, alpha ${alpha}`]
   })
   assert(faults.length === 0, `invalid combat cutouts:\n    ${faults.join('\n    ')}`)
@@ -349,7 +453,7 @@ for name in sys.argv[1:]:
         faults.append(f"{label}: corners are opaque {corners}")
     elif sum(1 for value in alpha.getdata() if value < 16) / (w * h) < 0.05:
         faults.append(f"{label}: less than 5% of its canvas is transparent")
-    elif bbox is None or min(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 400 or max(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 700:
+    elif bbox is None or min(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 0.30 * min(w, h) or max(bbox[2] - bbox[0], bbox[3] - bbox[1]) < 0.55 * max(w, h):
         faults.append(f"{label}: visible art is undersized ({bbox})")
 print(json.dumps(faults))
 `
@@ -359,7 +463,7 @@ print(json.dumps(faults))
   assert(pixelFaults.length === 0, `combat cutouts have opaque backgrounds:\n    ${pixelFaults.join('\n    ')}`)
 })
 
-check('combat pile and current-deck icons are high-resolution transparent images', () => {
+check('combat pile and current-deck icons are HUD-sized transparent images', () => {
   assertDeepEqual(combatPileFiles.sort(), ['discard.webp', 'draw.webp', 'exhaust.webp'])
   const files = [
     ...combatPileFiles.map((file) => join(combatPileRoot, file)),
@@ -369,11 +473,13 @@ check('combat pile and current-deck icons are high-resolution transparent images
   assert(result.status === 0, result.stderr || 'could not inspect pile icons')
   const inspected = result.stdout.split(/^File: /m).slice(1)
   assertEqual(inspected.length, files.length, 'decoded pile icon count')
+  const [floor, cap] = PILE_ICON_EDGE
   for (const block of inspected) {
     const file = block.slice(0, block.indexOf('\n')).split('/').pop()
     const width = Number(block.match(/  Width: (\d+)/)?.[1])
     const height = Number(block.match(/  Height: (\d+)/)?.[1])
-    assert(width >= 1000 && height >= 1000, `${file} is only ${width}x${height}`)
+    const long = Math.max(width, height)
+    assert(long >= floor && long <= cap, `${file} is ${width}x${height}, outside ${floor}-${cap}px`)
     assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
   }
 })

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CARDS, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
-import { cardImagePath } from '../game/assets.ts'
+import { cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
 import { cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
@@ -21,8 +21,22 @@ const POOLS: { id: Pool; label: string; sigil: string }[] = [
 
 const CARDS_BY_NAME = Object.values(CARDS).sort((a, b) => a.name.localeCompare(b.name))
 
-function ScannedCardFace({ def, upgraded }: { def: CardDef; upgraded: boolean }) {
-  const src = cardImagePath(def, upgraded)
+/**
+ * `full` is for the zoom dialog only. The grid paints 208px tiles, and the full
+ * scans cost 3 MB of decoded texture each — enough that browsing the library on
+ * a phone held over 100 MB of card art at once.
+ *
+ * The zoom therefore fetches a URL the grid did not warm, so the first zoom of a
+ * card shows this component's own card face for as long as the scan takes to
+ * arrive. That is the designed fallback face — a complete, legible card — and
+ * paying a moment of it once per card beats holding the grid at full resolution.
+ */
+function ScannedCardFace({ def, upgraded, full = false }: {
+  def: CardDef
+  upgraded: boolean
+  full?: boolean
+}) {
+  const src = full ? cardImagePath(def, upgraded) : cardThumbPath(def, upgraded)
   const [scanUnavailable, setScanUnavailable] = useState(false)
   useEffect(() => setScanUnavailable(false), [src])
   return (
@@ -159,7 +173,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
           onClose={() => setSelected(null)}>
           <button type="button" onClick={() => detailRef.current?.close()} aria-label="Close card detail">×</button>
           <span className="compendium__detail-card">
-            <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} />
+            <ScannedCardFace def={selectedFace} upgraded={upgraded && Boolean(selected?.upgrade)} full />
           </span>
         </dialog>
       ) : null}

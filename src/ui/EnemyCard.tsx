@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { assetPath, cardImagePath, enemyImagePath } from '../game/assets.ts'
+import { assetPath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
@@ -419,7 +419,7 @@ export function EnemyCard({
 
       {visibleEnemy.corpseExplosion ? (
         <span className="enemy__attachment" title={`Corpse Explosion · ${visibleEnemy.corpseExplosion.damage} row damage on death`}>
-          <img src={cardImagePath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded)} alt=""
+          <img src={cardThumbPath(cardDef(visibleEnemy.corpseExplosion.card.defId), visibleEnemy.corpseExplosion.card.upgraded)} alt=""
             onLoad={(event) => revealDecodedImage(event.currentTarget)}
             onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} />
           <span>Corpse Explosion · {visibleEnemy.corpseExplosion.damage}</span>

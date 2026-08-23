@@ -4,7 +4,7 @@ import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
-import { cardImagePath } from '../game/assets.ts'
+import { cardThumbPath } from '../game/assets.ts'
 import { CardFace } from './CardFace.tsx'
 import { Icon } from './Icon.tsx'
 import type { CardInstance } from '../game/types.ts'
@@ -384,7 +384,7 @@ export function Card({
   onLostPointerCapture,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
-  const scan = cardImagePath(def, card.upgraded)
+  const scan = cardThumbPath(def, card.upgraded)
   const [scanUnavailable, setScanUnavailable] = useState(false)
   useEffect(() => setScanUnavailable(false), [scan])
   const className = [
