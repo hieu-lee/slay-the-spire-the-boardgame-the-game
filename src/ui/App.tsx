@@ -52,7 +52,7 @@ import { createRng, seedFromString } from '../game/rng.ts'
 import type { CharacterId } from '../game/types.ts'
 import { ROOM_LABEL } from '../game/run.ts'
 import { hasRoomSession } from '../multiplayer/useRoomSession.ts'
-import { isActIVUnlocked } from '../game/campaign.ts'
+import { ACT_IV_UNLOCK_BOXES, COLORLESS_UNLOCK, isActIVUnlocked } from '../game/campaign.ts'
 import { allocateSharedMarks, canEnterActIV, createCampaignProgress, parseCampaignProgress } from '../game/campaign.ts'
 import type { CampaignProgress } from '../game/campaign.ts'
 import { eventCanStartCombat } from '../game/events.ts'
@@ -100,8 +100,12 @@ const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 const CAMPAIGN_KEY = 'sts-physical-campaign'
 
 function savedCampaign(): CampaignProgress {
-  try { return parseCampaignProgress(JSON.parse(localStorage.getItem(CAMPAIGN_KEY) ?? '{}')) }
-  catch { return createCampaignProgress() }
+  let progress: CampaignProgress
+  try { progress = parseCampaignProgress(JSON.parse(localStorage.getItem(CAMPAIGN_KEY) ?? '{}')) }
+  catch { progress = createCampaignProgress() }
+  return SINGLE_PLAYER_ONLY
+    ? { ...progress, colorless: COLORLESS_UNLOCK.boxes, actIV: ACT_IV_UNLOCK_BOXES, unspentMarks: 0 }
+    : progress
 }
 
 function legalCharacters(selected: readonly CharacterId[]): CharacterId[] {
