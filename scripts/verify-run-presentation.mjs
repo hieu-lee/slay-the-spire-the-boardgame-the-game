@@ -5,6 +5,8 @@
 // over a reward screen, or none where a card really did change.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { diffDeckMorphs, planMorphs } from '../src/ui/useCardMorphs.ts'
 import { deckHighlights } from '../src/ui/run-summary-data.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
@@ -13,10 +15,16 @@ import { suite, check, assert, assertDeepEqual, assertEqual, report } from './li
 suite('run presentation')
 
 check('every event has its own full-screen background', () => {
-  const hashes = Object.keys(EVENT_DEFINITIONS).map((id) => createHash('sha256')
-    .update(readFileSync(new URL(`../public/assets/noncombat/events/${id}.webp`, import.meta.url)))
-    .digest('hex'))
+  const files = Object.keys(EVENT_DEFINITIONS).map((id) => new URL(`../public/assets/noncombat/events/${id}.webp`, import.meta.url))
+  const hashes = files.map((file) => createHash('sha256').update(readFileSync(file)).digest('hex'))
   assertEqual(new Set(hashes).size, hashes.length, 'event backgrounds must not reuse one generic scene')
+  for (const file of files) {
+    const inspected = spawnSync('webpinfo', ['-summary', fileURLToPath(file)], { encoding: 'utf8' })
+    const width = Number(inspected.stdout.match(/Width:\s+(\d+)/)?.[1])
+    const height = Number(inspected.stdout.match(/Height:\s+(\d+)/)?.[1])
+    assert(inspected.status === 0 && width / height >= 1.9,
+      `${file.pathname.split('/').at(-1)} is not a decodable panoramic background: ${width}x${height}`)
+  }
 })
 
 // `diffDeckMorphs` never resolves a card definition, so its cases may use any

@@ -496,7 +496,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
   return (
     <>
-    <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined} className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
+    <main ref={runShell} tabIndex={-1} inert={compendiumOpen || undefined} aria-hidden={compendiumOpen || undefined} className={`app-shell app-shell--online sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendiumOpen ? ' app-shell--compendium-open' : ''}`}>
       <header className="app-shell__header">
         <h1>Slay the Spire</h1>
         <div className="run-status">

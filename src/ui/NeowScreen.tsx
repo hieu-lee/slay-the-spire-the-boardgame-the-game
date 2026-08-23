@@ -112,7 +112,6 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
   }
 
   return <div className="neow-offer">
-    <h3>{offer.kind === 'rare' ? 'Rare Card Reward' : offer.kind === 'colorless' ? 'Colorless Card Reward' : 'Card Reward'}</h3>
     <p className="muted">These cards are face-up to the whole party. Choose one or skip.</p>
     <div className="neow-offer__cards">
       {offer.choices.map((defId, index) => <Card key={`${defId}-${index}`}
