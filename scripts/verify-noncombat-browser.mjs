@@ -346,6 +346,7 @@ await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().neow.players.p1.redReward !== null)
 assertEqual(await page.getByRole('button', { name: 'Reveal Card Reward' }).count(), 0, 'revealed reward still offered Reveal')
 assertEqual(await page.getByRole('button', { name: 'Skip unseen' }).count(), 0, 'revealed reward still offered unseen skip')
+const neowCardRewardSubheadings = await page.locator('.neow-offer > h3').count()
 const publicRedNames = await page.locator('.neow-face--active .neow-face__reveal').textContent()
 await page.getByRole('button', { name: 'Skip reward' }).click()
 const neowConfirmReward = page.getByRole('button', { name: 'Confirm reward' })
@@ -428,6 +429,7 @@ check('local Neow exposes every public face and keeps hot-seat ownership explici
   assertEqual(hiddenRedOrder.offer, null)
   assertEqual(hiddenRedOrder.publicOffers, 0, 'face-down Neow rewards leaked before Reveal')
   assertEqual(neowFaceActionOverlap, false, 'Neow actions cover a dealt public card')
+  assertEqual(neowCardRewardSubheadings, 0, 'Neow repeats a Card Reward heading under Choose a Card')
   assert(exhaustedPrismaticRevealDisabled && exhaustedPrismaticSkipEnabled,
     'exhausted Prismatic Neow supply did not disable Reveal while preserving skip')
   assert(publicRedNames?.includes('Face-up:'), 'revealed reward was not public')
@@ -1964,14 +1966,20 @@ await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), full
 const eventShape = await page.evaluate(() => {
   const panel = document.querySelector('.event-panel')
   if (panel) panel.scrollTop = panel.scrollHeight
-  const stage = panel?.getBoundingClientRect()
+  const panelBox = panel?.getBoundingClientRect()
+  const stage = document.querySelector('.event-stage')
+  const stageBox = stage?.getBoundingClientRect()
+  const stageStyle = stage ? getComputedStyle(stage) : null
   const last = [...document.querySelectorAll('.event-options button')].at(-1)?.getBoundingClientRect()
   const picker = document.querySelector('.event-cards--deck')
   const card = picker?.querySelector('.card')
   return {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     options: document.querySelectorAll('.event-options button').length,
-    contained: Boolean(stage && last && stage.bottom >= last.bottom - 1),
+    contained: Boolean(panelBox && last && panelBox.bottom >= last.bottom - 1),
+    borderless: Boolean(stageStyle && parseFloat(stageStyle.borderTopWidth) === 0 && parseFloat(stageStyle.borderRightWidth) === 0 &&
+      parseFloat(stageStyle.borderBottomWidth) === 0 && parseFloat(stageStyle.borderLeftWidth) === 0),
+    fullBleed: Boolean(stageBox && stageBox.left <= 1 && stageBox.right >= innerWidth - 1 && stageBox.bottom >= innerHeight - 1),
     cardHeight: card?.getBoundingClientRect().height ?? 0,
     pickerHeight: picker?.getBoundingClientRect().height ?? 0,
     pickerScrollsVertically: Boolean(picker && picker.scrollHeight > picker.clientHeight + 1),
@@ -1986,6 +1994,8 @@ check('Event hierarchy remains usable on compact desktop and does not demand irr
   assert(!eventShape.overflow)
   assertEqual(eventShape.options, 4)
   assert(eventShape.contained, 'the final Event choice escaped the compact desktop room frame')
+  assert(eventShape.borderless, 'the Event background still has an outer frame')
+  assert(eventShape.fullBleed, `the Event background leaves a viewport gap: ${JSON.stringify(eventShape)}`)
   assert(eventShape.cardHeight > 0 && eventShape.pickerHeight >= eventShape.cardHeight,
     `the Event picker is shorter than one card: ${JSON.stringify(eventShape)}`)
   assertEqual(eventShape.pickerScrollsVertically, false, 'the Event deck is trapped in a nested vertical scroller')
@@ -2648,9 +2658,12 @@ const rewardCollect = await page.evaluate(async () => {
   const measured = collect && panel ? (() => {
     const panelBox = panel.getBoundingClientRect()
     const box = collect.getBoundingClientRect()
+    const style = getComputedStyle(panel)
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
     return {
       rendered: true,
+      borderless: parseFloat(style.borderTopWidth) === 0 && parseFloat(style.borderRightWidth) === 0 &&
+        parseFloat(style.borderBottomWidth) === 0 && parseFloat(style.borderLeftWidth) === 0,
       // Without scrolling first: it has to be reachable the moment the screen opens.
       inside: box.bottom <= panelBox.bottom + 1 && box.top >= panelBox.top - 1,
       // And the FIRST child must not be above the panel's top edge. A panel that
@@ -2683,6 +2696,7 @@ const rewardCollect = await page.evaluate(async () => {
 await page.setViewportSize({ width: 1440, height: 900 })
 check('the reward screen keeps its collect control on screen', () => {
   assert(rewardCollect.rendered, 'the collect control did not render')
+  assert(rewardCollect.borderless, 'the reward screen still has an outer frame')
   assert(rewardCollect.scrolls > 0, 'this reward fits without scrolling, so the check proves nothing')
   assert(rewardCollect.inside, 'the collect control sat outside the reward panel on load')
   assert(rewardCollect.hittable, 'the collect control was not clickable at its own centre')
