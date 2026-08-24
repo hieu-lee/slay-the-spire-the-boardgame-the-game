@@ -2302,19 +2302,25 @@ button:disabled {
    the same expression the orb sprites themselves are sized from, so the
    band's placement scales with the actual orbs in it rather than with the
    portrait's height: it now sits entirely above the portrait box.
-   `--orb-margin` is the gap above the tallest orb, and it has to grow with
-   the orb count, not stay flat: `--orb-depth` (the outermost orbs' shallow
-   arc, applied as `translateY` below) grows without bound as more orbs join
-   the row — its worst case is `(orb-count - 1) / 2 * 1.05rem` — so a fixed
-   margin sized for a small hand of orbs (Capacitor alone puts a Defect at
-   5, two copies at 7) eventually gets outrun and the outermost orb dips
-   back into the portrait, the exact bug this rule exists to prevent. The
-   `max()` keeps the plain, unscaled 3rem gap for ordinary orb counts and
-   only grows past it once the arc's own reach demands more room. */
+   `--orb-margin` is the gap between the portrait's top edge and the LOWEST
+   point any orb can reach, and it has to grow with the orb count, not stay
+   flat: `--orb-depth` (the outermost orbs' shallow arc, applied as
+   `translateY` below) grows without bound as more orbs join the row — its
+   worst case is `(orb-count - 1) / 2 * 1.05rem` — so a fixed margin sized
+   for a small hand of orbs (Capacitor alone puts a Defect at 5, two copies
+   at 7) eventually gets outrun and the outermost orb dips back into the
+   portrait, the exact bug this rule exists to prevent.
+   The `(orb-count - 1) * 0.525rem` term below is that exact same worst case
+   (`1.05rem / 2` is `0.525rem`), added rather than maxed against, which is
+   deliberate, not just "big enough": subtracting it back off always leaves
+   a CONSTANT `--orb-clearance` (set on `.seat`, see above) of clear space
+   above the portrait's top edge, not a shrinking one — which is what lets
+   `.seat__meta` float in that space without the two ever competing for
+   room, however many orbs are in play. */
 .orbs {
   --orb-count: 3;
   --orb-size: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
-  --orb-margin: max(3rem, calc((var(--orb-count) - 1) * 0.525rem + 0.5rem));
+  --orb-margin: calc((var(--orb-count) - 1) * 0.525rem + var(--orb-clearance));
   position: absolute;
   z-index: 4;
   top: calc(-1 * (var(--orb-size) + var(--orb-margin)));
@@ -3855,6 +3861,19 @@ button.pile:hover { filter: brightness(1.15); }
   background: none;
   border: 0;
   filter: drop-shadow(0 0.5rem 0.5rem rgb(0 0 0 / 0.55));
+  /* .seat__portrait reads its own height from this instead of setting it
+     directly, so .seat__meta (a SIBLING of .seat__portrait, not a
+     descendant — it can't read a custom property set on .seat__portrait
+     itself) can share the exact same value to position itself relative to
+     the portrait's top edge without duplicating each of the values below. */
+  --portrait-height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
+  /* The guaranteed clear space `.orbs` (below) keeps above the portrait's
+     top edge, at any orb count — shared here so `.seat__meta` (pending
+     effects, held potions; also floats above the portrait, also a SIBLING
+     of .seat__portrait rather than a descendant of .orbs) can float in
+     that exact space instead of guessing at its own fixed offset and
+     landing on top of whichever Orbs happen to be floating there. */
+  --orb-clearance: 3rem;
 }
 
 .seat--viewer {
@@ -3874,7 +3893,7 @@ button.pile:hover { filter: brightness(1.15); }
   position: relative;
   display: grid;
   width: 100%;
-  height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
+  height: var(--portrait-height);
   place-items: end center;
   pointer-events: none;
 }
@@ -4937,8 +4956,8 @@ button.pile:hover { filter: brightness(1.15); }
     min-height: 18rem;
   }
 
-  .seat__portrait {
-    height: 6.5rem;
+  .seat {
+    --portrait-height: 6.5rem;
   }
 
   .combat__log {
@@ -5129,12 +5148,12 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   overflow: hidden;
 }
 
-.board[data-rows='3'] .seat__portrait {
-  height: calc(7.4rem * var(--stage-scale));
+.board[data-rows='3'] .seat {
+  --portrait-height: calc(7.4rem * var(--stage-scale));
 }
 
-.board[data-rows='4'] .seat__portrait {
-  height: calc(5.7rem * var(--stage-scale));
+.board[data-rows='4'] .seat {
+  --portrait-height: calc(5.7rem * var(--stage-scale));
 }
 
 /* Co-op lanes share one physical stage: every actor stands on the same floor. */
@@ -5254,11 +5273,20 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   zoom: min(1, calc(var(--stage-scale) + 0.15));
 }
 
+/* `bottom` scales with `--stage-scale` for the same reason every other
+   seat-floor anchor does (`.row__seat .seat__portrait`, `.seat__name`,
+   `.seat .bar`, all a few rules up) — a flat, unscaled value stays put while
+   everything it's meant to hover near shrinks with the stage, so at a low
+   enough scale (many players/enemies sharing one board) it drifts down
+   past the portrait's own (correctly scaled) top edge and overlaps the
+   Orbs/`.seat__meta` band floating there, the exact failure this pass
+   exists to close off for `.seat__meta` specifically — this row shares the
+   same risk and the same fix. */
 .seat__status-strip {
   position: absolute;
   z-index: 8;
   right: -0.25rem;
-  bottom: 3rem;
+  bottom: calc(3rem * var(--stage-scale));
   left: -0.25rem;
   display: flex;
   align-items: center;
@@ -5311,16 +5339,35 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   box-shadow: inset 0 0 0 2px #e8c877;
 }
 
+/* Pending-effect chips and held-Potion icons used to sit at a flat
+   `top: 1.95rem`, tuned back when Orbs floated low enough (over the top of
+   the portrait, not above it — the bug `.orbs` above exists to fix) that
+   the two never met. Once Orbs moved to float above the portrait instead,
+   this row landed squarely on top of them. Anchoring from `bottom` instead
+   — using the same `--portrait-height` the portrait itself is sized from,
+   plus the portrait's own fixed anchor point off the seat's floor — lands
+   this row's OWN bottom edge just above the portrait's top edge regardless
+   of stage scale or row count, and `--orb-clearance` (the fixed gap `.orbs`
+   guarantees above the portrait at any orb count, see above) is exactly
+   the room this row now floats in: below the Orbs, above the character.
+   `max-height` makes that an enforced ceiling rather than a coincidence:
+   nothing here otherwise stops a future taller chip (a bigger icon, a
+   second line of text) from growing this row past `--orb-clearance` and
+   landing back on the Orbs it sits above — this row's own `overflow-y:
+   hidden` already clips vertical overflow, so capping the height just
+   makes that clipping happen safely INSIDE this row's reserved space
+   instead of the row growing out of it and over the Orbs. */
 .seat__meta {
   position: absolute;
   z-index: 7;
-  top: 1.95rem;
+  bottom: calc(3rem * var(--stage-scale) + var(--portrait-height) + 0.2rem);
   right: 0;
   left: 0;
   display: flex;
   align-items: center;
   gap: 0.2rem;
   min-height: 1.25rem;
+  max-height: calc(var(--orb-clearance) - 0.4rem);
   overflow: auto hidden;
   white-space: nowrap;
   scrollbar-width: thin;
