@@ -1,0 +1,27 @@
+/* The treasure room was rendered in teal and magenta — the only two hues in the
+   build that appear nowhere else in the game. A relic in its chest is bronze on
+   dark, like every other relic. */
+.sts-scope .treasure-relic {
+  padding: 2.4rem 2rem;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(239 200 81 / 0.22), transparent 62%),
+    radial-gradient(circle at 50% 45%, rgb(59 44 26 / 0.95), rgb(16 12 9 / 0.9) 66%, transparent 70%);
+}
+
+.sts-scope .treasure-relic > span,
+.sts-scope .treasure-shared button > span {
+  color: var(--sts-gold);
+  text-shadow: 0 0 1.6rem rgb(239 200 81 / 0.75);
+}
+
+.sts-scope .treasure-relic strong { color: var(--cream); text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55); }
+.sts-scope .treasure-relic p { color: var(--tip-body); }
+
+.sts-scope .treasure-shared button {
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  background-color: var(--slate);
+  background-image:
+    radial-gradient(circle at 50% 34%, rgb(239 200 81 / 0.16), transparent 60%),
+    linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+}

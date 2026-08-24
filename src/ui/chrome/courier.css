@@ -1,0 +1,29 @@
+/* The panel is a nowrap flex row capped at 42rem, already carrying a title, a
+   cost, an optional Replace select and two buttons. Adding the offer's printed
+   text made a sixth item, so every child shrank toward min-content and the
+   prose — the widest, so the biggest shrink share — collapsed into a column one
+   word wide. The panel is fixed to the bottom edge and grows UPWARD, so it ate
+   the board. The prose gets its own full-width line instead. */
+.courier-panel {
+  flex-wrap: wrap;
+  /* Narrower than the 42rem styles.css allows: at full width the prose row
+     pushed the panel to 661px, which reached across the board and covered both
+     the End turn key and three cards of the hand. */
+  max-width: min(30rem, calc(100vw - 2rem));
+}
+
+/* Clear of the End turn key, which is fixed to the same corner and occupies
+   the 4.5rem-7.5rem band (styles.css: `bottom: 4.5rem`, `min-height: 3rem`).
+   Anything below 7.5rem here puts the offer straight through the one control
+   the player needs on their turn.
+
+   It still crosses a couple of hand cards at 1024px, and that is left alone:
+   App.tsx marks the whole board `inert` while an offer is open, so nothing
+   underneath is interactive and the panel IS the decision. Only the End turn
+   collision mattered, because that key is what the panel was hiding. */
+.app-shell--combat .courier-panel { bottom: 8rem; }
+
+.courier-panel > .room-item-text {
+  flex: 1 0 100%;
+  max-width: 100%;
+}

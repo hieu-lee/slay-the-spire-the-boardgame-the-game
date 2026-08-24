@@ -1,0 +1,160 @@
+.room-stage {
+  position: relative;
+  min-height: min(72vh, 760px);
+  overflow: auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  color: #f4ead6;
+  background:
+    radial-gradient(circle at 50% 5%, rgba(207, 153, 73, .24), transparent 38%),
+    linear-gradient(145deg, #281b19 0%, #0b1115 66%, #050607 100%);
+  border: 2px solid #6c4a31;
+  box-shadow: inset 0 0 70px #000b, 0 24px 70px #0008;
+}
+
+.room-banner {
+  max-width: 720px;
+  margin: 0 auto 1.5rem;
+  text-align: center;
+}
+
+.room-banner > span {
+  color: #dfb05d;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.room-banner h2 {
+  margin: .2rem 0;
+  color: #fff7df;
+  font-family: Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  text-shadow: 0 3px 0 #30140d, 0 0 18px #e2974166;
+}
+
+.room-banner p { margin: .4rem 0; color: #c9c2b7; }
+
+.merchant-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  max-width: 1100px;
+  margin: auto;
+  padding: clamp(1rem, 2vw, 2rem);
+  background: #53613d;
+  border: 10px solid #261713;
+  border-radius: 8px 28px 10px 18px;
+  box-shadow: inset 0 0 0 3px #83906655, inset 0 0 60px #17221499;
+}
+
+.merchant-shelf, .merchant-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: .65rem;
+}
+
+.merchant-shelf h3, .merchant-cards h3 { grid-column: 1 / -1; margin: 0; color: #f2dda9; }
+
+.merchant-potion-discard {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: .5rem;
+}
+
+.merchant-potion-discard .item-icon-image { width: 2rem; height: 2rem; }
+
+.merchant-board button, .event-options button, .treasure-actions button {
+  min-height: 88px;
+  padding: .7rem;
+  color: #f7eddb;
+  background: linear-gradient(#313e40, #172328);
+  border: 2px solid #708489;
+  border-radius: 7px;
+  box-shadow: 0 5px 0 #0b1012;
+  cursor: pointer;
+}
+
+.merchant-board button:hover:not(:disabled),
+.merchant-board button:focus-visible,
+.event-options button:hover:not(:disabled),
+.event-options button:focus-visible,
+.event-cards button:focus-visible:not(.card),
+.treasure-actions button:focus-visible {
+  outline: 3px solid #f2c451;
+  outline-offset: 3px;
+  filter: brightness(1.18);
+  transform: translateY(-2px);
+}
+
+.merchant-board button:disabled { cursor: not-allowed; }
+.merchant-board button strong, .merchant-board button small, .merchant-board button span { display: block; }
+.merchant-pledges { max-width: 1100px; margin: .8rem auto 0; padding: .8rem; background: #10181ed9; border: 1px solid #846839; border-radius: 8px; }
+.merchant-pledges h3 { margin: 0 0 .5rem; }
+.merchant-pledges button { margin-right: .5rem; padding: .55rem .8rem; color: #fff1c4; background: #263638; border: 1px solid #d2ad5b; border-radius: 5px; }
+
+.room-proceed {
+  position: sticky;
+  bottom: .5rem;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 1.25rem 0 0 auto;
+  padding: .8rem 2rem;
+  color: #fff6d8;
+  background: linear-gradient(90deg, #72291d, #b54b29);
+  border: 2px solid #e7a04a;
+  clip-path: polygon(0 0, 85% 0, 100% 50%, 85% 100%, 0 100%, 8% 50%);
+  font: 700 1.1rem Georgia, serif;
+}
+.room-proceed:disabled { opacity: .45; filter: grayscale(.7); cursor: not-allowed; }
+
+.treasure-stage { text-align: center; }
+.treasure-relic { max-width: 430px; margin: 3rem auto; padding: 2rem; background: radial-gradient(circle, #177c7a, #073131 68%, transparent 70%); }
+.treasure-relic > span { display: block; color: #fd80e7; font-size: 4rem; text-shadow: 0 0 24px currentColor; }
+.treasure-relic strong { font: 700 1.7rem Georgia, serif; }
+.treasure-shared { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin: 2rem auto; }
+.treasure-shared button { width: min(230px, 42vw); min-height: 190px; color: #f5ead2; background: radial-gradient(circle, #177c7a, #073131 68%); border: 2px solid #5ea6a2; border-radius: 44% 44% 18% 18%; }
+.treasure-shared button > span, .treasure-shared button > strong { display: block; }
+.treasure-shared button > span { color: #fd80e7; font-size: 2.5rem; }
+.treasure-actions { display: flex; justify-content: center; gap: .8rem; flex-wrap: wrap; }
+.treasure-actions button { min-width: 170px; min-height: 54px; }
+
+.event-stage { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(300px, 1.2fr); align-items: center; gap: clamp(1rem, 5vw, 5rem); }
+.event-stage > .event-panel:only-child { grid-column: 1 / -1; width: min(100%, 900px); margin: auto; }
+.event-art { display: grid; place-items: center; min-height: 420px; color: #ffd061; font: 700 12rem Georgia, serif; background: radial-gradient(circle, #b84d272e, transparent 60%); text-shadow: 0 0 45px #e45d3caa; }
+.event-options { display: grid; gap: .75rem; }
+.event-options button { min-height: 70px; text-align: left; }
+.event-options button strong, .event-options button span { display: block; }
+.event-options button strong { color: #f4cf71; font: 700 1.1rem Georgia, serif; }
+.event-cards { display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: 1rem; border-color: #706458; }
+.event-cards button:not(.card) { min-height: 88px; padding: .7rem; color: #f7eddb; background: linear-gradient(#313e40, #172328); border: 2px solid #708489; border-radius: 7px; box-shadow: 0 5px 0 #0b1012; cursor: pointer; }
+.event-cards button[aria-pressed='true']:not(.card) { color: #17120b; background: #f4cf71; }
+
+/* The original game leaves the Event art behind and spreads the whole deck in
+   a broad, readable grid. Keep one scrolling surface (the Event panel) rather
+   than trapping full cards inside a strip shorter than one card. */
+.event-stage:has(.event-cards--deck) { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.event-stage:has(.event-cards--deck) > .event-art { display: none; }
+.event-stage:has(.event-cards--deck) > .event-panel { width: min(100%, 1100px); margin: auto; }
+.event-cards--deck {
+  --card-width: clamp(7rem, 10vw, 9.5rem);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, var(--card-width));
+  justify-content: center;
+  max-height: none;
+  min-height: calc(var(--card-width) * var(--card-ratio, 1.395) + 2rem);
+  overflow: visible;
+  padding: .75rem;
+  background: #0a0c0c85;
+}
+.event-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0 0 1rem; }
+.event-selectors label { display: grid; gap: .25rem; color: #d6c8b1; font-size: .78rem; }
+.event-selectors select, .event-selectors input { min-width: 0; }
+.campaign-end { max-width: 760px; margin: 2rem auto; padding: clamp(1.2rem, 4vw, 2.5rem); text-align: center; color: #eee2c4; background: radial-gradient(circle at top, #5b3a2577, transparent 65%), #11191d; border: 2px solid #997244; border-radius: 8px 24px; box-shadow: 0 18px 55px #0009; }
+.campaign-end > span { color: #dfb05d; font-size: .72rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.campaign-end h2 { margin: .25rem; font: 700 clamp(2rem, 7vw, 4rem) Georgia, serif; }
+.campaign-end div { display: flex; justify-content: center; gap: .7rem; flex-wrap: wrap; }
+.campaign-end button { min-height: 48px; padding: .7rem 1.1rem; color: #fff5d2; background: #7a3523; border: 2px solid #d89a4d; border-radius: 4px; }

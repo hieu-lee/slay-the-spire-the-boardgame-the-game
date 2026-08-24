@@ -1,0 +1,133 @@
+/* These are not keys, they are plaques: an icon, a name, its printed prose and
+   a price, stacked. The key rule in chrome/keys.css centres its children in a
+   row, which would lay all four out side by side — so the tiles opt back into a
+   column and grow to fit the prose that this change added to them. */
+.sts-scope :is(.merchant-board, .treasure-shared) button:not(.merchant-removal button) {
+  flex-direction: column;
+  /* Top-aligned, not centred: the added prose gives neighbouring tiles
+     different content heights, and centring each one independently left the
+     names in a shelf row sitting at different heights from each other. */
+  justify-content: flex-start;
+  /* Also the shop's tile gap — the appended shop section cannot set it, because
+     this selector out-specifies its shared `.merchant-item`/`.merchant-card`
+     rule and the two would disagree. */
+  gap: 0.2rem;
+  min-height: 88px;
+  padding: 0.7rem 0.8rem;
+}
+
+/* Event card pickers name a single card and nothing else, so they keep the
+   key's default height and just take a tighter gutter. */
+.sts-scope .event-cards button { padding: 0.4rem 0.8rem; }
+
+.sts-scope :is(.merchant-board, .treasure-shared) button .room-item-text {
+  max-width: 100%;
+  color: #fff8e4;
+  font-size: 0.74rem;
+  text-wrap: balance;
+  /* Restated, not inherited. The treasure prose is a direct-child `<span>` (a
+     `<p>` is invalid inside a `<button>`), which makes it match the
+     `button > span` rule in chrome/treasure.css — written for the 2.5rem `✦`
+     glyph and carrying
+     a 25.6px gold halo. That rule is (0,2,2) and beats `.room-item-text`'s own
+     (0,1,0) shadow, so without this line the offer text renders 0.74rem cream
+     inside a bloom meant for a single large icon. This block is (0,3,1). */
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.55);
+}
+
+/* Nothing recolours a shop tile on hover. It used to lift the price to gold,
+   wrong now on two counts: the price is near-white loose text on the cloth
+   rather than dark ink on a plate, and a blue discount price carries meaning a
+   gold hover would destroy. styles.css's brightness lift is the whole hover
+   affordance here. */
+
+/* styles.css draws a hover outline at `outline-offset: 3px` on these tiles.
+   An outline paints outside the border box and the chamfer clips it, so it was
+   being painted and thrown away on every hover — the same trap the focus ring
+   hit. Pulled inside the clip so the affordance actually shows.
+
+   NOT on the card tiles. A `Card` has no chamfer (`clip-path: none`), so it
+   never needed the inset — and it fills itself with absolutely positioned art
+   at `z-index: 1`, which paints OVER a ring pulled inside the border box. A
+   shop card that was hovered and keyboard-focused at once therefore had its
+   focus ring drawn and then buried under its own artwork: computed
+   `solid 3px gold`, zero pixels of it visible. */
+.sts-scope :is(.merchant-board, .event-options) button:hover:not(.card) {
+  outline-offset: -4px;
+}
+
+.room-item-icon { color: var(--sts-gold); text-shadow: 0 0 0.8rem rgb(239 200 81 / 0.45); }
+
+/* No red-price rule here. The client reddens a price the party cannot AFFORD,
+   but `:disabled` on these tiles also covers sold out, Sozu-blocked, and
+   "you are not the seat shopping right now" — so keying off it painted every
+   price in another player's shop red. Affordability is not knowable from CSS;
+   it would have to come from the component. */
+
+/* These bands bleed past the shell's bottom padding unless an in-flow panel
+   follows them — on the map a Wing Boots chooser can, and an unconditional pull
+   would drag the painted band up underneath it.
+   NOT `:last-child`: the run log is rendered last in the DOM on every
+   non-combat phase, so `:last-child` matched nothing and the bleed never
+   happened at all. The log is `position: fixed` and takes no space, so what
+   matters is whether a laid-out `.room-screen` follows. */
+/* How far the band pulls back depends on WHAT PRECEDES IT, not on whether a
+   potion belt exists — an earlier version keyed on `.outside-potions + .map`
+   and silently mis-pulled by 12px whenever a relic-resolve panel rendered
+   between the two (App.tsx does render one during the map phase).
+
+   Local grid shell: every row gap is 8px, so any band that follows another row
+   needs -0.5rem. Only a band sitting directly under the HEADER also has to
+   cancel the header's own 12px `margin-bottom`, for -1.25rem.
+   Below: a band in the middle track has the 8px gap plus the shell's 16px
+   padding under it (-1.5rem); a band that is the LAST track has only the
+   padding (-1rem).
+   Online: `.online-mutations` is a gapless flex column, so a band inside it
+   already touches whatever is above (0), while below it the shell's trailing
+   gap is still there (-1.5rem).
+
+   All of these tie on specificity and resolve by SOURCE ORDER — keep the
+   header-adjacent and online rules after the general ones. */
+.sts-scope .map,
+.sts-scope .campfire { margin-top: -0.5rem; margin-bottom: -1rem; }
+
+.sts-scope .app-shell__header + .map,
+.sts-scope .app-shell__header + .campfire { margin-top: -1.25rem; margin-bottom: -1.5rem; }
+
+.app-shell--online .map,
+.app-shell--online .campfire { margin-bottom: -1.5rem; }
+
+/* Inside `.online-mutations` (a gapless flex column) a band that follows the
+   belt already touches it; one that is FIRST still has the header's 20px above
+   it — which is the common case, not a rare one: right after Neow, whenever
+   nobody holds a potion, and whenever a pending relic suppresses the belt. */
+.app-shell--online .outside-potions + .map,
+.app-shell--online .outside-potions + .campfire { margin-top: 0; }
+
+.app-shell--online .online-mutations > .map:first-child,
+.app-shell--online .online-mutations > .campfire:first-child { margin-top: -1.25rem; }
+
+/* A band with an in-flow panel after it must not bleed past the shell's
+   padding, or it is dragged up underneath that panel. The run log does not
+   count — it is `position: fixed` and occupies no row. */
+.sts-scope .map:has(~ .room-screen),
+.sts-scope .campfire:has(~ .room-screen),
+.sts-scope .map:has(~ .map-row-switch) { margin-bottom: 0; }
+
+.sts-scope .map-row-switch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem 1.2rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 1rem;
+  border-top: 1px solid rgb(217 180 91 / 0.35);
+  background: linear-gradient(180deg, rgb(45 31 24 / 0.96), rgb(20 15 12 / 0.96));
+}
+
+.sts-scope .map-row-switch label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}

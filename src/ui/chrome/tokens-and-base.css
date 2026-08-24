@@ -1,0 +1,61 @@
+:root {
+  /* --- exact client constants (Settings.java, decoded from RGBA8888) --- */
+  --cream: #fff6e2;        /* CREAM_COLOR — default body text */
+  --tip-body: #fff8df;     /* TipHelper.BASE_COLOR */
+  --light-yellow: #ffeda7; /* LIGHT_YELLOW_COLOR */
+  /* One gold, defined in styles.css as --gold. Kept as an alias rather than a
+     second literal so the two stylesheets cannot drift apart again. */
+  --sts-gold: var(--gold);
+  --red-text: #ff6563;
+  --blue-text: #87ceeb;
+
+  /* Bronze ramp. The trim is not one gold: it is a lit top edge, a body and a
+     shadowed bottom edge, which is what actually reads as struck metal. */
+  --trim-lit: #d9b45b;
+  --trim: #8c6b33;
+  --trim-dim: #5e4520;
+
+  /* Grounds. There is no pure black anywhere: everything warm-shifts. */
+  --slate: #2f424e;
+  --slate-lit: #47606f;
+  --slate-dim: #17212b;    /* AVAILABLE_COLOR, the map node outline */
+  --leather: #1a1210;
+  --leather-lit: #2b1f1a;
+
+  /* The client draws its drop shadow by stamping the sprite a second time in
+     25% black at a fixed offset. It is hard-edged. Blurring it is the single
+     most common way a copy of this look goes wrong. */
+  --hard-shadow: 6px 8px 0 rgb(0 0 0 / 0.25);
+  --hard-shadow-lg: 9px 14px 0 rgb(0 0 0 / 0.25);
+
+  /* Panels are chamfered, not radiused. One clip-path, reused. */
+  --chamfer: 10px;
+
+  /* The hit-target floor for the keys, disclosures and form controls chrome.css
+     dresses. Two pre-existing controls sit below it and are left alone: the
+     `.run-modifiers` caption-summary, and the start menu's own settings inputs.
+     46px, not 44: scripts/verify-online-browser.mjs measures the RENDERED rect,
+     and an ancestor transform on the reward screen shrinks it ~2%, so a rule of
+     exactly 44 lands at 43.1 and fails. Named once because the run log's
+     backdrop offset is derived from it — hard-coding both let them drift. */
+  --key-min-height: 46px;
+
+  /* LERP_SPEED 7 per frame with a half-pixel snap ~= 140ms on this curve. */
+  --motion-lerp: 140ms;
+  --ease-lerp: cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* The full-bleed bands (the HUD in chrome/run-header.css, the map in
+   chrome/map.css, the campfire in chrome/campfire.css) size themselves
+   with `100vw` so they reach the window edge rather than stopping at the
+   shell's 1400px column. `100vw` counts the classic scrollbar gutter, though,
+   so on Windows and Linux each of them overhangs the page by ~15px the moment
+   it scrolls — and the screen audit cannot see it, because `innerWidth` counts
+   the gutter too. Clipping the axis costs nothing and makes the overhang
+   impossible. `clip`, not `hidden`: `hidden` would make this a scroll
+   container and break every `position: fixed` and `sticky` descendant. */
+html { overflow-x: clip; }
+
+/* Kreon is already a wide slab face; the client adds no tracking to it, and
+   adding some is what makes a fan copy read as a "fantasy web page". */
+.sts-scope { letter-spacing: 0; }

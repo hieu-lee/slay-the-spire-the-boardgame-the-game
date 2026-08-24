@@ -1,0 +1,90 @@
+/* The same panel as `.relic-tip`, and for the same reason: an icon-only node
+   cannot say what a room holds, and the native `title` it replaces was
+   unstyleable, a second late, and had no room for the act's boss.
+
+   Anchored to the NODE rather than to a shared strip, which is the opposite of
+   the relic bar's arrangement — map nodes are already scattered across a wide
+   frame, so there is no one opening point that reads as belonging to any of
+   them. `.room` is already `position: relative` (styles.css), so the node owns
+   the context; the translate below centres a 17rem box on a 52px node. */
+.room-tip {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + 0.55rem);
+  left: 50%;
+  display: grid;
+  gap: 0.15rem;
+  width: 17rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.6rem 0.9rem 0.7rem;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  color: var(--tip-body);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -0.3rem);
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp),
+    visibility 0s linear var(--motion-lerp);
+}
+
+/* `.room` is `position: relative; z-index: 1`, so each node opens its own
+   stacking context and the tooltip's z-index cannot escape it — the nodes drawn
+   after it in the row painted straight through the panel. Lift the whole node
+   while it is explaining itself. */
+.room:hover,
+.room:focus-visible {
+  z-index: 400;
+}
+
+.room:hover > .room-tip,
+.room:focus-visible > .room-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition-delay: 0s;
+}
+
+/* One room explains itself at a time. Hover is the more immediate intent, so a
+   node under the pointer wins over one merely holding focus — the same rule the
+   relic bar needs, for the same collision. */
+.map__frame:has(.room:hover) .room:not(:hover) > .room-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.room-tip__name {
+  color: var(--sts-gold);
+  font-size: 0.95rem;
+}
+
+.room-tip__pool {
+  color: var(--trim-lit);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.room-tip__status {
+  color: var(--light-yellow);
+  font-style: italic;
+}
+
+/* The node scales on hover and its tooltip is a child, so the panel was being
+   magnified with it. Undo exactly that factor. */
+.map .room--reachable:hover > .room-tip {
+  transform: translate(-50%, 0) scale(0.926);
+}

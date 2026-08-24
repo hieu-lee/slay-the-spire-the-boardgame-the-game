@@ -1,0 +1,16 @@
+/* Every non-combat screen used to be loose text on the page background. They
+   now sit on one slab, so the run reads as a board rather than as a form. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end {
+  flex: 0 1 auto;
+  align-self: center;
+  justify-self: center;
+  width: min(52rem, calc(100% - 2rem));
+  margin: auto;
+}
+
+.sts-scope .room-screen__defeat {
+  color: var(--red-text) !important;
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.6) !important;
+}

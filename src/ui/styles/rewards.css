@@ -1,0 +1,239 @@
+.reward-screen {
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(18px, 3vw, 42px);
+  background:
+    radial-gradient(circle at 50% 12%, rgb(205 151 56 / 18%), transparent 38%),
+    linear-gradient(180deg, #1d1811, #100e0b);
+  border: 0;
+  animation: reward-reveal 180ms ease-out;
+}
+
+.reward-screen__title {
+  width: fit-content;
+  margin: 0 auto 8px;
+  padding: 8px 34px;
+  color: #fff4d0;
+  background: linear-gradient(#8b6b3f, #4d341f);
+  border: 2px solid #cda76a;
+  clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 2px #120b06;
+}
+
+.reward-screen__players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr));
+  gap: 22px;
+}
+
+.reward-screen__player {
+  padding: 14px;
+  border: 1px solid rgb(205 151 56 / 32%);
+  background: rgb(8 7 6 / 58%);
+}
+
+.reward-screen__cards {
+  display: flex;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 22px);
+  margin: 12px 0 18px;
+}
+
+.reward-screen__choice {
+  display: flex;
+  flex: 0 1 clamp(92px, 10vw, 165px);
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  transition: transform 140ms ease, filter 140ms ease;
+  animation: reward-card-deal 380ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
+}
+
+.reward-screen__choice:nth-child(2) { animation-delay: 70ms; }
+.reward-screen__choice:nth-child(3) { animation-delay: 140ms; }
+.reward-screen__choice:nth-child(4) { animation-delay: 210ms; }
+.reward-screen__choice:nth-child(5) { animation-delay: 280ms; }
+
+@keyframes reward-card-deal {
+  from { opacity: 0; transform: translateY(54px) rotate(-5deg) scale(0.72); filter: brightness(0.65); }
+  72% { opacity: 1; transform: translateY(-6px) scale(1.04); filter: brightness(1.25); }
+}
+
+.reward-screen__choice:focus-within {
+  z-index: 2;
+  transform: translateY(-8px) scale(1.03);
+  filter: drop-shadow(0 0 10px rgb(72 202 228 / 70%));
+}
+
+.reward-screen__cards .card {
+  width: 100%;
+}
+
+.reward-screen__choice > button {
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-decoration: underline;
+}
+
+.reward-screen__scroll-hint {
+  display: none;
+}
+
+.reward-screen__unrevealed {
+  /* The centring this used to set is gone rather than relocated: the reveal and
+     skip keys are a banner now, and a banner is stretched by the grid's own
+     default. chrome.css owns its `min-height`, `margin` and `gap`. */
+  display: grid;
+}
+
+.reward-screen__unrevealed button {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--gold);
+}
+
+.reward-screen > button,
+.reward-screen__player > button {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--gold);
+}
+
+/* Skip and Collect do opposite things on a screen where a misclick costs a
+   card, so they are colour-coded. Only these VARIABLES live here — chrome.css
+   owns the rules that paint them, because its generic key plate would otherwise
+   win. Change a colour here; do not add a rule here expecting it to land. */
+.reward-screen {
+  --skip-edge: #a84237;
+  --skip-ink: #ffd4cb;
+  --skip-plate: #461b1a;
+  --skip-plate-lit: #8a352f;
+  --collect-edge: #55b8cc;
+  --collect-ink: #e8fbff;
+  --collect-plate: #143d49;
+  --collect-plate-lit: #2b7c8f;
+}
+
+.reward-screen__rare {
+  min-height: 24px;
+  color: #ffe08a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px #bc7e24;
+}
+
+.reward-screen__relic button,
+.reward-screen__potion button {
+  min-height: 46px;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  color: var(--gold);
+  background: var(--bg-raised);
+}
+
+.reward-screen__relic button:hover:not(:disabled),
+.reward-screen__relic button:focus-visible,
+.reward-screen__potion button:hover:not(:disabled),
+.reward-screen__potion button:focus-visible {
+  border-color: #ffe08a;
+  background: #3a2d20;
+}
+
+.reward-screen__relic button:disabled,
+.reward-screen__potion button:disabled {
+  color: #a99d87;
+  background: #241f1a;
+  opacity: 0.72;
+}
+
+.outside-potions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-block: 1px solid var(--edge);
+  background: rgb(8 7 6 / 86%);
+  overflow-x: auto;
+}
+
+.outside-potions__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.outside-potions button,
+.outside-potions__targets button {
+  min-height: 44px;
+  padding: 0.35rem 0.65rem;
+  color: var(--ink);
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+
+.outside-potions button:hover:not(:disabled),
+.outside-potions button:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.outside-potions button:disabled {
+  color: var(--ink-dim);
+  background: #181510;
+  opacity: 0.65;
+}
+
+.outside-potions__targets {
+  display: flex;
+  gap: 6px;
+}
+
+.outside-potions__targets .item-icon-image {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+}
+
+@keyframes reward-reveal {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+
+.reward-screen > button {
+  display: block;
+  margin: 20px auto 0;
+}
+
+.reward-screen button.is-chosen {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgb(205 151 56 / 20%);
+  box-shadow: inset 0 0 0 1px rgb(255 224 145 / 35%);
+}
+
+.reward-screen__upgrade {
+  /* Its own, not inherited from a `.reward-screen__player > p` rule: this <p>
+     is the only paragraph left in a reward panel, and without this the UA's 1em
+     block margin grew an upgraded-card panel by 25px. */
+  margin: 0;
+  color: var(--gold);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

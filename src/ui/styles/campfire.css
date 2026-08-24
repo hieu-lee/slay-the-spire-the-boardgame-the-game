@@ -1,0 +1,86 @@
+.campfire {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0.5rem 0;
+}
+
+.campfire h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--gold);
+  letter-spacing: 0.12em;
+}
+
+.campfire__players {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.campfire__player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.6rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  min-width: 200px;
+}
+
+.campfire__name {
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+}
+
+.campfire__choices {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.campfire__choices button,
+.campfire__leave {
+  background: var(--bg-raised);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.campfire__choices button.is-chosen {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.campfire__deck {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 460px;
+}
+
+.campfire__leave {
+  border-color: var(--gold);
+  color: var(--gold);
+  padding: 0.45rem 1rem;
+}
+
+.campfire__leave:disabled {
+  border-color: var(--edge);
+  color: var(--ink-dim);
+}
+
+.room-screen__defeat {
+  color: var(--blood);
+}

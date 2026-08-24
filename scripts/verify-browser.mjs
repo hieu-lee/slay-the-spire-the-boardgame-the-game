@@ -13045,8 +13045,8 @@ await shot('20-last-stand-victory')
 //
 // Only the bleed, deliberately. A clipping assertion was written here first and
 // removed: the local table is ONE seat (see the `.neow-screen` comment in
-// chrome.css for why that is a product invariant), one face renders as
-// `.neow-face--solo` — absolutely positioned, ~90px tall, bottom ~234px into the
+// src/ui/chrome/neow.css for why that is a product invariant), one face renders
+// as `.neow-face--solo` — absolutely positioned, ~90px tall, bottom ~234px into the
 // scene — and the scene floors at 42rem in BOTH sheets. Two independent probes
 // could not make a solo face clip: not by deleting the whole `.sts-scope
 // .neow-screen` rule, not by zeroing both min-heights, only by injecting a

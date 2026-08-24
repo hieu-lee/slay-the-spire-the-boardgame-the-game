@@ -1,0 +1,241 @@
+/* Wing Boots used the full room panel, which on the map is a page-wide slab
+   holding two words and a key. The client's equivalent is a narrow banner under
+   the map, and its options are the event banner.
+
+   Keyed on an explicit class, NOT on `.map ~ .room-screen`: OnlineGame.tsx
+   renders the pending-relic status notice and the Catch Up waiting notice as
+   `.room-screen` siblings AFTER the map, so a sibling combinator dressed those
+   plain status banners as a prompt panel too.
+
+   The row switch is deliberately NOT pulled in here: it is a thin full-width
+   strip, and giving it this panel's padding stole enough height from the map
+   band to clip the bottom row's node tooltips. */
+/* A STRIP, not a stacked panel — the same shape as the row switch below it. One
+   full-width button per destination read as a dialog and cost the map 207px of
+   its 822px band, which pushed the bottom rows of nodes below the fold on every
+   window. The map scrolls, so nothing was unreachable, but a prompt about where
+   to walk should not hide the map it is talking about. */
+.sts-scope .map-prompt {
+  display: flex;
+  /* `row` explicitly: `.room-screen` is a centring flex COLUMN in styles.css, and
+     without this the prompt inherited that direction and stayed a stack — the
+     strip this rule is for never happened. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem 0.6rem;
+  width: min(60rem, calc(100% - 2rem));
+  margin: 0.4rem auto;
+  padding: 0.45rem 0.8rem;
+}
+
+.sts-scope .map-prompt > strong {
+  color: var(--light-yellow);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sts-scope .map-prompt > button { flex: 0 1 auto; min-height: 2.4rem; padding: 0.3rem 0.8rem; }
+
+
+@media (max-width: 760px) {
+  /* The rug's three columns do not fit a phone, so each shelf takes its own
+     full-width row and the tiles keep one size instead of reflowing to three.
+     The module stays a length (see the note on `--item-module`); the STRETCH is
+     the `1fr` tracks, and the tiles fill their column on their own.
+     The `vw` term is capped by what THREE card tracks plus their gaps fit in
+     inside the board's padding: at 28vw the third card face hung past the rug
+     and was clipped, since the board is the width of the phone and cannot
+     scroll sideways to reveal it. */
+  /* On `.merchant-board`: the board declares this property itself, so a value set
+     on the STAGE is merely inherited and loses to it — the phone silently ran at
+     the clamp FLOOR until this moved. */
+  .sts-scope .merchant-board { --item-module: clamp(86px, 26vw, 120px); }
+
+  .sts-scope .merchant-cards { justify-self: start; }
+
+  /* The same treatment the pointerless block gives the shelves above 761px, for
+     the same reason: sized to their own content the relic tiles came out 99px
+     wide against the potion tiles' 56px, so the two stock rows did not line up
+     with each other. */
+  .sts-scope .merchant-shelf {
+    grid-template-columns: repeat(3, minmax(var(--icon-module), 1fr));
+    justify-self: stretch;
+  }
+  .sts-scope .reward-item {
+    grid-template-columns: 3rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .sts-scope .reward-item__actions { grid-column: 1 / -1; justify-content: stretch; }
+  .sts-scope .reward-item__actions button { flex: 1 1 8rem; }
+  .sts-scope .reward-boss__row { grid-template-columns: 1fr; }
+}
+
+/* The rug stacks one section per row below 830px, not 760px like the rest of the
+   narrow-width rules. The three-column shape needs room for three card tracks
+   PLUS two icon shelves plus the removal plaque — about 4.9 modules and 158px —
+   and between 761 and 830 it does not have it: the Colorless column was squeezed
+   to 92px against the character row's 107px. Stacked, each section gets the full
+   width and both card rows draw at one size. */
+@media (max-width: 830px) {
+  .sts-scope .merchant-board,
+  .sts-scope .merchant-board:not(:has(.merchant-cards--colorless)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'cards' 'colorless' 'relics' 'potions' 'removal';
+  }
+
+  /* Stacked, the pile has the whole width to itself, so the allowance the
+     three-column shape needs for the shelves and the plaque does not apply — with
+     it the cards came out at 92px on a window that can carry 107px. */
+  .sts-scope { --rug-width-limit: 13vw; }
+}
+
+/* Once the module is at its floor a short desktop window can only give back the
+   rug's own furniture. This trim is what a four-seat shop with a potion belt
+   spends to stop scrolling: measured with a full rug and a belt it reaches zero
+   at 1280x720, and shrinks but does not remove the overflow at 900x620 and
+   1024x600, where the card floor is already wider than the height allows. The
+   prices stay inside the stage in every case, and the rug scrolls. */
+@media (min-width: 761px) and (max-height: 820px) {
+  .sts-scope .merchant-board {
+    gap: 0.4rem var(--item-gap);
+    padding: 0.5rem clamp(1rem, 3vw, 2.4rem);
+    /* The same derivation as the base module, with the fixed cost re-measured:
+       everything trimmed in this block — the board's padding and gaps, the
+       banner's height, the shelf headings — comes out of that constant, so the
+       stock keeps the height the trim frees instead of leaving it empty. */
+    /* 254, measured by bisection. The height this regime appears to leave unused
+       is not usable: lowering the constant to 150 grows the cards but overflows
+       the stage by 102px and spills tile prose out of its track. */
+    --item-module: clamp(76px, min(var(--rug-width-limit), calc((100cqh - 254px) / 2.67)), 176px);
+  }
+
+  /* The stage's own frame and its title are furniture too, and giving them back
+     is what keeps the STOCK at a readable size on a short window — the
+     alternative was another cut to the card floor, which is the one thing on
+     this screen that cannot shrink without becoming unreadable. */
+  .sts-scope .merchant-stage { padding-block: 0.3rem; }
+
+  .sts-scope .merchant-stage .room-banner h2 { font-size: clamp(1.2rem, 2.2vw, 1.7rem); }
+
+  /* The title and the "Shopping for" seat picker sit on ONE row here. They are
+     the banner's only two visible children, and stacked they cost the rug a whole
+     row of stock — this is the largest piece of furniture left to give back. */
+  .sts-scope .merchant-stage .room-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem 0.9rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .sts-scope .merchant-shelf,
+  .sts-scope .merchant-cards,
+  .sts-scope .merchant-removal { gap: 0.15rem var(--item-gap); }
+}
+
+/* Above 760px a pointerless device keeps the desktop grid but prints a name and
+   a rules line on every tile, which roughly doubles tile height — enough to push
+   the potion row past the bottom of the stage and leave the rug scrolling. The
+   stock shrinks to pay for the prose. */
+@media (hover: none) and (min-width: 761px) {
+  /* On `.merchant-board`, like the other two: a module set on the STAGE is only
+     inherited, and the board's own declaration would beat it.
+     The constant is larger because every tile here carries two extra lines of
+     prose, and both stock rows pay for them. */
+  /* The same CEILING and width term as the pointer path; the fixed cost stays
+     higher, because the prose these tiles print is real height. The old 120px
+     ceiling and 7vw term were what starved the faces — a pointerless 1920x1200
+     got 120px cards and 9.6px rules where the pointer path got 176px and 11.2px,
+     and the constant was not the reason. Measured by bisection across pointerless
+     viewports: 1440x900 holding a potion is the binding case, and this is the
+     largest module there that does not overflow the stage. */
+  .sts-scope .merchant-board { --item-module: clamp(38px, min(var(--rug-width-limit), calc((100cqh - 355px) / 2.67)), 176px); }
+
+  /* Once the module is at its floor the only height left to give back is the
+     rug's furniture, and the rules line itself — two lines is enough to price an
+     item, and the full text stays in the tile's accessible name. */
+  .sts-scope .merchant-board {
+    gap: 0.3rem var(--item-gap);
+    padding: 0.28rem clamp(0.6rem, 2vw, 1.6rem);
+  }
+
+  .sts-scope .merchant-shelf,
+  .sts-scope .merchant-cards,
+  .sts-scope .merchant-removal { gap: 0.1rem var(--item-gap); }
+
+  /* The prose needs a track it fits in; an icon-width track let the first
+     tile's rules and price spill into its neighbour.
+     `stretch`, not the centring used elsewhere: `1fr` tracks inside a centred
+     item size to that item's own max-content, so the relic shelf sized itself to
+     its short rules and the potion shelf to its long ones, and the two stock
+     rows — which share one grid column — stopped lining up with each other. */
+  .sts-scope .merchant-shelf {
+    grid-template-columns: repeat(3, minmax(var(--icon-module), 1fr));
+    justify-self: stretch;
+  }
+
+  /* Art to the START of its track, not centred in it. These tracks are far wider
+     than the art because they carry prose, so centring left each shelf heading
+     hanging some 60px to the left of the first item it labels, while the card
+     rows — whose tracks are the width of a card — lined up exactly. */
+  .sts-scope .merchant-board .merchant-shelf .merchant-item {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .sts-scope .merchant-board .merchant-item > .room-item-text {
+    display: -webkit-box;
+    overflow: hidden;
+    line-height: 1.1;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .sts-scope .merchant-shelf h3,
+  .sts-scope .merchant-cards h3 { font-size: 0.6rem; }
+}
+
+/* The mobile combat tier also applies to non-combat scenes. Avoid full-viewport
+   blur passes and perpetual map compositing on phone-class GPUs. */
+html[data-mobile-performance='true'] .map-peek::backdrop,
+html[data-mobile-performance='true'] .settings-dialog::backdrop,
+html[data-mobile-performance='true'] .merchant-removal-dialog::backdrop,
+html[data-mobile-performance='true'] .merchant-potion-dialog::backdrop,
+html[data-mobile-performance='true'] .sts-scope .event-panel {
+  backdrop-filter: none;
+}
+
+html[data-mobile-performance='true'] .sts-scope .merchant-arrival::before {
+  left: 0;
+  width: 100%;
+  background: linear-gradient(180deg, #07040a, rgb(7 4 10 / 0.25) 42% 58%, #07040a);
+  filter: none;
+  transform: none;
+}
+
+html[data-mobile-performance='true'] .sts-scope.online-lobby {
+  background-attachment: scroll;
+}
+
+html[data-mobile-performance='true'] .map__path--live,
+html[data-mobile-performance='true'] .map .room--reachable,
+html[data-mobile-performance='true'] .map .room--here::after,
+html[data-mobile-performance='true'] .map .room--reachable::before {
+  animation: none;
+}
+
+/* Keep the game's cursor after surface-specific hover rules. Several of those
+   rules set `cursor: pointer`, so declaring this near the top was not enough. */
+body:has(.sts-scope),
+.sts-scope {
+  cursor: url('/assets/ui/cursor.png') 8 4, auto;
+}
+
+.sts-scope :is(button:not(:disabled), a, summary, label, [role='button']) {
+  cursor: url('/assets/ui/cursor.png') 8 4, pointer;
+}

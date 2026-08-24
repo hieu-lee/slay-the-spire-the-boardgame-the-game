@@ -1,0 +1,108 @@
+.hand-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-top: 1px solid var(--edge);
+  padding-top: 0.5rem;
+}
+
+.hand-area__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.pip--energy {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 32%, rgb(255 226 150 / 0.95), rgb(178 108 32 / 0.95)),
+    var(--bg-panel);
+  border: 2px solid rgb(255 226 150 / 0.55);
+  box-shadow:
+    inset 0 -4px 8px rgb(0 0 0 / 0.4),
+    0 0 14px rgb(214 176 96 / 0.4);
+  /* Dark on the gold disc: the previous rule painted it `--energy`, which is
+     the same gold, at 1.3:1. */
+  color: #241a0c;
+  font-weight: 700;
+}
+
+.hand {
+  display: flex;
+  /* Overlapped and centred: a held hand, not a shelf of boxes.
+     `safe` centring, because a centred flex line inside a scroll box overflows
+     BOTH edges and `scrollLeft` cannot go below zero — the leftmost cards
+     became unreachable at narrow widths. */
+  gap: 0;
+  justify-content: safe center;
+  align-items: flex-end;
+  /* Padding, not min-height: the cards lift UP on hover and the fan pushes the
+     outer ones DOWN, so the box needs slack at both ends or it clips them. */
+  /* Just enough for the 16px lift and the fan's downward tilt — every pixel
+     here is taken from the board, where the enemy's hit points live. */
+  padding: 1.15rem 0 0.6rem;
+  min-height: calc(var(--card-width) * var(--card-ratio));
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.card {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--card-width);
+  aspect-ratio: 1 / var(--card-ratio);
+  padding: 0;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  transition:
+    transform var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
+}
+
+.card__art {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.card--selected {
+  border-color: var(--gold);
+  transform: translateY(-10px);
+}
+
+.card--unplayable {
+  filter: grayscale(0.7) brightness(0.6);
+}
+
+/*
+ * The area-of-effect burst, opposite the cost so the two badges never collide.
+ * A disc behind it keeps the symbol readable over whatever art it lands on —
+ * these are full-colour printed symbols, and the card faces they sit on run
+ * from near-black to bright orange.
+ */
+.card__aoe {
+  position: absolute;
+  z-index: 2;
+  /* Below the title banner, over the art. The banner sweeps across the top of
+     every scan, so a badge at the top-right clips the last letters of a long
+     name — "Dagger Spray" loses its y at the smallest card size. */
+  top: 24%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+}

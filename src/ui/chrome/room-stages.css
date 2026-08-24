@@ -1,0 +1,89 @@
+/* The shop, treasure and event stages were the last screens carrying a plain
+   20px radius and a Georgia headline. Kreon is the game's only typeface — a
+   second serif in the same window is the tell that two people built this. */
+.sts-scope .room-stage {
+  border: 0;
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0,
+    100% var(--chamfer), 100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%,
+    0 calc(100% - var(--chamfer)), 0 var(--chamfer)
+  );
+  box-shadow: inset 0 0 70px rgb(0 0 0 / 0.7);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+/* `.sts-scope h2` already wins for the two headings, so only these two need
+   naming. */
+.sts-scope .treasure-relic strong,
+.sts-scope .event-options button strong {
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.sts-scope .room-banner > span,
+.sts-scope .campaign-end > span {
+  color: var(--light-yellow);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6);
+}
+
+/* Events now read as an illustrated encounter, not a twelve-rem question
+   mark beside a form. The same stage is decorative; event rules remain the
+   only source of truth and stay in the choice panel. */
+.sts-scope .event-stage {
+  align-self: stretch;
+  width: 100vw;
+  min-height: 100%;
+  margin-inline: calc(50% - 50vw);
+  clip-path: none;
+  filter: none;
+  background:
+    linear-gradient(90deg, transparent 0 42%, rgb(5 9 10 / 0.72) 64%, rgb(4 6 7 / 0.92)),
+    var(--event-art) center / cover no-repeat;
+}
+
+.sts-scope .event-art {
+  min-height: min(62vh, 37rem);
+  background: none;
+}
+
+.sts-scope .event-panel {
+  max-height: min(68vh, 42rem);
+  overflow: auto;
+  padding: clamp(0.8rem, 2vw, 1.4rem);
+  background: linear-gradient(180deg, rgb(21 27 28 / 0.9), rgb(10 14 15 / 0.94));
+  border: 1px solid var(--trim-dim);
+  box-shadow: inset 0 0 2.5rem rgb(0 0 0 / 0.48), var(--hard-shadow);
+  backdrop-filter: blur(3px);
+}
+
+.sts-scope .event-options button {
+  min-height: 3.6rem;
+  padding: 0.65rem 1.2rem 0.65rem 1.5rem;
+  border-color: #a96a41;
+  color: #f7ecd7;
+  background: linear-gradient(90deg, rgb(89 40 29 / 0.96), rgb(45 31 28 / 0.96));
+  clip-path: polygon(0.65rem 0, 100% 0, calc(100% - 0.65rem) 50%, 100% 100%, 0.65rem 100%, 0 50%);
+  box-shadow: inset 0 1px 0 rgb(255 216 160 / 0.18);
+}
+
+/* The stage is a grid; its rows, height, overflow and ground are all set by
+   chrome/merchant-rug.css, which lays the stock on a cloth rug. */
+.sts-scope .merchant-stage { display: grid; }
+
+
+/* No `min-height` here. It used to reserve two lines so a short rules text and a
+   long one kept their prices level, but `order` in the pointerless block now puts
+   the price ABOVE the prose, so the reservation only padded the tile's bottom —
+   and the tightest windows cannot spare it. Baselines are asserted directly. */
+
+@media (max-width: 760px) {
+  .sts-scope .event-stage {
+    grid-template-columns: 1fr;
+    align-content: end;
+    background:
+      linear-gradient(180deg, transparent 0 32%, rgb(5 9 10 / 0.78) 58%, rgb(4 6 7 / 0.95)),
+      var(--event-art) 42% center / cover no-repeat;
+  }
+  .sts-scope .event-art { min-height: 25vh; }
+  .sts-scope .event-panel { max-height: 58vh; }
+}

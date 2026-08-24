@@ -1,0 +1,202 @@
+@keyframes card-draw {
+  0% {
+    opacity: 0;
+    transform: translate3d(-42vw, -3.5rem, 0) rotate(-18deg) scale(0.68);
+    filter: brightness(0.7);
+  }
+  72% {
+    opacity: 1;
+    transform: rotate(var(--fan-angle, 0deg)) translateY(calc(var(--fan-lift, 0px) - 8px)) scale(1.06);
+    filter: brightness(1.35);
+  }
+  100% {
+    transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
+    filter: brightness(1);
+  }
+}
+
+.hand .card--drawn {
+  animation: card-draw 520ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
+  animation-delay: calc(var(--deal-index, 0) * 42ms);
+}
+
+/* A committed card leaves the hand, holds centre-stage long enough to read,
+   then resolves toward its real pile. The clone is decorative; the original
+   action remains authoritative and never waits for motion to finish. */
+.card-flight {
+  --flight-x: 0vw;
+  --flight-y: -44vh;
+  --flight-turn: 0deg;
+  --flight-trace: #e74b38;
+  --trail-x: -60%;
+  --trail-mid-x: -20%;
+  position: fixed;
+  z-index: 120;
+  left: 50%;
+  bottom: 1.2rem;
+  width: var(--card-width);
+  isolation: isolate;
+  pointer-events: none;
+  animation: card-resolve 980ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.card-flight--draw {
+  --flight-x: -38vw;
+  --flight-y: -3rem;
+  --flight-turn: -16deg;
+  --trail-x: 60%;
+  --trail-mid-x: 20%;
+}
+.card-flight--discard { --flight-x: 43vw; --flight-y: -3rem; --flight-turn: 9deg; }
+.card-flight--exhaust { --flight-x: 47vw; --flight-y: -3rem; --flight-turn: -18deg; }
+.card-flight--ironclad { --flight-trace: #e74b38; }
+.card-flight--silent { --flight-trace: #54ca68; }
+.card-flight--defect { --flight-trace: #42aef5; }
+.card-flight--watcher { --flight-trace: #a35ce5; }
+
+.card-flight::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: 45%;
+  width: 14rem;
+  height: 4rem;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 80% 48%, color-mix(in srgb, var(--flight-trace) 88%, white) 0 10%, transparent 34%),
+    radial-gradient(ellipse at 58% 30%, color-mix(in srgb, var(--flight-trace) 92%, transparent) 0 16%, transparent 44%),
+    radial-gradient(ellipse at 34% 68%, color-mix(in srgb, var(--flight-trace) 78%, transparent) 0 14%, transparent 48%),
+    radial-gradient(ellipse at 12% 40%, color-mix(in srgb, var(--flight-trace) 56%, transparent) 0 10%, transparent 42%);
+  filter: blur(2.5px) drop-shadow(0 0 10px var(--flight-trace));
+  transform-origin: right center;
+  animation: card-flight-smoke 980ms ease-out both;
+}
+
+.card-flight::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+  background: color-mix(in srgb, var(--flight-trace) 72%, transparent);
+  box-shadow: -18px -7px 0 color-mix(in srgb, var(--flight-trace) 62%, transparent),
+    -35px 7px 0 color-mix(in srgb, var(--flight-trace) 48%, transparent),
+    -52px -4px 0 color-mix(in srgb, var(--flight-trace) 38%, transparent),
+    -70px 8px 0 color-mix(in srgb, var(--flight-trace) 28%, transparent);
+  filter: blur(2px);
+  animation: card-flight-motes 980ms ease-out both;
+}
+
+.card-flight .card {
+  width: 100%;
+  transform: none;
+  filter: drop-shadow(0 1.2rem 1rem rgb(0 0 0 / 0.8));
+}
+
+@keyframes card-resolve {
+  0% { opacity: 1; transform: translate3d(-50%, 0, 0) rotate(-5deg) scale(0.88); }
+  18% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.58); }
+  34%, 66% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(1.05); }
+  76% { opacity: 1; transform: translate3d(-50%, -43vh, 0) rotate(0) scale(0.32); }
+  100% {
+    opacity: 0.45;
+    transform: translate3d(calc(-50% + var(--flight-x)), var(--flight-y), 0) rotate(var(--flight-turn)) scale(0.22);
+  }
+}
+
+@keyframes card-flight-smoke {
+  0%, 74% { opacity: 0; transform: translateX(0) scaleX(0.2); }
+  84% { opacity: 1; transform: translateX(var(--trail-mid-x)) scaleX(0.88); }
+  100% { opacity: 0; transform: translateX(var(--trail-x)) scaleX(1.45); }
+}
+
+@keyframes card-flight-motes {
+  0%, 75% { opacity: 0; transform: translate(0, -50%) scale(0.4); }
+  86% { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(var(--trail-x), -1.2rem) scale(1.5); }
+}
+
+.motion-pulse-0 { animation: ui-pulse 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.motion-pulse-1 { animation: ui-pulse-again 420ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@keyframes ui-pulse {
+  45% { transform: translateY(-4px) scale(1.16); filter: brightness(1.65); }
+}
+
+@keyframes ui-pulse-again {
+  45% { transform: translateY(-4px) scale(1.16); filter: brightness(1.65); }
+}
+
+/* Intent sits ABOVE the creature, the way the video game telegraphs it, and
+   several intents sit side by side rather than stacked. The order comes from
+   the markup, not from `order:` — a visual order that disagrees with the DOM
+   is one a keyboard walks in the wrong sequence. */
+.enemy__intent {
+  margin: 0 0 0.3rem;
+}
+
+/* A defeated enemy is flipped over on the table (p.13): still there, still
+   taking up its space in the row, but no longer threatening anything. */
+.enemy__defeated {
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: rgb(214 176 96 / 0.42);
+}
+
+/* What just happened, in the order it happened. The round-end pause is only
+   useful if there is something to read during it. */
+.combat__log {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0.6rem;
+  list-style: none;
+  border-top: 1px solid rgb(214 176 96 / 0.18);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #c9bda6;
+  /* The component renders newest-first, so normal flow puts the newest line at
+     the top of the box where scrollTop 0 leaves it. */
+  /* Capped against the VIEWPORT as well as in absolute terms: at 360x720 a
+     fixed cap pushed the enemy's hit-point bar below the fold, and that number
+     is what the whole turn is planned around. */
+  /* Whole lines. Everything is border-box, so the cap has to include the
+     0.7rem of vertical padding and the 1px border, or the last line is sliced
+     through the middle of its glyphs. 1.5 line-height on 0.78rem is 1.17rem. */
+  /* Both halves round to whole lines. A raw vh cap cut the last line through
+     its glyphs on short screens, which is the thing this cap exists to stop. */
+  max-height: min(calc(5 * 1.17rem + 0.75rem), calc(4 * 1.17rem + 0.75rem));
+  overflow-y: auto;
+  /* A visible track, because a log that silently hides half a round looks
+     identical to one that showed all of it. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(214 176 96 / 0.35) transparent;
+}
+
+.combat-log-drawer:not([open]) > .combat__log { display: none; }
+
+/* During the round-end pause the hand is empty and the log is the thing to
+   read, so it takes the space the hand is not using. A four-player enemy turn
+   runs to eight lines and used to show five with no scrollbar to say so. */
+.combat[data-phase='roundEnd'] .combat__log,
+.combat[data-phase='enemy'] .combat__log {
+  max-height: min(calc(12 * 1.17rem + 0.75rem), 34vh);
+}
+
+.combat__log li:first-child {
+  color: #f0e4c8;
+}
+
+/* The round divider: quieter than the events it separates. */
+.combat__log-turn {
+  color: #8d8171;
+  letter-spacing: 0.04em;
+  border-top: 1px solid rgb(214 176 96 / 0.14);
+  margin-top: 0.2rem;
+  padding-top: 0.2rem;
+}

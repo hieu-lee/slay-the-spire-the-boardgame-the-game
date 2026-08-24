@@ -1,0 +1,209 @@
+.sts-scope .merchant-stage {
+  /* `min-content`, not `0`, as the rug row's floor. At `0` the row took its
+     `1fr` share and the rug simply overflowed it, painting over the Leave banner
+     in the row below — which buried the whole potion price row and stopped three
+     tiles taking clicks on a short window. With a min-content floor the rows
+     overflow the STAGE instead, and the stage scrolls (see `overflow` below), so
+     a rug too tall for the window costs a scroll rather than lost stock. */
+  grid-template-rows: auto minmax(min-content, 1fr) auto;
+  height: calc(100dvh - 6.6rem);
+  /* Bounded, not pinned at 780px: a hard cap left a tall window with a third of
+     the screen black above and below a rug whose stock was at its floor. The
+     module's own clamp ceiling is what stops the stock growing without end. */
+  /* No `vw` term. Capping the stage against its WIDTH did cut the dark cloth a
+     narrow, tall window leaves — but it did it by starving the rug of height, and
+     the module fell to its floor with card text at 6.4px, under the 7.84px the
+     shared card ramp already gives. Legible stock is the point; the dead cloth is
+     split above and below the rug by the centring below instead. */
+  max-height: 1040px;
+  min-height: min(34rem, calc(100dvh - 6.6rem));
+  padding: clamp(0.55rem, 1.5vw, 1rem);
+  /* `auto`, never `clip`. The rug is sized to fit below, but a clip turns any
+     miscalculation into stock a player cannot see or reach — which is exactly
+     how the relic prices went missing on a short window. */
+  overflow: auto;
+}
+
+/* Centred in its shell row, so the height the stage declines to take is split
+   above and below the rug instead of left as one dead band under it — a tall,
+   narrow window stranded 682px of black below a 590px stage, which reads as an
+   unfinished screen.
+   Scoped to a DIRECT child of the shell, which is the local layout: OnlineGame
+   nests the stage inside `.online-mutations`, and centring it there left that
+   wrapper covering the gap and intercepting clicks on the stock. */
+.app-shell > .merchant-stage { align-self: center; }
+
+.sts-scope .merchant-stage .room-banner { z-index: 2; margin-bottom: 0.35rem; }
+.sts-scope .merchant-stage .room-banner > span,
+.sts-scope .merchant-stage .room-banner > p { display: none; }
+.sts-scope .merchant-stage .room-banner h2 { margin: 0; font-size: clamp(1.65rem, 3vw, 2.4rem); }
+.sts-scope .merchant-buyer { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.sts-scope .merchant-cards { grid-area: cards; }
+.sts-scope .merchant-cards--colorless { grid-area: colorless; }
+.sts-scope .merchant-shelf--relics { grid-area: relics; }
+.sts-scope .merchant-shelf--potions { grid-area: potions; }
+.sts-scope .merchant-removal { grid-area: removal; }
+
+.sts-scope .merchant-shelf,
+.sts-scope .merchant-cards,
+.sts-scope .merchant-removal {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* `--card-width` is what `Card` and `.merchant-card__sold` size themselves
+   against, so the shop's module has to reach them through it. */
+.sts-scope .merchant-cards { --card-width: var(--merchant-card-width); }
+
+/* The `:not()` matches nothing — `.merchant-item` is never rendered inside the
+   removal column — but it is NOT redundant: dropping it lowers this selector's
+   specificity, other rules start winning, and the tiles spill their prose and
+   overflow the stage. Kept for the cascade, not the filter. */
+.sts-scope .merchant-board button.merchant-item:not(.merchant-removal button) {
+  position: relative;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sts-scope .merchant-item > strong,
+.sts-scope .merchant-item > .room-item-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+.sts-scope .room-price img { object-fit: contain; }
+
+.sts-scope .merchant-tooltip {
+  position: absolute;
+  z-index: 30;
+  /* A tip is something you read, never something you hit: it hangs over the
+     tiles around its own, and while it was hittable it swallowed hovers and
+     clicks aimed at them. */
+  pointer-events: none;
+  bottom: calc(100% + 0.4rem);
+  display: none;
+  width: min(18rem, 70vw);
+  padding: 0.65rem;
+  color: var(--cream);
+  background: #17120f;
+  border: 1px solid var(--trim-lit);
+  box-shadow: var(--hard-shadow-lg);
+  text-align: left;
+}
+
+.sts-scope .merchant-tooltip > strong { color: var(--light-yellow); }
+.sts-scope .merchant-item:is(:hover, :focus-visible) .merchant-tooltip { display: block; }
+
+/* The stage scrolls, so the stage CLIPS, and a tip centred on a tile is far
+   wider than the tile it hangs off: it lost the item's name and the first words
+   of its rules — and the tip is the only place a pointer user can read a
+   bare-icon relic at all. NO tip is centred on its tile, therefore: each one
+   hangs off one of its tile's edges and opens inward, so its width is spent
+   over the rug rather than half of it over the rug's edge.
+   RIGHTWARD, for every column. The shelves are not at a fixed side of the rug —
+   they sit hard left with no Colorless pile in stock and right of centre with
+   one — so no per-column direction is safe, while the removal column is always
+   to their right and guarantees room there. */
+.sts-scope .merchant-shelf .merchant-item .merchant-tooltip {
+  left: 0;
+  translate: 0 0;
+}
+
+/* Raised on the TILE, not the tip, and REQUIRED. `styles.css` gives a hovered tile
+   a `filter` and a `transform`, either of which makes it a stacking context — so
+   the tip's own `z-index` is trapped inside the tile and counts for nothing
+   against the tile's siblings. The removal plaque is a later sibling with an
+   opaque background, and the shelf tips overlap it, so without this the plaque
+   paints over the tip a player is trying to read. */
+.sts-scope .merchant-board .merchant-item:is(:hover, :focus-visible) { z-index: 30; }
+
+.sts-scope .merchant-removal__cards { display: grid; aspect-ratio: 0.72; place-items: center; color: #b73932; background: #eee4c7; border: 0.35rem solid #d4bd87; rotate: 7deg; }
+
+.merchant-removal-dialog,
+.merchant-potion-dialog { width: min(96rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 0; background: transparent; }
+/* Sized to its own content, capped at 72rem here: three potion tiles
+   come to about 480px, and a fixed 72rem panel left a quarter of the screen of
+   dead plate on either side of them. */
+.merchant-potion-dialog { width: max-content; max-width: min(72rem, calc(100% - 2rem)); }
+.merchant-removal-dialog::backdrop,
+.merchant-potion-dialog::backdrop { background: rgb(4 5 4 / 0.86); backdrop-filter: blur(3px); }
+.merchant-removal-dialog .choice-modal__panel,
+.merchant-potion-dialog .choice-modal__panel { display: grid; gap: 1rem; padding: 1rem; }
+.merchant-removal-dialog header,
+.merchant-potion-dialog header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.merchant-removal-dialog header span,
+.merchant-potion-dialog header span { color: var(--trim-lit); letter-spacing: 0.12em; text-transform: uppercase; }
+.merchant-removal-dialog header h2,
+.merchant-potion-dialog header h2 { margin: 0.2rem 0 0; }
+.merchant-removal-dialog .campfire__deck {
+  max-height: min(58vh, 34rem);
+  /* No bottom padding and no fade: the confirm key below is in normal flow, not
+     sticky, so it never lands on a card — reserving room for it just cost the one
+     dialog whose job is reading card faces 56px of deck. A mask cannot tell
+     whether the deck actually overflows either, so it ghosted a short deck's last
+     row for nothing. */
+}
+.merchant-removal-dialog__confirm,
+.merchant-potion-dialog__confirm { justify-self: center; min-width: 16rem; }
+.merchant-potion-dialog .merchant-potion-discard { width: min(38rem, 100%); margin: 0 auto; }
+.sts-scope .merchant-potion-dialog .merchant-potion-discard button[aria-pressed='true'] { color: #2a1c07; transition: none; }
+
+@media (max-width: 760px) {
+  .settings-dialog { width: 100%; height: 100dvh; }
+  .settings-dialog__panel { clip-path: none; }
+  .settings-dialog__panel > header h2 { display: none; }
+  .settings-dialog nav button { min-height: 3rem; font-size: 0.78rem; }
+  .settings-volume { grid-template-columns: 1fr; }
+  .settings-toggle, .settings-action, .settings-select { grid-template-columns: minmax(0, 1fr) auto; }
+
+  /* A phone cannot show the whole rug, so the STAGE is the one scroller and it
+     is given every pixel below the header — the desktop `max-height` left it
+     shorter than that for no gain. The belt variant is spelled out because the
+     desktop `:has(.outside-potions)` height carries the same specificity, so
+     whichever comes later wins; that rule is scoped to `min-width: 761px` for
+     exactly this reason. Everything below the fold is reached by scrolling the
+     stage. */
+  .sts-scope .merchant-stage,
+  .sts-scope:has(.outside-potions) .merchant-stage {
+    display: block;
+    height: auto;
+    max-height: none;
+    min-height: calc(100dvh - 4rem);
+  }
+  /* The belt is a sibling strip, so its band comes off the stage's share or the
+     page starts scrolling behind the stage's own scroll. */
+  .sts-scope:has(.outside-potions) .merchant-stage { min-height: calc(100dvh - 4rem - var(--belt-band)); }
+
+}
+
+/* Whenever the hover tip is not a usable way to read an item, the shelf tile
+   prints its own name and rules instead. Two independent cases, so two media
+   features OR'd together: a device with no pointer cannot hover at all (a 768px
+   tablet used to get a bare icon and no tip), and a window under 760px has no
+   room to place the tip. Keying this on width alone was the bug. */
+@media (hover: none), (max-width: 760px) {
+  .sts-scope .merchant-item > strong,
+  .sts-scope .merchant-item > .room-item-text {
+    display: block;
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    line-height: 1.15;
+  }
+  /* The printed name and rules come BEFORE the price in DOM order, so a tile
+     with more prose — or a Sold tile with no rules line at all — pushed its own
+     price down and the shelf's baselines came apart. `order` puts the price back
+     directly under the art, whose height is fixed, and leaves the DOM order
+     alone for assistive tech. */
+  .sts-scope .merchant-board .merchant-item > :is(strong, .room-item-text) { order: 1; }
+  /* Same ink as the rules line beside it. The inherited cream measured 4.40:1
+     over the lit cloth at this size — under AA — while its own rules line had
+     already been lifted to #fff8e4. This name is the substitute for a tooltip
+     that is `display: none` here, so it is the last text that should be the
+     hardest to read. */
+  .sts-scope .merchant-board .merchant-item > strong { color: #fff8e4; font-size: 0.66rem; }
+  .sts-scope .merchant-board .merchant-item > .room-item-text { font-size: 0.58rem; }
+  .sts-scope .merchant-tooltip { display: none !important; }
+}

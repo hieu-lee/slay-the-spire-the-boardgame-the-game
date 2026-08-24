@@ -1,0 +1,38 @@
+/* Skip is red and Collect is cyan in styles.css, and those two buttons do
+   opposite things on a screen where a misclick costs a card. Pulling them into
+   the generic key list gave them the key's geometry — which they want — but
+   also its grey slate plate, which made them identical. `:is()` scores by its
+   most specific argument, so the key block at (0,2,1) beat the original
+   `.reward-screen .reward-screen__skip` at (0,2,0) on every declaration.
+   The colour coding comes back here, on top of the key shape. */
+.sts-scope .reward-screen .reward-screen__skip {
+  border-color: var(--skip-edge);
+  color: var(--skip-ink);
+  background-color: var(--skip-plate);
+  background-image: linear-gradient(180deg, var(--skip-plate-lit), var(--skip-plate));
+}
+
+/* `:not(.is-chosen)` is load-bearing, not decoration: these rules out-specify
+   the gold "chosen" plate, so without it a skip that was already chosen fell
+   back to red the moment it was hovered or focused and stopped reading as
+   selected at all. */
+.sts-scope .reward-screen .reward-screen__skip:not(.is-chosen):hover:not(:disabled),
+.sts-scope .reward-screen .reward-screen__skip:not(.is-chosen):focus-visible {
+  border-color: var(--skip-edge);
+  background-color: var(--skip-plate);
+  background-image: linear-gradient(180deg, var(--skip-plate-lit), var(--skip-plate));
+}
+
+.sts-scope .reward-screen .reward-screen__collect {
+  border-color: var(--collect-edge);
+  color: var(--collect-ink);
+  background-color: var(--collect-plate);
+  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
+}
+
+.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):hover:not(:disabled),
+.sts-scope .reward-screen .reward-screen__collect:not(.is-chosen):focus-visible {
+  border-color: var(--collect-edge);
+  background-color: var(--collect-plate);
+  background-image: linear-gradient(180deg, var(--collect-plate-lit), var(--collect-plate));
+}

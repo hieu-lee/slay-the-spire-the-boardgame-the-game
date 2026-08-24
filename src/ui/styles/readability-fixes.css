@@ -1,0 +1,99 @@
+.bar {
+  height: 16px;
+}
+
+.bar__label {
+  font-size: 0.72rem;
+  line-height: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.log {
+  max-height: 8rem;
+  font-size: 0.8rem;
+}
+
+.combat__die {
+  display: inline-flex;
+  align-items: center;
+}
+
+.discard-order {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+
+.discard-order select {
+  max-width: 9rem;
+}
+
+.retain-options {
+  display: inline-flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.end-turn-order {
+  position: relative;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+
+.end-turn-order > summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.end-turn-order[open] > ol {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  min-width: min(30rem, calc(100vw - 2rem));
+  /* These trays open unasked — the party ordering stage opens the end-turn one,
+     the before-draw Scry list is always open — and a four-seat party fills them:
+     cap the list so it scrolls instead of growing without bound, with a
+     scrollbar that matches the panel rather than the OS. */
+  max-height: min(60vh, 27rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color-scheme: dark;
+  margin: 0.25rem 0 0;
+  padding: 0.45rem;
+  list-style: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+
+.end-turn-order li {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0;
+}
+
+.end-turn-order li > span {
+  white-space: nowrap;
+}
+
+/* The one select that keeps its own FONT: this row lists a target per orb and
+   has to stay dense, so `font: inherit` holds it at the list's 0.72rem rather
+   than the 1rem chrome.css pins everywhere else. Only that is bespoke — border,
+   radius, plate and the 46px height floor are all left to chrome.css so it
+   still looks like every other dropdown in the game. */
+.end-turn-order li select {
+  width: min(14rem, 42vw);
+  padding: 0.1rem 0.35rem;
+  font: inherit;
+}
+
+.end-turn-order li button {
+  min-width: 1.8rem;
+  padding: 0.1rem 0.35rem;
+}

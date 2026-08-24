@@ -1,0 +1,43 @@
+.enemy__head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.enemy__intent {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem 0.4rem;
+  flex-wrap: wrap;
+  min-height: 34px;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  /* The single most important thing on an enemy is what it will do to you, so
+     it gets the strongest contrast on the card and the largest icons. */
+  background: rgb(0 0 0 / 0.45);
+  border: 1px solid rgb(215 169 75 / 0.35);
+}
+
+/* A divider between effects, so "1 Block, 1 Weak" cannot read as "11". */
+.intent + .intent::before {
+  content: '';
+  align-self: stretch;
+  width: 1px;
+  margin-right: 0.4rem;
+  background: rgb(215 169 75 / 0.3);
+}
+
+.intent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.intent .icon-value__number {
+  font-size: 1.15rem;
+}
+
+.enemy__asleep {
+  color: var(--ink-dim);
+  letter-spacing: 0.2em;
+}

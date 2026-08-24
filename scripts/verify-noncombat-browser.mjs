@@ -3105,7 +3105,7 @@ const onlineNeowContained = await neowPage.evaluate(() => document.documentEleme
 // to the viewport does not shrink the dealt faces, it clips them away with no
 // gesture that brings them back. An earlier pass here capped it and hid two of
 // the four faces outright at 375x667. Page scroll is the acceptable outcome;
-// an unreachable face is not, per styles.css:54.
+// an unreachable face is not, per src/ui/styles/neow.css.
 const neowFloorScroll = []
 for (const size of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 375, height: 667 }]) {
   await neowPage.setViewportSize(size)

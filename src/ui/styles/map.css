@@ -1,0 +1,106 @@
+.map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  align-items: center;
+  /* Depth, so the climb reads as a place rather than a page. */
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(72 40 30 / 0.5), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgb(20 16 16 / 0.8), transparent 55%);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0.5rem 0;
+}
+
+.map__hint {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+.map__row {
+  display: flex;
+  gap: 1.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Out of reach, but still readable and still reachable by keyboard — it is
+   `aria-disabled`, not `disabled`. */
+.room[aria-disabled='true'] {
+  cursor: default;
+}
+
+/* A node on the climb, not a row in a list: a carved medallion carrying its
+   symbol and nothing else. The name lives in the accessible label and the
+   tooltip — captioning every node is what made the Spire read as an org chart. */
+.room {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--ink-dim);
+  background:
+    radial-gradient(circle at 50% 34%, rgb(58 48 40 / 0.95), rgb(24 20 18 / 0.95)),
+    var(--bg-panel);
+  border: 2px solid rgb(90 74 56 / 0.85);
+  box-shadow:
+    inset 0 2px 4px rgb(255 236 200 / 0.06),
+    inset 0 -3px 6px rgb(0 0 0 / 0.55),
+    0 2px 5px rgb(0 0 0 / 0.5);
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease);
+  /* Rooms the party cannot reach are inert, but their SYMBOL stays legible —
+     it is the only thing telling you what lies ahead now the captions are
+     gone, so the plate dims and the glyph does not. */
+  opacity: 1;
+  border-color: rgb(90 74 56 / 0.4);
+  color: rgb(178 160 138);
+}
+
+.room--reachable {
+  opacity: 1;
+  color: var(--ink);
+  border-color: var(--gold);
+  box-shadow:
+    inset 0 2px 4px rgb(255 236 200 / 0.1),
+    inset 0 -3px 6px rgb(0 0 0 / 0.5),
+    0 0 14px rgb(214 176 96 / 0.45);
+}
+
+/* Already climbed: still on the map, plainly behind you. */
+.room--visited {
+  border-color: rgb(90 74 56 / 0.35);
+  color: rgb(126 114 100);
+}
+
+.room--here {
+  opacity: 1;
+  color: var(--ink);
+  border-color: var(--ink);
+  box-shadow:
+    inset 0 0 0 2px rgb(236 229 216 / 0.3),
+    0 0 16px rgb(236 229 216 / 0.3);
+}
+
+/* The thing you are climbing towards. */
+.room--boss {
+  width: 74px;
+  height: 74px;
+  border-color: var(--blood);
+  border-width: 3px;
+  background:
+    radial-gradient(circle at 50% 34%, rgb(96 34 30 / 0.95), rgb(30 14 14 / 0.96)),
+    var(--bg-panel);
+  box-shadow:
+    inset 0 -4px 8px rgb(0 0 0 / 0.55),
+    0 0 22px rgb(160 42 38 / 0.45);
+}

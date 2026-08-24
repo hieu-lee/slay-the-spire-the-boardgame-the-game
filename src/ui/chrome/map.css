@@ -1,0 +1,186 @@
+/* The digital game's climb is ink on parchment, with a pinned legend. */
+.map {
+  position: relative;
+  isolation: isolate;
+  /* `safe center`, not plain `center`. styles.css makes this a column flex box
+     with `overflow-y: auto`, and centring a SCROLLER puts its excess above the
+     scroll origin, where no scroll can reach it: at 1280x560 the top 47px of the
+     Spire sat under the opaque header with the boss node sliced and "Enter the
+     Spire" gone, and `scrollTop = -9999` could not bring it back. `safe` centres
+     while the content fits and falls back to flex-start the moment it does not,
+     so the whole climb stays reachable on a short window. */
+  justify-content: safe center;
+  /* Full-bleed, like the HUD above it. The shell is a centred 1400px column,
+     which left the painted rock sitting in a black picture frame — the one
+     thing that most made the climb read as a widget on a page. */
+  width: 100vw;
+  margin: -1.25rem calc(50% - 50vw) 0;
+  padding: 1.5rem 0 2rem;
+  color: #272727;
+  background:
+    linear-gradient(90deg, rgb(24 17 12 / 0.42), transparent 8%, transparent 92%, rgb(24 17 12 / 0.42)),
+    url('/assets/noncombat/map-parchment.webp') center / cover no-repeat;
+  box-shadow: inset 0 0 5rem rgb(44 29 15 / 0.45);
+}
+
+.map__hint {
+  position: relative;
+  z-index: 3;
+  color: #38332c;
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-shadow: 0 1px 0 rgb(255 249 220 / 0.65);
+}
+
+.map__frame {
+  width: min(52rem, calc(100% - 17rem));
+  min-width: min(28rem, calc(100% - 17rem));
+}
+
+.map__row {
+  gap: clamp(1.8rem, 4vw, 4.2rem);
+}
+
+.map .room {
+  color: #3a3937;
+  background: rgb(218 210 183 / 0.55);
+  border-color: rgb(52 51 49 / 0.58);
+  box-shadow: inset 0 0 0 2px rgb(255 250 223 / 0.28), 0 2px 4px rgb(40 29 18 / 0.35);
+}
+
+.map .room--visited { color: rgb(89 85 76 / 0.65); border-color: rgb(69 65 58 / 0.3); }
+
+.map .room--here {
+  color: #202020;
+  border-color: #202020;
+  box-shadow: inset 0 0 0 2px rgb(255 250 223 / 0.55), 0 0 0 3px rgb(37 36 34 / 0.3);
+}
+
+.map .room--boss {
+  color: #4d1715;
+  background: rgb(196 176 148 / 0.75);
+  border-color: #7e2822;
+}
+
+.map__legend {
+  position: absolute;
+  z-index: 4;
+  top: 15%;
+  right: clamp(1rem, 4vw, 4.5rem);
+  width: 11.5rem;
+  padding: 1rem 1.1rem 1.25rem;
+  color: #272727;
+  background: linear-gradient(90deg, #c9d4d2, #eef0e8 12%, #d9dfd9 86%, #b6c4c3);
+  border-block: 2px solid #879897;
+  box-shadow: 0 0.65rem 1rem rgb(30 24 18 / 0.38), inset 0 0 1.4rem rgb(56 81 82 / 0.18);
+  rotate: 1deg;
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.map__legend::before,
+.map__legend::after {
+  content: '';
+  position: absolute;
+  left: -0.45rem;
+  right: -0.45rem;
+  height: 0.6rem;
+  background: #c7d1cf;
+  border: 1px solid #82918f;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.35);
+}
+
+.map__legend::before { top: -0.35rem; }
+.map__legend::after { bottom: -0.35rem; }
+.map__legend > strong { display: block; margin-bottom: 0.45rem; text-align: center; font-size: 1.1rem; }
+.map__legend ul { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.map__legend li { display: flex; align-items: center; gap: 0.55rem; }
+
+@media (max-width: 760px) {
+  .map { justify-content: flex-start; }
+  .map__frame { width: calc(100% - 1rem); min-width: 0; }
+  .map__row { gap: 1.1rem; }
+  .map__legend { position: relative; top: auto; right: auto; width: min(28rem, calc(100% - 2rem)); }
+  .map__legend ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The hand-placed wobble, applied from the per-room custom properties set in
+   MapScreen. Paths are measured from the DOM after layout, so they follow the
+   nodes to their displaced positions on their own. */
+.map .room {
+  translate: var(--jitter-x, 0) var(--jitter-y, 0);
+}
+
+/* Hovering a reachable node lifts it; the translate above must survive that, so
+   the lift goes through `scale`/`transform` and never through `translate`. */
+.map .room--reachable:hover { transform: translateY(-3px) scale(1.08); }
+
+/* A worn trail of dots, not a drawn line. This is the map's signature and the
+   single most recognisable thing on the screen. */
+.map__path {
+  stroke: rgb(67 65 61 / 0.62);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 17;
+}
+
+.map__path--live {
+  stroke: var(--sts-gold);
+  stroke-width: 6;
+  stroke-dasharray: 0 17;
+  filter: drop-shadow(0 0 6px rgb(239 200 81 / 0.7));
+  animation: map-trail 1.6s linear infinite;
+}
+
+/* The trail crawls toward the room it leads to, which reads as "this way". */
+@keyframes map-trail {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -17; }
+}
+
+/* The client rings the party's current node with a ring that turns forever. */
+.map .room--here::after {
+  content: '';
+  position: absolute;
+  inset: -11px;
+  border: 2px dashed rgb(255 246 226 / 0.55);
+  border-radius: 50%;
+  animation: map-ring 9s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes map-ring {
+  to { rotate: 360deg; }
+}
+
+/* Reachable nodes breathe in opacity AND size together, on the client's own
+   ~5 rad/s cosine. A pulse in one channel alone reads as a CSS effect.
+
+   The glow is a pseudo-element so the loop can animate `opacity` alone.
+   Animating `box-shadow` on the node itself is not compositable, and this runs
+   forever on every reachable node — it would repaint the map every frame for
+   the whole time the player is deciding where to go. */
+.map .room--reachable {
+  border-color: var(--sts-gold);
+  animation: map-breathe 1.26s ease-in-out infinite;
+}
+
+.map .room--reachable::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 14px 3px rgb(239 200 81 / 0.55);
+  animation: map-glow 1.26s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes map-breathe {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+@keyframes map-glow {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}

@@ -1,0 +1,104 @@
+/* The original game keeps rewards on one compact hanging sheet in the middle
+   of the room. This also fixes the solo screen stretching one player to nearly
+   the whole viewport before anything has been revealed. */
+.sts-scope .reward-screen {
+  display: grid;
+  /* `safe center`, so a reward that fits sits in the middle of the screen rather
+     than clinging to the top with a dead band under it — and one that does NOT
+     fit still starts at the top edge instead of having its first row scrolled out
+     of reach, which is what plain `center` does in a scroll container. */
+  align-content: safe center;
+  justify-items: center;
+  gap: 0.7rem;
+  /* No bottom padding. The room the sticky collect control needs lives on the
+     CONTENT instead: a sticky inset resolves against the scroller's padding box,
+     so a padding here lifts the control off the bottom edge and leaves it
+     floating over the rows rather than under them. */
+  padding: clamp(1rem, 3vh, 2rem) 1rem 0;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgb(34 49 52 / 0.9), rgb(7 9 10 / 0.88) 42%, rgb(3 4 5 / 0.98) 78%),
+    linear-gradient(180deg, #172024, #050708);
+}
+
+.sts-scope .reward-screen__title {
+  z-index: 1;
+  margin-bottom: 0;
+  padding: 0.55rem 3rem 0.75rem;
+  background: linear-gradient(180deg, #e7d5ad, #a99367);
+  border-color: #6d5b3a;
+  color: #29323a;
+  text-shadow: 0 1px 0 #f9edcf;
+  filter: drop-shadow(0 0.45rem 0.45rem rgb(0 0 0 / 0.65));
+}
+
+.sts-scope .reward-screen > .muted {
+  z-index: 2;
+  margin: 0;
+  color: #d7c9aa;
+}
+
+.sts-scope .reward-screen__players {
+  display: grid;
+  width: min(48rem, 100%);
+  grid-template-columns: 1fr;
+  gap: 0.7rem;
+  margin: 0 auto;
+  padding: 1.2rem clamp(0.75rem, 3vw, 2rem) 1.6rem;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.05), transparent 8% 92%, rgb(0 0 0 / 0.18)),
+    linear-gradient(180deg, #607579, #3d5055 76%, #27383d);
+  clip-path: polygon(2% 0, 98% 0, 100% 2%, 99% 98%, 92% 100%, 84% 98.5%, 74% 100%, 63% 98%, 52% 100%, 40% 98.4%, 29% 100%, 18% 98.2%, 7% 100%, 1% 97%);
+  box-shadow: inset 0 0 0 2px rgb(212 225 211 / 0.12), inset 0 0 3rem rgb(0 0 0 / 0.28);
+  filter: drop-shadow(0 1rem 1.2rem rgb(0 0 0 / 0.6));
+}
+
+.sts-scope .reward-screen__player {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.8rem;
+  border: 1px solid rgb(230 240 218 / 0.18);
+  background: rgb(22 31 33 / 0.28);
+}
+
+.sts-scope .reward-screen__player h3 { margin: 0; color: var(--light-yellow); }
+.sts-scope .reward-screen__unrevealed { min-height: 0; margin: 0; }
+.sts-scope .reward-screen__unrevealed button {
+  min-height: 3.5rem;
+  padding-left: 3.25rem;
+  text-align: left;
+  background:
+    radial-gradient(circle at 1.65rem 50%, #e8e0ce 0 0.55rem, transparent 0.6rem),
+    linear-gradient(180deg, #61777c, #405459);
+  border-color: rgb(223 231 215 / 0.34);
+  color: #f4ead4;
+}
+
+.sts-scope .reward-screen__cards {
+  /* Off the ROW's own width, not the viewport's. The row is a near-constant
+     660-680px at every window, but a `13vw` ramp handed it 168px cards at 1440
+     and 112px at 800 for the same box — the card size tracked the screen while
+     the space it had to fill did not. `cqw` here resolves against the seat block,
+     which is the element that actually varies. The floor never binds: `cqw` wins on
+     a desktop row, and on a phone the card is sized by the narrow-width rules
+     instead — lowering it from 7rem to 4.9rem moved nothing. */
+  --card-width: clamp(7rem, 23cqw, 10.5rem);
+  max-width: 100%;
+  overflow: auto hidden;
+  justify-content: safe center;
+  padding: 0.5rem 0 0.8rem;
+}
+
+.sts-scope .reward-screen__choice { flex-basis: var(--card-width); }
+.sts-scope .reward-screen__cards > .card { width: var(--card-width); }
+/* STICKY to the bottom of the scroller. This is the only control that finishes
+   the screen, and on a reward with two items and a card choice it sat below the
+   panel's own fold at every window size — a scroller with no affordance, so the
+   run looked stuck. The plate behind it keeps the rows from showing through. */
+.sts-scope .reward-screen__collect {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin-top: 0.2rem;
+  box-shadow: 0 -0.6rem 1rem 0.6rem rgb(6 10 12 / 0.82);
+}

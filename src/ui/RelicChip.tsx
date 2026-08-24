@@ -6,9 +6,10 @@
 //
 // RelicBar is the only component exported; RelicChip is deliberately not, because
 // the tooltip is positioned against the BAR rather than against its own chip —
-// see the comment on `.relic-bar` in chrome.css — so a lone chip outside a bar
-// would place its tooltip against whatever happened to be positioned further up
-// the tree. `relicOptionLabel` is also exported: a pure formatter, no DOM.
+// see the comment on `.relic-bar` in src/ui/chrome/tooltips.css — so a lone chip
+// outside a bar would place its tooltip against whatever happened to be
+// positioned further up the tree. `relicOptionLabel` is also exported: a pure
+// formatter, no DOM.
 import { useEffect, useState } from 'react'
 import { relicDef } from '../game/relics.ts'
 import type { RelicDef } from '../game/relics.ts'
@@ -111,8 +112,8 @@ function RelicChip({ relic }: { relic: RelicInstance }) {
   const rarity = RELIC_POOL_LABEL[def.pool]
   // WCAG 1.4.13, both halves. The tooltip is a 320px panel covering the potion
   // belt, and it stays up while the pointer is on it (`pointer-events: auto` in
-  // chrome.css) — which means it also swallows clicks meant for the belt. That
-  // is only acceptable because Escape reliably puts it away.
+  // src/ui/chrome/tooltips.css) — which means it also swallows clicks meant for the
+  // belt. That is only acceptable because Escape reliably puts it away.
   //
   // Hence a document listener rather than an `onKeyDown` on the chip: a mouse
   // user who hovers a relic never gives it DOM focus, so a handler on the chip

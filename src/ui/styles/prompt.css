@@ -1,0 +1,205 @@
+.prompt {
+  position: absolute;
+  z-index: 75;
+  top: 3.25rem;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.95rem;
+  color: var(--gold);
+  /* A gold tint rather than the panel colour: the prompt is an instruction the
+     player must act on, and it was disappearing into the board. */
+  background: rgb(215 169 75 / 0.12);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  box-shadow: 0 .5rem 1.5rem #0009;
+  transform: translateX(-50%);
+}
+
+.prompt__cancel {
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  color: var(--ink-dim);
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+/* Enemy/ally targeting is communicated by the glowing game pieces. Keep the
+   status for assistive technology without painting a website-style banner. */
+.prompt:not(:has(button)) {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.prompt__orb,
+.prompt__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  padding: 0.2rem 0.5rem;
+  text-transform: capitalize;
+}
+
+.distilled-choice {
+  position: fixed;
+  z-index: 80;
+  inset: 0.5rem;
+  width: auto;
+  max-width: 760px;
+  height: fit-content;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 1rem);
+  margin: auto;
+  padding: 1rem;
+  overflow: auto;
+  text-align: center;
+  color: var(--ink);
+  background: linear-gradient(160deg, #241d17, #100d0b);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  box-shadow: 0 0 0 100vmax rgb(8 6 5 / 82%), 0 18px 60px #000;
+  animation: prompt-in var(--motion-medium) var(--ease);
+}
+
+.distilled-choice h2,
+.distilled-choice p {
+  margin: 0 0 0.75rem;
+}
+
+.distilled-choice__cards {
+  --card-width: clamp(105px, 15vw, 130px);
+  display: flex;
+  justify-content: safe center;
+  gap: 0.5rem;
+  min-height: calc(var(--card-width) * var(--card-ratio));
+  overflow-x: auto;
+}
+
+.distilled-choice .item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.distilled-choice .item-actions button {
+  min-height: 44px;
+  padding: 0.45rem 0.8rem;
+  color: var(--ink);
+  background: var(--bg-raised);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+}
+
+.relic-actions {
+  position: absolute;
+  z-index: 70;
+  top: 3.3rem;
+  left: .75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.relic-actions > section { display: flex; flex-wrap: wrap; gap: .4rem; max-width: min(36rem, calc(100vw - 2rem)); padding: .45rem; background: rgb(10 13 15 / .96); }
+
+.relic-actions details {
+  padding: 0.3rem;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+}
+
+.relic-actions button,
+.relic-actions summary,
+.distilled-choice > button {
+  min-height: 44px;
+}
+
+.choice-modal {
+  width: min(760px, calc(100% - 2rem));
+  max-width: none;
+  padding: 0;
+  color: var(--ink);
+  background: none;
+  border: 0;
+}
+
+.choice-modal::backdrop {
+  background: rgb(8 6 5 / 82%);
+  backdrop-filter: blur(3px);
+}
+
+.choice-modal__panel {
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.1rem;
+  text-align: center;
+  background: linear-gradient(160deg, #241d17, #100d0b);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px #000;
+}
+
+.choice-modal__panel h2,
+.choice-modal__panel p {
+  margin: 0 0 0.8rem;
+}
+
+.choice-modal__cards {
+  --card-width: clamp(105px, 15vw, 130px);
+  display: flex;
+  justify-content: safe center;
+  gap: 0.5rem;
+  min-height: calc(var(--card-width) * var(--card-ratio));
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.choice-modal__panel > button {
+  padding: 0.45rem 0.8rem;
+  background: var(--bg-raised);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+}
+
+.choice-modal__panel > button:disabled {
+  color: var(--ink-dim);
+  border-color: var(--edge);
+}
+
+.give-up-panel { width: min(28rem, calc(100% - 2rem)); }
+.give-up-panel ul { margin: 0 0 1rem; padding: 0; list-style: none; }
+.give-up-panel__actions { display: flex; justify-content: center; gap: .75rem; }
+.give-up-panel__actions button { min-height: 44px; padding: .45rem .8rem; }
+
+.pause-menu { width: min(24rem, calc(100% - 2rem)); }
+.pause-menu .choice-modal__panel { display: grid; gap: 0.55rem; padding: 1.5rem; }
+.pause-menu .choice-modal__panel > p { color: var(--ink-dim); letter-spacing: 0.18em; text-transform: uppercase; }
+.pause-menu .choice-modal__panel > button { min-height: 46px; font-family: 'Kreon', Georgia, serif; font-size: 1rem; }
+.pause-menu .choice-modal__panel > .is-chosen { color: #241807; background: linear-gradient(#ffe79a, #c99331); }
+
+@keyframes prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

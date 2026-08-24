@@ -1,0 +1,122 @@
+:root {
+  --ink: #ece5d8;
+  --ink-dim: #a49a88;
+  --bg: #14110e;
+  --bg-panel: #1e1a15;
+  --bg-raised: #272119;
+  --edge: #3a3229;
+  /* The digital client's GOLD_COLOR. styles.css and chrome.css each grew their
+     own gold, and the two landed on the same elements through different rules —
+     six different values for one idea. There is now one gold; chrome.css's
+     --sts-gold is an alias of it. */
+  --gold: #efc851;
+  --blood: #a3232b;
+  --hp: #b5322f;
+  --block: #4b93c4;
+  --energy: #e0b34a;
+
+  --motion-fast: 120ms;
+  --motion-medium: 180ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Scaled to the window's HEIGHT, because the hand competes with the board
+     for it: a fixed 132px hand took 268px of a 620px-tall window and pushed
+     the enemy's hit points off the board. */
+  --card-width: clamp(88px, 15vh, 132px);
+  --card-ratio: 1.395; /* 744 x 1039 scans */
+
+  font-family: 'Kreon', Georgia, serif;
+}
+
+.courier-panel {
+  position: fixed;
+  z-index: 30;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  max-width: min(42rem, calc(100vw - 2rem));
+  padding: .75rem;
+  border: 1px solid #d8a84b;
+  border-radius: .7rem;
+  background: #17120f;
+  box-shadow: 0 .5rem 2rem #000b;
+  color: #f6e4b1;
+}
+
+.courier-panel label { display: flex; gap: .4rem; align-items: center; }
+
+.courier-panel .item-replacement {
+  display: grid;
+  flex: 1 0 100%;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: .4rem;
+}
+
+.courier-panel .item-replacement .item-icon-image { width: 2rem; height: 2rem; }
+
+.courier-panel button {
+  border: 1px solid #d8a84b;
+  background: #302318;
+  color: #fff0bd;
+}
+
+.courier-panel button:focus-visible { outline: 3px solid #f3c85b; outline-offset: 2px; }
+
+.courier-panel button:disabled { color: #9d9278; background: #241f1a; }
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #241d16 0%, transparent 70%),
+    var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Keyboard users must always be able to see what is focused. */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+
+.game-mode {
+  height: 100%;
+}
+
+.app-loading { display: grid; height: 100%; place-items: center; color: #f1c953; background: #0b1115; font: 700 1.2rem 'Kreon', Georgia, serif; }

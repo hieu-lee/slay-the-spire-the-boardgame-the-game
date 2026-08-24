@@ -1,0 +1,36 @@
+.map__frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* The paths sit behind the rooms and never intercept clicks. */
+.map__paths {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Paths cut into the rock rather than pencilled on: solid and dark, with the
+   route you can actually take lit up. */
+.map__path {
+  stroke: rgb(74 60 46 / 0.75);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.map__path--live {
+  stroke: var(--gold);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 5px rgb(214 176 96 / 0.6));
+}
+
+.room {
+  position: relative;
+  z-index: 1;
+}

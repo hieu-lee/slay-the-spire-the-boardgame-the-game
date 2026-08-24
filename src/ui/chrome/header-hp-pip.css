@@ -1,0 +1,27 @@
+/* The run's health, pinned beside gold on every screen. Red ink on the plate
+   the other pips already provide — layout, gap and alignment all come from
+   `.run-status > .pip:not(.pip--energy)` in chrome/run-header.css, so only the
+   ink is set here.
+
+   `tabular-nums` so the pip does not reflow the header every time HP changes.
+
+   The heart lives in `::before` to keep it out of the markup, not out of the
+   accessible name: `role="img"` on the span means the `aria-label` replaces the
+   whole subtree, so no descendant contributes either way. The `/ ''` is kept
+   only so the glyph stays decorative if that role is ever dropped.
+
+   Both selectors are needed to win the cascade: this ties
+   `.run-status > .pip:not(.pip--energy)` at (0,3,0) and takes it on source
+   order. Without `.sts-scope` it is (0,2,0) and loses outright — the HP then
+   renders cream, indistinguishable from the rest of the header. */
+.sts-scope .run-status > .pip--hp {
+  color: var(--red-text);
+  font-family: 'Kreon', Georgia, serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.sts-scope .run-status > .pip--hp::before {
+  content: '♥' / '';
+  color: #c0403a;
+  font-size: 0.95em;
+}

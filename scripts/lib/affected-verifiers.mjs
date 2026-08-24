@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 
-const sharedUi = /^(src\/main\.tsx|src\/ui\/(App|StartMenu)\.tsx|src\/ui\/(chrome|styles)\.css)$/
+// The two stylesheets are index files of `@import`ed partials, and a partial
+// change is a change to the sheet that imports it.
+const sharedUi = /^(src\/main\.tsx|src\/ui\/(App|StartMenu)\.tsx|src\/ui\/(chrome|styles)(\/[\w.-]+)*\.css)$/
 const noncombatRoots = [
   'AchievementsScreen', 'CampfireScreen', 'CompendiumScreen', 'MapOverlay', 'MapScreen', 'MetaRunOptions',
   'NeowScreen', 'QuickSetupScreen', 'RelicResolvePanel', 'RewardScreen', 'RoomScreen', 'RunSummary',

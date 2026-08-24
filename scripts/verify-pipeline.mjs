@@ -49,9 +49,11 @@ check('frontend surfaces select only their owning browser suite', () => {
   ])
 })
 check('shared frontend and toolchain changes stay conservative', () => {
-  assertDeepEqual(affected('src/ui/chrome.css').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-  ])
+  for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css', 'src/ui/styles/hand.css']) {
+    assertDeepEqual(affected(sheet).filter((script) => script.includes('browser')), [
+      'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    ], sheet)
+  }
   assertDeepEqual(affected('package.json'), scripts)
   assertDeepEqual(affected('pnpm-workspace.yaml'), scripts)
 })
