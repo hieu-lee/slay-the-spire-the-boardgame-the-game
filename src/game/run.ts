@@ -1438,11 +1438,10 @@ function buildEncounter(
   }
 
   if (kind === 'elite') {
-    const card = drawCards(decks.elite, 1)[0] ?? {
-      ...ELITES[1]![0]!,
-      goldReward: act === 3 ? 3 : 2,
-      cardReward: act === 1 ? 'normal' as const : 'upgraded' as const,
+    if (decks.act !== act || decks.elite.length === 0) {
+      Object.assign(decks, createEnemyDecks(rng, act, ascension))
     }
+    const card = drawCards(decks.elite, 1)[0] ?? ELITES[act]?.[0] ?? ELITES[1]![0]!
     const hp = startingHp(enemyDef(card.defId, ascension), count)
     // Elites are placed in the bottom row (p.11).
     const row = Math.min(...players.map((player) => player.row))
