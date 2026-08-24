@@ -2295,14 +2295,32 @@ button:disabled {
 .token--orb-frost::before { background-image: url('/assets/combat/vfx/actions/frost-channel.webp'); animation: orb-frost-idle 2.8s ease-in-out infinite; }
 .token--orb-dark::before { background-image: url('/assets/combat/vfx/actions/dark-channel.webp'); animation: orb-dark-idle 4.2s linear infinite; }
 
+/* `top`/`height` used to be percentages of the portrait box (-8% / 70%),
+   which reached far enough down to sit the orbs over the top third or so of
+   the character art instead of above it — most noticeable on Defect, whose
+   sprite already has an arm raised into that same region. `--orb-size` is
+   the same expression the orb sprites themselves are sized from, so the
+   band's placement scales with the actual orbs in it rather than with the
+   portrait's height: it now sits entirely above the portrait box.
+   `--orb-margin` is the gap above the tallest orb, and it has to grow with
+   the orb count, not stay flat: `--orb-depth` (the outermost orbs' shallow
+   arc, applied as `translateY` below) grows without bound as more orbs join
+   the row — its worst case is `(orb-count - 1) / 2 * 1.05rem` — so a fixed
+   margin sized for a small hand of orbs (Capacitor alone puts a Defect at
+   5, two copies at 7) eventually gets outrun and the outermost orb dips
+   back into the portrait, the exact bug this rule exists to prevent. The
+   `max()` keeps the plain, unscaled 3rem gap for ordinary orb counts and
+   only grows past it once the arc's own reach demands more room. */
 .orbs {
   --orb-count: 3;
+  --orb-size: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
+  --orb-margin: max(3rem, calc((var(--orb-count) - 1) * 0.525rem + 0.5rem));
   position: absolute;
   z-index: 4;
-  top: -8%;
+  top: calc(-1 * (var(--orb-size) + var(--orb-margin)));
   right: -22%;
   left: -22%;
-  height: 70%;
+  height: calc(var(--orb-size) + var(--orb-margin));
   align-items: flex-start;
   justify-content: center;
   gap: 0;
@@ -2310,8 +2328,8 @@ button:disabled {
 }
 
 .orbs .token--orb {
-  width: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
-  height: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
+  width: var(--orb-size);
+  height: var(--orb-size);
   margin-inline: -0.08rem;
   transform: translateY(calc(var(--orb-depth) * 1.05rem));
 }
