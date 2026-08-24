@@ -1450,6 +1450,14 @@ check('an elite room places one elite, not one per player', () => {
         const collected = resolveCardRewards(revealed, { p1: 0, p2: null })
         assert(collected.players[0].deck.at(-1).upgraded, `Act ${act} elite adds the upgraded face`)
       }
+      for (const enemyDecks of [afterFight.enemyDecks, { act: 3, first: [], encounter: [], elite: [] }]) {
+        const recovered = enterRoom({ ...afterFight, act: 3, enemyDecks }, choice.id)
+        assert(['reptomancer', 'nemesis', 'giant_head'].includes(
+          recovered.combat.enemies.find((enemy) => enemy.uid === 'elite').defId,
+        ), 'a stale or empty Act III Elite deck produced an Elite from another Act')
+        assertEqual(recovered.enemyDecks.act, 3)
+        assertEqual(recovered.enemyDecks.elite.length, 3)
+      }
       found = true
       break
     }

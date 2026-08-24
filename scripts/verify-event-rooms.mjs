@@ -397,6 +397,17 @@ check('Mind Bloom War reserves no reward before combat and records a seeded Act 
   assert(['guardian_attack', 'hexaghost', 'slime_boss'].includes(run.eventCombat.bossDefId))
 })
 
+check('an Event elite rebuilds an empty Act III Elite deck', () => {
+  let run = inEvent('colosseum', 1)
+  run = { ...run, act: 3, enemyDecks: { act: 3, first: [], encounter: [], elite: [] } }
+  run.map.position = run.map.rows[0][0]
+  run = chooseEvent(run, 'p1', { optionIds: ['main_event'] })
+  assert(['reptomancer', 'nemesis', 'giant_head'].includes(
+    run.combat.enemies.find((enemy) => enemy.uid === 'elite').defId,
+  ))
+  assertEqual(run.enemyDecks.elite.length, 3)
+})
+
 check('players can switch rows after a combat Event is revealed', () => {
   const run = inEvent('mind_bloom', 2)
   const switched = switchBetweenCombatRow(run, 'p1', 1)
