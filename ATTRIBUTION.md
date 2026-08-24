@@ -33,7 +33,9 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
-| Combat stage, actor cutouts, animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Combat stage, actor cutouts, non-Orb animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
+| Defect Orb HUD sprites and channel VFX (`public/assets/combat/vfx/actions/*-channel.webp`) | OpenAI Imagegen fan assets extracted and reconstructed from authentic *Slay the Spire* gameplay screenshots captured for this implementation |
+| Compendium pool icons (`public/assets/menu/compendium-icons/`) | original OpenAI Imagegen fan icons visually grounded in a user-supplied *Slay the Spire 2* compendium screenshot |
 | Die-face icons (`public/assets/icons/die*.png`) | original OpenAI Imagegen fan assets, regenerated and standardized from this implementation's prior die icons |
 | Combat pile and current-deck HUD icons (`public/assets/combat/piles/`, `public/assets/menu/current-deck.webp`) | OpenAI Imagegen fan assets extracted or visually grounded from user-supplied gameplay screenshots; the Exhaust pile was generated from the extracted draw and discard references |
 | Merchant scene and character assets (`public/assets/noncombat/merchant/`) | OpenAI Imagegen fan illustrations visually grounded in user-provided gameplay references and this implementation's generated combat character cutouts |

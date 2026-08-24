@@ -1,7 +1,7 @@
 import { CARDS, faceOf, type CardDef, type Effect } from '../game/cards.ts'
 import { assetPath } from '../game/assets.ts'
 import { POTIONS } from '../game/relics.ts'
-import type { CharacterId } from '../game/types.ts'
+import type { CharacterId, OrbType } from '../game/types.ts'
 
 export type VfxFamily =
   | 'slash' | 'blunt' | 'projectile' | 'poison' | 'shiv' | 'lightning' | 'frost' | 'dark'
@@ -75,6 +75,15 @@ const recipe = (
 ): VfxRecipe => ({ family, actorMotion, asset, tone })
 
 const lightningChannel = recipe('lightning', 'cast', 'lightning-channel', 'electric-gold')
+const orbChannels: Readonly<Record<OrbType, VfxRecipe>> = {
+  lightning: lightningChannel,
+  frost: recipe('frost', 'cast', 'frost-channel', 'focus-blue'),
+  dark: recipe('dark', 'cast', 'dark-channel', 'fortune-purple'),
+}
+
+export function orbVfxRecipe(orb: OrbType): VfxRecipe {
+  return orbChannels[orb]
+}
 const calmStance = recipe('stance', 'cast', 'magic-burst', 'calm-white')
 const wrathStance = recipe('stance', 'cast', 'magic-burst', 'wrath-red')
 const neutralStance = recipe('stance', 'cast', 'magic-burst', 'astral-cyan')
@@ -89,12 +98,6 @@ const CARD_OVERRIDES: Readonly<Record<string, VfxRecipe>> = {
   strike_ironclad: recipe('slash', 'lunge', 'ironclad-strike', 'ember-orange'),
   bash: recipe('blunt', 'lunge', 'ironclad-bash', 'impact-ochre'),
 
-  zap: lightningChannel,
-  ball_lightning: recipe('lightning', 'cast', 'lightning-channel', 'electric-cyan'),
-  tempest: recipe('lightning', 'cast', 'lightning-channel', 'tempest-cyan'),
-  electrodynamics: recipe('lightning', 'cast', 'lightning-channel', 'storm-gold'),
-  storm: recipe('lightning', 'cast', 'lightning-channel', 'storm-cyan'),
-  rainbow: recipe('lightning', 'cast', 'lightning-channel', 'prismatic'),
   thunder_strike: recipe('lightning', 'cast', 'lightning-channel', 'thunder-gold'),
 
   pray: recipe('mantra', 'cast', 'watcher-pray', 'mantra-cyan'),
@@ -178,13 +181,8 @@ function allEffects(def: CardDef, mode?: number): Effect[] {
 function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number): VfxRecipe {
   const effects = allEffects(def, mode)
   const has = (...kinds: Effect['kind'][]) => effects.some((effect) => kinds.includes(effect.kind))
-  const channel = effects.find((effect) => effect.kind === 'channel')
 
-  if (channel?.kind === 'channel') {
-    if (channel.orb === 'lightning') return lightningChannel
-    return recipe(channel.orb, 'cast', 'magic-burst', `${channel.orb}-${actorTone[character]}`)
-  }
-  if (has('channelDieOrb', 'evoke', 'recurseOrb', 'fission', 'triggerOrbEndTurn')) {
+  if (has('evoke', 'recurseOrb', 'fission', 'triggerOrbEndTurn')) {
     return recipe('orb', 'cast', 'magic-burst', actorTone[character])
   }
   if (has('gainLightningEndTurnBonus', 'lightningTargetsRow')) return lightningChannel
@@ -199,6 +197,7 @@ function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number): Vf
   if (has('block', 'blockChoices', 'gainBlockFromLastHit', 'gainBlockPerExhaust')) {
     return recipe('block', 'recoil', 'guard-bloom', actorTone[character])
   }
+  if (has('channel', 'channelDieOrb')) return recipe('utility', 'cast', 'magic-burst', actorTone[character])
   if (has('applyWeak', 'applyVulnerable', 'clearTargetBlock')) {
     return recipe('debuff', 'cast', 'magic-burst', actorTone[character])
   }

@@ -5,7 +5,7 @@ import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
-import { cardVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
+import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
 import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
   MIN_STAGE_SCALE,
@@ -20,7 +20,7 @@ import {
   stageScaleFor,
 } from '../src/ui/board-signals.ts'
 import { wingBootLabel } from '../src/ui/wing-boots.ts'
-import { suite, check, assert, assertEqual, report } from './lib/harness.mjs'
+import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
 
@@ -94,7 +94,7 @@ check('repo-native card art is keyed by stable card ID, not printed face name', 
 
 check('every reachable card resolves a stable combat VFX recipe for every character', () => {
   const characters = ['ironclad', 'silent', 'defect', 'watcher']
-  const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'watcher-pray',
+  const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'frost-channel', 'dark-channel', 'watcher-pray',
     'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
   const cards = Object.values(CARDS)
   assertEqual(cards.filter((card) => characters.includes(card.owner)).length, 251,
@@ -120,6 +120,10 @@ check('notable card identities stay distinct and portable between characters', (
   assert(strike.family !== bash.family && strike.asset !== bash.asset, 'Strike is a slash; Bash is a blunt impact')
   assert(JSON.stringify(cardVfxRecipe('defect', 'zap')) !== JSON.stringify(cardVfxRecipe('defect', 'ball_lightning')),
     'Zap channels in place while Ball Lightning carries its own tone')
+  assert(cardVfxRecipe('defect', 'cold_snap').asset !== 'frost-channel')
+  assert(cardVfxRecipe('defect', 'darkness').asset !== 'dark-channel')
+  assertDeepEqual(['lightning', 'frost', 'dark'].map((orb) => orbVfxRecipe(orb).asset),
+    ['lightning-channel', 'frost-channel', 'dark-channel'])
   assert(cardVfxRecipe('watcher', 'vigilance').tone !== cardVfxRecipe('watcher', 'eruption').tone,
     'Calm and Wrath cannot be text-only palette twins')
   assert(cardVfxRecipe('silent', 'deadly_poison').family !== cardVfxRecipe('silent', 'blade_dance').family,

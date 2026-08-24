@@ -849,9 +849,13 @@ button:disabled {
 .compendium__search input { width: 100%; padding: 0.55rem 2.2rem 0.55rem 0.65rem; border: 0; border-bottom: 2px solid #526f72; color: #f1ead9; background: rgb(4 10 13 / 0.62); font: inherit; }
 .compendium__search button { position: absolute; top: 0; right: 0; bottom: 0; width: 2rem; border: 0; color: #fff; background: none; font-size: 1.5rem; }
 
-.compendium__pools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; margin: 0.75rem 0; }
-.compendium__pools button { aspect-ratio: 1; border: 1px solid #455b5e; border-radius: 50%; color: #a5b5b4; background: #172328; font-size: 1.25rem; }
-.compendium__pools button[aria-pressed='true'] { color: #fcdf67; border-color: #d2a53c; background: #334f54; box-shadow: 0 0 0.75rem rgb(85 224 238 / 0.35); }
+.compendium__pools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.2rem; margin: 0.75rem 0; }
+.compendium__pools button { display: grid; aspect-ratio: 1; place-items: center; padding: 0.12rem; border: 0; background: none; }
+.compendium__pools img { width: 100%; height: 100%; object-fit: contain; opacity: 0.64; filter: grayscale(0.6) brightness(0.72); transition: opacity var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
+.compendium__pools button:hover img,
+.compendium__pools button:focus-visible img { opacity: 0.9; filter: grayscale(0.15) brightness(0.95); transform: translateY(-0.12rem) scale(1.05); }
+.compendium__pools button[aria-pressed='true'] { background: none; box-shadow: none; }
+.compendium__pools button[aria-pressed='true'] img { opacity: 1; filter: drop-shadow(0 0 0.42rem rgb(244 205 91 / 0.78)); transform: scale(1.08); }
 
 .compendium__filter-block { margin: 0.25rem 0; border: 1px solid #30484c; border-radius: 0.25rem; background: rgb(18 43 47 / 0.62); }
 .compendium__filter-block h2,
@@ -2265,33 +2269,92 @@ button:disabled {
   margin-bottom: 0.35rem;
 }
 
-/* Channelled orbs: a coloured bead each, matching the orb colours on the
-   Defect's board. No number — the count is the number of beads. */
+/* The original game floats painted Orbs around the Defect instead of putting
+   status beads below HP. Slot index sets the shallow arc; the sprite itself
+   animates independently so its placement never jitters. */
 .token--orb {
-  width: 14px;
-  height: 14px;
+  position: relative;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
   padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.token--orb::before {
+  content: '';
+  position: absolute;
+  inset: -16%;
+  background: center / contain no-repeat;
+  filter: drop-shadow(0 0 0.24rem rgb(255 255 255 / 0.52));
+}
+
+.token--orb-lightning::before { background-image: url('/assets/combat/vfx/actions/lightning-channel.webp'); animation: orb-lightning-idle 1.25s steps(2, jump-none) infinite; }
+.token--orb-frost::before { background-image: url('/assets/combat/vfx/actions/frost-channel.webp'); animation: orb-frost-idle 2.8s ease-in-out infinite; }
+.token--orb-dark::before { background-image: url('/assets/combat/vfx/actions/dark-channel.webp'); animation: orb-dark-idle 4.2s linear infinite; }
+
+.orbs {
+  --orb-count: 3;
+  position: absolute;
+  z-index: 4;
+  top: -8%;
+  right: -22%;
+  left: -22%;
+  height: 70%;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  pointer-events: none;
+}
+
+.orbs .token--orb {
+  width: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
+  height: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
+  margin-inline: -0.08rem;
+  transform: translateY(calc(var(--orb-depth) * 1.05rem));
+}
+
+.orbs .token--orb-empty {
+  width: clamp(1.45rem, calc(9rem / var(--orb-count)), 2.45rem);
+  height: clamp(1.45rem, calc(9rem / var(--orb-count)), 2.45rem);
+  margin: 0.25rem 0.18rem 0;
+  border: 2px solid rgb(162 229 244 / 0.28);
   border-radius: 50%;
-  border: 1px solid rgb(0 0 0 / 0.5);
-  box-shadow: inset 0 -2px 4px rgb(0 0 0 / 0.45);
+  background: radial-gradient(circle, rgb(88 194 218 / 0.08), transparent 68%);
+  box-shadow: inset 0 0 0.5rem rgb(95 226 247 / 0.1), 0 0 0.35rem rgb(0 0 0 / 0.65);
 }
 
-.token--orb-lightning {
-  background: radial-gradient(circle at 35% 30%, #ffe9a3, #d9a520);
+.orb__value {
+  position: absolute;
+  z-index: 2;
+  right: -0.08rem;
+  bottom: -0.08rem;
+  min-width: 1rem;
+  color: #fff8df;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(0.62rem, calc(2.5rem / var(--orb-count)), 0.82rem);
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-shadow: -1px -1px 0 #111, 1px -1px 0 #111, -1px 1px 0 #111, 1px 1px 0 #111, 0 0 0.28rem #000;
 }
 
-.token--orb-frost {
-  background: radial-gradient(circle at 35% 30%, #d8f4ff, #4aa6d6);
+@keyframes orb-lightning-idle {
+  0%, 100% { opacity: 0.88; transform: rotate(-2deg) scale(0.98); filter: brightness(0.92) drop-shadow(0 0 0.2rem #dfff34); }
+  50% { opacity: 1; transform: rotate(2deg) scale(1.04); filter: brightness(1.2) drop-shadow(0 0 0.38rem #f5ff60); }
 }
 
-.token--orb-dark {
-  background: radial-gradient(circle at 35% 30%, #b28ad6, #4a2a70);
+@keyframes orb-frost-idle {
+  0%, 100% { transform: translateY(2%) scale(0.97); filter: brightness(0.95) drop-shadow(0 0 0.22rem #85eeff); }
+  50% { transform: translateY(-4%) scale(1.03); filter: brightness(1.12) drop-shadow(0 0 0.38rem #c4f8ff); }
 }
 
-.token--orb-empty {
-  background: rgb(135 190 220 / 0.1);
-  border-color: rgb(165 215 240 / 0.55);
-  border-style: dashed;
+@keyframes orb-dark-idle {
+  from { transform: rotate(0deg) scale(0.98); filter: brightness(0.86) drop-shadow(0 0 0.24rem #8c3de0); }
+  50% { filter: brightness(1.08) drop-shadow(0 0 0.42rem #da63ff); }
+  to { transform: rotate(360deg) scale(0.98); filter: brightness(0.86) drop-shadow(0 0 0.24rem #8c3de0); }
 }
 
 /* On a narrow screen the row stacks the seat above the enemy, so the row needs
@@ -4116,8 +4179,8 @@ button.pile:hover { filter: brightness(1.15); }
 
 .combat-vfx--poison { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #67d74c)); }
 .combat-vfx--poison::before { border-color: var(--vfx-tone-color, #77df4b); }
-.combat-vfx--frost { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #aaf4ff)); }
-.combat-vfx--dark { filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #9b6cff)); }
+.combat-vfx--frost { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #aaf4ff)); animation-name: combat-vfx-frost; }
+.combat-vfx--dark { filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #9b6cff)); animation-name: combat-vfx-dark; }
 .combat-vfx--block { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #55bbff)); }
 .combat-vfx--buff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #ffbb58)); }
 .combat-vfx--debuff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #b676e8)); }
@@ -4131,6 +4194,20 @@ button.pile:hover { filter: brightness(1.15); }
   20% { opacity: 1; transform: scale(1.08); }
   64% { opacity: 0.86; }
   100% { opacity: 0; transform: scale(1.18); }
+}
+
+@keyframes combat-vfx-frost {
+  0% { opacity: 0; transform: translateY(12%) scale(0.3); filter: brightness(2.1) drop-shadow(0 0 0.2rem #d8fbff); }
+  34% { opacity: 1; transform: translateY(-4%) scale(1.08); }
+  70% { opacity: 0.9; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8%) scale(1.28); }
+}
+
+@keyframes combat-vfx-dark {
+  0% { opacity: 0; transform: rotate(-120deg) scale(0.28); filter: brightness(0.5) drop-shadow(0 0 0.2rem #7130bc); }
+  30% { opacity: 1; transform: rotate(-18deg) scale(1.04); }
+  72% { opacity: 0.92; transform: rotate(34deg) scale(0.94); }
+  100% { opacity: 0; transform: rotate(110deg) scale(1.26); }
 }
 
 @keyframes combat-vfx-ring {
@@ -4895,6 +4972,7 @@ html[data-mobile-performance='true'] .stance-aura,
 html[data-mobile-performance='true'] .hand .card--drawn,
 html[data-mobile-performance='true'] .motion-pulse-0,
 html[data-mobile-performance='true'] .motion-pulse-1,
+html[data-mobile-performance='true'] .token--orb::before,
 html[data-mobile-performance='true'] .seat--targetable {
   animation: none;
 }
@@ -4962,6 +5040,7 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   .card-flight,
   .motion-pulse-0,
   .motion-pulse-1,
+  .token--orb::before,
   .combat__phase,
   .combat__result,
   .reward-screen__choice {
@@ -5239,15 +5318,6 @@ html[data-mobile-performance='true'] .choice-modal::backdrop {
   background: rgb(4 7 9 / 0.82);
   border: 1px solid rgb(222 190 113 / 0.42);
   border-radius: 999px;
-}
-
-.row__seat .seat > .orbs {
-  position: absolute;
-  z-index: 7;
-  top: 3.7rem;
-  right: 0;
-  left: 0;
-  pointer-events: none;
 }
 
 .board .enemy .tokens {

@@ -49,6 +49,7 @@ const powerIconRoot = join(publicRoot, 'assets/power-icons')
 const relicIconRoot = join(publicRoot, 'assets/relic-icons')
 const potionIconRoot = join(publicRoot, 'assets/potion-icons')
 const menuRoot = join(publicRoot, 'assets/menu')
+const compendiumIconRoot = join(menuRoot, 'compendium-icons')
 const fontRoot = join(publicRoot, 'assets/fonts')
 const sfxRoot = join(publicRoot, 'assets/sfx')
 
@@ -68,6 +69,7 @@ const statusIconFiles = listing(statusIconRoot, '.png')
 const powerIconFiles = listing(powerIconRoot, '.png')
 const relicIconFiles = listing(relicIconRoot, '.png')
 const potionIconFiles = listing(potionIconRoot, '.png')
+const compendiumIconFiles = listing(compendiumIconRoot, '.webp')
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -371,9 +373,19 @@ check('the optional enemy art table names only real enemies', () => {
   assert(stray.length === 0, `ENEMY_ART names enemies that do not exist: ${stray.join(', ')}`)
 })
 
-check('the menu backgrounds and licensed UI font are bundled', () => {
+check('the menu artwork and licensed UI font are bundled', () => {
   for (const file of ['title-spire.webp', 'compendium-archive.webp']) {
     assert(existsSync(join(menuRoot, file)), `missing menu artwork: ${file}`)
+  }
+  const expectedIcons = ['all', 'colorless', 'curse', 'defect', 'ironclad', 'silent', 'status', 'watcher']
+    .map((name) => `${name}.webp`)
+  assertDeepEqual(compendiumIconFiles.sort(), expectedIcons, 'compendium icon inventory')
+  const iconInfo = spawnSync('webpinfo', ['-summary', ...expectedIcons.map((file) => join(compendiumIconRoot, file))], { encoding: 'utf8' })
+  assert(iconInfo.status === 0, iconInfo.stderr || 'could not inspect compendium icons')
+  for (const block of iconInfo.stdout.split(/^File: /m).slice(1)) {
+    const file = block.slice(0, block.indexOf('\n')).split('/').pop()
+    assert(/  Width: 256[\s\S]*  Height: 256/.test(block), `${file} is not 256x256`)
+    assert(/Alpha:\s+1/.test(block), `${file} has no alpha channel`)
   }
   assert(existsSync(join(fontRoot, 'Kreon.ttf')), 'missing Kreon UI font')
   const license = readFileSync(join(fontRoot, 'Kreon-OFL.txt'), 'utf8')
@@ -489,7 +501,7 @@ check('combat animation effects are complete, transparent, and compact', () => {
     'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
   ]
   const expectedActions = [
-    'guard-bloom.webp', 'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp',
+    'dark-channel.webp', 'frost-channel.webp', 'guard-bloom.webp', 'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp',
     'magic-burst.webp', 'potion-burst.webp', 'silent-poison.webp', 'silent-shiv.webp',
     'watcher-calm-aura.webp', 'watcher-pray.webp', 'watcher-wrath-aura.webp',
   ]

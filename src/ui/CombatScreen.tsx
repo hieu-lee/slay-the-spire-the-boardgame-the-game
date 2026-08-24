@@ -73,13 +73,13 @@ import { CAPS } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from './combat-sfx.ts'
-import { cardVfxRecipe, potionVfxRecipe, shivVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
+import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
 import type { VfxRecipe } from './combat-vfx.ts'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { PowerGlyph, PowerRow } from './PowerRow.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
-import { OrbRow, TokenRow } from './TokenRow.tsx'
+import { OrbRow, TokenRow, orbDisplayText } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
   STAGE_MARGIN_REM,
@@ -183,7 +183,7 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
 ])
 
 const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
-  event.kind !== 'potion' && event.enemyIds.length > 0 &&
+  event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
   (event.kind === 'shiv' || cardDef(event.sourceId).type === 'attack' || OFFENSIVE_VFX_FAMILIES.has(recipe.family))
 
 function characterAttackContactMs(
@@ -191,7 +191,7 @@ function characterAttackContactMs(
   targetId: string,
   event?: CombatPresentationEvent,
 ): number {
-  if (!event || event.kind === 'potion' || !event.enemyIds.includes(targetId)) return 0
+  if (!event || event.kind === 'potion' || event.kind === 'orb' || !event.enemyIds.includes(targetId)) return 0
   const actor = state.players.find((player) => player.id === event.actorId)
   if (!actor) return 0
   const active = {
@@ -570,7 +570,7 @@ function describeSeat(player: Player): string {
   if (player.character === 'defect') {
     parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
   }
-  for (const orb of player.orbs) if (orb) parts.push(`${orb} orb`)
+  for (const orb of player.orbs) if (orb) parts.push(`${orb} orb, ${orbDisplayText(player, orb)}`)
   if (player.potions.length > 0) parts.push(`potions ${potionDescription(player)}`)
   if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
   // Powers are deliberately NOT listed here. They render as a sibling list
@@ -855,10 +855,11 @@ function useFalling(
 /** Only actions witnessed live animate; mounted and restored history is a baseline. */
 function usePresentationEvents(
   state: CombatState,
+  animateOpeningHand: boolean,
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
 ): CombatPresentationEvent[] {
-  const baseline = useRef<number | null>(null)
+  const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
   const previousCombat = useRef(state.combatId)
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
@@ -956,6 +957,10 @@ function usePersonalCombatSoundEffects(
       if (event.kind === 'shiv') {
         played.current.add(event.seq)
         pending.current.set(event.seq, playCombatSound(shivSfxRecipe()))
+        continue
+      }
+      if (event.kind === 'orb') {
+        played.current.add(event.seq)
         continue
       }
       const actor = state.players.find((player) => player.id === event.actorId)
@@ -1161,7 +1166,12 @@ function CombatScreenView({
     authoritativeRestoration,
     authoritativeConnected,
   )
-  const livePresentationEvents = usePresentationEvents(state, authoritativeRestoration, authoritativeConnected)
+  const livePresentationEvents = usePresentationEvents(
+    state,
+    animateOpeningHand,
+    authoritativeRestoration,
+    authoritativeConnected,
+  )
   useEffect(() => {
     if (!reducedMotion) return
     for (const [key, timer] of motionTimers.current) {
@@ -1187,11 +1197,14 @@ function CombatScreenView({
         continue
       }
       const actor = state.players.find((player) => player.id === event.actorId)
-      if (actor) resolved.push({
+      if (!actor) continue
+      resolved.push({
         event,
-        recipe: event.kind === 'shiv'
-          ? shivVfxRecipe()
-          : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+        recipe: event.kind === 'orb'
+          ? orbVfxRecipe(event.orb)
+          : event.kind === 'shiv'
+            ? shivVfxRecipe()
+            : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
       })
     }
     return resolved
@@ -1215,7 +1228,7 @@ function CombatScreenView({
     for (const player of state.players) {
       const actorEvents = activeVfx.filter(({ event }) => event.actorId === player.id)
       const latestNonAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
-        if (event.actorId !== player.id || event.sourceId === 'fairy_in_a_bottle') return latest
+        if (event.actorId !== player.id || event.kind === 'orb' || event.sourceId === 'fairy_in_a_bottle') return latest
         const recipe = event.kind === 'potion'
           ? potionVfxRecipe(event.sourceId)
           : event.kind === 'shiv'
@@ -1224,7 +1237,7 @@ function CombatScreenView({
         return isCharacterAttack({ event, recipe }) ? latest : Math.max(latest, event.seq)
       }, -1)
       const latestAttackSeq = (state.presentationEvents ?? []).reduce((latest, event) => {
-        if (event.actorId !== player.id || event.kind === 'potion') return latest
+        if (event.actorId !== player.id || event.kind === 'potion' || event.kind === 'orb') return latest
         const recipe = event.kind === 'shiv'
           ? shivVfxRecipe()
           : cardVfxRecipe(player.character, event.sourceId, event.mode, event.upgraded)
@@ -4108,7 +4121,7 @@ function CombatScreenView({
                 hitBeats={hits.get(enemy.uid)}
                 vfx={enemyVfxFor(enemy).map((active) => (
                   <CombatVfx
-                    key={active.event.seq}
+                    key={`${active.event.seq}-${active.recipe.asset}`}
                     active={active}
                     role="target"
                     attackContactMs={reducedMotion
@@ -4247,6 +4260,7 @@ function CombatScreenView({
                           alt=""
                           onError={(event) => { event.currentTarget.style.display = 'none' }}
                         />
+                        <OrbRow player={occupant} />
                         {characterAttackMotions.map((characterAttack) => (
                           <span
                             className={`character-attack character-attack--${occupant.character}`}
@@ -4307,10 +4321,10 @@ function CombatScreenView({
                           </span>
                         ))}
                         {actorVfx.map((active) => (
-                          <CombatVfx key={`actor-${active.event.seq}`} active={active} role="actor" />
+                          <CombatVfx key={`actor-${active.event.seq}-${active.recipe.asset}`} active={active} role="actor" />
                         ))}
                         {playerVfxFor(occupant.id).map((active) => (
-                          <CombatVfx key={`target-${active.event.seq}`} active={active} role="target" />
+                          <CombatVfx key={`target-${active.event.seq}-${active.recipe.asset}`} active={active} role="target" />
                         ))}
                       </span>
                       {(hits.get(occupant.id) ?? []).map((hit) => (
@@ -4334,11 +4348,6 @@ function CombatScreenView({
                           {occupant.hp}/{occupant.maxHp}
                         </span>
                       </span>
-                      <OrbRow
-                        orbs={occupant.character === 'defect'
-                          ? occupant.orbs
-                          : occupant.orbs.filter((orb) => orb !== null)}
-                      />
                       <span className="seat__meta">
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">
@@ -4429,7 +4438,7 @@ function CombatScreenView({
                       hitBeats={hits.get(enemy.uid)}
                       vfx={enemyVfxFor(enemy).map((active) => (
                         <CombatVfx
-                          key={active.event.seq}
+                          key={`${active.event.seq}-${active.recipe.asset}`}
                           active={active}
                           role="target"
                           attackContactMs={reducedMotion
