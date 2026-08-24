@@ -3899,9 +3899,18 @@ check('Force Field discounts for Powers and Tempest channels once per X Energy',
       })
       assertEqual(played.players[0].energy, 3 - energySpent)
       assertEqual(played.players[0].orbs.filter(Boolean).length, energySpent + (upgraded ? 1 : 0))
+      assertEqual(played.presentationEvents.filter((event) => event.kind === 'orb').length,
+        energySpent + (upgraded ? 1 : 0), 'Tempest published a channel that did not happen')
       assertEqual(played.players[0].exhaust[0].uid, tempest.uid)
     }
   }
+
+  const chargeBattery = instance('charge_battery')
+  const uncharged = playCard(combat([
+    makePlayer({ character: 'defect', hand: [chargeBattery], orbs: [null, null, null] }),
+  ], [makeEnemy()]), 'p1', chargeBattery.uid, { enemyUid: null, playerId: 'p1' })
+  assertEqual(uncharged.presentationEvents.filter((event) => event.kind === 'orb').length, 0,
+    'a failed conditional channel published an Orb animation')
 
   const overflowTempest = instance('tempest')
   const overflowState = combat([
@@ -3941,6 +3950,11 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
       upgraded ? ['lightning', 'lightning', 'lightning'] : ['frost', 'lightning', 'lightning'])
     assertEqual(resolved.players[0].block, upgraded ? 1 : 0)
     assertEqual(resolved.enemies[1].hp, 6, 'the Dark Orb did not use its chosen target')
+    const channelEvents = resolved.presentationEvents.filter((event) => event.kind === 'orb')
+    assertEqual(channelEvents.length, upgraded ? 2 : 1)
+    assert(channelEvents.every((event) => event.orb === 'lightning' && event.sourceId === 'storm' &&
+      event.enemyIds.length === 0 && event.playerIds.length === 0),
+    `Storm channels did not publish actor-only Lightning events: ${JSON.stringify(channelEvents)}`)
   }
 
   const state = combat([makePlayer({
@@ -4303,9 +4317,19 @@ check('Die Die Die sweeps one row and the boss, and Rainbow channels its three O
       makePlayer({ character: 'defect', hand: [rainbow], orbs: [null, null, null] }),
     ], [makeEnemy()]), 'p1', rainbow.uid, { enemyUid: null, playerId: null })
     assertDeepEqual(charged.players[0].orbs, ['lightning', 'frost', 'dark'])
+    assertDeepEqual(charged.presentationEvents.filter((event) => event.kind === 'orb').map((event) => event.orb),
+      ['lightning', 'frost', 'dark'])
     assertEqual(charged.players[0].exhaust.some((card) => card.uid === rainbow.uid), !upgraded)
     assertEqual(charged.players[0].discard.some((card) => card.uid === rainbow.uid), upgraded)
   }
+
+  const chaos = instance('chaos')
+  const rolled = playCard(combat([
+    makePlayer({ character: 'defect', hand: [chaos], orbs: [null, null, null] }),
+  ], [makeEnemy()]), 'p1', chaos.uid, { enemyUid: null, playerId: null })
+  assertDeepEqual(rolled.presentationEvents.filter((event) => event.kind === 'orb').map((event) => event.orb),
+    [rolled.players[0].orbs[0]],
+    'Chaos animation exposes the Orb type it actually rolled')
 })
 
 check('a lethal first repeated Evoke ends combat after removing only the chosen Orb', () => {

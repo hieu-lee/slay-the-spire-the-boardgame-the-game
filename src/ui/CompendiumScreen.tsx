@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CARDS, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
-import { cardImagePath, cardThumbPath } from '../game/assets.ts'
+import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
 import { cardAccessibleName, cardPlayText, revealDecodedImage } from './Card.tsx'
 import { CardFace } from './CardFace.tsx'
 
 type Pool = CardDef['owner'] | 'all'
 
-const POOLS: { id: Pool; label: string; sigil: string }[] = [
-  { id: 'all', label: 'All cards', sigil: '✦' },
-  { id: 'ironclad', label: 'Ironclad', sigil: '◒' },
-  { id: 'silent', label: 'Silent', sigil: '◢' },
-  { id: 'defect', label: 'Defect', sigil: '⌾' },
-  { id: 'watcher', label: 'Watcher', sigil: '◇' },
-  { id: 'colorless', label: 'Colorless', sigil: '☼' },
-  { id: 'curse', label: 'Curses', sigil: '☠' },
-  { id: 'status', label: 'Statuses', sigil: '✺' },
+const POOLS: { id: Pool; label: string }[] = [
+  { id: 'all', label: 'All cards' },
+  { id: 'ironclad', label: 'Ironclad' },
+  { id: 'silent', label: 'Silent' },
+  { id: 'defect', label: 'Defect' },
+  { id: 'watcher', label: 'Watcher' },
+  { id: 'colorless', label: 'Colorless' },
+  { id: 'curse', label: 'Curses' },
+  { id: 'status', label: 'Statuses' },
 ]
 
 const CARDS_BY_NAME = Object.values(CARDS).sort((a, b) => a.name.localeCompare(b.name))
@@ -111,7 +111,9 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
         <div className="compendium__pools" role="group" aria-label="Card pool">
           {POOLS.map((entry) => (
             <button key={entry.id} type="button" title={entry.label} aria-label={entry.label}
-              aria-pressed={pool === entry.id} onClick={() => setPool(entry.id)}>{entry.sigil}</button>
+              aria-pressed={pool === entry.id} onClick={() => setPool(entry.id)}>
+              <img src={assetPath(`menu/compendium-icons/${entry.id}.webp`)} alt="" />
+            </button>
           ))}
         </div>
         <section className="compendium__filter-block">

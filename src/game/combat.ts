@@ -151,12 +151,14 @@ export type CombatPresentationEvent = PresentationTargets & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
   | { kind: 'potion' }
   | { kind: 'shiv' }
+  | { kind: 'orb'; orb: OrbType }
 )
 
 type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
   | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
   | { kind: 'potion' }
   | { kind: 'shiv' }
+  | { kind: 'orb'; orb: OrbType }
 )
 
 export type PendingTrigger = {
@@ -340,10 +342,11 @@ function addPresentationEvent(
   event: NewPresentationEvent,
 ): void {
   const events = state.presentationEvents ?? []
-  state.presentationEvents = [...events, {
+  const added = {
     seq: (events.at(-1)?.seq ?? 0) + 1,
     ...event,
-  }].slice(-PRESENTATION_EVENT_LIMIT)
+  } as CombatPresentationEvent
+  state.presentationEvents = [...events, added].slice(-PRESENTATION_EVENT_LIMIT)
 }
 
 function forgetRetain(card: CardInstance): CardInstance {
@@ -924,6 +927,8 @@ export type PlayContext = {
   pendingExhaustTriggers?: { playerId: string; card: CardInstance }[]
   /** Internal result of the immediately preceding direct draw effect. */
   drewSkill?: boolean
+  /** Public source label for Orb channel animations, including triggered Powers and relics. */
+  presentationSourceId?: string
   /** Cards taken by this card's variable discard clause. */
   discardedByCard?: number
   /** Cards taken by this card's automatic Exhaust clause. */
@@ -1055,6 +1060,7 @@ function resolutionContext(
     pendingTriggers: [],
     pendingExhaustTriggers: [],
     drewSkill: false,
+    presentationSourceId: def.id,
     sourceRetainedLastTurn: held.retainedLastTurn === true,
     sourceCardType: def.type,
     sourceCardId: def.id,
@@ -5703,19 +5709,22 @@ function channelOrb(
   context: PlayContext,
 ): boolean {
   if (combatIsOver(state)) return false
-  const open = actor.orbs.indexOf(null)
-  if (open >= 0) {
-    actor.orbs[open] = orb
-    return true
-  }
+  let open = actor.orbs.indexOf(null)
   // A full set forces an evoke to make room (p.16). Unsaid, the evoke's line
   // appeared with nothing to explain why an orb had vanished.
-  state.log = [...state.log, `${actor.name} has no free orb slot, and must evoke to make room`]
-  evokeOrb(state, actor, context)
-  if (combatIsOver(state)) return false
-  const freed = actor.orbs.indexOf(null)
-  if (freed < 0) return false
-  actor.orbs[freed] = orb
+  if (open < 0) {
+    state.log = [...state.log, `${actor.name} has no free orb slot, and must evoke to make room`]
+    evokeOrb(state, actor, context)
+    if (combatIsOver(state)) return false
+    open = actor.orbs.indexOf(null)
+    if (open < 0) return false
+  }
+  actor.orbs[open] = orb
+  addPresentationEvent(state, {
+    kind: 'orb', orb, actorId: actor.id,
+    sourceId: context.presentationSourceId ?? 'orb-channel',
+    enemyIds: [], playerIds: [],
+  })
   return true
 }
 
@@ -5873,6 +5882,7 @@ function fireTriggers(
 
 type TriggerSource = {
   id: string
+  presentationSourceId: string
   trigger: Trigger
   effects: Effect[]
   /** Named in the log, so a recurring effect is attributable. */
@@ -5895,6 +5905,7 @@ function triggerSourceById(player: Player, id: string): TriggerSource | undefine
     if (!ability) return undefined
     return {
       id,
+      presentationSourceId: held.defId,
       trigger: ability.trigger,
       effects: ability.effects,
       name: `${player.name}'s ${def.name}`,
@@ -5910,6 +5921,7 @@ function triggerSourceById(player: Player, id: string): TriggerSource | undefine
   if (!def.trigger) return undefined
   return {
     id,
+    presentationSourceId: held.defId,
     trigger: def.trigger,
     effects: def.effects,
     name: `${player.name}'s ${def.name}`,
@@ -6022,6 +6034,7 @@ function resolveTriggerSource(
     evokeIndex: 0,
     invalidEvokeTarget: false,
     sourcePowerUid: source.powerUid,
+    presentationSourceId: source.presentationSourceId,
     pendingTriggers,
   }
   const effects = source.name.endsWith("'s Tungsten Rod") && state.players.length === 1

@@ -491,6 +491,15 @@ check('Single Player opens a contained visual character picker before starting',
 await page.getByRole('button', { name: 'Compendium' }).click()
 await page.locator('.compendium').waitFor()
 const allCardCount = await page.locator('.compendium-card').count()
+const poolIconView = await page.locator('.compendium__pools button').evaluateAll((buttons) => buttons.map((button) => {
+  const image = button.querySelector('img')
+  const style = getComputedStyle(button)
+  return {
+    source: image?.getAttribute('src'),
+    loaded: Boolean(image?.complete && image.naturalWidth > 0),
+    border: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+  }
+}))
 await page.getByRole('button', { name: '0 energy', exact: true }).click()
 const allZeroCostLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
   cards.map((card) => card.getAttribute('aria-label')))
@@ -567,6 +576,11 @@ await page.getByPlaceholder('Search').fill('')
 await page.getByRole('button', { name: 'Ironclad' }).click()
 await shot('00a-compendium')
 check('the compendium filters the real card catalog and opens card detail', () => {
+  assertEqual(poolIconView.length, 8, 'one painted icon per card pool')
+  assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
+    `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
+  assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),
+    `the old circular pool frames remain: ${JSON.stringify(poolIconView)}`)
   assert(allCardCount > ironcladCardCount && ironcladCardCount > 0,
     `pool filtering did not narrow the catalog: ${allCardCount} / ${ironcladCardCount}`)
   assert(allZeroCostLabels.length > 0 && allZeroCostLabels.every((label) => !label?.includes('unplayable')),
@@ -2073,6 +2087,9 @@ await page.locator('.hand').getByRole('button', { name: /^Flex, cost 0,/ }).clic
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].exhaust
   .some((card) => card.uid === 'reduced-flex'))
 assertEqual(await page.locator('.card-flight').count(), 0, 'reduced motion creates no hidden delayed flight')
+assert((await page.locator('.token--orb:not(.token--orb-empty)').evaluateAll((orbs) =>
+  orbs.every((orb) => getComputedStyle(orb, '::before').animationName === 'none'))),
+'reduced motion leaves Orb idle animation running')
 assertEqual(await page.locator('[data-pile="exhaust"] .pile__count').textContent(), '1',
   'reduced motion updates the pile count immediately')
 await page.emulateMedia({ reducedMotion: 'no-preference' })
@@ -2888,6 +2905,10 @@ const orbView = await page.evaluate(() => ({
   slots: document.querySelectorAll('.seat--viewer .token--orb').length,
   beads: document.querySelectorAll('.seat--viewer .token--orb:not(.token--orb-empty)').length,
   classes: [...document.querySelectorAll('.seat--viewer .token--orb')].map((b) => b.className),
+  sprites: [...document.querySelectorAll('.seat--viewer .token--orb:not(.token--orb-empty)')]
+    .map((orb) => getComputedStyle(orb, '::before').backgroundImage),
+  values: [...document.querySelectorAll('.seat--viewer .orb__value')].map((value) => value.textContent),
+  floatsOverPortrait: Boolean(document.querySelector('.seat--viewer .seat__portrait > .orbs')),
   label: document.querySelector('.seat--viewer')?.getAttribute('aria-label') ?? '',
 }))
 check('channelled orbs are visible on the seat', () => {
@@ -2903,8 +2924,35 @@ check('channelled orbs are visible on the seat', () => {
     orbView.classes.some((name) => name.includes('token--orb-frost')),
     `expected a frost bead: ${orbView.classes.join(' | ')}`,
   )
+  assert(orbView.floatsOverPortrait, 'Orbs should float around the character portrait')
+  assert(orbView.sprites.some((source) => source.includes('lightning-channel.webp')) &&
+    orbView.sprites.some((source) => source.includes('frost-channel.webp')),
+  `the painted Orb sprites did not render: ${orbView.sprites.join(' | ')}`)
+  assertDeepEqual(orbView.values, ['1', '1'])
   assert(orbView.label.includes('lightning orb'), `and named to a screen reader: ${orbView.label}`)
   assert(orbView.label.includes('frost orb'), `both of them: ${orbView.label}`)
+  assert(orbView.label.includes('1 damage at end of turn') && orbView.label.includes('1 Block at end of turn'),
+    `Orb values are not exposed accessibly: ${orbView.label}`)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].damageDealtZeroThisTurn = true
+  debug.setRun(run)
+})
+await page.waitForFunction(() => [...document.querySelectorAll('.seat--viewer .orb__value')]
+  .map((value) => value.textContent).join(',') === '0,1')
+const suppressedOrbValues = await page.locator('.seat--viewer .orb__value').allTextContents()
+const suppressedOrbLabel = await page.locator('.seat--viewer').getAttribute('aria-label')
+check('Orb values follow effects that suppress damage this turn', () => {
+  assertDeepEqual(suppressedOrbValues, ['0', '1'])
+  assert(suppressedOrbLabel?.includes('0 damage at end of turn'), suppressedOrbLabel ?? 'missing seat label')
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].damageDealtZeroThisTurn = false
+  debug.setRun(run)
 })
 
 // p.16 makes every evoke two real choices: any occupied Orb, then an enemy
@@ -3339,14 +3387,46 @@ await page.getByRole('button', { name: /^Rainbow\+,/ }).waitFor()
 await shot('06q-rainbow-card')
 await page.getByRole('button', { name: /^Rainbow\+,/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.join(',') === 'lightning,frost,dark')
+await page.waitForFunction(() => new Set([...document.querySelectorAll('.seat--viewer .combat-vfx[data-vfx-kind="orb"]')]
+  .map((effect) => effect.getAttribute('data-vfx-asset'))).size >= 3)
+const rainbowVfxAssets = await page.locator('.seat--viewer .combat-vfx[data-vfx-kind="orb"]').evaluateAll((effects) =>
+  effects.map((effect) => effect.getAttribute('data-vfx-asset')))
 const rainbow = await readState()
 check('Rainbow+ channels Lightning, Frost, and Dark in order without Exhausting', () => {
   assertDeepEqual(rainbow.players[0].orbs, ['lightning', 'frost', 'dark'])
+  assertDeepEqual([...new Set(rainbowVfxAssets)].sort(),
+    ['dark-channel', 'frost-channel', 'lightning-channel'])
   assertEqual(rainbow.players[0].energy, 1)
   assertEqual(rainbow.players[0].discard.some((card) => card.uid === 'ui-rainbow'), true)
   assertEqual(rainbow.players[0].exhaust.some((card) => card.uid === 'ui-rainbow'), false)
 })
 await shot('06r-rainbow-orbs')
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.players[0], {
+    character: 'defect',
+    hand: [{ uid: 'ui-ball-lightning-vfx', defId: 'ball_lightning', upgraded: false }],
+    discard: [], exhaust: [], energy: 3, orbs: [null, null, null],
+  })
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /^Ball Lightning,/ }).click()
+await page.locator('.enemy--targeted').first().click()
+await page.waitForFunction(() => document.querySelector(
+  '.seat--viewer .combat-vfx[data-vfx-kind="orb"][data-vfx-asset="lightning-channel"]'))
+await page.locator('.seat--viewer .character-attack--defect').waitFor()
+const targetedChannelPlacement = await page.evaluate(() => ({
+  actor: document.querySelectorAll('.seat--viewer .combat-vfx[data-vfx-kind="orb"]').length,
+  enemies: document.querySelectorAll('.enemy .combat-vfx[data-vfx-kind="orb"]').length,
+  attack: Boolean(document.querySelector('.seat--viewer .character-attack--defect')),
+}))
+check('targeted channel cards keep the Orb animation on the character', () => {
+  assertEqual(targetedChannelPlacement.actor, 1)
+  assertEqual(targetedChannelPlacement.enemies, 0)
+  assert(targetedChannelPlacement.attack, 'the Orb event suppressed Ball Lightning\'s attack motion')
+})
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -8897,9 +8977,12 @@ await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'zap', enemyIds: [], playerIds: [],
   upgraded: false, copied: false, energy: 1,
 })
-await vfxActor().waitFor()
 await page.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
-  sound.cue === 'card:defect:zap:base').length === 3)
+  sound.cue === 'card:defect:zap:base').length === 2)
+await publishPresentationEvent({
+  kind: 'orb', orb: 'lightning', actorId: firstPlayerId, sourceId: 'zap', enemyIds: [], playerIds: [],
+})
+await vfxActor().waitFor()
 const zapPresentation = await vfxActor().evaluate((vfx) => ({
   family: vfx.getAttribute('data-vfx-family'),
   image: getComputedStyle(vfx).backgroundImage,
@@ -9234,7 +9317,7 @@ check('personal VFX events carry their matching layered SFX identity', () => {
   const potion = soundsFor('potion:fire_potion')
   assertEqual(strike.length, 2, 'Strike should layer its slash and personal accent')
   assertEqual(bash.length, 3, 'Bash should layer impact, block weight, and its accent')
-  assertEqual(zap.length, 3, 'Zap should layer channel, electric impact, and its accent')
+  assertEqual(zap.length, 2, 'Zap keeps its card cue while the Orb event owns the channel effect')
   assertEqual(pray.length, 3, 'Pray should layer mantra, recovery, and its accent')
   assertEqual(potion.length, 2, 'a potion should layer its effect and identity')
   assert(new Set([strike, bash, zap, pray, potion].map((sounds) =>
@@ -13006,6 +13089,21 @@ check('the local Neow scene keeps its full-bleed at every width', () => {
   }
 })
 
+await page.evaluate(() => window.__STS_DEBUG__.reset(3, 'flinch'))
+await bypassNeow()
+await enterFirstRoom()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')
+const openingDefectId = (await readState()).players.find((player) => player.character === 'defect')?.id
+assert(openingDefectId, 'the opening Orb VFX fixture needs a Defect')
+const openingOrbVfx = page.locator(
+  `.seat[data-player-id="${openingDefectId}"] .combat-vfx[data-vfx-kind="orb"][data-vfx-source="cracked_core"]`,
+)
+await openingOrbVfx.waitFor()
+const openingOrbAsset = await openingOrbVfx.getAttribute('data-vfx-asset')
+check('fresh combat animates Cracked Core on the Defect', () => {
+  assertEqual(openingOrbAsset, 'lightning-channel')
+})
+
 await page.evaluate((run) => {
   const next = structuredClone(run)
   next.combat.phase = 'won'
@@ -13086,7 +13184,9 @@ for (const [engineName, phoneBrowser, deviceName] of [
       ambientAnimations: [...document.querySelectorAll(
         '.seat__portrait > img, .enemy__portrait > .enemy__art--cutout, .stance-aura',
       )].some((element) => element.getAnimations().some((animation) =>
-        animation.effect?.getTiming().iterations === Infinity)),
+        animation.effect?.getTiming().iterations === Infinity)) ||
+        [...document.querySelectorAll('.token--orb:not(.token--orb-empty)')]
+          .some((orb) => getComputedStyle(orb, '::before').animationName !== 'none'),
       unplayableOpacity,
       selectedOutline,
       clippedCards: cards.filter((card) => {

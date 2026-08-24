@@ -8644,4 +8644,27 @@ check('only the newcomer funds, buys, and closes the Catch Up Merchant', () => {
   assertEqual(room.run.setup, null)
 })
 
+check('Orb channel presentation events stay public and actor-only across room snapshots', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.presentationEvents = [{
+    seq: 1,
+    kind: 'orb',
+    orb: 'dark',
+    actorId: a.playerId,
+    sourceId: 'darkness',
+    enemyIds: [],
+    playerIds: [],
+    privateChoiceUid: 'must-not-cross-the-room-boundary',
+  }]
+  assertDeepEqual(snapshotFor(room, b.token).run.combat.presentationEvents, [{
+    seq: 1,
+    kind: 'orb',
+    actorId: a.playerId,
+    sourceId: 'darkness',
+    enemyIds: [],
+    playerIds: [],
+    orb: 'dark',
+  }])
+})
+
 report('co-op rooms')

@@ -2858,6 +2858,7 @@ function redactCombat(combat, viewerId) {
         energy: event.energy,
         ...(event.mode === undefined ? {} : { mode: event.mode }),
       } : {}),
+      ...(event.kind === 'orb' ? { orb: event.orb } : {}),
     })),
     // Pending summons are public telegraphed enemy-card effects; the shuffled
     // Summons deck itself remains server-only.
