@@ -53,9 +53,11 @@ check('an engine submodule selects what its barrel selects', () => {
   // imports those files directly, so without this the browser suites stop
   // running for any engine change made inside them.
   assertDeepEqual(affected('src/game/combat/effects.ts'), affected('src/game/combat.ts'))
+  assertDeepEqual(affected('src/game/run/events.ts'), affected('src/game/run.ts'))
   // Answering for the barrel must not make an unimported new module look
   // covered: a file no script reaches still runs everything.
   assertDeepEqual(affected('src/game/combat/not-imported-yet.ts'), scripts)
+  assertDeepEqual(affected('src/game/run/not-imported-yet.ts'), scripts)
 })
 check('shared frontend and toolchain changes stay conservative', () => {
   for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css', 'src/ui/styles/hand.css']) {

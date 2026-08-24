@@ -16,9 +16,9 @@ const localRoots = [
 ].map((name) => `src/ui/${name}.tsx`)
 const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
-// src/game/combat/*.ts are the insides of combat.ts; everything outside the
-// engine imports them only through that barrel.
-const engineModuleOf = (file) => cleanPath(file).replace(/^src\/game\/combat\/[\w.-]+\.ts$/, 'src/game/combat.ts')
+// src/game/combat/*.ts and src/game/run/*.ts are the insides of combat.ts and
+// run.ts; everything outside the engine imports them only through those barrels.
+const engineModuleOf = (file) => cleanPath(file).replace(/^src\/game\/(combat|run)\/[\w.-]+\.ts$/, 'src/game/$1.ts')
 const directImportCache = new Map()
 const sourceCache = new Map()
 const cleanPath = (file) => file.replaceAll('\\', '/')
