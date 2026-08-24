@@ -16,6 +16,9 @@ const localRoots = [
 ].map((name) => `src/ui/${name}.tsx`)
 const onlineUi = /^(src\/multiplayer\/|src\/ui\/Online)/
 const sourceExtensions = ['', '.ts', '.tsx', '.mjs', '.js']
+// src/game/combat/*.ts are the insides of combat.ts; everything outside the
+// engine imports them only through that barrel.
+const engineModuleOf = (file) => cleanPath(file).replace(/^src\/game\/combat\/[\w.-]+\.ts$/, 'src/game/combat.ts')
 const directImportCache = new Map()
 const sourceCache = new Map()
 const cleanPath = (file) => file.replaceAll('\\', '/')
@@ -179,14 +182,22 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       covered = true
     }
     else if (file.startsWith('src/')) {
-      const absolute = resolve(root, file)
+      // A screen imports the engine through its barrel, so a change inside
+      // src/game/combat/ reaches the UI exactly as a change to the barrel
+      // itself does. Ask the direct-import checks about the barrel.
+      const barrel = engineModuleOf(file)
+      const absolute = resolve(root, barrel)
       const owners = []
       if (localRoots.some((entry) => directImports(entry, root).includes(absolute))) owners.push('verify-browser.mjs')
       if (noncombatRoots.some((entry) => directImports(entry, root).includes(absolute))) owners.push('verify-noncombat-browser.mjs')
       if (directImports('src/ui/OnlineGame.tsx', root).includes(absolute)) owners.push('verify-online-browser.mjs')
       if (owners.length) {
         for (const script of [...owners, ...extraBrowser]) selected.add(script)
-        covered = true
+        // Answering for the barrel must not also answer for the file: a module
+        // nothing imports yet is still uncovered, and has to keep the
+        // run-everything fallback below. A module that IS imported already had
+        // `covered` set by the transitive scan.
+        if (barrel === file) covered = true
       }
     }
 
