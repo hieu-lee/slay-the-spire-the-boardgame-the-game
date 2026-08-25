@@ -55,6 +55,7 @@ export {
   cardRewardSources,
   chooseRelicReward,
   drawTransformReward,
+  migrateLegacyBossRareRewards,
   neowRewardSources,
   pendingRelicEligibleCards,
   potionLimitFor,

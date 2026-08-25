@@ -63,6 +63,7 @@ import {
   revealCourier,
   merchantPurchaseCost,
   merchantRemovalCost,
+  migrateLegacyBossRareRewards,
   neowPreview,
   removeAtCurrentMerchant,
   overflowShivCount,
@@ -175,6 +176,12 @@ export function createStore({ file } = {}) {
             if (room.run.combat.potionLimit !== 2 && room.run.combat.potionLimit !== 3) {
               room.run.combat.potionLimit = room.run.ascension >= 4 ? 2 : 3
             }
+          }
+          const migratedBossRewards = migrateLegacyBossRareRewards(room.run)
+          if (migratedBossRewards !== room.run) {
+            room.run = migratedBossRewards
+            room.rewardChoices = undefined
+            room.rewardConfirmed = undefined
           }
           const runNumber = Number(/^campaign-(\d+)$/.exec(room.run.campaign?.runId ?? '')?.[1])
           const fallback = {

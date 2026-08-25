@@ -5997,7 +5997,8 @@ check('beating a boss resolves the shared boss-Relic offer before the next Act',
   apply(room, a.token, { kind: 'resolveCombat' })
   assertEqual(room.run.phase, 'reward')
   assertDeepEqual(room.run.players.map((player, index) => player.gold - goldBefore[index]), [3, 3])
-  assert(room.run.rewards.every((reward) => reward.cardReward), 'the boss omitted its normal Card Reward')
+  assert(room.run.rewards.every((reward) => reward.cardReward && reward.cardSource === 'rare'),
+    'the boss omitted its Rare Reward')
   const choices = room.run.rewards[0].bossRelics
   assertEqual(choices.length, 3, 'two players reveal players + 1 boss Relics')
   apply(room, a.token, { kind: 'cardReward', choice: null })

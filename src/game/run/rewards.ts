@@ -119,6 +119,69 @@ export function availableRewardSources(state: RunState, rare: boolean): RewardSo
   })
 }
 
+/** Repair open Act I-II boss rewards written before their yellow icon was classified as Rare. */
+export function migrateLegacyBossRareRewards(state: RunState): RunState {
+  if (state.phase !== 'reward' || state.act > 2 || state.rewardDestination !== 'victory') return state
+  const stale = state.rewards.filter((offer) => !offer.cardSource)
+  if (stale.length === 0) return state
+  const bottomKnownDraws = (deck: string[], drawn: readonly string[]) => {
+    const remaining = [...deck]
+    const bottom: string[] = []
+    for (const defId of drawn) {
+      const index = remaining.indexOf(defId)
+      if (index >= 0) bottom.push(...remaining.splice(index, 1))
+    }
+    return [...remaining, ...bottom]
+  }
+
+  let next = state
+  for (const offer of stale.filter((candidate) => candidate.cardReward && candidate.prismaticDraws)) {
+    next = settlePrismaticDraws(next, false, offer.prismaticDraws!, offer.choices ?? [], null).state
+  }
+  for (const player of state.players) {
+    const offer = stale.find((candidate) => candidate.playerId === player.id && candidate.cardReward &&
+      !candidate.prismaticDraws && candidate.cardsDrawn && candidate.raresDrawn)
+    if (!offer) continue
+    next = {
+      ...next,
+      players: next.players.map((candidate) => candidate.id === offer.playerId ? {
+        ...candidate,
+        cardRewards: offer.drawsReserved
+          ? [...candidate.cardRewards, ...offer.cardsDrawn!]
+          : bottomKnownDraws(candidate.cardRewards, offer.cardsDrawn!),
+        rareRewards: offer.drawsReserved
+          ? [...candidate.rareRewards, ...offer.raresDrawn!]
+          : bottomKnownDraws(candidate.rareRewards, offer.raresDrawn!),
+      } : candidate),
+    }
+  }
+
+  return {
+    ...next,
+    rewards: next.rewards.map((offer) => {
+      if (!stale.includes(offer)) return offer
+      const player = next.players.find((candidate) => candidate.id === offer.playerId)
+      const prismatic = Boolean(player && hasRelic(player, 'prismatic_shard'))
+      const availableSources = prismatic ? availableRewardSources(next, true) : undefined
+      return {
+        ...offer,
+        cardReward: Boolean(player && (prismatic ? (availableSources?.length ?? 0) >= 3 : player.rareRewards.length > 0)),
+        cardSource: 'rare',
+        transformReward: false,
+        prismatic,
+        choices: null,
+        rareChoiceIndices: undefined,
+        cardsDrawn: undefined,
+        raresDrawn: undefined,
+        drawsReserved: undefined,
+        prismaticSources: undefined,
+        prismaticDraws: undefined,
+        availableSources,
+      }
+    }),
+  }
+}
+
 export function reservePrismaticDraws(state: RunState, sources: readonly RewardSource[], rare: boolean): {
   state: RunState
   draws: NonNullable<CardRewardOffer['prismaticDraws']>
@@ -185,6 +248,20 @@ export function cardRewardSources(state: RunState, playerId: string): RewardSour
   return availableRewardSources(state, rare)
 }
 
+function refreshPrismaticRewardSources(state: RunState): RunState {
+  let projected = state
+  for (const revealed of state.rewards.filter((offer) => offer.choices !== null && !offer.drawsReserved)) {
+    projected = reserveRevealedRewardDraws(projected, revealed.playerId)
+  }
+  return {
+    ...state,
+    rewards: state.rewards.map((offer) => offer.prismatic && offer.choices === null ? {
+      ...offer,
+      availableSources: availableRewardSources(projected, offer.cardSource === 'rare'),
+    } : offer),
+  }
+}
+
 /** Reveal one player's top three; rewards may instead be skipped unseen (p.8). */
 export function revealCardReward(state: RunState, playerId: string, sources: readonly RewardSource[] = []): RunState {
   if (state.phase !== 'reward' || hasPendingRelicAcquisition(state)) return state
@@ -192,14 +269,20 @@ export function revealCardReward(state: RunState, playerId: string, sources: rea
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!offer || !offer.cardReward || offer.choices !== null || !player) return state
   if (offer.prismatic) {
-    const available = cardRewardSources(state, playerId)
+    let reservedState = state
+    for (const revealed of state.rewards.filter((candidate) => candidate.choices !== null && !candidate.drawsReserved)) {
+      reservedState = reserveRevealedRewardDraws(reservedState, revealed.playerId)
+    }
+    const currentOffer = reservedState.rewards.find((candidate) => candidate.playerId === playerId)
+    if (!currentOffer?.cardReward || currentOffer.choices !== null) return state
+    const available = cardRewardSources(reservedState, playerId)
     if (sources.length !== 3 || new Set(sources).size !== 3 || sources.some((source) => !available.includes(source)) ||
-      offer.cardSource === 'rare' && sources.includes('colorless')) return state
-    const rare = offer.cardSource === 'rare'
-    const reserved = reservePrismaticDraws(state, sources, rare)
+      currentOffer.cardSource === 'rare' && sources.includes('colorless')) return state
+    const rare = currentOffer.cardSource === 'rare'
+    const reserved = reservePrismaticDraws(reservedState, sources, rare)
     return {
       ...reserved.state,
-      rewards: reserved.state.rewards.map((candidate) => candidate === offer ? {
+      rewards: reserved.state.rewards.map((candidate) => candidate === currentOffer ? {
         ...candidate,
         prismaticSources: [...sources],
         prismaticDraws: reserved.draws,
@@ -212,17 +295,17 @@ export function revealCardReward(state: RunState, playerId: string, sources: rea
   }
   if (offer.cardSource === 'rare') {
     const drawn = player.rareRewards.slice(0, 3)
-    return {
+    return refreshPrismaticRewardSources({
       ...state,
       rewards: state.rewards.map((candidate) => candidate === offer
         ? { ...candidate, choices: [...drawn], cardsDrawn: [], raresDrawn: [...drawn] }
         : candidate),
-    }
+    })
   }
   const drawn = player.cardRewards.slice(0, 3)
   const common = drawn.filter((defId) => defId !== GOLDEN_TICKET)
   const rare = player.rareRewards.slice(0, drawn.length - common.length)
-  return {
+  return refreshPrismaticRewardSources({
     ...state,
     rewards: state.rewards.map((candidate) => candidate === offer
       ? {
@@ -233,7 +316,7 @@ export function revealCardReward(state: RunState, playerId: string, sources: rea
           raresDrawn: rare,
         }
       : candidate),
-  }
+  })
 }
 
 export function reserveRevealedRewardDraws(state: RunState, playerId: string): RunState {
