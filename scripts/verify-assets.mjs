@@ -14,6 +14,7 @@ import {
   cardArtPath,
   cardImagePath,
   cardThumbPath,
+  bossAnimationImagePath,
   enemyImagePath,
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
@@ -39,6 +40,7 @@ const cardArtRoot = join(publicRoot, 'assets/card-art')
 const iconRoot = join(publicRoot, 'assets/icons')
 const enemyRoot = join(publicRoot, 'assets/enemies')
 const combatEnemyRoot = join(publicRoot, 'assets/combat/enemies')
+const bossAnimationRoot = join(combatEnemyRoot, 'animations')
 const combatCharacterRoot = join(publicRoot, 'assets/combat/characters')
 const combatVfxRoot = join(publicRoot, 'assets/combat/vfx')
 const combatActionVfxRoot = join(combatVfxRoot, 'actions')
@@ -61,6 +63,7 @@ const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
 const iconFiles = listing(iconRoot, '.png')
 const enemyFiles = listing(enemyRoot, '.webp')
 const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
+const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
 const combatCharacterFiles = listing(combatCharacterRoot, '.webp')
 const combatVfxFiles = listing(combatVfxRoot, '.webp')
 const combatActionVfxFiles = listing(combatActionVfxRoot, '.webp')
@@ -399,7 +402,8 @@ check('every enemy has exactly one canonical combat cutout', () => {
   const trackedCombat = spawnSync('git', ['ls-files', 'public/assets/combat/enemies'], {
     cwd: repoRoot,
     encoding: 'utf8',
-  }).stdout.trim().split('\n').filter(Boolean).map((file) => file.split('/').pop()).sort()
+  }).stdout.trim().split('\n').filter((file) => dirname(file) === 'public/assets/combat/enemies')
+    .map((file) => file.split('/').pop()).sort()
   assertDeepEqual(trackedCombat, expected, 'tracked combat enemy cutout inventory')
   const legacy = spawnSync('git', ['ls-files', 'public/assets/enemies'], {
     cwd: repoRoot,
@@ -414,6 +418,57 @@ check('every live enemy runtime image path exists', () => {
     return !existsSync(join(publicRoot, 'assets', relative))
   }).map((def) => `${def.id}: ${enemyImagePath(def)}`)
   assert(missing.length === 0, `missing runtime enemy images:\n    ${missing.join('\n    ')}`)
+})
+
+check('every boss has transparent idle and left-facing attack animation assets', () => {
+  const bosses = Object.values(ENEMIES).filter((def) => def.isBoss)
+  const artIds = [...new Set(bosses.map((def) => def.artId ?? def.id))].sort()
+  const expected = artIds.flatMap((id) => [`${id}-attack.webp`, `${id}-idle.webp`]).sort()
+  assertDeepEqual(bossAnimationFiles.sort(), expected, 'boss animation inventory')
+  const missing = bosses.flatMap((def) => ['idle', 'attack'].filter((pose) => {
+    const relative = bossAnimationImagePath(def, pose).replace(/^\/assets\//, '')
+    return !existsSync(join(publicRoot, 'assets', relative))
+  }).map((pose) => `${def.id}: ${pose}`))
+  assert(missing.length === 0, `missing boss animations:\n    ${missing.join('\n    ')}`)
+
+  const probe = `
+import sys, json
+from PIL import Image
+faults = []
+for name in sys.argv[1:]:
+    im = Image.open(name)
+    if getattr(im, "n_frames", 1) < 2:
+        faults.append(f"{name}: not animated")
+        continue
+    boxes = []
+    for frame in range(im.n_frames):
+        im.seek(frame)
+        rgba = im.convert("RGBA")
+        alpha = rgba.getchannel("A")
+        w, h = rgba.size
+        boxes.append(alpha.getbbox())
+        corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
+                   alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
+        if max(corners) > 16:
+            faults.append(f"{name} frame {frame}: opaque corners {corners}")
+            break
+        if name.endswith("bronze_automaton-attack.webp") and frame == 0 and alpha.crop((int(w * .72), 0, w, h)).getbbox():
+            faults.append(f"{name}: impact leaked into the wind-up frame")
+    if len(boxes) >= 2 and all(boxes[:2]) and name.endswith("bronze_automaton-attack.webp"):
+        heights = [box[3] - box[1] for box in boxes[:2]]
+        if abs(heights[0] - heights[1]) > h * .08:
+            faults.append(f"{name}: attack frames use different character heights {heights}")
+    if len(boxes) >= 2 and all(boxes[:2]) and name.endswith("bronze_automaton-idle.webp"):
+        centers = [(box[0] + box[2]) / 2 for box in boxes[:2]]
+        if abs(centers[0] - centers[1]) > w * .03:
+            faults.append(f"{name}: idle frames jump sideways {centers}")
+print(json.dumps(faults))
+`
+  const paths = expected.map((file) => join(bossAnimationRoot, file))
+  const result = spawnSync('python3', ['-c', probe, ...paths], { encoding: 'utf8' })
+  assert(result.status === 0, result.stderr || 'boss animation audit requires python3 + Pillow')
+  const faults = JSON.parse(result.stdout.trim().split('\n').pop())
+  assert(faults.length === 0, `invalid boss animation assets:\n    ${faults.join('\n    ')}`)
 })
 
 check('bundled combat cutouts are sized for their render box, with transparency', () => {

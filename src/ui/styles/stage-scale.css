@@ -103,6 +103,22 @@
   left: 0;
 }
 
+/* Bosses share the floor with heroes but own more of the silhouette, as they
+   do in the digital game's boss rooms. Donu and Deca stay tighter so the pair
+   remains readable without collapsing the co-op stage spacing. */
+.board .board__bosses .enemy--boss .enemy__portrait {
+  right: -25%;
+  left: -25%;
+  aspect-ratio: 1.05;
+}
+
+.board .board__bosses .enemy--boss[data-enemy-def='donu'] .enemy__portrait,
+.board .board__bosses .enemy--boss[data-enemy-def='deca'] .enemy__portrait {
+  right: -14%;
+  left: -14%;
+  aspect-ratio: 1.05;
+}
+
 .row__seat .seat__name {
   position: absolute;
   right: 0;
@@ -128,6 +144,17 @@
 
 .board .enemy__intent .intent {
   zoom: min(1, calc(var(--stage-scale) + 0.15));
+}
+
+/* Boss art grows upward from the shared floor, so its normal intent row lands
+   across the enlarged silhouette. Keep the telegraph in the clear air above
+   the portrait while ordinary enemies retain the compact card layout. */
+.board .board__bosses .enemy--boss > .enemy__intent {
+  position: absolute;
+  z-index: 8;
+  top: calc(-6.5rem * var(--stage-scale));
+  right: -25%;
+  left: -25%;
 }
 
 /* `bottom` scales with `--stage-scale` for the same reason every other
@@ -283,4 +310,25 @@
   font-size: 0.62rem;
   line-height: 1;
   text-shadow: 0 1px 2px #000, 0 0 2px #000;
+}
+
+@media (max-height: 700px) {
+  .board .board__bosses .enemy--boss .enemy__portrait > .enemy__art--cutout {
+    --boss-scale: 1.5;
+  }
+
+  .board .board__bosses .enemy--boss:is([data-enemy-def='donu'], [data-enemy-def='deca'])
+    .enemy__portrait > .enemy__art--cutout {
+    --boss-scale: 1.4;
+  }
+
+  .board .board__bosses .enemy--boss > .enemy__intent {
+    top: calc(-4.4rem * var(--stage-scale));
+  }
+
+  /* The full hand overlaps the floor on a short stage. Lift every player's
+     persistent controls above it so later co-op seats remain inspectable. */
+  .seat__status-strip {
+    bottom: calc(var(--card-width) * var(--card-ratio) + 3rem);
+  }
 }

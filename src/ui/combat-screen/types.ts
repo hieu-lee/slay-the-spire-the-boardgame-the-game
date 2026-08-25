@@ -16,6 +16,7 @@ import type { VfxRecipe } from '../combat-vfx.ts'
 
 export type CombatScreenProps = {
   state: CombatState
+  act: number
   /** The seat this client controls. Everyone sees the same board. */
   viewerId: string
   onChange?: (next: CombatState) => void

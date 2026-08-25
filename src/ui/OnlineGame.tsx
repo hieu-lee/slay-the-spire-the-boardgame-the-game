@@ -623,6 +623,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={combat}
+          act={run.act}
           viewerId={snapshot.you.playerId}
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}

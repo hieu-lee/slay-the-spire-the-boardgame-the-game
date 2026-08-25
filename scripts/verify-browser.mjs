@@ -12726,9 +12726,79 @@ await shot('06zza-watcher-x-mantra-batch')
 // Boss cards use tracked rulebook-extracted portraits over generated act-specific
 // backdrops. Exercise three mechanically distinct cards in the real UI so a
 // missing asset, unreadable ability, or runaway boss layout fails visibly.
+await page.setViewportSize({ width: 1505, height: 430 })
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
 await bypassNeow()
 await enterFirstRoom()
+const originalHand = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun().combat.players[0].hand))
+const handFixture = [
+  ['hand-stability-1', 'strike_ironclad'],
+  ['hand-stability-2', 'defend_ironclad'],
+  ['hand-stability-3', 'bash'],
+  ['hand-stability-4', 'defend_ironclad'],
+  ['hand-stability-5', 'strike_ironclad'],
+  ['hand-stability-6', 'bash'],
+  ['hand-stability-7', 'defend_ironclad'],
+].map(([uid, defId]) => ({ uid, defId, upgraded: false }))
+await page.evaluate((hand) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = hand
+  debug.setRun(run)
+}, handFixture)
+await page.waitForFunction((count) => document.querySelector('.hand')?.getAttribute('data-count') === String(count), handFixture.length)
+await page.waitForTimeout(850)
+const populatedHand = await page.locator('.combat').evaluate((combat) => {
+  const hand = combat.querySelector('.hand-area')
+  const board = combat.querySelector('.board')
+  return {
+    hand: hand.getBoundingClientRect().toJSON(),
+    board: board.getBoundingClientRect().toJSON(),
+    cards: [...combat.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect().toJSON()),
+    documentHeight: document.documentElement.scrollHeight,
+    viewportHeight: innerHeight,
+    background: getComputedStyle(hand).backgroundImage,
+  }
+})
+await shot('17a-immersive-hand-stage', page.locator('.combat'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = []
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.hand')?.getAttribute('data-count') === '0')
+const emptyHand = await page.locator('.combat').evaluate((combat) => {
+  const hand = combat.querySelector('.hand-area')
+  const board = combat.querySelector('.board')
+  return {
+    hand: hand.getBoundingClientRect().toJSON(),
+    board: board.getBoundingClientRect().toJSON(),
+    background: getComputedStyle(hand).backgroundImage,
+  }
+})
+await page.evaluate((hand) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players[0].hand = hand
+  debug.setRun(run)
+}, originalHand)
+await page.waitForFunction((count) => document.querySelector('.hand')?.getAttribute('data-count') === String(count), originalHand.length)
+check('the transparent hand stage does not reflow combat when cards arrive', () => {
+  assert(populatedHand.background === 'none' && emptyHand.background === 'none',
+    'the hand stage still paints an opaque separation bar')
+  assert(populatedHand.documentHeight <= populatedHand.viewportHeight,
+    `the short combat stage scrolls vertically: ${populatedHand.documentHeight}/${populatedHand.viewportHeight}`)
+  assert(populatedHand.cards.every((card) => card.top >= 0 && card.bottom <= populatedHand.viewportHeight),
+    `the short combat stage clips a hand card: ${JSON.stringify(populatedHand.cards)}`)
+  for (const key of ['top', 'height']) {
+    assert(Math.abs(populatedHand.hand[key] - emptyHand.hand[key]) <= 1,
+      `hand ${key} shifted between empty and populated states`)
+    assert(Math.abs(populatedHand.board[key] - emptyHand.board[key]) <= 1,
+      `board ${key} shifted between empty and populated states`)
+  }
+})
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -12757,18 +12827,47 @@ const bossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => ca
   label: card.getAttribute('aria-label'),
   text: card.textContent,
   background: getComputedStyle(card).backgroundImage,
-  image: card.querySelector('img')?.getAttribute('src'),
-  loaded: (card.querySelector('img')?.naturalWidth ?? 0) > 0,
-  objectFit: getComputedStyle(card.querySelector('img')).objectFit,
-  maskImage: getComputedStyle(card.querySelector('img')).maskImage,
+  image: card.querySelector('.enemy__art--cutout')?.getAttribute('src'),
+  animation: card.getAttribute('data-animation'),
+  aura: getComputedStyle(card.querySelector('.enemy__art--cutout')).filter,
+  loaded: (card.querySelector('.enemy__art--cutout')?.naturalWidth ?? 0) > 0,
+  objectFit: getComputedStyle(card.querySelector('.enemy__art--cutout')).objectFit,
+  maskImage: getComputedStyle(card.querySelector('.enemy__art--cutout')).maskImage,
+  visualHeight: card.querySelector('.enemy__art--cutout').getBoundingClientRect().height,
+  artBox: card.querySelector('.enemy__art--cutout').getBoundingClientRect().toJSON(),
+  intentBox: card.querySelector('.enemy__intent').getBoundingClientRect().toJSON(),
   box: card.getBoundingClientRect().toJSON(),
 })))
+const bossStage = await page.locator('.combat').evaluate((combat) => ({
+  act: combat.getAttribute('data-act'),
+  background: getComputedStyle(combat).backgroundImage,
+  heroHeight: combat.querySelector('.seat__portrait > img').getBoundingClientRect().height,
+}))
+await page.locator('.enemy--boss').first().hover()
+const hoveredBossHeight = await page.locator('.enemy--boss').first()
+  .locator('.enemy__art--cutout').evaluate((image) => image.getBoundingClientRect().height)
+await page.mouse.move(0, 0)
 check('boss portraits, backdrops, mechanics, and accessible labels render together', () => {
   assert(bossVisuals.every((boss) => boss.loaded), 'a tracked boss portrait did not load')
   assert(bossVisuals.every((boss) => boss.objectFit === 'contain' && boss.maskImage === 'none'),
     'a boss portrait is cropped or masked')
-  assert(bossVisuals.every((boss) => boss.background.includes('/assets/backgrounds/boss-act-')),
-    'a boss is missing its act backdrop')
+  assert(bossStage.act === '1' && bossStage.background.includes('/assets/backgrounds/boss-act-1.webp'),
+    'the combat stage is missing its act backdrop')
+  assert(bossVisuals.every((boss) => boss.background === 'none'),
+    'a boss card still paints a rectangular backdrop')
+  assert(bossVisuals.every((boss) => boss.animation === 'idle' &&
+    boss.image.includes('/assets/combat/enemies/animations/') && boss.image.endsWith('-idle.webp')),
+  'a boss is missing its idle animation')
+  assert(bossVisuals.every((boss) => boss.aura.includes('drop-shadow')),
+    'a boss is missing its restrained aura')
+  assert(new Set(bossVisuals.map((boss) => boss.aura)).size === bossVisuals.length,
+    'boss auras should follow each boss identity, not only the act')
+  assert(bossVisuals.every((boss) => boss.intentBox.bottom <= boss.artBox.top + 4),
+    `boss intent must sit above the portrait: ${JSON.stringify(bossVisuals.map((boss) => ({ art: boss.artBox, intent: boss.intentBox })))}`)
+  assert(bossVisuals.every((boss) => boss.visualHeight > bossStage.heroHeight * 1.12),
+    `boss silhouettes should read larger than the hero: hero ${bossStage.heroHeight}, bosses ${bossVisuals.map((boss) => boss.visualHeight).join(', ')}`)
+  assert(hoveredBossHeight > bossStage.heroHeight * 1.12,
+    'hovering must not collapse a boss to the normal enemy scale')
   assert(bossVisuals.some((boss) => boss.label.includes('Sharp Hide')))
   assert(bossVisuals.some((boss) => boss.label.includes('Time Warp')))
   assert(bossVisuals.some((boss) => boss.label.includes('Haste')))
@@ -12779,6 +12878,112 @@ check('boss portraits, backdrops, mechanics, and accessible labels render togeth
   assert(bossVisuals.some((boss) => boss.text.includes('Invincible · no Weak')))
   assert(bossVisuals.every((boss) => boss.box.width <= 320 && boss.box.height <= 360),
     'boss cards must remain card-sized')
+})
+
+await page.setViewportSize({ width: 1505, height: 430 })
+await page.waitForFunction(() => [...document.querySelectorAll('.enemy--boss')].every((card) => {
+  const art = card.querySelector('.enemy__art--cutout').getBoundingClientRect()
+  const intent = card.querySelector('.enemy__intent').getBoundingClientRect()
+  const board = card.closest('.board').getBoundingClientRect()
+  return intent.top >= board.top - 1 && intent.bottom <= art.top + 4
+}))
+const shortBossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => ({
+  art: card.querySelector('.enemy__art--cutout').getBoundingClientRect().toJSON(),
+  intent: card.querySelector('.enemy__intent').getBoundingClientRect().toJSON(),
+  board: card.closest('.board').getBoundingClientRect().toJSON(),
+})))
+await shot('17aa-short-boss-intents')
+check('short boss stages keep every intent above its portrait and inside the board', () => {
+  assert(shortBossVisuals.every(({ intent, board }) =>
+    intent.top >= board.top - 1 && intent.bottom <= board.bottom + 1),
+  `a short-stage boss intent is clipped by the board: ${JSON.stringify(shortBossVisuals)}`)
+  assert(shortBossVisuals.every(({ art, intent }) => intent.bottom <= art.top + 4),
+    `a short-stage boss intent overlaps its portrait: ${JSON.stringify(shortBossVisuals)}`)
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+
+await page.waitForFunction(() => [...document.querySelectorAll('.enemy--boss')].every((card) => {
+  const idle = card.querySelector('.enemy__art--cutout')?.getAttribute('src')
+  const attack = idle?.replace('-idle.webp', '-attack.webp')
+  return attack && [...document.querySelectorAll('link[data-boss-attack-preload]')]
+    .some((link) => link.href === new URL(attack, location.href).href)
+}))
+const bossAttackPreloads = await page.locator('.enemy--boss').evaluateAll((cards) => cards.map((card) => {
+  const idle = card.querySelector('.enemy__art--cutout')?.getAttribute('src')
+  const attack = idle?.replace('-idle.webp', '-attack.webp')
+  return Boolean(attack && [...document.querySelectorAll('link[data-boss-attack-preload]')]
+    .some((link) => link.href === new URL(attack, location.href).href))
+}))
+check('boss attacks preload before the enemy phase', () => {
+  assert(bossAttackPreloads.every(Boolean))
+})
+
+const actStages = []
+for (const act of [1, 2, 3, 4]) {
+  await page.evaluate((nextAct) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.act = nextAct
+    debug.setRun(run)
+  }, act)
+  await page.waitForFunction((nextAct) => document.querySelector('.combat')?.getAttribute('data-act') === String(nextAct), act)
+  actStages.push(await page.locator('.combat').evaluate((combat) => getComputedStyle(combat).backgroundImage))
+}
+check('each act paints its own full-stage combat background', () => {
+  assertDeepEqual(actStages.map((background, index) =>
+    background.includes(`/assets/backgrounds/boss-act-${index + 1}.webp`)), [true, true, true, true])
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.phase = 'enemy'
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"]'))
+const bossAttack = await page.locator('.enemy--boss[data-animation="attack"]').first().evaluate((card) => ({
+  image: card.querySelector('.enemy__art--cutout')?.getAttribute('src'),
+  loaded: (card.querySelector('.enemy__art--cutout')?.naturalWidth ?? 0) > 0,
+}))
+check('an attacking boss swaps to its one-shot left-facing animation', () => {
+  assert(bossAttack.loaded)
+  assert(bossAttack.image.endsWith('-attack.webp'), bossAttack.image)
+})
+await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"][data-attack-motion="melee"]'))
+const meleeBossMotion = await page.locator('.enemy--boss[data-animation="attack"][data-attack-motion="melee"]')
+  .first().locator('.enemy__art--cutout').evaluate((image) => getComputedStyle(image).animationName)
+check('melee bosses dash toward the player side while attacking', () => {
+  assert(meleeBossMotion === 'boss-melee-dash', meleeBossMotion)
+})
+await page.waitForTimeout(220)
+const meleeImpact = await page.locator('.board').evaluate((board) => ({
+  boss: board.querySelector('.enemy--boss[data-animation="attack"][data-attack-motion="melee"] .enemy__art--cutout')
+    .getBoundingClientRect().toJSON(),
+  player: board.querySelector('.seat__portrait > img').getBoundingClientRect().toJSON(),
+}))
+check('a melee boss reaches the player lane at its impact frame', () => {
+  assert(meleeImpact.boss.left <= meleeImpact.player.right && meleeImpact.boss.right >= meleeImpact.player.left,
+    `melee impact stops short of the player: ${JSON.stringify(meleeImpact)}`)
+})
+await shot('17b-boss-attack', page.locator('.board'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.assign(run.combat.enemies[0], { hp: 0, dead: true })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.enemy--boss.enemy--dead')?.getAttribute('data-animation') === 'static')
+const deadBossArt = await page.locator('.enemy--boss.enemy--dead .enemy__art--cutout').getAttribute('src')
+check('a defeated boss falls back to static art during later enemy phases', () => {
+  assert(deadBossArt && !deadBossArt.includes('/animations/'), deadBossArt)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.act = 1
+  run.combat.phase = 'player'
+  Object.assign(run.combat.enemies[0], { hp: 40, dead: false })
+  debug.setRun(run)
 })
 await page.locator('.board').evaluate((board) => { board.scrollTop = 0 })
 const bossContainment = await page.locator('.board').evaluate((board) => {
@@ -13233,6 +13438,38 @@ for (const [engineName, phoneBrowser, deviceName] of [
       mobileRules: matchMedia('(max-width: 760px)').matches || matchMedia('(max-height: 600px)').matches,
     }
   })
+  const populatedHandLayout = await phonePage.locator('.combat').evaluate((combat) => {
+    const hand = combat.querySelector('.hand-area')
+    const board = combat.querySelector('.board')
+    return {
+      hand: hand.getBoundingClientRect().toJSON(),
+      board: board.getBoundingClientRect().toJSON(),
+      background: getComputedStyle(hand).backgroundImage,
+    }
+  })
+  await phonePage.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].hand = []
+    debug.setRun(run)
+  })
+  await phonePage.waitForFunction(() => document.querySelector('.hand')?.getAttribute('data-count') === '0')
+  const emptyHandLayout = await phonePage.locator('.combat').evaluate((combat) => {
+    const hand = combat.querySelector('.hand-area')
+    const board = combat.querySelector('.board')
+    return {
+      hand: hand.getBoundingClientRect().toJSON(),
+      board: board.getBoundingClientRect().toJSON(),
+      background: getComputedStyle(hand).backgroundImage,
+    }
+  })
+  layout.handTransparent = populatedHandLayout.background === 'none' && emptyHandLayout.background === 'none'
+  layout.handStable = ['top', 'height'].every((key) =>
+    Math.abs(populatedHandLayout.hand[key] - emptyHandLayout.hand[key]) <= 1 &&
+    Math.abs(populatedHandLayout.board[key] - emptyHandLayout.board[key]) <= 1)
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+  await phonePage.waitForFunction((count) => document.querySelectorAll('.hand .card').length === count,
+    combatAppearanceRun.combat.players[0].hand.length)
   await tap(phonePage.getByRole('button', { name: 'Map' }))
   const mapDialog = phonePage.getByRole('dialog', { name: /Act .* map/ })
   await mapDialog.waitFor()
@@ -13332,6 +13569,10 @@ for (const [engineName, phoneBrowser, deviceName] of [
       getComputedStyle(preview).transform)
     await pointerMove(enemyBox.x + enemyBox.width / 2, enemyBox.y + enemyBox.height / 2, 8)
     await phonePage.locator('.enemy--targeted').first().waitFor()
+    await phonePage.waitForFunction(() => {
+      const target = document.querySelector('.enemy--targeted')
+      return target && getComputedStyle(target).outlineStyle !== 'none'
+    })
     const targetOutline = await phonePage.locator('.enemy--targeted').first().evaluate((target) =>
       getComputedStyle(target).outlineStyle)
     await pointerUp()
@@ -13373,6 +13614,8 @@ check('landscape phones render and play the complete desktop combat UI', () => {
     assert(!layout.mobileRules, `${layout.deviceName}: mobile CSS is active`)
     assert(!layout.horizontalOverflow, `${layout.deviceName}: document overflows horizontally`)
     assert(layout.requiredRegions, `${layout.deviceName}: required combat information is missing or clipped`)
+    assert(layout.handTransparent, `${layout.deviceName}: hand paints a black separation bar`)
+    assert(layout.handStable, `${layout.deviceName}: combat reflows when the hand changes between empty and populated`)
     assert(layout.cardCount > 0, `${layout.deviceName}: hand is missing`)
     assertEqual(layout.fallbackIllustrations, 0, `${layout.deviceName}: hidden fallback card art was decoded`)
     assert(layout.mobilePerformance, `${layout.deviceName}: mobile performance mode is inactive`)

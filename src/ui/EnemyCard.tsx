@@ -1,5 +1,5 @@
 import { cardDef } from '../game/cards.ts'
-import { assetPath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
+import { bossAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
 import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
@@ -18,6 +18,8 @@ type EnemyCardProps = {
   label: string
   /** The round's shared die, which decides what a die-pattern enemy will do. */
   die: number
+  acting?: boolean
+  animateBoss?: boolean
   targeted?: boolean
   disabled?: boolean
   hitBeats?: { beat: number; damage: number; delayMs: number }[]
@@ -42,6 +44,17 @@ type EnemyCardProps = {
   defender?: Pick<Player, 'vulnerable' | 'powers'>
   onClick?: (enemy: Enemy) => void
 }
+
+const MELEE_BOSS_ART = new Set([
+  'slime_boss',
+  'guardian_attack',
+  'guardian_defensive',
+  'the_champ',
+  'bronze_automaton',
+  'awakened_one_phase_1',
+  'awakened_one_phase_2',
+  'time_eater',
+])
 
 type IntentPart = {
   icon: IconName
@@ -254,6 +267,8 @@ export function EnemyCard({
   enemy,
   label,
   die,
+  acting = false,
+  animateBoss = false,
   targeted = false,
   disabled = false,
   hitBeats = [],
@@ -271,6 +286,7 @@ export function EnemyCard({
   const [visibleEnemy, setVisibleEnemy] = useState(enemy)
   const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const pendingVisuals = useRef(new Map<number, { eventSeq: number; enemy: Enemy }>())
+  const attackPreload = useRef<HTMLImageElement | null>(null)
   const displayBeat = useRef(0)
   const displayedEventSeq = useRef(visualEventSeq)
   const visualSignature = JSON.stringify(enemy)
@@ -330,6 +346,31 @@ export function EnemyCard({
   const actualName = enemyDef(enemy.defId, enemy.ascension).name
   const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
   const actions = actionsForEnemy(visibleEnemy, die)
+  const animatedBoss = Boolean(visibleEnemy.isBoss && animateBoss && !visibleEnemy.dead)
+  const bossAttacking = Boolean(animatedBoss && acting &&
+    actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence'))
+  const art = animatedBoss
+    ? bossAnimationImagePath(def, bossAttacking ? 'attack' : 'idle')
+    : enemyImagePath(def)
+  const bossAttackArt = animatedBoss ? bossAnimationImagePath(def, 'attack') : undefined
+  useEffect(() => {
+    if (!bossAttackArt) return
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.as = 'image'
+    link.href = bossAttackArt
+    link.dataset.bossAttackPreload = def.artId ?? def.id
+    document.head.append(link)
+    const preload = new Image()
+    attackPreload.current = preload
+    preload.src = bossAttackArt
+    void preload.decode?.().catch(() => undefined)
+    return () => {
+      link.remove()
+      if (attackPreload.current === preload) attackPreload.current = null
+    }
+  }, [bossAttackArt, def.artId, def.id])
+  const bossAttackMotion = animatedBoss && MELEE_BOSS_ART.has(def.artId ?? def.id) ? 'melee' : 'ranged'
   const abilities = enemyAbilities(def)
   // Curiosity adds the defender's Power count to every hit, so it belongs in the
   // preview for the same reason Strength and Weak do.
@@ -356,6 +397,7 @@ export function EnemyCard({
     falling && visibleEnemy.dead ? 'enemy--falling' : '',
     targeted ? 'enemy--targeted' : '',
     visibleEnemy.isBoss ? 'enemy--boss' : '',
+    bossAttacking ? 'enemy--acting' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -366,10 +408,13 @@ export function EnemyCard({
       className={className}
       data-sfx="enemy"
       data-enemy-id={enemy.uid}
+      data-enemy-def={def.id}
+      data-boss-act={def.bossAct}
+      data-attack-motion={bossAttackMotion}
+      data-animation={animatedBoss ? bossAttacking ? 'attack' : 'idle' : 'static'}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
-        ...(def.bossAct ? { backgroundImage: `linear-gradient(rgb(14 12 10 / 0.72), rgb(14 12 10 / 0.88)), url(${assetPath(`backgrounds/boss-act-${def.bossAct}.webp`)})` } : {}),
       } as CSSProperties}
       disabled={enemy.dead || disabled}
       onClick={() => { if (!enemy.dead) onClick?.(enemy) }}
@@ -428,10 +473,11 @@ export function EnemyCard({
 
       <span className="enemy__portrait">
         <img
+          key={`${def.artId ?? def.id}-${bossAttacking ? 'attack' : 'idle'}`}
           className="enemy__art--cutout"
-          src={enemyImagePath(def)}
+          src={art}
           alt=""
-          loading="lazy"
+          loading={visibleEnemy.isBoss ? 'eager' : 'lazy'}
           onError={(event) => {
             // Keep combat usable if a bundled image fails to load.
             event.currentTarget.style.display = 'none'
