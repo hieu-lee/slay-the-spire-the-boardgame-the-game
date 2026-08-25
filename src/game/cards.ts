@@ -1174,12 +1174,12 @@ export const CARDS: Record<string, CardDef> = {
     cost: 1,
     effects: [
       { kind: 'block', amount: 2 },
-      { kind: 'channel', orb: 'frost', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
+      { kind: 'gainEnergy', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
     ],
     upgrade: {
       effects: [
         { kind: 'block', amount: 3 },
-        { kind: 'channel', orb: 'frost', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
+        { kind: 'gainEnergy', amount: 1, when: { kind: 'orbsAtLeast', amount: 3 } },
       ],
     },
   }),
