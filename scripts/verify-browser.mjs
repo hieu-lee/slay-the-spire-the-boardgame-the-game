@@ -471,6 +471,12 @@ check('the title menu fills the viewport without clipping its controls', () => {
 
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
+const characterCopy = {}
+for (const name of ['Ironclad', 'Silent', 'Defect', 'Watcher']) {
+  await page.getByRole('button', { name, exact: true }).click()
+  characterCopy[name] = await page.locator('.start-menu__character-copy').innerText()
+}
+await page.getByRole('button', { name: 'Ironclad', exact: true }).click()
 const characterSelection = await page.locator('.start-menu__character-select').evaluate((screen) => {
   const box = screen.getBoundingClientRect()
   const hero = screen.querySelector('.start-menu__character-hero')?.getBoundingClientRect()
@@ -486,6 +492,15 @@ check('Single Player opens a contained visual character picker before starting',
   assertEqual(characterSelection.choices, 4)
   assert(characterSelection.contained, 'character selection needs a nested scrollbar')
   assert(characterSelection.heroContained, 'selected character art leaves the selection frame')
+  for (const [name, special] of Object.entries({
+    Ironclad: 'Burning Blood · End of combat: heal 1 HP.',
+    Silent: 'Ring of the Snake · Start of combat: draw 2 cards.',
+    Defect: 'Cracked Core · Start of combat: channel 1 Lightning.',
+    Watcher: 'Pure Water · Start of combat: gain 1 Miracle.',
+  })) {
+    assert(characterCopy[name].includes(special), `${name} is missing its special effect`)
+    assert(characterCopy[name].length > 200, `${name} description is still too short`)
+  }
 })
 
 await page.getByRole('button', { name: 'Compendium' }).click()
@@ -12009,9 +12024,22 @@ await page.waitForFunction((before) =>
   window.__SFX_PLAYS__.slice(before).includes('/assets/sfx/defeat.ogg'), eventDefeatSoundBefore)
 await page.getByRole('button', { name: 'Record campaign result' }).click()
 await page.getByRole('button', { name: 'Begin next run →' }).click()
+await page.getByRole('heading', { name: 'Ironclad', exact: true }).waitFor()
+const runBeforeEmbark = await readRun()
+await page.getByRole('button', { name: 'Back', exact: true }).click()
+await page.getByRole('button', { name: 'Compendium', exact: true }).click()
+await page.locator('.compendium').waitFor()
+await page.getByRole('button', { name: 'Back to main menu', exact: true }).click()
+await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
+const nextRunPickerAfterRemount = await page.getByRole('heading', { name: 'Ironclad', exact: true }).count()
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Embark' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
 const ascensionRetry = await readRun()
-check('the campaign journal next run preserves every Ascension setup modifier', () => {
+check('the campaign journal returns to character select and preserves every Ascension setup modifier', () => {
+  assertEqual(runBeforeEmbark.campaign.finalized, true, 'Begin next run started before choosing a character')
+  assertEqual(nextRunPickerAfterRemount, 0, 'backing out of a next run reopened character select after a menu remount')
+  assert(ascensionRetry.seed !== runBeforeEmbark.seed, 'the next run reused the previous seed')
   assertEqual(ascensionRetry.ascension, 9)
   assertEqual(ascensionRetry.players[0].maxHp, 9)
   assertEqual(ascensionRetry.players[0].hp, 8)

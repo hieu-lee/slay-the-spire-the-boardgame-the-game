@@ -161,7 +161,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   onSettings: (settings: GameSettings) => void
   active: boolean
 }) {
-  const [playerCount, setPlayerCount] = useState(1)
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
   const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])
@@ -171,6 +170,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
+  const [choosingNextCharacter, setChoosingNextCharacter] = useState(false)
   const updateCombat = useCallback((next: CombatState) => {
     setRun((current) => ({ ...current, combat: next }))
   }, [])
@@ -229,7 +229,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     const nextCharacters = legalCharacters(selected)
     const progress = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
     const legalAscension = Math.min(nextAscension, progress.highestAscension)
-    setPlayerCount(count)
     setSeedText(seed)
     setAscension(legalAscension)
     setCharacters(nextCharacters)
@@ -341,14 +340,17 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         : current.filter((candidate) => candidate !== id))}
       onQuickStartAct={setQuickStartAct}
       onStart={() => {
+        setChoosingNextCharacter(false)
         restart(1, seedText, ascension, false, false, characters, metaOptions)
         onOpen()
       }}
       onOnline={onOnline}
       onCompendium={() => setCompendium(true)}
       onAchievements={() => setAchievements(true)}
+      onCharacterBack={() => setChoosingNextCharacter(false)}
       settings={settings}
       onSettings={onSettings}
+      initiallyChoosingCharacter={choosingNextCharacter}
     />
   }
 
@@ -611,7 +613,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         </section>
       ) : null}
 
-      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => restart(playerCount, crypto.randomUUID(), Math.min(ascension, run.campaignProgress.highestAscension))}>Begin next run →</button> : null}</div></section> : null}
+      {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => { setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Begin next run →</button> : null}</div></section> : null}
 
       {/* Not on Neow: it is a full-bleed painted scene with seat cards in the
           bottom-left and Skip keys in the bottom-right, so the fixed log tab
