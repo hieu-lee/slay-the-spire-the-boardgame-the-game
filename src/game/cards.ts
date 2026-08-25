@@ -2187,6 +2187,7 @@ export const CARDS: Record<string, CardDef> = {
   }),
   blizzard: card({
     id: 'blizzard', name: 'Blizzard', owner: 'defect', type: 'attack', rarity: 'uncommon', cost: 1,
+    target: 'row',
     effects: [{ kind: 'hit', amount: 2, times: { base: 0, per: 'frostOrbs' } }],
     upgrade: { effects: [{ kind: 'hit', amount: 3, times: { base: 0, per: 'frostOrbs' } }] },
   }),
