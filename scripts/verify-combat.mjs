@@ -4800,6 +4800,22 @@ check('Panache targets a row and reads the hand when its ordered end-turn abilit
   }), staleCardTarget, 'ordinary row cards must still reject a dead target')
 })
 
+check('a queued summon does not make targetless Lightning brick end turn', () => {
+  const state = combat([makePlayer({ character: 'defect', orbs: ['lightning', null, null] })], [
+    makeEnemy({ uid: 'boss', hp: 0, maxHp: 44, dead: true, isBoss: true }),
+  ])
+  state.pendingSummons = [{
+    sourceUid: 'boss', row: 0, defIds: ['acid_slime'], turn: state.turn,
+    direct: true, timing: 'endOfTurn',
+  }]
+
+  assertEqual(endTurnAbilities(state).some((ability) => ability.id === 'p1/orb:0'), false)
+  const ended = endPlayerTurn(state)
+  assertEqual(ended.phase, 'enemy')
+  assert(ended.enemies.some((enemy) => enemy.defId === 'acid_slime' && !enemy.dead),
+    'the queued summon did not resolve')
+})
+
 check('Apotheosis improves only starter Strikes and Defends for the combat', () => {
   for (const upgraded of [false, true]) {
     const apotheosis = instance('apotheosis', upgraded)
