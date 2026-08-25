@@ -184,6 +184,8 @@
 }
 
 .start-menu__character-copy > p { font-size: clamp(1rem, 1.5vw, 1.25rem); line-height: 1.45; }
+.start-menu__character-copy .start-menu__character-special { color: #d7eaf0; font-size: clamp(0.9rem, 1.2vw, 1.05rem); }
+.start-menu__character-special strong { color: #f5cf62; }
 
 .start-menu__character-hero {
   align-self: stretch;

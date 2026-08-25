@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { assetPath, characterHeroArt } from '../game/assets.ts'
 import type { DailyModifier, DailyModifierId, RunMode } from '../game/meta.ts'
+import { relicDef, STARTING_RELIC } from '../game/relics.ts'
 import type { CharacterId } from '../game/types.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -26,8 +27,10 @@ type StartMenuProps = {
   onOnline?: () => void
   onCompendium: () => void
   onAchievements: () => void
+  onCharacterBack: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
+  initiallyChoosingCharacter?: boolean
 }
 
 const HEROES: { id: CharacterId; name: string }[] = [
@@ -38,10 +41,10 @@ const HEROES: { id: CharacterId; name: string }[] = [
 ]
 
 const HERO_COPY: Record<CharacterId, string> = {
-  ironclad: 'A relentless warrior who trades health for overwhelming strength.',
-  silent: 'A precise huntress who turns poison and preparation into lethal turns.',
-  defect: 'A combat automaton that channels orbs for power that builds over time.',
-  watcher: 'A disciplined ascetic who changes stances to control risk and reward.',
+  ironclad: 'The sole survivor of the Ironclads sold his soul for demonic power. He starts with the most HP, builds Strength to empower every hit, and turns Exhaust into fuel for devastating attacks.',
+  silent: 'A deadly huntress from the foglands who eradicates foes with daggers and poison. She can stack lasting Poison or gather Shivs for explosive turns, rewarding patience and careful preparation.',
+  defect: 'An ancient combat automaton that became self-aware and learned to manipulate Orbs. Channel Lightning, Frost, and Dark, then Evoke them at the right moment to turn stored power into victory.',
+  watcher: 'A blind ascetic who came to evaluate the Spire and mastered its divine Stances. Shift between Calm and Wrath to control risk, use Miracles for extra Energy, and Scry toward the perfect turn.',
 }
 
 export function StartMenu({
@@ -62,14 +65,17 @@ export function StartMenu({
   onOnline,
   onCompendium,
   onAchievements,
+  onCharacterBack,
   settings,
   onSettings,
+  initiallyChoosingCharacter = false,
 }: StartMenuProps) {
   const [selection, setSelection] = useState('Single Player')
-  const [choosingCharacter, setChoosingCharacter] = useState(false)
+  const [choosingCharacter, setChoosingCharacter] = useState(initiallyChoosingCharacter)
   const runSettingsDialog = useRef<HTMLDialogElement>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
+  const special = relicDef(STARTING_RELIC[hero.id]!)
   return (
     <main className="start-menu">
       <div className="start-menu__profile" aria-label="Current profile">
@@ -102,6 +108,7 @@ export function StartMenu({
           <p>Choose your character</p>
           <h1 id="character-select-title">{hero.name}</h1>
           <p>{HERO_COPY[hero.id]}</p>
+          <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p>
           <small>Ascension {ascension}</small>
         </div>
         <img className="start-menu__character-hero" src={assetPath(characterHeroArt(hero.id))} alt={hero.name} />
@@ -114,7 +121,7 @@ export function StartMenu({
           </button>)}
         </div>
         <div className="start-menu__character-actions">
-          <button type="button" onClick={() => setChoosingCharacter(false)}>Back</button>
+          <button type="button" onClick={() => { setChoosingCharacter(false); onCharacterBack() }}>Back</button>
           <button type="button" onClick={() => runSettingsDialog.current?.showModal()}>Run settings</button>
           <button type="button" className="is-chosen" onClick={onStart}>Embark</button>
         </div>
