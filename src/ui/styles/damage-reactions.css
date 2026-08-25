@@ -139,32 +139,122 @@
 }
 
 .pip--energy {
+  --energy-orb-shape: circle(50%);
+  --energy-orb-frame: linear-gradient(145deg, #35130f, #d9a85b 18%, #6f291d 37%, #f1c36a 52%, #4c1a17 72%, #a24a2c);
+  --energy-orb-liquid:
+    radial-gradient(circle at 38% 28%, #fff3a5 0 8%, transparent 28%),
+    radial-gradient(circle at 62% 68%, #ffb21f 0 18%, transparent 45%),
+    conic-gradient(from 205deg, #7e1414, #e14416, #ffad1c, #d52b12, #7e1414);
+  --energy-orb-flow:
+    radial-gradient(ellipse at 30% 65%, rgb(255 245 171 / 0.9) 0 10%, transparent 30%),
+    radial-gradient(ellipse at 72% 34%, rgb(255 191 47 / 0.8) 0 12%, transparent 34%);
+  --energy-orb-glow: rgb(255 105 35 / 0.62);
   position: absolute;
   z-index: 8;
   left: clamp(0.75rem, 2vw, 2rem);
   bottom: 4.1rem;
+  display: grid;
+  place-items: center;
   width: 4.25rem;
   height: 4.25rem;
-  border: 3px solid #7b3122;
-  background: radial-gradient(circle at 42% 36%, #ffd779, #d95b2a 54%, #6a181c 100%);
-  box-shadow: inset 0 -8px 12px rgb(0 0 0 / 0.35), 0 0 18px rgb(235 98 42 / 0.38);
+  overflow: hidden;
+  isolation: isolate;
+  border: 0;
+  border-radius: 0;
+  clip-path: var(--energy-orb-shape);
+  background: var(--energy-orb-frame);
+  filter: drop-shadow(0 0.22rem 0.18rem rgb(0 0 0 / 0.8)) drop-shadow(0 0 0.65rem var(--energy-orb-glow));
+}
+
+.pip--energy[data-character='silent'] {
+  --energy-orb-shape: polygon(50% 0, 97% 42%, 85% 91%, 15% 91%, 3% 42%);
+  --energy-orb-frame: linear-gradient(145deg, #d5d0a4, #3e4b3d 24%, #b9a875 43%, #27352f 68%, #847658);
+  --energy-orb-liquid:
+    radial-gradient(circle at 36% 30%, #9bffd4 0 7%, transparent 27%),
+    radial-gradient(circle at 63% 72%, #0bd27f 0 18%, transparent 46%),
+    conic-gradient(from 190deg, #053c29, #08794a, #16d686, #05704c, #053c29);
+  --energy-orb-flow:
+    radial-gradient(ellipse at 28% 66%, rgb(128 255 210 / 0.78) 0 11%, transparent 31%),
+    radial-gradient(ellipse at 72% 32%, rgb(20 242 151 / 0.78) 0 12%, transparent 35%);
+  --energy-orb-glow: rgb(20 221 137 / 0.5);
+}
+
+.pip--energy[data-character='defect'] {
+  --energy-orb-shape: polygon(14% 0, 86% 0, 100% 14%, 100% 86%, 86% 100%, 14% 100%, 0 86%, 0 14%);
+  --energy-orb-frame: linear-gradient(145deg, #e7d798, #4c594f 22%, #c3a968 42%, #263d42 68%, #837856);
+  --energy-orb-liquid:
+    radial-gradient(circle at 38% 28%, #c9fbff 0 8%, transparent 28%),
+    radial-gradient(circle at 60% 70%, #19bce7 0 20%, transparent 48%),
+    conic-gradient(from 210deg, #073c67, #087fa9, #38d7ef, #075f99, #073c67);
+  --energy-orb-flow:
+    radial-gradient(ellipse at 28% 66%, rgb(201 251 255 / 0.86) 0 10%, transparent 31%),
+    radial-gradient(ellipse at 73% 34%, rgb(38 214 255 / 0.82) 0 13%, transparent 35%);
+  --energy-orb-glow: rgb(29 190 235 / 0.58);
+}
+
+.pip--energy[data-character='watcher'] {
+  --energy-orb-shape: polygon(50% 0, 96% 39%, 91% 75%, 73% 100%, 27% 100%, 9% 75%, 4% 39%);
+  --energy-orb-frame: linear-gradient(145deg, #e5d79f, #4b463c 23%, #c7ad73 43%, #302c30 68%, #8e7c5e);
+  --energy-orb-liquid:
+    radial-gradient(circle at 38% 28%, #f6cfff 0 8%, transparent 28%),
+    radial-gradient(circle at 61% 70%, #b83ee8 0 20%, transparent 48%),
+    conic-gradient(from 200deg, #35105d, #7522a5, #d864ee, #66218e, #35105d);
+  --energy-orb-flow:
+    radial-gradient(ellipse at 28% 66%, rgb(248 204 255 / 0.84) 0 10%, transparent 31%),
+    radial-gradient(ellipse at 72% 33%, rgb(213 99 247 / 0.82) 0 13%, transparent 35%);
+  --energy-orb-glow: rgb(184 69 235 / 0.56);
+}
+
+.pip--energy::before,
+.pip--energy::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  clip-path: var(--energy-orb-shape);
+}
+
+.pip--energy::before {
+  z-index: 0;
+  background: var(--energy-orb-liquid);
+  box-shadow: inset 0 -0.55rem 0.7rem rgb(0 0 0 / 0.42), inset 0 0 0 1px rgb(255 255 255 / 0.28);
+}
+
+.pip--energy::after {
+  z-index: 1;
+  background: var(--energy-orb-flow);
+  background-position: 18% 22%;
+  background-size: 145% 145%;
+  mix-blend-mode: screen;
+  filter: blur(1px);
+  animation: energy-liquid-flow 3.8s ease-in-out infinite alternate;
+}
+
+@keyframes energy-liquid-flow {
+  to { background-position: 84% 72%; transform: rotate(9deg) scale(1.08); }
 }
 
 .pip--energy .icon-value {
+  position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   justify-content: center;
 }
 
 .pip--energy .icon {
-  width: 1.35rem;
-  height: 1.35rem;
+  display: none;
 }
 
 .pip--energy .icon-value__number {
   font-size: 1.65rem;
   line-height: 1;
-  text-shadow: 0 1px 1px rgb(255 226 150 / 0.45);
+  color: #fff8dc;
+  -webkit-text-stroke: 1px #1d1010;
+  text-shadow: 0 2px 2px #000, 0 0 0.32rem #000;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pip--energy::after { animation: none; }
 }
 
 .pile {

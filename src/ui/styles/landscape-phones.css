@@ -9,6 +9,7 @@ html[data-mobile-performance='true'] .hand .card--drawn,
 html[data-mobile-performance='true'] .motion-pulse-0,
 html[data-mobile-performance='true'] .motion-pulse-1,
 html[data-mobile-performance='true'] .token--orb::before,
+html[data-mobile-performance='true'] .pip--energy::after,
 html[data-mobile-performance='true'] .seat--targetable {
   animation: none;
 }

@@ -10578,53 +10578,78 @@ check('combat HUD icons have bundled fallbacks when rulebook icons are not synce
   assertDeepEqual(brokenHudIcons, [])
 })
 
-// The energy count sits ON the gold disc, so it cannot be gold.
-const energyContrast = await page.evaluate(() => {
+const energyReadability = await page.evaluate(() => {
   const pip = document.querySelector('.pip--energy')
   const number = pip?.querySelector('.icon-value__number')
   if (!pip || !number) return { missing: true }
   const pipBox = pip.getBoundingClientRect()
   const numberBox = number.getBoundingClientRect()
-  const iconBox = pip.querySelector('.icon').getBoundingClientRect()
-  const pairBox = {
-    left: Math.min(numberBox.left, iconBox.left),
-    right: Math.max(numberBox.right, iconBox.right),
-    top: Math.min(numberBox.top, iconBox.top),
-    bottom: Math.max(numberBox.bottom, iconBox.bottom),
-  }
-  const parse = (value) => (value.match(/\d+/g) ?? []).slice(0, 3).map(Number)
-  const lum = ([r, g, b]) => {
-    const channel = (v) => {
-      const c = v / 255
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-    }
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-  }
-  const ink = lum(parse(getComputedStyle(number).color))
-  // The disc is a gradient; sample its lightest declared stop conservatively.
-  const plate = lum([255, 226, 150])
-  const ratio = (Math.max(ink, plate) + 0.05) / (Math.min(ink, plate) + 0.05)
+  const style = getComputedStyle(number)
   return {
     missing: false,
-    ratio,
-    pairCenterOffset: Math.hypot(
-      (pairBox.left + pairBox.right - pipBox.left - pipBox.right) / 2,
-      (pairBox.top + pairBox.bottom - pipBox.top - pipBox.bottom) / 2,
+    strokeWidth: parseFloat(style.getPropertyValue('-webkit-text-stroke-width')),
+    shadow: style.textShadow,
+    centerOffset: Math.hypot(
+      (numberBox.left + numberBox.right - pipBox.left - pipBox.right) / 2,
+      (numberBox.top + numberBox.bottom - pipBox.top - pipBox.bottom) / 2,
     ),
-    contained: pairBox.left >= pipBox.left && pairBox.right <= pipBox.right &&
-      pairBox.top >= pipBox.top && pairBox.bottom <= pipBox.bottom,
+    contained: numberBox.left >= pipBox.left && numberBox.right <= pipBox.right &&
+      numberBox.top >= pipBox.top && numberBox.bottom <= pipBox.bottom,
   }
 })
-check('the energy count is readable on its disc', () => {
-  assert(!energyContrast.missing, 'expected an energy pip')
-  assert(
-    energyContrast.ratio >= 4.5,
-    `the count contrasts at ${energyContrast.ratio.toFixed(2)}:1 against the disc`,
-  )
-  assert(energyContrast.contained, 'the energy count is clipped by its disc')
-  assert(energyContrast.pairCenterOffset <= 1,
-    `the energy count and icon are ${energyContrast.pairCenterOffset}px off-centre`)
+check('the energy count stays outlined, centred, and unclipped', () => {
+  assert(!energyReadability.missing, 'expected an energy pip')
+  assert(energyReadability.strokeWidth >= 1, 'the count needs a dark outline over moving liquid')
+  assert(energyReadability.shadow !== 'none', 'the count needs a shadow over bright liquid')
+  assert(energyReadability.contained, 'the energy count is clipped by its orb')
+  assert(energyReadability.centerOffset <= 1,
+    `the energy count is ${energyReadability.centerOffset}px off-centre`)
 })
+
+const energyOrbVariants = []
+for (const character of ['ironclad', 'silent', 'defect', 'watcher']) {
+  await page.evaluate((nextCharacter) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    for (const player of run.combat.players) player.character = nextCharacter
+    debug.setRun(run)
+  }, character)
+  await page.waitForFunction((nextCharacter) =>
+    document.querySelector('.pip--energy')?.dataset.character === nextCharacter, character)
+  energyOrbVariants.push(await page.locator('.pip--energy').evaluate((pip) => ({
+    character: pip.dataset.character,
+    shape: getComputedStyle(pip).clipPath,
+    liquid: getComputedStyle(pip, '::before').backgroundImage,
+    flow: getComputedStyle(pip, '::after').backgroundImage,
+    animation: getComputedStyle(pip, '::after').animationName,
+  })))
+}
+check('each character has a distinct animated energy orb', () => {
+  assertDeepEqual(energyOrbVariants.map(({ character }) => character), ['ironclad', 'silent', 'defect', 'watcher'])
+  assertEqual(new Set(energyOrbVariants.map(({ shape }) => shape)).size, 4, 'orb silhouettes')
+  assertEqual(new Set(energyOrbVariants.map(({ liquid }) => liquid)).size, 4, 'orb liquids')
+  assert(energyOrbVariants.every(({ flow }) => flow !== 'none'), 'every orb needs a liquid-flow layer')
+  assert(energyOrbVariants.every(({ animation }) => animation === 'energy-liquid-flow'),
+    'every liquid-flow layer needs to move')
+})
+
+const energyFlowStart = await page.locator('.pip--energy').evaluate((pip) =>
+  getComputedStyle(pip, '::after').backgroundPosition)
+await page.waitForTimeout(160)
+const energyFlowEnd = await page.locator('.pip--energy').evaluate((pip) =>
+  getComputedStyle(pip, '::after').backgroundPosition)
+check('the energy liquid visibly flows over time', () => {
+  assert(energyFlowStart !== energyFlowEnd,
+    `the liquid stayed frozen at ${energyFlowStart}`)
+})
+
+await page.emulateMedia({ reducedMotion: 'reduce' })
+const reducedEnergyMotion = await page.locator('.pip--energy').evaluate((pip) =>
+  getComputedStyle(pip, '::after').animationName)
+check('the energy liquid respects reduced motion', () => {
+  assertEqual(reducedEnergyMotion, 'none')
+})
+await page.emulateMedia({ reducedMotion: 'no-preference' })
 
 const energyDrawStack = await page.evaluate(() => {
   const energy = document.querySelector('.pip--energy')?.getBoundingClientRect()
@@ -13428,7 +13453,8 @@ for (const [engineName, phoneBrowser, deviceName] of [
       )].some((element) => element.getAnimations().some((animation) =>
         animation.effect?.getTiming().iterations === Infinity)) ||
         [...document.querySelectorAll('.token--orb:not(.token--orb-empty)')]
-          .some((orb) => getComputedStyle(orb, '::before').animationName !== 'none'),
+          .some((orb) => getComputedStyle(orb, '::before').animationName !== 'none') ||
+        getComputedStyle(document.querySelector('.pip--energy'), '::after').animationName !== 'none',
       unplayableOpacity,
       selectedOutline,
       clippedCards: cards.filter((card) => {
