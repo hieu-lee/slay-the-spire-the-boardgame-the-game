@@ -3663,7 +3663,7 @@ function CombatScreenView({
             'pip',
             'pip--energy',
             motionActive.has('energy') ? `motion-pulse-${motionBeats.energy % 2}` : '',
-          ].filter(Boolean).join(' ')} title="Energy">
+          ].filter(Boolean).join(' ')} data-character={viewer.character} title="Energy">
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
           <span className={['pile', motionActive.has('draw')
