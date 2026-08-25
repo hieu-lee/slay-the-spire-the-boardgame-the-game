@@ -7,6 +7,7 @@
 // dozen chances to forget one, and the engine is free to add a thirteenth. A
 // deck diff cannot be forgotten: if the cardboard changed, the animation plays.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CARDS } from '../game/cards.ts'
 import type { CardInstance } from '../game/types.ts'
 import type { CardMorphRequest } from './CardMorph.tsx'
 
@@ -22,8 +23,10 @@ import type { CardMorphRequest } from './CardMorph.tsx'
  * Curse gain. Plain rewards only add and removals only subtract, so neither can
  * be mistaken for a transform.
  *
- * Plain removals surface every departed card. They cannot be confused with a
- * transform because that shape also has an arrival.
+ * Plain removals surface every departed non-Status card. Temporary Status cards
+ * return to their shared supply after combat, which is cleanup rather than a
+ * player-facing deck change. Removals cannot be confused with a transform
+ * because that shape also has an arrival.
  *
  * Gains are the one plain-add shape this DOES surface, and only when the
  * caller explicitly arms it (`gainArmed`): a card that was never shown to the
@@ -56,7 +59,8 @@ export function diffDeckMorphs(
       key: `upgrade-${card.uid}`,
     }))
 
-  const gone = before.filter((card) => !current.has(card.uid))
+  const gone = before.filter((card) =>
+    !current.has(card.uid) && CARDS[card.defId]?.owner !== 'status')
   const arrived = after.filter((card) => !previous.has(card.uid))
   const transforms = gone.length > 0 && arrived.length >= gone.length && upgrades.length === 0
     ? gone.map((card, index) => ({
