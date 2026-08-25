@@ -159,6 +159,7 @@ export {
   giveUpFight,
   giveUpRun,
   canGiveUpRun,
+  migrateLegacyBossRareRewards,
   victoryIsTerminal,
   purchaseAtMerchant,
   revealCourier,

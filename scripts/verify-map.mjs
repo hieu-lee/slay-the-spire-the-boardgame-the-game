@@ -1147,19 +1147,20 @@ check('defeating the Corrupt Heart ends without an unusable boss Relic reward', 
   assertDeepEqual(resolved.rewards, [])
 })
 
-check('Act I and II bosses pay every player their printed gold, card, and Boss Relic rewards', () => {
+check('Act I and II bosses pay every player their printed gold, Rare, and Boss Relic rewards', () => {
   const seats = [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
     { id: 'p2', name: 'Silent', character: 'silent' },
     { id: 'p3', name: 'Defect', character: 'defect' },
     { id: 'p4', name: 'Watcher', character: 'watcher' },
   ]
-  for (const ascension of [0, 10]) for (let count = 1; count <= 4; count++) {
+  for (const [act, boss] of [[1, 'slime_boss'], [2, 'the_collector']]) for (const ascension of [0, 10]) for (let count = 1; count <= 4; count++) {
     const run = postNeowRun(940 + ascension + count, seats.slice(0, count), ascension)
     const bossId = run.map.rows.at(-1)[0]
     const entered = enterRoom({
       ...run,
-      actBossDefId: 'slime_boss',
+      act,
+      actBossDefId: boss,
       map: { ...run.map, position: run.map.rows.at(-2)[0] },
     }, bossId)
     const goldBefore = entered.players.map((player) => player.gold)
@@ -1168,14 +1169,78 @@ check('Act I and II bosses pay every player their printed gold, card, and Boss R
     const resolved = resolveCombat(entered)
     const gold = ascension >= 10 ? 2 : 3
     assertDeepEqual(resolved.players.map((player, index) => player.gold - goldBefore[index]),
-      Array(count).fill(gold), `${count}P A${ascension} boss gold`)
+      Array(count).fill(gold), `Act ${act} ${count}P A${ascension} boss gold`)
     assertEqual(resolved.rewards.length, count, `${count}P A${ascension} reward owners`)
     for (const reward of resolved.rewards) {
-      assertEqual(reward.cardReward, true, 'the normal Card Reward is present')
+      assertEqual(reward.cardReward, true, 'the Rare Reward is present')
+      assertEqual(reward.cardSource, 'rare')
       assertEqual(reward.upgraded, false)
       assert(reward.bossRelics.length > 0, 'the shared Boss Relic offer is present')
     }
+    let revealed = resolved
+    for (const player of resolved.players) {
+      const expected = player.rareRewards.slice(0, 3)
+      revealed = revealCardReward(revealed, player.id)
+      assertDeepEqual(revealed.rewards.find((reward) => reward.playerId === player.id).choices, expected,
+        `${player.name} was not offered the top three character rares`)
+    }
   }
+})
+
+check('boss Rare and Prismatic reveals reserve shared physical cards in either reveal order', () => {
+  const run = postNeowRun(967, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    actBossDefId: 'slime_boss',
+    players: run.players.map((player) => player.id === 'p2' ? {
+      ...player, relics: [...player.relics, { defId: 'prismatic_shard', spent: false }],
+    } : player),
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const offered = resolveCombat(entered)
+  const originalRares = offered.players.map((player) => [...player.rareRewards].sort())
+  for (const order of [['p1', 'p2'], ['p2', 'p1']]) {
+    let revealed = structuredClone(offered)
+    for (const playerId of order) revealed = playerId === 'p2'
+      ? revealCardReward(revealed, playerId, ['ironclad', 'silent', 'defect'])
+      : revealCardReward(revealed, playerId)
+    const red = revealed.rewards.find((reward) => reward.playerId === 'p1').choices
+    const prism = revealed.rewards.find((reward) => reward.playerId === 'p2').choices
+    assertEqual(red.some((card) => prism.includes(card)), false, `${order.join(' then ')} duplicated a physical rare`)
+    const settled = resolveCardRewards(revealed, { p1: null, p2: null })
+    assertDeepEqual(settled.players.map((player) => [...player.rareRewards].sort()), originalRares,
+      `${order.join(' then ')} did not conserve character rare decks`)
+  }
+})
+
+check('revealing the last Rare refreshes Prismatic sources and stale submissions are atomic', () => {
+  const run = postNeowRun(968, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    actBossDefId: 'slime_boss',
+    players: run.players.map((player) => player.id === 'p1' ? { ...player, rareRewards: ['feed'] } : player.id === 'p2' ? {
+      ...player, relics: [...player.relics, { defId: 'prismatic_shard', spent: false }],
+    } : player),
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const offered = resolveCombat(entered)
+  assert(offered.rewards.find((reward) => reward.playerId === 'p2').availableSources.includes('ironclad'))
+  const revealed = revealCardReward(offered, 'p1')
+  assertEqual(revealed.rewards.find((reward) => reward.playerId === 'p2').availableSources.includes('ironclad'), false)
+  assertEqual(revealCardReward(revealed, 'p2', ['ironclad', 'silent', 'defect']), revealed,
+    'a stale source selection partially reserved cards')
 })
 
 check('persisted pre-fix boss combats receive their printed rewards on resolution', () => {
@@ -1187,6 +1252,7 @@ check('persisted pre-fix boss combats receive their printed rewards on resolutio
     map: { ...run.map, position: run.map.rows.at(-2)[0] },
   }, bossId)
   const gold = entered.players[0].gold
+  const rares = entered.players[0].rareRewards.slice(0, 3)
   entered.combat.phase = 'won'
   entered.combat.enemies = entered.combat.enemies.map((enemy) => ({
     ...enemy, hp: 0, dead: true, goldReward: 0, cardReward: null,
@@ -1194,10 +1260,12 @@ check('persisted pre-fix boss combats receive their printed rewards on resolutio
   const resolved = resolveCombat(entered)
   assertEqual(resolved.players[0].gold, gold + 3)
   assertEqual(resolved.rewards[0].cardReward, true)
+  assertEqual(resolved.rewards[0].cardSource, 'rare')
   assert(resolved.rewards[0].bossRelics.length > 0)
+  assertDeepEqual(revealCardReward(resolved, 'p1').rewards[0].choices, rares)
 })
 
-check('boss Card Rewards and Orrery settle in either order without corrupting reward decks', () => {
+check('boss Rare Rewards and Orrery settle in either order without corrupting reward decks', () => {
   const run = postNeowRun(965, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const bossId = run.map.rows.at(-1)[0]
   const entered = enterRoom({
@@ -1233,6 +1301,22 @@ check('boss Card Rewards and Orrery settle in either order without corrupting re
     cardFirst.players[0].deck.slice(deckSize).map((card) => card.defId).sort(),
     'reward order duplicated or discarded a gained card',
   )
+})
+
+check('Transformed does not replace a boss Rare Reward', () => {
+  const run = postNeowRun(966, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const bossId = run.map.rows.at(-1)[0]
+  const entered = enterRoom({
+    ...run,
+    meta: { mode: 'custom', modifierIds: ['transformed'] },
+    actBossDefId: 'slime_boss',
+    map: { ...run.map, position: run.map.rows.at(-2)[0] },
+  }, bossId)
+  entered.combat.phase = 'won'
+  entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+  const resolved = resolveCombat(entered)
+  assertEqual(resolved.rewards[0].cardSource, 'rare')
+  assertEqual(resolved.rewards[0].transformReward, false)
 })
 
 check('Act III bosses have no unprinted Boss Relic reward', () => {

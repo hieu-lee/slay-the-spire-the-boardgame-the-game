@@ -26,8 +26,8 @@ not used.
 - Summons come from finite shuffled physical supplies and keep authoritative
   left-to-right acting order. Split and Awakened One use their printed delayed
   arrival timing.
-- Act I-II bosses give every player 3 Gold (2 at Ascension 10+) and a normal
-  Card Reward, then reveal player count plus one Boss Relics (three solo) from
+- Act I-II bosses give every player 3 Gold (2 at Ascension 10+) and a Rare
+  Reward, then reveal player count plus one Boss Relics (three solo) from
   the complete 20-card physical deck as one shared face-up draft. Act III boss
   cards print no rewards.
 - The Ascension 11 Spire Shield/Spear elite gives every player an upgraded Card

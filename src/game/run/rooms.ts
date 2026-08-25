@@ -319,13 +319,14 @@ export function resolveCombat(state: RunState): RunState {
       bossRelics: false as const,
     }]
     const source = sharedReward ?? combat.enemies.find((enemy) => enemy.row === player.row)
+    const rareReward = printedBossRewards
     const printedCardReward = wasBonusBoss || printedBossRewards ? 'normal' : source?.cardReward
-    const transformedReward = modifier('transformed') && printedCardReward === 'normal'
+    const transformedReward = modifier('transformed') && printedCardReward === 'normal' && !rareReward
     const vintageReward = modifier('vintage') && printedCardReward === 'normal' && !wasElite && !wasBoss
     const prismatic = hasRelic(player, 'prismatic_shard')
-    const rewardSources = prismatic ? availableRewardSources(state, false) : undefined
+    const rewardSources = prismatic ? availableRewardSources(state, rareReward) : undefined
     const cardReward = Boolean(printedCardReward && !transformedReward && !vintageReward &&
-      (prismatic ? (rewardSources?.length ?? 0) >= 3 : player.cardRewards.length > 0))
+      (prismatic ? (rewardSources?.length ?? 0) >= 3 : (rareReward ? player.rareRewards : player.cardRewards).length > 0))
     const potionCount = Number(source?.potionReward === true) + Number(hasRelic(player, 'white_beast_statue'))
     const potion: false | null = potionCount > 0 ? null : false
     // Elite relics are resolved by the shared physical room reward below.
@@ -334,6 +335,7 @@ export function resolveCombat(state: RunState): RunState {
     return [{
       playerId: player.id,
       cardReward,
+      cardSource: rareReward ? 'rare' : 'ordinary',
       prismatic: cardReward && prismatic,
       availableSources: cardReward && prismatic ? rewardSources : undefined,
       transformReward: transformedReward,
