@@ -109,27 +109,26 @@ check('a forced full-board channel uses the chosen Orb slot', () => {
   assertEqual(next.players[0].block, 1, 'the chosen Frost evokes before Lightning fills its slot')
 })
 
-check('Charge Battery channels Frost only from a full Orb board', () => {
-  const quietCard = instance('charge_battery')
-  const quiet = playCard(
-    combat([player({ hand: [quietCard], orbs: ['lightning', 'dark', null] })], [enemy()]),
-    'p1', quietCard.uid, { enemyUid: null, playerId: 'p1' },
-  )
-  assertEqual(quiet.players[0].block, 2)
-  assertDeepEqual(quiet.players[0].orbs, ['lightning', 'dark', null], 'two Orbs do not satisfy the condition')
+check('Charge Battery gains 1 Energy only from a full Orb board', () => {
+  for (const upgraded of [false, true]) {
+    const quietCard = instance('charge_battery', upgraded)
+    const quiet = playCard(
+      combat([player({ hand: [quietCard], orbs: ['lightning', 'dark', null] })], [enemy()]),
+      'p1', quietCard.uid, { enemyUid: null, playerId: 'p1' },
+    )
+    assertEqual(quiet.players[0].block, upgraded ? 3 : 2)
+    assertEqual(quiet.players[0].energy, 2, 'two Orbs do not satisfy the condition')
+    assertDeepEqual(quiet.players[0].orbs, ['lightning', 'dark', null], 'Charge Battery does not change Orbs')
 
-  const fullCard = instance('charge_battery', true)
-  const full = playCard(
-    combat([player({ hand: [fullCard], orbs: ['lightning', 'frost', 'dark'] })], [enemy()]),
-    'p1', fullCard.uid, {
-      enemyUid: null,
-      playerId: 'p1',
-      evokeSlots: [1],
-      evokeEnemyUids: [null],
-    },
-  )
-  assertEqual(full.players[0].block, 4, 'Charge Battery+ gives 3 Block and its evoked Frost gives 1')
-  assertDeepEqual(full.players[0].orbs, ['lightning', 'frost', 'dark'], 'Frost refills the chosen slot')
+    const fullCard = instance('charge_battery', upgraded)
+    const full = playCard(
+      combat([player({ hand: [fullCard], orbs: ['lightning', 'frost', 'dark'] })], [enemy()]),
+      'p1', fullCard.uid, { enemyUid: null, playerId: 'p1' },
+    )
+    assertEqual(full.players[0].block, upgraded ? 3 : 2)
+    assertEqual(full.players[0].energy, 3, 'three Orbs refund 1 Energy after paying the card cost')
+    assertDeepEqual(full.players[0].orbs, ['lightning', 'frost', 'dark'], 'Charge Battery does not change Orbs')
+  }
 })
 
 check('Chaos channels the Orb printed for the shared die', () => {
