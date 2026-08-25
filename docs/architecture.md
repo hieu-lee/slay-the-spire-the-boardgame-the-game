@@ -21,6 +21,50 @@ The `src/multiplayer/` → `src/ui/` direction is forbidden so the server can im
 protocol module without dragging in JSX or stylesheets. `scripts/verify-architecture.mjs`
 enforces this, plus the absence of import cycles inside `src/game/`.
 
+## Big modules are folders behind a barrel
+
+The engine's two largest modules are directories, not files. `src/game/combat.ts` and
+`src/game/run.ts` hold nothing but re-exports; the code lives in `src/game/combat/` and
+`src/game/run/`. Everything outside the engine imports the barrel, never a file inside it,
+which is what lets the insides be reorganised without touching a caller.
+
+Inside each folder the modules are grouped by depth, and the no-cycles rule above is what
+keeps the grouping honest: a module imports only from groups to the left of its own, never
+from its own group or the right of it.
+
+```
+combat  types | board | pieces, presentation, queries, create | effects
+              | enemy-turn, items | start-turn | end-turn, play
+
+run     types | rules, supplies, encounters | rewards, campfire
+              | setup, quick-setup, neow | rooms, merchant, relic-acquisition | events
+```
+
+In combat everything above `effects` goes through it: `enemy-turn` and `items` import it,
+`start-turn` imports those two, and `end-turn` and `play` import `start-turn`. In a run the
+top half is a fan rather than a chain — the only imports between its last three groups are
+`rooms → setup`, `merchant → quick-setup`, `relic-acquisition → neow` and `events → rooms`,
+that last one because an event card can send the party into a room.
+
+The modules nothing inside the folder imports are the ones the barrel exists to expose:
+`combat/create.ts`, `combat/end-turn.ts` and `combat/play.ts`; `run/campfire.ts`,
+`run/merchant.ts`, `run/relic-acquisition.ts` and `run/events.ts`.
+
+One file resists the layering on purpose. `combat/effects.ts` holds both the effect
+resolver and the trigger loop, because an effect fires triggers and a trigger applies
+effects — genuine mutual recursion. Splitting them would buy two files and an import
+cycle, so they stay together and the file says so at the top.
+
+`scripts/lib/affected-verifiers.mjs` knows about the barrels: a change inside
+`src/game/combat/` selects exactly the suites a change to `combat.ts` would, so
+`pnpm verify:changed` does not quietly stop running the browser checks. A file nothing
+imports yet still falls back to running everything.
+
+The same shape appears in the client. `src/ui/styles.css` and `src/ui/chrome.css` are
+index files of `@import`ed partials in cascade order, and `src/ui/CombatScreen.tsx` keeps
+the component while its types, helpers, hooks and effect overlay live in
+`src/ui/combat-screen/`.
+
 ## Engine shape
 
 Every rules function is `(state, ...args) => GameState` — pure, returning a new object, or
