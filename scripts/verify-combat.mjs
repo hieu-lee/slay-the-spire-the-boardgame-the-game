@@ -6264,15 +6264,21 @@ check('All for One returns every playable 0-cost discard card in pile order', ()
   }
 })
 
-check('Thunder Strike deals one separate hit per Lightning Orb and needs no target at zero', () => {
+check('Thunder Strike hits one chosen row per Lightning Orb and needs no target at zero', () => {
   for (const upgraded of [false, true]) {
     const thunder = instance('thunder_strike', upgraded)
     const struck = playCard(combat([makePlayer({
       character: 'defect', hand: [thunder], orbs: ['lightning', 'frost', 'lightning'], energy: 3,
-    })], [makeEnemy({ hp: 20, maxHp: 20, block: 1 })]), 'p1', thunder.uid, {
-      enemyUid: 'e1', playerId: null,
+    })], [
+      makeEnemy({ uid: 'row-a', row: 0, hp: 20, maxHp: 20, block: 1 }),
+      makeEnemy({ uid: 'row-b', row: 0, hp: 20, maxHp: 20, block: 1 }),
+      makeEnemy({ uid: 'other-row', row: 1, hp: 20, maxHp: 20, block: 1 }),
+      makeEnemy({ uid: 'boss', row: 1, hp: 20, maxHp: 20, block: 1, isBoss: true }),
+    ]), 'p1', thunder.uid, {
+      enemyUid: 'row-a', playerId: null,
     })
-    assertEqual(struck.enemies[0].hp, upgraded ? 9 : 13)
+    const expected = upgraded ? 9 : 13
+    assertDeepEqual(struck.enemies.map((enemy) => enemy.hp), [expected, expected, 20, expected])
   }
 
   const thunder = instance('thunder_strike')

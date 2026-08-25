@@ -2487,6 +2487,7 @@ export const CARDS: Record<string, CardDef> = {
   }),
   thunder_strike: card({
     id: 'thunder_strike', name: 'Thunder Strike', owner: 'defect', type: 'attack', rarity: 'rare', cost: 3,
+    target: 'row',
     effects: [{ kind: 'hit', amount: 4, times: { base: 0, per: 'lightningOrbs' } }],
     upgrade: { effects: [{ kind: 'hit', amount: 6, times: { base: 0, per: 'lightningOrbs' } }] },
   }),
