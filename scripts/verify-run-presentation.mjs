@@ -27,10 +27,11 @@ check('every event has its own full-screen background', () => {
   }
 })
 
-// `diffDeckMorphs` never resolves a card definition, so its cases may use any
-// id. `deckHighlights` does resolve, so its cases must use REAL ids — `cardDef`
-// throws on an unknown one, which is how the first draft of this file caught
-// itself using `strike` when the real id is `strike_ironclad`.
+// `diffDeckMorphs` only consults optional owner metadata to ignore known Status
+// cards, so unknown ids still act like ordinary cards. `deckHighlights` does
+// resolve definitions, so its cases must use REAL ids — `cardDef` throws on an
+// unknown one, which is how the first draft of this file caught itself using
+// `strike` when the real id is `strike_ironclad`.
 const card = (uid, defId, upgraded = false) => ({ uid, defId, upgraded })
 const base = [card('c1', 'strike'), card('c2', 'strike'), card('c3', 'defend')]
 
@@ -94,6 +95,20 @@ check('removing cards queues each departed face without inventing a replacement'
   assertEqual(found.length, 2)
   assert(found.every((entry) => entry.kind === 'remove' && entry.to === null))
   assertEqual(found.map((entry) => entry.from.uid).join(','), 'c1,c2')
+})
+
+check('removing temporary Status cards after combat stays silent', () => {
+  const found = diffDeckMorphs([...base, card('status-1', 'burn')], base.slice(1))
+  assertEqual(found.length, 1, 'ordinary removals must still animate')
+  assertEqual(found[0].from.uid, 'c1')
+})
+
+check('Status cleanup does not hide a simultaneous transform', () => {
+  const found = diffDeckMorphs([card('c1', 'strike'), card('status-1', 'burn')], [card('c9', 'anger')])
+  assertEqual(found.length, 1)
+  assertEqual(found[0].kind, 'transform')
+  assertEqual(found[0].from.uid, 'c1')
+  assertEqual(found[0].to.uid, 'c9')
 })
 
 check('removing one card while upgrading another queues both animations', () => {

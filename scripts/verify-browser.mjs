@@ -13134,6 +13134,7 @@ check('fresh combat animates Cracked Core on the Defect', () => {
 
 await page.evaluate((run) => {
   const next = structuredClone(run)
+  next.players[0].deck.push({ uid: 'abandoned-extra', defId: 'anger', upgraded: false })
   next.combat.phase = 'won'
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
@@ -13148,6 +13149,14 @@ const abandonedFinishedCombat = await readRun()
 check('returning to the menu does not resume a paused completed-combat transition', () => {
   assertEqual(abandonedFinishedCombat.phase, 'combat')
   assertEqual(abandonedFinishedCombat.combat.phase, 'won')
+})
+await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+await page.getByRole('button', { name: 'Embark' }).click()
+await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
+await page.waitForTimeout(100)
+const abandonedRunMorphs = await page.locator('.card-morph').count()
+check('starting over after abandoning a run does not replay old deck removals', () => {
+  assertEqual(abandonedRunMorphs, 0)
 })
 
 // Landscape phones use a desktop layout viewport and let the browser scale it
