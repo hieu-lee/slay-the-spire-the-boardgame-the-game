@@ -145,6 +145,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 
 function CombatScreenView({
   state,
+  act,
   viewerId,
   onChange,
   onAction,
@@ -174,6 +175,7 @@ function CombatScreenView({
   authoritativeConnected,
   animateOpeningHand = authoritativeVersion === undefined,
 }: CombatScreenProps) {
+  const stageAct = Math.min(4, Math.max(1, act))
   const [pending, setPending] = useState<Pending | null>(null)
   const [miracleOnCard, setMiracleOnCard] = useState(false)
   const [spendingShiv, setSpendingShiv] = useState(false)
@@ -2573,7 +2575,18 @@ function CombatScreenView({
   const drawPileCount = drawCount ?? viewer.draw.length
 
   return (
-    <div className="combat" data-phase={state.phase}>
+    <div
+      className="combat"
+      data-act={stageAct}
+      data-phase={state.phase}
+      style={{
+        '--combat-stage-image': `url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
+        '--stage-scale': stageScale,
+        '--stage-width': `${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem`,
+        '--stage-gap': `${stageGap}rem`,
+        '--stage-actor-width': `${stageGap - 1 * stageScale}rem`,
+      } as React.CSSProperties}
+    >
       <header className="combat__bar">
         <span className="combat__turn">Turn {state.turn}</span>
         <span className="combat__die" title="The round's shared die">
@@ -3263,12 +3276,6 @@ function CombatScreenView({
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"
-        style={{
-          '--stage-scale': stageScale,
-          '--stage-width': `${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem`,
-          '--stage-gap': `${stageGap}rem`,
-          '--stage-actor-width': `${stageGap - 1 * stageScale}rem`,
-        } as React.CSSProperties}
       >
         {bosses.length > 0 ? (
           <div className="board__bosses">
@@ -3278,6 +3285,8 @@ function CombatScreenView({
                 enemy={enemy}
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
+                acting={state.phase === 'enemy' && !reducedMotion}
+                animateBoss={!reducedMotion}
                 falling={falling.has(enemy.uid)}
                 visualContactMs={reducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
                   latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}

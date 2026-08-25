@@ -100,6 +100,11 @@ export function enemyImagePath(def: EnemyDef): string {
   return assetPath(`combat/enemies/${artId}.webp`)
 }
 
+export function bossAnimationImagePath(def: EnemyDef, pose: 'idle' | 'attack'): string {
+  const artId = def.artId ?? def.id
+  return assetPath(`combat/enemies/animations/${artId}-${pose}.webp`)
+}
+
 /**
  * The full-resolution cutout, for the two surfaces that paint a character
  * several hundred pixels tall: the character-select hero and the Neow scene.

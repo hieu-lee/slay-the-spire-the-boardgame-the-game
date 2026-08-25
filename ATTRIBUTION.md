@@ -33,6 +33,7 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
+| Boss idle and attack animations (`public/assets/combat/enemies/animations/`) | OpenAI Imagegen fan key frames grounded in the existing transparent enemy cutouts and authentic *Slay the Spire* boss-fight screenshots; packaged as transparent animated WebPs by `scripts/sync-boss-animation-art.mjs` |
 | Combat stage, actor cutouts, non-Orb animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Defect Orb HUD sprites and channel VFX (`public/assets/combat/vfx/actions/*-channel.webp`) | OpenAI Imagegen fan assets extracted and reconstructed from authentic *Slay the Spire* gameplay screenshots captured for this implementation |
 | Compendium pool icons (`public/assets/menu/compendium-icons/`) | original OpenAI Imagegen fan icons visually grounded in a user-supplied *Slay the Spire 2* compendium screenshot |
@@ -68,6 +69,10 @@ AI-generated fan illustrations made with OpenAI Imagegen for this implementation
 new enemy batch was visually grounded in complete enemy cards from the official Slay the
 Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.
 No generated asset contains a card scan, logo, or readable text.
+
+The thirteen boss designs also have transparent idle and attack animations. Their attacks
+are staged from the bosses on the right toward the players on the left; the generated
+source sheets remain untracked working files, while the packaged runtime WebPs are committed.
 
 `public/assets/combat/vfx/` contains five original transparent OpenAI Imagegen effects
 used by the shared idle, hit and defeat animations for every combat actor.

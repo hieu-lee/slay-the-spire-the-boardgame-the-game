@@ -439,6 +439,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
       {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           state={run.combat}
+          act={run.act}
           viewerId={viewerId}
           autoAdvance={!compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
           courierAvailable={!run.courier.usedBy.includes(viewerId) &&
