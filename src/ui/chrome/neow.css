@@ -1,0 +1,181 @@
+/* Neow is the first thing a run shows and the client plays it as a full screen,
+   not as a panel on a page. The shell's 1400px cap and its 1rem gutter left a
+   36px letterbox down both sides and a strip under the whale, so the scene read
+   as a widget rather than as a place.
+
+   Horizontally it bleeds the way the potion belt does: 100vw with a negative
+   inline margin cancelling the shell's centring. Vertically the shell drops its
+   own bottom padding and row gap for this phase only, so the `1fr` row runs to
+   the window edge and the `100%` term of the scene's `min-height` fills it.
+   (Negative block margins were tried first: they let following content overlap
+   but do not grow the box, so 32px of shell padding stayed visible under the
+   whale.) The scene's own rule below carries the rest, including the one case
+   `100%` cannot cover; read it before changing either. */
+.app-shell--neow {
+  padding-bottom: 0;
+  gap: 0;
+}
+
+.app-shell--event {
+  padding-bottom: 0;
+  gap: 0;
+}
+
+.sts-scope .neow-screen {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  /* THE SCENE MUST BE ABLE TO OUTGROW ITS BOX. `.neow-screen` is `overflow:
+     hidden` (styles/neow.css) with no scroller inside it, so anything that gives
+     it a definite height does not scale the table down, it CLIPS it: measured at
+     375x667, two of the four dealt blessing faces were cut off with no gesture
+     that revealed them — against styles/neow.css's stated intent that every dealt
+     face stays visible while the active seat resolves. Page scroll is the
+     accepted trade; scrolling to see the table beats not seeing it.
+
+     `flex-shrink: 0` is what allows that, and only the ONLINE shell needs it:
+     `.online-mutations` is a flex column, so the scene's height is its main
+     size. It asked for its content (993px of dealt faces at 320x568), shrank
+     toward the parent, and `min-height` halted the squeeze at 672px — the
+     min-height was never the height there, it was the SHRINK FLOOR, which is
+     why retuning it (5rem, 12rem, 13rem, 14rem) moved the clipping around
+     without ever fixing it.
+
+     The LOCAL shell needs nothing equivalent, even though `.app-shell` is a grid
+     where `flex-shrink` is inert — but the reason is a PRODUCT invariant, not a
+     CSS one, so it is worth stating precisely. `restart` has three real-UI call
+     sites: App.tsx:175 and :268 hard-code a count of 1, and :486 passes
+     `playerCount`, which only `restart` itself ever writes (App.tsx:162). Nothing
+     in the UI raises it, StartMenu renders `characters.slice(0, 1)`, and no
+     RunState is ever restored from storage (only CampaignProgress is persisted).
+     `run.ts`'s `beginCatchUp` does grow a party in place, and real players DO
+     reach it — the room server calls it whenever a seat joins or rejoins a room
+     already in progress. It is irrelevant here for a structural reason rather
+     than a reachability one: it only ever grows a run the SERVER owns, and a
+     server-owned run renders in the online shell. The local run is built by
+     `restart` and nothing else ever touches its party. So
+     the local table is one face and never outgrows its row, and a four-face local
+     table is reachable only through the `__STS_DEBUG__.reset` test hook.
+
+     IF A PARTY-SIZE CONTROL IS EVER WIRED UP, this rule needs the grid-shell
+     equivalent of `flex-shrink: 0` and the local suite needs the multi-face
+     coverage the online one has. An
+     `align-self: start` was added here for that synthetic state and removed
+     again: measured across 13 viewports it changed nothing in the product, and
+     with the min-height neutralised it COLLAPSES the scene (85px at 375x667)
+     rather than growing it, because the whale and hero are absolutely
+     positioned and the in-flow content is short.
+
+     The `min-height` is a floor for when the table is SHORT, never a cap:
+     - `42rem` restates the `.neow-screen` collapse floor in styles/neow.css. This rule overrides that
+       declaration outright, so dropping the restatement drops the floor.
+     - `100%` fills the shell's `1fr` row without measuring the header.
+     - `calc(100dvh - 5rem)` is the fallback for the BANNER states — the online
+       reconnect banner and the error alert — where the positional `1fr` goes to
+       the banner and the scene sits in an `auto` row whose height is
+       content-derived, so `100%` has no definite containing block and resolves
+       to 0. Without this term the scene shrank to its content and was pushed to
+       the page bottom: measured 1315px of unpainted page ABOVE it at 1440x2000,
+       and the same shape at 1440x1400, 1024x1366 and 1280x800.
+       Not the RelicResolvePanel state, despite that also displacing the scene —
+       there `100%` still resolves and this term is inert at 6 of 7 sizes.
+       It can only ever overshoot into page scroll, which is the accepted
+       outcome here; the overshoot is the 5rem-vs-real-header slack, 31px. */
+  flex-shrink: 0;
+  min-height: max(42rem, 100%, calc(100dvh - 5rem));
+}
+
+/* The original game keeps Neow's choices as a narrow stack between the hero
+   and Neow, then turns card rewards into a centred, darkened card stage. */
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action:not(.neow-action--offer) {
+  right: auto;
+  bottom: 1.25rem;
+  left: max(34%, 17.75rem);
+  width: min(34rem, calc(100% - 2rem));
+  padding: 0.5rem 0;
+  background: transparent;
+  transform: translateX(-50%);
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action__owner {
+  justify-content: center;
+  text-align: center;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-action__owner > span:first-child {
+  display: none;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-screen__progress {
+  display: none;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options {
+  grid-template-columns: 1fr;
+  gap: 0.28rem;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options button {
+  grid-template-columns: 1fr;
+  min-height: 2.9rem;
+  text-align: center;
+}
+
+.sts-scope .neow-screen:has(.neow-face--solo) .neow-options button > span {
+  display: none;
+}
+
+.sts-scope .neow-action--offer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  padding: 1rem;
+  overflow-x: hidden;
+  background: radial-gradient(circle at 50% 42%, rgb(17 24 27 / 0.88), rgb(3 5 6 / 0.97));
+}
+
+.sts-scope .neow-action--offer .neow-action__owner {
+  z-index: 1;
+  justify-content: center;
+  gap: 0.75rem;
+  width: min(42rem, 100%);
+  margin: 0 auto -0.3rem;
+  padding: 0.65rem 2rem 0.85rem;
+  background: linear-gradient(180deg, #eadcb8, #aa986d);
+  clip-path: polygon(7% 0, 93% 0, 100% 45%, 93% 100%, 7% 100%, 0 52%);
+  filter: drop-shadow(0 0.5rem 0.5rem rgb(0 0 0 / 0.65));
+}
+
+.sts-scope .neow-action--offer .neow-action__owner > span {
+  color: #654719;
+  font-size: 0.8rem;
+}
+
+.sts-scope .neow-action--offer .neow-action__owner h3 {
+  color: #29323a;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  text-shadow: 0 1px 0 #fff1cf;
+}
+
+.sts-scope .neow-action--offer .neow-offer:not(.neow-offer--potion) {
+  min-width: 0;
+  width: 100%;
+}
+
+.sts-scope .neow-action--offer .neow-offer > :is(h3, p) {
+  text-align: center;
+}
+
+.sts-scope .neow-action--offer .neow-offer__cards {
+  --card-width: clamp(100px, 25vh, 180px);
+}
+
+.sts-scope .neow-action--offer .neow-offer__actions {
+  width: min(32rem, calc(100% - 2rem));
+  margin: 0.5rem auto 0;
+}
+
+@media (max-width: 36rem) {
+  .sts-scope .neow-screen:has(.neow-face--solo) .neow-action:not(.neow-action--offer) {
+    left: 50%;
+  }
+}

@@ -1,85 +1,134 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { cardCost, cardDef, faceOf } from '../game/cards.ts'
-import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
-import type { CardDef, Effect } from '../game/cards.ts'
+// The combat screen: the board, the hand, and every prompt a fight puts up.
+//
+// One component, because the fight is one interaction — a card being dragged
+// knows about the enemy under the pointer, the Energy it would spend, and the
+// prompt it would open, and splitting that across components would mean passing
+// the same twenty things back and forth. What CAN stand outside it does:
+// combat-screen/types.ts for the shapes, helpers.ts for the questions it asks
+// of the board, hooks.ts for the senses that watch the board change, and
+// vfx.tsx for the effect overlay a play puts on it.
 import {
-  activatePower,
+  PHASE_LABEL,
+  TURN_MARKER,
+  canAfford,
+  cardShivsOnPlay,
+  describeSeat,
+  fanOf,
+  gainedShivs,
+  pendingFor,
+  revealViewerRow,
+  roundLog,
+  rowsOf,
+} from './combat-screen/helpers.ts'
+import {
+  useCombatSoundEffects,
+  useFalling,
+  usePersonalCombatSoundEffects,
+  usePresentationEvents,
+  useReducedEffects,
+  useStruck,
+} from './combat-screen/hooks.ts'
+import type {
+  ActiveCombatVfx,
+  CardDrag,
+  CardDragStart,
+  CardFlight,
+  CharacterAttackMotion,
+  CombatScreenProps,
+  MotionKey,
+  MotionSnapshot,
+  Pending,
+  PendingStartChoice,
+  UnknownCardAction,
+  UnknownPotionAction,
+  UnknownPowerAction,
+} from './combat-screen/types.ts'
+import {
+  CombatVfx,
+  characterAttackContactMs,
+  isCharacterAttack,
+  latestTargetPresentationEvent,
+} from './combat-screen/vfx.tsx'
+import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
+import { cardCost, cardDef, faceOf } from '../game/cards.ts'
+import {
+  STALE_END_TURN_ORDER,
   activatePotion,
+  activatePower,
   activateRelic,
   beginEndPlayerTurn,
-  STALE_END_TURN_ORDER,
+  canActivatePotion,
+  canActivateRelic,
   cardEnemyChoiceCount,
-  cardIsPlayable,
   cardModeIsAvailable,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardPlayConditionMet,
   cardPlayerChoiceCount,
   cardShivChoiceCount,
-  cardPlayConditionMet,
-  canActivatePotion,
-  canActivateRelic,
-  combatRowLabel,
-  chosenEvokeOrbs,
-  chooseEndTurnTarget,
   chooseDistilledCard,
+  chooseEndTurnTarget,
+  chosenEvokeOrbs,
+  combatRowLabel,
   defaultEndTurnOrder,
   defaultStartTurnChoices,
+  endPlayerTurn,
   endTurnAbilities,
   endTurnChoiceId,
   endTurnChoiceTarget,
-  endPlayerTurn,
-  enemyTurn,
   enemyLabel,
-  effectIsActive,
-  facingChoicesAreValid,
+  enemyTurn,
   evokeTargetProgress,
+  facingChoicesAreValid,
   lightningRowFromTarget,
   lightningRowTarget,
   lightningTargetsRows,
   nextEvokeChoice,
-  overflowShivCount,
   orderStartTurnScries,
+  overflowShivCount,
   pendingTriggerAbility,
   playCard,
   playCardCopy,
   playCost,
-  previewCardChoice,
-  previewCardCopyChoice,
   powerAbilityKey,
   powerAbilityUsed,
-  remainingRoundHpLoss,
+  previewCardChoice,
+  previewCardCopyChoice,
   reachedTimeWarpLimit,
+  remainingRoundHpLoss,
+  resolvePendingTrigger,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
-  resolvePendingTrigger,
   spendMiracle,
   spendShiv,
+  startPlayerTurnWithChoices,
   startTurnAbilities,
   startTurnDiscardPreview,
+  startTurnNeedsChoice,
   startTurnScryAbilities,
   startTurnScryPreview,
-  startTurnNeedsChoice,
-  startPlayerTurnWithChoices,
   validEndTurnOrder,
 } from '../game/combat.ts'
 import type {
-  CombatPresentationEvent, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PotionContext, PowerContext,
-  RelicContext, StartTurnAbility, StartTurnChoice, StartTurnScryAbility, StartTurnScryPreview,
+  DiscardOrders,
+  EndTurnOrder,
+  PotionContext,
+  PowerContext,
+  RelicContext,
+  StartTurnChoice,
 } from '../game/combat.ts'
 import { potionDef, relicAbilities, relicDef } from '../game/relics.ts'
-import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import { CAPS } from '../game/types.ts'
+import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
-import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from './combat-sfx.ts'
-import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, vfxAssetPath, vfxToneColor } from './combat-vfx.ts'
-import type { VfxRecipe } from './combat-vfx.ts'
-import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
+import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
-import { PowerGlyph, PowerRow } from './PowerRow.tsx'
+import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
-import { OrbRow, TokenRow, orbDisplayText } from './TokenRow.tsx'
+import { PowerGlyph, PowerRow } from './PowerRow.tsx'
+import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
   STAGE_MARGIN_REM,
@@ -90,892 +139,9 @@ import {
   shouldDisarmCardFlight,
   stageScaleFor,
 } from './board-signals.ts'
-import { playCombatSound, playSoundEffect } from './sfx.ts'
-import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
-
-type CombatScreenProps = {
-  state: CombatState
-  /** The seat this client controls. Everyone sees the same board. */
-  viewerId: string
-  onChange?: (next: CombatState) => void
-  onAction?: (action: Record<string, unknown>) => void | Promise<ActionOutcome | void>
-  autoAdvance?: boolean
-  courierAvailable?: boolean
-  mutationsEnabled?: boolean
-  drawCount?: number
-  decidedPlayerIds?: string[]
-  savedDiscardOrder?: string[]
-  /** Private cards revealed by a staged online play, visible only to this seat. */
-  cardPreview?: {
-    cardUid: string
-    copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck' | 'search'
-    cards: CardInstance[]
-    spendMiracle: boolean
-    enemyUid: string | null
-  }
-  partyEndTurnAbilities?: EndTurnAbility[]
-  savedEndTurnOrder?: string[]
-  endTurnCoordinatorId?: string | null
-  partyStartTurnAbilities?: StartTurnAbility[]
-  partyStartTurnScryAbilities?: StartTurnScryAbility[]
-  startTurnCoordinatorId?: string | null
-  startTurnChoiceId?: string
-  savedStartTurnEnemyTargets?: Record<string, string>
-  savedStartTurnChoices?: StartTurnChoice[]
-  partyStartTurnOrderPending?: boolean
-  partyStartTurnOrderLocked?: boolean
-  partyStartTurnScry?: Omit<StartTurnScryPreview, 'cards'> & { cards: CardInstance[] | null }
-  partyStartTurnDiscard?: { playerId: string; sourceId: string; label: string; cards: CardInstance[] | null }
-  /** Room snapshot version; omitted for the local table. */
-  authoritativeVersion?: number
-  /** Successful REST refresh count; omitted for the local table. */
-  authoritativeRefresh?: number
-  /** Accepted newer REST snapshot count; omitted for the local table. */
-  authoritativeRestoration?: number
-  /** Whether online snapshots are live rather than reconnect catch-up. */
-  authoritativeConnected?: boolean
-  /** Deal the already-populated opening hand when this combat starts live. */
-  animateOpeningHand?: boolean
-}
-
-type UnknownPotionAction = { refreshAttempt: number; potionId: string; countBefore: number }
-type UnknownPowerAction = { refreshAttempt: number; powerUid: string }
-type UnknownCardAction = { refreshAttempt: number; cardUid: string; copy: boolean; copiesBefore?: number }
-type MotionKey = 'energy' | 'draw' | 'discard' | 'exhaust'
-type CardFlight = {
-  beat: number
-  card: CardInstance
-  destination: ReturnType<typeof cardMotionDestination>
-}
-type CardDrag = {
-  card: CardInstance
-  pointerId: number
-  startX: number
-  startY: number
-  x: number
-  y: number
-  targetUid: string | null
-  targetPlayerId: string | null
-  needsEnemy: boolean
-  needsPlayer: boolean
-  hitsRow: boolean
-}
-type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & { element: HTMLButtonElement }
-type MotionSnapshot = {
-  hand: readonly CardInstance[]
-  energy: number
-  draw: number
-  discard: number
-  exhaust: number
-}
-type ActiveCombatVfx = { event: CombatPresentationEvent; recipe: VfxRecipe }
-type CharacterAttackMotion = {
-  active: ActiveCombatVfx
-  targetId: string
-  x: number
-  y: number
-  targets: { id: string; x: number; y: number }[]
-}
-
-const OFFENSIVE_VFX_FAMILIES = new Set([
-  'slash', 'blunt', 'projectile', 'shiv', 'lightning', 'frost', 'dark',
-])
-
-const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
-  event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
-  (event.kind === 'shiv' || cardDef(event.sourceId).type === 'attack' || OFFENSIVE_VFX_FAMILIES.has(recipe.family))
-
-function characterAttackContactMs(
-  state: CombatState,
-  targetId: string,
-  event?: CombatPresentationEvent,
-): number {
-  if (!event || event.kind === 'potion' || event.kind === 'orb' || !event.enemyIds.includes(targetId)) return 0
-  const actor = state.players.find((player) => player.id === event.actorId)
-  if (!actor) return 0
-  const active = {
-    event,
-    recipe: event.kind === 'shiv'
-      ? shivVfxRecipe()
-      : cardVfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
-  }
-  if (!isCharacterAttack(active)) return 0
-  const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
-  if (actor.character === 'silent') return 480 + targetIndex * 70
-  if (actor.character === 'defect') return 560 + targetIndex * 70
-  return 500
-}
-
-function latestTargetPresentationEvent(
-  events: readonly CombatPresentationEvent[] | undefined,
-  targetId: string,
-): CombatPresentationEvent | undefined {
-  for (let index = (events?.length ?? 0) - 1; index >= 0; index--) {
-    const event = events![index]!
-    if (event.enemyIds.includes(targetId) || event.playerIds.includes(targetId)) return event
-  }
-  return undefined
-}
-
-function useReducedEffects(): boolean {
-  const prefersReducedEffects = () =>
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-    document.documentElement.dataset.reducedMotion === 'true' ||
-    document.documentElement.dataset.mobilePerformance === 'true'
-  const [reduced, setReduced] = useState(prefersReducedEffects)
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = () => setReduced(prefersReducedEffects())
-    const observer = new MutationObserver(sync)
-    sync()
-    query.addEventListener('change', sync)
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-reduced-motion', 'data-mobile-performance'],
-    })
-    return () => {
-      query.removeEventListener('change', sync)
-      observer.disconnect()
-    }
-  }, [])
-  return reduced
-}
-
-function CombatVfx({
-  active,
-  role,
-  attackContactMs = 0,
-}: {
-  active: ActiveCombatVfx
-  role: 'actor' | 'target'
-  attackContactMs?: number
-}) {
-  const { event, recipe } = active
-
-  return (
-    <span
-      className={[
-        'combat-vfx', `combat-vfx--${role}`, `combat-vfx--${recipe.family}`,
-        role === 'target' && attackContactMs > 0 ? 'combat-vfx--attack-impact' : '',
-      ].filter(Boolean).join(' ')}
-      data-vfx-seq={event.seq}
-      data-vfx-kind={event.kind}
-      data-vfx-source={event.sourceId}
-      data-vfx-family={recipe.family}
-      data-vfx-motion={recipe.actorMotion}
-      data-vfx-asset={recipe.asset}
-      data-vfx-tone={recipe.tone}
-      style={{
-        '--vfx-image': `url("${vfxAssetPath(recipe)}")`,
-        '--vfx-tone-color': vfxToneColor(recipe.tone),
-        ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs - 60}ms` } : {}),
-      } as React.CSSProperties}
-      aria-hidden="true"
-    />
-  )
-}
-type PendingStartChoice =
-  | { kind: 'enemy'; ability: StartTurnAbility }
-  | { kind: 'player'; ability: StartTurnAbility }
-  | { kind: 'shiv'; ability: StartTurnAbility; index: number }
-  | { kind: 'evokeTarget'; ability: StartTurnAbility; index: number }
-  | { kind: 'evoke'; ability: StartTurnAbility }
-
-/** What a card still needs before it can be played. */
-type Pending = {
-  card: CardInstance
-  /** False for a physical original resolving after its virtual copy. */
-  cardInHand: boolean
-  /** Energy chosen for an X-cost card; null until the player decides. */
-  energySpent: number | null
-  /** Effective X after a fixed-cost override; never sent as a player choice. */
-  effectEnergy: number | null
-  needsEnemy: boolean
-  /**
-   * The card can land its support on someone other than the caster, as Defend+,
-   * True Grit and Vigilance all can. Auto-committing these to the caster would
-   * quietly remove the co-op play the card exists for.
-   */
-  needsAlly: boolean
-  /** The card may exchange the caster's row with another living player. */
-  needsSwitch: boolean
-  /** Gained Shivs exceeding the shared five-cube supply may attack now. */
-  overflowShivs: number
-  /** Held Shivs this card must spend as independently targeted attacks. */
-  spentShivs: number
-  enemyChoices: number
-  playerChoices: number
-  enemyUids: string[]
-  playerIds: string[]
-  shivEnemyUids: string[]
-  evokeSlots: number[]
-  evokeEnemyUids: (string | null | undefined)[]
-  mode: number | null
-  enemyUid: string | null
-  playerId: string | null
-  switchPlayerId: string | null
-  switchChoiceDone: boolean
-  /**
-   * The card carries the area-of-effect burst, so the chosen enemy is only an
-   * anchor: everything in its row is hit, and so is the boss. Without saying
-   * so, Cleave and a Strike look like the same interaction — pick one enemy —
-   * and the player never learns why they would hold Cleave for a crowd.
-   */
-  hitsRow: boolean
-  /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
-  choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search'
-    amount: number
-    minimum?: number
-  } | null
-  /** Private post-draw/Scry cards; null means choose from the visible hand. */
-  choiceCards: CardInstance[] | null
-  choiceConfirmed: boolean
-  picked: string[]
-}
-
-/** A round divider in the log, styled apart from the events inside the round. */
-const TURN_MARKER = /^Turn \d+ begins/
-
-/**
- * The current round, newest first, plus the divider that opened it.
- *
- * Everything since the last divider — never a fixed tail. A tail silently drops
- * lines, and if the box happens not to overflow there is nothing on screen to
- * say so.
- */
-function roundLog(log: readonly string[]): string[] {
-  let start = -1
-  for (let i = log.length - 1; i >= 0; i--) {
-    if (TURN_MARKER.test(log[i]!)) {
-      start = i
-      break
-    }
-  }
-  const round = start >= 0 ? log.slice(start) : log.slice(-12)
-  return [...round].reverse()
-}
-
-/** The engine's phase names are for the engine; players get words. */
-const PHASE_LABEL: Record<CombatState['phase'], string> = {
-  player: 'Your turn',
-  copy: 'Resolve original card',
-  start: 'Start of turn',
-  discard: 'Order discards',
-  enemy: 'Enemies act',
-  roundEnd: 'Round over',
-  won: 'Victory',
-  lost: 'Defeat',
-}
-
-function requirementsOf(
-  def: CardDef,
-  allies: number,
-  viewer: Player,
-  state: CombatState,
-  energySpent?: number,
-  cardInHand = true,
-): Omit<Pending, 'card' | 'cardInHand' | 'energySpent' | 'effectEnergy' | 'picked' | 'enemyUid' | 'playerId' | 'switchPlayerId' | 'switchChoiceDone' | 'enemyUids' | 'playerIds' | 'shivEnemyUids' | 'evokeSlots' | 'evokeEnemyUids' | 'mode' | 'choiceCards' | 'choiceConfirmed'> {
-  const onPlayEffects = def.type === 'power' && def.resolvesOnPlay !== true ? [] : def.effects
-  // The same predicate the engine uses to decide whether to REFUSE the play.
-  // Two copies of this list drifted apart once already: the UI would prompt for
-  // an enemy and the engine would then throw the choice away. The viewer goes
-  // in because a counted attack with nothing to count reaches nobody, and
-  // asking where to point it is asking a question with no consequence.
-  const cardTarget = cardNeedsEnemy(def, viewer, false, energySpent)
-  const shivsGained = cardShivsOnPlay(def)
-  const overflowShivs = overflowShivCount(state, shivsGained)
-  const spentShivs = cardShivChoiceCount(def, viewer)
-  const enemyChoices = onPlayEffects.length > 0 ? cardEnemyChoiceCount(def) : 0
-  const playerChoices = onPlayEffects.length > 0 ? cardPlayerChoiceCount(def) : 0
-  const needsEnemy = cardTarget || spentShivs > 0 || overflowShivs > 0 || enemyChoices > 0
-  // With one player on the board there is nobody to choose between, so asking
-  // "who gets it" is a prompt with a single possible answer.
-  const needsAlly = def.supportTarget === 'anyPlayer' && allies > 1
-  const needsSwitch = onPlayEffects.some((effect) => effect.kind === 'switchRows') && allies > 1
-  const discard = onPlayEffects.find((effect) => effect.kind === 'discard')
-  const discardAny = onPlayEffects.some((effect) => effect.kind === 'discardAny')
-  const exhaust = onPlayEffects.find((effect) => effect.kind === 'exhaustFromHand')
-  const exhaustAny = onPlayEffects.find((effect) => effect.kind === 'exhaustAny')
-  const topdeck = onPlayEffects.find((effect) => effect.kind === 'topdeck')
-  const recover = onPlayEffects.find((effect) => effect.kind === 'recoverDiscard')
-  const recoverExhaust = onPlayEffects.find((effect) => effect.kind === 'recoverExhaust')
-  const search = onPlayEffects.find((effect) =>
-    effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
-  const scried = onPlayEffects.find((effect): effect is Extract<Effect, { kind: 'scry' }> =>
-    effect.kind === 'scry' && effectIsActive(effect, state, viewer))
-  const choice = discard
-    ? { kind: 'discard' as const, amount: discard.amount }
-    : discardAny
-      ? { kind: 'discardAny' as const, amount: Math.max(0, viewer.hand.length - Number(cardInHand)) }
-    : exhaust
-      ? { kind: 'exhaust' as const, amount: exhaust.amount }
-    : exhaustAny
-      ? { kind: 'exhaustAny' as const, amount: exhaustAny.amount, minimum: exhaustAny.minimum }
-      : scried
-        ? { kind: 'scry' as const, amount: scried.amount }
-        : topdeck
-          ? { kind: 'topdeck' as const, amount: topdeck.amount }
-        : recover && viewer.discard.length > 0
-          ? { kind: 'recover' as const, amount: recover.amount }
-        : recoverExhaust && viewer.exhaust.length > 0
-          ? { kind: 'recoverExhaust' as const, amount: recoverExhaust.amount }
-        : search
-          ? { kind: 'search' as const, amount: search.kind === 'searchDraw' ? search.amount : 1 }
-        : null
-  return {
-    needsEnemy,
-    needsAlly,
-    needsSwitch,
-    overflowShivs,
-    spentShivs,
-    enemyChoices,
-    playerChoices,
-    hitsRow: def.target === 'row',
-    choice,
-  }
-}
-
-function pendingFor(
-  card: CardInstance,
-  choiceCards: CardInstance[] | null,
-  state: CombatState,
-  viewer: Player,
-  cardInHand = true,
-  copiedEnergySpent?: number,
-): Pending {
-  const def = faceOf(cardDef(card.defId), card.upgraded)
-  const forced = state.startTurnProgress?.forcedCard?.playerId === viewer.id &&
-    state.startTurnProgress.forcedCard.cardUid === card.uid
-  const cost = forced ? 0 : playCost(def, viewer, card)
-  const energySpent = copiedEnergySpent ?? (cost === 'X' ? null : 0)
-  const effectEnergy = copiedEnergySpent ?? (def.cost === 'X' && cost !== 'X' ? cost : energySpent)
-  const requirements = requirementsOf(
-    def, state.players.filter((player) => !player.dead).length, viewer, state, effectEnergy ?? undefined, cardInHand,
-  )
-  return {
-    card,
-    cardInHand,
-    energySpent,
-    effectEnergy,
-    ...requirements,
-    enemyUid: null,
-    playerId: null,
-    switchPlayerId: null,
-    switchChoiceDone: false,
-    enemyUids: [],
-    playerIds: state.players.filter((player) => !player.dead).length === 1
-      ? Array(requirements.playerChoices).fill(viewer.id)
-      : [],
-    shivEnemyUids: [],
-    evokeSlots: [],
-    evokeEnemyUids: [],
-    mode: null,
-    choiceCards: choiceCards ?? (requirements.choice?.kind === 'recover'
-      ? viewer.discard
-      : requirements.choice?.kind === 'recoverExhaust' ? viewer.exhaust : null),
-    choiceConfirmed: false,
-    picked: [],
-  }
-}
-
-function gainedShivs(effects: readonly Effect[], discarded = 0): number {
-  return effects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
-    ? effect.amount
-    : effect.kind === 'gainShivPerDiscard' ? discarded + effect.bonus : 0), 0)
-}
-
-function cardShivsOnPlay(def: CardDef, discarded = 0): number {
-  return def.type === 'power' && def.trigger && def.resolvesOnPlay !== true
-    ? 0
-    : gainedShivs(def.effects, discarded)
-}
-
-/** Rows are the board's spatial unit: one per player, enemies sit in them. */
-function rowsOf(state: CombatState): number[] {
-  const rows = new Set<number>()
-  for (const player of state.players) rows.add(player.row)
-  for (const enemy of state.enemies) if (!enemy.isBoss) rows.add(enemy.row)
-  return [...rows].sort((a, b) => b - a)
-}
-
-function revealViewerRow(board: HTMLElement | null, row: HTMLElement | null) {
-  if (!board || !row) return
-  const boardBox = board.getBoundingClientRect()
-  const rowBox = row.getBoundingClientRect()
-  board.scrollTop += rowBox.top - boardBox.top - (board.clientHeight - rowBox.height) / 2
-  let actors = [...row.querySelectorAll<HTMLElement>('.row__seat, .enemy')]
-  const enemies = [...row.querySelectorAll<HTMLElement>('.enemy')]
-  const bosses = [...board.querySelectorAll<HTMLElement>('.board__bosses .enemy:not(.enemy--dead)')]
-  if (enemies.length === 0 && bosses.length > 0) actors = bosses
-  const span = (items: HTMLElement[]): [number, number] => {
-    const boxes = items.map((actor) => actor.getBoundingClientRect())
-    return [Math.min(...boxes.map((box) => box.left)), Math.max(...boxes.map((box) => box.right))]
-  }
-  if (actors.length > 0 && enemies.length > 0) {
-    const [left, right] = span(actors)
-    if (right - left > board.clientWidth) actors = enemies
-  }
-  if (actors.length > 0) {
-    const [left, right] = span(actors)
-    board.scrollLeft += left - boardBox.left - (board.clientWidth - (right - left)) / 2
-  }
-}
-
-/**
- * The seat button's accessible name.
- *
- * An `aria-label` replaces the element's contents wholesale, so anything not
- * named here is invisible to a screen reader no matter how it is marked up —
- * which is how the tokens' own hidden labels ended up unreachable. Everything
- * shown on the seat has to be listed.
- */
-function describeSeat(player: Player): string {
-  const parts = [`${player.name}, ${player.hp} of ${player.maxHp} hit points, row ${player.row + 1}`]
-  const tokens: [string, number][] = [
-    ['Block', player.block],
-    ['Strength', player.strength],
-    ['Vulnerable', player.vulnerable],
-    ['Weak', player.weak],
-    ['Shivs', player.shivs],
-    ['Miracles', player.miracles],
-    ['Claw cubes', player.clawCubesGainedThisCombat ?? 0],
-  ]
-  for (const [label, value] of tokens) if (value > 0) parts.push(`${label} ${value}`)
-  if (player.strengthLossAtEndOfTurn > 0) {
-    parts.push(`Strength loss at end of turn ${player.strengthLossAtEndOfTurn}`)
-  }
-  if (player.drawLocked) parts.push('cannot draw more cards this turn')
-  if (player.cardPlayLocked) parts.push('cannot play additional cards this turn')
-  if ((player.freeAttacksThisTurn ?? 0) > 0) parts.push('next Attack costs 0 this turn')
-  if ((player.doubledAttacksThisTurn ?? 0) > 0) {
-    parts.push(`Double Tap, next ${player.doubledAttacksThisTurn} Attack${player.doubledAttacksThisTurn === 1 ? '' : 's'} played twice`)
-  }
-  if ((player.tripledAttacksThisTurn ?? 0) > 0) {
-    parts.push(`Blasphemy, next ${player.tripledAttacksThisTurn} Attack${player.tripledAttacksThisTurn === 1 ? '' : 's'} played three times`)
-  }
-  if ((player.doubledCardsThisTurn ?? 0) > 0) {
-    parts.push(`Echo Form, next ${player.doubledCardsThisTurn} Attack or Skill card${
-      player.doubledCardsThisTurn === 1 ? '' : 's'
-    } played twice`)
-  }
-  if ((player.doubledSkillsThisTurn ?? 0) > 0) {
-    parts.push(`Burst, next ${player.doubledSkillsThisTurn} Skill${player.doubledSkillsThisTurn === 1 ? '' : 's'} played twice`)
-  }
-  const hpLossRemaining = remainingRoundHpLoss(player)
-  if (hpLossRemaining !== undefined) {
-    parts.push(`${player.powers.some((power) => power.defId === 'wraith_form') ? 'Wraith Form' : 'Apparition'} protection, ${hpLossRemaining} hit point loss remaining this round`)
-  }
-  if (player.character === 'defect') {
-    parts.push(`${player.orbs.filter(Boolean).length} of ${player.orbs.length} Orb slots occupied`)
-  }
-  for (const orb of player.orbs) if (orb) parts.push(`${orb} orb, ${orbDisplayText(player, orb)}`)
-  if (player.potions.length > 0) parts.push(`potions ${potionDescription(player)}`)
-  if (player.stance !== 'neutral') parts.push(`${player.stance} stance`)
-  // Powers are deliberately NOT listed here. They render as a sibling list
-  // outside this button, with their own labels — naming them here as well had
-  // a screen reader announce every Power twice.
-  if (player.dead) parts.push('defeated')
-  return parts.join(', ')
-}
-
-function potionDescription(player: Player): string {
-  return [...new Set(player.potions)].map((potionId) => {
-    const count = player.potions.filter((held) => held === potionId).length
-    const potion = potionDef(potionId)
-    return `${potion.name}${count > 1 ? ` ×${count}` : ''}: ${potion.text}`
-  }).join(', ')
-}
-
-/**
- * How far a card sits from the middle of the fan, from -1 to 1.
- *
- * A single card hangs straight; the spread narrows as the hand grows so a full
- * hand still fits the width it is given.
- */
-function fanOf(index: number, count: number): number {
-  if (count < 2) return 0
-  return (index - (count - 1) / 2) / ((count - 1) / 2)
-}
-
-function canAfford(
-  state: CombatState,
-  player: Player,
-  card: CardInstance,
-  spendMiracle = false,
-  drawCount = player.draw.length,
-): boolean {
-  const def = faceOf(cardDef(card.defId), card.upgraded)
-  if (!cardIsPlayable(def, state, player, drawCount)) return false
-  if (reachedTimeWarpLimit(state, player)) return false
-  const cost = playCost(def, player, card)
-  if (spendMiracle && (cost === 'X' || cost === 0)) return false
-  if (def.cost === 'X' && cost !== 'X' && cost < (def.minimumX ?? 0)) return false
-  return cost === 'X'
-    ? player.energy >= (def.minimumX ?? 0)
-    : cost <= player.energy + (spendMiracle ? 1 : 0)
-}
-
-/** Keeps overlapping HP-loss bursts and additive portrait flinches until each impact finishes. */
-function useStruck(
-  state: CombatState,
-  authoritativeRestoration?: number,
-  authoritativeConnected?: boolean,
-  reducedEffects = false,
-): {
-  hits: Map<string, { beat: number; damage: number; delayMs: number }[]>
-} {
-  const previous = useRef(new Map<string, number>())
-  const previousRestoration = useRef(authoritativeRestoration)
-  const previousConnected = useRef(authoritativeConnected)
-  const previousCombat = useRef(state.combatId)
-  const previousPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? -1)
-  const nextBeats = useRef(new Map<string, number>())
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
-  const flinches = useRef(new Set<Animation>())
-  const [hits, setHits] = useState<Map<string, { beat: number; damage: number; delayMs: number }[]>>(new Map())
-
-  useEffect(() => {
-    const now = new Map<string, number>()
-    const hurt = new Map<string, number>()
-    const presentationEvents = state.presentationEvents ?? []
-    const latestPresentation = presentationEvents.at(-1)
-    const newPresentations = presentationEvents.filter((event) => event.seq > previousPresentationSeq.current)
-    const newPresentation = latestPresentation && latestPresentation.seq > previousPresentationSeq.current
-      ? latestPresentation
-      : undefined
-    const combatChanged = state.combatId !== previousCombat.current
-    previousCombat.current = state.combatId
-    previousPresentationSeq.current = combatChanged
-      ? (latestPresentation?.seq ?? -1)
-      : Math.max(previousPresentationSeq.current, latestPresentation?.seq ?? -1)
-    const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
-      authoritativeConnected === false || previousConnected.current === false || combatChanged
-    previousRestoration.current = authoritativeRestoration
-    previousConnected.current = authoritativeConnected
-    for (const entity of [...state.players, ...state.enemies]) {
-      const id = 'uid' in entity ? entity.uid : entity.id
-      now.set(id, entity.hp)
-      const before = previous.current.get(id)
-      if (!refreshed && before !== undefined && entity.hp < before) {
-        hurt.set(id, before - entity.hp)
-      }
-    }
-    previous.current = now
-    if (refreshed) {
-      for (const timer of timers.current.values()) clearTimeout(timer)
-      timers.current.clear()
-      for (const animation of flinches.current) animation.cancel()
-      flinches.current.clear()
-      nextBeats.current.clear()
-      setHits((current) => current.size === 0 ? current : new Map())
-      return
-    }
-    if (hurt.size === 0) return
-
-    if (state.phase !== 'lost' && state.players.some((player) => hurt.has(player.id))) playSoundEffect('hurt')
-
-    // Each actor owns its contact, beat and expiry. Concurrent hits must not
-    // cancel one another, while a second hit must restart at weapon contact.
-    for (const [id, amount] of hurt) {
-      const beat = (nextBeats.current.get(id) ?? 0) + 1
-      const token = `${id}:${beat}`
-      nextBeats.current.set(id, beat)
-      const targetPresentation = latestTargetPresentationEvent(newPresentations, id)
-      const delay = reducedEffects
-        ? 0
-        : characterAttackContactMs(state, id, targetPresentation ?? newPresentation)
-      setHits((current) => {
-        const next = new Map(current)
-        next.set(id, [...(next.get(id) ?? []), { beat, damage: amount, delayMs: delay }])
-        return next
-      })
-      const flinch = () => {
-        timers.current.delete(`${token}:flinch`)
-        if (reducedEffects) return
-        const escaped = CSS.escape(id)
-        const portrait = document.querySelector<HTMLElement>(
-          `.enemy[data-enemy-id="${escaped}"] .enemy__portrait, ` +
-          `.seat[data-player-id="${escaped}"] .seat__portrait`,
-        )
-        const animation = portrait?.animate([
-          { transform: 'translateX(0)', composite: 'add' },
-          { transform: 'translateX(-7px) scale(0.98)', composite: 'add', offset: 0.18 },
-          { transform: 'translateX(5px)', composite: 'add', offset: 0.42 },
-          { transform: 'translateX(-2px)', composite: 'add', offset: 0.68 },
-          { transform: 'translateX(0)', composite: 'add' },
-        ], { duration: 380, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
-        if (animation) {
-          flinches.current.add(animation)
-          animation.onfinish = animation.oncancel = () => flinches.current.delete(animation)
-        }
-      }
-      if (delay > 0) timers.current.set(`${token}:flinch`, setTimeout(flinch, delay))
-      else flinch()
-      timers.current.set(`${token}:cleanup`, setTimeout(() => {
-        timers.current.delete(`${token}:cleanup`)
-        setHits((current) => {
-          const remaining = (current.get(id) ?? []).filter((hit) => hit.beat !== beat)
-          const next = new Map(current)
-          if (remaining.length > 0) next.set(id, remaining)
-          else next.delete(id)
-          return next
-        })
-      }, delay + 520))
-    }
-  }, [authoritativeConnected, authoritativeRestoration, reducedEffects, state])
-
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) clearTimeout(timer)
-    for (const animation of flinches.current) animation.cancel()
-    flinches.current.clear()
-  }, [])
-
-  useEffect(() => {
-    if (!reducedEffects) return
-    for (const [key, timer] of timers.current) {
-      if (!key.endsWith(':flinch')) continue
-      clearTimeout(timer)
-      timers.current.delete(key)
-    }
-    for (const animation of flinches.current) animation.cancel()
-    flinches.current.clear()
-  }, [reducedEffects])
-
-  return { hits }
-}
-
-function useCombatSoundEffects(
-  state: CombatState,
-  viewerId: string,
-  animateOpeningHand: boolean,
-  authoritativeRestoration?: number,
-  authoritativeConnected?: boolean,
-) {
-  const previous = useRef<CombatState | null>(null)
-  const previousViewer = useRef(viewerId)
-  const previousRestoration = useRef(authoritativeRestoration)
-  const previousConnected = useRef(authoritativeConnected)
-
-  useEffect(() => {
-    const before = previous.current
-    const restored = (authoritativeRestoration !== undefined &&
-      authoritativeRestoration !== previousRestoration.current) ||
-      authoritativeConnected === false || previousConnected.current === false || previousViewer.current !== viewerId
-    previous.current = state
-    previousViewer.current = viewerId
-    previousRestoration.current = authoritativeRestoration
-    previousConnected.current = authoritativeConnected
-
-    const viewer = state.players.find((player) => player.id === viewerId)
-    if (!before) {
-      if (animateOpeningHand && viewer?.hand.length) playSoundEffect('draw')
-      return
-    }
-    if (restored || state.phase === 'won' || state.phase === 'lost') return
-    const previousPresentationSeq = before.presentationEvents?.at(-1)?.seq ?? 0
-    const actionPresented = (state.presentationEvents?.at(-1)?.seq ?? 0) > previousPresentationSeq
-    const priorPlayers = new Map(before.players.map((player) => [player.id, player]))
-    if (!actionPresented && state.players.some((player) =>
-      player.hp > (priorPlayers.get(player.id)?.hp ?? player.hp))) {
-      playSoundEffect('heal')
-    }
-    const priorViewer = before.players.find((player) => player.id === viewerId)
-    if (!actionPresented && viewer && priorViewer && drawnCardUids(priorViewer.hand, viewer.hand).length > 0) {
-      playSoundEffect('draw')
-    }
-    if (!actionPresented && state.players.some((player) =>
-      player.block !== (priorPlayers.get(player.id)?.block ?? player.block))) {
-      playSoundEffect('block')
-    }
-  }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, state, viewerId])
-}
-
-/** Actors that crossed from alive to dead during this mounted combat. */
-function useFalling(
-  state: CombatState,
-  authoritativeRestoration?: number,
-  authoritativeConnected?: boolean,
-): Set<string> {
-  const previous = useRef(new Map<string, boolean>())
-  const previousRestoration = useRef(authoritativeRestoration)
-  const previousConnected = useRef(authoritativeConnected)
-  const previousCombat = useRef(state.combatId)
-  const previousPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? -1)
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
-  const [falling, setFalling] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    const now = new Map<string, boolean>()
-    const presentationEvents = state.presentationEvents ?? []
-    const latestPresentation = presentationEvents.at(-1)
-    const newPresentations = presentationEvents.filter((event) => event.seq > previousPresentationSeq.current)
-    const combatChanged = state.combatId !== previousCombat.current
-    previousCombat.current = state.combatId
-    previousPresentationSeq.current = combatChanged
-      ? (latestPresentation?.seq ?? -1)
-      : Math.max(previousPresentationSeq.current, latestPresentation?.seq ?? -1)
-    const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
-      authoritativeConnected === false || previousConnected.current === false || combatChanged
-    previousRestoration.current = authoritativeRestoration
-    previousConnected.current = authoritativeConnected
-    for (const entity of [...state.players, ...state.enemies]) {
-      const id = 'uid' in entity ? entity.uid : entity.id
-      now.set(id, entity.dead)
-      if (refreshed) continue
-      if (previous.current.get(id) !== false || !entity.dead) continue
-      const delay = characterAttackContactMs(state, id, latestTargetPresentationEvent(newPresentations, id))
-      setFalling((current) => new Set(current).add(id))
-      const prior = timers.current.get(id)
-      if (prior) clearTimeout(prior)
-      timers.current.set(id, setTimeout(() => {
-        timers.current.delete(id)
-        setFalling((current) => {
-          const next = new Set(current)
-          next.delete(id)
-          return next
-        })
-      }, 860 + delay))
-    }
-    previous.current = now
-    if (!refreshed) return
-    for (const timer of timers.current.values()) clearTimeout(timer)
-    timers.current.clear()
-    setFalling((current) => current.size === 0 ? current : new Set())
-  }, [authoritativeConnected, authoritativeRestoration, state])
-
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) clearTimeout(timer)
-  }, [])
-
-  return falling
-}
-
-/** Only actions witnessed live animate; mounted and restored history is a baseline. */
-function usePresentationEvents(
-  state: CombatState,
-  animateOpeningHand: boolean,
-  authoritativeRestoration?: number,
-  authoritativeConnected?: boolean,
-): CombatPresentationEvent[] {
-  const baseline = useRef<number | null>(animateOpeningHand ? -1 : null)
-  const previousCombat = useRef(state.combatId)
-  const previousRestoration = useRef(authoritativeRestoration)
-  const previousConnected = useRef(authoritativeConnected)
-  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
-  const [active, setActive] = useState<CombatPresentationEvent[]>([])
-
-  useLayoutEffect(() => {
-    const events = state.presentationEvents ?? []
-    const latest = events.reduce((seq, event) => Math.max(seq, event.seq), -1)
-    const combatChanged = state.combatId !== previousCombat.current
-    const restored = (authoritativeRestoration !== undefined &&
-      authoritativeRestoration !== previousRestoration.current) ||
-      authoritativeConnected === false || previousConnected.current === false
-    previousCombat.current = state.combatId
-    previousRestoration.current = authoritativeRestoration
-    previousConnected.current = authoritativeConnected
-
-    if (baseline.current === null || combatChanged || restored) {
-      baseline.current = combatChanged ? latest : Math.max(baseline.current ?? -1, latest)
-      for (const timer of timers.current.values()) clearTimeout(timer)
-      timers.current.clear()
-      setActive((current) => current.length === 0 ? current : [])
-      return
-    }
-
-    const unseen = events.filter((event) => event.seq > baseline.current!)
-    baseline.current = Math.max(baseline.current, latest)
-    if (unseen.length === 0) return
-    setActive((current) => [
-      ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
-      ...unseen,
-    ])
-    for (const event of unseen) {
-      const prior = timers.current.get(event.seq)
-      if (prior) clearTimeout(prior)
-      const lastTarget = event.enemyIds.at(-1)
-      const lifetime = Math.max(900, lastTarget
-        // The target burst runs for 300ms after contact. Leave one frame-budget
-        // margin for a busy mobile renderer so the event cannot unmount before
-        // the delayed final impact paints.
-        ? characterAttackContactMs(state, lastTarget, event) + 420
-        : 0)
-      timers.current.set(event.seq, setTimeout(() => {
-        timers.current.delete(event.seq)
-        setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))
-      }, lifetime))
-    }
-  }, [authoritativeConnected, authoritativeRestoration, state.combatId, state.presentationEvents])
-
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) clearTimeout(timer)
-  }, [])
-
-  return active
-}
-
-function usePersonalCombatSoundEffects(
-  state: CombatState,
-  events: readonly CombatPresentationEvent[],
-  authoritativeRestoration?: number,
-  authoritativeConnected?: boolean,
-) {
-  const combatId = useRef(state.combatId)
-  const played = useRef(new Set<number>())
-  const pending = useRef(new Map<number, () => void>())
-  const previousRestoration = useRef(authoritativeRestoration)
-  const previousConnected = useRef(authoritativeConnected)
-
-  useEffect(() => {
-    const reset = combatId.current !== state.combatId ||
-      authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current ||
-      authoritativeConnected === false || previousConnected.current === false
-    combatId.current = state.combatId
-    previousRestoration.current = authoritativeRestoration
-    previousConnected.current = authoritativeConnected
-    if (reset) {
-      for (const cancel of pending.current.values()) cancel()
-      pending.current.clear()
-      played.current.clear()
-      return
-    }
-    const active = new Set(events.map((event) => event.seq))
-    for (const [seq, cancel] of pending.current) {
-      if (active.has(seq)) continue
-      cancel()
-      pending.current.delete(seq)
-    }
-    for (const event of events) {
-      if (played.current.has(event.seq)) continue
-      if (event.kind === 'potion') {
-        played.current.add(event.seq)
-        pending.current.set(event.seq, playCombatSound(potionSfxRecipe(event.sourceId)))
-        continue
-      }
-      if (event.kind === 'shiv') {
-        played.current.add(event.seq)
-        pending.current.set(event.seq, playCombatSound(shivSfxRecipe()))
-        continue
-      }
-      if (event.kind === 'orb') {
-        played.current.add(event.seq)
-        continue
-      }
-      const actor = state.players.find((player) => player.id === event.actorId)
-      if (!actor) continue
-      played.current.add(event.seq)
-      pending.current.set(event.seq,
-        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded)))
-    }
-  }, [authoritativeConnected, authoritativeRestoration, events, state.combatId, state.players])
-
-  useEffect(() => () => {
-    for (const cancel of pending.current.values()) cancel()
-    pending.current.clear()
-  }, [])
-}
+import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe } from './combat-vfx.ts'
+import { playSoundEffect } from './sfx.ts'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 function CombatScreenView({
   state,

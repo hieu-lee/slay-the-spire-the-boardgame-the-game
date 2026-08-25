@@ -1,0 +1,42 @@
+.icon {
+  display: inline-block;
+  flex: none;
+  object-fit: contain;
+  /* The art carries its own colour; the page only supplies the space. */
+}
+
+.icon--native {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgb(226 205 148 / 0.75);
+  border-radius: 3px;
+  color: #f0ddb0;
+  background: #17232b;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Images are exempt from forced-colour substitution, so the symbols keep their
+   own art. The rule only stops the browser adding a backplate behind them —
+   painting a background here put an opaque square behind every icon, which is
+   the tile this pass exists to remove. */
+@media (forced-colors: active) {
+  .icon {
+    forced-color-adjust: none;
+  }
+}
+
+.icon-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-value__number {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 1px 2px #000;
+}

@@ -1,0 +1,249 @@
+/* Neow is a shared table ritual, not another menu: every dealt face and every
+   revealed reward stays visible while the active seat resolves its card. */
+.neow-screen {
+  --neow-width: min(53vw, 54rem);
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: max(42rem, calc(100dvh - 5rem));
+  margin: 0;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  color: #f4ead7;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgb(5 7 8 / .15), rgb(4 5 6 / .2) 55%, rgb(2 3 4 / .78)),
+    url('/assets/combat/stage-act-1.webp') center / cover no-repeat;
+  box-shadow: inset 0 0 7rem #000;
+  font-family: 'Kreon', Georgia, serif;
+  overflow: hidden;
+}
+
+.neow-screen__neow {
+  position: absolute;
+  z-index: 0;
+  right: -3vw;
+  bottom: 10rem;
+  left: auto;
+  width: var(--neow-width);
+  height: auto;
+  filter: drop-shadow(0 1.5rem 2rem #000c);
+  opacity: 1;
+  pointer-events: none;
+}
+
+.neow-screen__hero {
+  position: absolute;
+  z-index: 1;
+  left: 7vw;
+  bottom: 12rem;
+  width: min(20vw, 17rem);
+  max-height: 45vh;
+  object-fit: contain;
+  filter: drop-shadow(0 1rem 1.2rem #000d);
+  pointer-events: none;
+}
+
+.neow-screen__header {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  margin: 0;
+}
+
+.neow-screen__header h2 { margin: 0; color: #f2eadb; font-size: 1.3rem; text-shadow: 0 3px 3px #000; }
+.neow-screen__progress { min-width: 5.5rem; padding: .55rem .75rem; text-align: center; border: 1px solid #54768c; border-radius: 999px; background: #101c26; }
+
+.neow-faces {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: start;
+  gap: .6rem;
+  width: min(36.75rem, 48vw);
+  margin: .75rem 0 0;
+}
+
+.neow-faces:has(.neow-face--solo) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  pointer-events: none;
+}
+
+.neow-face {
+  position: relative;
+  min-width: 0;
+  padding: .7rem;
+  border: 1px solid rgb(218 177 91 / .5);
+  border-radius: 0;
+  background: linear-gradient(165deg, rgb(31 26 24 / .92), rgb(12 15 18 / .94));
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .55);
+}
+
+.neow-face--active { border-color: #58c9f5; box-shadow: 0 0 0 2px rgba(88, 201, 245, .18), 0 8px 20px rgba(0, 0, 0, .35); }
+.neow-face--done { opacity: .74; }
+.neow-face__owner { display: flex; justify-content: space-between; gap: .5rem; color: #7fd9fb; }
+.neow-face__owner span { color: #b8ae9e; font-size: .8rem; }
+.neow-face blockquote { min-height: 2.5em; margin: .55rem 0; color: #e7d3ae; font-family: Georgia, serif; font-style: italic; }
+.neow-face__red { display: flex; align-items: center; gap: .35rem; padding: .45rem .55rem; border-radius: 7px; background: rgba(135, 36, 36, .38); color: #ffd6bf; font-weight: 700; }
+.neow-face ol { display: grid; gap: .35rem; margin: .7rem 0; padding: 0; list-style: none; counter-reset: neow-option; }
+.neow-face li { counter-increment: neow-option; padding: .38rem .45rem; border-left: 3px solid #237bb1; background: rgba(25, 76, 111, .23); font-size: .88rem; }
+.neow-face li::before { content: counter(neow-option) '. '; color: #65c9ef; font-weight: 800; }
+.neow-face li[data-picked="true"] { border-color: #e4bc62; background: rgba(142, 105, 27, .28); color: #ffe5a5; }
+.neow-face__reveal { overflow-wrap: anywhere; color: #d7cfbf; font-size: .8rem; }
+.neow-face__reveal span { color: #76d2f4; font-weight: 800; }
+.neow-face > button { width: 100%; min-height: 44px; }
+
+.neow-face--solo {
+  position: absolute;
+  top: 9rem;
+  right: calc(var(--neow-width) - 9rem);
+  left: auto;
+  width: min(24rem, 34vw);
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+.neow-face--solo .neow-face__owner,
+.neow-face--solo .neow-face__red,
+.neow-face--solo ol,
+.neow-face--solo .neow-face__reveal { display: none; }
+.neow-face--solo blockquote {
+  position: relative;
+  min-height: 0;
+  margin: 0;
+  padding: 1.2rem 1.5rem;
+  color: #292522;
+  background: #f5f4e9;
+  border: 3px solid #d8e8e6;
+  border-radius: 48% 45% 42% 48%;
+  box-shadow: 0 .5rem 1rem #0008;
+  font-size: 1.15rem;
+  text-align: center;
+}
+.neow-face--solo blockquote::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  bottom: -1.5rem;
+  border-width: 1.7rem .35rem 0 1.5rem;
+  border-style: solid;
+  border-color: #f5f4e9 transparent transparent;
+  transform: rotate(-12deg);
+}
+
+.neow-face > button,
+.neow-options > button,
+.neow-offer__actions > button,
+.neow-card-choice > button {
+  min-height: 44px;
+  color: #f8edd6;
+  background: linear-gradient(#30444d, #17282f);
+  background-color: #17282f;
+  border: 1px solid #79bad2;
+  border-radius: 6px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .09), 0 3px 0 #071116;
+}
+
+.neow-face > button:hover:not(:disabled),
+.neow-options > button:hover:not(:disabled),
+.neow-offer__actions > button:hover:not(:disabled),
+.neow-card-choice > button:hover:not(:disabled),
+.neow-face > button:focus-visible,
+.neow-options > button:focus-visible,
+.neow-offer__actions > button:focus-visible,
+.neow-card-choice > button:focus-visible {
+  color: #fff8e8;
+  background: linear-gradient(#426475, #204151);
+  background-color: #204151;
+  border-color: #b9e9fa;
+}
+
+.neow-face > button:disabled,
+.neow-options > button:disabled,
+.neow-offer__actions > button:disabled,
+.neow-card-choice > button:disabled {
+  color: #a9a49a;
+  background: #292d2f;
+  border-color: #555c5f;
+  box-shadow: none;
+  opacity: 1;
+}
+
+.neow-offer__actions > button[aria-pressed="true"],
+.neow-options > button[aria-expanded="true"] {
+  color: #1c160b;
+  background: linear-gradient(#f0d993, #c99f48);
+  background-color: #c99f48;
+  border-color: #ffe6a3;
+}
+
+.neow-action {
+  z-index: 1;
+  position: absolute;
+  right: 4vw;
+  bottom: 2rem;
+  left: 52vw;
+  width: auto;
+  margin: 0;
+  padding: .8rem;
+  border: 0;
+  background: rgb(4 8 10 / .68);
+  box-shadow: none;
+}
+
+.neow-action__owner { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem 1rem; margin-bottom: .45rem; }
+.neow-action__owner > span:first-child { color: #e2bc69; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.neow-action__owner h3 { margin: 0; font-size: 1.25rem; }
+.neow-action__owner > span:last-child { margin-left: auto; display: inline-flex; align-items: center; gap: .25rem; color: #cfc6b6; }
+.neow-action__waiting { margin: .6rem 0 0; padding: .75rem; border-radius: 8px; background: rgba(40, 102, 132, .22); }
+
+.neow-action--offer {
+  position: absolute;
+  inset: .75rem;
+  z-index: 5;
+  max-height: none;
+  overflow: auto;
+  background: rgb(7 9 10 / .94);
+  border: 1px solid #8ca7ad;
+}
+.neow-action--offer .neow-offer__cards {
+  --card-width: clamp(88px, 23vh, 160px);
+  justify-content: safe center;
+}
+.neow-action--offer .neow-offer__cards .card { flex-basis: var(--card-width); }
+
+.neow-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+.neow-options button { min-height: 68px; display: grid; grid-template-columns: 2rem 1fr; align-items: center; gap: .4rem; text-align: left; }
+.neow-options button > span { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; color: #ddf6ff; background: #176f9b; }
+
+.neow-offer h3 { margin: .2rem 0; color: #8adfff; }
+.neow-unrevealed { padding: 0; border: 0; border-radius: 0; background: none; }
+.neow-unrevealed p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1rem; margin: 0 0 .7rem; }
+.neow-unrevealed strong { color: #8adfff; }
+.neow-unrevealed span { color: #c8c0b1; }
+.neow-source-choice { display: flex; flex-wrap: wrap; gap: .45rem .8rem; margin: 0 0 .7rem; border: 0; padding: 0; }
+.neow-source-choice legend { width: 100%; color: #e9ddc8; }
+.neow-source-choice label { display: inline-flex; min-height: 2.75rem; align-items: center; gap: .35rem; }
+.neow-offer__cards { display: flex; align-items: flex-start; gap: .7rem; padding: .6rem .2rem; overflow-x: auto; scroll-snap-type: x proximity; }
+.neow-offer__cards .card { flex: 0 0 min(210px, 65vw); scroll-snap-align: center; }
+.neow-offer__actions { display: flex; flex-wrap: wrap; gap: .55rem; }
+.neow-offer button, .neow-options button, .neow-card-choice > button { min-height: 44px; }
+.neow-offer__actions button { flex: 1 1 10rem; }
+.neow-offer__skip { margin-left: auto; }
+
+.neow-card-choice { min-width: 0; margin-top: .9rem; padding: .75rem 0 0; border: 0; }
+.neow-card-choice legend { padding: 0 .4rem; color: #83d9fa; font-weight: 800; }
+.neow-card-choice > div { display: flex; gap: .65rem; padding: .5rem 0; overflow-x: auto; }
+.neow-card-choice .card { flex: 0 0 min(180px, 58vw); }
+.neow-card-choice > button { width: 100%; }

@@ -1,0 +1,286 @@
+/* A full party stays on one stage; shrinking lanes is better than scrolling
+   teammates above the visible battlefield. */
+.board[data-rows='3'] > .row:has(.seat--empty):not(:has(.enemy)),
+.board[data-rows='4'] > .row:has(.seat--empty):not(:has(.enemy)) {
+  overflow: hidden;
+}
+
+.board[data-rows='3'] .seat {
+  --portrait-height: calc(7.4rem * var(--stage-scale));
+}
+
+.board[data-rows='4'] .seat {
+  --portrait-height: calc(5.7rem * var(--stage-scale));
+}
+
+/* Co-op lanes share one physical stage: every actor stands on the same floor. */
+.board {
+  --stage-scale: 1;
+
+  display: block;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.board::-webkit-scrollbar { display: none; }
+
+.row__enemies {
+  display: contents;
+}
+
+.board__bosses {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  width: max(100%, var(--stage-width));
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+.board__bosses .enemy {
+  pointer-events: auto;
+}
+
+.row,
+.board[data-rows='3'] > .row,
+.board[data-rows='4'] > .row {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  width: max(100%, var(--stage-width));
+  min-height: 0;
+  padding: 0;
+}
+
+/* Every actor measurement below is multiplied by --stage-scale, so a stage that
+   has outgrown the board shrinks as one piece instead of turning into a row of
+   thin towers. CombatScreen sets the scale from the actor count and the board's
+   measured width. */
+.row__seat {
+  position: absolute;
+  bottom: calc(1.1rem * var(--stage-scale));
+  left: calc(1.5rem * var(--stage-scale) + var(--stage-row) * var(--stage-gap));
+  width: var(--stage-actor-width);
+  height: calc(18.5rem * var(--stage-scale));
+  align-content: start;
+}
+
+.seat,
+.board[data-rows='4'] .seat {
+  width: 100%;
+}
+
+.board .enemy,
+.board .board__bosses .enemy {
+  position: absolute;
+  right: calc(1.5rem * var(--stage-scale) + var(--stage-index) * var(--stage-gap));
+  bottom: calc(1.1rem * var(--stage-scale));
+  width: var(--stage-actor-width);
+  height: calc(14rem * var(--stage-scale));
+}
+
+.board[data-rows='3'] .enemy__portrait:has(> img),
+.board[data-rows='4'] .enemy__portrait:has(> img) {
+  aspect-ratio: 1.35;
+}
+
+.seat__name,
+.seat .bar {
+  position: relative;
+  z-index: 3;
+}
+
+.row__seat .seat {
+  height: calc(18.5rem * var(--stage-scale));
+}
+
+.row__seat .seat__portrait,
+.board .enemy__portrait {
+  position: absolute;
+  right: 0;
+  bottom: calc(3rem * var(--stage-scale));
+  left: 0;
+}
+
+.row__seat .seat__name {
+  position: absolute;
+  right: 0;
+  bottom: calc(1.55rem * var(--stage-scale));
+  left: 0;
+}
+
+.row__seat .seat .bar,
+.board .enemy .bar {
+  position: absolute;
+  right: 0;
+  bottom: calc(0.35rem * var(--stage-scale));
+  left: 0;
+}
+
+/* The name and HP strips are the first things to become unreadable as the stage
+   shrinks, so they scale too — but never above their full-size value. */
+.board .enemy__head,
+.board .seat__name,
+.board .bar__label {
+  font-size: min(0.78rem, calc(0.86rem * var(--stage-scale)));
+}
+
+.board .enemy__intent .intent {
+  zoom: min(1, calc(var(--stage-scale) + 0.15));
+}
+
+/* `bottom` scales with `--stage-scale` for the same reason every other
+   seat-floor anchor does (`.row__seat .seat__portrait`, `.seat__name`,
+   `.seat .bar`, all a few rules up) — a flat, unscaled value stays put while
+   everything it's meant to hover near shrinks with the stage, so at a low
+   enough scale (many players/enemies sharing one board) it drifts down
+   past the portrait's own (correctly scaled) top edge and overlaps the
+   Orbs/`.seat__meta` band floating there, the exact failure this pass
+   exists to close off for `.seat__meta` specifically — this row shares the
+   same risk and the same fix. */
+.seat__status-strip {
+  position: absolute;
+  z-index: 8;
+  right: -0.25rem;
+  bottom: calc(3rem * var(--stage-scale));
+  left: -0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 0;
+  min-width: 0;
+  overflow: auto hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.seat__status-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.seat__status-strip > .tokens,
+.seat__status-strip > .powers {
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  gap: 0;
+  margin: 0;
+  line-height: 0;
+}
+
+.seat__status-strip > .powers > li {
+  height: 44px;
+}
+
+.seat__status-strip .power {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 25%;
+  overflow: visible;
+  background: none;
+  box-shadow: none;
+  filter: drop-shadow(0 1px 1px #000);
+  pointer-events: auto;
+}
+
+.seat__status-strip .power::after {
+  display: none;
+}
+
+.seat__status-strip .power:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px #e8c877;
+}
+
+/* Pending-effect chips and held-Potion icons used to sit at a flat
+   `top: 1.95rem`, tuned back when Orbs floated low enough (over the top of
+   the portrait, not above it — the bug `.orbs` in styles/enemy-portrait.css
+   exists to fix) that the two never met. Once Orbs moved to float above the
+   portrait instead,
+   this row landed squarely on top of them. Anchoring from `bottom` instead
+   — using the same `--portrait-height` the portrait itself is sized from,
+   plus the portrait's own fixed anchor point off the seat's floor — lands
+   this row's OWN bottom edge just above the portrait's top edge regardless
+   of stage scale or row count, and `--orb-clearance` (the fixed gap `.orbs`
+   guarantees above the portrait at any orb count, see
+   styles/enemy-portrait.css) is exactly the room this row now floats in: below
+   the Orbs, above the character.
+   `max-height` makes that an enforced ceiling rather than a coincidence:
+   nothing here otherwise stops a future taller chip (a bigger icon, a
+   second line of text) from growing this row past `--orb-clearance` and
+   landing back on the Orbs it sits above — this row's own `overflow-y:
+   hidden` already clips vertical overflow, so capping the height just
+   makes that clipping happen safely INSIDE this row's reserved space
+   instead of the row growing out of it and over the Orbs. */
+.seat__meta {
+  position: absolute;
+  z-index: 7;
+  bottom: calc(3rem * var(--stage-scale) + var(--portrait-height) + 0.2rem);
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 1.25rem;
+  max-height: calc(var(--orb-clearance) - 0.4rem);
+  overflow: auto hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.seat__meta:empty {
+  display: none;
+}
+
+.seat__meta > * {
+  flex: 0 0 auto;
+  padding: 0.12rem 0.28rem;
+  background: rgb(4 7 9 / 0.82);
+  border: 1px solid rgb(222 190 113 / 0.42);
+  border-radius: 999px;
+}
+
+.board .enemy .tokens {
+  position: absolute;
+  right: 0;
+  bottom: -1.05rem;
+  left: 0;
+}
+
+.seat__status-strip > .tokens,
+.board .enemy .tokens {
+  gap: 0;
+  flex-wrap: nowrap;
+}
+
+.seat__status-strip .token,
+.board .enemy .token {
+  position: relative;
+  box-sizing: border-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.45rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px #000);
+  pointer-events: auto;
+}
+
+.seat__status-strip .token__count,
+.board .enemy .token__count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.62rem;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000, 0 0 2px #000;
+}

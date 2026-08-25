@@ -48,10 +48,23 @@ check('frontend surfaces select only their owning browser suite', () => {
     'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
   ])
 })
+check('an engine submodule selects what its barrel selects', () => {
+  // combat.ts is a barrel over src/game/combat/. Nothing outside the engine
+  // imports those files directly, so without this the browser suites stop
+  // running for any engine change made inside them.
+  assertDeepEqual(affected('src/game/combat/effects.ts'), affected('src/game/combat.ts'))
+  assertDeepEqual(affected('src/game/run/events.ts'), affected('src/game/run.ts'))
+  // Answering for the barrel must not make an unimported new module look
+  // covered: a file no script reaches still runs everything.
+  assertDeepEqual(affected('src/game/combat/not-imported-yet.ts'), scripts)
+  assertDeepEqual(affected('src/game/run/not-imported-yet.ts'), scripts)
+})
 check('shared frontend and toolchain changes stay conservative', () => {
-  assertDeepEqual(affected('src/ui/chrome.css').filter((script) => script.includes('browser')), [
-    'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
-  ])
+  for (const sheet of ['src/ui/chrome.css', 'src/ui/chrome/keys.css', 'src/ui/styles/hand.css']) {
+    assertDeepEqual(affected(sheet).filter((script) => script.includes('browser')), [
+      'verify-browser.mjs', 'verify-noncombat-browser.mjs', 'verify-online-browser.mjs',
+    ], sheet)
+  }
   assertDeepEqual(affected('package.json'), scripts)
   assertDeepEqual(affected('pnpm-workspace.yaml'), scripts)
 })

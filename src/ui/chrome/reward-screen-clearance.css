@@ -1,0 +1,9 @@
+/* The run log chip is fixed to the bottom-left, and the reward screen is its
+   own scroll container — so scrolled to the bottom at 1024px its Collect key
+   ran under the chip. The chip does not steal the click, but a button with a
+   tab sitting on it reads as broken. Reserve the corner. */
+/* Breathing room under the content so the sticky collect bar spends less of its
+   time over the card faces. Cosmetic, not a correctness fix: the bar is the last
+   thing in the flow, so it parks below the content at the end of the scroll
+   either way, and every choice is reachable with or without this. */
+.sts-scope .reward-screen__players { margin-bottom: 3.75rem; }

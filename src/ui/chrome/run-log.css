@@ -1,0 +1,70 @@
+/* It used to be a full-width black slab pinned to the bottom edge. Now it is a
+   closed tab that grows into a framed scroll.
+
+   It also moved to the bottom-LEFT. The bottom-right belongs to things that are
+   all more urgent than a log — the Courier's offer and Neow's Skip key — and it
+   was landing on top of them.
+
+   The bottom-left is not free everywhere either: the reward screen reserves it
+   with `padding-bottom` below; the SHOP puts its Leave banner there, so the log
+   swaps to the right for that one screen (the Courier never appears in a shop,
+   so that corner is genuinely free there); and Neow — a full-bleed scene with
+   content in BOTH bottom corners and no scroller to move it clear — simply does
+   not render the log at all (App.tsx / OnlineGame.tsx). There is no empty
+   corner; each screen either makes room, swaps sides, or opts out. */
+.log {
+  right: auto;
+  left: 1rem;
+  bottom: 1rem;
+  width: auto;
+  max-width: min(30rem, calc(100vw - 2rem));
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: visible;
+  text-align: left;
+}
+
+.log[open] {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: start;
+}
+
+.log > summary { text-align: left; }
+
+.log[open]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  /* Clears the summary tab above it: the tab's own height plus this
+     element's row gap. Derived from both, not guessed. */
+  inset: calc(var(--key-min-height) + 0.45rem) 0 0;
+  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.28);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}
+
+.log p {
+  max-width: 100%;
+  margin: 0;
+  padding: 0.2rem 0.8rem;
+  color: #b9ad93;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.log p:first-of-type { padding-top: 0.7rem; }
+
+/* The newest line is the one the player is actually looking for. */
+.log p:last-of-type { padding-bottom: 0.7rem; color: var(--cream); }
+
+/* An opened log grows upward from its own corner, so whatever else claims that
+   corner would cover the newest lines — the ones the player opened it to read.
+   It wins while open, because it is only ever open on purpose. */
+.log[open] { z-index: 31; }

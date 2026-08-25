@@ -1,0 +1,78 @@
+.enemy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  padding: 0.4rem 0.5rem;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+.enemy--targeted:not(:disabled):hover {
+  border-color: var(--gold);
+  transform: translateY(-2px);
+}
+
+.enemy--boss {
+  border-color: var(--blood);
+}
+
+.enemy--dead {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.enemy__name {
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.enemy__boss-tag {
+  font-size: 0.55rem;
+  letter-spacing: 0.14em;
+  color: var(--blood);
+  border: 1px solid var(--blood);
+  border-radius: 999px;
+  padding: 0 0.3rem;
+}
+
+.enemy__intent {
+  font-size: 0.8rem;
+  color: var(--gold);
+}
+
+.enemy__ability {
+  margin: 0 0.5rem;
+  color: #e2b34f;
+  font-size: 0.65rem;
+  line-height: 1.2;
+}
+
+.enemy__ability--spent {
+  color: var(--ink-dim);
+  text-decoration: line-through;
+}
+
+.enemy__attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0.5rem;
+  color: #db8cff;
+  font-size: 0.65rem;
+}
+
+.enemy__attachment img {
+  width: 2rem;
+  aspect-ratio: 744 / 1039;
+  object-fit: cover;
+  border-radius: 0.15rem;
+  box-shadow: 0 0 0.6rem rgb(185 80 255 / 45%);
+}

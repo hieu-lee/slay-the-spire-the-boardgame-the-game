@@ -1,0 +1,141 @@
+/* Phones use a scaled desktop combat board in landscape. Persistent filtered
+   layers are disproportionately expensive there, so keep the readable art and
+   short action overlay while dropping ambient and multi-layer effects. */
+html[data-mobile-performance='true'] .power::after,
+html[data-mobile-performance='true'] .seat__portrait > img,
+html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
+html[data-mobile-performance='true'] .stance-aura,
+html[data-mobile-performance='true'] .hand .card--drawn,
+html[data-mobile-performance='true'] .motion-pulse-0,
+html[data-mobile-performance='true'] .motion-pulse-1,
+html[data-mobile-performance='true'] .token--orb::before,
+html[data-mobile-performance='true'] .seat--targetable {
+  animation: none;
+}
+
+html[data-mobile-performance='true'] .seat__portrait::before,
+html[data-mobile-performance='true'] .enemy__portrait::before,
+html[data-mobile-performance='true'] .character-attack,
+html[data-mobile-performance='true'] .combat-vfx::before,
+html[data-mobile-performance='true'] .combat-vfx::after {
+  display: none;
+}
+
+html[data-mobile-performance='true'] .seat,
+html[data-mobile-performance='true'] .enemy,
+html[data-mobile-performance='true'] .seat__portrait > img,
+html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
+html[data-mobile-performance='true'] .stance-aura,
+html[data-mobile-performance='true'] .combat-vfx,
+html[data-mobile-performance='true'] .hit-vfx,
+html[data-mobile-performance='true'] .card-drag,
+html[data-mobile-performance='true'] .card-target-arrow__line,
+html[data-mobile-performance='true'] .hand .card {
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .combat-vfx {
+  mix-blend-mode: normal;
+}
+
+html[data-mobile-performance='true'] .card-target-arrow__line {
+  animation: none;
+}
+
+html[data-mobile-performance='true'] .hand .card {
+  transition: none;
+  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
+}
+
+html[data-mobile-performance='true'] .hand .card--unplayable {
+  opacity: 0.55;
+}
+
+html[data-mobile-performance='true'] .hand .card--selected {
+  outline: 2px solid #62e6ff;
+  outline-offset: 1px;
+  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
+}
+
+html[data-mobile-performance='true'] .seat--targeted,
+html[data-mobile-performance='true'] .enemy--targeted {
+  outline: 3px solid #65e8ff;
+  outline-offset: 3px;
+}
+
+html[data-mobile-performance='true'] .choice-modal::backdrop {
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hand .card { transition: none; }
+  .card-drag { transition: none; }
+  .card-target-arrow__line { animation: none; }
+
+  .hand .card--drawn,
+  .card-flight,
+  .motion-pulse-0,
+  .motion-pulse-1,
+  .token--orb::before,
+  .combat__phase,
+  .combat__result,
+  .reward-screen__choice {
+    animation: none;
+  }
+
+  .card-flight { display: none; }
+
+  .seat__portrait > img,
+  .enemy__portrait > .enemy__art--cutout,
+  .seat__portrait::before,
+  .enemy__portrait::before,
+  .hit-vfx,
+  .hit-vfx strong {
+    animation: none;
+  }
+
+  .stance-aura,
+  .combat-vfx,
+  .combat-vfx::before,
+  .combat-vfx::after,
+  .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img,
+  .seat[class*='seat--attack-'] .seat__portrait > img,
+  .seat--attack-ironclad .character-attack--ironclad,
+  .seat--attack-watcher .character-attack--watcher {
+    animation: none;
+    transform: none;
+  }
+
+  .character-attack { display: none; }
+
+  .seat--attack-watcher .stance-aura--calm,
+  .seat--attack-watcher .stance-aura--wrath { animation: none; }
+
+  .stance-aura--calm { opacity: 0.66; }
+  .stance-aura--wrath { opacity: 0.78; }
+  .combat-vfx { opacity: 0.55; }
+  .combat-vfx::before,
+  .combat-vfx::after { opacity: 0.45; }
+
+  .seat--dead .seat__portrait,
+  .enemy--dead .enemy__portrait,
+  .seat--dead.seat--falling .seat__portrait,
+  .enemy--dead.enemy--falling .enemy__portrait {
+    animation: none;
+    opacity: 0.28;
+    transform: translateY(10%) scale(0.76, 0.64) rotate(3deg);
+    filter: grayscale(1) brightness(0.5);
+  }
+
+  .seat--dead .seat__portrait::before,
+  .enemy--dead .enemy__portrait::before,
+  .seat--dead .seat__portrait::after,
+  .enemy--dead .enemy__portrait::after,
+  .seat--dead.seat--falling .seat__portrait::before,
+  .enemy--dead.enemy--falling .enemy__portrait::before,
+  .seat--dead.seat--falling .seat__portrait::after,
+  .enemy--dead.enemy--falling .enemy__portrait::after {
+    animation: none;
+    display: none;
+  }
+}

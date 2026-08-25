@@ -1,0 +1,470 @@
+/* Which buttons are keys.
+   Cards, enemies, map rooms and the other pictorial buttons all carry a class
+   of their own; the plumbing buttons — "New run", "Rest +3 HP", "Take" — carry
+   none. Selecting on the ABSENCE of a class is what lets one rule dress every
+   plain control on every screen without listing them, and without ever reaching
+   a card. Classed buttons that DO want the skin are listed below by name.
+
+   `[class='']` is not redundant: this codebase writes conditional classes as
+   `className={chosen ? 'is-chosen' : ''}`, and React renders that empty string
+   as a real `class=""` attribute — so `:not([class])` skips every one of those
+   buttons. That is what left the campfire's Rest and Smith keys undressed. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+) {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--key-min-height);
+  padding: 0.42rem 1.05rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+  color: var(--cream);
+  /* The colour is set twice on purpose. A `background` shorthand carrying only
+     a gradient leaves `background-color` transparent, and the desktop styling
+     audit in scripts/verify-online-browser.mjs reads `background-color` to
+     compute a contrast ratio — against a transparent value it cannot. The flat
+     colour is also the fallback if the gradient ever fails to paint. */
+  background-color: var(--slate);
+  background-image: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 -2px 0 rgb(0 0 0 / 0.45),
+    inset 0 0 0 1px rgb(0 0 0 / 0.4);
+  filter: drop-shadow(var(--hard-shadow));
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+  cursor: pointer;
+  transition:
+    color var(--motion-lerp) var(--ease-lerp),
+    filter var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp);
+}
+
+/* The client's hover affordance for a row of text is the text turning gold and
+   the row stretching slightly MORE vertically than horizontally. Both of those
+   are here; neither is a background swap. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+):hover:not(:disabled) {
+  /* --light-yellow, not --sts-gold: gold on this slate plate measures 4.12:1
+     at the top of the glyph band. Same warm hover family, clears 4.5:1. */
+  color: var(--light-yellow);
+  transform: scale(1.03, 1.09);
+  filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
+}
+
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+):active:not(:disabled) {
+  transform: translateY(2px) scale(1, 1);
+  filter: none;
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.6);
+}
+
+/* Claimed and unavailable things tint to a desaturated teal in the client
+   rather than simply dimming, which keeps them legible on a dark ground. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+):disabled {
+  /* The client tints unavailable things toward a desaturated teal rather than
+     just dimming them. Its own constant, rgb(102,153,153), is a multiply tint
+     over art; used directly as TEXT on this plate it lands near 2.4:1, so the
+     same hue is taken lighter to clear 4.5:1.
+
+     `opacity: 1` is load-bearing. Dimming a disabled key composites its text
+     over whatever is behind the panel, which turned a computed 6.85:1 into
+     2.68:1 as rendered on the shop shelf — the online spectator's default view,
+     since every tile is disabled for a seat that is not the one shopping. That
+     shop rule is deleted now, but `.reward-screen__relic/__potion
+     button:disabled` still sets `opacity: .72` and still loses to this block,
+     so the reset stays. The teal plate already carries the disabled
+     affordance; the dimming only destroyed contrast. */
+  opacity: 1;
+  color: #9dc0c0;
+  background-color: #26303a;
+  background-image: linear-gradient(180deg, #26303a, #161c22);
+  filter: none;
+  text-shadow: none;
+  cursor: not-allowed;
+}
+
+/* The one action that advances the run is the one gold thing on the screen.
+
+   Every selector here has to OUT-SPECIFY the key block above, not merely tie
+   it. `:is()` takes the specificity of its most specific argument, so that
+   whole block scores (0,2,1) — the weight of `.sts-scope button:not([class])`
+   — for every argument it holds, `.is-chosen` among them. A bare
+   `.sts-scope .is-chosen` scored (0,2,0) and lost outright: a chosen campfire
+   option rendered pixel-identical to an unchosen one. `:not(:disabled)` is
+   what carries this past the tie, and it is honest rather than a specificity
+   hack — a disabled option should not advertise itself as the chosen one. */
+.sts-scope button:not([class])[aria-pressed='true']:not(:disabled),
+.sts-scope button[class=''][aria-pressed='true']:not(:disabled),
+.sts-scope button.is-chosen:not(:disabled) {
+  color: #2a1c07;
+  background-color: var(--trim-lit);
+  background-image: linear-gradient(180deg, #ffe9a8, var(--trim-lit) 42%, #a97e2c);
+  border-color: #4a3110;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.sts-scope button.is-chosen:hover:not(:disabled),
+.sts-scope button:not([class])[aria-pressed='true']:hover:not(:disabled) { color: #2a1c07; }
+
+/* The universal "this one is selected" motif: four L-shaped corner brackets,
+   the sprite the client stamps on every hovered reward row and picked card.
+
+   Drawn INSIDE the border box. The chamfer `clip-path` on the button clips its
+   own pseudo-elements too, so the outset version of this (`inset: -5px`) was
+   painted and then thrown away — leaving nothing but the plate to distinguish
+   a chosen option. Anything that has to be visible on a clipped element has to
+   live within the clip. */
+.sts-scope button:not([class])[aria-pressed='true']::after,
+.sts-scope button[class=''][aria-pressed='true']::after,
+.sts-scope button.is-chosen:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background:
+    linear-gradient(#2a1c07, #2a1c07) 0 0 / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 0 / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 0 / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 0 / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 100% / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 0 100% / 2px 12px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 100% / 12px 2px no-repeat,
+    linear-gradient(#2a1c07, #2a1c07) 100% 100% / 2px 12px no-repeat;
+  pointer-events: none;
+}
+
+.sts-scope button:not([class])[aria-pressed='true'],
+.sts-scope button[class=''][aria-pressed='true'],
+.sts-scope button.is-chosen:not(:disabled) { position: relative; }
+
+/* A `.muted` sub-label is `--ink-dim`, which was chosen against this codebase's
+   near-black page ground. On the key's much lighter slate plate it measures
+   3.99:1 over the top half of its own glyph band. The keys carry the sub-label
+   on "Rest +3 HP" and "Smith upgrade" — the two words that say what the button
+   actually does — so it is lifted to a tint that clears 4.5:1 across the whole
+   gradient. It still reads as secondary through size and weight. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+) .muted { color: #dfd5c2; }
+
+/* Gold keys carry dark text, so the muted sub-label inside one has to darken
+   with it or it disappears into the plate. */
+.sts-scope button.is-chosen:not(:disabled) .muted,
+.sts-scope button:not([class])[aria-pressed='true'] .muted,
+.sts-scope button[class=''][aria-pressed='true'] .muted { color: #2a1c07; }
+
+/* An `outline` paints OUTSIDE the border box, and the chamfer `clip-path` on
+   these keys clips it away entirely — so keyboard focus became invisible on
+   every plain button in the shell, silently, because the suites only assert
+   that something matches `:focus-visible`. Pulling the ring inside the box with
+   a negative offset puts it back within the clip. */
+:is(
+  .sts-scope button:not([class]),
+  .sts-scope button[class=''],
+  .sts-scope .is-chosen,
+  .sts-scope .reward-screen__skip,
+  .sts-scope .reward-screen__collect,
+  .sts-scope .neow-offer__skip,
+  .sts-scope .campfire__leave,
+  .sts-scope .prompt__cancel,
+  .sts-scope .online-entry__back,
+  .sts-scope .online-lobby__copy,
+  .sts-scope .online-lobby__start,
+  /* These three carry their own `clip-path` in styles.css and were missed when
+     this list was written, so the global 2px ring was clipped away entirely and
+     keyboard focus was invisible on the two biggest keys in the game — "Leave
+     merchant" and "End turn" — and on the compendium's back arrow. Broken at
+     HEAD too; fixed here because it is the exact bug this block exists for.
+
+     `.room-proceed` is an ARROW, not a chamfer — its concave left notch and
+     right point mean the inset ring reads as a top and bottom bar rather than a
+     closed rectangle. Visible, which is the requirement, but not the same shape
+     the chamfered keys get. The compendium's own back arrow needs a different
+     offset again and has its own rule in chrome/online-entry.css. */
+  .sts-scope .room-proceed,
+  .sts-scope .combat__end-turn,
+  /* Added to the key plate above, so they carry the chamfer too — and the
+     chamfer is exactly what throws the global 2px ring away. */
+  .sts-scope .reward-boss__pick,
+  .sts-scope .merchant-removal-dialog__confirm,
+  .sts-scope .merchant-potion-dialog__confirm
+):focus-visible,
+.log > summary:focus-visible,
+.combat-log-drawer > summary:focus-visible,
+.online-lobby__settings > summary:focus-visible,
+.start-menu__meta > summary:focus-visible {
+  outline: 3px solid var(--sts-gold);
+  outline-offset: -4px;
+}
+
+/* Native form controls keep their platform skin no matter the border you give
+   them; `appearance: none` plus a drawn chevron is the only way off it.
+   These two are NOT scoped to `.sts-scope`. A platform select arrow and a
+   system-blue checkbox are the loudest "this is a web page" signals in the
+   build, and nothing here has a bespoke alternative to protect — so they are
+   dressed everywhere. The compendium in particular renders before a run exists
+   and so never gets the scope class. (The online lobby and entry screens DO
+   carry it now — this change added it — but these rules predate that and are
+   still deliberately global.) */
+select,
+input[type='search'],
+input:is(:not([type]), [type='text']) {
+  appearance: none;
+  /* Matches the key floor. At 2.1rem this rule was SHRINKING the online entry
+     screen's name and room-code inputs, which styles.css had at 38.8px — the
+     two primary controls of the multiplayer entry point, on a screen no suite
+     measures. */
+  min-height: var(--key-min-height);
+  /* A `select` sizes to its widest option and never wraps, so an option that
+     carries a relic's printed text can push the control past its panel. Capping
+     it makes the control truncate instead of overflowing. The dropped-open list
+     takes the control's width in Chromium and Firefox, so a long option is
+     ellipsized there too — the relic's full text is still reachable from the
+     HUD chip's tooltip, which is why that tooltip carries the same prose. */
+  max-width: 100%;
+  padding: 0.3rem 2rem 0.3rem 0.6rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  color: var(--cream);
+  background-color: #1c1712;
+  background-image: linear-gradient(180deg, #241d17, #14100d);
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.6);
+  font-family: 'Kreon', Georgia, serif;
+}
+
+/* The chevron rides its own, more specific rule.
+   `appearance: none` above is declared nowhere else, so it always lands and the
+   native arrow always goes. The replacement arrow, though, was painted through
+   the `background` SHORTHAND on a bare `select`, and styles.css rules that set
+   their own `background` wiped it — leaving a dropdown with no arrow at all,
+   worse than the native control it replaced.
+
+   This change deleted most of those. What is left: `.online-entry select` /
+   `.online-lobby select` (styles.css, one block) merely TIE this rule and lose
+   on load order, and `.end-turn-order li select` is (0,1,2) and genuinely
+   out-specifies it — which is the only reason the extra arm below is needed. */
+select:not([multiple]),
+.end-turn-order li select {
+  /* The gutter belongs with the chevron: `.end-turn-order li select` sets its
+     own padding at a specificity that beats the base rule above, so without
+     this its option text runs underneath the arrow. */
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 48%, var(--trim-lit) 48% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 48%, var(--trim-lit) 48% 56%, transparent 56%),
+    linear-gradient(180deg, #241d17, #14100d);
+  background-repeat: no-repeat;
+  background-position: right 0.85rem top 55%, right 0.45rem top 55%, 0 0;
+  background-size: 0.42rem 0.42rem, 0.42rem 0.42rem, auto;
+}
+
+input[type='search'],
+input:is(:not([type]), [type='text']) { padding-right: 0.6rem; }
+
+/* styles.css skins `.online-entry select` / `.online-lobby select` at (0,1,1),
+   which beats the bare `select` above — so on the entry screen the Character
+   picker kept a 4.8px radius and a lighter plate while the text input beside it
+   was square and dark. Two treatments, one panel. The font size is pinned too:
+   those inputs use `font: inherit`, so one picked up its label's 0.8rem and its
+   neighbour the panel's 1rem, leaving them 3.2px apart and the smaller one
+   under the 16px threshold that makes iOS zoom on focus.
+
+   Combat's `.end-turn-order li select` deliberately keeps its own FONT SIZE: it
+   is `(0,1,2)` and wins on `font`, which holds the dense turn-order list at
+   0.72rem. Its height is not bespoke — the base `select` rule still gives it
+   the 46px floor. That row is desktop-only, so the zoom threshold does not
+   apply to it. */
+.end-turn-order li select { font-family: 'Kreon', Georgia, serif; }
+
+.sts-scope select,
+.sts-scope input[type='search'],
+.sts-scope input:is(:not([type]), [type='text']) {
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  /* `color` belongs here too. Without it styles.css kept `--ink` on the select
+     while the input next to it took `--cream` from the base rule — the same
+     "two treatments, one panel" split this block exists to close. */
+  color: var(--cream);
+  background-color: #1c1712;
+  font-size: 1rem;
+}
+
+select option { background: #14100d; color: var(--cream); }
+
+/* `appearance: none` strips the platform's disabled skin along with everything
+   else, and the rules above then pin an opaque plate and cream text — so a
+   disabled control rendered pixel-identical to a live one. The lobby disables
+   its ascension and character pickers whenever the socket drops, which made a
+   dead dropdown look fully interactive.
+
+   The select arm must restate ALL THREE background layers. `background-size`,
+   `-position` and `-repeat` are still the chevron rule's three-value lists, so
+   a single-layer `background-image` here left the plate painted at 6.7x6.7px in
+   the arrow's slot, deleted the arrow, and let the control fall back to a
+   LIGHTER colour from styles.css — the exact inverse of the intent. */
+input:disabled {
+  color: #9dc0c0;
+  background-image: linear-gradient(180deg, #1b1713, #100d0b);
+  cursor: not-allowed;
+}
+
+select:disabled {
+  color: #9dc0c0;
+  background-color: #17130f;
+  background-image:
+    linear-gradient(45deg, transparent 48%, #6f6152 48% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 48%, #6f6152 48% 56%, transparent 56%),
+    linear-gradient(180deg, #1b1713, #100d0b);
+  cursor: not-allowed;
+}
+
+/* A struck plate with a drawn tick, which is what the client's OPTION_TOGGLE
+   is. The tick is drawn with two gradient strokes so there is no glyph to fall
+   back badly. The box itself is 1.15rem — its label is the real hit target,
+   and inside a grid label (`.event-selectors`) that comes to roughly 37px
+   rather than the `--key-min-height` floor every other key holds. */
+input[type='checkbox'] {
+  appearance: none;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0 0.15rem;
+  border: 1px solid var(--trim-dim);
+  background: linear-gradient(180deg, #241d17, #14100d);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.6);
+  cursor: pointer;
+}
+
+/* The tick is sized in PERCENTAGES of the box, not in rem. This rule is global
+   and the box is not one size everywhere — the start menu's settings dialog
+   gives its checkboxes 2rem against the 1.15rem here — and rem strokes drew a
+   small, off-centre tick in the larger box. */
+input[type='checkbox']:checked {
+  border-color: var(--trim-lit);
+  background:
+    /* A tick is a SHORT stroke falling to the right, meeting a LONG stroke
+       rising to the right, joined at one bottom-left vertex.
+       A `45deg` gradient bands perpendicular to its own axis, so it draws a "\"
+       stroke; `-45deg` draws a "/". The first version had those the wrong way
+       round — long "\" plus short "/" — and sized the two boxes so they crossed
+       mid-stroke instead of meeting end to end. That is a cross, not a tick: the
+       universal "off" mark sitting on the control that means "on".
+       Short arm first, then the long one, then the plate. */
+    linear-gradient(45deg, transparent 40%, #2a1c07 40% 62%, transparent 62%) no-repeat 18% 58% / 30% 32%,
+    linear-gradient(-45deg, transparent 44%, #2a1c07 44% 60%, transparent 60%) no-repeat 76% 32% / 46% 50%,
+    linear-gradient(180deg, #ffe9a8, var(--trim-lit) 45%, #a97e2c);
+}
+
+input[type='checkbox']:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.7); }
+input[type='checkbox']:focus-visible { outline: 2px solid var(--sts-gold); outline-offset: 2px; }
+
+/* A legend that wraps is laid out on the fieldset's top border, so its second
+   line lands inside the box and the border cuts through the text. Giving it the
+   full width forces the whole label above the frame. styles.css already does
+   this for `.neow-source-choice`; the event fieldsets had no equivalent. */
+/* Named rather than a blanket `fieldset > legend`: Neow's fieldsets set their
+   own legend colours and a broad rule silently repainted them. The item-offer
+   fieldsets sit one level deeper inside `.event-cards`, hence the second arm.
+
+   The full width is what forces a wrapping legend clear of the frame, and it
+   erases the top border across itself as a side effect. Three of these four
+   carry only the UA's `2px groove`, so losing it costs nothing on framed
+   screens that supply their own edges. `.event-cards` DOES have an authored
+   border, and a round spent trying to keep it: given an intrinsic width the
+   border came back, but then ran between the lines of every legend that wraps —
+   at 360px that is all of them, and at any width it includes the two
+   52-character Prismatic Shard legends. Hiding it behind a solid ground only
+   swapped that for a warm patch that cannot match `.room-stage`'s gradient at
+   more than one point. One consistent trade beats two competing hacks: the top
+   border goes, and every legend reads at every width. */
+.sts-scope .event-cards > legend,
+.sts-scope .event-cards fieldset > legend,
+.sts-scope .reward-screen__sources > legend,
+.sts-scope .online-lobby__meta > legend { width: 100%; color: var(--light-yellow); }
+
+/* Headings: one carved gold voice across every framed screen, not five. */
+.sts-scope h2 {
+  margin: 0;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  font-weight: 700;
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55);
+}
+
+.sts-scope h3 {
+  margin: 0;
+  color: var(--light-yellow);
+  font-size: 1rem;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}

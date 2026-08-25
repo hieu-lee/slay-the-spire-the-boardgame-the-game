@@ -1,0 +1,320 @@
+/* The rest site is staged from behind the party, with one shared smoke-cloud
+   choice panel. Keeping every seat in one scene covers any living subset of a
+   four-player party without multiplying layouts.
+
+   The prompt panel and the seated party are both positioned absolutely
+   against `.campfire` itself, the same way the merchant scene floats its
+   title and party over a fixed backdrop instead of stacking them in normal
+   flow. Opening the Smith card picker grows the prompt panel a lot — in flex
+   flow that shoved the seats (and the whole party) down the page, sliding
+   them off their spot on the ground since the background doesn't move with
+   its content. Anchoring the seats to the bottom of `.campfire` independent
+   of the prompt's height keeps them glued to the floor no matter what the
+   prompt is showing. */
+.sts-scope .campfire {
+  position: relative;
+  isolation: isolate;
+  width: 100vw;
+  margin: -1.25rem calc(50% - 50vw) 0;
+  padding: 0;
+  overflow: clip;
+  background:
+    linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
+    url('/assets/noncombat/campfire/scene.webp') center bottom / cover no-repeat;
+  box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
+  /* Now that every child is absolutely positioned, `.campfire` has no in-flow
+     content to size itself by — it depends entirely on a definite height
+     handed down by its container. That height isn't guaranteed: an online
+     reconnect banner or error alert renders as a sibling ABOVE the shell's
+     `1fr` row, which bumps `.campfire` into the trailing `auto` row instead,
+     collapsing it to 0. `.neow-screen` hit this identical failure mode (see
+     its own comment in chrome/neow.css) and this is the same fix: a floor that fills the
+     shell's row when it lands there (`100%`) with a fallback for when a
+     banner has displaced it (`calc(100dvh - 5rem)`), never smaller than a
+     reasonable minimum (`42rem`). */
+  flex-shrink: 0;
+  min-height: max(42rem, 100%, calc(100dvh - 5rem));
+  /* How much of `.campfire`'s own height, measured up from the bottom, the
+     seated party's box (`.campfire__players`) occupies — shared with the
+     prompt panel's max-height below so a big Smith/Peace Pipe deck can't
+     grow the prompt down into the party. Redefined per breakpoint wherever
+     `.campfire__players`'s own height/bottom-offset changes. */
+  --campfire-floor-reserve: clamp(18rem, 45vh, 28rem);
+}
+
+.sts-scope .campfire__prompt {
+  position: absolute;
+  z-index: 5;
+  top: clamp(0.75rem, 2vh, 1.4rem);
+  left: 50%;
+  translate: -50% 0;
+  width: min(47rem, calc(100% - 2rem));
+  max-height: min(43vh, 24rem, calc(100% - var(--campfire-floor-reserve) - 2.5rem));
+  overflow: auto;
+  padding: 0.75rem clamp(0.8rem, 2vw, 1.5rem) 1rem;
+  text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgb(54 58 57 / 0.94), rgb(27 31 31 / 0.9) 66%, transparent 72%);
+  filter: drop-shadow(0 0.8rem 1.3rem rgb(0 0 0 / 0.65));
+}
+
+/* The fire itself: the campfire heading's flame icon, given a slow flicker so
+   the screen is never completely still. */
+.sts-scope .campfire h2 .icon {
+  filter: drop-shadow(0 0 1.2rem rgb(255 150 50 / 0.8));
+  animation: campfire-flicker 2.4s ease-in-out infinite;
+}
+
+@keyframes campfire-flicker {
+  0%, 100% { opacity: 0.86; transform: scale(1); }
+  40% { opacity: 1; transform: scale(1.09); }
+  70% { opacity: 0.92; transform: scale(0.98); }
+}
+
+.sts-scope .campfire__prompt h2 {
+  justify-content: center;
+  color: var(--light-yellow);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.8);
+}
+
+.sts-scope .campfire__spectator {
+  margin: 0.75rem auto;
+  color: var(--ink-dim);
+  text-wrap: balance;
+}
+
+.sts-scope .campfire__player {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  filter: none;
+}
+
+.sts-scope .campfire__name { color: var(--light-yellow); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6); }
+
+/* Rest and Smith are the decision of the screen; they get the size to say so. */
+.sts-scope .campfire__choices button {
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 8.5rem;
+  min-height: 6.5rem;
+  padding: 0.25rem 0.65rem 0.55rem;
+  border-color: rgb(186 193 191 / 0.48);
+  background: linear-gradient(180deg, rgb(81 86 85 / 0.9), rgb(43 47 47 / 0.94));
+  box-shadow: 0 4px 0 rgb(8 10 10 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+.sts-scope .campfire__choices button > img {
+  width: 6.8rem;
+  height: 3.7rem;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.8));
+}
+
+.sts-scope .campfire__choices button > strong { font-size: 1rem; }
+
+.sts-scope .campfire__deck {
+  --card-width: clamp(7rem, 10vw, 9.5rem);
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: safe center;
+  max-width: 100%;
+  max-height: none;
+  min-height: calc(var(--card-width) * var(--card-ratio, 1.395) + 1.2rem);
+  overflow: auto hidden;
+  padding: 0.55rem 0.55rem 0.8rem;
+  background: rgb(10 12 12 / 0.52);
+  overscroll-behavior-inline: contain;
+}
+
+.sts-scope .campfire__prompt .campfire__deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, var(--card-width));
+  justify-content: center;
+  overflow: visible;
+}
+
+/* Smith and Peace Pipe turn the choice cloud into the game's full card picker. */
+.sts-scope .campfire__prompt:has(.campfire__deck) {
+  width: min(76rem, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+}
+
+/* Card choice replaces the seated scene in the original game. Give that picker
+   the scene's height, wrap complete cards, and keep only its one outer scroll. */
+.sts-scope .campfire:has(.campfire__deck) {
+  min-height: calc(100dvh - 5rem);
+}
+
+.sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__players,
+.sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__players,
+.sts-scope .campfire:has(.campfire__deck--smith):not(:has(.campfire__deck--smith .card--selected)) .campfire__players {
+  display: none;
+}
+
+/* Once Smith is picked, or while optional Peace Pipe removal is open, reserve
+   one responsive seat strip so local parties can always move to the next player. */
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected),
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) {
+  --campfire-switcher-height: clamp(4rem, 12vh, 12rem);
+}
+
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
+  max-height: calc(100% - var(--campfire-switcher-height) - 0.75rem);
+}
+
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__players,
+.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__players {
+  z-index: 6;
+  bottom: 0.25rem;
+  height: var(--campfire-switcher-height);
+}
+
+.sts-scope .campfire:has(.campfire__deck) .campfire__leave:disabled { display: none; }
+
+.sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button {
+  flex-direction: row;
+  min-width: 7rem;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button > img { display: none; }
+
+@media (max-height: 600px) {
+  .sts-scope .campfire__prompt:has(.campfire__deck--smith .card--selected) h2,
+  .sts-scope .campfire__prompt:has(.campfire__deck--remove) h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) { top: 0.5rem; bottom: auto; }
+}
+
+@media (max-height: 600px) and (min-width: 701px) {
+  .sts-scope .campfire__prompt:has(.campfire__deck) .campfire__name {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) { min-height: 100%; }
+  .sts-scope:has(.campfire .campfire__deck) .log { display: none; }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__prompt {
+    top: 3.5rem;
+    max-height: calc(100% - 4rem);
+  }
+
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
+    max-height: calc(100% - var(--campfire-switcher-height) - 3.75rem);
+  }
+
+  .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    max-width: 40%;
+  }
+
+  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__prompt,
+  .sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__prompt {
+    max-height: calc(100% - 8rem);
+  }
+}
+
+.sts-scope .campfire__players {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  width: min(76rem, 100%);
+  height: clamp(18rem, 45vh, 28rem);
+}
+
+.sts-scope .campfire__seat {
+  position: absolute;
+  bottom: -1.2rem;
+  display: block;
+  height: 100%;
+  padding: 0;
+  overflow: visible;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+
+.sts-scope div.campfire__seat { cursor: default; }
+
+.sts-scope .campfire__seat > img {
+  width: 100%;
+  height: calc(100% - 2.8rem);
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 0.9rem 0.8rem rgb(0 0 0 / 0.8));
+}
+
+.sts-scope .campfire__seat:hover,
+.sts-scope .campfire__seat[aria-pressed='true'] { filter: brightness(1.12); transform: translateY(-0.3rem); }
+
+/* The scene art puts the fire pit on the right and leaves open floor to the
+   left, so the whole party sits there shoulder-to-shoulder, seat boxes
+   touching edge to edge, instead of spreading across the fire like it used
+   to (e.g. a 2-player game seating one hero on each side of the flames).
+   Width is set here per party size (not on the shared `.campfire__seat` rule
+   above) so seats never overlap into a neighbor's click target — these are
+   real buttons, not just decorative art — and percentages hold at every
+   viewport width, so there's no separate mobile pass to keep in sync. */
+.sts-scope .campfire[data-party-size='1'] .campfire__seat--0 { left: 6%; width: 22%; }
+.sts-scope .campfire[data-party-size='2'] .campfire__seat--0 { left: 2%; width: 20%; }
+.sts-scope .campfire[data-party-size='2'] .campfire__seat--1 { left: 22%; width: 20%; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--0 { left: 0; width: 15%; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--1 { left: 15%; width: 15%; }
+.sts-scope .campfire[data-party-size='3'] .campfire__seat--2 { left: 30%; width: 15%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--0 { left: 0; width: 12%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 12%; width: 12%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { left: 24%; width: 12%; }
+.sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { left: 36%; width: 12%; }
+
+.sts-scope .campfire__leave {
+  position: absolute;
+  z-index: 7;
+  right: 1rem;
+  bottom: 1rem;
+}
+
+@media (max-width: 700px) {
+  /* `.campfire__players` is shorter here (16rem) but also sits 4.5rem off
+     the true bottom (see below), so the floor it occupies is the sum. */
+  .sts-scope .campfire { --campfire-floor-reserve: 20.5rem; }
+  .sts-scope .campfire__prompt { width: calc(100% - 0.5rem); max-height: min(48vh, calc(100% - var(--campfire-floor-reserve) - 2.5rem)); }
+  .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
+  .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
+  .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
+  .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: calc(100% - 0.5rem); }
+  .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
+  /* `bottom: 4.5rem`, not `0`: the floating Run Log tab sits fixed at the
+     viewport's bottom-left on mobile, and a seat pinned flush to the very
+     bottom would render underneath it. */
+  .sts-scope .campfire__players { height: 16rem; bottom: 4.5rem; }
+  /* At 12% width (the desktop-tuned value), a 4-player seat is a real
+     clickable button under 44px wide on a narrow phone — below a comfortable
+     tap target. Only party size 4 needs the bump; 1-3 are already wide
+     enough at every width down to 320px. */
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--0 { width: 14%; }
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 14%; width: 14%; }
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { left: 28%; width: 14%; }
+  .sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { left: 42%; width: 14%; }
+}

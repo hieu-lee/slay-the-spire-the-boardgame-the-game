@@ -1,0 +1,99 @@
+/* The shop sells cards, so it shows cards. `RoomScreen` now renders a real
+   `Card` per slot instead of a name-and-rarity plaque, which is what the reward
+   screen one room over has always done — buying blind off two words was the
+   complaint. */
+.sts-scope .merchant-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+/* styles.css dresses every `.merchant-board button` as a teal plate, and the
+   shop-tile rule in chrome/item-tiles.css re-dresses it. A card face IS the button here, so both
+   have to come back off — otherwise the art sits inside a shop tile and reads
+   as a plaque again.
+
+   The `:not(.merchant-removal button)` is carried over deliberately, not copied
+   by accident: it is what that tile rule uses, and `:not()` takes its
+   argument's specificity, so that rule is (0,3,2). Without matching it here
+   this reset is (0,3,1) and LOSES on `padding` and `min-height` regardless of
+   source order. `* { box-sizing: border-box }` IS set (styles.css), so the
+   button's own box held — but `.card-face` is `position: absolute; inset: 0`,
+   which resolves against the PADDING box, so the 0.7rem/0.8rem padding shrank
+   the face inside it by 1.6rem x 1.4rem, broke its aspect ratio, and left the
+   "Sold" plate visibly smaller than a real card beside it. */
+/* A shop card the seat cannot buy must STAY greyed out under the pointer.
+   styles.css dresses `.merchant-board button:hover:not(:disabled)` with a gold
+   outline, +18% brightness and a 2px lift — written when the tile was a real
+   `<button disabled>`, which that `:not()` excluded. `Card` uses `aria-disabled`
+   instead (deliberately, so the tile stays focusable), so the rule now matches
+   an unaffordable card and un-greys it the moment it is hovered: it reads as
+   buyable and is not. Worst online, where every tile is blocked for any seat
+   that is not the one shopping.
+
+   All FOUR of that rule's properties have to come back off, not just the two
+   that dim the card: its `outline: 3px solid #f2c451` is the shop's own "you
+   can act on this" affordance (styles/non-combat-rooms.css), so leaving it meant a card that stayed grey but
+   still lit a gold ring under the pointer.
+
+   `:not(:focus-visible)` is load-bearing, not decoration. Hover and keyboard
+   focus are not exclusive — Tab onto the shelf with the pointer parked over a
+   tile and a card is both. Without the exclusion this rule's (0,5,0) beat every
+   ring that could paint it and left a focused control with NO focus indicator
+   (WCAG 2.4.7). Worst online, where every tile is unplayable for a seat that is
+   not the one shopping, so the whole shelf loses its ring. */
+.sts-scope .merchant-board .merchant-card .card--unplayable:hover:not(:focus-visible) {
+  outline: none;
+}
+
+.sts-scope .merchant-board .merchant-card .card--unplayable:hover,
+.sts-scope .merchant-board .merchant-card .card--unplayable:focus-visible {
+  filter: grayscale(0.7) brightness(0.6);
+  transform: none;
+}
+
+/* styles.css sets `display: block` on every span/strong inside a merchant
+   button — fine for the old text plaque, but it now reaches into the card face
+   and flattens its grid, its clamped title and its centred rules. Normally
+   invisible behind `.card__art`, so it only shows while the scan is loading, if
+   one fails to decode, or the day a sellable card ships without art. Restated
+   here rather than weakening the styles.css rule, which the plaques still use. */
+.sts-scope .merchant-card .card-face,
+.sts-scope .merchant-card .card-face__cost,
+.sts-scope .merchant-card .card-face__rules { display: grid; }
+.sts-scope .merchant-card .card-face__title { display: -webkit-box; }
+
+/* `.card__aoe` is a child of the card BUTTON, not of `.card-face`, so it needs
+   its own arm — and unlike the face it is NOT hidden behind the art: it sits at
+   `z-index: 2`, above the scan, on all 17 row-target cards (Cleave among them).
+   Flattened to a block, its 18px symbol dropped onto the baseline and out of
+   the bottom of its 22px disc, on every one of them, always. */
+.sts-scope .merchant-card .card__aoe { display: grid; place-items: center; }
+
+.sts-scope .merchant-board .merchant-card button:not(.merchant-removal button) {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Sized to its TRACK, not to `--card-width`. The module is the track's MAXIMUM,
+   so a column the grid gives less than that — the Colorless pile's, whose column
+   is sized against the shelves beside it — left each plate wider than its own
+   track: at 1600x1000 three plates overlapped by ~35px each and ran off the left
+   of the row as one continuous slab. The aspect keeps the plate a card shape. */
+.sts-scope .merchant-card__sold {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: calc(1 / var(--card-ratio, 1.395));
+  margin: 0;
+  color: #9dc0c0;
+  background: linear-gradient(#26303a, #161c22);
+  box-shadow: inset 0 0 0 2px #5e4520;
+  font-family: 'Kreon', Georgia, serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}

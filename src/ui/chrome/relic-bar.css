@@ -1,0 +1,127 @@
+/* The client's relic strip: a row of 64px painted glyphs on a 72px pitch, each
+   with a dark contour sprite behind it so it pops off the bar. */
+.relic-bar {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.15rem 0.35rem;
+  background: rgb(0 0 0 / 0.28);
+  box-shadow: inset 0 0 0 1px rgb(217 180 91 / 0.14);
+}
+
+/* A late run holds a dozen-plus relics, and the header is one flex row: an
+   un-wrapping strip of them would shove the Menu key off the window.
+   The bar wraps to a second line instead of scrolling — a scroll container
+   would compute `overflow-y` to `auto` as well and clip every tooltip, which
+   is the one thing this bar exists to show. */
+.run-status { flex-wrap: wrap; min-width: 0; }
+
+.run-status > .relic-bar {
+  flex-wrap: wrap;
+  min-width: 0;
+  row-gap: 0.2rem;
+}
+
+.relic-bar > .relic-chip { flex: none; }
+
+/* The chip must establish NO containing block of its own: its tooltip anchors
+   to `.relic-bar` so that a chip near the right end of a long strip cannot
+   push its 320px box off the window. `position: relative` is the obvious way
+   to break that — but so is `transform`, and so are the `translate`/`scale`
+   longhands. A hover lift written here re-anchored the tooltip to the chip and
+   hung 136px of it off a 1024px window, complete with a horizontal scrollbar.
+   The lift therefore moves the ICON inside the chip; the chip itself never
+   transforms. */
+.relic-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #4a3a27, #241a12 70%);
+  box-shadow:
+    inset 0 0 0 1px rgb(217 180 91 / 0.45),
+    inset 0 -2px 4px rgb(0 0 0 / 0.6),
+    0 0 0 2px rgb(0 0 0 / 0.33);
+  cursor: help;
+  transition: box-shadow var(--motion-lerp) var(--ease-lerp);
+}
+
+.relic-chip > .item-icon-image {
+  transition: transform var(--motion-lerp) var(--ease-lerp);
+}
+
+.relic-chip:hover > .item-icon-image,
+.relic-chip:focus-within > .item-icon-image {
+  transform: translateY(-2px) scale(1.1);
+}
+
+.relic-chip:hover,
+.relic-chip:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--trim-lit),
+    0 0 0 2px rgb(0 0 0 / 0.33),
+    0 0 0.9rem rgb(255 230 102 / 0.6);
+}
+
+/* A face-down once-per-combat relic. Greyed rather than hidden: the player
+   still needs to know they own it.
+
+   Nothing here may go on the CHIP itself. `filter` and `transform` would make
+   it a containing block and re-anchor its tooltip away from the bar; `opacity`
+   is just as bad for a different reason — the tooltip is a child, so group
+   opacity fades it too, and the one relic whose tooltip carries a
+   state-critical line ("already used") would be the one rendered at 62%.
+   So the icon is greyed and the plate is darkened, each on its own. */
+.relic-chip--spent > .item-icon-image { filter: grayscale(0.85) brightness(0.6); }
+
+.relic-chip--spent {
+  background: radial-gradient(circle at 38% 30%, #2e261d, #17110c 70%);
+  box-shadow:
+    inset 0 0 0 1px rgb(217 180 91 / 0.18),
+    inset 0 -2px 4px rgb(0 0 0 / 0.6),
+    0 0 0 2px rgb(0 0 0 / 0.33);
+}
+
+/* Potion belts scroll on narrow screens and combat seats use filters, so the
+   tooltip is portalled to the viewport rather than clipped or re-anchored. */
+.potion-chip {
+  display: inline-grid;
+  place-items: center;
+  cursor: help;
+}
+
+.potion-chip .item-icon-image {
+  transition: transform var(--motion-lerp) var(--ease-lerp), filter var(--motion-lerp) var(--ease-lerp);
+}
+
+.potion-chip:hover .item-icon-image,
+.potion-chip:focus-within .item-icon-image {
+  transform: translateY(-2px) scale(1.1);
+  filter: drop-shadow(0 0 0.45rem rgb(107 177 196 / 0.9));
+}
+
+.potion-tip {
+  position: fixed;
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, 0);
+  pointer-events: none;
+}
+
+.potion-tip--hoverable { pointer-events: auto; }
+.relic-chip .item-icon-image { width: 1.75rem; height: 1.75rem; }
+
+/* Printed relic/potion prose, wherever an item is offered. Same voice as the
+   tooltip body, so the shelf and the tooltip agree. */
+.room-item-text {
+  display: block;
+  max-width: 22rem;
+  margin: 0;
+  color: var(--tip-body);
+  font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.55);
+  text-wrap: pretty;
+}

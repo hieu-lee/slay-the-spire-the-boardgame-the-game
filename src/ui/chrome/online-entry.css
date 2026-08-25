@@ -1,0 +1,79 @@
+/* `.online-entry` / `.online-lobby` are `display: grid; place-items: center`,
+   whose single implicit column is an AUTO track — it sizes to the panel's
+   max-content, not to the window. So the panel's own `width: min(42rem, 100%)`
+   resolves 100% against a track that is already too wide, and the panel spills:
+   at 360px it measured 373px wide with the page really scrolling 29px sideways
+   (`html { overflow-x: clip }` does not save a grid track that overflows its
+   own container).
+
+   Pre-existing, but this pass made it worse — dressing these screens in
+   `.sts-scope` gave their keys the 1.05rem side padding, which widened "Create
+   room" 69->77 and "Join" 54->62 and roughly doubled the overhang. Bounding the
+   track is the fix for both halves: `minmax(0, …)` lets it shrink, and the
+   panel's existing `min()` then does what it always meant to. */
+.sts-scope:is(.online-entry, .online-lobby) {
+  grid-template-columns: minmax(0, auto);
+}
+
+/* And the join row wraps. It is `nowrap` in styles.css, so a room-code field
+   plus a key could not fit a 360px panel however narrow the track became — the
+   last 4px of overhang after the track fix was this row refusing to break. */
+.sts-scope .online-entry__actions { flex-wrap: wrap; }
+
+/* Neow's own offers use the shared item voice. The potion offer is a
+   `flex-wrap: wrap` row (styles.css), so the prose sits beside the name with
+   the keys pushed right by `.neow-offer__skip`'s `margin-left: auto` — which
+   reads well and needs no line break. This WIDENS the shared measure rather
+   than adding one — `.room-item-text` already caps at 22rem — because Neow's
+   row is far wider than a shop tile and 22rem broke short potion text onto two
+   lines for no reason. A wrap-forcing `flex: 0 0 100%` was tried and does
+   nothing here anyway: `max-width` caps the flex base before it can push
+   anything onto a new line. */
+.sts-scope .neow-offer .room-item-text {
+  max-width: 34rem;
+}
+
+/* Potion rewards use the client's compact hanging reward sheet: icon, name,
+   rules, then small decisions. Full physical card faces belong in card-choice
+   screens; here they made one Potion fill nearly the entire Neow scene. */
+.sts-scope .neow-action--offer:has(.neow-offer--potion) {
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-items: center;
+  padding: 1rem;
+  border: 0;
+  background: rgb(3 5 6 / 0.82);
+}
+
+.sts-scope .neow-offer--potion {
+  width: min(38rem, 100%);
+  padding: 1.3rem 1rem 1.7rem;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.05), transparent 10% 90%, rgb(0 0 0 / 0.18)),
+    linear-gradient(180deg, #607579, #34484d);
+  clip-path: polygon(2% 0, 98% 0, 100% 3%, 99% 96%, 88% 100%, 72% 97%, 55% 100%, 38% 97%, 20% 100%, 1% 96%);
+  filter: drop-shadow(0 1rem 1.2rem rgb(0 0 0 / 0.65));
+}
+
+.sts-scope .neow-offer--potion .reward-item {
+  background: rgb(22 31 33 / 0.72);
+}
+
+/* The compendium's back arrow, which renders outside `.sts-scope` and so is not
+   in the focus list in chrome/keys.css — and could not simply join it, because its clip needs a
+   different offset.
+
+   Its polygon insets the top and bottom edges by 8% of its height: ~5.5px at
+   the 4.3rem min-height. A ring at `-4px` sits 1-4px from each edge, i.e.
+   OUTSIDE that inset, so both horizontal bars were clipped and the indicator
+   collapsed to a single left bar (measured: 177 of 201 changed pixels on the
+   left quarter). `-10px` clears the inset with room to spare. It needs the
+   `main` in the selector to reach (0,3,1) and beat the shared list — a bare
+   `.compendium__back:focus-visible` is (0,2,0) and silently lost, which is how
+   the first attempt at this shipped with no effect. */
+main.compendium .compendium__back:focus-visible {
+  outline: 3px solid var(--sts-gold);
+  outline-offset: -10px;
+}

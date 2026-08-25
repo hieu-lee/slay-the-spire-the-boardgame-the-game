@@ -1,0 +1,87 @@
+.quick-setup {
+  width: min(72rem, calc(100% - 2rem));
+  margin: 1rem auto;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 2px solid #8d6d42;
+  border-radius: 1rem;
+  color: #eee6d2;
+  background: radial-gradient(circle at top, rgb(91 45 53 / .96), rgb(24 20 21 / .98) 65%);
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / .65), inset 0 0 2rem rgb(224 166 70 / .08);
+}
+
+.quick-setup__header { text-align: center; }
+.quick-setup__eyebrow { color: #e2ba62; text-transform: uppercase; letter-spacing: .12em; }
+.quick-setup__progress, .quick-setup__die, .quick-setup__empty { color: #c8bcaa; }
+.quick-setup__die { text-align: center; font-size: 1.1rem; }
+.quick-setup__selection { min-width: 0; border: 0; padding: 0; }
+.quick-setup__selection legend { margin: 0 auto 1rem; font-weight: 700; }
+.quick-setup__cards { display: flex; width: 100%; max-width: 100%; box-sizing: border-box; gap: .75rem; overflow-x: auto; padding: .5rem; }
+.quick-setup__advance {
+  display: block;
+  min-width: 10rem;
+  min-height: 2.75rem;
+  margin: 1.25rem auto 0;
+  border: 1px solid #d0a84c;
+  border-radius: .45rem;
+  color: #1d1713;
+  background: linear-gradient(#f0cf72, #b98531);
+  font-weight: 800;
+}
+
+.quick-setup__advance:focus-visible { outline: 3px solid #fff2a8; outline-offset: 3px; }
+/* Not `opacity`: dimming the whole key composites its dark ink over the gold
+   plate and lands at 1.70:1. Grey the plate instead, using chrome.css's own
+   disabled-key values so the two match rather than merely rhyme. */
+.quick-setup__advance:disabled {
+  border-color: #5e4520;
+  color: #9dc0c0;
+  /* Split, not a `background` shorthand: the shorthand zeroes background-color
+     to transparent, which is the trap chrome.css documents for its key plate. */
+  background-color: #26303a;
+  background-image: linear-gradient(#26303a, #161c22);
+}
+
+.room--hidden { color: #a9a2b5; border-color: #5e596b; background: radial-gradient(circle, #302d39, #17151d); }
+
+.item-card-image {
+  display: block;
+  width: min(9rem, 100%);
+  aspect-ratio: 320 / 457;
+  margin: .45rem auto;
+  object-fit: contain;
+  border-radius: .35rem;
+  filter: drop-shadow(0 .4rem .45rem rgb(0 0 0 / .55));
+}
+
+.item-card-fallback {
+  display: grid;
+  grid-template-rows: auto 1fr auto minmax(3rem, auto);
+  align-items: center;
+  width: min(9rem, 100%);
+  aspect-ratio: 320 / 457;
+  margin: .45rem auto;
+  overflow: hidden;
+  color: #f8efd8;
+  border: .18rem solid #a9833d;
+  border-radius: .55rem;
+  background: linear-gradient(#293c47 0 17%, #152128 17% 66%, #251c18 66%);
+  box-shadow: 0 .4rem .45rem rgb(0 0 0 / .55), inset 0 0 0 .12rem #15100d;
+}
+
+.item-card-fallback--potion { border-color: #6bb1c4; }
+.item-card-fallback > strong { padding: .35rem .25rem; font-size: .78rem; line-height: 1; }
+.item-card-fallback > .item-card-image {
+  width: min(4.4rem, 70%);
+  aspect-ratio: 1;
+  margin: .15rem auto;
+  filter: drop-shadow(0 .25rem .25rem rgb(0 0 0 / .55));
+}
+.item-card-fallback > small { padding: .15rem; color: #d9bf82; font-size: .6rem; text-transform: uppercase; }
+.item-card-fallback > span { padding: .35rem; font-size: .56rem; line-height: 1.2; }
+
+.item-icon-image {
+  width: 1.8rem;
+  height: 1.8rem;
+  object-fit: contain;
+  vertical-align: middle;
+}

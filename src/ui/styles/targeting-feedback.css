@@ -1,0 +1,34 @@
+.enemy--targeted {
+  border-color: rgb(215 169 75 / 0.55);
+  animation: none;
+}
+
+.seat--targetable {
+  border-color: rgb(75 147 196 / 0.7);
+  animation: targetable 1.6s ease-in-out infinite;
+}
+
+@keyframes targetable {
+  50% {
+    box-shadow: 0 0 0 2px rgb(215 169 75 / 0.25);
+  }
+}
+
+.card--picked {
+  border-color: #ff6b5e;
+  transform: translateY(-6px);
+  /* A dark border on a dark hand is invisible; the glow is what reads. */
+  box-shadow: 0 0 0 2px rgb(255 107 94 / 0.45), 0 0 14px rgb(255 107 94 / 0.35);
+  filter: brightness(0.9) saturate(0.75);
+}
+
+.token__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pip--energy .icon-value__number {
+  /* Dark on the gold disc. Painting it `--energy` put gold on gold at 1.3:1. */
+  color: #241a0c;
+  font-size: 1.2rem;
+}

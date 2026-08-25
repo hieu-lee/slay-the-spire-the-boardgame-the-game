@@ -1,0 +1,7 @@
+@font-face {
+  font-family: 'Kreon';
+  src: url('/assets/fonts/Kreon.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}

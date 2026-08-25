@@ -1,0 +1,78 @@
+.board {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  /* Tall enough for one whole enemy tile INCLUDING its token row — measured at
+     273px, so 13rem was never enough and the hit-point bar still fell below
+     the fold at 360x720. */
+  min-height: 17.5rem;
+  /* `safe` keeps the first row reachable when the rows overflow; plain `center`
+     would push the top out of the scrollable area. */
+  justify-content: safe center;
+}
+
+.board__bosses {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--edge);
+}
+
+.row {
+  display: grid;
+  /* Summons share their main enemy's row. Give that track the remaining width
+     so two or more cards stay side-by-side instead of making the row taller
+     than the board viewport. */
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
+  justify-content: center;
+  width: 100%;
+  max-width: 1240px;
+  gap: 1.2rem;
+  min-width: 0;
+  align-items: stretch;
+  /* No panel chrome. A bordered box per row is what made the board read as a
+     table of records; the rows are separated by space and a hairline instead. */
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgb(214 176 96 / 0.12);
+  border-radius: 0;
+  padding: 0.7rem 0.6rem;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row__potion-target {
+  grid-column: 1 / -1;
+  justify-self: center;
+  color: var(--gold);
+  background: rgb(215 169 75 / 0.08);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  padding: 0.35rem 0.8rem;
+  min-height: 44px;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The row you control is lit, not boxed. */
+.row--viewer {
+  background: radial-gradient(ellipse at 50% 50%, rgb(214 176 96 / 0.07), transparent 70%);
+}
+
+.row__enemies {
+  min-width: 0;
+  width: 100%;
+  /* auto-fit rather than fixed widths: one enemy fills the row, four share it. */
+  display: grid;
+  /* The upper bound matters: with a 1fr column the card fills the whole row and
+     the portrait's aspect-ratio turns that width into ~500px of height. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 250px));
+  justify-content: start;
+  gap: 0.6rem;
+  align-items: start;
+}

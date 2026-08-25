@@ -1,0 +1,385 @@
+/* The module is derived from the height the rug ACTUALLY has, not guessed from
+   the window's. `vh` cannot do this job: the stage is capped at `max-height`, a
+   potion belt takes a band out of it, and the shell's own header is above it — so
+   a `vh` term either overflows a tall window or, as it did here, leaves 200-330px
+   of cloth empty while the card faces sat at their floor, printing names at under
+   7px. The stage is a size container and the module is measured against it.
+
+   The two constants are the rug's structural costs, measured rather than assumed:
+   it spends the module about 2.67 times over (three stacked item rows, each
+   paying for art), and a fixed cost on things that do not scale with the module —
+   the banner, the Leave row, three shelf headings, the gaps and the board's own
+   padding. That fixed cost is 388px here, and the two regimes below re-state it,
+   because what each of them trims is exactly what it measures. The multiplier
+   covers the three ART rows only; the prices and headings are fixed-size text and
+   live in the constant.
+
+   `100cqh` is the stage's CONTENT box, so the stage's own padding is already out
+   of it — do not subtract it again. */
+.sts-scope .merchant-stage { container-type: size; }
+
+.sts-scope .merchant-board {
+  --item-module: clamp(76px, min(var(--rug-width-limit), calc((100cqh - 388px) / 2.67)), 176px);
+}
+
+/* Copied from the client's shop screen: the merchandise is laid out on one
+   olive cloth rug with a chevron weave, the stock is the only thing on it, and
+   every price is loose gold text under its own item. The rug is the hero — the
+   merchant himself is not on this screen in the original, so the art here is
+   pulled back to a hint in the surround rather than lighting the panel. */
+.sts-scope .merchant-stage {
+  background: linear-gradient(180deg, #14100c, #0a0807 70%, #060505);
+}
+
+/* The rug. Row one is this character's cards; row two is the Colorless pile on
+   the left, the relic and potion stacks in the middle, and the removal service
+   pinned to the right — the client's own reading order. */
+.sts-scope .merchant-board {
+  /* A card face carries its own printed name, cost and rules, so it has a
+     legibility floor the icon shelves do not need: an icon shrinks to a smaller
+     picture, but a card shrinks to unreadable type, and the card tiles print no
+     fallback text anywhere else. Kept as its own token rather than an alias of
+     `--item-module` so a branch that shrinks the STOCK — the pointerless one
+     below — cannot silently shrink the cards with it. */
+  --merchant-card-width: max(76px, var(--item-module));
+  /* A legibility floor of its own. The icons carry no text, so an icon too small
+     to identify is worse than a slightly tighter rug — and a short window with a
+     potion belt drives the stock module down to its own floor. Taken from
+     `--item-module`, NOT from the card width: the cards hold a floor of their
+     own, and hanging the icons off that floor would stop them shrinking in the
+     branch that shrinks them on purpose. Safe as a `max()` now that icons take
+     this as an explicit width; when they were sized in percent, a floor here
+     desynchronised the two shelves. */
+  --icon-module: max(31px, calc(var(--item-module) * 0.62));
+  display: grid;
+  grid-template-columns: auto auto auto;
+  grid-template-areas:
+    'cards     cards   cards'
+    'colorless relics  removal'
+    'colorless potions removal';
+  align-content: center;
+  justify-content: space-between;
+  gap: clamp(0.7rem, 1.8vw, 1.4rem) clamp(1.2rem, 3.5vw, 3.2rem);
+  position: relative;
+  width: 100%;
+  /* NO `height: 100%` — it makes the board's block size definite, which shrank
+     its own `cards` row below its content and painted card faces over the row
+     beneath. Worst where the rug is tallest and narrowest: a phone with a
+     Colorless pile.
+     `min-height: 0` is deliberate: a `max-content` minimum HERE cannot grow the
+     row, so the board would simply overflow it and paint over the Leave banner —
+     which is how three tiles once stopped taking clicks. The row's floor belongs
+     on the row (see the stage's `grid-template-rows`, which now carries it) and
+     fitting the stock belongs to the module (see the belt-aware clamps). */
+  min-height: 0;
+  /* The rug takes the stage's width. `styles.css` caps it at 1100px, which on a
+     wide monitor left 268px of the stage unused AND squeezed the board's three
+     `auto` columns: inside 1100px they want about 1160px, so the Colorless pile
+     collapsed to its zero minimum and drew cards a quarter smaller than the
+     character row above it — that row escapes because it SPANS all three columns.
+     Bounded so the cloth cannot grow without end on a very wide display. */
+  max-width: min(100%, 1600px);
+  padding: clamp(1rem, 2.4vw, 1.9rem) clamp(1rem, 3vw, 2.4rem);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The cloth is painted by a pseudo-element, not by the board: its silhouette is
+   a `clip-path`, and a clip on the board itself would also cut the hover
+   tooltips — the shelves reach the rug's edge, so an edge tile's tip was sliced
+   in half. The tip has to escape the shape the cloth keeps.
+
+   The chevron weave is an inline SVG rather than a file: one round trip saved,
+   and no second request to block the rug's first paint. It tiles at a fixed
+   64x52, so the weave keeps one scale however wide the rug gets. */
+.sts-scope .merchant-board::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='52' viewBox='0 0 64 52'%3E%3Cpath d='M4 4 L32 26 L4 48' fill='none' stroke='%23c9b96a' stroke-opacity='0.06' stroke-width='9' stroke-linejoin='round'/%3E%3Cpath d='M36 4 L64 26 L36 48' fill='none' stroke='%23c9b96a' stroke-opacity='0.06' stroke-width='9' stroke-linejoin='round'/%3E%3C/svg%3E")
+      right 0 / 64px 52px,
+    linear-gradient(90deg, #5f6e49 0 46%, transparent 62%),
+    radial-gradient(ellipse at 50% 42%, rgb(139 156 104 / 0.1), transparent 68%),
+    linear-gradient(170deg, #5f6e49, #55643f 58%, #48562f);
+  /* A cloth edge, not a machined one: the corners are cut back and the sides
+     ripple, the way the client's rug sprite is drawn. */
+  clip-path: polygon(
+    2% 0, 98% 1%, 100% 4%, 99.2% 22%, 100% 40%, 99.4% 60%, 100% 78%, 99% 96%,
+    97% 100%, 3% 99%, 1% 96%, 0.6% 74%, 0 56%, 0.8% 38%, 0 20%, 1% 4%
+  );
+  box-shadow:
+    inset 0 0 0 0.55rem rgb(30 26 18 / 0.55),
+    inset 0 0 5rem rgb(28 34 20 / 0.55);
+  filter: drop-shadow(0 1rem 1.6rem rgb(0 0 0 / 0.6));
+}
+
+/* A shop with no Colorless pile gives that column back rather than leaving a
+   hole where two cards would have been. */
+.sts-scope .merchant-board:not(:has(.merchant-cards--colorless)) {
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'cards   cards'
+    'relics  removal'
+    'potions removal';
+}
+
+.sts-scope .merchant-shelf,
+.sts-scope .merchant-cards,
+.sts-scope .merchant-removal {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem var(--item-gap);
+}
+
+/* THREE tracks in both piles, and `minmax(0, …)` rather than a bare length.
+   `createMerchant` draws three Colorless cards, so a two-track pile wrapped its
+   third card onto a row of its own — which overflowed the rug, put that card's
+   price outside the stage and left the card itself under the Leave banner and
+   unclickable. The `minmax(0, …)` floor is what keeps three tracks honest on a
+   narrow window: the tracks give way instead of the third face hanging past the
+   rug's edge, which cannot scroll into view. */
+/* `minmax(0, …)`, so a track gives way rather than hanging stock past the rug's
+   edge, which cannot scroll into view.
+   The cost is that the Colorless pile's `auto` column can collapse to that zero
+   minimum: once the module reaches its 176px ceiling — 1600px wide and up — the
+   pile renders about a quarter smaller than the character cards above it. Both a
+   definite track here and a definite column for the pile fix the size and
+   overlap the shelves instead, and putting both card rows in one column shrinks
+   the character cards to match rather than the other way round. Left as the
+   smaller-of-two-evils, and only visible above 1600px. */
+.sts-scope .merchant-cards { grid-template-columns: repeat(3, minmax(0, var(--merchant-card-width))); }
+
+/* A card is offered so it can be READ. The shared card face ramps its rules text
+   off the card's width and caps it at 0.49rem — 7.8px at any size — so widening
+   the shop's cards bought a bigger picture and still-illegible type: measured
+   6.03px at 1440x900. The shop, the reward screen and the removal picker are the
+   three places where a player must read a card face to decide, so they get their
+   own ramp.
+   No row-height override goes with it: giving the rules row more of the card
+   (13/27/8 rather than the shared 13/35/8) turned out to change nothing —
+   measured across all 81 card ids, panel overflow is 0 either way. */
+/* Ramped off the CARD's own inline size, not off `--card-width`. Those two agree
+   on the rug, where the module sizes the track — but the reward row and the
+   removal picker size their tracks from the grid and leave `--card-width` a
+   viewport clamp, so the two diverged in the worst direction: the picker's
+   BIGGEST cards printed its SMALLEST text (a 182px card at 8.06px, its rules
+   panel two-thirds empty). A container query asks the card how wide it actually
+   came out. */
+.sts-scope .merchant-cards .card,
+.sts-scope .reward-screen .card,
+.merchant-removal-dialog .card { container-type: inline-size; }
+
+.sts-scope .merchant-cards .card-face__rules,
+.sts-scope .reward-screen .card-face__rules,
+.merchant-removal-dialog .card-face__rules {
+  /* Capped at 0.70rem, which is where the wordiest card in the pool still fits
+     its panel once the card module reaches its own 176px ceiling. */
+  /* 7.2cqw, not 8: the ratio has to hold for the WORDIEST card in the pool at
+     every card size the module produces, and 8 clipped it on a ~107px card.
+     The 0.4rem floor stays low on purpose. Raising it to the ~9px a reader wants
+     clips that card on every window where the rug is height-starved enough to put
+     the module on its own floor (measured: 0.5rem clips at 1024x600, 0.55rem at
+     900x620 and 1280x720 pointerless, 0.58rem everywhere). At an 86px card the
+     panel is genuinely too small for the text, and losing words is worse than
+     small ones — the fix is height for the rug, not a bigger font here. */
+  font-size: clamp(0.4rem, 7.2cqw, 0.7rem);
+}
+
+/* The title ramps with the rules, or it ends up the SMALLEST text on a card it
+   is supposed to head: the shared cap is 0.68rem, just under the 0.70rem the
+   rules now reach. */
+.sts-scope .merchant-cards .card-face__title,
+.sts-scope .reward-screen .card-face__title,
+.merchant-removal-dialog .card-face__title {
+  font-size: clamp(0.44rem, 9.2cqw, 0.82rem);
+}
+
+/* The type line rides the same container query. Left on the shared
+   `--card-width` ramp it became the SMALLEST text on the face — 6.16px against
+   11.2px rules on a 182px removal-picker card. */
+.sts-scope .merchant-cards .card-face__type,
+.sts-scope .reward-screen .card-face__type,
+.merchant-removal-dialog .card-face__type {
+  font-size: clamp(0.42rem, 6cqw, 0.62rem);
+}
+
+/* The relic and potion stacks are ICON rows, the way the client lays its stock
+   on the cloth — the framed card faces belong to the reward and treasure
+   screens. The rules text lives in the hover tip, and on touch under the icon. */
+/* No `justify-self`: the board sizes this column to its content, so centring and
+   stretching resolve to the same box. The pointerless branch, whose tracks are
+   `1fr`, is where it has to be stated. */
+.sts-scope .merchant-shelf { grid-template-columns: repeat(3, minmax(var(--icon-module), auto)); }
+
+.sts-scope .merchant-shelf h3,
+.sts-scope .merchant-cards h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  /* Same ink as the prices: at #f2eccf these labels measured 4.32:1 over the
+     lit centre of the cloth, just under the bar the rest of the shop holds. */
+  color: #fff8e4;
+  /* A flat 0.68rem — 10.88px — on purpose. Ramping this off the module made the
+     headings, which span their shelf's tracks, size those tracks: the relic and
+     potion tiles then disagreed by 4px and the two stock rows stopped lining up.
+     These are letter-spaced uppercase labels at 4.82:1, not body text. */
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 0 rgb(28 34 20 / 0.75);
+  white-space: nowrap;
+}
+
+/* `align-content: start`, and no `1fr` row: a tile that carries an extra line —
+   a part-funded relic's "4 Gold still needed", a touch tile's rules text — must
+   not squeeze its own art to fit, or its price stops lining up with the price of
+   every other tile on the shelf. The slack goes under the tile instead. */
+.sts-scope .merchant-board button.merchant-item,
+.sts-scope .merchant-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+  justify-items: center;
+}
+
+/* A Sold slot draws a glyph where a stocked one draws art, so it has to be
+   given the module explicitly. `width: 100%` does NOT work here — a percentage
+   resolves against the glyph's OWN content box, not the shelf track, so the Sold
+   slot came out shorter than a stocked one and floated its price above the
+   neighbouring prices. */
+/* An empty slot, drawn as empty. The shared glyph rule paints these in the live
+   gold accent with a glow, so a sold-out shelf read as six pieces of unidentified
+   stock rather than as gone. */
+.sts-scope .merchant-board .merchant-item > .room-item-icon {
+  display: grid;
+  width: var(--icon-module);
+  height: var(--icon-module);
+  color: rgb(198 214 202 / 0.34);
+  text-shadow: none;
+  place-items: center;
+  align-self: start;
+  font-size: calc(var(--icon-module) * 0.5);
+  line-height: 1;
+}
+
+/* The module explicitly, NOT `width: 100%`: the discounted tile's price carries
+   a chip whose padding makes that tile's min-content wider than its track, and a
+   percentage icon inherited the overflow — that one tile's art came out visibly
+   larger than the rest of the shelf. */
+.sts-scope .merchant-board .merchant-item > .item-icon-image {
+  width: var(--icon-module);
+  height: var(--icon-module);
+  align-self: start;
+  filter: drop-shadow(0 0.3rem 0.35rem rgb(20 26 14 / 0.6));
+}
+
+/* The face takes its TRACK's width, not the module directly: the module is the
+   track's max, so on a narrow window the track is the smaller of the two and a
+   face still sized to the module overhung its neighbour. */
+.sts-scope .merchant-card > .card { align-self: start; width: 100%; min-width: 0; }
+
+/* Loose gold under the item, exactly as the client prints it: a small coin and
+   a number, no plate and no box. */
+.sts-scope .room-price {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  color: #fff8e4;
+  font-size: 0.94rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-shadow: 2px 2px 0 rgb(24 30 16 / 0.75);
+}
+
+.sts-scope .room-price img { width: 1.05rem; height: 1.05rem; }
+
+/* A discount prints its price in blue, which is the client's whole signal that
+   the number is not the list price. */
+.sts-scope .room-price--sale {
+  color: #9fe3ff;
+  padding: 0 0.32rem;
+  background: rgb(12 18 10 / 0.82);
+}
+
+.sts-scope .room-price__sale-mark {
+  position: absolute;
+  inset-block-start: -0.62em;
+  inset-inline-start: 0;
+  font-size: 0.72em;
+  font-weight: 900;
+}
+
+.sts-scope .merchant-item:disabled .room-price {
+  padding: 0 0.32rem;
+  color: #cfe3e3;
+  background: rgb(12 18 10 / 0.82);
+  text-shadow: none;
+}
+
+/* AFTER the disabled tint, not before: the two selectors carry the same
+   specificity — four classes each — so position decides, and placed first this
+   lost. A discounted tile that is unaffordable, Sozu-blocked, or simply not the
+   seat being shopped for otherwise drops the only sale marker it has. Desaturated,
+   so it still reads as out of reach. */
+.sts-scope .merchant-item:disabled .room-price--sale { color: #8fb6c8; }
+
+/* The removal service is a stone plaque leaning on the rug, gold-lettered, with
+   the card illustration above the title. */
+.sts-scope .merchant-removal__service {
+  display: grid;
+  gap: 0.4rem;
+  min-height: 0;
+  padding: 0.7rem 0.6rem;
+  place-items: center;
+  border-color: #22262a;
+  background-color: #4a5055;
+  background-image: linear-gradient(180deg, #5b6268, #4a5055 52%, #3b4045);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), inset 0 -2px 0 rgb(0 0 0 / 0.45);
+}
+
+.sts-scope .merchant-removal__service strong {
+  color: var(--sts-gold);
+  font-size: 0.92rem;
+  line-height: 1.15;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
+  text-wrap: balance;
+}
+
+/* A used-up service has to LOOK used up: the label alone changing colour left the
+   plate, its card graphic, its border and its brightness identical to the
+   purchasable state. */
+.sts-scope .merchant-removal__service:disabled {
+  opacity: 0.55;
+  filter: grayscale(0.65);
+}
+
+.sts-scope .merchant-removal__service:disabled strong { color: inherit; }
+
+.sts-scope .merchant-removal__cards {
+  width: 3rem;
+  border-width: 0.25rem;
+  box-shadow: -0.35rem 0.3rem 0 rgb(40 34 28 / 0.7);
+  font-size: 1.5rem;
+}
+
+/* Leave is a banner running off the LEFT EDGE below the rug, which is where the
+   original puts it — the arrow reads as "back to the map", not "onward".
+   `padding-left` keeps the label clear of the screen edge it bleeds past. */
+.sts-scope .merchant-stage > .room-proceed {
+  position: relative;
+  z-index: 3;
+  height: 3.25rem;
+  /* Bleeds off the left margin the way the original's banner runs off the screen
+     edge, but in its OWN row: floated over the rug it intercepted every click on
+     the potion shelf. */
+  margin: 0.4rem auto 0 calc(-1 * clamp(0.55rem, 1.5vw, 1rem));
+  padding: 0 1.1rem 0 1.7rem;
+  background: linear-gradient(270deg, #72291d, #b54b29);
+  clip-path: polygon(15% 0, 100% 0, 92% 50%, 100% 100%, 15% 100%, 0 50%);
+}

@@ -1,0 +1,152 @@
+/* Authoritative presentation events render the same semantic overlay for the
+   acting client and every peer. Generated art is the primary layer; the small
+   CSS marks keep the family readable while it fades in and out. */
+.combat-vfx {
+  position: absolute;
+  z-index: 12;
+  inset: -24%;
+  background-image: var(--vfx-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #ffe091));
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  animation: combat-vfx-reveal 820ms ease-out both;
+}
+
+.combat-vfx--actor { z-index: 3; }
+.combat-vfx--target { z-index: 12; }
+
+.combat-vfx::before,
+.combat-vfx::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.combat-vfx::before {
+  inset: 22%;
+  border: 0.16rem solid color-mix(in srgb, var(--vfx-tone-color, #ffe091) 72%, white);
+  border-radius: 50%;
+  animation: combat-vfx-ring 650ms ease-out both;
+}
+
+.combat-vfx::after {
+  top: 44%;
+  right: 12%;
+  left: 12%;
+  height: 12%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, white 45%, var(--vfx-tone-color, #f59a3d) 56%, transparent);
+  transform: rotate(-24deg);
+  animation: combat-vfx-streak 520ms ease-out both;
+}
+
+.combat-vfx--blunt::before {
+  inset: 28%;
+  border-width: 0.35rem;
+  border-color: rgb(255 200 91 / 0.92);
+  box-shadow: 0 0 1rem rgb(255 112 45 / 0.8), inset 0 0 0.6rem white;
+}
+
+.combat-vfx--blunt::after {
+  inset: 34%;
+  height: auto;
+  border-radius: 50%;
+  background: radial-gradient(circle, white 0 8%, #ffc054 9% 28%, transparent 65%);
+  transform: none;
+}
+
+.combat-vfx--lightning {
+  filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #7beaff));
+}
+
+.combat-vfx--lightning::before {
+  inset: 8% 42%;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(#efffff, #5ce6ff 42%, #587eff);
+  clip-path: polygon(45% 0, 100% 0, 61% 36%, 92% 36%, 12% 100%, 34% 55%, 0 55%);
+  animation: lightning-strike 560ms steps(2, jump-none) both;
+}
+
+.combat-vfx--lightning::after {
+  background: radial-gradient(ellipse, white, #66eaff 24%, transparent 68%);
+  transform: none;
+}
+
+.combat-vfx--mantra {
+  filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #78efff));
+}
+
+.combat-vfx--mantra::before,
+.combat-vfx--stance::before,
+.combat-vfx--orb::before {
+  inset: 14%;
+  border-color: rgb(159 244 255 / 0.9);
+  border-style: double;
+  border-width: 0.35rem;
+  animation: mantra-ring 760ms ease-out both;
+}
+
+.combat-vfx--mantra::after,
+.combat-vfx--stance::after,
+.combat-vfx--orb::after {
+  inset: 8% 38%;
+  height: auto;
+  background: linear-gradient(transparent, #d9fcff 42%, #5bdced 64%, transparent);
+  transform: none;
+}
+
+.combat-vfx--poison { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #67d74c)); }
+.combat-vfx--poison::before { border-color: var(--vfx-tone-color, #77df4b); }
+.combat-vfx--frost { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #aaf4ff)); animation-name: combat-vfx-frost; }
+.combat-vfx--dark { filter: drop-shadow(0 0 0.55rem var(--vfx-tone-color, #9b6cff)); animation-name: combat-vfx-dark; }
+.combat-vfx--block { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #55bbff)); }
+.combat-vfx--buff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #ffbb58)); }
+.combat-vfx--debuff { filter: drop-shadow(0 0 0.5rem var(--vfx-tone-color, #b676e8)); }
+.combat-vfx--draw,
+.combat-vfx--discard,
+.combat-vfx--exhaust,
+.combat-vfx--utility { filter: drop-shadow(0 0 0.45rem var(--vfx-tone-color, #8bd9ff)); }
+
+@keyframes combat-vfx-reveal {
+  0% { opacity: 0; transform: scale(0.62); }
+  20% { opacity: 1; transform: scale(1.08); }
+  64% { opacity: 0.86; }
+  100% { opacity: 0; transform: scale(1.18); }
+}
+
+@keyframes combat-vfx-frost {
+  0% { opacity: 0; transform: translateY(12%) scale(0.3); filter: brightness(2.1) drop-shadow(0 0 0.2rem #d8fbff); }
+  34% { opacity: 1; transform: translateY(-4%) scale(1.08); }
+  70% { opacity: 0.9; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8%) scale(1.28); }
+}
+
+@keyframes combat-vfx-dark {
+  0% { opacity: 0; transform: rotate(-120deg) scale(0.28); filter: brightness(0.5) drop-shadow(0 0 0.2rem #7130bc); }
+  30% { opacity: 1; transform: rotate(-18deg) scale(1.04); }
+  72% { opacity: 0.92; transform: rotate(34deg) scale(0.94); }
+  100% { opacity: 0; transform: rotate(110deg) scale(1.26); }
+}
+
+@keyframes combat-vfx-ring {
+  from { opacity: 0; transform: scale(0.3); }
+  32% { opacity: 1; }
+  to { opacity: 0; transform: scale(1.35); }
+}
+
+@keyframes combat-vfx-streak {
+  from { opacity: 0; transform: translateX(-24%) rotate(-24deg) scaleX(0.25); }
+  30% { opacity: 1; }
+  to { opacity: 0; transform: translateX(18%) rotate(-24deg) scaleX(1.2); }
+}
+
+@keyframes lightning-strike {
+  0%, 100% { opacity: 0; transform: translateY(-8%) scaleY(0.7); }
+  18%, 44%, 70% { opacity: 1; transform: translate(3%, 0) scaleY(1); }
+  30%, 58% { opacity: 0.32; transform: translate(-3%, 0) scaleY(0.94); }
+}

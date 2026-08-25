@@ -1,0 +1,135 @@
+.game-settings.game-settings__summary {
+  display: grid;
+  flex: 0 0 2.6rem;
+  width: 2.6rem;
+  min-height: 2.6rem;
+  margin-left: 0;
+  padding: 0.28rem;
+  place-items: center;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.game-settings.game-settings__summary:hover { filter: brightness(1.16); }
+.game-settings.game-settings__summary > img { width: 100%; height: 100%; object-fit: contain; }
+
+.settings-dialog {
+  width: min(68rem, calc(100% - 2rem));
+  height: min(44rem, calc(100dvh - 2rem));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  color: var(--cream);
+  background: transparent;
+}
+
+.settings-dialog::backdrop {
+  background: rgb(5 7 8 / 82%);
+  backdrop-filter: blur(4px);
+}
+
+.settings-dialog__panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  padding: clamp(1rem, 3vw, 2.2rem);
+  background:
+    radial-gradient(circle at 50% 0, rgb(213 164 73 / 0.12), transparent 38%),
+    linear-gradient(145deg, #2d211a, #17110d 66%, #090706);
+  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 0 0 4px #090604, inset 0 0 5rem rgb(0 0 0 / 0.55);
+  clip-path: polygon(1rem 0, calc(100% - 1rem) 0, 100% 1rem, 100% calc(100% - 1rem), calc(100% - 1rem) 100%, 1rem 100%, 0 calc(100% - 1rem), 0 1rem);
+}
+
+.settings-dialog__panel > header { display: flex; align-items: center; gap: 1rem; }
+.settings-dialog__panel > header h2 { margin: 0; color: var(--light-yellow); font-size: clamp(1.6rem, 3vw, 2.5rem); }
+.settings-dialog__back { min-width: 7rem; }
+
+.settings-dialog button {
+  min-height: 2.7rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--trim-dim);
+  color: var(--cream);
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate), var(--slate-dim));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 -2px 0 rgb(0 0 0 / 0.45);
+  font-family: 'Kreon', Georgia, serif;
+  cursor: pointer;
+}
+
+.settings-dialog button:hover,
+.settings-dialog button:focus-visible { color: var(--light-yellow); filter: brightness(1.12); }
+
+.settings-dialog nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 1rem 0;
+  border-block: 1px solid var(--trim-dim);
+}
+
+.settings-dialog nav button {
+  min-height: 3.4rem;
+  border: 0;
+  border-inline-end: 1px solid var(--trim-dim);
+  color: var(--cream);
+  background: rgb(0 0 0 / 0.18);
+  font: 700 1rem 'Kreon', Georgia, serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings-dialog nav button:last-child { border-inline-end: 0; }
+.settings-dialog nav button[aria-pressed='true'] { color: #241807; background: linear-gradient(#f5d880, #b97c2d); }
+
+.settings-dialog__body { min-height: 0; overflow: auto; }
+.settings-dialog__body > section { display: grid; width: min(48rem, 100%); margin: 0 auto; gap: 0.8rem; }
+.settings-dialog__body h3 { margin: 0 0 0.6rem; color: var(--trim-lit); letter-spacing: 0.12em; text-transform: uppercase; }
+
+.settings-toggle,
+.settings-action,
+.settings-volume,
+.settings-select,
+.settings-party {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid rgb(217 180 91 / 0.3);
+  background: rgb(0 0 0 / 0.28);
+}
+
+.settings-toggle span,
+.settings-action span,
+.settings-volume > span { display: grid; gap: 0.18rem; }
+.settings-dialog small { color: var(--ink-dim); }
+.settings-toggle input { width: 1.5rem; height: 1.5rem; accent-color: #d19a3e; }
+.settings-volume { grid-template-columns: minmax(9rem, 0.7fr) minmax(12rem, 1.3fr); }
+.settings-volume > span { grid-template-columns: 1fr auto; }
+.settings-volume output { color: var(--light-yellow); font-variant-numeric: tabular-nums; }
+.settings-volume input { width: 100%; accent-color: #d19a3e; }
+.settings-select select { min-width: 12rem; }
+.settings-party { grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+.settings-party span { color: var(--cream); }
+.settings-dialog__error { color: var(--red-text); }
+.settings-dialog__reset { justify-self: center; min-width: 12rem; margin-top: 1rem; }
+
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+html[data-screen-shake='false'] :is(.seat--struck, .seat--struck-alt) .seat__portrait,
+html[data-screen-shake='false'] :is(.enemy--struck, .enemy--struck-alt) .enemy__portrait { animation: none; }
+
+html[data-high-contrast='true'] { --cream: #fff9e8; --ink-dim: #d8cdb7; --trim-dim: #d2aa55; }
+html[data-high-contrast='true'] .start-menu::before { background: rgb(0 0 0 / 0.72); }
+html[data-high-contrast='true'] .start-menu__nav button { color: #fff; }
+html[data-high-contrast='true'] .start-menu__nav button[data-selected='true'] { color: #fff36b; }
+html[data-high-contrast='true'] .start-menu__nav button:focus-visible { outline-color: #fff; }

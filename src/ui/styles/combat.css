@@ -1,0 +1,76 @@
+/* Flex, not grid: the result banner is conditional, so fixed grid rows would
+   shift every child up one track and hand the free space to the wrong element. */
+.combat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  min-width: 0;
+}
+
+.combat__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--ink-dim);
+}
+
+.combat__die {
+  color: var(--gold);
+}
+
+.combat__phase {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  animation: phase-change 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.combat__phase--player {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.combat__phase--enemy {
+  color: var(--blood);
+  border-color: var(--blood);
+}
+
+.combat__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.combat__result {
+  margin: 0;
+  text-align: center;
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  animation: result-arrive 520ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+@keyframes phase-change {
+  from { opacity: 0; transform: translateY(-8px) scale(0.88); filter: brightness(1.8); }
+}
+
+@keyframes result-arrive {
+  from { opacity: 0; transform: scale(0.72); letter-spacing: 0.5em; filter: brightness(2); }
+}
+
+.combat__result--won {
+  color: var(--gold);
+}
+
+.combat__result--lost {
+  color: var(--blood);
+}

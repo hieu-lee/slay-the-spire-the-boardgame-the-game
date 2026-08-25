@@ -1,0 +1,85 @@
+/* A held potion is a component on the table, not a row of the page.
+
+   The belt used to auto-place into `.app-shell`'s `1fr` row (styles.css
+   `grid-template-rows: auto 1fr auto`), which is the wrong row for it: it took
+   the free space that belongs to the screen below, stretching to 455px on a
+   roomy screen and collapsing to 16px on a busy one. Four attempts to paper
+   over that from the belt's own box all failed — `align-self: start` rendered
+   it outside a collapsed track so its buttons stopped taking clicks, a
+   `min-height` stole 62px from the room stage and pushed the last Event choice
+   out of its frame, a `max-height` capped the box but not the track and left up
+   to 393px of dead ground, and paint-only left the label sliced in half
+   wherever the track collapsed.
+
+   The row itself is reserved now — see `.app-shell:has(> .outside-potions)` in
+   chrome/shell-growing-row.css — so the belt sizes to its content and the screen below
+   keeps the free space. That is what the two limitations recorded here used to
+   describe, and both are gone: measured at 1440x900 on `betweenCombat` holding
+   one potion, the belt is 62px and the framed panel is centred again rather
+   than 542px and shoved to 608-884; and at 761px and up the event, merchant and
+   reward stages no longer collapse the strip mid-glyph. On a phone the strip is
+   still tighter than its own buttons — measured at 390x844 the belt's row is 6px
+   against a 46px button — which is a narrow-width problem this rule does not
+   reach.
+
+   An earlier revision of this comment recorded that shape as tried and
+   REVERTED, on the grounds that the 62px came out of the room stage and
+   scripts/verify-noncombat-browser.mjs caught the last Event choice leaving its
+   frame at 1280x800. That is no longer what happens: with the rule in place the
+   suite passes in full and the last Event choice measures 714 against a stage
+   bottom of 784, with the belt present at its natural 62px. Do not re-revert it
+   on the strength of the old note.
+
+   What remains here is the belt's own PAINT: the plate and its bronze rule are
+   drawn as a fixed 62px band at the top, so the box reads as a strip. */
+.sts-scope .outside-potions {
+  gap: 0.6rem;
+  /* A fallback only, and NOT what currently keeps the belt in its band —
+     every direct child sets `align-self: stretch` below, and `align-self`
+     always defeats the container's `align-items`, so this line renders nothing
+     today. It is kept for any future child that does not opt in. Do not read it
+     as permission to drop the `align-self`/`max-height` pair: that pair is what
+     stops the row's content falling out of a collapsed box. */
+  align-items: start;
+  /* Bleeds like the HUD above it; the shell's gutter showed as soon as this
+     rule started painting a bronze rule and a distinct ground. The belt always
+     follows the header, so it closes the same 20px (grid gap + the header's
+     margin) that the map and campfire bands do. */
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  margin-top: -1.25rem;
+  padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+  /* `top 60px` resolves against the padding box, so a border here would push
+     the rule 1px inside a taller box and leave a sliver below it. */
+  border-block: 0;
+  background:
+    linear-gradient(rgb(217 180 91 / 0.22), rgb(217 180 91 / 0.22)) top / 100% 1px no-repeat,
+    linear-gradient(rgb(140 107 51 / 0.55), rgb(140 107 51 / 0.55)) top 60px left / 100% 2px no-repeat,
+    linear-gradient(180deg, rgb(43 31 26 / 0.92), rgb(24 17 14 / 0.94)) top / 100% 62px no-repeat,
+    /* the page's ground under the rest of a stretched box, so the leftover
+       track reads as background rather than as a hole above the band below */
+    linear-gradient(rgb(14 11 9 / 0.96), rgb(14 11 9 / 0.96));
+}
+
+/* The bare "Potions" label is a direct flex child with no wrapper of its own,
+   so `align-items: start` alone left it riding above the buttons' centre line.
+   Centre it against the row WITHOUT a height floor: a `min-height` here forced
+   the whole row's content past the bottom of a collapsed box (measured: content
+   at y=116 in a box ending at y=82), which hid the belt outright at 1440 on the
+   merchant and reward screens — far worse than the clipping it tidied.
+
+   The potion items need the same clamp for the same reason. Without it their
+   children sat centred in a 46px box starting 8px above a 20px clip, so on the
+   merchant every potion NAME and every button LABEL rendered zero visible
+   pixels while the word "Potions" survived — the limitation noted above was
+   "clipped mid-glyph" in theory and "nothing at all" in practice. */
+.sts-scope .outside-potions > strong,
+.sts-scope .outside-potions > .outside-potions__item {
+  align-self: stretch;
+  max-height: var(--key-min-height);
+}
+
+.sts-scope .outside-potions > strong {
+  display: flex;
+  align-items: center;
+}

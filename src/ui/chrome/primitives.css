@@ -1,0 +1,34 @@
+/* The chamfer. Cutting the corners is what stops a slab reading as a <div>;
+   the client's panels are painted sprites with notched silhouettes, and this is
+   the cheapest honest approximation of one. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end,
+.relic-actions > section,
+.relic-tip {
+  clip-path: polygon(
+    var(--chamfer) 0, calc(100% - var(--chamfer)) 0,
+    100% var(--chamfer), 100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%,
+    0 calc(100% - var(--chamfer)), 0 var(--chamfer)
+  );
+}
+
+/* The panel ground: warm leather with a lit top edge, a bronze inner rule, and
+   a faint woven texture so no area is ever a flat fill. The texture is an
+   inline SVG turbulence rather than a file — one round trip saved, and it
+   scales with the element instead of tiling at a fixed pixel size. */
+.sts-scope .room-screen,
+.sts-scope .between-combat,
+.sts-scope .campaign-end {
+  padding: clamp(1.1rem, 3vw, 2rem);
+  border: 0;
+  background:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, rgb(217 180 91 / 0.16), transparent 30%),
+    linear-gradient(180deg, var(--leather-lit), var(--leather) 62%, #120c0a);
+  background-blend-mode: overlay, normal, normal;
+  box-shadow: inset 0 0 3rem rgb(0 0 0 / 0.6);
+  color: var(--cream);
+  filter: drop-shadow(var(--hard-shadow-lg));
+}

@@ -1,0 +1,83 @@
+/* High-contrast mode strips background-image, background-color and box-shadow
+   from every plate chrome.css paints, but it does NOT touch `filter`. That left the
+   hard drop shadow of a now-transparent panel painting as a detached grey slab
+   offset 6/8px — under the relic tooltip it read as redaction bars struck
+   through the text, and the same ghosts trailed Menu, Run log, the merchant
+   headings and Leave merchant.
+
+   Zeroing the two tokens is the whole fix: all twelve consumers spend them
+   inside `drop-shadow()`, so one override reaches every one and any future one.
+   `0 0 0 transparent` is used rather than `filter: none` on a list of selectors
+   because two of those twelve also carry `brightness(1.15)`, and the spent
+   relic chip's `grayscale()` is the ONLY cue left distinguishing it once the
+   plate is stripped — a blanket filter reset would erase both. */
+@media (forced-colors: active) {
+  :root {
+    --hard-shadow: 0 0 0 transparent;
+    --hard-shadow-lg: 0 0 0 transparent;
+  }
+
+  /* Hand the native controls back. High contrast forces `background-image` to
+     `none` — gradients included — but leaves `appearance: none` alone, so a
+     drawn mark simply disappears while the control that would have drawn it
+     natively stays suppressed. For a checkbox that means CHECKED and UNCHECKED
+     render identically: the tick is a gradient, and the `:checked` border is
+     forced to the same system colour as the unchecked one. State conveyed by
+     nothing at all (WCAG 1.4.1). The `<select>` chevron is drawn the same way
+     and vanishes with it. `appearance: auto` restores both. */
+  input[type='checkbox'],
+  select {
+    appearance: auto;
+  }
+
+  /* The chosen-key reticle is eight gradient layers and its plate colour is
+     forced flat, so selection had no visual cue either. A system-coloured ring
+     is the one thing high contrast is guaranteed to paint. */
+  .sts-scope .is-chosen,
+  .sts-scope [aria-pressed='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  /* An element gets ONE outline, and the shared focus rule in chrome/keys.css is
+     (0,3,1) — so focusing a chosen key replaced its selection ring with the
+     focus ring,
+     which forced colours remap to CanvasText. Focused-and-chosen then looked
+     exactly like focused-and-unchosen, losing the state on the keyboard path
+     this block exists to serve. A doubled ring at (0,3,1), later in the file,
+     reads as both at once. */
+  .sts-scope button.is-chosen:focus-visible,
+  .sts-scope button[aria-pressed='true']:focus-visible {
+    /* 5px double, not 4px: at 4px this drew two hairlines and the CHOSEN key
+       read lighter than an unchosen focused one at solid 3px — the selected
+       option looking less emphasised than the unselected. 5px puts more ink
+       down than the plain ring while staying inside the 7px chamfer. */
+    outline: 5px double Highlight;
+    outline-offset: -5px;
+  }
+
+  /* The compendium renders outside `.sts-scope`, so the ring above never reached
+     its filter buttons. Their pressed cues are `color`/`border-color`/
+     `background` — all forced flat — plus `box-shadow` glows and a `filter`
+     applied to a gradient, both of which forced colours drops. Measured
+     byte-identical pressed vs unpressed: 0 of 10608 pixels on Card Type, 0 of
+     4340 on Cost.
+     Scoped to the `.compendium__filters` aside rather than to one group,
+     because all three live there and fixing only `__pools` left the identical
+     bug two rows below it. The sort toggle matches too and is unharmed — its
+     state is carried by its own glyph. */
+  .compendium__filters [aria-pressed='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  /* The companion the `.sts-scope` pair above already has, and the reason it
+     needs one: an element gets ONE outline, and this rule at (0,2,0) beats the
+     global `:focus-visible` at (0,1,0) — so the SELECTED button in each group
+     rendered byte-identically focused and unfocused. Tabbing a filter group
+     showed a ring on three of four buttons and nothing on the fourth. */
+  .compendium__filters [aria-pressed='true']:focus-visible {
+    outline: 5px double Highlight;
+    outline-offset: -5px;
+  }
+}

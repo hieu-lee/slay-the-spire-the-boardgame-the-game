@@ -1,0 +1,159 @@
+/* TipHelper's geometry, to the pixel: a 320px box, 280px of body wrap, a 23px
+   gold header and a 22px cream body, under a hard (+9,+14) 25%-black stamp.
+   Kept in CSS rather than in a portal component because the chip renders one of
+   these per relic in the HUD strip and they all have to open at the same place
+   without any of them measuring coordinates. (Shop and reward relics do not use
+   this tooltip at all — they print `.room-item-text` inline, where there is room
+   for the prose.) */
+.relic-tip {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 0.75rem);
+  display: grid;
+  gap: 0.15rem;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  padding: 0.7rem 22px 0.8rem;
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 2px var(--trim-dim),
+    inset 0 0 0 3px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  filter: drop-shadow(var(--hard-shadow-lg));
+  color: var(--tip-body);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 0.86rem;
+  line-height: 1.42;
+  text-align: left;
+  transform: translate(0, -0.3rem);
+  opacity: 0;
+  visibility: hidden;
+  /* NOT `none`. WCAG 1.4.13 requires hover-triggered content to stay open while
+     the pointer is on it, and this tooltip is 320px of text a magnifier user
+     has to track across. The tooltip is a DOM child of the chip, so the pointer
+     entering it keeps `.relic-chip:hover` true and the tooltip stays up. While
+     hidden it is `visibility: hidden`, which already blocks hit-testing, so
+     this costs nothing when the tooltip is not showing.
+
+     The measured cost when it IS showing: the 320x88 box covers the potion
+     belt's second `Give`, and a pointer that walked down from the chip lands on
+     the tooltip instead of that button. Below the 47.99rem breakpoint the box
+     spans the status row instead, so the covered strip is wider still — the
+     Menu key falls under it there. Accepted rather than reverted, because
+     `pointer-events: none` fails 1.4.13 outright and whatever is underneath
+     stays reachable three ways — Escape (from any input modality, and from
+     either trigger, see RelicChip.tsx), or approaching from the side or below
+     rather than through the chip. */
+  pointer-events: auto;
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform var(--motion-lerp) var(--ease-lerp),
+    visibility var(--motion-lerp);
+}
+
+.relic-chip:hover > .relic-tip,
+.relic-chip:focus-within > .relic-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, 0);
+}
+
+/* The other half of WCAG 1.4.13: dismissible. The tooltip overlaps the potion
+   belt below it and — because it takes pointer events, above — swallows clicks
+   aimed at it, so a player who only wanted to know what a relic does must be
+   able to put it away without moving the pointer or losing their place in the
+   tab order. `Escape` sets this attribute from a document-level listener (see
+   RelicChip.tsx, which explains why it cannot live on the chip), and it wins
+   over both trigger rules above by coming later at equal specificity. */
+.relic-chip[data-tip-dismissed='true'] > .relic-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Only one relic explains itself at a time. Focus and hover are independent, so
+   clicking a chip and then hovering its neighbour matches BOTH trigger rules —
+   and since every tooltip is anchored to the bar rather than to its own chip
+   (`left: 0` below, one shared `z-index`), the two 320px panels land on the
+   same rect and render as two sentences printed over each other.
+
+   The pointer is the more immediate intent, so when a chip is hovered it wins.
+
+   `:has(.relic-chip:hover)` rather than a bare `.relic-bar:hover`: the bar's
+   box includes its padding, the gaps between chips, and the square corners
+   outside each round chip, and in all of those the pointer hovers the BAR while
+   no chip matches `:hover` — so `:not(:hover)` matched every chip and hid every
+   tooltip. That silently swallowed keyboard-raised tooltips whenever the mouse
+   happened to be resting over the strip: the chip would light up on Tab with no
+   panel and no cue why.
+
+   At (0,6,0) this outranks the (0,3,0) triggers. It can co-match the dismissed
+   rule above on a chip that is focused-but-not-hovered, which is harmless —
+   both declare the same two properties. */
+.relic-bar:has(.relic-chip:hover) .relic-chip:not(:hover) > .relic-tip {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Where the strip's tooltip goes.
+
+   A 320px box centred on a 34px chip hangs off the left edge of the window for
+   the first relic and off the right edge for the fifteenth, and CSS alone
+   cannot flip it — nothing here can measure the window.
+
+   So the box is anchored to the BAR rather than to the chip: `.relic-bar` owns
+   the positioning context and every tip opens at the bar's own left edge,
+   under the whole strip. That keeps one opening point for any relic count, and
+   the client itself drops relic tooltips below the bar rather than beside each
+   relic. The chip therefore must NOT be `position: relative`, or it would
+   capture the tip back.
+
+   Wide windows only — see the breakpoint below for what happens when the bar's
+   left edge is too far in for a 320px box to follow it. */
+.relic-bar { position: relative; }
+.relic-bar .relic-tip { left: 0; }
+
+/* Below roughly 768px the 320px box no longer fits to the right of the bar's
+   left edge, which sits ~215px into the HUD, so it ran past the window: at
+   380px, 155px of it. Nothing scrolled — the `html { overflow-x: clip }` in
+   chrome/tokens-and-base.css sees
+   to that — which is exactly why it mattered: the overhang was silently CUT
+   rather than reachable, and the tooltip lost the end of its own sentence.
+   `max-width: calc(100vw - 2rem)` never engaged, because the box is narrower
+   than that cap; the cap bounds the width, not where the box ends up.
+
+   The fix hands the positioning context up to the status row and lets the box
+   fill it, so `top: 100%` means "under the whole HUD line" instead of "under
+   the bar". `.run-status` is a shrink-to-fit flex item, so this is the width of
+   the pips rather than of the header — narrower than 320px on a small window,
+   which is the point.
+
+   `position: fixed` was tried first and rejected: `fixed` cannot see the bar,
+   so the box fell to its static position over the header — at 600px it covered
+   the title and gold outright. */
+@media (max-width: 50rem) {
+  .run-status { position: relative; }
+  .relic-bar { position: static; }
+
+  /* `left: 0` is already set above; only the right edge and the sizing change. */
+  .relic-bar .relic-tip {
+    right: 0;
+    width: auto;
+    max-width: none;
+  }
+
+}
+
+.relic-tip__name {
+  color: var(--sts-gold);
+  font-size: 1.05rem;
+  font-weight: 400;
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.6);
+}
+
+.relic-tip__pool { color: #9b8a6a; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.relic-tip__text { color: var(--tip-body); }
+.relic-tip__rule { color: var(--blue-text); font-style: italic; }
+.relic-tip__note { color: var(--sts-gold); }

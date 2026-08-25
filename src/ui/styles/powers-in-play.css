@@ -1,0 +1,140 @@
+/* A Power sits in front of the player for the whole combat and changes how the
+   turn plays out; it has to be visible or it cannot be planned around. */
+/* Selected Powers have bespoke generated pictograms; the rest use the nearest
+   generated status symbol. The full face-up card stays one interaction away. */
+.powers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.power {
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+  width: 34px;
+  height: 22px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgb(214 176 96 / 0.55);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  background: #1a1520;
+}
+
+.power > .icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.power__counter {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 0;
+  background: none;
+  color: #f5d47b;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000, 0 0 2px #000;
+}
+
+/* Hover, focus or click enlarges the real card, which already carries its own
+   rules text — cheaper and more accurate than restating the effect in prose
+   beside it. The enlarged card itself is rendered into the body; see
+   .power__zoom below. */
+.power:focus-visible {
+  outline: 2px solid #e8c877;
+  outline-offset: 1px;
+}
+
+/* The enlarged card lives in the body, not in the tile: an ancestor with a
+   scroll container clips a fixed descendant, which cut half the card off at
+   smaller viewports. Its coordinates come from PowerRow, clamped to the
+   viewport, because CSS alone cannot see where the tile ended up. */
+.power__zoom {
+  position: fixed;
+  width: 190px;
+  aspect-ratio: 3 / 4;
+  height: auto;
+  z-index: 200;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.75);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.power__zoom-image {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+
+.power__zoom-card {
+  --card-width: 190px;
+}
+
+.power__zoom--fallback {
+  min-height: 253px;
+}
+
+.power__zoom-description {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 2;
+  max-height: 44%;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgb(232 200 119 / 0.5);
+  border-radius: 4px;
+  color: #f8ecd3;
+  background: rgb(22 15 13 / 0.94);
+  font: 0.82rem/1.3 system-ui, sans-serif;
+  text-shadow: none;
+}
+
+/* A composited opacity fade rather than an animated box-shadow: a four-player
+   board can carry sixteen of these, and repainting each one forever is a cost
+   nobody asked for. */
+.power::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 3px;
+  box-shadow: 0 0 7px rgb(214 176 96 / 0.55);
+  opacity: 0;
+  animation: power-idle 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.power--open::after,
+.power:hover::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes power-idle {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .power::after {
+    animation: none;
+  }
+}

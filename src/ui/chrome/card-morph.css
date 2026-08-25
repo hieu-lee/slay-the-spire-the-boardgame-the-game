@@ -1,0 +1,119 @@
+/* Full-bleed, above everything, and inert: `pointer-events: none` because this
+   plays while the player is mid-action and a 2-second curtain that ate clicks
+   would feel like a freeze rather than a flourish. The run underneath keeps
+   working; this is only the camera cutting to it. */
+.card-morph {
+  position: fixed;
+  z-index: 900;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* `align-content` too, not just `place-items`. `place-items` centres each item
+     WITHIN its row; it does not size the rows, and `align-content` defaults to
+     stretch — so the two auto rows split all the free height between them and
+     the gap below is swamped. Measured before this line: 281px between card and
+     caption at 1440x900 and 820px at 1440x2000, with the card stranded at a
+     third of the height. The caption read as an unrelated label rather than as
+     part of the same object. */
+  align-content: center;
+  gap: 1.4rem;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.85));
+  animation: card-morph-veil 260ms var(--ease-lerp) both;
+}
+
+.card-morph__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* Both faces occupy one cell so the new card grows out of the old one's
+     footprint instead of appearing beside it. */
+  grid-template-areas: 'face';
+}
+
+/* `Card` is passed `playable={false}` here, which earns it `.card--unplayable`
+   and with it `grayscale(0.7) brightness(0.6)`. That is right for a card you
+   cannot play and wrong for the only moment the card IS the screen — the
+   upgraded face was landing centre-stage on a near-black veil, desaturated and
+   at 60% brightness. Worse under reduced motion, which skips straight to that
+   frame and shows nothing else. The morph therefore needs the exception here. */
+.card-morph .card--unplayable { filter: none; }
+
+.card-morph__slot {
+  grid-area: face;
+  /* Above the burst. Both are in the same grid cell, and the flash reads as
+     light coming from BEHIND the card. */
+  z-index: 1;
+  /* Roughly twice a hand card. This is the one moment the card is the subject
+     of the screen rather than one of eight things on it. */
+  --card-width: clamp(150px, 26vh, 250px);
+  transition:
+    opacity var(--motion-lerp) var(--ease-lerp),
+    transform 320ms var(--ease-lerp),
+    filter 320ms var(--ease-lerp);
+}
+
+/* The old card holds, then blows out white and shrinks away. */
+.card-morph__slot--from { opacity: 1; transform: scale(1); }
+.card-morph--burn .card-morph__slot--from { opacity: 0; transform: scale(0.82); filter: brightness(3.2) saturate(0); }
+.card-morph--new .card-morph__slot--from { opacity: 0; transform: scale(0.82); }
+
+/* The new one lands from slightly larger, the way a stamp comes down. It is
+   already half-present during the burn: cutting the old card to nothing and
+   only THEN bringing the new one in left a beat with neither on screen, which
+   read as the animation having broken rather than as a transition. */
+.card-morph__slot--to { opacity: 0; transform: scale(1.22); }
+.card-morph--burn .card-morph__slot--to { opacity: 0.45; transform: scale(1.12); }
+.card-morph--new .card-morph__slot--to { opacity: 1; transform: scale(1); }
+
+/* The flash between them. Gold for an upgrade, blue-white for a transform,
+   because a transform is a different card rather than a better one. */
+.card-morph__burst {
+  position: absolute;
+  grid-area: face;
+  width: 30rem;
+  height: 30rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--morph-flare, rgb(255 214 122 / 0.95)) 0%, rgb(255 214 122 / 0.25) 38%, transparent 68%);
+  opacity: 0;
+  transform: scale(0.35);
+}
+
+.card-morph--transform { --morph-flare: rgb(178 226 255 / 0.95); }
+.card-morph--remove { --morph-flare: rgb(255 99 72 / 0.95); }
+
+.card-morph--burn .card-morph__burst { animation: card-morph-burst 520ms var(--ease-lerp) both; }
+
+.card-morph__caption {
+  margin: 0;
+  color: var(--sts-gold);
+  font-family: 'Kreon', Georgia, serif;
+  font-size: 1.5rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.65);
+  opacity: 0;
+  transition: opacity var(--motion-lerp) var(--ease-lerp);
+}
+
+.card-morph--transform .card-morph__caption { color: var(--blue-text); }
+.card-morph--remove .card-morph__caption { color: #ff9b78; }
+.card-morph--new .card-morph__caption { opacity: 1; }
+
+@keyframes card-morph-veil { from { opacity: 0 } to { opacity: 1 } }
+
+@keyframes card-morph-burst {
+  0% { opacity: 0; transform: scale(0.35); }
+  45% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+/* Reduced motion: the component already skips straight to the result, so the
+   only thing left to disarm is the veil's fade and the residual transitions —
+   the outcome still shows, it just does not move. */
+@media (prefers-reduced-motion: reduce) {
+  .card-morph { animation: none; }
+  .card-morph__slot,
+  .card-morph__caption { transition: none; }
+  .card-morph__burst { animation: none; opacity: 0; }
+}

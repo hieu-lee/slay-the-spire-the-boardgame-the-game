@@ -1,0 +1,102 @@
+/* Native <details> paints its own triangle in the platform's colour and font.
+   Removing the marker is what lets the summary become a key. */
+.relic-actions details > summary,
+.end-turn-order > summary,
+.log > summary,
+.run-modifiers > summary,
+.online-lobby__settings > summary,
+.combat-log-drawer > summary,
+.start-menu__meta > summary {
+  list-style: none;
+}
+
+.relic-actions details > summary::-webkit-details-marker,
+.end-turn-order > summary::-webkit-details-marker,
+.log > summary::-webkit-details-marker,
+.run-modifiers > summary::-webkit-details-marker,
+.online-lobby__settings > summary::-webkit-details-marker,
+.combat-log-drawer > summary::-webkit-details-marker,
+.start-menu__meta > summary::-webkit-details-marker {
+  display: none;
+}
+
+.log > summary,
+.online-lobby__settings > summary,
+.start-menu__meta > summary,
+.combat-log-drawer > summary {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: var(--key-min-height);
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--trim-dim);
+  border-radius: 0;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+  color: var(--cream);
+  background: linear-gradient(180deg, var(--slate-lit), var(--slate) 46%, var(--slate-dim));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 -2px 0 rgb(0 0 0 / 0.45),
+    inset 0 0 0 1px rgb(0 0 0 / 0.4);
+  filter: drop-shadow(var(--hard-shadow));
+  font-family: 'Kreon', Georgia, serif;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+  cursor: pointer;
+  transition: color var(--motion-lerp) var(--ease-lerp), filter var(--motion-lerp) var(--ease-lerp);
+}
+
+/* The client tints its top-bar icon buttons cyan on hover, but `--blue-text` on
+   this slate plate measures 4.39:1 once the hover's own `brightness(1.15)`
+   lifts the plate under it — the identical trap chrome/keys.css documents for
+   gold. `--light-yellow` clears it, and the open state
+   is unmistakable from the panel itself rather than from a second hue. */
+.log > summary:hover,
+.online-lobby__settings > summary:hover,
+.combat-log-drawer > summary:hover,
+.start-menu__meta > summary:hover {
+  color: var(--light-yellow);
+  filter: drop-shadow(var(--hard-shadow)) brightness(1.15);
+}
+
+.online-lobby__settings[open] > summary,
+.start-menu__meta[open] > summary,
+.combat-log-drawer[open] > summary,
+.log[open] > summary { color: var(--light-yellow); }
+
+/* A drawn glyph in front of each disclosure. Cheaper than an icon font, and it
+   never falls back to a multiplication sign the way ⚔ does.
+
+   Every one of these carries the ` / ''` alt text. Generated content counts
+   toward the accessible name, so without it the menu announces as "trigram for
+   heaven Menu" and the log as "rotated floral heart bullet Run log". The empty
+   alt marks the glyph decorative and drops it from the name. Browsers that do
+   not know the syntax ignore the whole declaration, which leaves them exactly
+   where they were before this line — no glyph is a smaller loss than a
+   mispronounced one. */
+.online-lobby__settings > summary::before { content: '☰' / ''; font-size: 1.05rem; }
+
+/* Inherits 0.65rem uppercase from `.start-menu__meta`; the key sets its own. */
+.start-menu__meta > summary { font-size: 0.8rem; letter-spacing: 0.08em; }
+.log > summary::before { content: '❧' / ''; font-size: 1rem; }
+
+/* .run-modifiers had no stylesheet rules at all — raw browser chrome sitting
+   inside an otherwise dressed panel. */
+.run-modifiers {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--trim-dim);
+  background: rgb(0 0 0 / 0.35);
+}
+
+.run-modifiers > summary {
+  color: var(--light-yellow);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.run-modifiers > summary::before { content: '◈ ' / ''; color: var(--trim-lit); }
+.run-modifiers :is(ul, ol) { display: grid; gap: 0.3rem; margin: 0.5rem 0 0; padding-left: 1rem; }
+.run-modifiers li { color: var(--cream); font-size: 0.8rem; }
+.run-modifiers strong { color: var(--sts-gold); }

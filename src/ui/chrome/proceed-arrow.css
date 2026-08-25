@@ -1,0 +1,15 @@
+/* `.room-proceed` is already a bespoke arrow-shaped plate (styles.css) that
+   right-aligns itself with `margin-left: auto` on a BLOCK box. It is
+   deliberately not a key: making it one replaced `display: block` with
+   `inline-flex`, and an auto margin cannot align an inline-level box, so the
+   button fell to the left edge — where its `position: sticky` floated it over
+   the shop's own labels. It only needed the palette, not the shape. */
+.sts-scope .room-proceed {
+  border-color: var(--trim-lit);
+  background: linear-gradient(90deg, #5e2418, #a8442a);
+  color: var(--cream);
+  font-family: 'Kreon', Georgia, serif;
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
+}
+
+.sts-scope .room-proceed:hover:not(:disabled) { color: var(--light-yellow); filter: brightness(1.14); }

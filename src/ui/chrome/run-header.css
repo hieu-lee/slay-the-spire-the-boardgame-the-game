@@ -1,0 +1,96 @@
+/* TopPanel: a full-width slab, a bronze rule along its bottom edge, and a soft
+   dark gradient falling into the play area beneath it. */
+.app-shell__header {
+  position: relative;
+  z-index: 40;
+  align-items: center;
+  min-height: 3.6rem;
+  padding: 0.5rem clamp(0.75rem, 2vw, 1.5rem);
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(71 96 111 / 0.96), rgb(23 33 43 / 0.98)),
+    var(--slate);
+  box-shadow:
+    inset 0 1px 0 rgb(217 180 91 / 0.22),
+    inset 0 -3px 0 var(--trim),
+    0 6px 18px rgb(0 0 0 / 0.45);
+}
+
+/* The header spans the window even when the shell is a centred column, so the
+   HUD reads as the game's frame instead of as a card floating on a page. */
+.app-shell {
+  position: relative;
+  padding-top: 0;
+}
+
+/* The room screens sat on flat near-black. A lit floor under them costs one
+   pseudo-element and stops every framed panel from looking like it is hanging
+   in a void. Screens that paint their own stage (map, campfire, combat) cover
+   this, so it only shows where nothing else does. */
+.app-shell:not(.app-shell--combat)::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 108%, rgb(122 74 34 / 0.3), transparent 72%),
+    radial-gradient(ellipse 90% 60% at 50% -12%, rgb(58 44 34 / 0.55), transparent 68%);
+  pointer-events: none;
+}
+
+.app-shell > .app-shell__header {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-bottom: 0.75rem;
+}
+
+/* The implicit column takes its width from the widest item, and the full-bleed header
+   above contributes 50vw of max-content — so past roughly 2736px the column outgrows
+   the centred 1400px shell and every `50% - 50vw` break-out inside it lands off centre,
+   carrying the header, the potion belt and the Settings gear off the right edge. Pin the
+   column to the shell so the break-outs measure against a centred box. */
+.app-shell { grid-template-columns: minmax(0, 1fr); }
+
+/* styles.css gives the combat HUD its own taller slab and a GEORGIA h1, at a
+   higher specificity than the rule above — so the header changed typeface the
+   instant a fight started, which is the "two people built this" tell. The
+   combat bar keeps its own geometry; only the type and the bronze rule are
+   brought back in line. */
+.app-shell--combat > .app-shell__header {
+  box-shadow:
+    inset 0 1px 0 rgb(217 180 91 / 0.22),
+    inset 0 -3px 0 var(--trim),
+    0 6px 18px rgb(0 0 0 / 0.45);
+}
+
+/* Kreon is the game's only typeface. The entry and lobby headings were set in
+   Georgia by styles.css, so the multiplayer front door greeted the player in a
+   different serif from the one the whole run is set in. */
+.sts-scope.online-entry h1,
+.sts-scope.online-lobby h1 { font-family: 'Kreon', Georgia, serif; }
+
+.app-shell h1,
+.app-shell--combat > .app-shell__header h1 {
+  font-family: 'Kreon', Georgia, serif;
+  font-size: clamp(0.95rem, 1.5vw, 1.25rem);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--cream);
+  text-shadow: 3px 3px 0 rgb(0 0 0 / 0.55);
+}
+
+.run-status { gap: 0.7rem; font-size: 0.9rem; color: var(--cream); }
+
+/* Act and Ascension read as struck plates rather than as loose grey words. */
+.run-status > .pip:not(.pip--energy) {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.16rem 0.6rem;
+  background: rgb(0 0 0 / 0.3);
+  box-shadow: inset 0 0 0 1px rgb(217 180 91 / 0.2);
+  color: var(--cream);
+  text-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+}
+
+.run-status .icon-value__number { color: var(--sts-gold); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55); }

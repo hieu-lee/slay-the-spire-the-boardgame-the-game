@@ -1,0 +1,15 @@
+/* `--item-module` is NOT declared here. It used to be, on the theory that one
+   module could size an item wherever it was offered, but the shop derives its own
+   from the rug's height while a reward row and the boss picker size their art to
+   the row they sit in — so a value here had no consumer and only made it look as
+   though those three were kept in step. */
+.sts-scope { --item-gap: clamp(0.35rem, 0.8vw, 0.7rem); }
+
+/* How wide a card the rug's WIDTH can carry. Three card tracks sit in one column
+   beside two icon shelves and the removal plaque, so the module cannot simply be
+   a share of the viewport: at a plain `13vw` the pile's column was squeezed below
+   the character row's and drew smaller cards — 94px against 108px at 831x900.
+   The second term is what the row's other occupants leave over, fitted to the
+   widths where the squeeze happens (94px at 831, 107 at 900, 125 at 1000); above
+   about 1100px the plain share is the smaller of the two and wins. */
+.sts-scope { --rug-width-limit: min(13vw, calc(18.3vw - 58px)); }
