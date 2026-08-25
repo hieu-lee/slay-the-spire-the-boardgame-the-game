@@ -2580,7 +2580,7 @@ function CombatScreenView({
       data-act={stageAct}
       data-phase={state.phase}
       style={{
-        '--combat-stage-image': `url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
+        backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
         '--stage-scale': stageScale,
         '--stage-width': `${stageCount * stageGap + STAGE_MARGIN_REM * stageScale}rem`,
         '--stage-gap': `${stageGap}rem`,
