@@ -66,10 +66,12 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
   }
   player.orbs.forEach((orb, slot) => {
     if (orb === 'lightning') {
+      const targets = lightningTargetOptions(state, player)
+      if (targets.length === 0) return
       abilities.push({
         id: `orb:${slot}`,
         label: `Lightning Orb ${slot + 1}`,
-        targets: lightningTargetOptions(state, player),
+        targets,
       })
     } else if (orb === 'frost') abilities.push({ id: `orb:${slot}`, label: `Frost Orb ${slot + 1}` })
   })
