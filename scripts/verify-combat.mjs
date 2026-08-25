@@ -4179,10 +4179,16 @@ check('Blizzard counts only Frost Orbs and Hologram recovers a chosen discard', 
     const blizzard = instance('blizzard', upgraded)
     const frozen = combat([makePlayer({
       character: 'defect', hand: [blizzard], orbs: ['frost', 'lightning', 'frost'], energy: 3,
-    })], [makeEnemy({ hp: 10, maxHp: 10, block: 1 })])
+    })], [
+      makeEnemy({ hp: 10, maxHp: 10, block: 1 }),
+      makeEnemy({ uid: 'row-mate', hp: 10, maxHp: 10, block: 1 }),
+      makeEnemy({ uid: 'other-row', hp: 10, maxHp: 10, block: 1, row: 1 }),
+      makeEnemy({ uid: 'boss', hp: 10, maxHp: 10, block: 1, row: 1, isBoss: true }),
+    ])
     const resolved = playCard(frozen, 'p1', blizzard.uid, { enemyUid: 'e1', playerId: null })
-    assertEqual(resolved.enemies[0].hp, upgraded ? 5 : 7,
-      'Blizzard did not resolve one separate hit per Frost Orb')
+    assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp),
+      [upgraded ? 5 : 7, upgraded ? 5 : 7, 10, upgraded ? 5 : 7],
+      'Blizzard did not resolve one separate hit per Frost Orb against the chosen row and Boss')
   }
 
   const emptyBlizzard = instance('blizzard')
