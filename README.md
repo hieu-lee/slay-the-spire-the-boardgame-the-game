@@ -76,6 +76,13 @@ node scripts/verify-rng.mjs   # or run one directly
 bridge, not against pixels. Screenshots land in `artifacts/browser/` for review, and the
 run fails on any console error, page error or failed request.
 
+`verify-all.mjs` runs its 3 browser suites 2 at a time by default (each boots its own Vite
+and Chromium) and retries a suite that fails while contending, up to twice, before counting
+it as a failure — a suite that needed a retry still gets logged as `flaked then recovered:
+...` even though the run passes. If that line shows up often on your machine, pass
+`--heavy=1` to fall back to running the browser suites one at a time (no contention, no
+retries); `--heavy-retries=N` tunes the retry count instead, including `0` to disable it.
+
 There is no test framework. Each check is a plain Node program that imports the engine
 directly (Node 22 strips TypeScript types on import) and exits non-zero on failure. This
 keeps the engine importable from playtests, the server, and the browser without a build
