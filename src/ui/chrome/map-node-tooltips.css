@@ -46,24 +46,97 @@
    after it in the row painted straight through the panel. Lift the whole node
    while it is explaining itself. */
 .room:hover,
-.room:focus-visible {
+.room:focus-visible,
+.room--reading {
   z-index: 400;
 }
 
 .room:hover > .room-tip,
-.room:focus-visible > .room-tip {
+.room:focus-visible > .room-tip,
+.room--reading > .room-tip {
   opacity: 1;
   visibility: visible;
   transform: translate(-50%, 0);
   transition-delay: 0s;
 }
 
+/* A tap-opened panel must not take the taps around it. The panel is 17rem of
+   text hanging below a 52px node, so it lies across the row beneath — and it is
+   a CHILD of its own node's button, which means a tap on it counts as a tap on
+   that node. A player reaching past an open panel for the room below it would
+   have walked into the room they were only reading about.
+   Scoped to the tapped state on purpose: on a pointer device the panel has to
+   stay hittable, because hovering ONTO it is what keeps it open (WCAG 1.4.13),
+   and there is no hover here to keep. */
+.room--reading > .room-tip {
+  pointer-events: none;
+}
+
+/* Reachable nodes pulse their opacity forever, and the panel is a CHILD of the
+   node — so an open panel inherits the pulse and its text breathes in and out
+   while being read. Phones already stop that pulse through
+   `data-mobile-performance` (chrome/map-prompts.css), but a tablet clears the
+   600px short edge that flag needs while still having no hover at all. */
+.map .room--reading.room--reachable,
+/* The halo is a separate animation on a pseudo-element; frozen node plus
+   pulsing ring reads as a glitch rather than as a settle. Both the
+   reduced-motion block and the mobile tier stop the two together. */
+.map .room--reading.room--reachable::before {
+  animation: none;
+  opacity: 1;
+}
+
+/* Opened upward when the panel does not fit below it inside the map's own
+   scrollport. The rows run bottom-up, so a run's opening choices are the LOWEST
+   on screen and their panels opened past the fold — the first tap of a run
+   appeared to do nothing at all. MapScreen measures the real panel against the
+   real node and only sets this where flipping is both needed and safe. */
+.room--reading[data-tip-flip='up'] > .room-tip {
+  top: auto;
+  bottom: calc(100% + 0.55rem);
+}
+
+/* The prompt that makes the two-step tap discoverable. Gold and spaced like the
+   node captions, so it reads as an instruction rather than as more room prose. */
+.room-tip__confirm {
+  margin-top: 0.15rem;
+  color: var(--sts-gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* A tap leaves `:hover` stuck on the node, so hover would hold a room's panel
+   open long after the player had moved on. Only the hover arm goes: a tablet
+   with a keyboard matches `(hover: none)` too, and `:focus-visible` is the one
+   way its panels open at all — it does not match pointer activation, so it
+   cannot be the stuck state this is removing. */
+@media (hover: none) {
+  /* `:not(.room--reading)` rather than a later override: `.room:hover >
+     .room-tip` is (0,3,0) and would outrank the (0,2,0) rule that opens the
+     tapped node's own panel, so the node the player just read would be the one
+     node whose panel stayed hidden. Excluding it here settles that by matching,
+     not by cascade order. */
+  .room:hover:not(.room--reading) > .room-tip {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
 /* One room explains itself at a time. Hover is the more immediate intent, so a
    node under the pointer wins over one merely holding focus — the same rule the
-   relic bar needs, for the same collision. */
-.map__frame:has(.room:hover) .room:not(:hover) > .room-tip {
-  opacity: 0;
-  visibility: hidden;
+   relic bar needs, for the same collision.
+
+   Hover devices only. A tap leaves `:hover` stuck on the node it hit, so
+   without the query this rule kept arbitrating on a phone with a pointer that
+   is not there — Tab to another node and its freshly focused panel was hidden
+   by a hover left behind three taps ago. Where hover is not an input it does
+   not get a vote. */
+@media (hover: hover) {
+  .map__frame:has(.room:hover) .room:not(:hover) > .room-tip {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
 .room-tip__name {

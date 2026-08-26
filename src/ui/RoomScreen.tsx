@@ -11,7 +11,8 @@ import type {
   TreasureDecision,
 } from "../game/noncombat.ts";
 import { courierCost } from "../game/noncombat.ts";
-import { relicOptionLabel } from "./RelicChip.tsx";
+import { relicOptionLabel, RelicOptionText } from "./RelicChip.tsx";
+import { useHoverUnavailable } from "./touch-input.ts";
 import { Card } from "./Card.tsx";
 import type { Player } from "../game/types.ts";
 import type { EventEffect } from "../game/events.ts";
@@ -686,6 +687,12 @@ function EventScreen({
   onSkipEvent,
   onArmCardGain,
 }: Props & { room: Extract<Props["room"], { kind: "event" }> }) {
+  // Where the rules are printed under the option (see RelicOptionText), the
+  // `title` would be announced a second time as the button's description — the
+  // same duplicate sentence `distinctRule` exists to avoid on relic chips.
+  const printsRulesInline = useHoverUnavailable();
+  const relicTitle = (id: string, withCost = false) =>
+    printsRulesInline ? undefined : relicOptionLabel(id, withCost);
   const player =
     players.find((candidate) => candidate.id === viewerId) ?? players[0]!;
   const [cards, setCards] = useState<string[]>([]);
@@ -903,8 +910,9 @@ function EventScreen({
         ) : (
           <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) =>
             <button type="button" key={`${relic.defId}-${index}`} aria-pressed={relicId === relic.defId}
-              title={relicOptionLabel(relic.defId)} onClick={() => setRelicId(relic.defId)}>
+              title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}>
               <ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}
+              <RelicOptionText id={relic.defId} />
             </button>)}</fieldset>
         )}
         <div className="event-options"><button type="button" disabled={pendingTrade.kind === "card" ? !cards[0] : !relicId} onClick={() => submit(["accept_trade"])}>Complete exchange</button><button type="button" onClick={() => submit(["reject_trade"])}>Decline</button></div>
@@ -946,7 +954,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicOptionLabel(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}</button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -1098,9 +1106,10 @@ function EventScreen({
           {needsRelic && player.relics.length ? (
             <fieldset className="event-cards"><legend>Your relic</legend>
               {player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`}
-                aria-pressed={relicId === relic.defId} title={relicOptionLabel(relic.defId, paysRelicCost)}
+                aria-pressed={relicId === relic.defId} title={relicTitle(relic.defId, paysRelicCost)}
                 onClick={() => { setRelicId((current) => current === relic.defId ? '' : relic.defId); setPotionIndexes([]); }}>
                 <ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}
+                <RelicOptionText id={relic.defId} withCost={paysRelicCost} />
               </button>)}
             </fieldset>
           ) : null}

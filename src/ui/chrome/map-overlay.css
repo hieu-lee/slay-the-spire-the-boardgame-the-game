@@ -95,9 +95,11 @@
 .map-peek__panel .map {
   width: auto;
   margin: 0;
-  /* Every tooltip opens BELOW its node, including the boss at the top: the
-     panel's own header clips anything that tries to open above it, and the
-     lowest row needs the tail room either way. */
+  /* Every tooltip opens below its node unless MapScreen measures that it
+     will not fit there — and a flip only ever moves it into space that is
+     already inside this scrollport, so it never meets the panel's own header,
+     which clips anything reaching above it. The lowest row needs the tail room
+     either way. */
   padding: 0.75rem 0 7.5rem;
   flex: 0 1 auto;
   background: radial-gradient(ellipse at 50% 40%, rgb(30 22 18 / 0.6), transparent 70%);

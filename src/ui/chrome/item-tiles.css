@@ -20,6 +20,46 @@
    key's default height and just take a tighter gutter. */
 .sts-scope .event-cards button { padding: 0.4rem 0.8rem; }
 
+/* A relic option button shows an icon and a name, and kept its printed rules in
+   a `title` — the one tooltip a touchscreen cannot open. These buttons ask
+   which relic to give up or trade, so on a phone the decision was being made
+   blind. The prose is always in the DOM (see RelicOptionText) and appears only
+   where there is no hover to open the `title` with, which is exactly the
+   substitution the merchant shelves make in chrome/merchant-rug.css.
+
+   Hidden with `display: none` rather than clipped, which takes it out of the
+   accessible tree along with the view. That is right only on a hover device,
+   where the `title` is reachable and printing the same sentence again would be
+   duplicate clutter. Where it IS shown it joins the button's accessible name on
+   purpose — see RelicOptionText, which explains why a `title` cannot be relied
+   on to carry these rules on a phone. */
+.sts-scope .relic-option__text { display: none; }
+
+@media (hover: none) {
+  .sts-scope .relic-option__text {
+    display: block;
+    max-width: 14rem;
+    color: #fff8e4;
+    /* The floor the reward tiles hold (chrome/rewards.css cites 9px). Phone
+       landscape scales the whole 1280px layout down by well under half, so
+       0.62rem measured about four points on the screen — unreadable, on the one
+       piece of text that exists to be read. */
+    font-size: 0.76rem;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  /* A column, the way the merchant and treasure tiles stack their own art,
+     name and prose. `flex-wrap` alone did not do it: these buttons are
+     shrink-to-fit, so a `flex-basis: 100%` line resolves against a width taken
+     FROM the content and never overflows — half the relic options put their
+     sentence beside the name and half below it. */
+  .sts-scope .event-cards button:has(.relic-option__text) {
+    flex-direction: column;
+    padding-block: 0.5rem;
+  }
+}
+
 .sts-scope :is(.merchant-board, .treasure-shared) button .room-item-text {
   max-width: 100%;
   color: #fff8e4;
