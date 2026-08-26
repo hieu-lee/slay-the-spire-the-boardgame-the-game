@@ -9041,6 +9041,18 @@ check('per-roll Relics activate once and Loaded Die can reroute another owned Re
     'Loaded Die paid both its Energy and reroute choices')
 })
 
+check('Loaded Die requires and applies Stone Calendar\'s implicit enemy target', () => {
+  const state = { ...combat([makePlayer({ relics: [
+    { defId: 'loaded_die', spent: false }, { defId: 'stone_calendar', spent: false },
+  ] })], [makeEnemy(), makeEnemy({ uid: 'e2', hp: 6, maxHp: 6, row: 1 })]), phase: 'start', die: 6 }
+  const choice = { targetRelicPlayerId: 'p1', targetRelicIndex: 1, targetAbilityIndex: 0 }
+  assertEqual(activateRelic(state, 'p1', 0, choice), state,
+    'Loaded Die spent without a target for Stone Calendar')
+  const used = activateRelic(state, 'p1', 0, { ...choice, enemyUid: 'e2' })
+  assertDeepEqual(used.enemies.map((enemy) => enemy.hp), [6, 2])
+  assertEqual(used.players[0].relics[0].spent, true)
+})
+
 check("Nilry's Codex cannot reroute its own die ability", () => {
   const state = { ...combat([makePlayer({ relics: [{ defId: 'nilrys_codex', spent: false }] })], [makeEnemy()]),
     phase: 'start', die: 4 }
