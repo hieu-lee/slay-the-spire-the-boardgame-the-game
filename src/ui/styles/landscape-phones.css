@@ -18,7 +18,14 @@ html[data-mobile-performance='true'] .seat__portrait::before,
 html[data-mobile-performance='true'] .enemy__portrait::before,
 html[data-mobile-performance='true'] .character-attack,
 html[data-mobile-performance='true'] .combat-vfx::before,
-html[data-mobile-performance='true'] .combat-vfx::after {
+html[data-mobile-performance='true'] .combat-vfx::after,
+/* The card-flight clone's own particle trail: a smoke wisp and a four-dot mote
+   trail, each a separate filtered/shadowed layer riding along on every single
+   card played, drawn, discarded or exhausted — by far the most frequent
+   animation in the game, and the one filtered effect this file forgot. Nothing
+   about the ACTION reads from these; only the card's flight path does. */
+html[data-mobile-performance='true'] .card-flight::before,
+html[data-mobile-performance='true'] .card-flight::after {
   display: none;
 }
 
@@ -31,12 +38,24 @@ html[data-mobile-performance='true'] .combat-vfx,
 html[data-mobile-performance='true'] .hit-vfx,
 html[data-mobile-performance='true'] .card-drag,
 html[data-mobile-performance='true'] .card-target-arrow__line,
-html[data-mobile-performance='true'] .hand .card {
+html[data-mobile-performance='true'] .hand .card,
+html[data-mobile-performance='true'] .card-flight .card {
   filter: none;
 }
 
 html[data-mobile-performance='true'] .combat-vfx {
   mix-blend-mode: normal;
+}
+
+/* `combat-vfx--frost`/`--dark` (Defect's orb evokes) set `filter` directly in
+   their OWN keyframes, and an animated property always wins over a static
+   override on the same element — so `.combat-vfx { filter: none }` above never
+   actually stopped these two from sweeping a `brightness()` + `drop-shadow()`
+   across most of their 820ms. Routing them to the plain reveal keyframe, which
+   never touches `filter` at all, is what the override above intended. */
+html[data-mobile-performance='true'] .combat-vfx--frost,
+html[data-mobile-performance='true'] .combat-vfx--dark {
+  animation-name: combat-vfx-reveal;
 }
 
 html[data-mobile-performance='true'] .card-target-arrow__line {
