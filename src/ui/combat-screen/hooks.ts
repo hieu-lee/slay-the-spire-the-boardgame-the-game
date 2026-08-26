@@ -37,6 +37,43 @@ export function useReducedEffects(): boolean {
   return reduced
 }
 
+/**
+ * Whether the PLAYER asked for less motion — never whether their hardware is
+ * weak. `useReducedEffects` folds `data-mobile-performance` into the same flag
+ * on purpose for most of the screen's ambient flourish, where a cheaper
+ * animation and no animation cost about the same to build. The signature
+ * attack sequence is not that case: on a phone, `useReducedEffects` being true
+ * was quietly skipping the whole character-attack computation (CombatScreen's
+ * `characterAttacks` effect) and zeroing `characterAttackContactMs`, so an
+ * attack that had nowhere to travel from landed as an instant flash with no
+ * windup — worse than the plain lunge a phone can render cheaply, and nothing
+ * a phone's weaker hardware asked for. Only genuine motion sensitivity should
+ * cut the travel and the wait for it; being on a phone should just make both
+ * cheaper, which CombatScreen's mobile-only keyframes already do.
+ */
+export function usePrefersReducedMotion(): boolean {
+  const prefersReducedMotion = () =>
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    document.documentElement.dataset.reducedMotion === 'true'
+  const [reduced, setReduced] = useState(prefersReducedMotion)
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const sync = () => setReduced(prefersReducedMotion())
+    const observer = new MutationObserver(sync)
+    sync()
+    query.addEventListener('change', sync)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-reduced-motion'],
+    })
+    return () => {
+      query.removeEventListener('change', sync)
+      observer.disconnect()
+    }
+  }, [])
+  return reduced
+}
+
 /** Keeps overlapping HP-loss bursts and additive portrait flinches until each impact finishes. */
 export function useStruck(
   state: CombatState,

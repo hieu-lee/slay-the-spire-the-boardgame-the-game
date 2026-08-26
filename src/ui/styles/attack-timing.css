@@ -47,6 +47,14 @@
 @keyframes vfx-recoil-again { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
 @keyframes vfx-cast { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
 @keyframes vfx-cast-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
+/* Filter-free twins for `data-mobile-performance` (chrome/landscape-phones.css),
+   for the same reason as `attack-defect-mobile` below: the brightness flash is
+   the expensive part, the lift is a plain transform. Two names, not one, for the
+   same reason the desktop pair is two names — casting twice in a row toggles
+   between them so the animation restarts even though the class never changes,
+   rather than replaying from a frozen mid-point. */
+@keyframes vfx-cast-mobile { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); } }
+@keyframes vfx-cast-mobile-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); } }
 @keyframes vfx-drink { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
 @keyframes vfx-drink-again { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
 @keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
@@ -142,6 +150,19 @@
   28% { transform: translateY(3%) scale(0.96); filter: brightness(1.2); }
   48% { transform: translateY(-4%) scale(1.045); filter: brightness(1.7) drop-shadow(0 0 0.8rem #65e9ff); }
   68% { transform: translateY(-2%) scale(1.02); filter: brightness(1.25); }
+}
+
+/* The same motion with the `filter` sweep removed. `data-mobile-performance`
+   swaps to this one (chrome/landscape-phones.css): the brightness+drop-shadow
+   flash is the one part of Defect's attack that is genuinely expensive to
+   recomposite every frame, but the lunge under it is a plain transform — as
+   cheap as the other three characters' attacks — and there is no reason
+   Defect alone should stand still while they lunge. */
+@keyframes attack-defect-mobile {
+  0%, 100% { transform: translateY(0) scale(1); }
+  28% { transform: translateY(3%) scale(0.96); }
+  48% { transform: translateY(-4%) scale(1.045); }
+  68% { transform: translateY(-2%) scale(1.02); }
 }
 
 .character-attack {
