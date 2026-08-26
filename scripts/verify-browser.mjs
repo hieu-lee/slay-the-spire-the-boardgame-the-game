@@ -13,6 +13,7 @@ import { suite, check, assert, assertDeepEqual, assertEqual, report } from './li
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
 import { combatRowLabel, STALE_END_TURN_ORDER } from '../src/game/combat.ts'
 import { enemyDef } from '../src/game/enemies.ts'
+import { potionDef, relicDef } from '../src/game/relics.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cardArtDir = join(repoRoot, 'public/assets/cards')
@@ -13405,6 +13406,12 @@ for (const [engineName, phoneBrowser, deviceName] of [
   auditErrors(phonePage)
   const tap = async (locator) => {
     if (engineName === 'Chromium') return locator.tap()
+    // Playwright's touchscreen takes viewport coordinates, and `boundingBox`
+    // reports a box that may be off screen — a node below the fold was tapped
+    // at a point that resolved to whatever was scrolled into that spot instead.
+    // Harmless for a menu key that is always in view; decisive for a 52px map
+    // node in the bottom row.
+    await locator.scrollIntoViewIfNeeded({ timeout: 5000 })
     const box = await locator.boundingBox()
     assert(box, `${engineName} could not locate the touch target`)
     const viewport = await phonePage.evaluate(() => ({
@@ -13515,6 +13522,7 @@ for (const [engineName, phoneBrowser, deviceName] of [
   await tap(settingsDialog.getByRole('button', { name: /Back/ }))
   await phonePage.screenshot({ path: join(outDir, `phone-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`), scale: 'css' })
 
+
   if (deviceName === 'iPhone SE landscape') {
     const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
     const attackIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
@@ -13595,12 +13603,16 @@ for (const [engineName, phoneBrowser, deviceName] of [
       getComputedStyle(preview).transform)
     await pointerMove(enemyBox.x + enemyBox.width / 2, enemyBox.y + enemyBox.height / 2, 8)
     await phonePage.locator('.enemy--targeted').first().waitFor()
-    await phonePage.waitForFunction(() => {
+    // Read in the same evaluation that waits, rather than waiting for an
+    // outline and then going back for it. Targeting moves while the pointer
+    // settles, so between the two calls the first `.enemy--targeted` could be a
+    // different element than the one the wait was satisfied by — which read as
+    // "drag target feedback is invisible" on a board that was showing it.
+    const targetOutline = await phonePage.waitForFunction(() => {
       const target = document.querySelector('.enemy--targeted')
-      return target && getComputedStyle(target).outlineStyle !== 'none'
-    })
-    const targetOutline = await phonePage.locator('.enemy--targeted').first().evaluate((target) =>
-      getComputedStyle(target).outlineStyle)
+      const style = target ? getComputedStyle(target).outlineStyle : null
+      return style && style !== 'none' ? style : null
+    }).then((handle) => handle.jsonValue())
     await pointerUp()
     await phonePage.waitForFunction((count) =>
       window.__STS_DEBUG__.getState().players[0].hand.length < count, before)
@@ -13630,6 +13642,270 @@ for (const [engineName, phoneBrowser, deviceName] of [
       cancellationCleared,
     }
   }
+  // Every panel that explains a thing — what a room holds, what a relic does,
+  // what a potion costs you — opens on hover, which a phone does not have. The
+  // tap that would reach them is also the tap that COMMITS, so on touch these
+  // surfaces read first and act on a second tap. Asserted per device, because
+  // the engines disagree about what a touch even dispatches.
+  //
+  // LAST in the iteration on purpose. These cases walk the app through a map,
+  // a combat and an event screen, and handing a settled board back to the
+  // checks above turned out to be worth more care than it was worth taking:
+  // reading a run back in deals a fresh hand, and the drag case measured a
+  // card's box while it was still on its way in. Nothing follows this, so
+  // nothing has to be handed back.
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun({
+    ...run,
+    // TWO relics: one chip cannot collide with itself, and every tip in the bar
+    // opens at the same anchored rect — so a second open panel is the failure
+    // this owns-one-open-chip arrangement exists to prevent.
+    players: run.players.map((player) => ({
+      ...player,
+      relics: [{ defId: 'akabeko', spent: false }, { defId: 'anchor', spent: false }],
+    })),
+  }), mapBeforeRoomSwitchCheck)
+  // Wait for THESE relics, not merely for a chip. Reading a run in replaces the
+  // bar's chips with new elements (their React keys carry the relic id), and a
+  // locator that resolves on "some chip" can hand back the outgoing node — the
+  // tap then lands on an element React detaches a frame later and is simply
+  // lost, which is what left the panel closed on every device at once.
+  const relicChips = phonePage.locator('.app-shell__header .relic-bar .relic-chip')
+  await phonePage.locator('.app-shell__header .relic-chip[aria-label^="Akabeko"]').waitFor()
+  await phonePage.locator('.app-shell__header .relic-chip[aria-label^="Anchor"]').waitFor()
+  const readRelicBar = () => phonePage.evaluate(() => {
+    const chips = [...document.querySelectorAll('.app-shell__header .relic-bar .relic-chip')]
+    return {
+      visible: chips.filter((chip) => {
+        const tip = chip.querySelector('.relic-tip')
+        return tip && getComputedStyle(tip).visibility === 'visible'
+      }).length,
+      // The attribute is the mechanism under test. Visibility alone cannot fail:
+      // `:hover` and `:focus-within` open the same panel, so a tap that focused
+      // the chip would satisfy it with `data-tip-open` deleted entirely.
+      open: chips.filter((chip) => chip.dataset.tipOpen === 'true').length,
+    }
+  })
+  const relicClosed = await readRelicBar()
+  await tap(relicChips.first())
+  // Both conditions, because they are two different claims: that the tap set the
+  // attribute, and that the attribute is what puts the panel on screen. Waiting
+  // on the attribute alone raced the panel's own visibility transition.
+  await phonePage.waitForFunction(() => {
+    const chip = document.querySelector('.relic-chip[data-tip-open="true"]')
+    const tip = chip?.querySelector('.relic-tip')
+    return Boolean(tip && getComputedStyle(tip).visibility === 'visible')
+  }, null, { timeout: 4000 }).catch(() => {})
+  const relicOpened = await readRelicBar()
+  // Hit-testing, not the side effect: a click-through panel would ALSO end with
+  // the panel closed, because the tap-away listener would fire on whatever it
+  // landed on instead. Only this says the tap reached the panel.
+  layout.relicPanelTakesTaps = await phonePage.evaluate(() => {
+    const tip = document.querySelector('.relic-chip[data-tip-open="true"] .relic-tip')
+    if (!tip) return false
+    const box = tip.getBoundingClientRect()
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return Boolean(hit && tip.contains(hit))
+  })
+  await tap(phonePage.locator('.relic-chip[data-tip-open="true"] .relic-tip').first())
+  await phonePage.waitForFunction(() => !document.querySelector('.relic-chip[data-tip-open="true"]'),
+    null, { timeout: 4000 }).catch(() => {})
+  await phonePage.waitForFunction(() => [...document.querySelectorAll('.app-shell__header .relic-tip')]
+    .every((tip) => getComputedStyle(tip).visibility === 'hidden'), null, { timeout: 4000 }).catch(() => {})
+  layout.relicPanelTapCloses = (await readRelicBar()).open === 0
+  await tap(relicChips.first())
+  await phonePage.waitForFunction(() => document.querySelector('.relic-chip[data-tip-open="true"]'),
+    null, { timeout: 4000 }).catch(() => {})
+  // Asserted in its own right: if this re-open silently failed, the switch case
+  // below would be satisfied by the second chip alone and would no longer be
+  // testing that opening one panel closes another.
+  layout.relicTap = { reopened: await readRelicBar() }
+  await tap(relicChips.nth(1))
+  // `visibility` is transitioned, so it lags the attribute that drives it —
+  // reading the moment the attribute flips catches the panel mid-fade and the
+  // measurement disagrees with itself. Settle on the rendered state.
+  await phonePage.waitForFunction(() => {
+    const chips = [...document.querySelectorAll('.app-shell__header .relic-bar .relic-chip')]
+    const shown = chips.filter((chip) => {
+      const tip = chip.querySelector('.relic-tip')
+      return tip && getComputedStyle(tip).visibility === 'visible'
+    })
+    return chips[1]?.dataset.tipOpen === 'true' && shown.length === 1
+  }, null, { timeout: 4000 }).catch(() => {})
+  const relicSwitched = await readRelicBar()
+  await tap(relicChips.nth(1))
+  await phonePage.waitForFunction(() => !document.querySelector('.relic-chip[data-tip-open="true"]') &&
+    [...document.querySelectorAll('.app-shell__header .relic-tip')]
+      .every((tip) => getComputedStyle(tip).visibility === 'hidden'),
+  null, { timeout: 4000 }).catch(() => {})
+  Object.assign(layout.relicTap, {
+    closed: relicClosed, opened: relicOpened, switched: relicSwitched, reclosed: await readRelicBar(),
+  })
+
+  layout.mapHint = await phonePage.locator('.map__hint').textContent()
+  const phoneRoom = phonePage.locator('.map:not([inert]) .room--reachable').first()
+  await phoneRoom.waitFor()
+  const aimedRoom = await phoneRoom.getAttribute('data-room')
+  await tap(phoneRoom)
+  await phonePage.waitForFunction(() => document.querySelector('.room--reading'),
+    null, { timeout: 4000 }).catch(() => {})
+  layout.mapTap = await phonePage.evaluate((aimed) => {
+    const node = document.querySelector('.room--reading')
+    return {
+      phase: window.__STS_DEBUG__.getRun().phase,
+      reading: document.querySelectorAll('.room--reading').length,
+      readTheAimedRoom: node?.dataset.room === aimed,
+      tip: node?.querySelector('.room-tip')
+        ? getComputedStyle(node.querySelector('.room-tip')).visibility
+        : 'missing',
+      // `visibility` is not the question a player asks. The rows run bottom-up,
+      // so the opening row sits lowest and its panel used to open past the fold
+      // — visible, and entirely unreadable.
+      // `.map` scrolls, so `.map` clips: a panel inside the window but outside
+      // the scrollport is cut with nothing on screen to say so.
+      tipOnScreen: (() => {
+        const box = node?.querySelector('.room-tip')?.getBoundingClientRect()
+        const port = node?.closest('.map')?.getBoundingClientRect()
+        return Boolean(box && port && box.top >= port.top - 1 && box.bottom <= port.bottom + 1)
+      })(),
+      flipped: node?.getAttribute('data-tip-flip') ?? '',
+      // An open panel lies across the row below it and belongs to its own
+      // node's button, so a tap meant for the room underneath would otherwise
+      // enter the room being read.
+      tipTakesTaps: node?.querySelector('.room-tip')
+        ? getComputedStyle(node.querySelector('.room-tip')).pointerEvents !== 'none'
+        : false,
+      confirm: node?.querySelector('.room-tip__confirm')?.textContent ?? '',
+    }
+  }, aimedRoom)
+  // The board screenshot above is taken before any of this, so without one here
+  // the artefacts a human reviews show none of the surfaces this block is about.
+  await phonePage.waitForFunction(() => {
+    const tip = document.querySelector('.room--reading .room-tip')
+    return tip && getComputedStyle(tip).opacity === '1' &&
+      tip.getAnimations().every((animation) => animation.playState === 'finished')
+  }, null, { timeout: 4000 }).catch(() => {})
+  await phonePage.screenshot({
+    path: join(outDir, `phone-tap-read-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`),
+    scale: 'css',
+  })
+  await tap(phoneRoom)
+  await phonePage.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'map',
+    null, { timeout: 6000 }).catch(() => {})
+  Object.assign(layout.mapTap, await phonePage.evaluate((aimed) => ({
+    enteredPhase: window.__STS_DEBUG__.getRun().phase,
+    // Entering the WRONG room is the harm this two-step prevents, so the room
+    // that was actually walked into is the thing worth pinning.
+    enteredTheAimedRoom: window.__STS_DEBUG__.getRun().map.position === aimed,
+  }), aimedRoom))
+
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+  await phonePage.locator('.combat').waitFor()
+  await phonePage.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'player'
+    run.combat.players[0].potions = ['energy_potion']
+    debug.setRun(run)
+  })
+  const phonePotion = phonePage.locator(
+    `.combat__actions .potion-chip button[aria-label="Use ${potionDef('energy_potion').name}"]`)
+  await phonePotion.waitFor()
+  const potionsHeld = await phonePage.evaluate(() =>
+    window.__STS_DEBUG__.getState().players[0].potions.length)
+  await tap(phonePotion)
+  await phonePage.locator('.potion-tip').first().waitFor({ timeout: 4000 }).catch(() => {})
+  layout.potionTap = await phonePage.evaluate((held) => {
+    const tip = document.querySelector('.potion-tip')
+    const box = tip?.getBoundingClientRect()
+    return {
+      stillHeld: window.__STS_DEBUG__.getState().players[0].potions.length === held,
+      rules: tip?.querySelector('.relic-tip__text')?.textContent ?? '',
+      confirm: tip?.querySelector('.relic-tip__confirm')?.textContent ?? '',
+      // A panel in the DOM but invisible, or placed off screen, satisfies every
+      // text assertion while telling the player nothing.
+      onScreen: Boolean(tip && getComputedStyle(tip).visibility !== 'hidden' && box &&
+        box.top >= 0 && box.bottom <= window.innerHeight + 1),
+      // One panel at a time is the whole point of `claimTooltip`.
+      tips: document.querySelectorAll('.potion-tip').length,
+    }
+  }, potionsHeld)
+  await tap(phonePotion)
+  await phonePage.waitForFunction((held) =>
+    window.__STS_DEBUG__.getState().players[0].potions.length < held, potionsHeld,
+  { timeout: 6000 }).catch(() => {})
+  layout.potionTap.drankOnSecondTap = await phonePage.evaluate((held) =>
+    window.__STS_DEBUG__.getState().players[0].potions.length < held, potionsHeld)
+  layout.potionTap.expectedRules = potionDef('energy_potion').text
+
+  // Tapping away must DISARM, not merely hide: a panel raised by a stray tap
+  // that left the button armed would spend the next potion the player pressed.
+  // Relic option buttons keep their rules in a `title` a touchscreen cannot
+  // open, so the prose is printed instead where there is no hover.
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun({
+    ...run,
+    phase: 'room',
+    combat: null,
+    players: run.players.map((player, index) => index === 0
+      ? { ...player, gold: 0, potions: ['swift_potion'], relics: [{ defId: 'akabeko', spent: false }] }
+      : player),
+    roomState: { kind: 'event', decisions: {}, dieRolls: {}, card: {
+      id: 'the_joust', instanceId: 'phone-joust', act: 2, minAscension: 0,
+      requiresColorlessUnlock: false, name: 'The Joust', scope: 'player',
+      options: [{ id: 'bet', label: 'Bet', description: 'Pay 2 Gold, a Relic, or a Potion.',
+        effects: [{ tag: 'pay-gold', amount: 2, filter: 'or lose one Relic or Potion' }] }],
+    } },
+  }), mapBeforeRoomSwitchCheck)
+  await phonePage.locator('.relic-option__text').first().waitFor({ timeout: 8000 }).catch(() => {})
+  // Playwright's accessible-name computation, which is the only thing here that
+  // actually resolves one. A substring test against the button's own text can
+  // never fail, because the span is inside the button either way.
+  layout.relicOptionNamed = await phonePage.getByRole('button', {
+    name: new RegExp(relicDef('akabeko').text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+  }).count()
+  layout.relicOption = await phonePage.evaluate(() => {
+    const text = document.querySelector('.relic-option__text')
+    const button = text?.closest('button')
+    if (!text || !button) return { printed: false, titled: null, stacked: false }
+    const textBox = text.getBoundingClientRect()
+    const label = button.querySelector('.item-card-image, .item-icon-image')?.getBoundingClientRect()
+    return {
+      printed: getComputedStyle(text).display !== 'none' && (text.textContent ?? '').length > 0,
+      // The `title` would otherwise be announced as a description saying the
+      // same sentence the name now carries.
+      titled: button.getAttribute('title'),
+      // Its own line, rather than beside the name on whichever relic happens to
+      // have a short enough sentence.
+      stacked: Boolean(label && textBox.top >= label.bottom - 1),
+    }
+  })
+
+  // The flip only fires for a node with no room beneath it inside the map's own
+  // scrollport, which the opening choice may or may not be. Read the lowest node
+  // on the board explicitly so the branch is exercised somewhere.
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapBeforeRoomSwitchCheck)
+  await phonePage.locator('.map:not([inert]) .room--reachable').first().waitFor()
+  const lowestRoom = await phonePage.evaluate(() => {
+    const rooms = [...document.querySelectorAll('.map:not([inert]) .room')]
+    const lowest = rooms.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0]
+    return lowest?.dataset.room ?? null
+  })
+  if (lowestRoom) {
+    await tap(phonePage.locator(`.map:not([inert]) [data-room="${lowestRoom}"]`))
+    await phonePage.waitForFunction(() => document.querySelector('.room--reading'),
+      null, { timeout: 4000 }).catch(() => {})
+    layout.lowRoom = await phonePage.evaluate(() => {
+      const node = document.querySelector('.room--reading')
+      if (!node) return null
+      const tip = node.querySelector('.room-tip')
+      const box = tip?.getBoundingClientRect()
+      const port = node.closest('.map')?.getBoundingClientRect()
+      return {
+        flipped: node.getAttribute('data-tip-flip') ?? '',
+        insidePort: Boolean(box && port && box.top >= port.top - 1 && box.bottom <= port.bottom + 1),
+      }
+    })
+  }
+
   phoneLayouts.push({ deviceName: `${engineName} ${deviceName}`, ...layout })
   await phoneContext.close()
 }
@@ -13662,6 +13938,81 @@ check('landscape phones render and play the complete desktop combat UI', () => {
     }
     assertEqual(layout.clippedCards, 0, `${layout.deviceName}: clipped cards`)
   }
+})
+
+// A phone cannot hover, so every panel that explains a room, a relic or a potion
+// is reached by the same tap that would COMMIT to it. These surfaces read on the
+// first tap and act on the second; this is that contract, per device, because
+// the engines disagree about what a touch dispatches.
+check('phones can read a hover-only panel before committing to it', () => {
+  for (const layout of phoneLayouts) {
+    assertEqual(layout.relicTap.closed.visible, 0, `${layout.deviceName}: a relic panel was open before any tap`)
+    assertEqual(layout.relicTap.opened.open, 1, `${layout.deviceName}: tapping a relic did not open its panel`)
+    assertEqual(layout.relicTap.opened.visible, 1, `${layout.deviceName}: a tapped relic panel is not visible`)
+    assert(layout.relicPanelTakesTaps,
+      `${layout.deviceName}: an open relic panel is click-through — a tap on it presses whatever it covers`)
+    assert(layout.relicPanelTapCloses, `${layout.deviceName}: tapping the panel did not close it`)
+    assertEqual(layout.relicTap.reopened.open, 1,
+      `${layout.deviceName}: the panel did not reopen, so the switch case below proves nothing`)
+    assertEqual(layout.relicTap.switched.open, 1,
+      `${layout.deviceName}: tapping a second relic left ${layout.relicTap.switched.open} panels open`)
+    assertEqual(layout.relicTap.switched.visible, 1,
+      `${layout.deviceName}: tapping a second relic left ${layout.relicTap.switched.visible} panels on screen`)
+    assertEqual(layout.relicTap.reclosed.open, 0, `${layout.deviceName}: a tapped relic panel would not close`)
+    assertEqual(layout.relicTap.reclosed.visible, 0,
+      `${layout.deviceName}: a closed relic panel is still on screen`)
+
+    assert(/tap a room to read it, then tap it again to enter\./.test(layout.mapHint ?? ''),
+      `${layout.deviceName}: the map never teaches the two-step tap: "${layout.mapHint}"`)
+    assertEqual(layout.mapTap.phase, 'map', `${layout.deviceName}: the first tap on a room entered it`)
+    assertEqual(layout.mapTap.reading, 1, `${layout.deviceName}: the first tap on a room opened no panel`)
+    assert(layout.mapTap.readTheAimedRoom, `${layout.deviceName}: the tap landed on a different room`)
+    assert(!layout.mapTap.tipTakesTaps, `${layout.deviceName}: an open room panel still swallows taps`)
+    assertEqual(layout.mapTap.tip, 'visible', `${layout.deviceName}: a read room kept its panel hidden`)
+    assert(layout.mapTap.tipOnScreen, `${layout.deviceName}: a read room opened its panel off screen`)
+    // The lowest node is where the panel runs out of room below and the flip has
+    // to earn its keep; wherever it lands, it must land inside the scrollport.
+    assert(layout.lowRoom, `${layout.deviceName}: the lowest room was never read`)
+    assert(layout.lowRoom.insidePort,
+      `${layout.deviceName}: the lowest room opened its panel outside the map (flip: "${layout.lowRoom.flipped}")`)
+    assertEqual(layout.mapTap.confirm, 'Tap again to enter',
+      `${layout.deviceName}: the room panel does not offer its confirmation step`)
+    assert(layout.mapTap.enteredPhase !== 'map',
+      `${layout.deviceName}: a second tap on the same room did not enter it`)
+    assert(layout.mapTap.enteredTheAimedRoom, `${layout.deviceName}: the party entered a room it never read`)
+
+    assert(layout.potionTap.stillHeld, `${layout.deviceName}: the first tap on a potion drank it`)
+    assert(layout.potionTap.onScreen, `${layout.deviceName}: the potion panel is not on screen to be read`)
+    assertEqual(layout.potionTap.rules, layout.potionTap.expectedRules,
+      `${layout.deviceName}: a tapped potion printed the wrong rules`)
+    assertEqual(layout.potionTap.confirm, 'Tap again to drink',
+      `${layout.deviceName}: the potion panel does not say what the next tap does`)
+    assert(layout.potionTap.drankOnSecondTap, `${layout.deviceName}: a second tap did not drink the potion`)
+    assertEqual(layout.potionTap.tips, 1, `${layout.deviceName}: ${layout.potionTap.tips} potion panels were open at once`)
+
+    assert(layout.beltPotion.stillHeld, `${layout.deviceName}: the first tap on a belt potion drank it`)
+    assertEqual(layout.beltPotion.rules, layout.beltPotion.expectedRules,
+      `${layout.deviceName}: a tapped belt potion printed the wrong rules`)
+    assertEqual(layout.beltPotion.confirm, 'Tap again to drink',
+      `${layout.deviceName}: the belt panel does not say what the next tap does`)
+    assert(layout.beltPotion.onScreen, `${layout.deviceName}: the belt potion panel is not on screen to be read`)
+    assertEqual(layout.beltPotion.tips, 1,
+      `${layout.deviceName}: ${layout.beltPotion.tips} belt potion panels were open at once`)
+    assert(layout.beltPotion.drankOnSecondTap,
+      `${layout.deviceName}: a second tap did not drink the belt potion`)
+
+    assert(layout.relicOption.printed, `${layout.deviceName}: a relic option hid its rules from touch`)
+    assertEqual(layout.relicOptionNamed, 1,
+      `${layout.deviceName}: relic option rules are not in the button's accessible name`)
+    assertEqual(layout.relicOption.titled, null,
+      `${layout.deviceName}: a relic option prints its rules AND repeats them in a title`)
+    assert(layout.relicOption.stacked, `${layout.deviceName}: relic option rules did not get their own line`)
+  }
+  // Somewhere in the matrix the panel must actually have been flipped, or the
+  // branch that exists for it is guarded but never taken.
+  assert(phoneLayouts.some((layout) => layout.lowRoom?.flipped === 'up'),
+    `no device opened a room panel upward: ${phoneLayouts.map((layout) =>
+      `${layout.deviceName}=${layout.lowRoom?.flipped || 'none'}`).join(', ')}`)
 })
 
 writeFileSync(
