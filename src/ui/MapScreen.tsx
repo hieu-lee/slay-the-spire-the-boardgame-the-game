@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type React from 'react'
 import type { Room, SpireMap } from '../game/map.ts'
 import { enemyDef } from '../game/enemies.ts'
 import { Icon } from './Icon.tsx'
 import type { IconName } from './icons.ts'
+import { POINTER_CLICK_WINDOW_MS, useHoverUnavailable } from './touch-input.ts'
 
 type MapScreenProps = {
   map: SpireMap
@@ -55,6 +56,14 @@ const ROOM_TEXT: Record<Room['kind'], string> = {
 }
 
 const LEGEND_KINDS: Room['kind'][] = ['event', 'merchant', 'treasure', 'campfire', 'encounter', 'elite', 'boss']
+
+/** What a room calls itself — named boss included, hidden rooms withheld. */
+function roomName(room: Room | undefined, bossDefId?: string | null): string {
+  if (!room) return 'Room'
+  if (room.hidden) return 'Unknown room'
+  if (room.kind === 'boss' && bossDefId) return enemyDef(bossDefId, 0).name
+  return ROOM_LABEL[room.kind]
+}
 
 type Line = { key: string; x1: number; y1: number; x2: number; y2: number; live: boolean }
 
@@ -117,6 +126,22 @@ export function MapScreen({
   // A Set is a fresh object every render, so measuring cannot depend on it
   // without re-running forever. Key the effect on its contents instead.
   const reachableKey = [...reachable].sort().join(',')
+  // Touch has no hover, so a tap on a reachable node used to walk the party
+  // into it with the room's own panel — what it is, and whether it is an Elite
+  // — never once on screen. Route planning is most of the decision-making in a
+  // climb, so on a phone the first tap READS the room and only a second tap on
+  // that same room enters it. The panel doubles as the confirmation step, which
+  // is also why a mis-tap on the Spire no longer costs a run.
+  const tapToRead = useHoverUnavailable()
+  const [reading, setReading] = useState<string | null>(null)
+  // The panel always hangs below its node, and the rows render bottom-up — so
+  // the row a run STARTS on is the lowest on screen, and its panel opened into
+  // the space under the map where there is no viewport left. Measured on a
+  // phone in landscape it fell entirely below the fold once a potion belt was
+  // on screen: the first tap of the run appeared to do nothing at all, which
+  // teaches exactly the second blind tap this whole path exists to prevent.
+  const [flip, setFlip] = useState(false)
+  const pointerActivatedAt = useRef(Number.NEGATIVE_INFINITY)
 
   const measure = useCallback(() => {
     const frame = frameRef.current
@@ -172,17 +197,107 @@ export function MapScreen({
     wasBlocked.current = blocked
   }, [blocked])
 
+  // A panel left open across a move would describe a room the party has already
+  // left, and its "tap again to enter" would point at a node that is no longer
+  // a choice. The two move independently — the shell blanks `choices` on its
+  // own while acquiring a card — so either one clears it.
+  useEffect(() => setReading(null), [map.position, reachableKey])
+
+  // Measured rather than guessed at from the row index: the map scrolls, the
+  // panel's height depends on how much prose the room has, and how much room is
+  // left below depends on whether a potion belt is on screen.
+  useLayoutEffect(() => {
+    if (!reading) {
+      setFlip(false)
+      return
+    }
+    const node = frameRef.current?.querySelector<HTMLElement>(`[data-room="${CSS.escape(reading)}"]`)
+    const tip = node?.querySelector<HTMLElement>('.room-tip')
+    if (!node || !tip) {
+      setFlip(false)
+      return
+    }
+    const port = node.closest('.map')?.getBoundingClientRect()
+    if (!port) {
+      setFlip(false)
+      return
+    }
+    const box = node.getBoundingClientRect()
+    const height = tip.offsetHeight
+    const gap = 0.55 * 16
+    // Measured against the SCROLLPORT, not the window: `.map` scrolls, so it is
+    // `.map` that clips, and the two disagree by the height of the shell header.
+    //
+    // Flipping has to earn its place: only when the panel does not fit below AND
+    // fully fits above. Down is otherwise the recoverable direction — the map
+    // carries 7.5rem of tail padding (chrome/map-overlay.css) so a bottom-row
+    // panel can at least be scrolled to, while scrollable overflow never
+    // extends past the top. The second term is also what keeps the in-combat
+    // peek safe: its panel header clips anything opening above the port, and a
+    // flip that requires the panel to fit inside the port cannot reach there.
+    setFlip(box.bottom + gap + height > port.bottom && box.top - gap - height >= port.top)
+  }, [reading, reachableKey, map.position])
+
+  // Escape closes the panel before anything else acts on it, the way the relic
+  // chip and the potion anchor already do — without it the pause menu opened on
+  // top of a panel that stayed put.
+  useEffect(() => {
+    if (!reading) return undefined
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      // Inside the in-combat peek this keypress is also the dialog's own cancel,
+      // and stopping propagation does not stop a default action — one press
+      // would have closed the panel and the whole peek with it.
+      if (frameRef.current?.closest('dialog[open]')) event.preventDefault()
+      event.stopPropagation()
+      setReading(null)
+    }
+    document.addEventListener('keydown', dismiss, true)
+    return () => document.removeEventListener('keydown', dismiss, true)
+  }, [reading])
+
+  // A tap that lands on nothing puts the panel away — but it has to be a TAP.
+  // Bound to `click` rather than `pointerdown` because the map scrolls, and a
+  // scroll gesture opens with a pointerdown on the parchment: dismissing there
+  // closed the panel the moment a player dragged the Spire to see more of it.
+  // On `document`, so a tap on the header — a relic chip, the deck — closes it
+  // too, rather than leaving two explanations open at once.
+  useEffect(() => {
+    if (!reading) return undefined
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest('.room')) return
+      setReading(null)
+    }
+    document.addEventListener('click', dismiss, true)
+    return () => document.removeEventListener('click', dismiss, true)
+  }, [reading])
+
   return (
     <div className="map" inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
         {readOnly
-          ? 'Hover a room to read it.'
+          ? tapToRead ? 'Tap a room to read it.' : 'Hover a room to read it.'
           : choices.length === 0
             ? 'Nowhere to go.'
-            : map.position === null
-              ? 'Enter the Spire.'
-              : 'Choose the next room.'}
+            : tapToRead
+              ? `${map.position === null ? 'Enter the Spire' : 'Choose the next room'} — tap a room to read it, then tap it again to enter.`
+              : map.position === null
+                ? 'Enter the Spire.'
+                : 'Choose the next room.'}
       </p>
+
+      {/* Present at all times and only its TEXT changes: a live region inserted
+          together with its content is the classic case assistive technology
+          does not announce, and the read step has nothing else to announce it
+          — the panels are all `aria-hidden`. Named rather than a fixed
+          sentence, so reading a different KIND of room announces again: React
+          writes nothing when the text does not change. `aria-live` rather than
+          `role="status"`, for the reason App.tsx gives at its own region. */}
+      <span className="visually-hidden" aria-live="polite" aria-atomic="true">
+        {reading && reachable.has(reading)
+          ? `${roomName(map.rooms[reading], bossDefId)} read. Activate again to enter.`
+          : ''}
+      </span>
 
       <div className="map__frame" ref={frameRef}>
         <svg className="map__paths" aria-hidden="true">
@@ -208,7 +323,7 @@ export function MapScreen({
               const named = !room.hidden && room.kind === 'boss' && bossDefId
                 ? enemyDef(bossDefId, 0).name
                 : null
-              const label = room.hidden ? 'Unknown room' : named ?? ROOM_LABEL[room.kind]
+              const label = roomName(room, bossDefId)
               const text = room.hidden
                 ? 'An Uncertain Future hides what this room holds until you arrive.'
                 : ROOM_TEXT[room.kind]
@@ -228,19 +343,58 @@ export function MapScreen({
                     room.visited ? 'room--visited' : '',
                     isHere ? 'room--here' : '',
                     canGo ? 'room--reachable' : '',
+                    reading === id ? 'room--reading' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
+                  data-tip-flip={reading === id && flip ? 'up' : undefined}
                   // `aria-disabled` rather than `disabled`: a disabled button
                   // is not focusable, and with the captions gone the only way
                   // to learn what a room is would have been a mouse hover.
                   aria-disabled={!canGo}
-                  onClick={() => canGo && onEnter(id)}
+                  // Hover devices keep the one-click walk they have always had;
+                  // the panel is already open under the pointer by the time the
+                  // click lands, so a confirmation step there would be a tax on
+                  // information the player has read.
+                  //
+                  // A keyboard has already opened this panel through
+                  // `:focus-visible`, so it must not also be charged a second
+                  // Enter and told to "tap". Neither signal is reliable alone —
+                  // the engines disagree about the `detail` a synthesised tap
+                  // carries, and a `pointerdown` can be followed by no click at
+                  // all — so both must agree before an activation counts as a
+                  // key. A timestamp rather than a flag because this ref is
+                  // shared by every node: a drag that scrolls the map would
+                  // otherwise leave it latched for whichever room is pressed
+                  // next.
+                  onPointerDown={() => { pointerActivatedAt.current = Date.now() }}
+                  onClick={(event) => {
+                    // Guessing wrong towards "pointer" costs one extra Enter;
+                    // guessing wrong towards "keyboard" walks the party into a
+                    // room they never got to read.
+                    const keyboardActivated = event.detail === 0 &&
+                      Date.now() - pointerActivatedAt.current > POINTER_CLICK_WINDOW_MS
+                    const readFirst = tapToRead && !keyboardActivated
+                    if (readFirst && reading !== id) {
+                      setReading(id)
+                      return
+                    }
+                    if (readFirst && !canGo) {
+                      setReading(null)
+                      return
+                    }
+                    if (canGo) onEnter(id)
+                  }}
                   aria-label={[
                     named ? `${ROOM_LABEL.boss}: ${named}` : label,
                     room.burning ? 'Burning Elite' : '',
                     text,
                     status,
+                    // The panel is `aria-hidden`, so the label is the only place
+                    // the two-step exists for a screen reader. A label change on
+                    // an already-focused control is not reliably re-announced,
+                    // which is why the live region below carries it as well.
+                    reading === id && canGo ? 'Activate again to enter' : '',
                   ]
                     .filter(Boolean)
                     .join(', ')}
@@ -261,6 +415,15 @@ export function MapScreen({
                     {room.burning ? <span className="room-tip__pool">Burning Elite</span> : null}
                     <span className="room-tip__text">{text}</span>
                     <span className="room-tip__status">{status}</span>
+                    {/* The second half of the tap-to-read contract, printed
+                        where the player is already looking. Only where it is
+                        true: an out-of-reach room's panel would promise a walk
+                        the next tap does not take, and a keyboard — which opens
+                        this panel through focus and enters on one press — is
+                        not being asked to tap anything. */}
+                    {tapToRead && canGo && reading === id ? (
+                      <span className="room-tip__confirm">Tap again to enter</span>
+                    ) : null}
                   </span>
                 </button>
               )

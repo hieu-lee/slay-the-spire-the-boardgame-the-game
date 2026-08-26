@@ -55,10 +55,37 @@
 }
 
 .relic-chip:hover > .relic-tip,
-.relic-chip:focus-within > .relic-tip {
+.relic-chip:focus-within > .relic-tip,
+/* The touch trigger. Whether a tap focuses a `tabindex` span is engine
+   dependent — iOS Safari is reported not to — so `:focus-within` cannot be
+   relied on and RelicChip sets this from the tap itself.
+
+   The panel deliberately keeps the `pointer-events: auto` above. It is a DOM
+   child of the chip, so a tap on it reaches the chip's own toggle and closes
+   it; made click-through instead, that tap would fall to whatever the 320px box
+   is covering — by the measurement above, the potion belt's second `Give`, or
+   the Menu key on a narrow window. */
+.relic-chip[data-tip-open='true'] > .relic-tip {
   opacity: 1;
   visibility: visible;
   transform: translate(0, 0);
+}
+
+/* A touchscreen still emulates hover: a tap fires `mouseenter`, and `:hover`
+   then STICKS on whatever was tapped until something else is. Left in the
+   trigger list, that turned every tap into a panel nothing could put away —
+   the chip's own toggle cleared `data-tip-open` and `:hover` kept the box on
+   screen anyway, two at a time. Where hover is not a real input it does not get
+   to open anything; the tap does, and only the tap. */
+@media (hover: none) {
+  /* Excluded by matching rather than by cascade order, so the tapped chip's own
+     panel cannot be hidden by the same rule that suppresses stuck hover. The
+     focus trigger is deliberately left alone: a tablet with a keyboard matches
+     `(hover: none)`, and focus is the only way it opens a panel at all. */
+  .relic-chip:hover:not([data-tip-open='true']) > .relic-tip {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
 /* The other half of WCAG 1.4.13: dismissible. The tooltip overlaps the potion
@@ -67,7 +94,7 @@
    able to put it away without moving the pointer or losing their place in the
    tab order. `Escape` sets this attribute from a document-level listener (see
    RelicChip.tsx, which explains why it cannot live on the chip), and it wins
-   over both trigger rules above by coming later at equal specificity. */
+   over the trigger rules above by coming later at equal specificity. */
 .relic-chip[data-tip-dismissed='true'] > .relic-tip {
   opacity: 0;
   visibility: hidden;
@@ -91,10 +118,16 @@
 
    At (0,6,0) this outranks the (0,3,0) triggers. It can co-match the dismissed
    rule above on a chip that is focused-but-not-hovered, which is harmless —
-   both declare the same two properties. */
-.relic-bar:has(.relic-chip:hover) .relic-chip:not(:hover) > .relic-tip {
-  opacity: 0;
-  visibility: hidden;
+   both declare the same two properties.
+
+   Hover devices only. Touch leaves `:hover` stuck on whatever it last hit, so
+   unscoped this rule arbitrated on a phone using a pointer that does not exist,
+   and hid whichever panel had just been opened by focus. */
+@media (hover: hover) {
+  .relic-bar:has(.relic-chip:hover) .relic-chip:not(:hover) > .relic-tip {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
 /* Where the strip's tooltip goes.
@@ -157,3 +190,17 @@
 .relic-tip__text { color: var(--tip-body); }
 .relic-tip__rule { color: var(--blue-text); font-style: italic; }
 .relic-tip__note { color: var(--sts-gold); }
+
+/* Printed only while a tap is holding this panel open, on the anchors that wrap
+   an action — see PotionIcon. Without it the two-step tap is a trick the player
+   has to discover by pressing a potion twice and noticing it survived.
+   The map node's `.room-tip__confirm` is the same prompt in the same voice;
+   both are kept beside the panel they belong to rather than shared, because
+   each file owns its own tooltip's type ramp. */
+.relic-tip__confirm {
+  margin-top: 0.15rem;
+  color: var(--sts-gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

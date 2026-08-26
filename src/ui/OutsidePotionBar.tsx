@@ -3,7 +3,7 @@ import { potionDef } from '../game/relics.ts'
 import { healingCapFor } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
 import { ItemImage } from './ItemImage.tsx'
-import { PotionIcon } from './PotionIcon.tsx'
+import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
 
 type Props = {
   players: Player[]
@@ -30,21 +30,42 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
     setGiving(null)
     setReplacing(null)
   }, [viewerId, inventory, recipientIds, sozu, viewerDead])
+  // Whether this item's replacement chooser is already open. Its button toggles,
+  // so with the chooser up the next press only collapses it — free and
+  // reversible, which is nothing to read first and nothing to promise.
+  const choosingReplacement = (index: number, id: string) =>
+    replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
   if (!viewer?.potions.length) return null
   return <aside className="outside-potions" aria-label="Potion inventory">
     <strong>Potions</strong>
     {viewer.potions.map((id, index) => <div className="outside-potions__item" key={`${id}-${index}`}>
       <PotionIcon id={id} />
-      {id === 'blood_potion' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}
-        title={`Use ${potionDef(id).name}`} disabled={viewerDead || viewer.hp >= healingCapFor(viewer)} onClick={() => onUse(id)}><PotionIcon id={id} focusable={false} /></button> : null}
-      {id === 'entropic_brew' ? <button type="button" aria-label={`Use ${potionDef(id).name}`}
-        aria-expanded={!sozu && viewer.potions.length - 1 + 2 > potionLimit
-          ? replacing?.context === inventoryContext && replacing.index === index && replacing.id === id : undefined}
-        title={`Use ${potionDef(id).name}`} disabled={viewerDead} onClick={() => {
-        if (sozu || viewer.potions.length - 1 + 2 <= potionLimit) onUse(id)
-        else setReplacing(replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
-          ? null : { index, id, context: inventoryContext })
-      }}><PotionIcon id={id} focusable={false} /></button> : null}
+      {/* The anchor WRAPS the button rather than sitting inside it, the way the
+          combat action bar arranges the same pair. That nesting is what lets the
+          anchor gate its own button on a device with no hover, so the potion's
+          rules are read before it is irreversibly drunk — nested the other way
+          round the anchor cannot tell the press apart from a tap on somebody
+          else's control, and the belt kept spending potions on first touch. */}
+      {id === 'blood_potion' ? <PotionTooltipAnchor id={id} confirmLabel="drink">
+        <button type="button" aria-label={`Use ${potionDef(id).name}`}
+          title={`Use ${potionDef(id).name}`} disabled={viewerDead || viewer.hp >= healingCapFor(viewer)}
+          onClick={() => onUse(id)}><ItemImage kind="potion" id={id} /></button>
+      </PotionTooltipAnchor> : null}
+      {/* Entropic Brew only drinks when there is room for what it pours; on a
+          full belt the committing tap opens the replacement chooser instead,
+          and the panel has to say which of the two it is about to do. */}
+      {id === 'entropic_brew' ? <PotionTooltipAnchor id={id}
+        confirmLabel={sozu || viewer.potions.length - 1 + 2 <= potionLimit ? 'drink'
+          : choosingReplacement(index, id) ? undefined : 'choose a replacement'}>
+        <button type="button" aria-label={`Use ${potionDef(id).name}`}
+          aria-expanded={!sozu && viewer.potions.length - 1 + 2 > potionLimit
+            ? replacing?.context === inventoryContext && replacing.index === index && replacing.id === id : undefined}
+          title={`Use ${potionDef(id).name}`} disabled={viewerDead} onClick={() => {
+          if (sozu || viewer.potions.length - 1 + 2 <= potionLimit) onUse(id)
+          else setReplacing(replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
+            ? null : { index, id, context: inventoryContext })
+        }}><ItemImage kind="potion" id={id} /></button>
+      </PotionTooltipAnchor> : null}
       {id === 'entropic_brew' && !viewerDead && !sozu && replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
         ? <div className="outside-potions__targets">
         {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, heldIndex) =>

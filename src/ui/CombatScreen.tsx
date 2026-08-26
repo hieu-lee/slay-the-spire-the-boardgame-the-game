@@ -2633,7 +2633,12 @@ function CombatScreenView({
                   potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
                 ) || overflowShivCount(state, shivs) > 0
                 const descriptionId = `potion-action-${viewer.id}-${potionId}-description`
-                return <PotionTooltipAnchor id={potionId} key={potionId}>
+                // A potion that needs a target is not drunk by the committing
+                // tap — that tap arms targeting, and the target is chosen next.
+                // Already staged, the button only un-stages: free and
+                // reversible, so there is nothing to read first and no label.
+                return <PotionTooltipAnchor id={potionId} key={potionId}
+                  confirmLabel={needsTarget ? (staged ? undefined : 'aim') : 'drink'}>
                   <span id={descriptionId} className="visually-hidden">{potion.text}</span>
                   <button
                     type="button"
@@ -3029,6 +3034,14 @@ function CombatScreenView({
           <div className="item-actions">
             {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, index) => {
               const descriptionId = `entropic-replace-${held}-${index}-description`
+              // Deliberately no `confirmLabel`, which is what keeps the
+              // read-first step OFF here: this dialog is opened with
+              // `showModal`, and the anchor portals its panel to the body —
+              // outside the top layer, so under the backdrop. A gate whose
+              // panel cannot be seen is a tap that does nothing. That panel is
+              // equally unreachable here for a mouse, which is an older and
+              // separate problem; the rules stay available through the
+              // description below either way.
               return <PotionTooltipAnchor id={held} key={`${held}:${index}`}>
                 <span id={descriptionId} className="visually-hidden">{potionDef(held).text}</span>
                 <button type="button" aria-describedby={descriptionId}
