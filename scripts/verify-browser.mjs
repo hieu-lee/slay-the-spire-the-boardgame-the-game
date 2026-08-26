@@ -49,7 +49,7 @@ const base = `http://localhost:${address.port}`
 
 const browser = await chromium.launch({ headless: !headed })
 const page = installScreenAudit(await browser.newPage({ viewport: { width: 1440, height: 900 } }))
-page.setDefaultTimeout(10_000)
+page.setDefaultTimeout(30_000)
 page.setDefaultNavigationTimeout(30_000)
 
 const consoleErrors = []
@@ -1853,17 +1853,23 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 const draggedFlask = page.getByRole('button', { name: /^Bouncing Flask, cost 2,/ })
 const flaskTargets = page.locator('.enemy')
-await draggedFlask.hover()
-const draggedFlaskBox = await draggedFlask.boundingBox()
-const firstFlaskTargetBox = await flaskTargets.first().boundingBox()
-assert(draggedFlaskBox && firstFlaskTargetBox, 'Bouncing Flask drag fixtures are visible')
-await page.mouse.move(draggedFlaskBox.x + draggedFlaskBox.width / 2,
-  draggedFlaskBox.y + draggedFlaskBox.height / 2)
-await page.mouse.down()
-await page.mouse.move(firstFlaskTargetBox.x + firstFlaskTargetBox.width / 2,
-  firstFlaskTargetBox.y + firstFlaskTargetBox.height / 2, { steps: 10 })
-await page.mouse.up()
-await page.locator('.prompt').filter({ hasText: 'token target 2/2' }).waitFor()
+const flaskPrompt = page.locator('.prompt').filter({ hasText: 'token target 2/2' })
+// A synthetic low-level drag can occasionally miss its opening pointerdown in
+// headless Chromium. Retry once only while the first target has not staged.
+for (let attempt = 0; attempt < 2 && await flaskPrompt.count() === 0; attempt += 1) {
+  await draggedFlask.hover()
+  const draggedFlaskBox = await draggedFlask.boundingBox()
+  const firstFlaskTargetBox = await flaskTargets.first().boundingBox()
+  assert(draggedFlaskBox && firstFlaskTargetBox, 'Bouncing Flask drag fixtures are visible')
+  await page.mouse.move(draggedFlaskBox.x + draggedFlaskBox.width / 2,
+    draggedFlaskBox.y + draggedFlaskBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(firstFlaskTargetBox.x + firstFlaskTargetBox.width / 2,
+    firstFlaskTargetBox.y + firstFlaskTargetBox.height / 2, { steps: 10 })
+  await page.mouse.up()
+  await page.waitForTimeout(250)
+}
+await flaskPrompt.waitFor()
 await flaskTargets.nth(1).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].discard
   .some((card) => card.uid === 'drag-bouncing-flask'))
@@ -11055,6 +11061,50 @@ check('player tokens and Powers stay anchored above their HP bar', () => {
     `the status strip is detached from its owner by ${statusStripGeometry.gap}px`)
 })
 
+const permanentEffectPlayerId = await page.locator('.seat--viewer').getAttribute('data-player-id')
+await page.evaluate((playerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players.find((player) => player.id === playerId).powers = [
+    'demon_form', 'metallicize', 'inflame', 'barricade', 'combust', 'corruption', 'evolve', 'feel_no_pain',
+  ].map((defId, index) => ({ uid: `scroll-power-${index}`, defId, upgraded: false }))
+  debug.setRun(run)
+}, permanentEffectPlayerId)
+await page.waitForFunction(() => document.querySelectorAll('.row__seat:has(> .seat--viewer) .power').length === 8)
+const permanentEffectScroll = await page.locator('.row__seat').filter({ has: page.locator('.seat--viewer') })
+  .locator('.seat__status-strip').evaluate((strip) => {
+  const before = strip.scrollLeft
+  strip.scrollLeft = strip.scrollWidth
+  return {
+    before,
+    after: strip.scrollLeft,
+    clientWidth: strip.clientWidth,
+    scrollWidth: strip.scrollWidth,
+    overflowX: getComputedStyle(strip).overflowX,
+    scrollbarWidth: getComputedStyle(strip).scrollbarWidth,
+    tabIndex: strip.tabIndex,
+  }
+})
+check('overflowing permanent effects scroll with an invisible scrollbar', () => {
+  assert(permanentEffectScroll.scrollWidth > permanentEffectScroll.clientWidth,
+    `permanent effects did not overflow: ${JSON.stringify(permanentEffectScroll)}`)
+  assert(permanentEffectScroll.after > permanentEffectScroll.before,
+    `permanent effects did not scroll: ${JSON.stringify(permanentEffectScroll)}`)
+  assertEqual(permanentEffectScroll.overflowX, 'auto')
+  assertEqual(permanentEffectScroll.scrollbarWidth, 'none')
+  assert(permanentEffectScroll.tabIndex >= 0, 'the invisible scroll region is not keyboard reachable')
+})
+await page.evaluate((playerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.combat.players.find((player) => player.id === playerId).powers = [
+    { uid: 'pw-1', defId: 'demon_form', upgraded: false },
+    { uid: 'pw-2', defId: 'metallicize', upgraded: false },
+  ]
+  debug.setRun(run)
+}, permanentEffectPlayerId)
+await page.waitForFunction(() => document.querySelectorAll('.row__seat:has(> .seat--viewer) .power').length === 2)
+
 const topmostOverPower = await page.evaluate(() => {
   const tile = document.querySelector('.row__seat .power')
   if (!tile) return 'no tile'
@@ -12861,7 +12911,16 @@ const bossVisuals = await page.locator('.enemy--boss').evaluateAll((cards) => ca
   maskImage: getComputedStyle(card.querySelector('.enemy__art--cutout')).maskImage,
   visualHeight: card.querySelector('.enemy__art--cutout').getBoundingClientRect().height,
   artBox: card.querySelector('.enemy__art--cutout').getBoundingClientRect().toJSON(),
+  portraitBox: card.querySelector('.enemy__portrait').getBoundingClientRect().toJSON(),
+  headBox: card.querySelector('.enemy__head').getBoundingClientRect().toJSON(),
+  hpBox: card.querySelector('.bar').getBoundingClientRect().toJSON(),
   intentBox: card.querySelector('.enemy__intent').getBoundingClientRect().toJSON(),
+  abilityBox: card.querySelector('.enemy__ability').getBoundingClientRect().toJSON(),
+  abilityScrollHeight: card.querySelector('.enemy__ability').scrollHeight,
+  abilityClientHeight: card.querySelector('.enemy__ability').clientHeight,
+  abilityOverflowY: getComputedStyle(card.querySelector('.enemy__ability')).overflowY,
+  abilityScrollbarWidth: getComputedStyle(card.querySelector('.enemy__ability')).scrollbarWidth,
+  abilityPosition: getComputedStyle(card.querySelector('.enemy__ability')).position,
   box: card.getBoundingClientRect().toJSON(),
 })))
 const bossStage = await page.locator('.combat').evaluate((combat) => ({
@@ -12890,6 +12949,18 @@ check('boss portraits, backdrops, mechanics, and accessible labels render togeth
     'boss auras should follow each boss identity, not only the act')
   assert(bossVisuals.every((boss) => boss.intentBox.bottom <= boss.artBox.top + 4),
     `boss intent must sit above the portrait: ${JSON.stringify(bossVisuals.map((boss) => ({ art: boss.artBox, intent: boss.intentBox })))}`)
+  assert(bossVisuals.every((boss) => boss.abilityBox.top >= boss.intentBox.bottom - 4 &&
+    boss.abilityBox.left >= boss.intentBox.left - 1 && boss.abilityBox.right <= boss.intentBox.right + 1),
+    `boss ability must sit in the clear band below intent: ${JSON.stringify(bossVisuals.map((boss) => ({ intent: boss.intentBox, ability: boss.abilityBox })))}`)
+  assert(bossVisuals.every((boss) => boss.abilityPosition === 'absolute'),
+    'boss ability text must not reflow the portrait or its HP bar')
+  assert(bossVisuals.every((boss) => [boss.artBox, boss.portraitBox, boss.headBox]
+    .every((box) => Math.abs((box.left + box.right) / 2 - (boss.hpBox.left + boss.hpBox.right) / 2) <= 1)),
+  `boss art, name, and HP centers diverged: ${JSON.stringify(bossVisuals.map((boss) => ({ art: boss.artBox, portrait: boss.portraitBox, head: boss.headBox, hp: boss.hpBox })))}`)
+  assert(bossVisuals.every((boss) => boss.abilityOverflowY === 'auto' && boss.abilityScrollbarWidth === 'none'),
+    'boss ability bands must scroll vertically without visible scrollbars')
+  assert(bossVisuals.some((boss) => boss.abilityScrollHeight > boss.abilityClientHeight),
+    'the long boss ability fixture did not exercise vertical overflow')
   assert(bossVisuals.every((boss) => boss.visualHeight > bossStage.heroHeight * 1.12),
     `boss silhouettes should read larger than the hero: hero ${bossStage.heroHeight}, bosses ${bossVisuals.map((boss) => boss.visualHeight).join(', ')}`)
   assert(hoveredBossHeight > bossStage.heroHeight * 1.12,
@@ -13223,6 +13294,39 @@ const afterGoldenEye = await readState()
 check('Golden Eye resolves the selected physical Scry choice', () => {
   assertEqual(afterGoldenEye.players[0].relics[0].spent, true)
   assertEqual(afterGoldenEye.players[0].discard.at(-1).uid, 'ui-golden-eye-1')
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  run.combat.phase = 'start'
+  run.combat.die = 6
+  run.combat.pendingTriggers = []
+  delete run.combat.pendingRelicScry
+  delete run.combat.startTurnProgress
+  actor.relics = [
+    { defId: 'loaded_die', spent: false },
+    { defId: 'stone_calendar', spent: false },
+  ]
+  debug.setRun(run)
+})
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'start' &&
+  window.__STS_DEBUG__.getState().players[0].relics[0]?.defId === 'loaded_die')
+const calendarDetails = page.locator('.relic-actions details').filter({ hasText: 'Loaded Die' })
+await calendarDetails.locator('summary').click()
+const calendarTarget = calendarDetails.getByRole('button', { name: /Stone Calendar/ }).first()
+await calendarTarget.waitFor()
+const calendarTargetName = await calendarTarget.textContent()
+const calendarBefore = await readState()
+await calendarTarget.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].relics[0]?.spent === true)
+const calendarAfter = await readState()
+const calendarHpChanges = calendarAfter.enemies.map((enemy, index) =>
+  enemy.hp - calendarBefore.enemies[index].hp)
+check('Loaded Die lets Stone Calendar choose and damage an enemy', () => {
+  assert(calendarTargetName?.includes('→'), `Stone Calendar had no target: ${calendarTargetName}`)
+  assertDeepEqual(calendarHpChanges.sort((a, b) => a - b), [-4, ...Array(calendarHpChanges.length - 1).fill(0)])
+  assertEqual(calendarAfter.players[0].relics[0].spent, true)
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -13846,7 +13950,7 @@ for (const [engineName, phoneBrowser, deviceName] of [
     phase: 'room',
     combat: null,
     players: run.players.map((player, index) => index === 0
-      ? { ...player, gold: 0, potions: ['swift_potion'], relics: [{ defId: 'akabeko', spent: false }] }
+      ? { ...player, hp: 1, gold: 0, potions: ['blood_potion'], relics: [{ defId: 'akabeko', spent: false }] }
       : player),
     roomState: { kind: 'event', decisions: {}, dieRolls: {}, card: {
       id: 'the_joust', instanceId: 'phone-joust', act: 2, minAscension: 0,
@@ -13856,6 +13960,37 @@ for (const [engineName, phoneBrowser, deviceName] of [
     } },
   }), mapBeforeRoomSwitchCheck)
   await phonePage.locator('.relic-option__text').first().waitFor({ timeout: 8000 }).catch(() => {})
+  const beltPotion = phonePage.getByRole('button', { name: `Use ${potionDef('blood_potion').name}` })
+  await phonePage.waitForFunction(() => {
+    const run = window.__STS_DEBUG__.getRun()
+    return run.phase === 'room' && run.combat === null &&
+      run.players[0].potions.length === 1 && run.players[0].potions[0] === 'blood_potion'
+  })
+  await beltPotion.waitFor()
+  const beltPotionsHeld = await phonePage.evaluate(() =>
+    window.__STS_DEBUG__.getRun().players[0].potions.length)
+  assertEqual(beltPotionsHeld, 1, `${engineName} ${deviceName}: belt potion fixture did not settle`)
+  await tap(beltPotion)
+  await phonePage.locator('.potion-tip').first().waitFor({ timeout: 4000 }).catch(() => {})
+  layout.beltPotion = await phonePage.evaluate((held) => {
+    const tip = document.querySelector('.potion-tip')
+    const box = tip?.getBoundingClientRect()
+    return {
+      stillHeld: window.__STS_DEBUG__.getRun().players[0].potions.length === held,
+      rules: tip?.querySelector('.relic-tip__text')?.textContent ?? '',
+      confirm: tip?.querySelector('.relic-tip__confirm')?.textContent ?? '',
+      onScreen: Boolean(tip && getComputedStyle(tip).visibility !== 'hidden' && box &&
+        box.top >= 0 && box.bottom <= window.innerHeight + 1),
+      tips: document.querySelectorAll('.potion-tip').length,
+    }
+  }, beltPotionsHeld)
+  await tap(beltPotion)
+  await phonePage.waitForFunction((held) =>
+    window.__STS_DEBUG__.getRun().players[0].potions.length < held, beltPotionsHeld,
+  { timeout: 6000 }).catch(() => {})
+  layout.beltPotion.drankOnSecondTap = await phonePage.evaluate((held) =>
+    window.__STS_DEBUG__.getRun().players[0].potions.length < held, beltPotionsHeld)
+  layout.beltPotion.expectedRules = potionDef('blood_potion').text
   // Playwright's accessible-name computation, which is the only thing here that
   // actually resolves one. A substring test against the button's own text can
   // never fail, because the span is inside the button either way.

@@ -343,6 +343,31 @@
   pointer-events: none;
 }
 
+/* Boss rules belong in the clear band below their telegraph, never over the
+   portrait. Long rules scroll inside that band without moving the boss or HP. */
+.board .board__bosses .enemy--boss > .enemy__ability {
+  top: calc(-3.9rem * var(--stage-scale));
+  right: -25%;
+  left: -25%;
+  display: block;
+  max-width: none;
+  max-height: calc(2.25rem * var(--stage-scale));
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: normal;
+  text-overflow: clip;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.board .board__bosses .enemy--boss > .enemy__ability::-webkit-scrollbar {
+  display: none;
+}
+
+.board .board__bosses .enemy--boss > .enemy__ability > span {
+  display: block;
+}
+
 .enemy__portrait,
 .board[data-rows='3'] .enemy__portrait,
 .board[data-rows='4'] .enemy__portrait {

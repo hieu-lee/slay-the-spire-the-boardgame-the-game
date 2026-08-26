@@ -95,6 +95,7 @@ import {
   powerAbilityUsed,
   previewCardChoice,
   previewCardCopyChoice,
+  reachesEnemy,
   reachedTimeWarpLimit,
   remainingRoundHpLoss,
   resolvePendingTrigger,
@@ -3118,7 +3119,8 @@ function CombatScreenView({
                     if (ability.trigger.kind !== 'dieRelic' || face !== null && !ability.trigger.faces.includes(face) ||
                       ['nilrys_codex', 'loaded_die'].includes(held.defId) && owner.id === viewerId &&
                       targetRelicIndex === relicIndex) return []
-                    const enemies = ability.target === 'enemy' || ability.target === 'row'
+                    const enemies = (ability.target ?? 'enemy') !== 'allEnemies' &&
+                      ability.effects.some((effect) => reachesEnemy(effect, owner))
                       ? state.enemies.filter((enemy) => !enemy.dead)
                       : [undefined]
                     return enemies.map((enemy) => <button type="button"
@@ -3598,7 +3600,8 @@ function CombatScreenView({
                       ) : null}
                       </span>
                     </button>
-                    <div className="seat__status-strip">
+                    <div className="seat__status-strip" tabIndex={0}
+                      aria-label={`${occupant.name} permanent effects`}>
                       <TokenRow
                         block={occupant.block}
                         strength={occupant.strength}

@@ -52,6 +52,7 @@ export {
   nextEvokeChoice,
   overflowShivCount,
   playCost,
+  reachesEnemy,
   reachedTimeWarpLimit,
 } from './combat/queries.ts'
 export { MAX_TRIGGER_DEPTH, evokeTargetProgress } from './combat/effects.ts'

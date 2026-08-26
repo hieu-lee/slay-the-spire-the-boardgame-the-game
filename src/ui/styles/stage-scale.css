@@ -103,19 +103,12 @@
   left: 0;
 }
 
-/* Bosses share the floor with heroes but own more of the silhouette, as they
-   do in the digital game's boss rooms. Donu and Deca stay tighter so the pair
-   remains readable without collapsing the co-op stage spacing. */
+/* Boss art scales beyond its portrait box, but the box itself stays centered
+   on the name and HP. A fixed width plus negative left/right offsets is
+   over-constrained CSS: browsers ignored right and shifted every boss left. */
 .board .board__bosses .enemy--boss .enemy__portrait {
-  right: -25%;
-  left: -25%;
-  aspect-ratio: 1.05;
-}
-
-.board .board__bosses .enemy--boss[data-enemy-def='donu'] .enemy__portrait,
-.board .board__bosses .enemy--boss[data-enemy-def='deca'] .enemy__portrait {
-  right: -14%;
-  left: -14%;
+  right: 0;
+  left: 0;
   aspect-ratio: 1.05;
 }
 
@@ -324,6 +317,11 @@
 
   .board .board__bosses .enemy--boss > .enemy__intent {
     top: calc(-4.4rem * var(--stage-scale));
+  }
+
+  .board .board__bosses .enemy--boss > .enemy__ability {
+    top: calc(-2.15rem * var(--stage-scale));
+    max-height: calc(1.5rem * var(--stage-scale));
   }
 
   /* The full hand overlaps the floor on a short stage. Lift every player's

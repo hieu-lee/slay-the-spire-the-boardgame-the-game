@@ -6,7 +6,7 @@
 import { clone, findPlayer, livingEnemies, resolveEnemyTargets, rowExists } from './board.ts'
 import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, settle } from './effects.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
-import { cardIsPlayable, overflowShivCount, reachedTimeWarpLimit } from './queries.ts'
+import { cardIsPlayable, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
 import type { CombatState, PlayContext, PotionContext, RelicContext } from './types.ts'
 import { cardDef, faceOf } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
@@ -128,7 +128,10 @@ export function activateRelic(
     const ability = targetHeld && relicAbilities(relicDef(targetHeld.defId))[context.targetAbilityIndex ?? 0]
     const face = ability?.trigger.kind === 'dieRelic' ? ability.trigger.faces : []
     const targetFace = held.defId === 'nilrys_codex' ? 2 : held.defId === 'dollys_mirror' ? 1 : undefined
+    const needsEnemy = ability && (ability.target ?? 'enemy') !== 'allEnemies' &&
+      ability.effects.some((effect) => reachesEnemy(effect, owner))
     if (!owner || owner.dead || !ability || (targetFace !== undefined && !face.includes(targetFace)) ||
+      needsEnemy && !livingEnemies(state).some((enemy) => enemy.uid === context.enemyUid) ||
       ['nilrys_codex', 'loaded_die'].includes(held.defId) && owner.id === playerId &&
       context.targetRelicIndex === relicIndex) return state
   }
