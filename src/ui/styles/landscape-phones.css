@@ -2,7 +2,6 @@
    layers are disproportionately expensive there, so keep the readable art and
    short action overlay while dropping ambient and multi-layer effects. */
 html[data-mobile-performance='true'] .power::after,
-html[data-mobile-performance='true'] .seat__portrait > img,
 html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
 html[data-mobile-performance='true'] .stance-aura,
 html[data-mobile-performance='true'] .hand .card--drawn,
@@ -13,6 +12,53 @@ html[data-mobile-performance='true'] .pip--energy::after,
 html[data-mobile-performance='true'] .seat--targetable {
   animation: none;
 }
+
+/* `.seat__portrait > img` gets its OWN rule, and only the `animation-name`
+   longhand — not the `animation` shorthand every selector above uses. The
+   shorthand resets every sub-property, including `animation-duration` and
+   `animation-fill-mode`, and this element's duration comes from a SEPARATE
+   rule keyed on the active `.seat--*` class (attack-timing.css). Zeroing it
+   here left nothing for the restores below to size a lunge into: they only
+   override the name, so a name pointed at a 0s, fill-mode-less animation is
+   still invisible. This way the disable is exactly what it says: no name,
+   still nothing playing, but the duration/timing/fill-mode are there for a
+   more specific selector below to actually restore. */
+html[data-mobile-performance='true'] .seat__portrait > img {
+  animation-name: none;
+}
+
+/* The rule above cuts `actor-idle`, the 3.4s ambient breathing loop this file
+   means to — but on the SAME selector every attack lunge and action beat
+   (attack-timing.css) is layered on top of via that same `animation-name`
+   override, so it silently took the character's whole body out of every
+   attack too. On a real phone that reads as "the animation is missing", which
+   is worse than the choppiness cutting it was meant to fix.
+   Three of the four attacks, and every action beat, are already exactly what
+   this file's own header asks for: plain `transform`/`opacity`, no filter, no
+   extra layer — as cheap as a CSS animation gets. Restoring them needs MORE
+   specificity than the rule above, which is why each one repeats its own
+   `.seat--*` class rather than only strengthening `.seat__portrait`. */
+html[data-mobile-performance='true'] .seat--vfx-lunge.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-lunge; }
+html[data-mobile-performance='true'] .seat--vfx-lunge.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-lunge-again; }
+html[data-mobile-performance='true'] .seat--vfx-recoil.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-recoil; }
+html[data-mobile-performance='true'] .seat--vfx-recoil.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-recoil-again; }
+html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-drink; }
+html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
+html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
+html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
+html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
+html[data-mobile-performance='true'] .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
+html[data-mobile-performance='true'] .seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
+
+/* The remaining fourth (Defect's attack) and the one action beat with a filter
+   (casting) genuinely do spend part of their motion on a `brightness()` flash
+   — that part stays cut, via a filter-free twin keyframe carrying the same
+   transform timeline (attack-timing.css) rather than the real one. Standing
+   Defect still while every other character lunges would have looked like this
+   file was choosing favourites, not cutting cost. */
+html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast-mobile; }
+html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-mobile-again; }
+html[data-mobile-performance='true'] .seat--attack-defect .seat__portrait > img { animation-name: attack-defect-mobile; }
 
 html[data-mobile-performance='true'] .seat__portrait::before,
 html[data-mobile-performance='true'] .enemy__portrait::before,
