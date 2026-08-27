@@ -101,8 +101,17 @@
   gap: 0.4rem;
   margin: 0;
   padding: 0.4rem;
+  border: 0;
+  border-top: 1px solid rgb(217 180 91 / 0.25);
 }
 .sts-scope .event-potion-replacement > legend { color: var(--light-yellow); }
+
+.sts-scope .event-items .reward-item {
+  padding-inline: 0;
+  border: 0;
+  border-top: 1px solid rgb(217 180 91 / 0.28);
+  background: transparent;
+}
 
 /* The reveal keys were a small key, a wide key and a centred key on one screen.
    All three are one banner now. */

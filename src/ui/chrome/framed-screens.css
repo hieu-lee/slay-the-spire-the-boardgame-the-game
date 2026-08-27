@@ -1,13 +1,25 @@
-/* Every non-combat screen used to be loose text on the page background. They
-   now sit on one slab, so the run reads as a board rather than as a form. */
+/* Transitional screens float on the room, as they do in the client. Only the
+   campaign journal keeps a physical sheet because it represents one. */
 .sts-scope .room-screen,
-.sts-scope .between-combat,
 .sts-scope .campaign-end {
   flex: 0 1 auto;
   align-self: center;
   justify-self: center;
   width: min(52rem, calc(100% - 2rem));
   margin: auto;
+}
+
+.sts-scope .room-screen {
+  padding: clamp(0.6rem, 2vw, 1.25rem);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+}
+
+.sts-scope .room-screen.relic-resolve {
+  width: 100%;
+  max-width: none;
 }
 
 .sts-scope .room-screen__defeat {

@@ -21,7 +21,7 @@ export function RelicResolvePanel({ pending, deck, onResolve }: Props) {
   const eligible = pendingRelicEligibleCards({ deck }, pending.relicId)
   const count = Math.min(CARD_COUNTS[pending.relicId] ?? 0, eligible.length)
   const rewardReady = (pending.rewardChoices ?? []).every((_choice, index) => rewards[index] !== undefined)
-  return <section className="room-screen">
+  return <section className="room-screen relic-resolve">
     <h2>Resolve {relicDef(pending.relicId).name}</h2>
     {/* The panel asks the player to pick cards for an effect it never stated. */}
     <p className="room-item-text">{relicDef(pending.relicId).text}</p>

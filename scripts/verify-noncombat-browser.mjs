@@ -1300,6 +1300,8 @@ const stackedRoomScreens = await page.evaluate(() => {
     counts.whilePendingAcquisition = roomScreens()
     counts.relicResolvers = [...document.querySelectorAll('.room-screen > h2')]
       .filter((heading) => /^Resolve /.test(heading.textContent ?? '')).length
+    counts.relicResolverWidth = document.querySelector('.relic-resolve')?.getBoundingClientRect().width ?? 0
+    counts.shellWidth = document.querySelector('.app-shell')?.getBoundingClientRect().width ?? 0
     debug.setRun(before)
     await settle()
     return counts
@@ -1661,6 +1663,8 @@ check('a campfire tile with an open room interaction mounts exactly one screen',
     'a pending acquisition left an underlying room action mounted')
   assertEqual(stackedRoomScreens.relicResolvers, 1,
     'a pending acquisition did not mount exactly one Relic resolver')
+  assert(stackedRoomScreens.relicResolverWidth >= stackedRoomScreens.shellWidth - 40,
+    `the Relic resolver stayed capped at ${stackedRoomScreens.relicResolverWidth}px inside a ${stackedRoomScreens.shellWidth}px shell`)
 })
 check('a pointerless shopper reads shelf rules without hovering', () => {
   for (const [label, shelf] of [['tall', touchShelf], ['short with a belt', touchShelfShort]]) {
@@ -1946,6 +1950,36 @@ await page.getByRole('heading', { name: 'Big Fish' }).waitFor()
 await page.locator('.room-stage').evaluate((element) => { element.scrollTop = 0 })
 await page.mouse.move(0, 0)
 await page.locator('.card-morph').waitFor({ state: 'detached' })
+const initialEventOptionCount = await page.locator('.event-options button').count()
+const initialEventPickerCount = await page.locator('.event-cards--deck').count()
+await page.screenshot({ path: join(outDir, 'event-choice-bars-compact.png'), fullPage: true })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.players[0]
+  const strike = actor.deck.find((card) => card.defId.startsWith('strike_'))
+  run.roomState.card.instanceId += '-reconnect'
+  run.roomState.pendingDecisions = { [actor.id]: { optionIds: ['donut'], cardUids: [strike.uid] } }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
+const reconnectedEventCardLocked = await page.locator('.event-cards--deck .card[aria-pressed="true"][aria-disabled="true"]').count()
+const reconnectedEventConfirmEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+check('Event resolver restores authoritative selections after reconnect', () => {
+  assertEqual(reconnectedEventCardLocked, 1)
+  assert(reconnectedEventConfirmEnabled)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState.card.instanceId += '-fresh'
+  run.roomState.pendingDecisions = {}
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Donut\]/ }).waitFor()
+await page.getByRole('button', { name: /\[Donut\]/ }).click()
+await page.waitForFunction(() => document.activeElement?.matches('.event-cards--deck .card'))
+const eventResolverFocus = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card'))
 const draftedEventCard = page.locator('.event-cards--deck .card').first()
 await draftedEventCard.click()
 const draftedEventCardBeforeCompendium = await draftedEventCard.getAttribute('aria-pressed')
@@ -1965,21 +1999,22 @@ const draftedEventCardPreserved = await draftedEventCard.getAttribute('aria-pres
 await page.screenshot({ path: join(outDir, 'event-4p-compact-desktop.png'), fullPage: true })
 const eventShape = await page.evaluate(() => {
   const panel = document.querySelector('.event-panel')
-  if (panel) panel.scrollTop = panel.scrollHeight
   const panelBox = panel?.getBoundingClientRect()
   const stage = document.querySelector('.event-stage')
   const stageBox = stage?.getBoundingClientRect()
   const stageStyle = stage ? getComputedStyle(stage) : null
-  const last = [...document.querySelectorAll('.event-options button')].at(-1)?.getBoundingClientRect()
+  const panelStyle = panel ? getComputedStyle(panel) : null
+  const confirm = document.querySelector('.event-resolve-actions .room-proceed')?.getBoundingClientRect()
   const picker = document.querySelector('.event-cards--deck')
   const card = picker?.querySelector('.card')
   return {
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     options: document.querySelectorAll('.event-options button').length,
-    contained: Boolean(panelBox && last && panelBox.bottom >= last.bottom - 1),
+    contained: Boolean(panelBox && confirm && panelBox.bottom >= confirm.bottom - 1),
     borderless: Boolean(stageStyle && parseFloat(stageStyle.borderTopWidth) === 0 && parseFloat(stageStyle.borderRightWidth) === 0 &&
       parseFloat(stageStyle.borderBottomWidth) === 0 && parseFloat(stageStyle.borderLeftWidth) === 0),
     fullBleed: Boolean(stageBox && stageBox.left <= 1 && stageBox.right >= innerWidth - 1 && stageBox.bottom >= innerHeight - 1),
+    panelScrolls: Boolean(panelStyle && ['auto', 'scroll'].includes(panelStyle.overflowY)),
     cardHeight: card?.getBoundingClientRect().height ?? 0,
     pickerHeight: picker?.getBoundingClientRect().height ?? 0,
     pickerScrollsVertically: Boolean(picker && picker.scrollHeight > picker.clientHeight + 1),
@@ -1992,13 +2027,58 @@ check('Event hierarchy remains usable on compact desktop and does not demand irr
   assertEqual(draftedEventCardPreserved, 'true', 'opening Compendium cleared the staged Event card')
   assert(eventPauseActions.some((label) => label.trim() === 'Compendium'), 'the Event pause menu hid the Compendium')
   assert(!eventShape.overflow)
-  assertEqual(eventShape.options, 4)
+  assertEqual(initialEventOptionCount, 4)
+  assertEqual(initialEventPickerCount, 0, 'the Event demanded a card before an option was chosen')
+  assertEqual(eventShape.options, 0, 'the picker remained stacked above unrelated Event choices')
   assert(eventShape.contained, 'the final Event choice escaped the compact desktop room frame')
   assert(eventShape.borderless, 'the Event background still has an outer frame')
   assert(eventShape.fullBleed, `the Event background leaves a viewport gap: ${JSON.stringify(eventShape)}`)
   assert(eventShape.cardHeight > 0 && eventShape.pickerHeight >= eventShape.cardHeight,
     `the Event picker is shorter than one card: ${JSON.stringify(eventShape)}`)
+  assertEqual(eventShape.panelScrolls, false, 'the Event resolver retained a nested panel scroller')
   assertEqual(eventShape.pickerScrollsVertically, false, 'the Event deck is trapped in a nested vertical scroller')
+})
+await page.setViewportSize({ width: 390, height: 844 })
+const compactEventShape = await page.evaluate(() => {
+  const panel = document.querySelector('.event-panel')
+  const stage = document.querySelector('.event-stage')
+  const title = document.querySelector('#event-title')?.getBoundingClientRect()
+  const stageBox = stage?.getBoundingClientRect()
+  const card = document.querySelector('.event-cards--deck .card')?.getBoundingClientRect()
+  const actions = [...document.querySelectorAll('.event-resolve-actions button')].map((button) => button.getBoundingClientRect())
+  const log = document.querySelector('.log')?.getBoundingClientRect()
+  return {
+    horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+    panelScrolls: Boolean(panel && ['auto', 'scroll'].includes(getComputedStyle(panel).overflowY)),
+    stageScrolls: Boolean(stage && stage.scrollHeight > stage.clientHeight + 1),
+    stageScrollTop: stage?.scrollTop ?? -1,
+    stageTop: stageBox?.top ?? -1,
+    panelTop: panel?.getBoundingClientRect().top ?? -1,
+    titleTop: title?.top ?? -1,
+    titleVisible: Boolean(title && stageBox && title.top >= stageBox.top),
+    completeCard: Boolean(card && card.top >= 0 && card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight),
+    actionsVisible: actions.length === 2 && actions.every((box) => box.top >= (stageBox?.top ?? 0) && box.bottom <= innerHeight),
+    actionsShareRow: actions.length === 2 && Math.abs(actions[0].top - actions[1].top) < 1,
+    actionsClearLog: !log || actions.every((box) => box.right <= log.left || box.left >= log.right || box.bottom <= log.top || box.top >= log.bottom),
+  }
+})
+await page.screenshot({ path: join(outDir, 'event-card-picker-compact.png'), fullPage: true })
+check('compact Event resolution keeps one reachable scroll surface', () => {
+  assert(!compactEventShape.horizontalOverflow, `compact Event overflowed: ${JSON.stringify(compactEventShape)}`)
+  assert(!compactEventShape.panelScrolls, 'compact Event retained a nested panel scroller')
+  assert(compactEventShape.titleVisible, `compact Event hid its title above the stage: ${JSON.stringify(compactEventShape)}`)
+  assert(compactEventShape.completeCard, `compact Event showed no complete card: ${JSON.stringify(compactEventShape)}`)
+  assert(compactEventShape.actionsVisible && compactEventShape.actionsShareRow,
+    `compact Event split or hid its resolver actions: ${JSON.stringify(compactEventShape)}`)
+  assert(compactEventShape.actionsClearLog, `the run log covered a compact Event action: ${JSON.stringify(compactEventShape)}`)
+})
+await page.setViewportSize({ width: 1280, height: 800 })
+await page.getByRole('button', { name: 'Back to choices' }).click()
+await page.waitForFunction(() => document.activeElement?.getAttribute('data-event-option') === 'donut')
+const restoredEventOptionFocus = await page.evaluate(() => document.activeElement?.getAttribute('data-event-option'))
+check('Event resolvers move focus into the picker and restore the originating choice', () => {
+  assert(eventResolverFocus)
+  assertEqual(restoredEventOptionFocus, 'donut')
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2007,7 +2087,8 @@ await page.evaluate(() => {
   debug.setRun(run)
   debug.setViewer(run.players[1].id)
 })
-await page.getByRole('button', { name: /\[Banana\]/ }).waitFor()
+await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')]
+  .some((button) => button.textContent?.includes('[Banana]') && button.disabled))
 const claimedBigFishDisabled = await page.getByRole('button', { name: /\[Banana\]/ }).isDisabled()
 check('Big Fish disables an option already claimed by another seat', () => assert(claimedBigFishDisabled))
 await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
@@ -2024,25 +2105,28 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Ancient Writing' }).waitFor()
+await page.getByRole('button', { name: /\[Simplicity\]/ }).click()
 const writingDefend = page.locator('.event-cards button').filter({ hasText: 'Defend' }).first()
 const writingStrike = page.locator('.event-cards button').filter({ hasText: 'Strike' }).first()
 await writingDefend.click()
 await writingStrike.click()
-const reverseSimplicityEnabled = await page.getByRole('button', { name: /\[Simplicity\]/ }).isEnabled()
+const reverseSimplicityEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await writingDefend.click()
 await writingStrike.click()
 check('Ancient Writing accepts its Strike and Defend in either click order', () => assert(reverseSimplicityEnabled))
 await page.locator('.event-cards button').first().click()
 await chooseLocalSeat({ label: 'Silent' })
-await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')].some((button) => button.textContent?.includes('[Elegance]') && button.disabled), undefined, { timeout: 5_000 })
+await page.waitForFunction(() => [...document.querySelectorAll('.event-options button')]
+  .some((button) => button.textContent?.includes('[Elegance]')) && !document.querySelector('.event-cards--deck'), undefined, { timeout: 5_000 })
 const retainedCards = await page.locator('.event-cards button[aria-pressed="true"]').count()
 const eleganceEnabled = await page.getByRole('button', { name: /\[Elegance\]/ }).isEnabled()
 check('hot-seat Event form state resets between players', () => {
   assertEqual(retainedCards, 0)
-  assertEqual(eleganceEnabled, false)
+  assertEqual(eleganceEnabled, true)
 })
-await page.locator('.event-cards button').first().click()
 await page.getByRole('button', { name: /\[Elegance\]/ }).click()
+await page.locator('.event-cards button').first().click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2126,6 +2210,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Falling' }).waitFor()
+await page.getByRole('button', { name: /\[Land\]/ }).click()
 await page.waitForFunction(() => {
   const run = window.__STS_DEBUG__.getRun()
   const viewerId = run.players.find((player) => player.character === 'ironclad')?.id
@@ -2239,11 +2324,12 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().roomState?.card?.id === 'designer')
+const fullService = page.getByRole('button', { name: /\[Full Service\]/ })
+await fullService.click()
 await page.getByRole('button', { name: 'Injury' }).click()
 await page.getByRole('button', { name: 'Strike' }).click()
-const fullService = page.getByRole('button', { name: /\[Full Service\]/ })
-const fullServiceEnabled = await fullService.isEnabled()
-await fullService.click()
+const fullServiceEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 check('heterogeneous Event card effects validate each selected card in effect order', () => assertEqual(fullServiceEnabled, true))
 
@@ -2262,12 +2348,13 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.roomState.pendingRolls = { [run.players[0].id]: [6] }
+  run.roomState.pendingDecisions = { [run.players[0].id]: { optionIds: ['resolve'] } }
   debug.setRun(run)
 })
 await page.getByLabel('Target player').waitFor()
-const labBonusDisabled = await page.getByRole('button', { name: /\[Take Potions\]/ }).isDisabled()
+const labBonusDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByLabel('Target player').selectOption({ index: 1 })
-const labBonusEnabled = await page.getByRole('button', { name: /\[Take Potions\]/ }).isEnabled()
+const labBonusEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 check('Lab asks for a bonus recipient only after a successful party roll', () => {
   assertEqual(labTargetBeforeRoll, 0)
   assert(labInitialEnabled)
@@ -2285,6 +2372,7 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /\[Bet\]/ }).click()
 const joustRelic = page.locator('fieldset').filter({ hasText: 'Your relic' }).getByRole('button').first()
 await page.waitForFunction(() => {
   const images = [...document.querySelectorAll('fieldset .item-card-image, fieldset .item-icon-image')]
@@ -2294,12 +2382,12 @@ const joustItemImages = await page.locator('fieldset').filter({ hasText: /Your r
   .locator('.item-card-image, .item-icon-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
 const joustPotionCardFaces = await page.getByRole('group', { name: 'Your potions' }).locator('.item-card-image').count()
 await joustRelic.click()
-const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
+const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await joustRelic.click()
 const clearedJoustRelic = await joustRelic.getAttribute('aria-pressed')
-const zeroGoldBetAfterClearing = await page.getByRole('button', { name: /\[Bet\]/ }).isDisabled()
+const zeroGoldBetAfterClearing = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
-const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /\[Bet\]/ }).isEnabled()
+const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 check('The Joust enables its printed Relic and Potion alternatives at zero Gold', () => {
   assert(zeroGoldRelicBetEnabled)
   assertDeepEqual(joustItemImages, [true, true])
@@ -2307,6 +2395,50 @@ check('The Joust enables its printed Relic and Potion alternatives at zero Gold'
   assertEqual(clearedJoustRelic, 'false')
   assert(zeroGoldBetAfterClearing)
   assert(zeroGoldPotionBetEnabled)
+})
+await page.getByRole('button', { name: /Confirm choice/ }).click()
+await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls))
+const lockedPotionPaymentSelectors = await page.getByRole('group', { name: /Your relic|Your potions/ }).count()
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0] = { ...run.players[0], gold: 2, relics: [], potions: [] }
+  run.roomState = { kind: 'event', card: { id: 'the_joust', instanceId: 'browser-joust-exact-payment', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Joust', scope: 'player', options: [
+    { id: 'bet', label: 'Bet', description: 'Pay 2 Gold, a Relic, or a Potion. Roll the die; on 4–6 gain 6 Gold.', effects: [{ tag: 'pay-gold', amount: 2, filter: 'or lose one Relic or Potion' }, { tag: 'roll-d6', results: { 4: [{ tag: 'gain-gold', amount: 6 }], 5: [{ tag: 'gain-gold', amount: 6 }], 6: [{ tag: 'gain-gold', amount: 6 }] } }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Bet\]/ }).click()
+await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls?.[window.__STS_DEBUG__.getRun().players[0].id]))
+const exactJoustPayment = {
+  gold: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold),
+  confirmEnabled: await page.getByRole('button', { name: /Confirm choice/ }).isEnabled(),
+  paymentSelectors: await page.getByRole('group', { name: /Your relic|Your potions/ }).count(),
+}
+check('The Joust can finish after its locked payment spends the party’s last Gold', () => {
+  assertEqual(exactJoustPayment.gold, 0)
+  assert(exactJoustPayment.confirmEnabled)
+  assertEqual(exactJoustPayment.paymentSelectors, 0)
+  assertEqual(lockedPotionPaymentSelectors, 0)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0] = { ...run.players[0], gold: 0, relics: [{ defId: 'anchor', spent: false }], potions: [] }
+  run.roomState = { kind: 'event', card: { id: 'the_joust', instanceId: 'browser-joust-locked-relic', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Joust', scope: 'player', options: [
+    { id: 'bet', label: 'Bet', description: 'Pay 2 Gold, a Relic, or a Potion. Roll the die; on 4–6 gain 6 Gold.', effects: [{ tag: 'pay-gold', amount: 2, filter: 'or lose one Relic or Potion' }, { tag: 'roll-d6', results: { 4: [{ tag: 'gain-gold', amount: 6 }], 5: [{ tag: 'gain-gold', amount: 6 }], 6: [{ tag: 'gain-gold', amount: 6 }] } }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Bet\]/ }).click()
+await page.getByRole('group', { name: 'Your relic' }).getByRole('button').click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
+await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls))
+const lockedRelicPaymentSelectors = await page.getByRole('group', { name: /Your relic|Your potions/ }).count()
+check('The Joust hides every payment alternative after Relic, Potion, or Gold is locked', () => {
+  assertEqual(lockedRelicPaymentSelectors, 0)
 })
 
 await page.evaluate(() => {
@@ -2319,10 +2451,11 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /\[Offer\]/ }).click()
 await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
 await page.getByRole('button', { name: 'Blood Potion', exact: true }).click()
 const selectedNlothPotions = await page.locator('fieldset.event-cards button[aria-pressed="true"]').count()
-const nlothOfferEnabled = await page.getByRole('button', { name: /\[Offer\]/ }).isEnabled()
+const nlothOfferEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 check("N'loth keeps its singular Potion payment valid when another Potion is chosen", () => {
   assertEqual(selectedNlothPotions, 1)
   assert(nlothOfferEnabled)
@@ -2352,6 +2485,111 @@ check('random Relic payments disable when no Relic can be offered', () => {
   assert(emptyAltarDisabled)
 })
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.players[0]
+  run.players[0] = { ...actor, relics: [{ defId: 'anchor', spent: false }] }
+  run.roomState = { kind: 'event', card: { id: 'nloth', instanceId: 'browser-nloth-random-relic', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: "N'loth", scope: 'player', options: [
+    { id: 'offer_relic', label: 'Offer', description: 'Give a random Relic. Gain a Rare Reward.', effects: [{ tag: 'lose-relic', random: true }, { tag: 'rare-reward' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /random Relic/ }).click()
+await page.waitForFunction(() => !document.querySelector('.event-options'))
+await page.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+const randomRelicPickerCount = await page.getByRole('group', { name: 'Your relic' }).count()
+const rewardResolverFocused = await page.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+check('random Relic losses skip the meaningless picker and focus the real reward resolver', () => {
+  assertEqual(randomRelicPickerCount, 0)
+  assert(rewardResolverFocused)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.players[0]
+  run.players[0] = { ...actor, relics: [{ defId: 'anchor', spent: false }] }
+  run.itemDecks.relics = ['akabeko']
+  run.phase = 'room'
+  run.roomState = { kind: 'event', card: { id: 'face_trader', instanceId: 'browser-face-trader-staged', act: 3, minAscension: 0, requiresColorlessUnlock: false, name: 'Face Trader', scope: 'player', options: [
+    { id: 'take_and_give', label: 'Take and Give', description: 'Gain a Relic, then lose a Relic.', effects: [{ tag: 'gain-relic' }, { tag: 'lose-relic' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+const faceTraderPreselectionCount = await page.getByRole('group', { name: 'Your relic' }).count()
+await page.getByRole('button', { name: /\[Take and Give\]/ }).click()
+await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingDecisions))
+const faceTraderStage = {
+  relics: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].relics.length),
+  picker: await page.getByRole('group', { name: 'Your relic' }).count(),
+  confirmDisabled: await page.getByRole('button', { name: /Confirm choice/ }).isDisabled(),
+}
+check('Face Trader grants first, then asks once for the Relic that is actually lost', () => {
+  assertEqual(faceTraderPreselectionCount, 0)
+  assertEqual(faceTraderStage.relics, 2)
+  assertEqual(faceTraderStage.picker, 1)
+  assert(faceTraderStage.confirmDisabled)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.players[0]
+  run.itemDecks.relics = ['akabeko']
+  run.phase = 'room'
+  run.roomState = { kind: 'event', card: { id: 'big_fish', instanceId: 'browser-box-focus', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Big Fish', scope: 'player', options: [
+    { id: 'box', label: 'Box', description: 'Gain a Relic. Gain a Curse.', effects: [{ tag: 'gain-relic' }, { tag: 'gain-curse' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Box\]/ }).click()
+await page.locator('.event-items').waitFor()
+await page.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+const itemResolverFocused = await page.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+check('staged Event item resolvers receive keyboard focus', () => assert(itemResolverFocused))
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.players[0]
+  run.players[0] = { ...actor, hp: Math.max(3, actor.hp), dead: false }
+  run.phase = 'room'
+  run.roomState = { kind: 'event', card: { id: 'scrap_ooze', instanceId: 'browser-scrap-repeat', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Scrap Ooze', scope: 'player', options: [
+    { id: 'reach_inside', label: 'Reach Inside', description: 'Roll the die.', effects: [{ tag: 'lose-hp', amount: 1 }, { tag: 'roll-d6', results: { 1: [{ tag: 'nothing', filter: 'repeat-or-leave' }], 2: [{ tag: 'nothing', filter: 'repeat-or-leave' }] } }] },
+    { id: 'leave', label: 'Leave', description: 'Stop reaching into the ooze.', effects: [{ tag: 'nothing' }] },
+  ] }, decisions: {}, dieRolls: { [actor.id]: [1] }, pendingRolls: { [actor.id]: [1] }, pendingDecisions: { [actor.id]: { optionIds: ['reach_inside'] } } }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Leave\]/ }).waitFor()
+const scrapRepeatShape = {
+  options: await page.locator('.event-options button').count(),
+  genericConfirm: await page.getByRole('button', { name: /Confirm choice/ }).count(),
+}
+await page.getByRole('button', { name: /\[Leave\]/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+check('Scrap Ooze keeps its printed repeat-or-leave decision after a failed roll', () => {
+  assertEqual(scrapRepeatShape.options, 2)
+  assertEqual(scrapRepeatShape.genericConfirm, 0)
+})
+
+await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'event-solo-trade'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'room'
+  run.roomState = { kind: 'event', card: { id: 'note_for_yourself', instanceId: 'browser-note-solo', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'A Note for Yourself', scope: 'player', options: [
+    { id: 'exchange', label: 'Exchange', description: 'Give a player a card in your deck. They give you a card in their deck.', effects: [{ tag: 'trade-card' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: /\[Exchange\]/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+const soloTradeResolver = await page.locator('.event-panel--resolver').count()
+check('an impossible solo Event trade resolves as its engine no-op instead of opening a dead resolver', () => {
+  assertEqual(soloTradeResolver, 0)
+})
+
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'event-source-ui'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 2)
 await page.evaluate(() => {
@@ -2366,11 +2604,12 @@ await page.evaluate(() => {
   debug.setRun(run)
   window.__noteActor = actor.id
 })
+await page.getByRole('button', { name: /\[Exchange\]/ }).click()
 const noteTargetValues = await page.getByLabel('Target player').locator('option').evaluateAll((options) => options.map((option) => option.value))
 const noteActorId = await page.evaluate(() => window.__noteActor)
 await page.locator('.event-cards button').first().click()
-await page.getByLabel('Target player').selectOption('defect')
-const inactiveTradeDisabled = await page.getByRole('button', { name: /\[Exchange\]/ }).isDisabled()
+const inactiveTradeDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
+await page.getByLabel('Target player').selectOption(noteTargetValues.find((value) => value && value !== noteActorId))
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2385,16 +2624,19 @@ await page.evaluate(() => {
   } }
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /\[Skim\]/ }).click()
 const ordinarySources = page.getByRole('group', { name: 'Prismatic Shard · Card Reward · choose 3 reward decks' })
-const rareSources = page.getByRole('group', { name: 'Prismatic Shard · Rare Reward · choose 3 reward decks' })
 await ordinarySources.waitFor()
 const ordinarySourceText = await ordinarySources.textContent()
-const rareSourceText = await rareSources.textContent()
 for (const checkbox of await ordinarySources.getByRole('checkbox').all().then((boxes) => boxes.slice(0, 3))) await checkbox.check()
-const skimEnabledWithOrdinarySources = await page.getByRole('button', { name: /\[Skim\]/ }).isEnabled()
-const takeDisabledWithoutRareSources = await page.getByRole('button', { name: /\[Take\]/ }).isDisabled()
+const skimEnabledWithOrdinarySources = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+await page.getByRole('button', { name: 'Back to choices' }).click()
+await page.getByRole('button', { name: /\[Take\]/ }).click()
+const rareSources = page.getByRole('group', { name: 'Prismatic Shard · Rare Reward · choose 3 reward decks' })
+const rareSourceText = await rareSources.textContent()
+const takeDisabledWithoutRareSources = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 for (const checkbox of await rareSources.getByRole('checkbox').all()) await checkbox.check()
-const takeEnabledWithRareSources = await page.getByRole('button', { name: /\[Take\]/ }).isEnabled()
+const takeEnabledWithRareSources = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await page.screenshot({ path: join(outDir, 'event-prismatic-mixed.png'), fullPage: true })
 
 await page.evaluate(() => {
@@ -2406,9 +2648,9 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: { card: ['ironclad', 'silent', 'defect', 'watcher'], rare: [] } }
   debug.setRun(run)
 })
+await page.getByRole('button', { name: /\[Success\?\]/ }).click()
 const skullSources = page.getByRole('group', { name: 'Prismatic Shard · Card Reward · choose 3 reward decks' })
 for (const checkbox of (await skullSources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
-await page.getByRole('button', { name: /\[Success\?\]/ }).click()
 const skullConfirm = page.getByRole('button', { name: 'Confirm chosen questions →' })
 const skullConfirmReady = await skullConfirm.isEnabled()
 await skullSources.getByRole('checkbox').first().uncheck()
@@ -2437,6 +2679,22 @@ const exhaustedPrismaticEvent = {
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  run.players[0] = {
+    ...run.players[0],
+    gold: 3,
+    deck: run.players[0].deck.map((card) => ({ ...card, upgraded: true })),
+  }
+  run.roomState = { kind: 'event', card: { id: 'the_cleric', instanceId: 'browser-cleric-no-upgrade', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Cleric', scope: 'player', options: [
+    { id: 'prayer', label: 'Prayer', description: 'Pay 2 Gold. Upgrade a card.', effects: [{ tag: 'pay-gold', amount: 2 }, { tag: 'upgrade-card' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+const impossiblePrayerDisabled = await page.getByRole('button', { name: /\[Prayer\]/ }).isDisabled()
+const impossiblePrayerEscape = await page.getByRole('button', { name: /No legal choice/ }).isVisible()
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   run.roomState = { kind: 'event', card: { id: 'designer', instanceId: 'browser-focus-enabled', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Designer In-Spire', scope: 'player', options: [
     { id: 'pay', label: 'Pay', description: 'Pay 2 Gold.', effects: [{ tag: 'pay-gold', amount: 2 }] },
@@ -2456,12 +2714,16 @@ check('Event source and focus controls expose only legal actions', () => {
   assert(skullConfirmReady && skullConfirmRevalidated, 'Knowing Skull Confirm ignored its selected Prismatic reward requirements')
   assert(exhaustedPrismaticEvent.normalDisabled && exhaustedPrismaticEvent.rareDisabled && exhaustedPrismaticEvent.escapeVisible,
     'exhausted Prismatic Event rewards hid the no-legal-choice escape')
+  assert(impossiblePrayerDisabled && impossiblePrayerEscape,
+    'The Cleric enabled an upgrade choice that the engine would reject')
   assert(focusedLegalEventOption.includes('[Punch!]'), 'Event did not focus its first enabled option')
 })
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  const strike = run.players[0].deck.find((card) => card.defId.startsWith('strike_'))
+  if (strike) strike.upgraded = false
   run.roomState = { kind: 'event', card: { id: 'big_fish', instanceId: 'browser-live-focus', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Big Fish', scope: 'player', rule: 'Each player chooses a different option.', options: [
     { id: 'banana', label: 'Banana', description: 'Heal 2 HP.', effects: [{ tag: 'heal', amount: 2 }] },
     { id: 'donut', label: 'Donut', description: 'Upgrade a starter Strike.', effects: [{ tag: 'upgrade-card', filter: 'starter Strike' }] },
@@ -2478,7 +2740,39 @@ await page.evaluate(() => {
 })
 await page.waitForFunction(() => document.activeElement?.textContent?.includes('[Donut]'))
 const liveEventFocus = await page.evaluate(() => document.activeElement?.textContent ?? '')
-check('Event focus moves when a teammate claims the focused unique option', () => assert(liveEventFocus.includes('[Donut]')))
+await page.getByRole('button', { name: /\[Donut\]/ }).click()
+await page.locator('.event-cards--deck .card').first().click()
+const liveEventConfirmBeforeClaim = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+const focusedSelectionBeforeClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const teammate = run.players[1]
+  run.roomState.decisions[teammate.id] = { optionIds: ['donut'] }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.event-resolve-actions .room-proceed')?.disabled === true)
+const liveEventConfirmAfterClaim = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
+const focusedSelectionAfterClaim = await page.evaluate(() => document.activeElement?.matches('.event-cards--deck .card[aria-pressed="true"]'))
+check('Event focus and an open resolver react when a teammate claims a unique option', () => {
+  assert(liveEventFocus.includes('[Donut]'))
+  assert(liveEventConfirmBeforeClaim)
+  assert(liveEventConfirmAfterClaim)
+  assert(focusedSelectionBeforeClaim && focusedSelectionAfterClaim, 'a teammate update stole focus from the active Event selection')
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.roomState = { kind: 'event', card: { id: 'focus_reuse', instanceId: 'browser-focus-new-instance', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Fresh Event', scope: 'player', options: [
+    { id: 'leave', label: 'Leave', description: 'Nothing happens.', effects: [{ tag: 'nothing' }] },
+    { id: 'donut', label: 'Donut', description: 'Nothing happens.', effects: [{ tag: 'nothing' }] },
+  ] }, decisions: {}, dieRolls: {} }
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.activeElement?.getAttribute('data-event-option') === 'leave')
+const freshEventFocus = await page.evaluate(() => document.activeElement?.getAttribute('data-event-option'))
+check('a new Event instance forgets the prior Event’s originating option', () => assertEqual(freshEventFocus, 'leave'))
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2500,9 +2794,9 @@ await page.evaluate(() => {
   run.roomState.pendingRolls = { [run.players[0].id]: [3] }
   debug.setRun(run)
 })
-await page.waitForFunction(() => document.activeElement?.textContent?.includes('[Spin]'))
+await page.getByRole('button', { name: /Confirm choice/ }).waitFor()
 await page.locator('.event-cards button').first().click()
-await page.getByRole('button', { name: /\[Spin\]/ }).click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => {
   const run = window.__STS_DEBUG__.getRun()
   const actor = run.players.find((player) => player.id === window.__wheelActor)
@@ -2522,7 +2816,6 @@ await page.evaluate(() => {
   run.roomState = { kind: 'event', card: { id: 'old_beggar', instanceId: 'browser-no-choice', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Old Beggar', scope: 'player', options: [{ id: 'give', label: 'Give', description: 'Pay 2 Gold. Remove a card.', effects: [{ tag: 'pay-gold', amount: 2 }, { tag: 'remove-card' }] }] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-await page.locator('.event-cards button').first().click()
 const unaffordableEventOptionDisabled = await page.getByRole('button', { name: /\[Give\]/ }).isDisabled()
 const noChoicePlayerIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().players.filter((player) => !player.dead).map((player) => player.id))
 for (const [index, playerId] of noChoicePlayerIds.entries()) {
@@ -3540,14 +3833,17 @@ liveRoom.run.roomState = {
 }
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
+await ann.getByRole('button', { name: /\[Skim\]/ }).click()
 const onlineOrdinarySources = ann.getByRole('group', { name: 'Prismatic Shard · Card Reward · choose 3 reward decks' })
-const onlineRareSources = ann.getByRole('group', { name: 'Prismatic Shard · Rare Reward · choose 3 reward decks' })
 await onlineOrdinarySources.waitFor()
 for (const checkbox of (await onlineOrdinarySources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
-const onlineSkimEnabled = await ann.getByRole('button', { name: /\[Skim\]/ }).isEnabled()
-const onlineTakeDisabled = await ann.getByRole('button', { name: /\[Take\]/ }).isDisabled()
+const onlineSkimEnabled = await ann.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+await ann.getByRole('button', { name: 'Back to choices' }).click()
+await ann.getByRole('button', { name: /\[Take\]/ }).click()
+const onlineRareSources = ann.getByRole('group', { name: 'Prismatic Shard · Rare Reward · choose 3 reward decks' })
+const onlineTakeDisabled = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 for (const checkbox of (await onlineRareSources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
-const onlineTakeEnabled = await ann.getByRole('button', { name: /\[Take\]/ }).isEnabled()
+const onlineTakeEnabled = await ann.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 check('online Event snapshots preserve option-specific Prismatic source inventories', () => {
   assert(onlineSkimEnabled && onlineTakeDisabled && onlineTakeEnabled)
 })
@@ -3562,10 +3858,10 @@ liveRoom.run.roomState = {
 }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
+await ann.getByRole('button', { name: /\[Success\?\]/ }).click()
 const onlineSkullSources = ann.getByRole('group', { name: 'Prismatic Shard · Card Reward · choose 3 reward decks' })
 await onlineSkullSources.waitFor()
 for (const checkbox of (await onlineSkullSources.getByRole('checkbox').all()).slice(0, 3)) await checkbox.check()
-await ann.getByRole('button', { name: /\[Success\?\]/ }).click()
 const onlineSkullConfirm = ann.getByRole('button', { name: 'Confirm chosen questions →' })
 assert(await onlineSkullConfirm.isEnabled(), 'online Knowing Skull fixture did not reach a valid Prismatic choice')
 liveRoom.run.roomState.availableRewardSources.card = ['silent', 'defect', 'watcher']
@@ -3611,12 +3907,13 @@ liveRoom.run.roomState = {
   kind: 'event', card: { id: 'big_fish', instanceId: 'browser-online-big-fish', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Big Fish', scope: 'player', rule: 'Each player chooses a different option.', options: [
     { id: 'banana', label: 'Banana', description: 'Heal 2 HP.', effects: [{ tag: 'heal', amount: 2 }] },
     { id: 'donut', label: 'Donut', description: 'Upgrade a starter Strike.', effects: [{ tag: 'upgrade-card', filter: 'starter Strike' }] },
-  ] }, decisions: { [onlineSeats[0].playerId]: { optionIds: ['banana'] } }, dieRolls: {},
+    { id: 'box', label: 'Box', description: 'Gain a Relic.', effects: [{ tag: 'gain-relic' }] },
+  ] }, decisions: {}, pendingDecisions: { [onlineSeats[0].playerId]: { optionIds: ['box'] } }, dieRolls: {},
 }
 liveRoom.version += 1
 await bo.reload({ waitUntil: 'networkidle' })
-const reconnectBigFishDisabled = await bo.getByRole('button', { name: /\[Banana\]/ }).isDisabled()
-check('Big Fish unique choices remain disabled for teammates after reconnect', () => assert(reconnectBigFishDisabled))
+const reconnectBigFishDisabled = await bo.getByRole('button', { name: /\[Box\]/ }).isDisabled()
+check('staged Big Fish choices remain disabled for teammates after reconnect redaction', () => assert(reconnectBigFishDisabled))
 
 liveRoom.run.phase = 'room'
 liveRoom.run.roomState = {
@@ -3627,14 +3924,18 @@ liveRoom.run.roomState = {
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
 const transformedUid = liveRoom.run.players[0].deck[0].uid
-await ann.locator('.event-cards button').first().click()
 await ann.getByRole('button', { name: /\[Pray\]/ }).click()
+await ann.locator('.event-cards button').first().click()
+await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('status').filter({ hasText: 'Your choice is locked' }).waitFor()
+const lockedEventActions = await ann.locator('.event-resolve-actions button').count()
 check('online Transform uses the owner’s public reward count without exposing its deck', () => {
   assert(!liveRoom.run.players[0].deck.some((card) => card.uid === transformedUid))
+  assertEqual(lockedEventActions, 0, 'a locked Event decision kept mutable resolver actions')
 })
 
 const tradeCard = liveRoom.run.players[0].deck[0]
+liveRoom.run.players[2].deck = [{ ...liveRoom.run.players[2].deck[0], defId: 'ascenders_bane', uid: 'browser-bane-only-trade-target' }]
 liveRoom.run.phase = 'room'
 liveRoom.run.roomState = {
   kind: 'event', card: { id: 'note_for_yourself', instanceId: 'browser-online-trade-start', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'A Note for Yourself', scope: 'player', options: [
@@ -3643,14 +3944,20 @@ liveRoom.run.roomState = {
 }
 liveRoom.version += 1
 await ann.reload({ waitUntil: 'networkidle' })
-await ann.locator('.event-cards button').first().click()
-const targetlessTradeDisabled = await ann.getByRole('button', { name: /\[Exchange\]/ }).isDisabled()
-await ann.getByLabel('Target player').selectOption(onlineSeats[1].playerId)
 await ann.getByRole('button', { name: /\[Exchange\]/ }).click()
+await ann.locator('.event-cards button').first().click()
+const targetlessTradeDisabled = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
+const onlineTradeTargets = await ann.getByLabel('Target player').locator('option').evaluateAll((options) => options.map((option) => option.value))
+await ann.getByLabel('Target player').selectOption(onlineSeats[1].playerId)
+await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('status').filter({ hasText: 'Exchange pending' }).waitFor()
+await bo.waitForFunction(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+const tradeResolverFocused = await bo.evaluate(() => document.querySelector('.event-panel--resolver')?.contains(document.activeElement))
+check('the receiving player’s Event trade resolver receives keyboard focus', () => assert(tradeResolverFocused))
 await ann.screenshot({ path: join(outDir, 'event-online-trade-initiation.png'), fullPage: true })
 check('online Note trade uses teammate public deck count and stages server authority', () => {
   assert(targetlessTradeDisabled, 'Note exchange enabled before its target was chosen')
+  assert(!onlineTradeTargets.includes(onlineSeats[2].playerId), 'Note exchange offered a teammate whose only card was Ascender’s Bane')
   assertEqual(liveRoom.run.roomState.pendingTrade.actorId, onlineSeats[0].playerId)
   assertEqual(liveRoom.run.roomState.pendingTrade.targetId, onlineSeats[1].playerId)
   assertEqual(liveRoom.run.roomState.pendingTrade.offeredId, tradeCard.defId)
@@ -3733,6 +4040,56 @@ liveRoom.run.players[0] = { ...liveRoom.run.players[0], relics: liveRoom.run.pla
 liveRoom.run.combat.players[0] = { ...liveRoom.run.combat.players[0], relics: liveRoom.run.combat.players[0].relics.filter((relic) => relic.defId !== 'sozu') }
 liveRoom.run.courier = { ...liveRoom.run.courier, offer: null }
 
+liveRoom.run.phase = 'room'
+liveRoom.run.players = liveRoom.run.players.map((player) => ({
+  ...player,
+  gold: 3,
+  deck: player.deck.map((card) => ({ ...card, upgraded: !card.defId.startsWith('strike_') })),
+}))
+liveRoom.run.roomState = {
+  kind: 'event', card: { id: 'the_cleric', instanceId: 'browser-online-cleric-race', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Cleric', scope: 'player', options: [
+    { id: 'prayer', label: 'Prayer', description: 'Pay 2 Gold. Upgrade a card.', effects: [{ tag: 'pay-gold', amount: 2 }, { tag: 'upgrade-card' }] },
+  ] }, decisions: {}, dieRolls: {},
+}
+liveRoom.version += 1
+rooms.publishRoom(liveRoom.code)
+await ann.getByRole('button', { name: /\[Prayer\]/ }).click()
+await ann.locator('.event-cards--deck .card').first().click()
+const onlinePrayerInitiallyReady = await ann.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+liveRoom.run.players = liveRoom.run.players.map((player) => ({ ...player, gold: 0 }))
+liveRoom.version += 1
+rooms.publishRoom(liveRoom.code)
+await ann.getByRole('button', { name: /Confirm choice/ }).waitFor({ state: 'visible' })
+await ann.waitForFunction(() => document.querySelector('.event-resolve-actions .room-proceed')?.disabled === true)
+const onlinePrayerInvalidated = await ann.getByRole('button', { name: /Confirm choice/ }).isDisabled()
+check('an open online Event resolver disables when authoritative availability changes', () => {
+  assert(onlinePrayerInitiallyReady && onlinePrayerInvalidated)
+})
+
+liveRoom.run.itemDecks.potions = ['swift_potion']
+liveRoom.run.roomState = {
+  kind: 'event', card: { id: 'knowing_skull', instanceId: 'browser-online-skull-race', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Knowing Skull', scope: 'player', rule: 'Choose one or two options.', options: [
+    { id: 'pick_me_up', label: 'Pick Me Up?', description: 'Gain a Potion. Lose 1 HP.', effects: [{ tag: 'gain-potion' }, { tag: 'lose-hp', amount: 1 }] },
+    { id: 'riches', label: 'Riches?', description: 'Gain 3 Gold. Lose 1 HP.', effects: [{ tag: 'gain-gold', amount: 3 }, { tag: 'lose-hp', amount: 1 }] },
+  ] }, decisions: {}, dieRolls: {},
+}
+liveRoom.version += 1
+rooms.publishRoom(liveRoom.code)
+const pickMeUp = ann.getByRole('button', { name: /\[Pick Me Up\?\]/ })
+await pickMeUp.click()
+liveRoom.run.itemDecks.potions = []
+liveRoom.version += 1
+rooms.publishRoom(liveRoom.code)
+await ann.waitForFunction(() => document.querySelector('.room-proceed')?.disabled === true)
+const staleSkullChoiceRemovable = await pickMeUp.isEnabled()
+const staleSkullConfirmDisabled = await ann.getByRole('button', { name: 'Confirm chosen questions →' }).isDisabled()
+await pickMeUp.click()
+const staleSkullChoiceRemoved = await pickMeUp.getAttribute('aria-pressed')
+check('Knowing Skull keeps a newly unavailable selection removable and blocks stale confirmation', () => {
+  assert(staleSkullChoiceRemovable && staleSkullConfirmDisabled)
+  assertEqual(staleSkullChoiceRemoved, 'false')
+})
+
 liveRoom.eventPledge = undefined
 liveRoom.run.phase = 'room'
 liveRoom.run.players = liveRoom.run.players.map((player, index) => ({ ...player, gold: index === 2 || index === 3 ? 1 : 0 }))
@@ -3746,8 +4103,9 @@ await ann.reload({ waitUntil: 'networkidle' })
 await ann.getByRole('heading', { name: 'Old Beggar' }).waitFor()
 const removedUid = liveRoom.run.players[0].deck[0].uid
 const deckSize = liveRoom.run.players[0].deck.length
-await ann.locator('.event-cards button').first().click()
 await ann.getByRole('button', { name: /\[Give\]/ }).click()
+await ann.locator('.event-cards button').first().click()
+await ann.getByRole('button', { name: /Confirm choice/ }).click()
 await ann.getByRole('button', { name: 'Cancel payment' }).waitFor()
 const di = onlinePages[3]
 await di.getByRole('heading', { name: 'Old Beggar' }).waitFor()
@@ -3757,6 +4115,7 @@ await di.locator('.connection--connected').waitFor()
 await di.setViewportSize({ width: 1280, height: 800 })
 await di.getByRole('button', { name: /Contribute/ }).waitFor()
 const contributorSnapshot = await fetch(`${roomOrigin}/api/rooms/${create.snapshot.code}`, { headers: { 'x-room-token': onlineSeats[3].token } }).then((response) => response.json())
+if (await di.locator('.card-morph').count()) await di.locator('.card-morph').waitFor({ state: 'detached' })
 await di.screenshot({ path: join(outDir, 'event-funded-4p-reconnect-compact-desktop.png'), fullPage: true })
 await di.getByRole('button', { name: /Contribute/ }).click()
 await di.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Contribute') && button.disabled))
@@ -3831,12 +4190,13 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Secret Portal' }).waitFor()
+await page.getByRole('button', { name: /Enter the Portal/ }).click()
 const forward = page.getByLabel('Forward room')
 assert((await forward.locator('option').count()) > 1, 'Secret Portal did not list higher rooms')
-const targetlessPortalDisabled = await page.getByRole('button', { name: /Enter the Portal/ }).isDisabled()
+const targetlessPortalDisabled = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await forward.selectOption({ index: 1 })
 const destination = await forward.inputValue()
-await page.getByRole('button', { name: /Enter the Portal/ }).click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction((roomId) => window.__STS_DEBUG__.getRun().map.position === roomId, destination)
 const internalIdInputs = await page.locator('input[placeholder="Room id"]').count()
 check('Secret Portal exposes and enters labeled higher rooms without internal IDs', () => {
@@ -3923,6 +4283,35 @@ check('local reload rebuilds the pending run when Act IV unlocks', () => {
   assertEqual(actIVRun.campaignProgress.actIV, 5)
   assert(Object.values(actIVRun.map.rooms).some((room) => room.burning), 'Act IV unlock did not add a Burning Elite')
   assert(actIVMapContained, 'Act IV campaign map overflowed its viewport')
+})
+
+await page.setViewportSize({ width: 1100, height: 760 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'victory'
+  run.act = 3
+  run.neow = null
+  run.roomState = null
+  run.campaign.finalized = false
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'Act 3 complete' }).waitFor()
+const summaryDensity = await page.evaluate(() => ({
+  scrolls: document.documentElement.scrollHeight > innerHeight + 1,
+  roomBackground: getComputedStyle(document.querySelector('.room-screen')).backgroundImage,
+  tallies: [...document.querySelectorAll('.run-summary__tallies > div')].map((item) => ({
+    background: getComputedStyle(item).backgroundImage,
+    shadow: getComputedStyle(item).boxShadow,
+  })),
+  seats: [...document.querySelectorAll('.run-summary__seat')].map((item) => getComputedStyle(item).backgroundImage),
+}))
+await page.screenshot({ path: join(outDir, 'run-summary-borderless.png'), fullPage: true })
+check('run completion keeps facts and players out of nested cards', () => {
+  assertEqual(summaryDensity.scrolls, false, 'run completion needs a page scroll')
+  assertEqual(summaryDensity.roomBackground, 'none')
+  assert(summaryDensity.tallies.every((item) => item.background === 'none' && item.shadow === 'none'))
+  assert(summaryDensity.seats.every((background) => background === 'none'))
 })
 
 writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ failures }, null, 2))

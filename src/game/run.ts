@@ -77,7 +77,7 @@ export {
   removeAtCurrentMerchant,
   revealCourier,
 } from './run/merchant.ts'
-export { canSkipEvent, chooseEvent, skipEvent } from './run/events.ts'
+export { canSkipEvent, chooseEvent, skipEvent, unavailableEventOptionIds } from './run/events.ts'
 export { resolveCampfire } from './run/campfire.ts'
 export { pendingRelicPreview, resolvePendingRelic } from './run/relic-acquisition.ts'
 export { healingCapFor } from './acquisition.ts'

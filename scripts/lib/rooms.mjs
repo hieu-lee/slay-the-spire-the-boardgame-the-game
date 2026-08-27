@@ -34,6 +34,7 @@ import {
   cardNeedsEnemy,
   cardShivChoiceCount,
   canSkipEvent,
+  unavailableEventOptionIds,
   beginEndPlayerTurn,
   REBUILT_END_TURN_ORDER,
   STALE_END_TURN_ORDER,
@@ -2645,6 +2646,7 @@ export function snapshotFor(room, seatToken) {
         : { optionIds: [room.eventPledge.optionId] },
     } : undefined,
     eventCanSkip: viewerId !== null && run ? canSkipEvent(run, viewerId) : false,
+    unavailableEventOptionIds: viewerId !== null && run ? unavailableEventOptionIds(run, viewerId) : [],
     giveUpVote: giveUpVote && viewerId && giveUpVote.eligiblePlayerIds.includes(viewerId) ? {
       ...structuredClone(giveUpVote),
       remainingMs: Math.max(0, giveUpVote.deadlineAt - Date.now()),
@@ -2948,6 +2950,7 @@ function redactPlayer(player, viewerId) {
     handCount: player.hand.length,
     drawCount: player.draw.length,
     deckCount: player.deck.length,
+    tradableDeckCount: player.deck.filter((card) => card.defId !== 'ascenders_bane').length,
     // Face-down reward stacks, secret even from their owner until drawn.
     cardRewardCount: player.cardRewards.length,
     rareRewardCount: player.rareRewards.length,

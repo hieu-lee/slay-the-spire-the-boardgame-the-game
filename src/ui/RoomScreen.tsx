@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CARDS } from "../game/cards.ts";
 import { assetPath } from "../game/assets.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
@@ -44,6 +44,7 @@ type Props = {
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision };
   onCancelEventPayment?: () => void;
   eventCanSkip?: boolean;
+  unavailableEventOptionIds?: string[];
   onSkipEvent?: (playerId: string) => void;
   /** Arms the next deck change to play as a reveal, for a card gained without ever being shown (a random card/rare reward). */
   onArmCardGain?: () => void;
@@ -64,7 +65,7 @@ type PropsPledgeMap = Record<
 >;
 
 type EventCardSlot = (card: Player["deck"][number]) => boolean;
-type PublicPlayerCounts = { cardRewardCount?: number; deckCount?: number };
+type PublicPlayerCounts = { cardRewardCount?: number; tradableDeckCount?: number };
 
 const hasSozu = (player: Player) => player.relics.some((relic) => relic.defId === "sozu");
 
@@ -81,7 +82,7 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
       if (card.defId === "ascenders_bane") return false;
       if (effect.tag === "upgrade-card" && (card.upgraded || !def?.upgrade)) return false;
       if (effect.tag === "transform-card" && (def?.owner === "curse" || (player.cardRewards.length === 0 && ((player as PublicPlayerCounts).cardRewardCount ?? 0) === 0))) return false;
-      if (effect.tag === "trade-card" && !players.some((candidate) => candidate.id !== player.id && !candidate.dead && (candidate.deck.some((entry) => entry.defId !== "ascenders_bane") || ((candidate as PublicPlayerCounts).deckCount ?? 0) > 0))) return false;
+      if (effect.tag === "trade-card" && !players.some((candidate) => candidate.id !== player.id && !candidate.dead && (candidate.deck.some((entry) => entry.defId !== "ascenders_bane") || ((candidate as PublicPlayerCounts).tradableDeckCount ?? 0) > 0))) return false;
       if (effect.filter === "starter Strike") return def?.rarity === "starter" && def.name === "Strike";
       if (effect.filter === "rare or uncommon") return ["rare", "uncommon"].includes(def?.rarity ?? "");
       return true;
@@ -684,6 +685,7 @@ function EventScreen({
   onWithdraw,
   onCancelEventPayment,
   eventCanSkip = false,
+  unavailableEventOptionIds = [],
   onSkipEvent,
   onArmCardGain,
 }: Props & { room: Extract<Props["room"], { kind: "event" }> }) {
@@ -708,7 +710,9 @@ function EventScreen({
   const [rareRewardSources, setRareRewardSources] = useState<RewardSource[]>([]);
   const focusedEvent = useRef("");
   const focusedEventOption = useRef<HTMLButtonElement | null>(null);
+  const focusedEventOptionId = useRef("");
   const eventOptions = useRef<HTMLDivElement>(null);
+  const eventResolver = useRef<HTMLDivElement>(null);
   // The Compendium overlay can replay effects; only a real Event-stage change clears its draft.
   const draftStages = useRef<Record<string, string>>({});
   const rewardOffers = room.rewardOffers?.[player.id];
@@ -716,6 +720,9 @@ function EventScreen({
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
   const pendingDecision = room.pendingDecisions?.[player.id];
+  const decided = room.decisions[player.id];
+  const draftOptionIds = decided ? [] : pendingDecision?.optionIds ?? selectedOptions;
+  const selectionOpen = draftOptionIds.length > 0;
   const itemOfferStage = JSON.stringify([itemOffers, pendingDecision?.rewardItemIds?.length ?? 0]);
   const rewardOfferStage = JSON.stringify([rewardOffers, pendingDecision?.rewardIndexes?.length ?? 0]);
   const [rewardIndexes, setRewardIndexes] = useState<number[]>(() =>
@@ -725,6 +732,9 @@ function EventScreen({
   useEffect(() => {
     if (draftStages.current.event === eventDraftStage) return;
     draftStages.current.event = eventDraftStage;
+    focusedEvent.current = "";
+    focusedEventOption.current = null;
+    focusedEventOptionId.current = "";
     setCards([]);
     setRelicId("");
     setPotionIndexes([]);
@@ -752,25 +762,42 @@ function EventScreen({
     setRewardIndexes(Array(rewardOffers?.length ?? 0).fill(-2));
   }, [rewardDraftStage]);
   const pendingDie = room.pendingRolls?.[player.id]?.at(-1);
+  const repeatScrap = room.card.id === "scrap_ooze" && Boolean(pendingDecision) && (pendingDie ?? 3) <= 2;
+  const resolverOpen = selectionOpen && !repeatScrap;
+  const focusResolverOpen = resolverOpen || Boolean(pendingTrade || itemOffers || rewardOffers);
   const eventStage = `${room.card.instanceId}/${player.id}/${pendingDie ?? ""}/${JSON.stringify(pendingDecision ?? null)}`;
   useEffect(() => {
-    const button = eventOptions.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+    if (focusResolverOpen) {
+      requestAnimationFrame(() => {
+        const resolver = eventResolver.current;
+        if (!resolver || resolver.contains(document.activeElement)) return;
+        resolver.querySelector<HTMLElement>(
+          '[role="button"]:not([aria-disabled="true"]), button:not(:disabled), select:not(:disabled), input:not(:disabled)',
+        )?.focus();
+      });
+      return;
+    }
+    const buttons = [...(eventOptions.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
+    const button = buttons.find((candidate) => candidate.dataset.eventOption === focusedEventOptionId.current) ?? buttons[0];
     if (!button) return;
     const stageChanged = focusedEvent.current !== eventStage;
     const focusedDisabled = Boolean(focusedEventOption.current?.disabled) &&
       (document.activeElement === focusedEventOption.current || document.activeElement === document.body);
-    if (!stageChanged && !focusedDisabled) return;
+    const focusMissing = !focusedEventOption.current?.isConnected || document.activeElement === document.body;
+    if (!stageChanged && !focusedDisabled && !focusMissing) return;
     focusedEvent.current = eventStage;
     requestAnimationFrame(() => {
       button.focus();
       focusedEventOption.current = button;
     });
-  }, [eventStage, room.decisions]);
+  }, [eventStage, room.decisions, focusResolverOpen]);
   const activeEffects = (effects: readonly EventEffect[]): EventEffect[] => effects.flatMap((effect) => [
     effect,
     ...(effect.tag === "roll-d6" && pendingDie ? activeEffects(effect.results?.[pendingDie as 1 | 2 | 3 | 4 | 5 | 6] ?? []) : []),
   ]);
-  const effects = room.card.options.flatMap((choice) => activeEffects(choice.effects));
+  const effects = draftOptionIds.flatMap((id) =>
+    activeEffects(room.card.options.find((choice) => choice.id === id)?.effects ?? []),
+  );
   const hasPrismaticShard = player.relics.some((relic) => relic.defId === "prismatic_shard");
   const hasPrismaticCardReward = effects.some((effect) =>
     effect.tag === "card-reward" && effect.source !== "colorless" && effect.source !== "rare" && !effect.random,
@@ -794,9 +821,7 @@ function EventScreen({
     draftStages.current.rareSources = rareSourcesDraftStage;
     setRareRewardSources([]);
   }, [rareSourcesDraftStage]);
-  const selectedChoiceEffects = selectedOptions.flatMap((id) =>
-    activeEffects(room.card.options.find((choice) => choice.id === id)?.effects ?? []),
-  );
+  const selectedChoiceEffects = effects;
   const selectedPrismaticReward = hasPrismaticShard && selectedChoiceEffects.some((effect) =>
     (effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source !== "colorless") && !effect.random,
   );
@@ -804,6 +829,11 @@ function EventScreen({
     effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source === "rare",
   );
   const trade = effects.some((effect) => effect.tag === "trade-card" || effect.tag === "trade-relic");
+  const tradeCard = effects.some((effect) => effect.tag === "trade-card");
+  const tradeRelic = effects.some((effect) => effect.tag === "trade-relic");
+  const canTradeWith = (candidate: Player) => candidate.id !== player.id && !candidate.dead &&
+    (!tradeCard || candidate.deck.some((card) => card.defId !== "ascenders_bane") || ((candidate as PublicPlayerCounts).tradableDeckCount ?? 0) > 0) &&
+    (!tradeRelic || candidate.relics.length > 0);
   const otherCharacter = effects.some((effect) => effect.source === "other-character");
   const needsTarget = effects.some(
     (effect) =>
@@ -814,7 +844,7 @@ function EventScreen({
   );
   const needsRelic = effects.some(
     (effect) =>
-      effect.tag === "lose-relic" ||
+      effect.tag === "lose-relic" && !effect.random && (room.card.id !== "face_trader" || Boolean(pendingDecision)) ||
       effect.tag === "trade-relic" ||
       effect.filter?.includes("Relic"),
   );
@@ -822,33 +852,32 @@ function EventScreen({
   // Mirrors how event-room.ts resolves `relic-cost`, so the number on the option
   // is the gold the player will actually receive.
   //
-  // ponytail: card-scoped, like `needsRelic` above — `effects` is every option's
-  // effects, not the chosen one's. The Moai Head is the only card in the game
-  // that pays by relic cost, and its other option touches no relic, so the two
-  // cannot disagree today. A card offering "lose a relic for gold" alongside a
-  // plain "lose a relic" would need this narrowed to the selected option.
   const paysRelicCost = effects.some(
     (effect) => effect.tag === "gain-gold" && effect.amount === "relic-cost",
   );
   const needsPotion = effects.some(
     (effect) => effect.tag === "lose-potion" || effect.filter?.includes("Potion"),
   );
-  const maximumPotions = Math.max(0, ...room.card.options.map((choice) => activeEffects(choice.effects)
-    .filter((effect) => effect.tag === "lose-potion" || effect.tag === "pay-gold" && effect.filter?.includes("Potion")).length));
-  const maximumCards = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...room.card.options.map((choice) =>
-          eventCardSlots(choice.effects, pendingDie, player, players).length,
-        ),
-      ),
-    [room.card, pendingDie, player, players],
-  );
-  const decided = room.decisions[player.id];
+  const maximumPotions = effects.filter((effect) =>
+    effect.tag === "lose-potion" || effect.tag === "pay-gold" && effect.filter?.includes("Potion"),
+  ).length;
+  const draftCardSlots = draftOptionIds.flatMap((id) => eventCardSlots(
+    room.card.options.find((choice) => choice.id === id)?.effects ?? [], pendingDie, player, players,
+  ));
+  const maximumCards = draftCardSlots.length;
+  const effectiveCardUids = pendingDecision?.cardUids?.length ? pendingDecision.cardUids : cards;
+  const effectiveRelicId = pendingDecision?.relicIds?.[0] ?? relicId;
+  const effectivePotionIds = pendingDecision?.potionIds?.length
+    ? pendingDecision.potionIds
+    : potionIndexes.map((index) => player.potions[index]!).filter(Boolean);
+  const effectiveTargetPlayerId = pendingDecision?.targetPlayerId ?? targetPlayerId;
+  const effectiveRoomId = pendingDecision?.roomId ?? roomId;
+  const effectiveRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rewardSources;
+  const effectiveRareRewardSources = pendingDecision?.rewardSources?.length ? pendingDecision.rewardSources : rareRewardSources;
   const selectableCards = player.deck.filter(
     (card) =>
       card.defId !== "ascenders_bane" &&
+      draftCardSlots.some((matches) => matches(card)) &&
       (!room.revealedCards?.[player.id] ||
         room.revealedCards?.[player.id]?.includes(card.uid)),
   );
@@ -860,8 +889,54 @@ function EventScreen({
           ? [...current, uid]
           : current,
     );
+  const clearChoiceDraft = () => {
+    setCards([]);
+    setRelicId("");
+    setPotionIndexes([]);
+    setTargetPlayerId("");
+    setRoomId("");
+    setSelectedOptions([]);
+    setRewardSources([]);
+    setRareRewardSources([]);
+  };
+  const selectedCardsInvalid = room.card.id === "ancient_writing" && draftOptionIds.includes("simplicity")
+    ? draftCardSlots.some((matches) => !effectiveCardUids.some((uid) => {
+        const card = player.deck.find((candidate) => candidate.uid === uid);
+        return Boolean(card && matches(card));
+      }))
+    : effectiveCardUids.some((uid, cardIndex) => {
+        const card = player.deck.find((candidate) => candidate.uid === uid);
+        return !card || !draftCardSlots[cardIndex]?.(card);
+      });
+  const selectedMissingTarget = needsTarget && (!effectiveTargetPlayerId ||
+    (trade && !players.some((candidate) => candidate.id === effectiveTargetPlayerId && canTradeWith(candidate))));
+  const selectedMissingRelic = effects.some((effect, effectIndex) =>
+    effect.tag === "trade-relic" && !effectiveRelicId ||
+    effect.tag === "lose-relic" && (effect.random
+      ? player.relics.length === 0 && !effects.slice(0, effectIndex).some((prior) => prior.tag === "gain-relic")
+      : room.card.id !== "forgotten_altar" && !effectiveRelicId));
+  const requiredPotions = effects.filter((effect) => effect.tag === "lose-potion").length;
+  const selectedMissingPotion = requiredPotions > 0 && effectivePotionIds.length !== requiredPotions;
+  const selectedPrismaticSourcesMissing = selectedPrismaticReward &&
+    (selectedPrismaticRare ? effectiveRareRewardSources.length !== 3 : effectiveRewardSources.length !== 3);
+  const selectedCost = effects.reduce((sum, effect) =>
+    sum + (effect.tag === "pay-gold" && typeof effect.amount === "number" ? effect.amount : 0), 0);
+  const paymentLocked = Boolean(pendingDecision && room.pendingRolls?.[player.id] &&
+    draftOptionIds.every((id) => pendingDecision.optionIds.includes(id)));
+  const selectedItemPayment = effects.some((effect) => effect.filter?.includes("or lose one Relic or Potion")) &&
+    (Boolean(effectiveRelicId) || effectivePotionIds.length > 0);
+  const selectedUnaffordable = !paymentLocked && !selectedItemPayment && selectedCost >
+    players.filter((candidate) => !candidate.dead).reduce((sum, candidate) => sum + candidate.gold, 0);
+  const selectedOptionInvalidated = room.card.id === "big_fish" && draftOptionIds.some((id) =>
+    Object.entries({ ...room.decisions, ...room.pendingDecisions })
+      .some(([playerId, decision]) => playerId !== player.id && decision.optionIds.includes(id)));
+  const selectedOptionUnavailable = draftOptionIds.some((id) =>
+    unavailableEventOptionIds.includes(id) || Boolean(room.partyOptionIds && !room.partyOptionIds.includes(id)));
+  const selectionReady = effectiveCardUids.length === maximumCards && !selectedCardsInvalid && !selectedMissingTarget &&
+    !selectedMissingRelic && !selectedMissingPotion && !selectedPrismaticSourcesMissing && !selectedUnaffordable &&
+    !selectedOptionInvalidated && !selectedOptionUnavailable && (room.card.id !== "secret_portal" || Boolean(effectiveRoomId));
   const paymentFor = (optionIds: string[]) => {
-    if (pendingDecision && room.pendingRolls?.[player.id] && optionIds.every((id) => pendingDecision.optionIds.includes(id))) return undefined;
+    if (paymentLocked && optionIds.every((id) => pendingDecision?.optionIds.includes(id))) return undefined;
     const effects = optionIds.flatMap((id) => room.card.options.find((candidate) => candidate.id === id)?.effects ?? []);
     const cost = effects.reduce((sum, effect) => sum + (effect.tag === "pay-gold" && typeof effect.amount === "number" ? effect.amount : 0), 0);
     if (cost === 0 || (effects.some((effect) => effect.filter?.includes("or lose one Relic or Potion")) && (relicId || potionIndexes.length))) return undefined;
@@ -896,7 +971,7 @@ function EventScreen({
   }
   if (pendingTrade) {
     const isTarget = pendingTrade.targetId === player.id;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel">
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver">
       <div className="room-banner"><span>Event exchange</span><h2 id="event-title">{room.card.name}</h2>
         <p>{isTarget ? `${players.find((candidate) => candidate.id === pendingTrade.actorId)?.name ?? "A teammate"} offers ${pendingTrade.kind === "card" ? CARDS[pendingTrade.offeredId]?.name : relicDef(pendingTrade.offeredId).name}. Choose what to give back.` : "Waiting for your teammate to choose what they give back."}</p>
       </div>
@@ -954,7 +1029,7 @@ function EventScreen({
     const effectiveRelic = pending?.relicIds?.[0] ?? relicId;
     const effectiveTarget = pending?.targetPlayerId ?? targetPlayerId;
     let potionIndex = -1;
-    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div className="event-panel"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title"><div ref={eventResolver} className="event-panel event-panel--resolver"><div className="room-banner"><span>Event reward</span><h2 id="event-title">{room.card.name}</h2><p>These rewards are face-up. Choose each one, then resolve the Event.</p></div>{pendingCards > 0 ? <fieldset className="event-cards event-cards--deck"><legend>Locked Event cards</legend>{selectableCards.map((card) => <Card key={card.uid} card={card} playable={!pending?.cardUids} selected={effectiveCards.includes(card.uid)} onClick={() => toggle(card.uid)} />)}</fieldset> : null}{pendingRelic ? <fieldset className="event-cards"><legend>Your relic</legend>{player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`} disabled={Boolean(pending?.relicIds)} aria-pressed={effectiveRelic === relic.defId} title={relicTitle(relic.defId)} onClick={() => setRelicId(relic.defId)}><ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}<RelicOptionText id={relic.defId} /></button>)}</fieldset> : null}{pendingTarget ? <label>Reward recipient<select disabled={Boolean(pending?.targetPlayerId)} value={effectiveTarget} onChange={(event) => setTargetPlayerId(event.target.value)}><option value="">Choose one</option>{players.filter((candidate) => !candidate.dead).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label> : null}<div className="event-items item-offer-list">{itemOffers.map((offer, index) => {
       if (offer.kind === 'potion') potionIndex += 1;
       const at = potionIndex;
       const recipient = offer.kind === 'potion' ? players.find((candidate) => candidate.id === (potionRecipientIds[at] || player.id) && !candidate.dead) : player;
@@ -982,7 +1057,7 @@ function EventScreen({
   if (rewardOffers)
     return (
       <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
-        <div className="event-panel">
+        <div ref={eventResolver} className="event-panel event-panel--resolver">
           <div className="room-banner">
             <span>Event reward</span>
             <h2 id="event-title">Choose your reward</h2>
@@ -1031,7 +1106,7 @@ function EventScreen({
   return (
     <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
       <div className="event-art" aria-hidden="true" />
-      <div className="event-panel">
+      <div ref={eventResolver} className={`event-panel${resolverOpen ? " event-panel--resolver" : ""}`}>
         <div className="room-banner">
           <span>Event</span>
           <h2 id="event-title">{room.card.name}</h2>
@@ -1054,6 +1129,12 @@ function EventScreen({
             <p className="event-party-reveal" key={id}><strong>{players.find((candidate) => candidate.id === id)?.name ?? "Teammate"} revealed:</strong> {cardIds.map((id) => CARDS[id]?.name).join(", ")}</p>
           ))}
         </div>
+        {resolverOpen ? <p className="event-choice-summary">
+          {draftOptionIds.map((id) => room.card.options.find((choice) => choice.id === id))
+            .filter((choice) => choice)
+            .map((choice) => `[${choice!.label}] ${choice!.description}`)
+            .join(" · ")}
+        </p> : null}
         {maximumCards > 0 ? (
           <fieldset className="event-cards event-cards--deck">
             <legend>Choose cards as required by your option</legend>
@@ -1061,7 +1142,8 @@ function EventScreen({
               <Card
                 key={card.uid}
                 card={card}
-                selected={cards.includes(card.uid)}
+                playable={!pendingDecision?.cardUids?.length}
+                selected={effectiveCardUids.includes(card.uid)}
                 onClick={() => toggle(card.uid)}
               />
             ))}
@@ -1070,16 +1152,16 @@ function EventScreen({
         <div className="event-selectors">
           {hasPrismaticShard && hasPrismaticCardReward ? <fieldset className="event-cards"><legend>Prismatic Shard · Card Reward · choose 3 reward decks</legend>
             {availableCardSources.map((source) => <label key={source}>
-              <input type="checkbox" checked={rewardSources.includes(source)}
-                disabled={!rewardSources.includes(source) && rewardSources.length >= 3}
+              <input type="checkbox" checked={effectiveRewardSources.includes(source)}
+                disabled={Boolean(pendingDecision?.rewardSources?.length) || !rewardSources.includes(source) && rewardSources.length >= 3}
                 onChange={(event) => setRewardSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
               {source === "colorless" ? "Colorless" : source[0]!.toUpperCase() + source.slice(1)}
             </label>)}
           </fieldset> : null}
           {hasPrismaticShard && hasPrismaticRareReward ? <fieldset className="event-cards"><legend>Prismatic Shard · Rare Reward · choose 3 reward decks</legend>
             {availableRareSources.map((source) => <label key={source}>
-              <input type="checkbox" checked={rareRewardSources.includes(source)}
-                disabled={!rareRewardSources.includes(source) && rareRewardSources.length >= 3}
+              <input type="checkbox" checked={effectiveRareRewardSources.includes(source)}
+                disabled={Boolean(pendingDecision?.rewardSources?.length) || !rareRewardSources.includes(source) && rareRewardSources.length >= 3}
                 onChange={(event) => setRareRewardSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
               {source === "colorless" ? "Colorless" : source[0]!.toUpperCase() + source.slice(1)}
             </label>)}
@@ -1087,12 +1169,13 @@ function EventScreen({
           {needsTarget ? <label>
             Target player
             <select
-              value={targetPlayerId}
+              disabled={Boolean(pendingDecision?.targetPlayerId)}
+              value={effectiveTargetPlayerId}
               onChange={(event) => setTargetPlayerId(event.target.value)}
             >
               <option value="">None</option>
               {players
-                .filter((candidate) => !candidate.dead && (!(trade || otherCharacter) || candidate.id !== player.id))
+                .filter((candidate) => !candidate.dead && (!(trade || otherCharacter) || candidate.id !== player.id) && (!trade || canTradeWith(candidate)))
                 .map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.name}
@@ -1103,50 +1186,43 @@ function EventScreen({
                 .map((character) => <option key={character} value={character}>{character.charAt(0).toUpperCase() + character.slice(1)} reward deck</option>) : null}
             </select>
           </label> : null}
-          {needsRelic && player.relics.length ? (
+          {needsRelic && !paymentLocked && player.relics.length ? (
             <fieldset className="event-cards"><legend>Your relic</legend>
               {player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`}
-                aria-pressed={relicId === relic.defId} title={relicTitle(relic.defId, paysRelicCost)}
+                disabled={Boolean(pendingDecision?.relicIds?.length)}
+                aria-pressed={effectiveRelicId === relic.defId} title={relicTitle(relic.defId, paysRelicCost)}
                 onClick={() => { setRelicId((current) => current === relic.defId ? '' : relic.defId); setPotionIndexes([]); }}>
                 <ItemImage kind="relic" id={relic.defId} card />{relicDef(relic.defId).name}
                 <RelicOptionText id={relic.defId} withCost={paysRelicCost} />
               </button>)}
             </fieldset>
           ) : null}
-          {needsPotion && player.potions.length ? (
+          {needsPotion && !paymentLocked && player.potions.length ? (
             <fieldset className="event-cards"><legend>Your potions</legend>
-              {player.potions.map((id, index) => <button type="button" aria-pressed={potionIndexes.includes(index)} key={`${id}-${index}`} onClick={() => { setRelicId(""); setPotionIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : maximumPotions === 1 ? [index] : [...current, index].slice(-maximumPotions)); }}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}
+              {player.potions.map((id, index) => <button type="button" disabled={Boolean(pendingDecision?.potionIds?.length)} aria-pressed={pendingDecision?.potionIds?.length ? effectivePotionIds.includes(id) : potionIndexes.includes(index)} key={`${id}-${index}`} onClick={() => { setRelicId(""); setPotionIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : maximumPotions === 1 ? [index] : [...current, index].slice(-maximumPotions)); }}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}
             </fieldset>
           ) : null}
-          {room.card.id === "secret_portal" ? (
+          {resolverOpen && room.card.id === "secret_portal" ? (
             <label>
               Forward room
               <select
-                value={roomId}
+                disabled={Boolean(pendingDecision?.roomId)}
+                value={effectiveRoomId}
                 onChange={(event) => setRoomId(event.target.value)}
               ><option value="">Choose a room</option>{eventForwardRooms.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}</select>
             </label>
           ) : null}
         </div>
-      <div className="event-options" ref={eventOptions}>
+        {(!resolverOpen || room.card.id === "knowing_skull") ? <div className="event-options" ref={eventOptions}>
           {room.card.options.map((choice) => {
             const cardSlots = eventCardSlots(choice.effects, pendingDie, player, players);
-            const requiredCards = cardSlots.length;
             const choiceEffects = activeEffects(choice.effects);
-            const choiceNeedsTarget = choiceEffects.some((effect) => effect.target === "one-player" || effect.source === "other-character" || effect.tag === "trade-card" || effect.tag === "trade-relic");
-            const choiceTrades = choiceEffects.some((effect) => effect.tag === "trade-card" || effect.tag === "trade-relic");
-            const missingTarget = choiceNeedsTarget && (!targetPlayerId || choiceTrades && !players.some((candidate) => candidate.id === targetPlayerId && candidate.id !== player.id && !candidate.dead));
-            const missingRelic = choiceEffects.some((effect, effectIndex) =>
-              effect.tag === "trade-relic" && !relicId ||
-              effect.tag === "lose-relic" && (effect.random
-                ? player.relics.length === 0 && !choiceEffects.slice(0, effectIndex).some((prior) => prior.tag === "gain-relic")
-                : room.card.id !== "forgotten_altar" && room.card.id !== "face_trader" && !relicId));
-            const requiredPotions = choiceEffects.filter((effect) => effect.tag === "lose-potion").length;
-            const missingPotion = requiredPotions > 0 && potionIndexes.length !== requiredPotions;
-            const paymentLocked = pendingDecision?.optionIds.includes(choice.id) && Boolean(room.pendingRolls?.[player.id]);
-            const itemPayment = paymentLocked || choiceEffects.some((effect) => effect.tag === "pay-gold" && effect.filter?.includes("or lose one Relic or Potion")) && (Boolean(relicId) || potionIndexes.length > 0);
-            const unaffordable = !paymentLocked && !itemPayment && choiceEffects.filter((effect) => effect.tag === "pay-gold")
-              .reduce((sum, effect) => sum + (typeof effect.amount === "number" ? effect.amount : 0), 0) > players.filter((candidate) => !candidate.dead).reduce((sum, candidate) => sum + candidate.gold, 0);
+            const choiceTradeCard = choiceEffects.some((effect) => effect.tag === "trade-card");
+            const choiceTradeRelic = choiceEffects.some((effect) => effect.tag === "trade-relic");
+            const choiceTradePossible = choiceTradeCard ? cardSlots.length > 0 : !choiceTradeRelic ||
+              player.relics.length > 0 && players.some((candidate) => candidate.id !== player.id && !candidate.dead && candidate.relics.length > 0);
+            const choiceNeedsTarget = choiceEffects.some((effect) => effect.target === "one-player" || effect.source === "other-character" ||
+              (effect.tag === "trade-card" || effect.tag === "trade-relic") && choiceTradePossible);
             const selected = selectedOptions.includes(choice.id);
             const knowing = room.card.id === "knowing_skull";
             const lockedOption =
@@ -1155,19 +1231,30 @@ function EventScreen({
               .some(([playerId, decision]) => playerId !== player.id && decision.optionIds.includes(choice.id));
             const missingRedMask = choice.effects.some((effect) => effect.filter === "party has Red Mask") &&
               !players.some((candidate) => candidate.relics.some((relic) => relic.defId === "red_mask"));
-            const cardsInvalid = room.card.id === "ancient_writing" && choice.id === "simplicity"
-              ? cardSlots.some((matches) => !cards.some((uid) => {
-                  const card = player.deck.find((candidate) => candidate.uid === uid);
-                  return Boolean(card && matches(card));
-                }))
-              : cards.some((uid, cardIndex) => {
-                  const card = player.deck.find((candidate) => candidate.uid === uid);
-                  return !card || !cardSlots[cardIndex]?.(card);
-                });
             const prismaticReward = hasPrismaticShard && choiceEffects.some((effect) =>
               (effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source !== "colorless") && !effect.random,
             );
             const prismaticRare = choiceEffects.some((effect) => effect.tag === "rare-reward" || effect.tag === "card-reward" && effect.source === "rare");
+            const choiceCost = choiceEffects.reduce((sum, effect) =>
+              sum + (effect.tag === "pay-gold" && typeof effect.amount === "number" ? effect.amount : 0), 0);
+            const itemAlternative = choiceEffects.some((effect) => effect.filter?.includes("or lose one Relic or Potion")) &&
+              (player.relics.length > 0 || player.potions.length > 0);
+            const unaffordable = choiceCost > players.filter((candidate) => !candidate.dead)
+              .reduce((sum, candidate) => sum + candidate.gold, 0) && !itemAlternative;
+            const missingRequiredItem =
+              choiceEffects.some((effect, effectIndex) => effect.tag === "lose-relic" &&
+                player.relics.length === 0 && !choiceEffects.slice(0, effectIndex).some((prior) => prior.tag === "gain-relic")) ||
+              choiceEffects.filter((effect) => effect.tag === "lose-potion").length > player.potions.length;
+            const unavailablePrismaticSources = prismaticReward &&
+              (prismaticRare ? availableRareSources.length : availableCardSources.length) < 3;
+            const choiceUnavailable = unavailableEventOptionIds.includes(choice.id) || lockedOption || uniqueOptionTaken ||
+              missingRedMask || unaffordable || missingRequiredItem || unavailablePrismaticSources;
+            const needsResolver = cardSlots.length > 0 || choiceNeedsTarget ||
+              choiceEffects.some((effect) => effect.tag === "lose-relic" && !effect.random &&
+                !(room.card.id === "face_trader" && choice.id === "take_and_give" && !pendingDecision) ||
+                effect.tag === "lose-potion" || effect.filter?.includes("Relic") && player.relics.length > 0 ||
+                effect.filter?.includes("Potion") && player.potions.length > 0) ||
+              prismaticReward || room.card.id === "secret_portal";
             // ponytail: `choiceEffects` only expands a `roll-d6` branch once `pendingDie` is
             // set, which happens AFTER this option is clicked — so a random card/rare reward
             // nested inside a die-roll outcome would never arm the gain reveal. No event does
@@ -1177,22 +1264,14 @@ function EventScreen({
             return (
               <button
                 type="button"
-                onFocus={(event) => { focusedEventOption.current = event.currentTarget; }}
+                data-event-option={choice.id}
+                onFocus={(event) => {
+                  focusedEventOption.current = event.currentTarget;
+                  focusedEventOptionId.current = choice.id;
+                }}
                 aria-pressed={knowing ? selected : undefined}
                 key={choice.id}
-                disabled={
-                  Boolean(decided) ||
-                  lockedOption ||
-                  uniqueOptionTaken ||
-                  missingRedMask ||
-                  missingTarget ||
-                  missingRelic ||
-                  missingPotion ||
-                  unaffordable ||
-                  prismaticReward && (prismaticRare ? rareRewardSources.length !== 3 : rewardSources.length !== 3) ||
-                  (room.card.id === "secret_portal" && !roomId) ||
-                  cards.length !== requiredCards || cardsInvalid
-                }
+                disabled={Boolean(decided) || choiceUnavailable && !(knowing && selected)}
                 onClick={() => {
                   if (knowing) {
                     setSelectedOptions((current) =>
@@ -1204,6 +1283,11 @@ function EventScreen({
                     );
                     return;
                   }
+                  if (needsResolver) {
+                    clearChoiceDraft();
+                    setSelectedOptions([choice.id]);
+                    return;
+                  }
                   if (grantsRandomCard) onArmCardGain?.();
                   submit([choice.id], prismaticRare ? rareRewardSources : rewardSources);
                 }}
@@ -1213,12 +1297,23 @@ function EventScreen({
               </button>
             );
           })}
-        </div>
+        </div> : null}
+        {resolverOpen && room.card.id !== "knowing_skull" ? (
+          <div className="event-resolve-actions">
+            {!pendingDecision ? <button type="button" onClick={clearChoiceDraft}>Back to choices</button> : null}
+            <button type="button" className="room-proceed" disabled={!selectionReady} onClick={() => {
+              if (selectedChoiceEffects.some((effect) =>
+                (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();
+              submit(draftOptionIds, selectedPrismaticRare ? effectiveRareRewardSources : effectiveRewardSources);
+            }}>Confirm choice →</button>
+          </div>
+        ) : null}
         {room.card.id === "knowing_skull" ? (
           <button
             type="button"
             className="room-proceed"
             disabled={selectedOptions.length < 1 || selectedOptions.length > 2 ||
+              selectedOptions.some((id) => unavailableEventOptionIds.includes(id)) ||
               selectedPrismaticReward && (selectedPrismaticRare ? rareRewardSources.length !== 3 : rewardSources.length !== 3)}
             onClick={() => {
               if (selectedChoiceEffects.some((effect) => (effect.tag === "card-reward" || effect.tag === "rare-reward") && effect.random === true)) onArmCardGain?.();

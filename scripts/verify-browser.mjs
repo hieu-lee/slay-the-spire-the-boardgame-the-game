@@ -13959,6 +13959,7 @@ for (const [engineName, phoneBrowser, deviceName] of [
         effects: [{ tag: 'pay-gold', amount: 2, filter: 'or lose one Relic or Potion' }] }],
     } },
   }), mapBeforeRoomSwitchCheck)
+  await tap(phonePage.getByRole('button', { name: /\[Bet\]/ }))
   await phonePage.locator('.relic-option__text').first().waitFor({ timeout: 8000 }).catch(() => {})
   const beltPotion = phonePage.getByRole('button', { name: `Use ${potionDef('blood_potion').name}` })
   await phonePage.waitForFunction(() => {

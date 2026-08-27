@@ -28,6 +28,7 @@ import {
   revealCardReward,
   revealPotionReward,
   revealRelicReward,
+  unavailableEventOptionIds,
   resolveRelicReward,
   resolveBossRelicReward,
   resolvePotionReward,
@@ -571,6 +572,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
           onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
           eventCanSkip={canSkipEvent(run, viewerId)}
+          unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
           onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
           sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
           eventForwardRooms={Object.values(seenMap.rooms).filter((room) => room.row > (run.map.position ? run.map.rooms[run.map.position]?.row ?? -1 : -1)).map((room) => ({ id: room.id, label: `Floor ${room.row + 1} · ${room.hidden ? 'Unknown' : ROOM_LABEL[room.kind]}` }))}

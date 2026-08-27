@@ -1,8 +1,6 @@
 /* The chamfer. Cutting the corners is what stops a slab reading as a <div>;
    the client's panels are painted sprites with notched silhouettes, and this is
    the cheapest honest approximation of one. */
-.sts-scope .room-screen,
-.sts-scope .between-combat,
 .sts-scope .campaign-end,
 .relic-actions > section,
 .relic-tip {
@@ -18,8 +16,6 @@
    a faint woven texture so no area is ever a flat fill. The texture is an
    inline SVG turbulence rather than a file — one round trip saved, and it
    scales with the element instead of tiling at a fixed pixel size. */
-.sts-scope .room-screen,
-.sts-scope .between-combat,
 .sts-scope .campaign-end {
   padding: clamp(1.1rem, 3vw, 2rem);
   border: 0;

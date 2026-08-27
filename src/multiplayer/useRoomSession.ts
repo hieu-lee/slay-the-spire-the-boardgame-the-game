@@ -28,6 +28,7 @@ export type VisiblePlayer = Omit<
   deck: CardInstance[] | null
   hand: CardInstance[] | null
   deckCount: number
+  tradableDeckCount: number
   drawCount: number
   handCount: number
   cardRewardCount: number
@@ -193,6 +194,7 @@ export type RoomSnapshot = {
   courierPledge?: { playerId: string; id: string; discardPotionId?: string; payments: Record<string, number> }
   eventPledge?: { actorId: string; optionId: string; cost: number; payments: Record<string, number>; decision: EventDecision }
   eventCanSkip: boolean
+  unavailableEventOptionIds: string[]
   giveUpVote?: {
     runId: string
     deadlineAt: number
