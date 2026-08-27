@@ -4171,6 +4171,21 @@ check('Storm pauses start of turn for every full-slot Orb and target choice', ()
   assertDeepEqual(triggeredShivPlan.shivTargets.map((target) => target.uid), ['e2'])
 })
 
+check('playing Storm does not stage its start-of-turn channels immediately', () => {
+  for (const upgraded of [false, true]) {
+    const storm = instance('storm', upgraded)
+    const state = combat([makePlayer({
+      character: 'defect', hand: [storm], orbs: ['frost', 'dark', 'lightning'],
+    })], [makeEnemy({ hp: 10, maxHp: 10 })])
+    const def = faceOf(CARDS.storm, upgraded)
+    assertEqual(nextEvokeChoice(def, state.players[0], []), null)
+
+    const played = playCard(state, 'p1', storm.uid)
+    assertDeepEqual(played.players[0].orbs, ['frost', 'dark', 'lightning'])
+    assertEqual(played.presentationEvents.filter((event) => event.kind === 'orb').length, 0)
+  }
+})
+
 check('Blizzard counts only Frost Orbs and Hologram recovers a chosen discard', () => {
   for (const upgraded of [false, true]) {
     const blizzard = instance('blizzard', upgraded)
