@@ -315,11 +315,10 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
       return
     case 'shuffleStatus':
       for (const target of living) {
-        const gained = addStatus(state, target, action.card, action.amount, enemy.uid)
+        const gained = addStatus(state, target, action.card, action.amount, enemy.uid, 'draw')
         if (gained === 0) continue
-        target.draw = shuffle(state.rng, [...target.draw, ...target.discard])
-        target.discard = []
-        state.log = [...state.log, `${name} shuffled ${gained} ${action.card} into ${target.name}'s deck`]
+        target.draw = shuffle(state.rng, target.draw)
+        state.log = [...state.log, `${name} shuffled ${gained} ${action.card} into ${target.name}'s draw pile`]
       }
       return
     case 'summon':

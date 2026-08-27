@@ -161,6 +161,7 @@ export function addStatus(
   defId: 'burn' | 'slimed',
   amount: number,
   source: string,
+  pile: 'draw' | 'discard' = 'discard',
 ): number {
   const inPlay = state.players.reduce((total, player) => total + [
     ...player.draw, ...player.hand, ...player.discard, ...player.exhaust,
@@ -171,6 +172,7 @@ export function addStatus(
     defId,
     upgraded: false,
   }))
-  target.discard = addToDiscardTop(target, cards).discard
+  if (pile === 'draw') target.draw = [...cards, ...target.draw]
+  else target.discard = addToDiscardTop(target, cards).discard
   return gained
 }

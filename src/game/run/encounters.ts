@@ -317,7 +317,6 @@ export function buildEncounter(
           ascension,
           false,
           false,
-          card.defId === 'taskmaster' && defId.startsWith('red_slaver'),
         ))
       }
     }
