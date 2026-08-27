@@ -152,7 +152,7 @@ function intentParts(action: EnemyAction, swing: (printed: number) => number): I
     case 'removeInvincible':
       return [{ icon: 'monster', label: 'removes Invincible', visibleLabel: 'Invincible off' }]
     case 'shuffleStatus':
-      return [{ icon: action.card === 'burn' ? 'burn' : 'monster', value: action.amount, label: `shuffle ${action.card} into every deck`, visibleLabel: action.card }]
+      return [{ icon: action.card === 'burn' ? 'burn' : 'monster', value: action.amount, label: `shuffle ${action.card} into every draw pile`, visibleLabel: action.card }]
     case 'actsLast':
       return [{ icon: 'monster', label: 'acts last', visibleLabel: 'Acts last' }]
     case 'idle':

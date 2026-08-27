@@ -201,7 +201,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
       byRoll: byPairs(
         [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
         [{ kind: 'attack', amount: 4 }],
-        [{ kind: 'attack', amount: 2 }, { kind: 'gainStrength', amount: 1 }],
+        [{ kind: 'block', amount: 2 }, { kind: 'gainStrength', amount: 1 }],
       ),
     },
   },
@@ -556,7 +556,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   mystic: {
-    id: 'mystic', name: 'Mystic', hpByPlayers: [12, 12, 12, 12],
+    id: 'mystic', name: 'Mystic', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'healAllEnemies', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
@@ -565,7 +565,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 
   mystic_2sh: {
-    id: 'mystic_2sh', name: 'Mystic', artId: 'mystic', hpByPlayers: [12, 12, 12, 12],
+    id: 'mystic_2sh', name: 'Mystic', artId: 'mystic', hpByPlayers: [10, 10, 10, 10],
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'applyWeak', amount: 1 }],
       [{ kind: 'strengthenAllEnemies', amount: 1 }, { kind: 'actsLast' }],
@@ -705,26 +705,29 @@ export const ENEMIES: Record<string, EnemyDef> = {
 
   red_slaver_3vd: {
     id: 'red_slaver_3vd', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
+    actsLast: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
-      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
     ) },
   },
 
   red_slaver_3dv: {
     id: 'red_slaver_3dv', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
+    actsLast: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
-      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }],
     ) },
   },
 
   red_slaver_v3d: {
     id: 'red_slaver_v3d', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
+    actsLast: true,
     pattern: { kind: 'die', byRoll: byPairs(
-      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }],
       [{ kind: 'attack', amount: 3 }],
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
     ) },
@@ -732,9 +735,10 @@ export const ENEMIES: Record<string, EnemyDef> = {
 
   red_slaver_dv3: {
     id: 'red_slaver_dv3', name: 'Red Slaver', artId: 'red_slaver', hpByPlayers: [10, 10, 10, 10],
+    actsLast: true,
     pattern: { kind: 'die', byRoll: byPairs(
       [{ kind: 'attack', amount: 2 }, { kind: 'daze', amount: 1 }],
-      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }, { kind: 'actsLast' }],
+      [{ kind: 'attack', amount: 2 }, { kind: 'applyVulnerable', amount: 1 }],
       [{ kind: 'attack', amount: 3 }],
     ) },
   },
@@ -812,6 +816,15 @@ export const ENEMIES: Record<string, EnemyDef> = {
       [{ kind: 'attack', amount: 4 }],
       [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
       [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
+    ) },
+  },
+
+  jaw_worm_summon_3b4: {
+    id: 'jaw_worm_summon_3b4', name: 'Jaw Worm', artId: 'jaw_worm', hpByPlayers: [10, 10, 10, 10],
+    pattern: { kind: 'die', byRoll: byPairs(
+      [{ kind: 'attack', amount: 3 }, { kind: 'block', amount: 1 }],
+      [{ kind: 'attack', amount: 4 }],
+      [{ kind: 'block', amount: 3 }, { kind: 'gainStrength', amount: 1 }],
     ) },
   },
 
@@ -910,7 +923,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     id: 'maw', name: 'The Maw', hpByPlayers: [28, 28, 28, 28],
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'applyVulnerable', amount: 1, aoe: true }, { kind: 'actsLast' }], once: true },
-      { actions: [{ kind: 'attack', amount: 2, times: 2 }] },
+      { actions: [{ kind: 'attack', amount: 2, times: 3 }] },
       { actions: [{ kind: 'gainStrength', amount: 2 }] },
       { actions: [{ kind: 'attack', amount: 6 }] },
     ] },
@@ -1195,8 +1208,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
           kind: 'cube',
           slots: [
             { actions: [{ kind: 'applyWeak', amount: 2, aoe: true }] },
-            { actions: [{ kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
             { actions: [{ kind: 'attack', amount: 4, aoe: true }] },
+            { actions: [{ kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
           ],
         },
       },
@@ -1306,7 +1319,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     hpByPlayers: perPlayer(40),
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 4 }] },
-      { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+      { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' }] },
       { actions: [{ kind: 'attack', amount: 5 }, { kind: 'block', amount: 3 }] },
     ] },
     ability: { kind: 'rebirth', hpPerPlayer: 40, defId: 'the_champ_fury' },
@@ -1315,7 +1328,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
       hpByPlayers: perPlayer(45),
       pattern: { kind: 'cube', slots: [
         { actions: [{ kind: 'attack', amount: 4 }] },
-        { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
+        { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' }] },
         { actions: [{ kind: 'attack', amount: 6 }, { kind: 'block', amount: 3 }] },
       ] },
       ability: { kind: 'rebirth', hpPerPlayer: 45, defId: 'the_champ_fury' },
@@ -1536,7 +1549,7 @@ const SUMMON_CARDS: SummonSupply = {
   ],
   sentry_a: Array(7).fill('sentry_a'),
   sentry_b: Array(5).fill('sentry_b'),
-  jaw_worm_act3: Array(2).fill('jaw_worm_summon'),
+  jaw_worm_act3: ['jaw_worm_summon', 'jaw_worm_summon_3b4'],
   repulsor: ['repulsor_summon'],
   exploder: ['exploder_summon'],
   spiker: ['spiker_add', 'spiker_attack'],

@@ -5,7 +5,7 @@
 // asserts every engine module is reachable from here, which is what catches a
 // module that was written but never wired up.
 //
-// Combat and 106 enemy definitions covering roughly 60 physical cards are live.
+// Combat and 107 enemy definitions covering roughly 60 physical cards are live.
 // 251 of 259 unique character cards are live as ordinary definitions; the
 // other 8 are implemented Golden Ticket rewards. 22 of 22 colorless cards are live. Relics, potions, and their
 // Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign

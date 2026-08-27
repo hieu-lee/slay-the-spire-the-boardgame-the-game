@@ -6,7 +6,7 @@ import {
   playCard,
   startPlayerTurn,
 } from '../src/game/combat.ts'
-import { actionsFor, advanceCube, enemyDef, startingHp } from '../src/game/enemies.ts'
+import { actionsFor, advanceCube, createSummonSupply, enemyDef, startingHp } from '../src/game/enemies.ts'
 import { CARDS, STARTER_DECKS, faceOf } from '../src/game/cards.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
@@ -83,6 +83,11 @@ check('a die-pattern enemy acts on the shared roll', () => {
   const rolled3 = enemyTurn({ ...state, die: 3 })
   assertEqual(rolled3.players[0].hp, 6, 'on a 3 it hits for 4')
   assertEqual(rolled3.enemies[0].block, 0, 'with no Block on that roll')
+
+  const rolled6 = enemyTurn({ ...state, die: 6 })
+  assertEqual(rolled6.players[0].hp, 10, 'on a 6 it does not attack')
+  assertEqual(rolled6.enemies[0].block, 2, 'and blocks itself for 2')
+  assertEqual(rolled6.enemies[0].strength, 1, 'and gains 1 Strength')
 })
 
 check('enemy Strength adds to its attacks', () => {
@@ -246,6 +251,7 @@ check('the printed Act I and II enemy corrections stay distinct', () => {
 
   for (const id of ['mystic', 'mystic_2sh']) {
     const def = enemyDef(id)
+    assertEqual(startingHp(def, 1), 10, `${id} has the printed 10 HP`)
     const strengthRoll = [1, 3, 5].find((die) =>
       actionsFor(def, die, 0).some((action) => action.kind === 'strengthenAllEnemies'))
     assert(actionsFor(def, strengthRoll, 0).some((action) => action.kind === 'actsLast'),
@@ -255,6 +261,66 @@ check('the printed Act I and II enemy corrections stay distinct', () => {
         `${id} non-Strength row must keep normal order`)
     }
   }
+  assertDeepEqual(actionsFor(enemyDef('mystic'), 6, 0), [
+    { kind: 'strengthenAllEnemies', amount: 1 }, { kind: 'actsLast' },
+  ], 'the pictured Mystic strengthens on 5-6')
+  assertDeepEqual(actionsFor(enemyDef('mystic_2sh'), 6, 0), [
+    { kind: 'healAllEnemies', amount: 3 },
+  ], 'the second physical Mystic card heals on 5-6')
+
+  assertDeepEqual(actionsFor(enemyDef('lagavulin', 1), 1, 0), [{ kind: 'applyWeak', amount: 2, aoe: true }])
+  assertDeepEqual(actionsFor(enemyDef('lagavulin', 1), 1, 1), [{ kind: 'attack', amount: 4, aoe: true }])
+  assertDeepEqual(actionsFor(enemyDef('lagavulin', 1), 1, 2), [
+    { kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 },
+  ])
+  assertDeepEqual(actionsFor(enemyDef('lagavulin', 12), 1, 1), [
+    { kind: 'attack', amount: 4, aoe: true }, { kind: 'gainStrength', amount: 1 },
+  ], 'Ascension 12 keeps its distinct printed order')
+
+  for (const id of ['red_slaver_3vd', 'red_slaver_3dv', 'red_slaver_v3d', 'red_slaver_dv3']) {
+    const def = enemyDef(id)
+    assert(def.actsLast, `${id} always acts last`)
+    for (const die of [1, 3, 5]) {
+      assert(!actionsFor(def, die, 0).some((action) => action.kind === 'actsLast'),
+        `${id} must not tie acts-last to only one die row`)
+    }
+  }
+
+  for (const ascension of [0, 10]) {
+    assertDeepEqual(actionsFor(enemyDef('the_champ', ascension), 1, 1), [
+      { kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' },
+    ], `The Champ's middle action is printed correctly at Ascension ${ascension}`)
+  }
+
+  assertDeepEqual(actionsFor(enemyDef('maw'), 1, 1), [{ kind: 'attack', amount: 2, times: 3 }])
+  assertDeepEqual(actionsFor(enemyDef('maw', 7), 1, 1), [{ kind: 'attack', amount: 2, times: 2 }])
+  assertDeepEqual(createSummonSupply(createRng(9)).jaw_worm_act3.sort(), [
+    'jaw_worm_summon', 'jaw_worm_summon_3b4',
+  ], 'both distinct physical Act III Jaw Worm summon cards are present')
+})
+
+check('base Corrupt Heart shuffles Slimed into only the draw pile', () => {
+  const discard = [instance('strike')]
+  const next = enemyTurn(inEnemyPhase(
+    [player({ draw: [instance('defend')], discard })],
+    [enemy({ defId: 'corrupt_heart', isBoss: true, hp: 100, maxHp: 100 })],
+  ))
+  assertEqual(next.players[0].draw.filter((card) => card.defId === 'slimed').length, 5)
+  assertDeepEqual(next.players[0].discard, discard, 'the existing discard pile is not shuffled into the draw pile')
+  assert(next.log.some((line) => line.includes("slimed into Ironclad's draw pile")),
+    'the combat log names the physical destination')
+})
+
+check('Ascension 11 Corrupt Heart shuffles Burns into only the draw pile', () => {
+  const discard = [instance('strike')]
+  const next = enemyTurn(inEnemyPhase(
+    [player({ draw: [instance('defend')], discard })],
+    [enemy({ defId: 'corrupt_heart', isBoss: true, ascension: 11, hp: 120, maxHp: 120 })],
+  ))
+  assertEqual(next.players[0].draw.filter((card) => card.defId === 'burn').length, 5)
+  assertDeepEqual(next.players[0].discard, discard, 'the existing discard pile is not shuffled into the draw pile')
+  assert(next.log.some((line) => line.includes("burn into Ironclad's draw pile")),
+    'the combat log names the physical destination')
 })
 
 check('a full round runs Player Turn then Enemy Turn and repeats', () => {

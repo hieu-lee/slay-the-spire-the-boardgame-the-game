@@ -9084,6 +9084,17 @@ check('the real table turn keeps the post-roll item window open', () => {
   assertEqual(activatePotion(starting, 'p1', 'gamblers_brew', { die: 6 }).die, 6)
 })
 
+check('a changed die drives the Mystic action that actually resolves', () => {
+  const starting = { ...combat(
+    [makePlayer({ potions: ['gamblers_brew'] })],
+    [makeEnemy({ defId: 'mystic', hp: 7, maxHp: 10 })],
+  ), phase: 'start', die: 1 }
+  const changed = activatePotion(starting, 'p1', 'gamblers_brew', { die: 6 })
+  const resolved = enemyTurn({ ...changed, phase: 'enemy' })
+  assertEqual(resolved.enemies[0].hp, 7, 'the pictured Mystic does not heal on 6')
+  assertEqual(resolved.enemies[0].strength, 1, 'the pictured Mystic strengthens on 6')
+})
+
 check('the post-roll window rejects unrelated manual Relics', () => {
   const card = instance('defend_ironclad')
   const state = { ...combat([makePlayer({ hand: [card], relics: [{ defId: 'blue_candle', spent: false }] })],
