@@ -3849,17 +3849,30 @@ try {
   liveRoom.run = {
     ...liveRoom.run, phase: 'reward', combat: null, rewardDestination: 'map',
     rewards: [{ playerId: annRun.id, cardReward: false, choices: null, upgraded: false,
-      potion: false, relic: 'astrolabe', bossRelics: false }],
+      potion: false, relic: 'empty_cage', bossRelics: false }],
   }
+  const pendingRelicOwner = liveRoom.run.players.find((player) => player.id === annRun.id)
+  pendingRelicOwner.deck.push(...pendingRelicOwner.deck.slice(0, 6).map((card, index) => ({
+    ...card, uid: `empty-cage-overflow-${index}`,
+  })))
   await roomAction(a, { kind: 'relicReward', choice: 'gain' })
-  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
-  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
-  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))
-  const relicDeckLayout = await ownerGame.locator('.relic-resolve .campfire__deck').evaluate((deck) => ({
-    display: getComputedStyle(deck).display,
-    overflowX: getComputedStyle(deck).overflowX,
-    contained: deck.scrollWidth <= deck.clientWidth + 1,
-  }))
+  await ownerGame.getByRole('heading', { name: 'Resolve Empty Cage' }).waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Empty Cage' }).waitFor()
+  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 640 })))
+  const relicDeckLayout = await ownerGame.locator('.relic-resolve').evaluate((resolver) => {
+    const deck = resolver.querySelector('.campfire__deck')
+    const button = resolver.querySelector(':scope > button:last-child')
+    const buttonBox = button?.getBoundingClientRect()
+    const resolverBox = resolver.getBoundingClientRect()
+    return {
+      display: getComputedStyle(deck).display,
+      overflowX: getComputedStyle(deck).overflowX,
+      contained: deck.scrollWidth <= deck.clientWidth + 1,
+      deckScrollable: deck.scrollHeight > deck.clientHeight + 1,
+      resolverContained: resolverBox.top >= 0 && resolverBox.bottom <= innerHeight + 1,
+      buttonVisible: Boolean(buttonBox && buttonBox.top >= 0 && buttonBox.bottom <= innerHeight),
+    }
+  })
   const activeGames = [ownerGame, teammateGame]
   await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
   const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
@@ -3874,10 +3887,10 @@ try {
     })))
   const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
   const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
-  await a.screenshot({ path: join(outDir, '08a-compact-desktop-pending-relic.png'), fullPage: true })
+  await a.screenshot({ path: join(outDir, '08a-compact-desktop-pending-relic.png') })
   const pendingOnCompact = (await snapshot(a)).pendingRelic?.relicId
   check('pending Relic acquisition is exposed on the compact desktop owner surface', () => {
-    assertEqual(pendingOnCompact, 'astrolabe')
+    assertEqual(pendingOnCompact, 'empty_cage')
     assert(ownerMapBlocked.inert, 'the active owner map was not inert')
     assert(teammateMapBlocked.inert, 'the active teammate map was not inert')
     assertEqual(ownerMapBlocked.focusable, 0, 'the owner map kept focusable progression controls')
@@ -3885,12 +3898,15 @@ try {
     assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
     assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
     assertEqual(relicDeckLayout.display, 'grid', 'the Relic resolver did not use its wrapping card grid')
-    assertEqual(relicDeckLayout.overflowX, 'visible', 'the Relic resolver kept a nested horizontal scroller')
+    assertEqual(relicDeckLayout.overflowX, 'auto', 'the Relic resolver card grid was not scrollable')
     assert(relicDeckLayout.contained, 'the Relic resolver card grid overflowed horizontally')
+    assert(relicDeckLayout.deckScrollable, 'the dense Empty Cage fixture did not exercise card-grid scrolling')
+    assert(relicDeckLayout.resolverContained, 'the Relic resolver escaped the compact viewport')
+    assert(relicDeckLayout.buttonVisible, 'Resolve Relic was not visible at 100% browser zoom')
   })
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()
-  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
+  await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Empty Cage' }).waitFor()
   await teammateGame.locator('.map[inert]').waitFor()
   const reconnectedMapBlocked = await teammateGame.locator('.map').evaluate((map) => {
     const rooms = [...map.querySelectorAll('button')]
@@ -3906,10 +3922,14 @@ try {
   })
   const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Settings' })
   await teammateHeaderControl.focus()
-  const astrolabeChoices = ownerGame.locator('.campfire__deck button')
-  for (let index = 0; index < 3; index++) await astrolabeChoices.nth(index).click()
-  await ownerGame.getByRole('button', { name: 'Resolve Relic' }).click()
-  await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor({ state: 'hidden' })
+  const emptyCageChoices = ownerGame.locator('.campfire__deck button')
+  for (let index = 0; index < 2; index++) await emptyCageChoices.nth(index).click()
+  const resolveEmptyCage = ownerGame.getByRole('button', { name: 'Resolve Relic' })
+  assert(await resolveEmptyCage.isEnabled(), 'Empty Cage did not enable confirmation after two choices')
+  await a.screenshot({ path: join(outDir, '08a-compact-desktop-pending-relic-ready.png') })
+  await resolveEmptyCage.click()
+  await ownerGame.getByRole('heading', { name: 'Resolve Empty Cage' }).waitFor({ state: 'hidden' })
+  await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))
   await Promise.all(activeGames.map((game) => game.locator('.map:not([inert]) .room--reachable').first().waitFor()))
   await a.waitForFunction(() => document.activeElement?.classList.contains('room--reachable'))
   const ownerMapFocusRestored = await ownerGame.locator('.room--reachable').first()
