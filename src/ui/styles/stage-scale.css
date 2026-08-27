@@ -60,7 +60,7 @@
 .row__seat {
   position: absolute;
   bottom: calc(1.1rem * var(--stage-scale));
-  left: calc(1.5rem * var(--stage-scale) + var(--stage-row) * var(--stage-gap));
+  left: calc(clamp(1.5rem, 4vw, 5rem) + var(--stage-row) * var(--stage-gap));
   width: var(--stage-actor-width);
   height: calc(18.5rem * var(--stage-scale));
   align-content: start;

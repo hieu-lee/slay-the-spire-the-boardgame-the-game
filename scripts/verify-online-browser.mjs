@@ -3212,6 +3212,45 @@ try {
     peerPlayedVfx.getAttribute('data-vfx-source'),
     b.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]').count(),
   ])
+  const remoteActor = liveRoom.run.combat.players.find((player) => player.id === aView.you.playerId)
+  const remoteTarget = liveRoom.run.combat.enemies.find((enemy) => !enemy.dead)
+  const remoteRapidSeq = liveRoom.run.combat.presentationEvents
+    .reduce((latest, event) => Math.max(latest, event.seq), -1) + 1
+  liveRoom.run.combat.presentationEvents = [...liveRoom.run.combat.presentationEvents, {
+    seq: remoteRapidSeq,
+    kind: 'card',
+    actorId: remoteActor.id,
+    sourceId: 'strike_ironclad',
+    enemyIds: [remoteTarget.uid],
+    playerIds: [],
+    upgraded: false,
+    copied: false,
+    energy: 1,
+  }].slice(-12)
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await b.locator(`.character-attack[data-attack-seq="${remoteRapidSeq}"]`).waitFor()
+  const peerRapidBodies = await b.locator(`.seat[data-player-id="${remoteActor.id}"]`).evaluate((seat) => {
+    for (const animation of seat.getAnimations({ subtree: true })) {
+      if (animation.animationName?.startsWith('attack-') || animation.animationName?.endsWith('-pose')) {
+        animation.currentTime = 130
+        animation.pause()
+      }
+    }
+    const idle = Number(getComputedStyle(seat.querySelector('.seat__portrait > img')).opacity)
+    const poses = [...seat.querySelectorAll('.character-attack__pose')]
+      .map((pose) => Number(getComputedStyle(pose).opacity))
+    const result = {
+      attacks: seat.querySelectorAll('.character-attack').length,
+      poses: poses.length,
+      visibleBodies: Number(idle > 0.01) + poses.filter((opacity) => opacity > 0.01).length,
+      oldPoses: seat.querySelector('.character-attack')?.querySelectorAll('.character-attack__pose').length,
+    }
+    for (const animation of seat.getAnimations({ subtree: true })) {
+      if (animation.playState === 'paused') animation.play()
+    }
+    return result
+  })
   await b.waitForFunction((before) => {
     const lines = [...document.querySelectorAll('.combat__log li')].map((line) => line.textContent ?? '')
     return lines.some((line) => line.includes('Strike')) || lines.length > before
@@ -3230,6 +3269,11 @@ try {
     assert(peerPlayedSource === 'bash' || peerPlayedSource?.startsWith('strike_'),
       `unexpected source ${peerPlayedSource}`)
     assert(peerTargetVfx > 0, 'the peer did not render the authoritative enemy impact')
+    assertEqual(peerRapidBodies.attacks, 2, 'the online fixture did not retain both rapid attack events')
+    assertEqual(peerRapidBodies.poses, 2, 'the older online event retained a duplicate generated body')
+    assertEqual(peerRapidBodies.oldPoses, 0, 'the older online event still painted actor poses')
+    assert(peerRapidBodies.visibleBodies <= 1,
+      `the peer stacked idle and attack bodies: ${JSON.stringify(peerRapidBodies)}`)
   })
   const viewerEnemyGeometry = await a.evaluate(() => {
     const board = document.querySelector('.board')?.getBoundingClientRect()

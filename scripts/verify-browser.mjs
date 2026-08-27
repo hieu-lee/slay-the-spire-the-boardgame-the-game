@@ -8806,6 +8806,17 @@ const watcherPlayerId = await page.evaluate(() => {
 })
 const watcherSeat = page.locator(`.seat[data-player-id="${watcherPlayerId}"]`)
 await watcherSeat.locator('.stance-aura--calm').waitFor()
+const watcherIdleClearance = await watcherSeat.evaluate((seat) => {
+  const art = seat.querySelector('.seat__portrait > img')
+  const name = seat.querySelector('.seat__name')
+  const bar = seat.querySelector('.bar')
+  if (!(art instanceof HTMLElement) || !(name instanceof HTMLElement) || !(bar instanceof HTMLElement)) return null
+  const artBox = art.getBoundingClientRect()
+  const nameBox = name.getBoundingClientRect()
+  const barBox = bar.getBoundingClientRect()
+  const padding = Number.parseFloat(getComputedStyle(art).paddingBottom)
+  return { padding, artFloor: artBox.bottom - padding, nameTop: nameBox.top, barTop: barBox.top }
+})
 const calmPresentation = await watcherSeat.evaluate((seat) => {
   const aura = seat.querySelector('.stance-aura--calm')
   return {
@@ -8831,6 +8842,11 @@ const wrathPresentation = await watcherSeat.evaluate((seat) => {
   }
 })
 check('Watcher Calm and Wrath use distinct accessible portrait auras instead of text', () => {
+  assert(watcherIdleClearance && watcherIdleClearance.padding >= 8,
+    `Watcher art was not raised: ${JSON.stringify(watcherIdleClearance)}`)
+  assert(watcherIdleClearance.artFloor <= watcherIdleClearance.nameTop - 4 &&
+    watcherIdleClearance.artFloor <= watcherIdleClearance.barTop - 4,
+  `Watcher feet overlap the name or HP bar: ${JSON.stringify(watcherIdleClearance)}`)
   assertEqual(calmPresentation.visibleText, 0)
   assert(calmPresentation.label.includes('calm stance'), calmPresentation.label)
   assert(wrathPresentation.label.includes('wrath stance'), wrathPresentation.label)
@@ -8842,6 +8858,36 @@ check('Watcher Calm and Wrath use distinct accessible portrait auras instead of 
 
 const vfxActor = () => page.locator('.combat-vfx--actor').last()
 const vfxTarget = () => page.locator('.enemy .combat-vfx--target').last()
+const sampleCharacterFrames = (times) => watcherSeat.evaluate((seat, sampleTimes) => {
+  const animations = seat.getAnimations({ subtree: true }).filter((animation) => {
+    const name = animation.animationName ?? ''
+    return name.startsWith('attack-') || name.startsWith('watcher-') ||
+      name.endsWith('-pose') || name === 'defect-core-charge'
+  })
+  const previous = animations.map((animation) => ({
+    animation,
+    currentTime: animation.currentTime,
+    playState: animation.playState,
+  }))
+  const frames = sampleTimes.map((currentTime) => {
+    for (const animation of animations) {
+      animation.currentTime = currentTime
+      animation.pause()
+    }
+    return {
+      sampled: {
+        idle: Number(getComputedStyle(seat.querySelector('.seat__portrait > img')).opacity),
+        poses: [...seat.querySelectorAll('.character-attack__pose')]
+          .map((pose) => Number(getComputedStyle(pose).opacity)),
+      },
+    }
+  })
+  for (const { animation, currentTime, playState } of previous) {
+    animation.currentTime = currentTime
+    if (playState === 'running') animation.play()
+  }
+  return frames
+}, times)
 async function captureCombatAnimation(name, time = 300, sample) {
   await page.evaluate((currentTime) => {
     for (const animation of document.getAnimations()) {
@@ -8944,8 +8990,14 @@ Object.assign(strikePresentation, await watcherSeat.evaluate((seat) => {
     impactImage: impact?.querySelector('img')?.getAttribute('src') ?? '',
   }
 }))
-const ironcladReadyFrame = await captureCombatAnimation('combat-attack-ironclad-ready.png', 150)
-const ironcladImpactFrame = await captureCombatAnimation('combat-attack-ironclad-impact.png', 500)
+const [ironcladReadyFrame, ironcladHandoffFrame, ironcladImpactFrame, ironcladReturnFrame] =
+  await sampleCharacterFrames([130, 413, 500, 670])
+ironcladReadyFrame.attackImpactOpacity = (await captureCombatAnimation(
+  'combat-attack-ironclad-ready.png', 130,
+)).attackImpactOpacity
+ironcladImpactFrame.attackImpactOpacity = (await captureCombatAnimation(
+  'combat-attack-ironclad-impact.png', 500,
+)).attackImpactOpacity
 await vfxTarget().waitFor({ state: 'detached' })
 
 const rowDashFixture = await page.evaluate(({ livingUid, corpseUid }) => {
@@ -9059,6 +9111,8 @@ const defectAttack = await watcherSeat.evaluate((seat) => ({
     }
   })(),
 }))
+const [defectChargeFrame, defectHandoffFrame, defectReturnFrame] =
+  await sampleCharacterFrames([130, 413, 700])
 await captureCombatAnimation('combat-attack-defect.png', 380)
 check('Defect damage feedback lands with its emitted bolt', () => {
   assertEqual(earlyDefectFeedback, 0)
@@ -9165,6 +9219,8 @@ const readWatcherMeteorFrame = () => watcherSeat.evaluate((seat) => {
     boardTop: boardRect.top,
   }
 })
+const [watcherChargeFrame, watcherHandoffFrame, watcherReturnFrame] =
+  await sampleCharacterFrames([77, 413, 700])
 await captureCombatAnimation('combat-attack-watcher-charge.png', 180)
 const watcherMeteorSky = (await captureCombatAnimation(
   'combat-attack-watcher-meteor-sky.png', 100, readWatcherMeteorFrame,
@@ -9255,8 +9311,10 @@ const silentAttack = await watcherSeat.evaluate((seat) => ({
   })(),
   attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
 }))
+const [silentEntryFrame, silentThrowFrame, silentReturnFrame] =
+  await sampleCharacterFrames([130, 480, 700])
 await captureCombatAnimation('combat-attack-silent.png', 480)
-await captureCombatAnimation('combat-attack-silent-return.png', 690)
+await captureCombatAnimation('combat-attack-silent-return.png', 700)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
   assertEqual(mixedTargetPresentation.allyImpacts, 0)
@@ -9378,6 +9436,29 @@ check('personal card and potion events render distinct authoritative recipes', (
     'enemy impact art fired while Ironclad was still preparing')
   assert(ironcladImpactFrame.attackImpactOpacity > 0.5,
     `enemy impact art was not visible at contact: ${ironcladImpactFrame.attackImpactOpacity}`)
+  for (const [label, frame] of [
+    ['Ironclad ready', ironcladReadyFrame],
+    ['Ironclad handoff', ironcladHandoffFrame],
+    ['Ironclad impact', ironcladImpactFrame],
+    ['Ironclad return', ironcladReturnFrame],
+    ['Defect charge', defectChargeFrame],
+    ['Defect handoff', defectHandoffFrame],
+    ['Defect return', defectReturnFrame],
+    ['Watcher charge', watcherChargeFrame],
+    ['Watcher handoff', watcherHandoffFrame],
+    ['Watcher return', watcherReturnFrame],
+    ['Silent entry', silentEntryFrame],
+    ['Silent throw', silentThrowFrame],
+    ['Silent return', silentReturnFrame],
+  ]) {
+    assert(frame.sampled, `${label} body layers were not measurable`)
+    const visiblePoses = frame.sampled.poses.filter((opacity) => opacity > 0.01).length
+    const visibleBodies = visiblePoses + Number(frame.sampled.idle > 0.01)
+    assertEqual(visibleBodies, 1, `${label} did not show exactly one body: ${JSON.stringify(frame.sampled)}`)
+    if (!label.endsWith('return')) {
+      assertEqual(visiblePoses, 1, `${label} did not show its generated body: ${JSON.stringify(frame.sampled)}`)
+    }
+  }
   assertEqual(rowDashTarget, rowDashFixture.expected,
     'a row attack did not dash to the first enemy in that row')
   assertEqual(strikePresentation.actorOverlays, 0, 'hostile impact art belongs on the enemy, not the actor')
@@ -9599,12 +9680,18 @@ await watcherSeat.locator(`.character-attack[data-attack-seq="${secondActorSeq}"
 const actorRestartMarker = await watcherSeat.locator('.seat__portrait > img').getAttribute('data-restart-probe')
 const attackRestartMarker = await watcherSeat.locator(`.character-attack[data-attack-seq="${secondActorSeq}"]`)
   .getAttribute('data-restart-probe')
-const rapidAttackLayers = await watcherSeat.locator('.character-attack').count()
+const rapidAttackLayers = await watcherSeat.evaluate((seat) => ({
+  attacks: seat.querySelectorAll('.character-attack').length,
+  poses: seat.querySelectorAll('.character-attack__pose').length,
+  swings: seat.querySelectorAll('.character-attack__swing').length,
+}))
 check('interleaved teammate events cannot suppress a repeated actor motion', () => {
   assertEqual(firstActorSeq % 2, secondActorSeq % 2, 'the fixture did not reproduce equal global parity')
   assertEqual(actorRestartMarker, null, 'the repeated actor motion reused its stale portrait node')
   assertEqual(attackRestartMarker, null, 'the repeated personal effect reused its stale animation node')
-  assertEqual(rapidAttackLayers, 2, 'a rapid same-actor attack replaced its predecessor')
+  assertEqual(rapidAttackLayers.attacks, 2, 'a rapid same-actor attack replaced its predecessor')
+  assertEqual(rapidAttackLayers.poses, 2, 'an older attack kept a duplicate generated body')
+  assertEqual(rapidAttackLayers.swings, 1, 'an older attack kept a duplicate weapon swing')
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${secondActorSeq}"]`).waitFor({ state: 'detached' })
 
@@ -10885,12 +10972,26 @@ await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length ==
 await shot('06a-four-player-map')
 await enterFirstRoom()
 const four = await shot('06-four-players')
+const fourPlayerGutter = await page.locator('.board').evaluate((board) => {
+  const boardBox = board.getBoundingClientRect()
+  const seats = [...board.querySelectorAll('.row__seat')]
+    .filter((seat) => seat.querySelector('.seat:not(.seat--empty)'))
+  const hpBars = seats.map((seat) => seat.querySelector('.seat .bar')?.getBoundingClientRect())
+  return {
+    left: Math.min(...seats.map((seat) => seat.getBoundingClientRect().left)) - boardBox.left,
+    hpInside: hpBars.every((bar) => bar && bar.left >= boardBox.left && bar.right <= boardBox.right),
+  }
+})
 check('a four player game lays out one row per player', () => {
   const mainEnemies = four.enemies.filter((enemy) => !enemy.uid.includes('-summon'))
   assertEqual(four.players.length, 4, 'four seats')
   assertEqual(new Set(four.players.map((p) => p.row)).size, 4, 'each player gets their own row')
   assertEqual(mainEnemies.length, 4, 'a normal encounter draws one card per player')
   assertEqual(new Set(mainEnemies.map((enemy) => enemy.defId)).size, 4, 'opening cards are not duplicated')
+})
+check('a four-player party keeps a deliberate desktop gutter', () => {
+  assert(fourPlayerGutter.left >= 48, `the party starts only ${fourPlayerGutter.left}px from the board edge`)
+  assert(fourPlayerGutter.hpInside, 'a shifted player HP bar left the board')
 })
 
 const rowCount = await page.locator('.row').count()

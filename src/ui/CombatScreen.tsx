@@ -3371,6 +3371,7 @@ function CombatScreenView({
           const latestActorVfx = actorEvents[actorEvents.length - 1]
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
+          const latestCharacterAttackSeq = characterAttack?.active.event.seq
           const rowLabel = combatRowLabel(state, row)
           return (
             <div
@@ -3486,7 +3487,8 @@ function CombatScreenView({
                               '--attack-y': `${characterAttack.y}px`,
                             } as React.CSSProperties}
                           >
-                            {occupant.character === 'ironclad' ? (
+                            {occupant.character === 'ironclad' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
                                 <span className="character-attack__pose character-attack__pose--ironclad-ready">
                                   <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
@@ -3496,19 +3498,24 @@ function CombatScreenView({
                                 </span>
                               </>
                             ) : null}
-                            {occupant.character === 'silent' ? (
+                            {occupant.character === 'silent' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <span className="character-attack__pose character-attack__pose--silent-throw">
                                 <img src={assetPath('combat/characters/silent-throw.webp')} alt="" />
                               </span>
                             ) : null}
                             {occupant.character === 'watcher' ? (
                               <>
-                                <span className="character-attack__pose character-attack__pose--watcher-charge">
-                                  <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--watcher-cast">
-                                  <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
-                                </span>
+                                {characterAttack.active.event.seq === latestCharacterAttackSeq ? (
+                                  <>
+                                    <span className="character-attack__pose character-attack__pose--watcher-charge">
+                                      <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
+                                    </span>
+                                    <span className="character-attack__pose character-attack__pose--watcher-cast">
+                                      <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
+                                    </span>
+                                  </>
+                                ) : null}
                                 {characterAttack.targets.map((target, index) => (
                                   <span
                                     className="character-attack__meteor"
@@ -3536,10 +3543,12 @@ function CombatScreenView({
                                 ))}
                               </>
                             ) : null}
-                            {occupant.character === 'ironclad' ? (
+                            {occupant.character === 'ironclad' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <span className="character-attack__swing" />
                             ) : null}
-                            {occupant.character === 'defect' ? (
+                            {occupant.character === 'defect' &&
+                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
                               <>
                                 <span className="character-attack__pose character-attack__pose--defect-charge">
                                   <img src={assetPath('combat/characters/defect-charge.webp')} alt="" />
