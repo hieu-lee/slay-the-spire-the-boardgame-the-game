@@ -558,7 +558,9 @@ export function evokePlan(
   mode?: number,
   energySpent = 0,
 ) {
-  const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
+  const effects = def.type === 'power' && def.resolvesOnPlay !== true
+    ? []
+    : def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
   return effectEvokePlan(effects, actor, slots, energySpent)
 }
 
