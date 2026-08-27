@@ -194,21 +194,32 @@ export function revealViewerRow(board: HTMLElement | null, row: HTMLElement | nu
   const boardBox = board.getBoundingClientRect()
   const rowBox = row.getBoundingClientRect()
   board.scrollTop += rowBox.top - boardBox.top - (board.clientHeight - rowBox.height) / 2
-  let actors = [...row.querySelectorAll<HTMLElement>('.row__seat, .enemy')]
+  const seats = [...row.querySelectorAll<HTMLElement>('.row__seat')]
+  const partySeats = [...board.querySelectorAll<HTMLElement>('.row__seat')]
+    .filter((seat) => seat.querySelector('.seat:not(.seat--empty)'))
   const enemies = [...row.querySelectorAll<HTMLElement>('.enemy')]
   const bosses = [...board.querySelectorAll<HTMLElement>('.board__bosses .enemy:not(.enemy--dead)')]
-  if (enemies.length === 0 && bosses.length > 0) actors = bosses
+  let actors = [...seats, ...(enemies.length > 0 ? enemies : bosses)]
   const span = (items: HTMLElement[]): [number, number] => {
     const boxes = items.map((actor) => actor.getBoundingClientRect())
     return [Math.min(...boxes.map((box) => box.left)), Math.max(...boxes.map((box) => box.right))]
   }
-  if (actors.length > 0 && enemies.length > 0) {
+  const gutter = 8
+  if (actors.length > 0 && seats.length > 0) {
     const [left, right] = span(actors)
-    if (right - left > board.clientWidth) actors = enemies
+    if (right - left > board.clientWidth - gutter * 2) {
+      if (partySeats.length > 0) {
+        const [partyLeft, partyRight] = span(partySeats)
+        actors = partyRight - partyLeft <= board.clientWidth - gutter * 2 ? partySeats : seats
+      } else {
+        actors = seats
+      }
+    }
   }
   if (actors.length > 0) {
     const [left, right] = span(actors)
-    board.scrollLeft += left - boardBox.left - (board.clientWidth - (right - left)) / 2
+    const target = board.scrollLeft + left - boardBox.left - (board.clientWidth - (right - left)) / 2
+    board.scrollLeft = Math.max(0, Math.min(Math.max(0, board.scrollWidth - board.clientWidth), target))
   }
 }
 

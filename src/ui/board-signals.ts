@@ -2,7 +2,12 @@
 // component files so a plain Node check can import them — a .tsx module cannot
 // be loaded by the verify scripts, which is why these went untested for so long.
 import type { CombatState } from '../game/combat.ts'
-import type { CardInstance, Player } from '../game/types.ts'
+import type { CardInstance, Enemy, Player } from '../game/types.ts'
+
+/** Keep a fresh defeat mounted only long enough to finish its one-shot dissolve. */
+export function displayedEnemies(enemies: readonly Enemy[], falling: ReadonlySet<string>): Enemy[] {
+  return enemies.filter((enemy) => !enemy.dead || falling.has(enemy.uid))
+}
 
 /**
  * Which band a health bar is in.

@@ -135,6 +135,7 @@ import {
   STAGE_GAP_REM,
   STAGE_MARGIN_REM,
   cardMotionDestination,
+  displayedEnemies,
   drawnCardUids,
   healthBand,
   pendingUiSurvivesContext,
@@ -144,6 +145,9 @@ import {
 import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe } from './combat-vfx.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+
+// Weighted alpha PCA of watcher-meteor.webp: tail-to-nose y/x.
+const WATCHER_METEOR_FALL_SLOPE = 0.7113856 / 0.7028019
 
 function CombatScreenView({
   state,
@@ -399,6 +403,8 @@ function CombatScreenView({
       return
     }
     const enemies = [...board.querySelectorAll<HTMLElement>('.enemy')]
+    const boardRect = board.getBoundingClientRect()
+    const skyClearance = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
     const next: Record<string, CharacterAttackMotion[]> = {}
     for (const player of state.players) {
       const actorEvents = activeVfx.filter(({ event }) => event.actorId === player.id)
@@ -426,17 +432,28 @@ function CombatScreenView({
       const actor = board.querySelector<HTMLElement>(`.seat[data-player-id="${player.id}"] .seat__portrait`)
       if (!actor) continue
       const actorRect = actor.getBoundingClientRect()
+      const actorCenterX = actorRect.left + actorRect.width / 2
+      const actorCenterY = actorRect.top + actorRect.height / 2
       next[player.id] = attacks.flatMap((active) => {
         const targets = active.event.enemyIds.flatMap((id) => {
           const target = enemies.find((enemy) => enemy.dataset.enemyId === id)?.querySelector<HTMLElement>('.enemy__portrait')
           if (!target) return []
           const rect = target.getBoundingClientRect()
+          const x = rect.left + rect.width / 2 - actorCenterX -
+            (player.character === 'silent' ? actorRect.width * 0.15 :
+              player.character === 'defect' ? -actorRect.width * 0.03 : 0)
+          const y = (player.character === 'watcher' ? rect.bottom : rect.top + rect.height / 2) -
+            actorCenterY + (player.character === 'silent' ? actorRect.height * 0.19 :
+              player.character === 'defect' ? actorRect.height * 0.35 : 0)
+          const startY = player.character === 'watcher'
+            ? boardRect.top - actorCenterY - skyClearance
+            : y
           return [{
             id,
-            x: rect.left + rect.width / 2 - actorRect.left - actorRect.width / 2 -
-              (player.character === 'silent' ? actorRect.width * 0.38 : 0),
-            y: rect.top + rect.height / 2 - actorRect.top - actorRect.height / 2 +
-              (player.character === 'silent' ? actorRect.height * 0.22 : 0),
+            x,
+            y,
+            startX: player.character === 'watcher' ? x - (y - startY) / WATCHER_METEOR_FALL_SLOPE : x,
+            startY,
           }]
         })
         if (targets.length === 0) return []
@@ -1031,11 +1048,12 @@ function CombatScreenView({
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = 0
   }, [state.log.length])
-  const bosses = state.enemies.filter((enemy) => enemy.isBoss)
-  const stageEnemies = state.enemies.filter((enemy) => !enemy.isBoss)
-  const stageCount = state.players.length + state.enemies.length
+  const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
+  const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
+  const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
+  const stageCount = state.players.length + visibleEnemies.length
   const stageGap = STAGE_GAP_REM * stageScale
-  const stageLayoutKey = state.enemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
+  const stageLayoutKey = visibleEnemies.map((enemy) => `${enemy.uid}:${enemy.row}:${enemy.isBoss}`).join('|')
 
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -3347,7 +3365,7 @@ function CombatScreenView({
 
         {rows.map((row) => {
           const occupant = state.players.find((player) => player.row === row)
-          const foes = state.enemies.filter((enemy) => enemy.row === row && !enemy.isBoss)
+          const foes = stageEnemies.filter((enemy) => enemy.row === row)
           const actorEvents = occupant ? actorVfxFor(occupant.id) : []
           const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0)
           const latestActorVfx = actorEvents[actorEvents.length - 1]
@@ -3485,19 +3503,55 @@ function CombatScreenView({
                             ) : null}
                             {occupant.character === 'watcher' ? (
                               <>
-                                <span className="character-attack__pose character-attack__pose--watcher-ready">
+                                <span className="character-attack__pose character-attack__pose--watcher-charge">
                                   <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
                                 </span>
-                                <span className="character-attack__pose character-attack__pose--watcher-thrust">
+                                <span className="character-attack__pose character-attack__pose--watcher-cast">
                                   <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
                                 </span>
-                                <span className="character-attack__thrust" />
+                                {characterAttack.targets.map((target, index) => (
+                                  <span
+                                    className="character-attack__meteor"
+                                    data-attack-target-id={target.id}
+                                    key={target.id}
+                                    style={{
+                                      '--attack-target-x': `${target.x}px`,
+                                      '--attack-target-y': `${target.y}px`,
+                                      '--attack-start-x': `${target.startX}px`,
+                                      '--attack-start-y': `${target.startY}px`,
+                                      '--attack-delay': `${index * 70}ms`,
+                                    } as React.CSSProperties}
+                                  >
+                                    <img
+                                      className="character-attack__meteor-art"
+                                      src={assetPath('combat/vfx/actions/watcher-meteor.webp')}
+                                      alt=""
+                                    />
+                                    <img
+                                      className="character-attack__meteor-impact"
+                                      src={assetPath('combat/vfx/actions/watcher-meteor-impact.webp')}
+                                      alt=""
+                                    />
+                                  </span>
+                                ))}
                               </>
                             ) : null}
                             {occupant.character === 'ironclad' ? (
                               <span className="character-attack__swing" />
                             ) : null}
-                            {occupant.character === 'defect' ? <span className="character-attack__core" /> : null}
+                            {occupant.character === 'defect' ? (
+                              <>
+                                <span className="character-attack__pose character-attack__pose--defect-charge">
+                                  <img src={assetPath('combat/characters/defect-charge.webp')} alt="" />
+                                </span>
+                                <span className="character-attack__pose character-attack__pose--defect-release">
+                                  <img src={assetPath('combat/characters/defect-release.webp')} alt="" />
+                                </span>
+                                <span className="character-attack__core">
+                                  <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />
+                                </span>
+                              </>
+                            ) : null}
                             {(occupant.character === 'silent' || occupant.character === 'defect')
                               ? characterAttack.targets.map((target, index) => (
                                 <span
@@ -3511,7 +3565,11 @@ function CombatScreenView({
                                     '--attack-target-y': `${target.y}px`,
                                     '--attack-delay': `${index * 70}ms`,
                                   } as React.CSSProperties}
-                                />
+                                >
+                                  {occupant.character === 'silent'
+                                    ? <img src={assetPath('combat/vfx/actions/silent-knife.webp')} alt="" />
+                                    : <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />}
+                                </span>
                               ))
                               : null}
                           </span>

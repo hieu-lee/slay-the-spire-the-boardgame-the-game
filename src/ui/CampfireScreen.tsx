@@ -120,7 +120,12 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
             aria-pressed={seat.id === player?.id}
             onClick={() => setFocusedId(seat.id)}
           >
-            <img src={assetPath(`noncombat/campfire/${seat.character}-back.webp`)} alt="" />
+            <img
+              src={assetPath(`noncombat/campfire/${seat.character}-back.webp`)}
+              alt=""
+              loading="eager"
+              decoding="async"
+            />
           </button>
         })}
       </div>

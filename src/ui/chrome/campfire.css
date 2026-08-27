@@ -318,3 +318,27 @@
   .sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { left: 28%; width: 14%; }
   .sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { left: 42%; width: 14%; }
 }
+
+@media (max-height: 700px) {
+  .sts-scope .campfire:not(:has(.campfire__deck)) {
+    min-height: calc(100dvh - 5rem);
+  }
+}
+
+@media (max-height: 520px) {
+  .sts-scope .campfire:not(:has(.campfire__deck)) { --campfire-floor-reserve: 10.625rem; }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__prompt {
+    top: 0.25rem;
+    padding-block: 0.35rem;
+  }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__prompt h2 { font-size: 1.1rem; }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__choices button {
+    flex-direction: row;
+    min-height: 2.75rem;
+  }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__choices button > img { display: none; }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__players {
+    bottom: 3.125rem;
+    height: 7.5rem;
+  }
+}

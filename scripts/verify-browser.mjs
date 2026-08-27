@@ -11,7 +11,7 @@ import { createServer } from 'vite'
 import { chromium, devices, webkit } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
-import { combatRowLabel, STALE_END_TURN_ORDER } from '../src/game/combat.ts'
+import { combatRowLabel } from '../src/game/combat.ts'
 import { enemyDef } from '../src/game/enemies.ts'
 import { potionDef, relicDef } from '../src/game/relics.ts'
 
@@ -8842,12 +8842,13 @@ check('Watcher Calm and Wrath use distinct accessible portrait auras instead of 
 
 const vfxActor = () => page.locator('.combat-vfx--actor').last()
 const vfxTarget = () => page.locator('.enemy .combat-vfx--target').last()
-async function captureCombatAnimation(name, time = 300) {
+async function captureCombatAnimation(name, time = 300, sample) {
   await page.evaluate((currentTime) => {
     for (const animation of document.getAnimations()) {
       const name = animation.animationName ?? ''
       if (name.startsWith('combat-vfx') || name.startsWith('vfx-') ||
-        name.startsWith('attack-') || name.endsWith('-pose') || name === 'defect-core-charge') {
+        name.startsWith('attack-') || name.startsWith('watcher-') ||
+        name.endsWith('-pose') || name === 'defect-core-charge') {
         animation.currentTime = currentTime
         animation.pause()
       }
@@ -8857,11 +8858,12 @@ async function captureCombatAnimation(name, time = 300) {
     const impact = [...document.querySelectorAll('.combat-vfx--attack-impact')].at(-1)
     return impact ? Number(getComputedStyle(impact).opacity) : null
   })
+  const sampled = sample ? await sample() : null
   await page.screenshot({ path: join(animationReferenceDir, name), timeout: 15_000 })
   await page.evaluate(() => {
     for (const animation of document.getAnimations()) if (animation.playState === 'paused') animation.play()
   })
-  return { attackImpactOpacity }
+  return { attackImpactOpacity, sampled }
 }
 const firstEnemyId = await page.locator('.enemy').first().getAttribute('data-enemy-id')
 const firstPlayerId = watcherPlayerId
@@ -9028,8 +9030,34 @@ await page.waitForFunction((enemyId) => {
 const defectAttack = await watcherSeat.evaluate((seat) => ({
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
   core: getComputedStyle(seat.querySelector('.character-attack__core')).animationName,
+  coreImage: seat.querySelector('.character-attack__core img')?.getAttribute('src') ?? '',
+  charge: getComputedStyle(seat.querySelector('.character-attack__pose--defect-charge')).animationName,
+  chargeImage: seat.querySelector('.character-attack__pose--defect-charge img')?.getAttribute('src') ?? '',
+  release: getComputedStyle(seat.querySelector('.character-attack__pose--defect-release')).animationName,
+  releaseImage: seat.querySelector('.character-attack__pose--defect-release img')?.getAttribute('src') ?? '',
   bolts: seat.querySelectorAll('.character-attack__bolt').length,
   target: seat.querySelector('.character-attack__bolt')?.getAttribute('data-attack-target-id'),
+  projectileImage: seat.querySelector('.character-attack__bolt img')?.getAttribute('src') ?? '',
+  launchOffset: (() => {
+    const pose = seat.querySelector('.character-attack__pose--defect-release')
+    const bolt = seat.querySelector('.character-attack__bolt')
+    const core = seat.querySelector('.character-attack__core')
+    if (!(pose instanceof HTMLElement) || !(bolt instanceof HTMLElement) || !(core instanceof HTMLElement)) return null
+    // The generated 512x341 pose's large cyan face lens is centred at (297, 52).
+    const renderedHeight = pose.offsetWidth * 341 / 512
+    const lensX = pose.offsetLeft + pose.offsetWidth * 297 / 512
+    const lensY = pose.offsetTop + pose.offsetHeight - renderedHeight + renderedHeight * 52 / 341
+    return {
+      projectile: {
+        x: bolt.offsetLeft + bolt.offsetWidth / 2 - lensX,
+        y: bolt.offsetTop + bolt.offsetHeight / 2 - lensY,
+      },
+      charge: {
+        x: core.offsetLeft + core.offsetWidth / 2 - lensX,
+        y: core.offsetTop + core.offsetHeight / 2 - lensY,
+      },
+    }
+  })(),
 }))
 await captureCombatAnimation('combat-attack-defect.png', 380)
 check('Defect damage feedback lands with its emitted bolt', () => {
@@ -9037,7 +9065,14 @@ check('Defect damage feedback lands with its emitted bolt', () => {
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${defectStrikeSeq}"]`).waitFor({ state: 'detached' })
 
-const defectVolleyIds = await page.locator('.enemy').evaluateAll((enemies) =>
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const enemy of run.combat.enemies.slice(0, 3)) Object.assign(enemy, { hp: Math.max(2, enemy.maxHp), dead: false })
+  debug.setRun(run)
+})
+await page.waitForFunction(() => document.querySelectorAll('.enemy:not(.enemy--dead)').length >= 3)
+const defectVolleyIds = await page.locator('.enemy:not(.enemy--dead)').evaluateAll((enemies) =>
   enemies.slice(0, 3).map((enemy) => enemy.getAttribute('data-enemy-id')).filter(Boolean))
 const defectVolleySeq = await publishPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'strike_defect', enemyIds: defectVolleyIds,
@@ -9087,7 +9122,7 @@ const prayPresentation = await vfxActor().evaluate((vfx) => ({
 await vfxActor().waitFor({ state: 'detached' })
 
 await publishPresentationEvent({
-  kind: 'card', actorId: firstPlayerId, sourceId: 'eruption', enemyIds: [firstEnemyId], playerIds: [],
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_watcher', enemyIds: defectVolleyIds, playerIds: [],
   upgraded: false, copied: false, energy: 1,
 })
 await vfxTarget().waitFor()
@@ -9095,17 +9130,61 @@ await watcherSeat.locator('.character-attack--watcher').waitFor()
 const watcherAttack = await watcherSeat.evaluate((seat) => ({
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
   target: seat.getAttribute('data-attack-target'),
-  ready: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-ready')).animationName,
-  readyImage: seat.querySelector('.character-attack__pose--watcher-ready img')?.getAttribute('src') ?? '',
-  thrust: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-thrust')).animationName,
-  thrustImage: seat.querySelector('.character-attack__pose--watcher-thrust img')?.getAttribute('src') ?? '',
-  thrustStreak: getComputedStyle(seat.querySelector('.character-attack__thrust')).animationName,
+  charge: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-charge')).animationName,
+  chargeImage: seat.querySelector('.character-attack__pose--watcher-charge img')?.getAttribute('src') ?? '',
+  cast: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-cast')).animationName,
+  castImage: seat.querySelector('.character-attack__pose--watcher-cast img')?.getAttribute('src') ?? '',
+  meteors: [...seat.querySelectorAll('.character-attack__meteor')].map((meteor) => ({
+    target: meteor.getAttribute('data-attack-target-id'),
+    animation: getComputedStyle(meteor).animationName,
+    image: meteor.querySelector('.character-attack__meteor-art')?.getAttribute('src') ?? '',
+    impactImage: meteor.querySelector('.character-attack__meteor-impact')?.getAttribute('src') ?? '',
+  })),
   auraDash: seat.querySelector('.stance-aura')?.getAnimations()
-    .some((animation) => animation.animationName === 'attack-watcher-aura'),
+    .some((animation) => animation.animationName === 'attack-watcher-aura') ?? false,
 }))
-await captureCombatAnimation('combat-attack-watcher-ready.png', 150)
-await captureCombatAnimation('combat-attack-watcher-thrust.png', 520)
+const readWatcherMeteorFrame = () => watcherSeat.evaluate((seat) => {
+  const meteor = seat.querySelector('.character-attack__meteor')
+  const impact = meteor?.querySelector('.character-attack__meteor-impact')
+  const targetId = meteor?.getAttribute('data-attack-target-id')
+  const target = targetId ? document.querySelector(`.enemy[data-enemy-id="${targetId}"] .enemy__portrait`) : null
+  const board = seat.closest('.board')
+  if (!(meteor instanceof HTMLElement) || !(impact instanceof HTMLElement) ||
+    !(target instanceof HTMLElement) || !(board instanceof HTMLElement)) return null
+  const meteorRect = meteor.getBoundingClientRect()
+  const impactRect = impact.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  const boardRect = board.getBoundingClientRect()
+  return {
+    meteor: { left: meteorRect.left, top: meteorRect.top, right: meteorRect.right, bottom: meteorRect.bottom,
+      width: meteorRect.width, height: meteorRect.height },
+    nose: { x: meteorRect.left + meteorRect.width * 0.8965, y: meteorRect.top + meteorRect.height * 0.8613 },
+    impact: { x: impactRect.left + impactRect.width / 2, y: impactRect.top + impactRect.height / 2,
+      width: impactRect.width, opacity: Number(getComputedStyle(impact).opacity) },
+    target: { x: targetRect.left + targetRect.width / 2, y: targetRect.bottom },
+    boardTop: boardRect.top,
+  }
+})
+await captureCombatAnimation('combat-attack-watcher-charge.png', 180)
+const watcherMeteorSky = (await captureCombatAnimation(
+  'combat-attack-watcher-meteor-sky.png', 100, readWatcherMeteorFrame,
+)).sampled
+const watcherMeteorContact = (await captureCombatAnimation(
+  'combat-attack-watcher-meteor-impact.png', 520, readWatcherMeteorFrame,
+)).sampled
 await vfxTarget().waitFor({ state: 'detached' })
+
+await page.setViewportSize({ width: 1440, height: 1200 })
+const tallWatcherSeq = await publishPresentationEvent({
+  kind: 'card', actorId: firstPlayerId, sourceId: 'strike_watcher', enemyIds: [defectVolleyIds[0]], playerIds: [],
+  upgraded: false, copied: false, energy: 1,
+})
+await watcherSeat.locator(`.character-attack[data-attack-seq="${tallWatcherSeq}"]`).waitFor()
+const watcherTallMeteorSky = (await captureCombatAnimation(
+  'combat-attack-watcher-meteor-tall-sky.png', 100, readWatcherMeteorFrame,
+)).sampled
+await page.locator(`.combat-vfx[data-vfx-seq="${tallWatcherSeq}"]`).first().waitFor({ state: 'detached' })
+await page.setViewportSize({ width: 1440, height: 900 })
 
 await page.evaluate((enemyId) => {
   const debug = window.__STS_DEBUG__
@@ -9167,9 +9246,17 @@ const silentAttack = await watcherSeat.evaluate((seat) => ({
   poseImage: seat.querySelector('.character-attack__pose--silent-throw img')?.getAttribute('src') ?? '',
   daggers: seat.querySelectorAll('.character-attack__dagger').length,
   target: seat.querySelector('.character-attack__dagger')?.getAttribute('data-attack-target-id'),
+  daggerImage: seat.querySelector('.character-attack__dagger img')?.getAttribute('src') ?? '',
+  daggerAnimation: getComputedStyle(seat.querySelector('.character-attack__dagger')).animationName,
+  daggerRoundTrip: (() => {
+    const animation = seat.querySelector('.character-attack__dagger')?.getAnimations()[0]
+    const frames = animation?.effect?.getKeyframes() ?? []
+    return frames.length > 1 && frames[0].transform === frames.at(-1).transform
+  })(),
   attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
 }))
-await captureCombatAnimation('combat-attack-silent.png', 330)
+await captureCombatAnimation('combat-attack-silent.png', 480)
+await captureCombatAnimation('combat-attack-silent-return.png', 690)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
   assertEqual(mixedTargetPresentation.allyImpacts, 0)
@@ -9228,7 +9315,7 @@ const silentVolleyTimings = await silentVolley.locator('.character-attack__dagge
     const style = getComputedStyle(dagger)
     const duration = Number.parseFloat(style.animationDuration) * 1000
     const delay = Number.parseFloat(style.animationDelay) * 1000
-    return { duration, delay, contact: duration + delay }
+    return { duration, delay, contact: delay + duration / 2, return: delay + duration }
   }))
 await page.waitForTimeout(430)
 const earlySilentHits = await Promise.all(rowDashFixture.ids.map((enemyId) =>
@@ -9253,6 +9340,8 @@ check('multi-target Silent daggers reach every enemy inside the contact window',
     `first dagger contact is ${silentVolleyTimings[0].contact}ms`)
   assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 700,
     `a staggered dagger outlives contact: ${JSON.stringify(silentVolleyTimings)}`)
+  assert(Math.max(...silentVolleyTimings.map((timing) => timing.return)) < 1_000,
+    `a staggered dagger did not return inside the event lifetime: ${JSON.stringify(silentVolleyTimings)}`)
   assertDeepEqual(earlySilentHits, rowDashFixture.ids.map(() => 0))
   assert(staggeredSilentHits[0] > 0.5)
   assertEqual(staggeredSilentHits.at(-1), 0, 'all hit feedback appeared before the staggered daggers landed')
@@ -9306,24 +9395,58 @@ check('personal card and potion events render distinct authoritative recipes', (
   assert(zapPresentation.image.includes('lightning-channel.webp'), zapPresentation.image)
   assertEqual(defectAttack.animation, 'attack-defect')
   assertEqual(defectAttack.core, 'defect-core-charge')
+  assert(defectAttack.coreImage.endsWith('/defect-face-orb.webp'), defectAttack.coreImage)
+  assertEqual(defectAttack.charge, 'defect-charge-pose')
+  assert(defectAttack.chargeImage.endsWith('/defect-charge.webp'), defectAttack.chargeImage)
+  assertEqual(defectAttack.release, 'defect-release-pose')
+  assert(defectAttack.releaseImage.endsWith('/defect-release.webp'), defectAttack.releaseImage)
   assertEqual(defectAttack.bolts, 1)
   assertEqual(defectAttack.target, firstEnemyId)
+  assert(defectAttack.projectileImage.endsWith('/defect-face-orb.webp'), defectAttack.projectileImage)
+  assert(defectAttack.launchOffset && [defectAttack.launchOffset.projectile, defectAttack.launchOffset.charge]
+    .every((offset) => Math.abs(offset.x) <= 4 && Math.abs(offset.y) <= 4),
+    `Defect projectile misses its face lens: ${JSON.stringify(defectAttack.launchOffset)}`)
   assertEqual(prayPresentation.family, 'mantra')
   assertEqual(prayPresentation.tone, 'mantra-cyan')
   assert(prayPresentation.image.includes('watcher-pray.webp'), prayPresentation.image)
   assertEqual(watcherAttack.animation, 'attack-watcher')
-  assertEqual(watcherAttack.target, firstEnemyId)
-  assertEqual(watcherAttack.ready, 'watcher-ready-pose')
-  assert(watcherAttack.readyImage.endsWith('/watcher-ready.webp'), watcherAttack.readyImage)
-  assertEqual(watcherAttack.thrust, 'watcher-thrust-pose')
-  assert(watcherAttack.thrustImage.endsWith('/watcher-thrust.webp'), watcherAttack.thrustImage)
-  assertEqual(watcherAttack.thrustStreak, 'attack-watcher-thrust')
-  assertEqual(watcherAttack.auraDash, true)
+  assertEqual(watcherAttack.target, defectVolleyIds[0])
+  assertEqual(watcherAttack.charge, 'watcher-charge-pose')
+  assert(watcherAttack.chargeImage.endsWith('/watcher-ready.webp'), watcherAttack.chargeImage)
+  assertEqual(watcherAttack.cast, 'watcher-cast-pose')
+  assert(watcherAttack.castImage.endsWith('/watcher-thrust.webp'), watcherAttack.castImage)
+  assertDeepEqual(watcherAttack.meteors.map(({ target }) => target), defectVolleyIds)
+  assert(watcherAttack.meteors.every(({ animation }) => animation === 'watcher-meteor-fall'))
+  assert(watcherAttack.meteors.every(({ image }) => image.endsWith('/watcher-meteor.webp')))
+  assert(watcherAttack.meteors.every(({ impactImage }) => impactImage.endsWith('/watcher-meteor-impact.webp')))
+  assert(watcherMeteorSky && watcherMeteorContact, 'Watcher meteor frames were not measurable')
+  assert(watcherMeteorSky.meteor.bottom <= watcherMeteorSky.boardTop,
+    `Watcher meteor did not start in the sky: ${JSON.stringify(watcherMeteorSky)}`)
+  assert(watcherTallMeteorSky && watcherTallMeteorSky.meteor.bottom <= watcherTallMeteorSky.boardTop,
+    `Watcher meteor did not start in the sky on a tall stage: ${JSON.stringify(watcherTallMeteorSky)}`)
+  const meteorDx = watcherMeteorContact.nose.x - watcherMeteorSky.nose.x
+  const meteorDy = watcherMeteorContact.nose.y - watcherMeteorSky.nose.y
+  assert(Math.abs(meteorDy / meteorDx - Math.tan(45.34776287123926 * Math.PI / 180)) < 0.002,
+    `Watcher meteor flight diverged from its 45.35deg asset axis: ${meteorDx},${meteorDy}`)
+  assert(Math.abs(watcherMeteorContact.nose.x - watcherMeteorContact.target.x) <= 2 &&
+    Math.abs(watcherMeteorContact.nose.y - watcherMeteorContact.target.y) <= 2,
+  `Watcher meteor missed enemy ground contact: ${JSON.stringify(watcherMeteorContact)}`)
+  assert(Math.abs(watcherMeteorContact.impact.x - watcherMeteorContact.target.x) <= 2 &&
+    Math.abs(watcherMeteorContact.impact.y - watcherMeteorContact.target.y) <= 2 &&
+    watcherMeteorContact.impact.opacity >= 0.9,
+  `Watcher meteor impact was not visible at ground contact: ${JSON.stringify(watcherMeteorContact)}`)
+  assert(Math.abs(watcherMeteorContact.impact.width / watcherMeteorContact.meteor.width - 1.15) <= 0.01,
+    `Watcher meteor impact is not 1.15x the meteor: ${JSON.stringify(watcherMeteorContact)}`)
+  assert(watcherMeteorContact.meteor.width >= 90, `Watcher meteor is still too small: ${watcherMeteorContact.meteor.width}px`)
+  assertEqual(watcherAttack.auraDash, false)
   assertEqual(silentAttack.animation, 'attack-silent')
   assertEqual(silentAttack.pose, 'silent-throw-pose')
   assert(silentAttack.poseImage.endsWith('/silent-throw.webp'), silentAttack.poseImage)
   assertEqual(silentAttack.daggers, 1)
   assertEqual(silentAttack.target, firstEnemyId)
+  assert(silentAttack.daggerImage.endsWith('/silent-knife.webp'), silentAttack.daggerImage)
+  assertEqual(silentAttack.daggerAnimation, 'attack-dagger-round-trip')
+  assertEqual(silentAttack.daggerRoundTrip, true, 'Silent’s knife does not return along the exact outbound path')
   assert(silentAttack.attackX > 0, 'the Silent target offset fixture is invalid')
   assertEqual(potionPresentation.kind, 'potion')
   assertEqual(potionPresentation.family, 'projectile')
@@ -10214,7 +10337,7 @@ const corpse = await page.evaluate(() => {
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[0].dead)
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+    if (['enemy-clear', 'enemy-disintegrate', 'enemy-dissolve', 'enemy-death-ash', 'death-ring'].includes(animation.animationName) &&
       Number(animation.currentTime) < 250) {
       animation.currentTime = 380
       animation.pause()
@@ -10224,7 +10347,7 @@ await page.evaluate(() => {
 await shot('09c-enemy-defeat-animation')
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (['actor-defeat', 'death-ash', 'death-ring'].includes(animation.animationName) &&
+    if (['enemy-clear', 'enemy-disintegrate', 'enemy-dissolve', 'enemy-death-ash', 'death-ring'].includes(animation.animationName) &&
       animation.playState === 'paused') animation.play()
   }
 })
@@ -10248,30 +10371,97 @@ check('a defeated enemy stops telegraphing and stops carrying tokens', () => {
   assertEqual(corpseView.tokens, 0, 'and no tokens')
   assert(corpseView.disabled, 'and cannot be clicked')
   assert(corpseView.label.includes('defeated'), `and says so: ${corpseView.label}`)
-  assertEqual(corpseView.deathAnimation, 'actor-defeat', 'and plays its defeat animation')
+  assertEqual(corpseView.deathAnimation, 'enemy-disintegrate', 'and plays its defeat animation')
   assert(corpseView.ash.includes('/assets/combat/vfx/death-ash.webp'), corpseView.ash)
   assert(corpseView.ring.includes('/assets/combat/vfx/death-ring.webp'), corpseView.ring)
 })
 
-// A reconnect remounts the combat with its current dead actors. Those corpses
-// keep the final collapsed pose, but must not replay a death from long ago.
+await page.locator(`.enemy[data-enemy-id="${corpse}"]`).waitFor({ state: 'detached' })
+const clearedEnemyCount = await page.locator(`.enemy[data-enemy-id="${corpse}"]`).count()
+check('a defeated enemy releases its stage slot after dissolving', () => {
+  assertEqual(clearedEnemyCount, 0)
+})
+
+// A reconnect remounts the combat with its authoritative dead actors, but
+// settled corpses neither replay old deaths nor occupy stage slots.
 const restoredCombat = await readRun()
 await page.evaluate((run) => window.__STS_DEBUG__.setRun({ ...run, phase: 'map' }), restoredCombat)
 await page.waitForFunction(() => !document.querySelector('.board'))
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), restoredCombat)
-await page.waitForFunction(() => document.querySelector('.enemy--dead .enemy__portrait'))
-const restoredCorpse = await page.locator('.enemy--dead .enemy__portrait').evaluate((portrait) => ({
-  falling: portrait.closest('.enemy')?.classList.contains('enemy--falling') ?? true,
-  animation: getComputedStyle(portrait).animationName,
-  ash: getComputedStyle(portrait, '::before').animationName,
-  opacity: getComputedStyle(portrait).opacity,
-}))
-check('restored and reconnected corpses do not replay old deaths', () => {
-  assert(!restoredCorpse.falling, 'a restored corpse should not be marked as newly falling')
-  assertEqual(restoredCorpse.animation, 'none')
-  assertEqual(restoredCorpse.ash, 'none')
-  assertEqual(restoredCorpse.opacity, '0.28')
+await page.locator('.board').waitFor()
+const restoredCorpses = await page.locator('.enemy--dead').count()
+check('restored and reconnected corpses stay out of the stage layout', () => {
+  assertEqual(restoredCorpses, 0)
 })
+
+// A summoning Boss keeps dead pieces in authoritative state for effects such
+// as Regrow, but those pieces must stop consuming stage positions. The real
+// insertion order is B, C, D, E, Boss; filtering settled B/C should put D/E in
+// the exact same two visual slots.
+const slotReuseRestore = await readRun()
+const slotFixture = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const template = run.combat.enemies[0]
+  const row = run.combat.players[0].row
+  const enemy = (uid, defId, isBoss = false) => ({
+    ...structuredClone(template), uid, defId, row, isBoss, hp: 5, maxHp: 5,
+    dead: false, block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0,
+    actionIndex: 0, phase: 0, abilityUsed: false,
+  })
+  run.combat.enemies = [
+    enemy('slot-summon-b', 'cultist'),
+    enemy('slot-summon-c', 'jaw_worm'),
+    enemy('slot-boss-a', 'slime_boss', true),
+  ]
+  debug.setRun(run)
+  return { b: 'slot-summon-b', c: 'slot-summon-c', d: 'slot-summon-d', e: 'slot-summon-e' }
+})
+await page.waitForFunction(({ b, c }) =>
+  document.querySelector(`[data-enemy-id="${b}"]`) && document.querySelector(`[data-enemy-id="${c}"]`), slotFixture)
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+const oldSummonSlots = await page.evaluate(({ b, c }) => [b, c].map((id) =>
+  document.querySelector(`[data-enemy-id="${id}"]`).getBoundingClientRect().left), slotFixture)
+await page.evaluate(({ b, c }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  for (const enemy of run.combat.enemies) if (enemy.uid === b || enemy.uid === c) {
+    enemy.hp = 0
+    enemy.dead = true
+  }
+  debug.setRun(run)
+}, slotFixture)
+await page.waitForFunction(({ b, c }) => [b, c].every((id) =>
+  document.querySelector(`[data-enemy-id="${id}"]`)?.classList.contains('enemy--falling')), slotFixture)
+await Promise.all([slotFixture.b, slotFixture.c].map((id) =>
+  page.locator(`[data-enemy-id="${id}"]`).waitFor({ state: 'detached' })))
+await page.evaluate(({ b, c, d, e }) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const deadB = run.combat.enemies.find((enemy) => enemy.uid === b)
+  const deadC = run.combat.enemies.find((enemy) => enemy.uid === c)
+  const bossIndex = run.combat.enemies.findIndex((enemy) => enemy.isBoss)
+  run.combat.enemies.splice(bossIndex, 0,
+    { ...structuredClone(deadB), uid: d, hp: 5, dead: false },
+    { ...structuredClone(deadC), uid: e, hp: 5, dead: false })
+  debug.setRun(run)
+}, slotFixture)
+await page.waitForFunction(({ d, e }) =>
+  document.querySelector(`[data-enemy-id="${d}"]`) && document.querySelector(`[data-enemy-id="${e}"]`), slotFixture)
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+const reusedSummonSlots = await page.evaluate(({ d, e }) => [d, e].map((id) =>
+  document.querySelector(`[data-enemy-id="${id}"]`).getBoundingClientRect().left), slotFixture)
+const retainedDeadSummons = await page.evaluate(({ b, c }) => {
+  const enemies = window.__STS_DEBUG__.getState().enemies
+  return [b, c].every((id) => enemies.some((enemy) => enemy.uid === id && enemy.dead))
+}, slotFixture)
+check('later Boss summons reuse the cleared positions of dead summons', () => {
+  assert(retainedDeadSummons, 'slot cleanup mutated authoritative corpses needed by revive rules')
+  assertDeepEqual(reusedSummonSlots.map((left, index) => Math.abs(left - oldSummonSlots[index]) < 1), [true, true],
+    `old ${oldSummonSlots.join(', ')}; reused ${reusedSummonSlots.join(', ')}`)
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), slotReuseRestore)
+await page.locator('.board').waitFor()
 
 await page.emulateMedia({ reducedMotion: 'reduce' })
 const reducedMotion = await page.evaluate(() => {
@@ -10286,12 +10476,29 @@ const reducedMotion = await page.evaluate(() => {
     phase: phase ? getComputedStyle(phase).animationName : '',
   }
 })
+const reducedEnemyRestore = await readRun()
+const reducedEnemyId = await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const enemy = run.combat.enemies.find((candidate) => !candidate.dead)
+  enemy.hp = 0
+  enemy.dead = true
+  debug.setRun(run)
+  return enemy.uid
+})
+await page.waitForFunction((enemyId) => window.__STS_DEBUG__.getState().enemies
+  .some((enemy) => enemy.uid === enemyId && enemy.dead), reducedEnemyId)
+await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+const reducedEnemyTiles = await page.locator(`[data-enemy-id="${reducedEnemyId}"]`).count()
 check('reduced motion disables ambient, phase, and defeat movement', () => {
   assertEqual(reducedMotion.seat, 'none')
   assertEqual(reducedMotion.enemy, 'none')
-  assertEqual(reducedMotion.corpse, 'none')
+  assertEqual(reducedMotion.corpse, '')
   assertEqual(reducedMotion.phase, 'none')
+  assertEqual(reducedEnemyTiles, 0, 'a fresh enemy death held its stage slot for an invisible animation')
 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), reducedEnemyRestore)
+await page.locator(`[data-enemy-id="${reducedEnemyId}"]`).waitFor()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -11554,16 +11761,6 @@ check('the player can order end-of-turn abilities before committing', () => {
     'each Orb should appear as its own ability')
 })
 await shot('15bb-end-turn-order')
-await page.getByRole('button', { name: 'End turn' }).click()
-await page.getByRole('alert').filter({ hasText: STALE_END_TURN_ORDER }).waitFor()
-const rejectedOrbPlan = await readState()
-check('a stale Lightning target keeps the whole end-turn plan editable', () => {
-  assertEqual(rejectedOrbPlan.phase, 'player')
-  assertDeepEqual(rejectedOrbPlan.enemies.map((enemy) => enemy.hp), [1, 4],
-    'the rejected plan must not leak partial Orb damage')
-})
-await shot('15bba-stale-orb-target')
-await page.getByLabel('Target for Ironclad — Lightning Orb 2').selectOption({ label: 'Acid Slime' })
 await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
@@ -11574,7 +11771,7 @@ check('the Curse end-turn step resolves before discard ordering', () => {
   assertEqual(player.block, 0, 'Shame removes the only Block before Decay')
   assertEqual(player.weak, 1, 'Doubt grants Weak')
   assertDeepEqual(cursePrepared.enemies.map((enemy) => enemy.hp), [0, 3],
-    'each Lightning Orb uses its selected target')
+    'the later Lightning Orb retargets after the first overkills its chosen enemy')
   assertDeepEqual(player.exhaust.map((card) => card.uid).sort(), ['curse-bane', 'curse-clumsy'])
   assertEqual(player.hand.length, 5, 'Ethereal cards leave before the discard picker')
 })
@@ -11803,6 +12000,8 @@ for (let living = 1; living <= 4; living += 1) {
   campfirePartyLayouts.push(await page.evaluate(() => ({
     count: document.querySelectorAll('.campfire__seat').length,
     loaded: [...document.querySelectorAll('.campfire__seat img')].every((image) => image.naturalWidth > 0),
+    optimized: [...document.querySelectorAll('.campfire__seat img')]
+      .every((image) => image.loading === 'eager' && image.decoding === 'async'),
     overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   })))
 }
@@ -11813,9 +12012,61 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribute('data-party-size') === '4')
+const campfireResponsiveLayouts = []
+for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
+  await page.setViewportSize(viewport)
+  await page.locator('.campfire__seat img').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
+  campfireResponsiveLayouts.push({ ...viewport, ...await page.locator('.campfire').evaluate((campfire) => {
+    const blockers = [...document.querySelectorAll('.log, .campfire__leave')].map((element) => element.getBoundingClientRect())
+    const overlaps = (box) => blockers.some((blocker) =>
+      blocker.left < box.right && blocker.right > box.left && blocker.top < box.bottom && blocker.bottom > box.top)
+    return {
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+        document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      images: [...campfire.querySelectorAll('.campfire__seat img')].map((image) => {
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')
+        context.drawImage(image, 0, 0)
+        const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data
+        let left = canvas.width, top = canvas.height, right = 0, bottom = 0
+        for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
+          if (alpha[(y * canvas.width + x) * 4 + 3] < 16) continue
+          left = Math.min(left, x)
+          top = Math.min(top, y)
+          right = Math.max(right, x + 1)
+          bottom = Math.max(bottom, y + 1)
+        }
+        const box = image.getBoundingClientRect()
+        const drawn = {
+          left: box.left + left / canvas.width * box.width,
+          top: box.top + top / canvas.height * box.height,
+          right: box.left + right / canvas.width * box.width,
+          bottom: box.top + bottom / canvas.height * box.height,
+        }
+        return {
+          visible: drawn.left >= -1 && drawn.right <= innerWidth + 1 && drawn.top >= -1 && drawn.bottom <= innerHeight + 1,
+          covered: overlaps(drawn),
+          crisp: image.naturalWidth >= box.width && image.naturalHeight >= box.height,
+        }
+      }),
+    }
+  }) })
+}
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.emulateMedia({ reducedMotion: 'reduce' })
+await page.locator('.campfire__seat').first().hover()
+const reducedCampfireLift = await page.locator('.campfire__seat').first()
+  .evaluate((seat) => getComputedStyle(seat).transform)
+await page.mouse.move(0, 0)
+await page.emulateMedia({ reducedMotion: 'no-preference' })
 check('campfire party art covers every living party size without overflow', () => {
   assertDeepEqual(campfirePartyLayouts.map((layout) => layout.count), [1, 2, 3, 4])
-  assert(campfirePartyLayouts.every((layout) => layout.loaded && !layout.overflow), JSON.stringify(campfirePartyLayouts))
+  assert(campfirePartyLayouts.every((layout) => layout.loaded && layout.optimized && !layout.overflow), JSON.stringify(campfirePartyLayouts))
+  assert(campfireResponsiveLayouts.every((layout) => !layout.overflow &&
+    layout.images.every((image) => image.visible && !image.covered && image.crisp)), JSON.stringify(campfireResponsiveLayouts))
+  assertEqual(reducedCampfireLift, 'none', 'the focused campfire character still lifts under reduced motion')
 })
 
 const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
@@ -11944,10 +12195,14 @@ const compactReadySmith = await page.evaluate(() => {
     logVisible: Boolean(document.querySelector('.log') && getComputedStyle(document.querySelector('.log')).display !== 'none'),
     headerChoiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => {
       const box = choice.getBoundingClientRect()
+      const visible = promptBox ? {
+        left: Math.max(box.left, promptBox.left), right: Math.min(box.right, promptBox.right),
+        top: Math.max(box.top, promptBox.top), bottom: Math.min(box.bottom, promptBox.bottom),
+      } : box
       return headerControls.some((control) => {
         const controlBox = control.getBoundingClientRect()
-        return controlBox.width > 0 && controlBox.height > 0 && controlBox.left < box.right &&
-          controlBox.right > box.left && controlBox.top < box.bottom && controlBox.bottom > box.top
+        return visible.left < visible.right && visible.top < visible.bottom && controlBox.width > 0 && controlBox.height > 0 &&
+          controlBox.left < visible.right && controlBox.right > visible.left && controlBox.top < visible.bottom && controlBox.bottom > visible.top
       })
     }).length,
   }
@@ -13497,6 +13752,7 @@ check('starting over after abandoning a run does not replay old deck removals', 
 // Landscape phones use a desktop layout viewport and let the browser scale it
 // uniformly. This keeps one UI instead of a second mobile combat layout.
 const phoneLayouts = []
+const portraitCombatLayouts = []
 const webkitBrowser = await webkit.launch({ headless: !headed })
 for (const [engineName, phoneBrowser, deviceName] of [
   ['Chromium', browser, 'iPhone SE landscape'],
@@ -13636,8 +13892,42 @@ for (const [engineName, phoneBrowser, deviceName] of [
     await tap(phonePage.locator('.enemy--targeted').first())
     await phonePage.waitForFunction((count) => window.__STS_DEBUG__.getState().players[0].hand.length < count, before)
 
-    await phonePage.setViewportSize({ width: 320, height: 568 })
-    await phonePage.waitForFunction(() => innerWidth === 320 && innerHeight === 568)
+    for (const viewport of [{ width: 320, height: 568 }, { width: 414, height: 896 }]) {
+      await phonePage.setViewportSize(viewport)
+      await phonePage.waitForFunction(({ width, height }) => innerWidth === width && innerHeight === height, viewport)
+      await phonePage.waitForTimeout(100)
+      portraitCombatLayouts.push({ engineName, ...viewport, ...await phonePage.locator('.row--viewer').evaluate((row) => {
+        const board = row.closest('.board')
+        const boardBox = board?.getBoundingClientRect()
+        const seats = [...(board?.querySelectorAll('.row__seat') ?? [])]
+          .filter((seat) => seat.querySelector('.seat:not(.seat--empty)'))
+        const boxes = seats.flatMap((seat) => [seat, ...['.seat__portrait', '.seat__name', '.seat .bar']
+          .map((selector) => seat.querySelector(selector))])
+          .map((element) => element?.getBoundingClientRect())
+        const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+        const piles = [...document.querySelectorAll('.hand-area .pile')]
+          .map((pile) => pile.getBoundingClientRect())
+        const gutter = 8
+        return {
+          visible: seats.length > 0 && boxes.every((box) => box && boardBox &&
+            box.left >= Math.max(0, boardBox.left) + gutter - 1 &&
+            box.right <= Math.min(innerWidth, boardBox.right) - gutter + 1),
+          documentOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+          lefts: boxes.map((box) => Math.round(box?.left ?? -999)),
+          controlsVisible: Boolean(endTurn && endTurn.left >= gutter - 1 && endTurn.right <= innerWidth - gutter + 1 &&
+            endTurn.top >= -1 && endTurn.bottom <= innerHeight + 1),
+          controlsSeparated: Boolean(endTurn && piles.length > 0 && piles.every((pile) =>
+            endTurn.right <= pile.left || pile.right <= endTurn.left ||
+            endTurn.bottom <= pile.top || pile.bottom <= endTurn.top) && boxes.every((box) => box &&
+            (endTurn.right <= box.left || box.right <= endTurn.left ||
+              endTurn.bottom <= box.top || box.bottom <= endTurn.top))),
+        }
+      }) })
+      await phonePage.screenshot({
+        path: join(outDir, `combat-portrait-${engineName.toLowerCase()}-${viewport.width}.png`),
+        scale: 'css',
+      })
+    }
     await phonePage.setViewportSize({ width: 568, height: 320 })
     await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
   } else {
@@ -14045,6 +14335,13 @@ for (const [engineName, phoneBrowser, deviceName] of [
   phoneLayouts.push({ deviceName: `${engineName} ${deviceName}`, ...layout })
   await phoneContext.close()
 }
+
+check('portrait combat keeps every occupied player seat and HP bar inside the board gutter', () => {
+  assertEqual(portraitCombatLayouts.length, 4)
+  assert(portraitCombatLayouts.every((layout) => layout.visible && layout.controlsVisible &&
+    layout.controlsSeparated && !layout.documentOverflows),
+    JSON.stringify(portraitCombatLayouts))
+})
 await webkitBrowser.close()
 check('landscape phones render and play the complete desktop combat UI', () => {
   for (const layout of phoneLayouts) {

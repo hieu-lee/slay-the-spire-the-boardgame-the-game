@@ -12,6 +12,7 @@ import {
   STAGE_GAP_REM,
   STAGE_MARGIN_REM,
   cardMotionDestination,
+  displayedEnemies,
   drawnCardUids,
   healthBand,
   pendingUiSurvivesContext,
@@ -253,6 +254,20 @@ check('Wing Boots labels separate same-kind rooms and never name a hidden one', 
 suite('board feedback helpers')
 
 // Neither of these had a test, and both are pure functions with sharp edges.
+
+check('dead enemies release their stage slots after the live dissolve', () => {
+  const enemies = [
+    { uid: 'boss-a', dead: false },
+    { uid: 'summon-b', dead: true },
+    { uid: 'summon-c', dead: true },
+    { uid: 'summon-d', dead: false },
+    { uid: 'summon-e', dead: false },
+  ]
+  assertDeepEqual(displayedEnemies(enemies, new Set(['summon-b', 'summon-c'])).map((enemy) => enemy.uid),
+    ['boss-a', 'summon-b', 'summon-c', 'summon-d', 'summon-e'], 'fresh deaths stay through their dissolve')
+  assertDeepEqual(displayedEnemies(enemies, new Set()).map((enemy) => enemy.uid),
+    ['boss-a', 'summon-d', 'summon-e'], 'later summons reuse the released B/C positions')
+})
 
 check('the health bands fall where they are documented', () => {
   // Green above 60%, amber above 30%, red below — with the boundary itself
