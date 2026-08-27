@@ -1168,8 +1168,8 @@ check('Void spends Energy to Exhaust a drawn Slimed and fires Exhaust effects', 
   })], [boss]))
   assertEqual(next.players[0].energy, 2, 'Void spends exactly 1 Energy')
   assertEqual(next.players[0].hand.some((card) => card.defId === 'slimed'), false)
-  assertEqual(next.players[0].exhaust.some((card) => card.defId === 'slimed'), false,
-    'the shared Status returns to its supply')
+  assertEqual(next.players[0].exhaust.some((card) => card.defId === 'slimed'), true,
+    'Void moves the shared Status to the exhaust pile')
   assertEqual(next.players[0].block, 1, 'the Exhaust fires Feel No Pain')
 })
 

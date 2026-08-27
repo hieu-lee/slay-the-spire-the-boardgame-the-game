@@ -795,7 +795,7 @@ check('a card can exhaust another card out of hand', () => {
   assertEqual(next.players[0].discard.length, 1, 'True Grit itself goes to the discard pile')
 })
 
-check('exhausting Daze returns it to the shared supply and still fires exhaust triggers', () => {
+check('exhausting Daze moves it to the exhaust pile and still fires exhaust triggers', () => {
   const grit = instance('true_grit')
   const daze = instance('daze')
   const state = combat([
@@ -806,7 +806,7 @@ check('exhausting Daze returns it to the shared supply and still fires exhaust t
     playerId: 'p1',
     exhaustUids: [daze.uid],
   })
-  assertEqual(next.players[0].exhaust.length, 0, 'Daze returns instead of entering the exhaust pile')
+  assertDeepEqual(next.players[0].exhaust.map((card) => card.uid), [daze.uid])
   assertEqual(next.players[0].block, 2, 'Feel No Pain still sees the Daze exhaust')
 })
 
@@ -1005,8 +1005,7 @@ check('Second Wind exhausts every non-Attack, counts Status cards, and resolves 
     const state = combat([makePlayer({ hand: [wind, attack, sentinel, defend, daze] })], [makeEnemy()])
     const played = playCard(state, 'p1', wind.uid, { enemyUid: null, playerId: null })
     assertDeepEqual(played.players[0].hand.map((card) => card.uid), [attack.uid])
-    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [sentinel.uid, defend.uid],
-      'Status cards count as Exhausted but return to their shared supply')
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [sentinel.uid, defend.uid, daze.uid])
     assertEqual(played.players[0].block, upgraded ? 6 : 3)
     assertEqual(played.players[0].energy, 4, 'Sentinel gains 2 Energy only after Second Wind finishes')
     const blockAt = played.log.indexOf(`Ironclad gains ${upgraded ? 6 : 3} Block`)
@@ -1051,8 +1050,7 @@ check('Fiend Fire Exhausts the rest of the hand and deals one Strength-modified 
     assertEqual(played.enemies[0].hp, upgraded ? 11 : 14,
       'Fiend Fire must deal a separate Strength-modified hit for each other card')
     assertDeepEqual(played.players[0].hand, [])
-    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [strike.uid, sentinel.uid, fiend.uid],
-      'Daze returns to the shared supply while every non-Status card Exhausts')
+    assertDeepEqual(played.players[0].exhaust.map((card) => card.uid), [strike.uid, sentinel.uid, daze.uid, fiend.uid])
     assertEqual(played.players[0].block, 4, 'Feel No Pain must see all three hand cards and Fiend Fire itself')
     assertEqual(played.players[0].energy, 2, 'Sentinel must resolve after the attack and refund 2 Energy')
     const hitAt = played.log.findIndex((line) => line.includes(' hit '))
@@ -1418,7 +1416,7 @@ check('a lethal Curse immediately defeats the co-op party', () => {
   assertEqual(next.phase, 'lost', 'one fallen player ends the co-op combat (p.13)')
 })
 
-check('Ethereal uses the hand at end-turn start and returns Daze to its supply', () => {
+check('Ethereal uses the hand at end-turn start and moves Daze to the exhaust pile', () => {
   const clumsy = instance('clumsy')
   const daze = instance('daze')
   const drawnClumsy = instance('clumsy')
@@ -1430,8 +1428,7 @@ check('Ethereal uses the hand at end-turn start and returns Daze to its supply',
     }),
   ], [makeEnemy()])
   const next = beginEndPlayerTurn(state)
-  assertDeepEqual(next.players[0].exhaust.map((held) => held.uid), [clumsy.uid],
-    'the Curse remains exhausted but the shared Daze returns to its supply')
+  assertDeepEqual(next.players[0].exhaust.map((held) => held.uid), [clumsy.uid, daze.uid])
   assertEqual(next.players[0].hand.length, 1, 'Dark Embrace draws once per exhausted card')
   assertEqual(next.players[0].hand[0].uid, drawnClumsy.uid,
     'an Ethereal card drawn during this step waits until the next end turn')
@@ -7828,7 +7825,7 @@ check('Snecko Oil puts Daze on top without exceeding the shared ten-card deck', 
   const state = combat(
     [
       makePlayer({ potions: ['snecko_oil'], draw: Array.from({ length: 5 }, () => instance('strike_ironclad')) }),
-      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, draw: existing }),
+      makePlayer({ id: 'p2', name: 'Silent', character: 'silent', row: 1, exhaust: existing }),
     ],
     [makeEnemy({ defId: 'spike_slime' })],
   )
@@ -7841,6 +7838,7 @@ check('Snecko Oil puts Daze on top without exceeding the shared ten-card deck', 
     ...player.draw,
     ...player.hand,
     ...player.discard,
+    ...player.exhaust,
   ].filter((card) => card.defId === 'daze').length, 0)
   assertEqual(dazes, 10, 'an enemy cannot draw an eleventh card from the shared Daze deck')
 })

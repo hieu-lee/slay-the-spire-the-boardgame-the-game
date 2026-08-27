@@ -6410,7 +6410,7 @@ check('Second Wind+ exhausts non-Attacks, counts Daze, then resolves Sentinel an
   assert(sentinelLabel.includes('when this card is exhausted, gain 2 Energy'), sentinelLabel)
   assertDeepEqual(secondWind.players[0].hand.map((card) => card.uid), ['ui-second-wind-strike'])
   assertDeepEqual(secondWind.players[0].exhaust.map((card) => card.uid), [
-    'ui-second-wind-sentinel', 'ui-second-wind-defend',
+    'ui-second-wind-sentinel', 'ui-second-wind-defend', 'ui-second-wind-daze',
   ])
   assertEqual(secondWind.players[0].block, 9, '6 printed Block plus three Feel No Pain triggers')
   assertEqual(secondWind.players[0].energy, 2, 'Sentinel did not refund 2 Energy after Second Wind')
@@ -6455,7 +6455,7 @@ check('Fiend Fire+ Exhausts the whole hand and lands a separate Strength-modifie
   assertEqual(fiendFire.enemies.find((enemy) => enemy.uid === fiendTarget).hp, 11)
   assertDeepEqual(fiendFire.players[0].hand, [])
   assertDeepEqual(fiendFire.players[0].exhaust.map((card) => card.uid), [
-    'ui-fiend-fire-strike', 'ui-fiend-fire-sentinel', 'ui-fiend-fire',
+    'ui-fiend-fire-strike', 'ui-fiend-fire-sentinel', 'ui-fiend-fire-daze', 'ui-fiend-fire',
   ])
   assertEqual(fiendFire.players[0].block, 4)
   assertEqual(fiendFire.players[0].energy, 2)
@@ -6466,7 +6466,7 @@ await exhaustPileDialog.waitFor()
 const exhaustedCardTitles = await exhaustPileDialog.locator('.card').evaluateAll((cards) =>
   cards.map((card) => card.getAttribute('title')))
 check('the Exhaust pile opens the same read-only card viewer', () => {
-  assertDeepEqual(exhaustedCardTitles, ['Strike', 'Sentinel', 'Fiend Fire+'])
+  assertDeepEqual(exhaustedCardTitles, ['Strike', 'Sentinel', 'Daze', 'Fiend Fire+'])
 })
 await exhaustPileDialog.getByRole('button', { name: 'Close' }).click()
 await shot('06zj-fiend-fire-resolved')

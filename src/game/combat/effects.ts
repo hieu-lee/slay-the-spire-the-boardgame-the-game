@@ -1478,16 +1478,14 @@ export function drawInto(
   return drawnCards
 }
 
-/** Exhaust cards once, returning Status cards to their shared supply (p.24). */
+/** Exhaust cards once and retain them in the player's exhaust pile. */
 export function exhaustCards(
   state: CombatState,
   actor: Player,
   cards: readonly Player['hand'][number][],
   context?: PlayContext,
 ): void {
-  const lasting = cards
-    .filter((held) => cardDef(held.defId).owner !== 'status')
-    .map(forgetRetain)
+  const lasting = cards.map(forgetRetain)
   actor.exhaust = [...actor.exhaust, ...lasting]
   for (const card of cards) {
     if (context?.pendingExhaustTriggers) {
