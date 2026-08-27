@@ -68,7 +68,12 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
       </div>
       <div className="campfire__players" aria-label="Party around the campfire">
         {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
-          <img src={`/assets/noncombat/campfire/${seat.character}-back.webp`} alt="" />
+          <img
+            src={`/assets/noncombat/campfire/${seat.character}-back.webp`}
+            alt=""
+            loading="eager"
+            decoding="async"
+          />
         </div>)}
       </div>
       {alive ? <button

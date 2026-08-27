@@ -13,6 +13,8 @@ import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
 import { playCombatSound, playSoundEffect } from '../sfx.ts'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+export const ACTOR_DEFEAT_MS = 1_800
+
 export function useReducedEffects(): boolean {
   const prefersReducedEffects = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
@@ -263,6 +265,17 @@ export function useFalling(
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const [falling, setFalling] = useState<Set<string>>(new Set())
 
+  // Include a transition in the render that first observes it. Waiting for the
+  // effect would let the board remove the dead enemy for one commit, remount it,
+  // and lose EnemyCard's contact-timed HP/death snapshot.
+  const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
+    authoritativeConnected === false || previousConnected.current === false || state.combatId !== previousCombat.current
+  const visibleFalling = new Set(falling)
+  if (!refreshed) for (const entity of [...state.players, ...state.enemies]) {
+    const id = 'uid' in entity ? entity.uid : entity.id
+    if (previous.current.get(id) === false && entity.dead) visibleFalling.add(id)
+  }
+
   useEffect(() => {
     const now = new Map<string, boolean>()
     const presentationEvents = state.presentationEvents ?? []
@@ -273,8 +286,6 @@ export function useFalling(
     previousPresentationSeq.current = combatChanged
       ? (latestPresentation?.seq ?? -1)
       : Math.max(previousPresentationSeq.current, latestPresentation?.seq ?? -1)
-    const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
-      authoritativeConnected === false || previousConnected.current === false || combatChanged
     previousRestoration.current = authoritativeRestoration
     previousConnected.current = authoritativeConnected
     for (const entity of [...state.players, ...state.enemies]) {
@@ -293,7 +304,7 @@ export function useFalling(
           next.delete(id)
           return next
         })
-      }, 860 + delay))
+      }, ACTOR_DEFEAT_MS + delay))
     }
     previous.current = now
     if (!refreshed) return
@@ -306,7 +317,7 @@ export function useFalling(
     for (const timer of timers.current.values()) clearTimeout(timer)
   }, [])
 
-  return falling
+  return visibleFalling
 }
 
 /** Only actions witnessed live animate; mounted and restored history is a baseline. */

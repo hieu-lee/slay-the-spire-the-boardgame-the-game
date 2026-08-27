@@ -882,7 +882,6 @@ try {
     energy: 1,
   }].slice(-12)
   rooms.publishRoom(code)
-  await b.locator('.enemy--dead').first().waitFor()
   const peerHistoricalVfx = b.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`)
   await peerHistoricalVfx.first().waitFor()
   await b.waitForFunction(() => window.__SFX_DETAILS__.filter((sound) =>
@@ -890,15 +889,10 @@ try {
   const peerHistoricalSource = await peerHistoricalVfx.first().getAttribute('data-vfx-source')
   const peerHistoricalSounds = await b.evaluate(() => window.__SFX_DETAILS__.filter((sound) =>
     sound.cue?.includes(':strike_ironclad:')))
+  await b.locator(`.enemy[data-enemy-id="${liveRoom.run.combat.enemies[0].uid}"]`).waitFor({ state: 'detached' })
   await a.evaluate(() => window.__RELEASE_ROOM_AUTH__())
   await a.locator('.connection--connected').waitFor()
   const reconnectCorpseImmediate = await a.locator('.enemy--dead').count()
-  const reconnectedCorpse = a.locator('.enemy--dead').first()
-  await reconnectedCorpse.waitFor()
-  const reconnectDeathMotion = await reconnectedCorpse.evaluate((enemy) => ({
-    falling: enemy.classList.contains('enemy--falling'),
-    animation: getComputedStyle(enemy.querySelector('.enemy__portrait')).animationName,
-  }))
   const reconnectWeakSounds = await a.evaluate(() => window.__SFX_PLAYS__
     .filter((path) => path === '/assets/sfx/weak.ogg').length)
   const reconnectSounds = await a.evaluate(() => window.__SFX_PLAYS__
@@ -907,9 +901,7 @@ try {
   const reconnectDrawMotion = await a.locator('.hand .card--drawn').count()
   const reconnectHistoricalVfx = await a.locator(`.combat-vfx[data-vfx-seq="${historicalVfxSeq}"]`).count()
   check('a retained online combat does not replay effects learned during reconnect', () => {
-    assertEqual(reconnectDeathMotion.falling, false)
-    assertEqual(reconnectCorpseImmediate, 1, 'the restored corpse waited for historical weapon contact')
-    assertEqual(reconnectDeathMotion.animation, 'none')
+    assertEqual(reconnectCorpseImmediate, 0, 'the restored corpse reclaimed a stage slot')
     assertEqual(reconnectWeakSounds, 0)
     assertDeepEqual(reconnectSounds, [])
     assertEqual(reconnectDrawMotion, 0)
@@ -923,8 +915,8 @@ try {
   Object.assign(liveRoom.run.combat.enemies[0], restoredEnemy)
   rooms.publishRoom(code)
   await Promise.all([
-    a.locator('.enemy--dead').waitFor({ state: 'detached' }),
-    b.locator('.enemy--dead').waitFor({ state: 'detached' }),
+    a.locator(`.enemy[data-enemy-id="${restoredEnemy.uid}"]`).waitFor(),
+    b.locator(`.enemy[data-enemy-id="${restoredEnemy.uid}"]`).waitFor(),
   ])
 
   // Capture a REST response, then let a newer WebSocket snapshot land before
@@ -3578,11 +3570,14 @@ try {
   const deadCampfireStatus = await teammateGame.getByRole('status').textContent()
   const deadCampfireControls = await teammateGame.locator('.campfire__prompt button, .campfire__leave').count()
   const livingCampfirePortraits = await teammateGame.locator('.campfire__seat').count()
+  const onlineCampfireImageHints = await teammateGame.locator('.campfire__seat img')
+    .evaluateAll((images) => images.every((image) => image.loading === 'eager' && image.decoding === 'async'))
   const ownerCampfireControls = await ownerGame.locator('.campfire__prompt button').count()
   check('a dead online viewer spectates the living Campfire without submitting a choice', () => {
     assert(deadCampfireStatus.includes('watching the surviving party'), deadCampfireStatus)
     assertEqual(deadCampfireControls, 0)
     assertEqual(livingCampfirePortraits, 1)
+    assert(onlineCampfireImageHints, 'online campfire character art is missing eager loading or async decoding')
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
   })
   await ownerGame.getByRole('button', { name: /Smith/ }).click()

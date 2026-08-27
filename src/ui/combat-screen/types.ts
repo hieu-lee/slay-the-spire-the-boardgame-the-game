@@ -106,7 +106,7 @@ export type CharacterAttackMotion = {
   targetId: string
   x: number
   y: number
-  targets: { id: string; x: number; y: number }[]
+  targets: { id: string; x: number; y: number; startX: number; startY: number }[]
 }
 
 export type PendingStartChoice =

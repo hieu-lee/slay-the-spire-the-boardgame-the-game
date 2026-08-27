@@ -118,10 +118,10 @@
 .sts-scope .merchant-arrival__party img { display: block; width: 100%; }
 /* Each standing asset leaves a different transparent gap under its feet; pushing
    every sprite down by its own gap lands the whole party on one floor line. */
-.sts-scope .merchant-arrival__party figure[data-character='ironclad'] img { transform: translateY(2.8%); }
-.sts-scope .merchant-arrival__party figure[data-character='silent'] img { transform: translateY(2.86%); }
-.sts-scope .merchant-arrival__party figure[data-character='defect'] img { transform: translateY(10.09%); }
-.sts-scope .merchant-arrival__party figure[data-character='watcher'] img { transform: translateY(1.76%); }
+.sts-scope .merchant-arrival__party figure[data-character='ironclad'] img { transform: translateY(1.39%); }
+.sts-scope .merchant-arrival__party figure[data-character='silent'] img { transform: translateY(4.86%); }
+.sts-scope .merchant-arrival__party figure[data-character='defect'] img { transform: translateY(2.6%); }
+.sts-scope .merchant-arrival__party figure[data-character='watcher'] img { transform: translateY(2.26%); }
 .sts-scope .merchant-arrival__merchant {
   position: absolute;
   z-index: 3;

@@ -473,10 +473,10 @@ print(json.dumps(faults))
 
 check('bundled combat cutouts are sized for their render box, with transparency', () => {
   const expectedCharacters = [
-    'defect-hero.webp', 'defect.webp', 'ironclad-hero.webp', 'ironclad-impact.webp',
-    'ironclad-ready.webp', 'ironclad.webp', 'silent-hero.webp', 'silent-throw.webp',
-    'silent.webp', 'watcher-hero.webp', 'watcher-ready.webp', 'watcher-thrust.webp',
-    'watcher.webp',
+    'defect-charge.webp', 'defect-hero.webp', 'defect-release.webp', 'defect.webp',
+    'ironclad-hero.webp', 'ironclad-impact.webp', 'ironclad-ready.webp', 'ironclad.webp',
+    'silent-hero.webp', 'silent-throw.webp', 'silent.webp', 'watcher-hero.webp',
+    'watcher-ready.webp', 'watcher-thrust.webp', 'watcher.webp',
   ]
   assertDeepEqual(combatCharacterFiles.sort(), expectedCharacters, 'combat character cutout inventory')
   const enemyPaths = combatEnemyFiles.map((file) => join(combatEnemyRoot, file))
@@ -556,9 +556,11 @@ check('combat animation effects are complete, transparent, and compact', () => {
     'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
   ]
   const expectedActions = [
-    'dark-channel.webp', 'frost-channel.webp', 'guard-bloom.webp', 'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp',
-    'magic-burst.webp', 'potion-burst.webp', 'silent-poison.webp', 'silent-shiv.webp',
-    'watcher-calm-aura.webp', 'watcher-pray.webp', 'watcher-wrath-aura.webp',
+    'dark-channel.webp', 'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp',
+    'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
+    'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
+    'watcher-calm-aura.webp', 'watcher-meteor-impact.webp', 'watcher-meteor.webp',
+    'watcher-pray.webp', 'watcher-wrath-aura.webp',
   ]
   assertDeepEqual(combatVfxFiles.sort(), expected, 'combat VFX inventory')
   assertDeepEqual(combatActionVfxFiles.sort(), expectedActions, 'personal combat VFX inventory')
@@ -608,8 +610,8 @@ print(json.dumps(faults))
     .reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
     'base combat VFX exceed 320 KiB')
   assert(expectedActions.map((file) => join(combatActionVfxRoot, file))
-    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 1024 * 1024,
-    'personal combat VFX exceed 1 MiB')
+    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 1.25 * 1024 * 1024,
+    'personal combat VFX exceed 1.25 MiB')
 })
 
 check('bundled stage and generated icon inventories are complete and decodable', () => {

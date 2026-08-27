@@ -292,7 +292,12 @@ function MerchantScreen({
           <div className="merchant-arrival__party" aria-label="Party at the merchant">
             {eligiblePlayers.map((candidate) => (
               <figure key={candidate.id} data-character={candidate.character} aria-label={`${candidate.name}, ${candidate.character}`}>
-                <img src={assetPath(`noncombat/merchant/characters/${candidate.character}-standing.webp`)} alt="" />
+                <img
+                  src={assetPath(`noncombat/merchant/characters/${candidate.character}-standing.webp`)}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                />
               </figure>
             ))}
           </div>

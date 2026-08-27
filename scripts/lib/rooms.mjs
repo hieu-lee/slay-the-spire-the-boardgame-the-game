@@ -1566,15 +1566,15 @@ function resolveEndTurn(room, seat, action, seatToken) {
   }
   const next = beginEndPlayerTurn(combat, order)
   if (next === combat) {
-    // The published abilities are still the live ones, so the plan is what the
-    // engine refused — two Orbs aimed at an enemy the first one kills. Keep the
-    // stage: the party's arrangement survives and only the target changes.
+    // The published abilities are still the live ones, so this is a defensive
+    // engine refusal rather than a stale room snapshot. Keep the stage so the
+    // party's arrangement survives.
     const live = endTurnAbilities(combat)
     const targetUids = (ability) => (ability.targets ?? []).map((target) => target.uid).join()
-    // The engine's other refusals cannot reach here: apply rejects a pending
+    // The engine's normal refusals cannot reach here: apply rejects a pending
     // trigger and a forced card above this dispatch, and a phase that moved on
     // empties the live list, which the comparison below then fails. So a match
-    // means the plan and only the plan.
+    // means the submitted plan itself was refused.
     if (live.length === room.endTurnAbilities.length && live.every((ability, index) =>
       ability.id === room.endTurnAbilities[index].id &&
       targetUids(ability) === targetUids(room.endTurnAbilities[index]))) {

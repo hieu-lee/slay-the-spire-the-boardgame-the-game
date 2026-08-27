@@ -122,7 +122,7 @@ export function validEndTurnOrder(abilities: readonly EndTurnAbility[], order: r
   })
 }
 
-/** Retargets still-unresolved single-enemy abilities after a mandatory reaction kills their target. */
+/** Retargets still-unresolved single-enemy abilities after an earlier ordered effect kills their target. */
 function refreshEndTurnTargets(state: CombatState, order: EndTurnOrder): EndTurnOrder {
   const abilities = endTurnAbilities(state)
   return order.map((choice) => {
@@ -139,7 +139,13 @@ function refreshEndTurnTargets(state: CombatState, order: EndTurnOrder): EndTurn
       : undefined
     // A row-targeting ability keeps its chosen row even when its enemy anchor died.
     if (source?.scope === 'row' && state.enemies.some((enemy) => enemy.uid === target)) return choice
-    const fallback = ability.targets[0]
+    const loopTarget = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
+      ? parseLoopOrbTarget(target)
+      : undefined
+    // Loop repeats the Orb the player selected; only its enemy may change.
+    const fallback = loopTarget
+      ? ability.targets.find((candidate) => parseLoopOrbTarget(candidate.uid)?.slot === loopTarget.slot)
+      : ability.targets[0]
     return fallback ? chooseEndTurnTarget(id, fallback.uid) : choice
   })
 }
@@ -194,11 +200,12 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
 function continueEndPlayerTurn(
   state: CombatState,
   order: EndTurnOrder,
-  rollback?: CombatState,
 ): CombatState {
   const next = state
   for (let index = 0; index < order.length; index++) {
-    const choice = order[index]!
+    // Earlier ordered effects may kill this ability's chosen enemy. Recompute
+    // against the current board, not the board on which the order was submitted.
+    const choice = refreshEndTurnTargets(next, [order[index]!])[0]!
     const id = endTurnChoiceId(choice)
     if (id.startsWith('poison:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
@@ -260,7 +267,6 @@ function continueEndPlayerTurn(
           : ((source.scope !== 'row' && triggerTargets(next, player, source) &&
             resolveEnemyTargets(next, source.scope, target ?? null).length === 0) ||
             !resolveTriggerSource(next, player, source, false, undefined, target, selectedRow)))) {
-          if (rollback) return rollback
           continue
         }
       } else if (localId === 'strength') {
@@ -272,7 +278,6 @@ function continueEndPlayerTurn(
         player.strengthLossAtEndOfTurn = 0
       } else if (localId.startsWith('orb:')) {
         if (!resolveOrbAtEndOfTurn(next, player, Number(localId.slice(4)), endTurnChoiceTarget(choice))) {
-          if (rollback) return rollback
           continue
         }
       } else if (localId === 'wrath') {
@@ -348,11 +353,8 @@ export function discardNeedsChoice(player: Player): boolean {
 }
 
 /**
- * Shown when an end-of-turn order cannot resolve against a list that still
- * matches the battle — solo and online alike, so the two paths cannot drift into
- * different recovery advice. The cause is always an ability aimed at something
- * an earlier ability kills, so the fix is re-aiming it, not picking a target
- * that looks alive right now.
+ * Defensive fallback when an end-of-turn order cannot resolve despite still
+ * matching the battle. Normal ordered overkill retargets or skips in-engine.
  */
 export const STALE_END_TURN_ORDER =
   'An end-of-turn ability is aimed at an enemy an earlier one kills. Re-aim or reorder it under "End-turn order", then try again.'
@@ -378,7 +380,7 @@ export function beginEndPlayerTurn(
       next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
     }
   }
-  return continueEndPlayerTurn(next, order, state)
+  return continueEndPlayerTurn(next, order)
 }
 
 /** Whether an ordered discard omits only cards this player may Retain. */

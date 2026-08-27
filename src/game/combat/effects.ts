@@ -2004,10 +2004,16 @@ export function resolveTriggerSource(
     const slot = evokeSlots?.[0]
     if (slot === undefined) return loopOrbTargets(state, player) === undefined
     const orb = player.orbs[slot]
-    const target = evokeEnemyUids?.[0] ?? undefined
+    let target = evokeEnemyUids?.[0] ?? undefined
     if ((orb !== 'lightning' && orb !== 'frost') || (orb === 'lightning' && !target) ||
       (orb === 'frost' && target !== undefined)) return false
     for (let index = 0; index < loop.amount; index++) {
+      // Loop+ repeats one chosen Orb. If its first Lightning trigger kills the
+      // chosen enemy, keep the Orb slot and aim the repeat at the next legal
+      // enemy instead of dropping the rest of the printed effect.
+      if (orb === 'lightning' && !lightningDamageTargets(state, player, target)) {
+        target = lightningTargetOptions(state, player)[0]?.uid
+      }
       if (!resolveOrbAtEndOfTurn(state, player, slot, target)) {
         if (index === 0) return false
         break

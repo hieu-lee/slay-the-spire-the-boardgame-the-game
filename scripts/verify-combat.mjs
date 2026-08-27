@@ -4828,6 +4828,73 @@ check('a queued summon does not make targetless Lightning brick end turn', () =>
     'the queued summon did not resolve')
 })
 
+check('later end-turn Lightning retargets after overkill and skips when no target remains', () => {
+  const overkill = combat([makePlayer({
+    name: 'Defect', character: 'defect', orbs: ['lightning', 'lightning'],
+  })], [
+    makeEnemy({ uid: 'first', hp: 1, maxHp: 1 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 5, maxHp: 5 }),
+  ])
+  const lightning = endTurnAbilities(overkill).filter((ability) => ability.id.includes('/orb:'))
+  const retargeted = beginEndPlayerTurn(overkill,
+    lightning.map((ability) => chooseEndTurnTarget(ability.id, 'first')))
+  assert(retargeted !== overkill, 'a valid overkill order rolled the whole turn back')
+  assertEqual(retargeted.enemies[0].dead, true)
+  assertEqual(retargeted.enemies[1].hp, 4, 'the later Orb did not retarget the remaining enemy')
+
+  const split = combat([makePlayer({
+    name: 'Defect', character: 'defect', orbs: ['lightning', 'lightning'],
+  })], [makeEnemy({ uid: 'slime-boss', defId: 'slime_boss', isBoss: true, hp: 1, maxHp: 1 })])
+  const splitLightning = endTurnAbilities(split).filter((ability) => ability.id.includes('/orb:'))
+  const skipped = beginEndPlayerTurn(split,
+    splitLightning.map((ability) => chooseEndTurnTarget(ability.id, 'slime-boss')))
+  assert(skipped !== split, 'a later Orb with no living target blocked the pending Split')
+  assert(skipped.enemies[0].dead)
+  assert(skipped.pendingSummons.length > 0, 'Slime Boss lost its queued Split')
+})
+
+check('Loop retargets only the selected Lightning slot after overkill', () => {
+  const loop = instance('loop')
+  const state = combat([makePlayer({
+    name: 'Defect', character: 'defect', powers: [loop], orbs: ['frost', 'lightning'],
+  })], [
+    makeEnemy({ uid: 'first', hp: 1, maxHp: 1 }),
+    makeEnemy({ uid: 'second', row: 1, hp: 5, maxHp: 5 }),
+  ])
+  const abilities = endTurnAbilities(state)
+  const lightning = abilities.find((ability) => ability.id.endsWith('/orb:1'))
+  const frost = abilities.find((ability) => ability.id.endsWith('/orb:0'))
+  const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
+  const loopTarget = loopAbility.targets.find((target) => target.label.includes('Lightning Orb 2') &&
+    target.label.includes('row 1'))
+  const resolved = beginEndPlayerTurn(state, [
+    chooseEndTurnTarget(lightning.id, 'first'),
+    frost.id,
+    chooseEndTurnTarget(loopAbility.id, loopTarget.uid),
+  ])
+  assertEqual(resolved.enemies[1].hp, 4, 'Loop did not retarget its selected Lightning Orb')
+  assertEqual(resolved.players[0].block, 1, 'Loop silently switched from Lightning to the first Frost slot')
+
+  const loopPlus = instance('loop', true)
+  const repeated = combat([makePlayer({
+    name: 'Defect', character: 'defect', powers: [loopPlus], orbs: ['lightning'],
+  })], [
+    makeEnemy({ uid: 'repeat-first', hp: 1, maxHp: 1 }),
+    makeEnemy({ uid: 'repeat-second', row: 1, hp: 5, maxHp: 5 }),
+  ])
+  const repeatedAbilities = endTurnAbilities(repeated)
+  const repeatedLoop = repeatedAbilities.find((ability) => ability.label.includes('Loop'))
+  const repeatedTarget = repeatedLoop.targets.find((target) => target.uid.endsWith(':repeat-first'))
+  const repeatedOrb = repeatedAbilities.find((ability) => ability.id.endsWith('/orb:0'))
+  const repeatedResult = beginEndPlayerTurn(repeated, [
+    chooseEndTurnTarget(repeatedLoop.id, repeatedTarget.uid),
+    chooseEndTurnTarget(repeatedOrb.id, 'repeat-first'),
+  ])
+  assertEqual(repeatedResult.enemies[0].dead, true)
+  assertEqual(repeatedResult.enemies[1].hp, 3,
+    'Loop+ and the later normal trigger did not retarget while keeping the selected Lightning slot')
+})
+
 check('Apotheosis improves only starter Strikes and Defends for the combat', () => {
   for (const upgraded of [false, true]) {
     const apotheosis = instance('apotheosis', upgraded)

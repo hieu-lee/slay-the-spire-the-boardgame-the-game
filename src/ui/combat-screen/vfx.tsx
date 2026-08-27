@@ -34,6 +34,7 @@ export function characterAttackContactMs(
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
   if (actor.character === 'silent') return 480 + targetIndex * 70
   if (actor.character === 'defect') return 560 + targetIndex * 70
+  if (actor.character === 'watcher') return 520 + targetIndex * 70
   return 500
 }
 

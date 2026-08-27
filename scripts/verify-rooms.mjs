@@ -24,7 +24,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, REBUILT_END_TURN_ORDER, ROOM_LABEL, STALE_END_TURN_ORDER, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, REBUILT_END_TURN_ORDER, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
@@ -1561,31 +1561,24 @@ check('a stale end-turn order tells the coordinator how to recover', () => {
   assertEqual(room.run.combat.phase, 'enemy', 'the party could not recover from the stale order')
 })
 
-check('a refused plan keeps the party arrangement when the abilities are still live', () => {
+check('an online overkill plan retargets later Lightning abilities', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []
   room.run.combat.players.find((player) => player.id === b.playerId).orbs = ['lightning', 'lightning', null]
   const [firstEnemy] = room.run.combat.enemies
+  const secondHp = room.run.combat.enemies[1].hp
   firstEnemy.hp = 1
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
   const published = snapshotFor(room, a.token)
-  const versionBefore = room.version
-  let refused = null
-  try {
-    // The first Orb kills the enemy the second one is aimed at: the plan is
-    // stale, the published abilities are not.
-    apply(room, a.token, {
-      kind: 'resolveEndTurn',
-      abilityOrder: published.endTurnAbilities.map((ability) => `${ability.id}@${firstEnemy.uid}`),
-    })
-  } catch (error) {
-    refused = error
-  }
-  assertEqual(refused?.message, STALE_END_TURN_ORDER)
-  assertEqual(room.version, versionBefore, 'a refusal the party can fix in place still bumped the room')
-  assertDeepEqual(snapshotFor(room, a.token).endTurnAbilities, published.endTurnAbilities,
-    'the party lost its arrangement to a refusal it could have fixed in place')
+  apply(room, a.token, {
+    kind: 'resolveEndTurn',
+    abilityOrder: published.endTurnAbilities.map((ability) => `${ability.id}@${firstEnemy.uid}`),
+  })
+  assertEqual(room.run.combat.phase, 'enemy')
+  assertEqual(room.run.combat.enemies[0].dead, true)
+  assertEqual(room.run.combat.enemies[1].hp, secondHp - 1,
+    'the second Orb did not retarget on the authoritative room path')
 })
 
 check('a stale end-turn order with nothing left to choose just resolves', () => {
@@ -1648,35 +1641,6 @@ check('Loop Orb choices are public, authoritative, and reject forged targets onl
   assertEqual(room.run.combat.enemies[0].hp, firstHp - 1)
   assertEqual(room.run.combat.enemies[1].hp, secondHp - 2)
   assertEqual(room.run.combat.players.find((player) => player.id === actor.id).block, 1)
-})
-
-check('an online Lightning plan with a dynamically dead target stays editable', () => {
-  const { room, a, b } = twoSeatRoom()
-  for (const player of room.run.combat.players) player.hand = []
-  room.run.combat.players.find((player) => player.id === b.playerId).orbs = ['lightning', 'lightning', null]
-  room.run.combat.enemies[0].hp = 1
-  const [firstEnemy, secondEnemy] = room.run.combat.enemies
-  apply(room, a.token, { kind: 'endTurn' })
-  apply(room, b.token, { kind: 'endTurn' })
-  const [firstOrb, secondOrb] = snapshotFor(room, a.token).endTurnAbilities
-  let rejected = null
-  try {
-    apply(room, a.token, {
-      kind: 'resolveEndTurn',
-      abilityOrder: [`${firstOrb.id}@${firstEnemy.uid}`, `${secondOrb.id}@${firstEnemy.uid}`],
-    })
-  } catch (error) {
-    rejected = error
-  }
-  assertEqual(rejected?.name, 'RoomError')
-  assertEqual(room.run.combat.phase, 'player', 'the choice stage remains open for a replacement target')
-  assertEqual(room.run.combat.enemies[0].hp, 1, 'the rejected plan is atomic')
-  apply(room, a.token, {
-    kind: 'resolveEndTurn',
-    abilityOrder: [`${firstOrb.id}@${firstEnemy.uid}`, `${secondOrb.id}@${secondEnemy.uid}`],
-  })
-  assertEqual(room.run.combat.enemies[0].hp, 0)
-  assertEqual(room.run.combat.enemies[1].hp, secondEnemy.hp - 1)
 })
 
 check('a malformed online discard order is refused as a room error', () => {

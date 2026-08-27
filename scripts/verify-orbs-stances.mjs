@@ -297,13 +297,14 @@ check('each Orb can be targeted and interleaved as its own end-turn ability', ()
   assertEqual(next.players[0].block, 1, 'Frost can resolve after Shame instead of in one atomic Orb block')
 })
 
-check('a later Lightning never silently retargets after its chosen enemy dies', () => {
+check('a later Lightning retargets after its chosen enemy dies', () => {
   const state = combat([
     player({ orbs: ['lightning', 'lightning', null] }),
   ], [enemy({ uid: 'e1', hp: 1 }), enemy({ uid: 'e2', hp: 2, row: 1 })])
-  const rejected = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1@e1'])
-  assert(rejected === state, 'the whole plan is rejected atomically so the player can choose again')
-  assertDeepEqual(state.enemies.map((target) => target.hp), [1, 2], 'no partial damage escapes the rejected plan')
+  const resolved = beginEndPlayerTurn(state, ['p1/orb:0@e1', 'p1/orb:1@e1'])
+  assert(resolved !== state, 'a valid overkill plan rolled the whole turn back')
+  assertDeepEqual(resolved.enemies.map((target) => target.hp), [0, 1],
+    'the later Orb did not hit the first remaining living enemy')
 })
 
 check('a Dark orb does nothing at end of turn', () => {

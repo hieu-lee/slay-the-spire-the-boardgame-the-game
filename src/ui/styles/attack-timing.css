@@ -60,8 +60,8 @@
 @keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
 @keyframes vfx-throw-again { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
 
-/* Character attacks use the authoritative event targets already rendered on
-   the board. The model moves; the button and its hit box stay in its lane. */
+/* Character attacks use only authoritative targets already rendered on the
+   board. Visual layers move; the button and its hit box stay in its lane. */
 .seat[class*='seat--attack-'] .seat__portrait > img {
   animation-duration: 860ms;
   animation-fill-mode: both;
@@ -72,32 +72,18 @@
 .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
 .seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
-.seat--attack-defect .seat__portrait > img { animation-name: attack-defect; }
+.seat--attack-defect .seat__portrait > img {
+  animation-name: attack-defect;
+  animation-delay: 0s;
+}
 
-.seat--attack-ironclad .character-attack--ironclad,
-.seat--attack-watcher .character-attack--watcher {
+.seat--attack-ironclad .character-attack--ironclad {
   animation-duration: 860ms;
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
 .seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
-.seat--attack-watcher .character-attack--watcher { animation-name: attack-watcher-motion; }
-
-.seat--attack-watcher .stance-aura--calm {
-  animation: calm-aura 2.2s ease-in-out infinite, attack-watcher-aura 860ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
-}
-
-.seat--attack-watcher .stance-aura--wrath {
-  animation: wrath-aura 1.05s ease-in-out infinite, attack-watcher-aura 860ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
-}
-
-@keyframes attack-watcher-aura {
-  0%, 100% { translate: 0; }
-  18% { translate: -3% 1%; }
-  42%, 66% { translate: var(--attack-x) var(--attack-y); }
-  82% { translate: 14% 0; }
-}
 
 @keyframes attack-ironclad {
   0%, 5%, 100% { opacity: 1; transform: translate(0) scale(1); }
@@ -118,46 +104,34 @@
   92% { transform: translate(2%, 0) scale(1.01, 0.99); }
 }
 
-@keyframes attack-watcher {
-  0%, 5%, 100% { opacity: 1; transform: translate(0) scale(1); }
-  10% { opacity: 0.35; transform: translate(-1%, 0) scale(0.99, 1.01); }
-  14%, 72% { opacity: 0; }
-  42%, 66% { transform: translate(var(--attack-x), var(--attack-y)); }
-  82% { opacity: 0.25; transform: translate(14%, 0) scale(0.98, 1.02); }
-  91% { opacity: 0.8; transform: translate(2%, 0) scale(1.01, 0.99); }
+@keyframes attack-ironclad-mobile {
+  0%, 100% { transform: translate(0) scale(1); }
+  18% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
+  46%, 64% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  56% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.05, 0.95); }
+  82% { transform: translate(12%, 0) scale(0.98, 1.02); }
 }
 
-@keyframes attack-watcher-motion {
-  0%, 10%, 100% { transform: translate(0) scale(1); }
-  18% { transform: translate(-4%, 1%) scale(1.02, 0.98); }
-  43% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  54% { transform: translate(calc(var(--attack-x) + 5%), var(--attack-y)) scale(1.08, 0.94); }
-  66% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  82% { transform: translate(14%, 0) scale(0.97, 1.03); }
-  92% { transform: translate(2%, 0) scale(1.01, 0.99); }
+@keyframes attack-watcher {
+  0%, 10%, 90%, 100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+  20%, 80% { opacity: 0; transform: translateY(2%) rotate(-2deg) scale(0.985); }
+  48%, 66% { opacity: 0; transform: translateY(-2%) rotate(1deg) scale(1.025); }
 }
 
 @keyframes attack-silent {
-  0%, 10%, 100% { opacity: 1; transform: translate(0) rotate(0); }
-  18%, 72% { opacity: 0; }
-  22% { transform: translate(-3%, 1%) rotate(-4deg); }
-  46% { transform: translate(2%, -1%) rotate(5deg); }
-  78% { opacity: 1; transform: translate(-1%, 0) rotate(-2deg); }
+  0%, 10%, 90%, 100% { opacity: 1; transform: translate(0) rotate(0); }
+  20%, 80% { opacity: 0; transform: translate(-2%, 1%) rotate(-3deg); }
+  50% { opacity: 0; transform: translate(2%, -1%) rotate(4deg); }
 }
 
 @keyframes attack-defect {
-  0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
-  28% { transform: translateY(3%) scale(0.96); filter: brightness(1.2); }
-  48% { transform: translateY(-4%) scale(1.045); filter: brightness(1.7) drop-shadow(0 0 0.8rem #65e9ff); }
-  68% { transform: translateY(-2%) scale(1.02); filter: brightness(1.25); }
+  0%, 10%, 90%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+  20%, 80% { opacity: 0; transform: translateY(2%) scale(0.98); }
+  48% { opacity: 0; transform: translateY(-3%) scale(1.04); }
 }
 
-/* The same motion with the `filter` sweep removed. `data-mobile-performance`
-   swaps to this one (chrome/landscape-phones.css): the brightness+drop-shadow
-   flash is the one part of Defect's attack that is genuinely expensive to
-   recomposite every frame, but the lunge under it is a plain transform — as
-   cheap as the other three characters' attacks — and there is no reason
-   Defect alone should stand still while they lunge. */
+/* Phones skip the two generated pose layers, so this keeps the base Defect
+   visible while retaining the same transform-only charge motion. */
 @keyframes attack-defect-mobile {
   0%, 100% { transform: translateY(0) scale(1); }
   28% { transform: translateY(3%) scale(0.96); }
@@ -170,12 +144,12 @@
   z-index: 5;
   inset: 0;
   overflow: visible;
+  container-type: inline-size;
   pointer-events: none;
   will-change: transform;
 }
 
-.character-attack--ironclad::before,
-.character-attack--watcher::before {
+.character-attack--ironclad::before {
   position: absolute;
   z-index: 1;
   top: 30%;
@@ -188,10 +162,6 @@
   opacity: 0;
   transform-origin: right center;
   animation: attack-speed-trail 860ms ease-in-out both;
-}
-
-.character-attack--watcher::before {
-  background: repeating-linear-gradient(0deg, transparent 0 20%, rgb(230 157 255 / 0.65) 21% 25%, transparent 26% 40%);
 }
 
 @keyframes attack-speed-trail {
@@ -225,7 +195,7 @@
   z-index: 2;
   inset: 0;
   opacity: 0;
-  will-change: opacity, transform, filter;
+  will-change: opacity, transform;
 }
 
 .character-attack__pose > img {
@@ -237,61 +207,54 @@
 
 .character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 860ms both; }
 .character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 860ms both; }
-.character-attack__pose--watcher-ready { animation: watcher-ready-pose 860ms both; }
-.character-attack__pose--watcher-thrust { animation: watcher-thrust-pose 860ms both; }
 .character-attack__pose--silent-throw { animation: silent-throw-pose 860ms both; }
+.character-attack__pose--defect-charge { animation: defect-charge-pose 860ms both; }
+.character-attack__pose--defect-release { animation: defect-release-pose 860ms both; }
+.character-attack__pose--watcher-charge { animation: watcher-charge-pose 860ms both; }
+.character-attack__pose--watcher-cast { animation: watcher-cast-pose 860ms both; }
 
 @keyframes ironclad-ready-pose {
-  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); filter: blur(0.1rem); }
-  12%, 39% { opacity: 1; transform: translate(0) rotate(0) scale(1); filter: blur(0); }
-  46% { opacity: 0.72; transform: translate(2%, -1%) rotate(1deg) scale(1.025); filter: blur(0.04rem); }
+  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); }
+  12%, 39% { opacity: 1; transform: translate(0) rotate(0) scale(1); }
+  46% { opacity: 0.72; transform: translate(2%, -1%) rotate(1deg) scale(1.025); }
 }
 
 @keyframes ironclad-impact-pose {
-  0%, 40%, 82%, 100% { opacity: 0; transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); filter: blur(0.12rem); }
-  49% { opacity: 0.72; transform: translate(1%, 0) rotate(1deg) scale(1.035); filter: blur(0.04rem); }
-  56%, 66% { opacity: 1; transform: translate(3%, 1%) rotate(2deg) scale(1.06); filter: blur(0); }
-  75% { opacity: 0.5; transform: translate(0) rotate(0) scale(1); filter: blur(0.05rem); }
-}
-
-@keyframes watcher-ready-pose {
-  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-3%, 1%) scale(0.97); filter: blur(0.1rem); }
-  12%, 39% { opacity: 1; transform: translate(-1%, 0) scale(1); filter: blur(0); }
-  46% { opacity: 0.72; transform: translate(2%, 0) scale(1.025); filter: blur(0.04rem); }
-}
-
-@keyframes watcher-thrust-pose {
-  0%, 40%, 83%, 100% { opacity: 0; transform: translate(-4%, 0) scale(0.96); filter: blur(0.12rem); }
-  49% { opacity: 0.72; transform: translate(1%, 0) scale(1.04, 0.98); filter: blur(0.04rem); }
-  56%, 67% { opacity: 1; transform: translate(5%, 0) scale(1.08, 0.96); filter: blur(0); }
-  76% { opacity: 0.5; transform: translate(1%, 0) scale(1); filter: blur(0.05rem); }
-}
-
-.character-attack__thrust {
-  position: absolute;
-  z-index: 4;
-  top: 44%;
-  left: 54%;
-  width: 72%;
-  height: 0.28rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, #fff, #dc7cff 68%, transparent);
-  filter: drop-shadow(0 0 0.38rem #a54cff);
-  opacity: 0;
-  transform-origin: left center;
-  animation: attack-watcher-thrust 300ms 410ms cubic-bezier(0.12, 0.82, 0.24, 1) both;
-}
-
-@keyframes attack-watcher-thrust {
-  from { opacity: 0; transform: scaleX(0.12); }
-  38% { opacity: 1; }
-  to { opacity: 0; transform: translateX(18%) scaleX(1.18); }
+  0%, 40%, 82%, 100% { opacity: 0; transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); }
+  49% { opacity: 0.72; transform: translate(1%, 0) rotate(1deg) scale(1.035); }
+  56%, 66% { opacity: 1; transform: translate(3%, 1%) rotate(2deg) scale(1.06); }
+  75% { opacity: 0.5; transform: translate(0) rotate(0) scale(1); }
 }
 
 @keyframes silent-throw-pose {
-  0%, 10%, 78%, 100% { opacity: 0; transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
-  18% { opacity: 1; transform: translate(-2%, 0) rotate(-2deg) scale(1); }
-  48%, 68% { opacity: 1; transform: translate(2%, -1%) rotate(2deg) scale(1.03); }
+  0%, 10%, 90%, 100% { opacity: 0; transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
+  22%, 78% { opacity: 1; transform: translate(-1%, 0) rotate(-1deg) scale(1); }
+  38%, 62% { opacity: 1; transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
+  50% { opacity: 1; transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
+}
+
+@keyframes defect-charge-pose {
+  0%, 10%, 58%, 100% { opacity: 0; transform: translateY(2%) scale(0.97); }
+  20%, 42% { opacity: 1; transform: translateY(0) scale(1); }
+  50% { opacity: 0.7; transform: translateY(-1%) scale(1.025); }
+}
+
+@keyframes defect-release-pose {
+  0%, 42%, 84%, 100% { opacity: 0; transform: translateY(1%) scale(0.97); }
+  50%, 68% { opacity: 1; transform: translateY(-2%) scale(1.04); }
+  76% { opacity: 0.55; transform: translateY(0) scale(1); }
+}
+
+@keyframes watcher-charge-pose {
+  0%, 8%, 56%, 100% { opacity: 0; transform: translateY(1%) rotate(-1deg) scale(0.98); }
+  18%, 42% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+  50% { opacity: 0.7; transform: translateY(-1%) rotate(1deg) scale(1.02); }
+}
+
+@keyframes watcher-cast-pose {
+  0%, 40%, 84%, 100% { opacity: 0; transform: translateY(1%) rotate(-1deg) scale(0.97); }
+  50%, 68% { opacity: 1; transform: translateY(-1%) rotate(1deg) scale(1.035); }
+  76% { opacity: 0.55; transform: translateY(0) rotate(0) scale(1); }
 }
 
 .character-attack__dagger,
@@ -310,21 +273,49 @@
 }
 
 .character-attack--silent .character-attack__dagger {
-  top: 28%;
-  left: 88%;
-  animation-duration: 330ms;
+  top: 31%;
+  left: 65%;
+  width: 4rem;
+  height: 2.2rem;
+  background: none;
+  clip-path: none;
+  filter: drop-shadow(0 0 0.22rem #92ffc1);
+  animation-name: attack-dagger-round-trip;
+  animation-duration: 660ms;
   animation-delay: calc(150ms + var(--attack-delay));
 }
 
+.character-attack__dagger > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .character-attack__bolt {
-  top: 38%;
-  left: 50%;
-  width: 1rem;
-  height: 1rem;
+  top: auto;
+  bottom: calc(56.445cqw - 1.2rem);
+  left: calc(58% - 1.8rem);
+  width: 3.6rem;
+  height: 2.4rem;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, white 0 12%, #70eeff 24%, #3b71ff 58%, transparent 70%);
+  background: none;
   clip-path: none;
   filter: drop-shadow(0 0 0.45rem #4ee9ff) drop-shadow(-0.65rem 0 0.28rem #4e8fff);
+}
+
+.character-attack__bolt > img,
+.character-attack__core > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.character-attack__bolt > img { transform: translateX(-15%); }
+
+@keyframes attack-dagger-round-trip {
+  0%, 100% { opacity: 0; transform: translate(0) rotate(-18deg) scale(0.72); }
+  8%, 92% { opacity: 1; }
+  50% { opacity: 1; transform: translate(var(--attack-target-x), var(--attack-target-y)) rotate(22deg) scale(1); }
 }
 
 @keyframes attack-projectile {
@@ -337,14 +328,73 @@
 .character-attack__core {
   position: absolute;
   z-index: 3;
-  top: 30%;
-  left: 47%;
-  width: 12%;
+  top: auto;
+  bottom: 39.445cqw;
+  left: 41%;
+  width: 34%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, white 0 16%, #ffef78 28%, #ff7b24 50%, transparent 72%);
+  background: none;
   box-shadow: 0 0 0.8rem #64e8ff, 0 0 1.35rem #477cff;
   animation: defect-core-charge 700ms ease-out both;
+}
+
+.character-attack__core > img { transform: translateX(-22%); }
+
+.character-attack__meteor {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 6.2rem;
+  height: 6.2rem;
+  border-radius: 55% 55% 48% 48%;
+  background: none;
+  filter: drop-shadow(0 0 0.38rem #ff442d);
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: watcher-meteor-fall 500ms calc(100ms + var(--attack-delay)) cubic-bezier(0.32, 0, 0.8, 0.24) both;
+}
+
+.character-attack__meteor-art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: watcher-meteor-art 500ms calc(100ms + var(--attack-delay)) linear both;
+}
+
+.character-attack__meteor-impact {
+  position: absolute;
+  top: 86.13%;
+  left: 89.65%;
+  width: 115%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  opacity: 0;
+  animation: watcher-meteor-impact 500ms calc(100ms + var(--attack-delay)) ease-out both;
+}
+
+@keyframes watcher-meteor-fall {
+  0% {
+    opacity: 0;
+    transform: translate(var(--attack-start-x), var(--attack-start-y)) translate(-89.65%, -86.13%);
+  }
+  8%, 83% { opacity: 1; }
+  84%, 100% {
+    opacity: 1;
+    transform: translate(var(--attack-target-x), var(--attack-target-y)) translate(-89.65%, -86.13%);
+  }
+}
+
+@keyframes watcher-meteor-art {
+  0%, 83% { opacity: 1; }
+  84%, 100% { opacity: 0; }
+}
+
+@keyframes watcher-meteor-impact {
+  0%, 83% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+  84%, 92% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.08); }
 }
 
 @keyframes defect-core-charge {

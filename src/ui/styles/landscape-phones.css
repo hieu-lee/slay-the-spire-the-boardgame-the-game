@@ -33,7 +33,7 @@ html[data-mobile-performance='true'] .seat__portrait > img {
    override, so it silently took the character's whole body out of every
    attack too. On a real phone that reads as "the animation is missing", which
    is worse than the choppiness cutting it was meant to fix.
-   Three of the four attacks, and every action beat, are already exactly what
+   The attack bases and most action beats are already exactly what
    this file's own header asks for: plain `transform`/`opacity`, no filter, no
    extra layer — as cheap as a CSS animation gets. Restoring them needs MORE
    specificity than the rule above, which is why each one repeats its own
@@ -46,23 +46,24 @@ html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-0 .seat__po
 html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
 html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
 html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
-html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
+html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad-mobile; }
 html[data-mobile-performance='true'] .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
 html[data-mobile-performance='true'] .seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
 
-/* The remaining fourth (Defect's attack) and the one action beat with a filter
-   (casting) genuinely do spend part of their motion on a `brightness()` flash
-   — that part stays cut, via a filter-free twin keyframe carrying the same
-   transform timeline (attack-timing.css) rather than the real one. Standing
-   Defect still while every other character lunges would have looked like this
-   file was choosing favourites, not cutting cost. */
+/* Casting still has a brightness sweep, so phones use its filter-free twin.
+   Defect's twin keeps the base art visible because its extra pose layers are
+   omitted below. */
 html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast-mobile; }
 html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-mobile-again; }
 html[data-mobile-performance='true'] .seat--attack-defect .seat__portrait > img { animation-name: attack-defect-mobile; }
 
 html[data-mobile-performance='true'] .seat__portrait::before,
 html[data-mobile-performance='true'] .enemy__portrait::before,
-html[data-mobile-performance='true'] .character-attack,
+html[data-mobile-performance='true'] .character-attack--ironclad::before,
+html[data-mobile-performance='true'] .character-attack__pose--ironclad-ready,
+html[data-mobile-performance='true'] .character-attack__pose--ironclad-impact,
+html[data-mobile-performance='true'] .character-attack__pose--defect-charge,
+html[data-mobile-performance='true'] .character-attack__pose--defect-release,
 html[data-mobile-performance='true'] .combat-vfx::before,
 html[data-mobile-performance='true'] .combat-vfx::after,
 /* The card-flight clone's own particle trail: a smoke wisp and a four-dot mote
@@ -81,6 +82,10 @@ html[data-mobile-performance='true'] .seat__portrait > img,
 html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
 html[data-mobile-performance='true'] .stance-aura,
 html[data-mobile-performance='true'] .combat-vfx,
+html[data-mobile-performance='true'] .character-attack__swing,
+html[data-mobile-performance='true'] .character-attack__dagger,
+html[data-mobile-performance='true'] .character-attack__bolt,
+html[data-mobile-performance='true'] .character-attack__meteor,
 html[data-mobile-performance='true'] .hit-vfx,
 html[data-mobile-performance='true'] .card-drag,
 html[data-mobile-performance='true'] .card-target-arrow__line,
@@ -131,6 +136,21 @@ html[data-mobile-performance='true'] .enemy--targeted {
 
 html[data-mobile-performance='true'] .choice-modal::backdrop {
   backdrop-filter: none;
+}
+
+/* A phone still clears the slot on the shared 1.8s beat, but skips the mask,
+   filtered collapse and both decorative death layers. */
+html[data-mobile-performance='true'] .enemy--dead.enemy--falling .enemy__portrait {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .enemy--dead.enemy--falling .enemy__portrait > .enemy__art--cutout {
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: enemy-fade 1800ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
