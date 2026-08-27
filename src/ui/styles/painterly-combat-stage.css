@@ -215,6 +215,10 @@
   animation-delay: calc(var(--stage-row, 0) * -0.43s);
 }
 
+.seat__portrait > img[src$='/watcher.webp'] {
+  padding-bottom: calc(0.65rem * var(--stage-scale));
+}
+
 .seat__portrait::before,
 .enemy__portrait:has(> .enemy__art--cutout)::before {
   content: '';

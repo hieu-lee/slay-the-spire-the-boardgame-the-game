@@ -86,12 +86,12 @@
 .seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
 
 @keyframes attack-ironclad {
-  0%, 5%, 100% { opacity: 1; transform: translate(0) scale(1); }
-  10% { opacity: 0.35; transform: translate(-1%, 0) scale(0.99, 1.01); }
-  14%, 70% { opacity: 0; }
+  0%, 4%, 82%, 100% { opacity: 1; transform: translate(0) scale(1); }
+  4.01%, 81.99% { opacity: 0; }
+  10% { transform: translate(-1%, 0) scale(0.99, 1.01); }
   42%, 64% { transform: translate(var(--attack-x), var(--attack-y)); }
-  80% { opacity: 0.25; transform: translate(14%, 0) scale(0.98, 1.02); }
-  90% { opacity: 0.78; transform: translate(2%, 0) scale(1.01, 0.99); }
+  80% { transform: translate(14%, 0) scale(0.98, 1.02); }
+  90% { transform: translate(2%, 0) scale(1.01, 0.99); }
 }
 
 @keyframes attack-ironclad-motion {
@@ -113,21 +113,24 @@
 }
 
 @keyframes attack-watcher {
-  0%, 10%, 90%, 100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
-  20%, 80% { opacity: 0; transform: translateY(2%) rotate(-2deg) scale(0.985); }
-  48%, 66% { opacity: 0; transform: translateY(-2%) rotate(1deg) scale(1.025); }
+  0%, 8%, 90%, 100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+  8.01%, 89.99% { opacity: 0; }
+  20%, 80% { transform: translateY(2%) rotate(-2deg) scale(0.985); }
+  48%, 66% { transform: translateY(-2%) rotate(1deg) scale(1.025); }
 }
 
 @keyframes attack-silent {
   0%, 10%, 90%, 100% { opacity: 1; transform: translate(0) rotate(0); }
-  20%, 80% { opacity: 0; transform: translate(-2%, 1%) rotate(-3deg); }
-  50% { opacity: 0; transform: translate(2%, -1%) rotate(4deg); }
+  10.01%, 89.99% { opacity: 0; }
+  20%, 80% { transform: translate(-2%, 1%) rotate(-3deg); }
+  50% { transform: translate(2%, -1%) rotate(4deg); }
 }
 
 @keyframes attack-defect {
   0%, 10%, 90%, 100% { opacity: 1; transform: translateY(0) scale(1); }
-  20%, 80% { opacity: 0; transform: translateY(2%) scale(0.98); }
-  48% { opacity: 0; transform: translateY(-3%) scale(1.04); }
+  10.01%, 89.99% { opacity: 0; }
+  20%, 80% { transform: translateY(2%) scale(0.98); }
+  48% { transform: translateY(-3%) scale(1.04); }
 }
 
 /* Phones skip the two generated pose layers, so this keeps the base Defect
@@ -214,47 +217,61 @@
 .character-attack__pose--watcher-cast { animation: watcher-cast-pose 860ms both; }
 
 @keyframes ironclad-ready-pose {
-  0%, 4%, 54%, 100% { opacity: 0; transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); }
-  12%, 39% { opacity: 1; transform: translate(0) rotate(0) scale(1); }
-  46% { opacity: 0.72; transform: translate(2%, -1%) rotate(1deg) scale(1.025); }
+  0%, 4%, 48%, 100% { opacity: 0; }
+  4.01%, 47.99% { opacity: 1; }
+  0%, 100% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); }
+  12%, 39% { transform: translate(0) rotate(0) scale(1); }
+  46% { transform: translate(2%, -1%) rotate(1deg) scale(1.025); }
 }
 
 @keyframes ironclad-impact-pose {
-  0%, 40%, 82%, 100% { opacity: 0; transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); }
-  49% { opacity: 0.72; transform: translate(1%, 0) rotate(1deg) scale(1.035); }
-  56%, 66% { opacity: 1; transform: translate(3%, 1%) rotate(2deg) scale(1.06); }
-  75% { opacity: 0.5; transform: translate(0) rotate(0) scale(1); }
+  0%, 47.99%, 82%, 100% { opacity: 0; }
+  48%, 81.99% { opacity: 1; }
+  0%, 100% { transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); }
+  49% { transform: translate(1%, 0) rotate(1deg) scale(1.035); }
+  56%, 66% { transform: translate(3%, 1%) rotate(2deg) scale(1.06); }
+  75% { transform: translate(0) rotate(0) scale(1); }
 }
 
 @keyframes silent-throw-pose {
-  0%, 10%, 90%, 100% { opacity: 0; transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
-  22%, 78% { opacity: 1; transform: translate(-1%, 0) rotate(-1deg) scale(1); }
-  38%, 62% { opacity: 1; transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
-  50% { opacity: 1; transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
+  0%, 10%, 90%, 100% { opacity: 0; }
+  10.01%, 89.99% { opacity: 1; }
+  0%, 100% { transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
+  22%, 78% { transform: translate(-1%, 0) rotate(-1deg) scale(1); }
+  38%, 62% { transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
+  50% { transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
 }
 
 @keyframes defect-charge-pose {
-  0%, 10%, 58%, 100% { opacity: 0; transform: translateY(2%) scale(0.97); }
-  20%, 42% { opacity: 1; transform: translateY(0) scale(1); }
-  50% { opacity: 0.7; transform: translateY(-1%) scale(1.025); }
+  0%, 10%, 48%, 100% { opacity: 0; }
+  10.01%, 47.99% { opacity: 1; }
+  0%, 100% { transform: translateY(2%) scale(0.97); }
+  20%, 42% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1%) scale(1.025); }
 }
 
 @keyframes defect-release-pose {
-  0%, 42%, 84%, 100% { opacity: 0; transform: translateY(1%) scale(0.97); }
-  50%, 68% { opacity: 1; transform: translateY(-2%) scale(1.04); }
-  76% { opacity: 0.55; transform: translateY(0) scale(1); }
+  0%, 47.99%, 90%, 100% { opacity: 0; }
+  48%, 89.99% { opacity: 1; }
+  0%, 100% { transform: translateY(1%) scale(0.97); }
+  50%, 68% { transform: translateY(-2%) scale(1.04); }
+  76% { transform: translateY(0) scale(1); }
 }
 
 @keyframes watcher-charge-pose {
-  0%, 8%, 56%, 100% { opacity: 0; transform: translateY(1%) rotate(-1deg) scale(0.98); }
-  18%, 42% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
-  50% { opacity: 0.7; transform: translateY(-1%) rotate(1deg) scale(1.02); }
+  0%, 8%, 48%, 100% { opacity: 0; }
+  8.01%, 47.99% { opacity: 1; }
+  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.98); }
+  18%, 42% { transform: translateY(0) rotate(0) scale(1); }
+  50% { transform: translateY(-1%) rotate(1deg) scale(1.02); }
 }
 
 @keyframes watcher-cast-pose {
-  0%, 40%, 84%, 100% { opacity: 0; transform: translateY(1%) rotate(-1deg) scale(0.97); }
-  50%, 68% { opacity: 1; transform: translateY(-1%) rotate(1deg) scale(1.035); }
-  76% { opacity: 0.55; transform: translateY(0) rotate(0) scale(1); }
+  0%, 47.99%, 90%, 100% { opacity: 0; }
+  48%, 89.99% { opacity: 1; }
+  0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.97); }
+  50%, 68% { transform: translateY(-1%) rotate(1deg) scale(1.035); }
+  76% { transform: translateY(0) rotate(0) scale(1); }
 }
 
 .character-attack__dagger,
