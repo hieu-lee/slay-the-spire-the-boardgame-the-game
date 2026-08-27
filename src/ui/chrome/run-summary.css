@@ -6,28 +6,24 @@
   text-align: left;
 }
 
-/* The three numbers that describe the climb, as a row of plaques. */
+/* The client keeps run facts in one quiet HUD-like line, not three plaques. */
 .sts-scope .run-summary__tallies {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 0.45rem 1.1rem;
   margin: 0;
 }
 
 .sts-scope .run-summary__tallies > div {
-  display: grid;
-  gap: 0.1rem;
-  justify-items: center;
-  min-width: 7rem;
-  padding: 0.5rem 0.9rem;
-  background: linear-gradient(180deg, #2b1f1a, #15100c 72%);
-  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 2px 0 rgb(217 180 91 / 0.22);
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
 }
 
 .sts-scope .run-summary__tallies dt {
   color: #9b8a6a;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -36,7 +32,7 @@
   margin: 0;
   color: var(--sts-gold);
   font-family: 'Kreon', Georgia, serif;
-  font-size: 1.5rem;
+  font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
 }
@@ -54,13 +50,12 @@
   display: grid;
   gap: 0.45rem;
   align-content: start;
-  padding: 0.75rem 0.9rem;
-  background: linear-gradient(180deg, rgb(43 31 26 / 0.92), rgb(21 16 12 / 0.94));
-  box-shadow: inset 0 0 0 2px var(--trim-dim), inset 0 2px 0 rgb(217 180 91 / 0.22);
+  padding: 0.65rem 0;
+  border-top: 1px solid rgb(217 180 91 / 0.42);
 }
 
 /* A fallen seat is dimmed but never hidden — who died is part of the record. */
-.sts-scope .run-summary__seat--dead { box-shadow: inset 0 0 0 2px #5e2a26, inset 0 2px 0 rgb(192 64 58 / 0.3); }
+.sts-scope .run-summary__seat--dead { border-color: #8d4039; }
 
 .sts-scope .run-summary__seat-head {
   display: flex;
@@ -94,14 +89,14 @@
   line-height: 1.45;
 }
 
-/* The bar anchors its tooltips to itself, and here it sits inside a card in a
-   grid — without this the tip would open against whatever is positioned above.
+/* The bar anchors its tooltips to itself, and here it sits inside a summary row
+   in a grid — without this the tip would open against whatever is positioned above.
    `justify-self: start` keeps it the width of its chips: stretched across the
-   seat card, its plate read as an empty text field with three tokens in it.
+   seat row, its plate read as an empty text field with three tokens in it.
 
    It must also WRAP. The wrap in the HUD is scoped to `.run-status > .relic-bar`,
    so this bar inherited `nowrap` and a late-run seat ran its chips straight out
-   of the card: measured +164px past the card at 10 relics, painting under the
+   of the row: measured +164px past the seat at 10 relics, painting under the
    next seat, and in the online shell at 1024 it scrolled the page sideways for
    real (`scrollTo(9999,0)` landed at 154). `max-width: 100%` is what actually
    bounds it — `justify-self` alone leaves it free to size to content. */
@@ -117,14 +112,14 @@
    320px panel with `pointer-events: auto` on the primary CTA is a worse trade
    than the one made for the potion belt.
 
-   Measured ceiling: below roughly 570px of viewport HEIGHT, with the seat cards
+   Measured ceiling: below roughly 570px of viewport HEIGHT, with the seat rows
    scrolled to the top, the flipped tip clips the top edge (at 1280x560 its top
    is -19 and the relic name is sheared; 1280x580 is the boundary). Accepted —
    that is under any real desktop window, and the alternative is covering the
    only button on the screen at every size.
 
    That number was measured against the BAR. Below 47.99rem the tip is anchored
-   to the seat card instead (see the block at the end of this file), which sits
+   to the seat row instead (see the block at the end of this file), which sits
    60-90px higher, so it shears sooner there. Same trade, smaller window. */
 .sts-scope .run-summary__seat .relic-tip {
   top: auto;
@@ -146,13 +141,13 @@
    the tip with `width: auto` against its containing block, which here is the
    BAR — about three chips — turning 320px of prose into a ~600px column that,
    flipped upward, runs off the top of the page. Pinning it back to 320px fixes
-   that but reintroduces the other: the bar sits ~64px into the seat card, so a
+   that but reintroduces the other: the bar sits ~64px into the seat row, so a
    320px box overhangs the window below ~384px. Tooltips are laid out even while
    `visibility: hidden`, so that overhang scrolled the whole page sideways on the
    run's final screen with nothing hovered.
 
-   Anchoring to the seat CARD instead solves both: the card spans the panel, so
-   the tip takes the card's width — never wider than the window, never collapsed
+   Anchoring to the seat row instead solves both: the row spans the summary, so
+   the tip takes the row's width — never wider than the window, never collapsed
    to three chips.
 
    Moving the containing block is the ONLY thing this block needs to do. The

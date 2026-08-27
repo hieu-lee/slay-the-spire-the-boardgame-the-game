@@ -8387,7 +8387,9 @@ check('only the blocked Event seat can use the no-legal-choice escape after reco
   room.run.combat = null
   room.run.players = room.run.players.map((player) => ({ ...player, gold: 0, relics: [], potions: [] }))
   room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.old_beggar, instanceId: 'test-skip-beggar', act: 2, minAscension: 0, requiresColorlessUnlock: false })
-  assertEqual(snapshotFor(room, a.token).eventCanSkip, true)
+  const blockedSnapshot = snapshotFor(room, a.token)
+  assertEqual(blockedSnapshot.eventCanSkip, true)
+  assertDeepEqual(blockedSnapshot.unavailableEventOptionIds, ['give'])
   let forged
   try { apply(room, b.token, { kind: 'eventSkip', playerId: a.playerId }) } catch (error) { forged = error }
   assertEqual(forged?.name, 'RoomError')
@@ -8412,6 +8414,7 @@ check('four-player Big Fish rejects used staged choices and reconnects the final
   room.run.phase = 'room'
   room.run.roomState = createEventRoom({ ...EVENT_DEFINITIONS.big_fish, instanceId: 'test-four-fish', act: 1, minAscension: 0, requiresColorlessUnlock: false })
   apply(room, seats[0].token, { kind: 'event', decision: { optionIds: ['box'] } })
+  assert(snapshotFor(room, seats[1].token).unavailableEventOptionIds.includes('box'))
   markDisconnected(room, seats[0].token)
   joinRoom(room, { token: seats[0].token })
   apply(room, seats[0].token, { kind: 'event', decision: { optionIds: ['box'], rewardItemChoices: ['skip'] } })

@@ -144,6 +144,7 @@ export {
   advanceQuickSetup,
   beginCatchUp,
   canSkipEvent,
+  unavailableEventOptionIds,
   decideCourier,
   chooseEvent,
   chooseRelicReward,

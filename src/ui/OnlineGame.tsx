@@ -771,6 +771,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           onRelic={(playerId, decision) => room.act({ kind: 'relicReward', playerId, decision })}
           onEvent={(playerId, decision) => room.act({ kind: 'event', playerId, decision })}
           eventCanSkip={snapshot.eventCanSkip}
+          unavailableEventOptionIds={snapshot.unavailableEventOptionIds}
           onSkipEvent={(playerId) => room.act({ kind: 'eventSkip', playerId })}
           sapphireAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.sapphire}
           merchantPledges={snapshot.merchantPledges}

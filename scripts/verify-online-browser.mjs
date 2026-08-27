@@ -3816,6 +3816,11 @@ try {
   await ownerGame.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Astrolabe' }).waitFor()
   await Promise.all([a, b].map((page) => page.setViewportSize({ width: 1280, height: 800 })))
+  const relicDeckLayout = await ownerGame.locator('.relic-resolve .campfire__deck').evaluate((deck) => ({
+    display: getComputedStyle(deck).display,
+    overflowX: getComputedStyle(deck).overflowX,
+    contained: deck.scrollWidth <= deck.clientWidth + 1,
+  }))
   const activeGames = [ownerGame, teammateGame]
   await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
   const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
@@ -3840,6 +3845,9 @@ try {
     assertEqual(teammateMapBlocked.focusable, 0, 'the teammate map kept focusable progression controls')
     assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
     assertEqual(wingBootsDuringRelic, 0, 'Wing Boots stayed focusable behind a mandatory Relic')
+    assertEqual(relicDeckLayout.display, 'grid', 'the Relic resolver did not use its wrapping card grid')
+    assertEqual(relicDeckLayout.overflowX, 'visible', 'the Relic resolver kept a nested horizontal scroller')
+    assert(relicDeckLayout.contained, 'the Relic resolver card grid overflowed horizontally')
   })
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()

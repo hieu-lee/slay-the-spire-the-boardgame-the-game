@@ -659,11 +659,23 @@ function eventOptionAvailable(state: RunState, player: Player, option: EventCard
 export function canSkipEvent(state: RunState, playerId: string): boolean {
   if (state.phase !== 'room' || state.roomState?.kind !== 'event' || state.roomState.decisions[playerId]) return false
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
-  const used = state.roomState.card.id === 'big_fish' ? new Set([
+  const used = usedBigFishOptionIds(state, playerId)
+  return Boolean(player && !state.roomState.card.options.some((option) => !used.has(option.id) && eventOptionAvailable(state, player, option)))
+}
+
+export function unavailableEventOptionIds(state: RunState, playerId: string): string[] {
+  if (state.phase !== 'room' || state.roomState?.kind !== 'event' || state.roomState.decisions[playerId] || state.roomState.pendingDecisions?.[playerId]) return []
+  const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
+  const used = usedBigFishOptionIds(state, playerId)
+  return player ? state.roomState.card.options.filter((option) => used.has(option.id) || !eventOptionAvailable(state, player, option)).map((option) => option.id) : []
+}
+
+function usedBigFishOptionIds(state: RunState, playerId: string): Set<string> {
+  if (state.roomState?.kind !== 'event' || state.roomState.card.id !== 'big_fish') return new Set()
+  return new Set([
     ...Object.entries(state.roomState.decisions),
     ...Object.entries(state.roomState.pendingDecisions ?? {}),
-  ].filter(([id]) => id !== playerId).map(([, choice]) => choice.optionIds[0])) : null
-  return Boolean(player && !state.roomState.card.options.some((option) => !used?.has(option.id) && eventOptionAvailable(state, player, option)))
+  ].filter(([id]) => id !== playerId).flatMap(([, choice]) => choice.optionIds[0] ? [choice.optionIds[0]] : []))
 }
 
 export function skipEvent(state: RunState, playerId: string): RunState {
