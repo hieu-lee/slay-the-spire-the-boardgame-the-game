@@ -156,15 +156,24 @@
 .event-selectors select, .event-selectors input { min-width: 0; }
 .event-choice-summary { margin: 0 0 .75rem; color: #f4cf71; }
 .event-resolve-actions { display: flex; justify-content: flex-end; gap: .6rem; flex-wrap: wrap; }
-.relic-resolve { align-self: stretch; justify-content: flex-start; overflow: auto; }
+.relic-resolve {
+  align-self: stretch;
+  min-height: 0;
+  max-height: calc(100dvh - 5rem);
+  justify-content: flex-start;
+  overflow: hidden;
+}
 .sts-scope .relic-resolve .campfire__deck {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 10rem));
   justify-content: center;
   width: 100%;
   max-height: none;
-  overflow: visible;
+  min-height: 0;
+  overflow: auto;
 }
+.relic-resolve > button:last-child { flex: none; }
 .campaign-end { max-width: 760px; margin: 2rem auto; padding: clamp(1.2rem, 4vw, 2.5rem); text-align: center; color: #eee2c4; background: radial-gradient(circle at top, #5b3a2577, transparent 65%), #11191d; border: 2px solid #997244; border-radius: 8px 24px; box-shadow: 0 18px 55px #0009; }
 .campaign-end > span { color: #dfb05d; font-size: .72rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
 .campaign-end h2 { margin: .25rem; font: 700 clamp(2rem, 7vw, 4rem) Georgia, serif; }

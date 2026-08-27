@@ -79,7 +79,6 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
         </nav>
         <div className="settings-dialog__body">
           {tab === 'general' ? <section id={`${id}-general-panel`} role="tabpanel" aria-labelledby={`${id}-general-tab`}>
-            <h3>General</h3>
             <label className="settings-toggle">
               <span><strong>Screen shake</strong><small>Allow impact effects to move the battlefield.</small></span>
               <input type="checkbox" checked={settings.screenShake} onChange={(event) => set('screenShake', event.target.checked)} />
@@ -87,7 +86,6 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
             {generalChildren}
           </section> : null}
           {tab === 'video' ? <section id={`${id}-video-panel`} role="tabpanel" aria-labelledby={`${id}-video-tab`}>
-            <h3>Video</h3>
             <div className="settings-action">
               <span><strong>Display mode</strong><small>{fullscreen ? 'Fullscreen' : 'Windowed'}</small></span>
               <button type="button" aria-pressed={fullscreen} onClick={() => void toggleFullscreen()}>
@@ -105,7 +103,6 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
             {fullscreenError ? <p className="settings-dialog__error" role="alert">{fullscreenError}</p> : null}
           </section> : null}
           {tab === 'audio' ? <section id={`${id}-audio-panel`} role="tabpanel" aria-labelledby={`${id}-audio-tab`}>
-            <h3>Audio</h3>
             <Volume label="Music" value={settings.bgmVolume} onChange={(value) => set('bgmVolume', value)} />
             <Volume label="Sound effects" value={settings.sfxVolume} onChange={(value) => set('sfxVolume', value)} />
             <Volume label="Voice chat" value={settings.voiceVolume} onChange={(value) => set('voiceVolume', value)} />

@@ -391,6 +391,24 @@ const sfxCanMute = await page.evaluate(() => localStorage.getItem('sts-sfx-enabl
 await sfxSlider.fill('100')
 const sfxCanRestore = await page.evaluate(() => localStorage.getItem('sts-sfx-enabled'))
 const menuSounds = await page.evaluate(() => window.__SFX_PLAYS__)
+const settingsAudioLayout = await settingsDialog.evaluate((dialog) => {
+  const dialogBox = dialog.getBoundingClientRect()
+  const cards = [...dialog.querySelectorAll('.settings-volume')]
+  return {
+    width: dialogBox.width,
+    height: dialogBox.height,
+    repeatedHeadings: dialog.querySelectorAll('[role="tabpanel"] h3').length,
+    cardsContained: cards.every((card) => {
+      const cardBox = card.getBoundingClientRect()
+      return cardBox.left >= dialogBox.left && cardBox.right <= dialogBox.right
+    }),
+    slidersContained: cards.every((card) => {
+      const cardBox = card.getBoundingClientRect()
+      const sliderBox = card.querySelector('input[type="range"]')?.getBoundingClientRect()
+      return sliderBox && sliderBox.left >= cardBox.left && sliderBox.right <= cardBox.right
+    }),
+  }
+})
 await shot('00-title-settings')
 await page.keyboard.press('Escape')
 await settingsDialog.waitFor({ state: 'hidden' })
@@ -463,6 +481,11 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(sfxCanMute, 'off', 'sound preference did not mute')
   assertEqual(sfxCanRestore, 'on', 'sound preference did not restore')
   assert(menuSounds.includes('/assets/sfx/ui.ogg'), 'menu clicks did not play the UI sound')
+  assert(settingsAudioLayout.width <= 802 && settingsAudioLayout.height <= 514,
+    `settings remained oversized: ${JSON.stringify(settingsAudioLayout)}`)
+  assertEqual(settingsAudioLayout.repeatedHeadings, 0, 'a selected settings tab repeated its own label')
+  assert(settingsAudioLayout.cardsContained, 'an audio control card left the settings dialog')
+  assert(settingsAudioLayout.slidersContained, 'an audio slider left its control card')
   assert(formSoundPlays, 'form changes did not play the UI sound')
   assertEqual(freshMenuCampaign.saved.nextRunNumber, 0, 'opening the menu persisted a draft campaign run')
   assertEqual(reloadedMenuCampaign.saved.nextRunNumber, 0, 'reloading the menu consumed a campaign run number')
@@ -13978,8 +14001,25 @@ for (const [engineName, phoneBrowser, deviceName] of [
   await tap(phonePage.getByRole('button', { name: 'Settings' }))
   const settingsDialog = phonePage.getByRole('dialog', { name: 'Settings' })
   await settingsDialog.waitFor()
-  layout.settingsBackdropFilter = await settingsDialog.evaluate((dialog) =>
-    getComputedStyle(dialog, '::backdrop').backdropFilter)
+  await tap(settingsDialog.getByRole('button', { name: 'audio' }))
+  Object.assign(layout, await settingsDialog.evaluate((dialog) => {
+    const dialogBox = dialog.getBoundingClientRect()
+    const cards = [...dialog.querySelectorAll('.settings-volume')]
+    return {
+      settingsBackdropFilter: getComputedStyle(dialog, '::backdrop').backdropFilter,
+      settingsRepeatedHeadings: dialog.querySelectorAll('[role="tabpanel"] h3').length,
+      settingsAudioContained: cards.every((card) => {
+        const cardBox = card.getBoundingClientRect()
+        const sliderBox = card.querySelector('input[type="range"]')?.getBoundingClientRect()
+        return cardBox.left >= dialogBox.left && cardBox.right <= dialogBox.right && sliderBox &&
+          sliderBox.left >= cardBox.left && sliderBox.right <= cardBox.right
+      }),
+    }
+  }))
+  await phonePage.screenshot({
+    path: join(outDir, `phone-settings-audio-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`),
+    scale: 'css',
+  })
   await tap(settingsDialog.getByRole('button', { name: /Back/ }))
   await phonePage.screenshot({ path: join(outDir, `phone-${engineName.toLowerCase()}-${deviceName.replaceAll(' ', '-').toLowerCase()}.png`), scale: 'css' })
 
@@ -14460,6 +14500,8 @@ check('landscape phones render and play the complete desktop combat UI', () => {
     assert(layout.selectedOutline !== 'none', `${layout.deviceName}: selected cards lost their outline`)
     assert(layout.mapBackdropFilter === 'none', `${layout.deviceName}: map backdrop still blurs`)
     assert(layout.settingsBackdropFilter === 'none', `${layout.deviceName}: settings backdrop still blurs`)
+    assertEqual(layout.settingsRepeatedHeadings, 0, `${layout.deviceName}: settings repeated the selected tab label`)
+    assert(layout.settingsAudioContained, `${layout.deviceName}: an audio slider clips its control card`)
     assert(layout.mapHerePresent, `${layout.deviceName}: map location probe is missing`)
     assert(layout.mapHereAnimation === 'none', `${layout.deviceName}: map location ring still animates`)
     if (layout.drag) {
