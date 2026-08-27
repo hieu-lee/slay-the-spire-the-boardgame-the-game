@@ -142,6 +142,7 @@ export function addDaze(
     ...player.draw,
     ...player.hand,
     ...player.discard,
+    ...player.exhaust,
   ].filter((card) => card.defId === 'daze').length, 0)
   const gained = Math.min(amount, Math.max(0, CAPS.daze - inPlay))
   const cards = Array.from({ length: gained }, (_, index) => ({
@@ -162,7 +163,7 @@ export function addStatus(
   source: string,
 ): number {
   const inPlay = state.players.reduce((total, player) => total + [
-    ...player.draw, ...player.hand, ...player.discard,
+    ...player.draw, ...player.hand, ...player.discard, ...player.exhaust,
   ].filter((card) => card.defId === 'burn' || card.defId === 'slimed').length, 0)
   const gained = Math.min(amount, Math.max(0, CAPS.status - inPlay))
   const cards = Array.from({ length: gained }, (_, index) => ({
