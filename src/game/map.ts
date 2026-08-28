@@ -16,6 +16,8 @@ export type RoomKind =
   | 'merchant'
   | 'boss'
 
+export type MapTokenBack = 'dark' | 'light'
+
 export type Room = {
   id: string
   kind: RoomKind
@@ -28,6 +30,8 @@ export type Room = {
   visited: boolean
   /** The physical Burning Elite token replacing a dark-backed Encounter. */
   burning?: boolean
+  /** Back shown by the printed token socket; absent for rooms printed on the board. */
+  tokenBack?: MapTokenBack
   /** Presentation-only marker used by Uncertain Future; authoritative maps never set it. */
   hidden?: boolean
 }
@@ -41,134 +45,116 @@ export type SpireMap = {
   position: string | null
 }
 
-/**
- * Room weights for the randomly filled middle rows. The first row is always an
- * encounter, the row below the boss is always campfires, and the boss sits
- * alone at the top (p.4, p.9).
- */
-const FILLER: { kind: RoomKind; weight: number }[] = [
-  { kind: 'encounter', weight: 10 },
-  { kind: 'event', weight: 6 },
-  { kind: 'elite', weight: 4 },
-  { kind: 'campfire', weight: 3 },
-  { kind: 'merchant', weight: 2 },
-  { kind: 'treasure', weight: 2 },
+type MapSlot = RoomKind | MapTokenBack
+type RoomSpec = readonly [slot: MapSlot, exits: readonly number[]]
+type ActMapSpec = readonly (readonly RoomSpec[])[]
+
+const DARK_TOKENS: readonly RoomKind[] = [
+  'encounter', 'encounter', 'encounter', 'elite', 'elite', 'elite', 'event', 'event',
+]
+const LIGHT_TOKENS: readonly RoomKind[] = [
+  'campfire', 'campfire', 'campfire', 'merchant', 'merchant', 'treasure', 'treasure',
 ]
 
-function pickKind(rng: RngState): RoomKind {
-  const total = FILLER.reduce((sum, entry) => sum + entry.weight, 0)
-  let roll = nextInt(rng, total)
-  for (const entry of FILLER) {
-    roll -= entry.weight
-    if (roll < 0) return entry.kind
-  }
-  return 'encounter'
+// The retail boards, transcribed bottom-to-top. Only token faces are random;
+// the printed rooms and paths never change.
+const ACT_I_MAPS: readonly ActMapSpec[] = [
+  [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1]], ['event', [2]]],
+    [['encounter', [0, 1]], ['encounter', [1, 2]], ['event', [3]]],
+    [['merchant', [0]], ['light', [1]], ['event', [2]], ['encounter', [3]]],
+    [['dark', [0]], ['encounter', [0, 1]], ['light', [1, 2]], ['light', [2, 3]]],
+    [['event', [0]], ['dark', [0, 1]], ['encounter', [1, 2]], ['dark', [2, 3]]],
+    [['treasure', [0, 1]], ['treasure', [1]], ['treasure', [2]], ['treasure', [2]]],
+    [['encounter', [0, 1]], ['dark', [1, 2]], ['dark', [2, 3]]],
+    [['light', [0]], ['event', [1]], ['light', [2, 3]], ['light', [3]]],
+    [['encounter', [0]], ['light', [1, 2]], ['event', [2]], ['dark', [3]]],
+    [['event', [0]], ['dark', [1]], ['dark', [2]], ['event', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+  [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1]], ['event', [2]]],
+    [['event', [0]], ['encounter', [1, 2]], ['encounter', [2, 3]]],
+    [['encounter', [0, 1]], ['light', [1, 2]], ['event', [2]], ['event', [3]]],
+    [['dark', [0]], ['encounter', [0, 1]], ['dark', [1]], ['light', [2]]],
+    [['light', [0, 1]], ['light', [1, 2]], ['dark', [2]]],
+    [['treasure', [0]], ['treasure', [1, 2]], ['treasure', [2, 3]]],
+    [['encounter', [0]], ['event', [0, 1]], ['dark', [1]], ['encounter', [2]]],
+    [['dark', [0, 1]], ['light', [1, 2]], ['dark', [3]]],
+    [['light', [0]], ['encounter', [1]], ['event', [2]], ['light', [2, 3]]],
+    [['dark', [0]], ['merchant', [1]], ['dark', [2]], ['event', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+]
+
+const ACT_MAPS: Record<2 | 3, ActMapSpec> = {
+  2: [
+    [['encounter', [0, 1, 2]]],
+    [['encounter', [0]], ['event', [1]], ['event', [2]]],
+    [['merchant', [0, 1]], ['light', [1, 2]], ['encounter', [2, 3]]],
+    [['dark', [0]], ['dark', [0, 1]], ['encounter', [1, 2]], ['light', [2, 3]]],
+    [['light', [0, 1]], ['light', [1]], ['dark', [2]], ['dark', [2, 3]]],
+    [['dark', [0]], ['dark', [1, 2]], ['light', [2, 3]], ['light', [3]]],
+    [['event', [0]], ['light', [0, 1]], ['event', [2, 3]], ['event', [3]]],
+    [['dark', [0]], ['encounter', [1]], ['event', [2]], ['elite', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+  3: [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1, 2]], ['encounter', [3]]],
+    [['light', [0]], ['light', [0, 1]], ['dark', [2]], ['event', [3]]],
+    [['dark', [0, 1]], ['event', [0, 1]], ['light', [2]], ['light', [2, 3]]],
+    [['encounter', [0, 1]], ['light', [1, 2]], ['dark', [2, 3]], ['dark', [3, 4]]],
+    [['light', [0]], ['dark', [1]], ['encounter', [1, 2]], ['light', [2, 3]], ['event', [3]]],
+    [['dark', [0]], ['merchant', [1]], ['dark', [2]], ['dark', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
 }
 
-export type MapShape = {
-  /** Rows between the opening encounter and the campfire row. */
-  middleRows: number
-  /** How wide the map can get. */
-  maxWidth: number
-}
+/** Builds the printed retail map and deals its finite physical token supply. */
+export function generateMap(rng: RngState, act: number, ascension = 0): SpireMap {
+  if (act === 4) return actIVMap(ascension >= 11)
+  if (act !== 1 && act !== 2 && act !== 3) throw new Error(`unsupported map act: ${act}`)
 
-export const ACT_SHAPE: MapShape = { middleRows: 6, maxWidth: 4 }
-
-/**
- * Generates one act's map. Every room is reachable from the row below it, and
- * every room leads somewhere, so the party can never strand itself.
- */
-export function generateMap(
-  rng: RngState,
-  act: number,
-  shape: MapShape = ACT_SHAPE,
-  ascension = 0,
-): SpireMap {
-  const rows: string[][] = []
+  const dark = shuffle(rng, [...DARK_TOKENS])
+  const light = shuffle(rng, [...LIGHT_TOKENS])
+  const spec = act === 1 ? ACT_I_MAPS[nextInt(rng, ACT_I_MAPS.length)]! : ACT_MAPS[act]
+  const rows = spec.map((row, rowIndex) => row.map((_room, column) => `a${act}r${rowIndex}c${column}`))
   const rooms: Record<string, Room> = {}
 
-  const addRow = (kinds: RoomKind[]) => {
-    const row = rows.length
-    const ids = kinds.map((kind, column) => {
-      const id = `a${act}r${row}c${column}`
-      rooms[id] = { id, kind, row, column, exits: [], visited: false }
-      return id
-    })
-    rows.push(ids)
-    return ids
-  }
-
-  // The Act IV elite is added only by Ascension 11; lower levels go straight
-  // to the Heart (Ascension reference card).
-  if (act === 4) {
-    if (ascension < 11) {
-      addRow(['boss'])
-      return { act, rooms, rows, position: null }
-    }
-    const elite = addRow(['elite'])[0]!
-    const boss = addRow(['boss'])[0]!
-    rooms[elite]!.exits = [boss]
-    return { act, rooms, rows, position: null }
-  }
-
-  // The bottom row is a single fixed encounter (p.9).
-  addRow(['encounter'])
-
-  for (let i = 0; i < shape.middleRows; i++) {
-    const width = 2 + nextInt(rng, shape.maxWidth - 1)
-    addRow(Array.from({ length: width }, () => pickKind(rng)))
-  }
-  const middle = rows.slice(1).flatMap((row) => row.map((id) => rooms[id]!))
-  if (!middle.some((room) => room.kind === 'encounter') && middle[0]) middle[0].kind = 'encounter'
-
-  // The row below the boss is all campfires, so the party can always rest or
-  // upgrade before the fight.
-  const campfireWidth = rows[rows.length - 1]?.length ?? 2
-  addRow(Array.from({ length: campfireWidth }, () => 'campfire' as RoomKind))
-
-  addRow(['boss'])
-
-  // Connect each row to the one above. Every room gets at least one exit, and
-  // every room above is reached by at least one room below.
-  for (let row = 0; row < rows.length - 1; row++) {
-    const here = rows[row] ?? []
-    const above = rows[row + 1] ?? []
-    if (above.length === 0) continue
-
-    for (const [index, id] of here.entries()) {
-      // Map each room to the proportionally nearest room above, then optionally
-      // fan out by one so the path branches.
-      const anchor = Math.min(
-        above.length - 1,
-        Math.floor((index / Math.max(1, here.length - 1 || 1)) * (above.length - 1)),
-      )
-      const exits = new Set<string>([above[anchor] as string])
-      if (nextInt(rng, 2) === 0) {
-        const neighbour = above[Math.min(above.length - 1, anchor + 1)]
-        if (neighbour) exits.add(neighbour)
+  for (const [row, specs] of spec.entries()) {
+    for (const [column, [slot, exitColumns]] of specs.entries()) {
+      const tokenBack = slot === 'dark' || slot === 'light' ? slot : undefined
+      const kind = tokenBack ? (tokenBack === 'dark' ? dark.pop() : light.pop()) : slot
+      if (!kind || kind === 'dark' || kind === 'light') throw new Error(`not enough ${tokenBack} map tokens for Act ${act}`)
+      const id = rows[row]![column]!
+      rooms[id] = {
+        id,
+        kind,
+        row,
+        column,
+        exits: exitColumns.map((exit) => rows[row + 1]?.[exit]).filter((exit): exit is string => Boolean(exit)),
+        visited: false,
+        ...(tokenBack ? { tokenBack } : {}),
       }
-      const room = rooms[id]
-      if (room) room.exits = [...exits]
-    }
-
-    // Anything above with no route to it gets one from a random room below.
-    const reached = new Set(here.flatMap((id) => rooms[id]?.exits ?? []))
-    for (const target of above) {
-      if (reached.has(target)) continue
-      const source = shuffle(rng, [...here])[0]
-      const room = source ? rooms[source] : undefined
-      if (room) room.exits = [...new Set([...room.exits, target])]
     }
   }
 
   return { act, rooms, rows, position: null }
 }
 
-/** Replaces one non-opening Encounter with the physical Burning Elite token. */
+/** Replaces one dark-backed Encounter with the physical Burning Elite token. */
 export function addBurningElite(rng: RngState, map: SpireMap): SpireMap {
-  const middleTop = map.rows.length - 2
-  const encounters = Object.values(map.rooms).filter((room) => room.row > 0 && room.row < middleTop && room.kind === 'encounter')
-  const picked = encounters[nextInt(rng, encounters.length)]
+  const encounters = Object.values(map.rooms).filter((room) => room.tokenBack === 'dark' && room.kind === 'encounter')
+  // Pick among the three physical Encounter tokens. Act II leaves one dark
+  // token unused, so the replaced token can legitimately miss the board.
+  const picked = encounters[nextInt(rng, 3)]
   if (!picked) return map
   return {
     ...map,

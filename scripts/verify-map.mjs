@@ -1,9 +1,75 @@
-import { generateMap, addBurningElite, availableMoves, moveTo, currentRoom, isActComplete, ACT_SHAPE } from '../src/game/map.ts'
+import { generateMap, addBurningElite, availableMoves, moveTo, currentRoom, isActComplete } from '../src/game/map.ts'
 import { createRng } from '../src/game/rng.ts'
-import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
+import { visibleMap } from '../src/game/run/rooms.ts'
+import { suite, check, assert, assertEqual, assertDeepEqual, assertThrows, report } from './lib/harness.mjs'
 
 const build = (seed = 1, act = 1, ascension = 0) =>
-  generateMap(createRng(seed), act, ACT_SHAPE, ascension)
+  generateMap(createRng(seed), act, ascension)
+
+const topology = (map) => map.rows.map((row) => row.map((id) => {
+  const room = map.rooms[id]
+  return [room.tokenBack ?? room.kind, room.exits.map((exit) => map.rooms[exit].column)]
+}))
+
+const RETAIL_TOPOLOGY = {
+  1: [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1]], ['event', [2]]],
+    [['encounter', [0, 1]], ['encounter', [1, 2]], ['event', [3]]],
+    [['merchant', [0]], ['light', [1]], ['event', [2]], ['encounter', [3]]],
+    [['dark', [0]], ['encounter', [0, 1]], ['light', [1, 2]], ['light', [2, 3]]],
+    [['event', [0]], ['dark', [0, 1]], ['encounter', [1, 2]], ['dark', [2, 3]]],
+    [['treasure', [0, 1]], ['treasure', [1]], ['treasure', [2]], ['treasure', [2]]],
+    [['encounter', [0, 1]], ['dark', [1, 2]], ['dark', [2, 3]]],
+    [['light', [0]], ['event', [1]], ['light', [2, 3]], ['light', [3]]],
+    [['encounter', [0]], ['light', [1, 2]], ['event', [2]], ['dark', [3]]],
+    [['event', [0]], ['dark', [1]], ['dark', [2]], ['event', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+  2: [
+    [['encounter', [0, 1, 2]]],
+    [['encounter', [0]], ['event', [1]], ['event', [2]]],
+    [['merchant', [0, 1]], ['light', [1, 2]], ['encounter', [2, 3]]],
+    [['dark', [0]], ['dark', [0, 1]], ['encounter', [1, 2]], ['light', [2, 3]]],
+    [['light', [0, 1]], ['light', [1]], ['dark', [2]], ['dark', [2, 3]]],
+    [['dark', [0]], ['dark', [1, 2]], ['light', [2, 3]], ['light', [3]]],
+    [['event', [0]], ['light', [0, 1]], ['event', [2, 3]], ['event', [3]]],
+    [['dark', [0]], ['encounter', [1]], ['event', [2]], ['elite', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+  3: [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1, 2]], ['encounter', [3]]],
+    [['light', [0]], ['light', [0, 1]], ['dark', [2]], ['event', [3]]],
+    [['dark', [0, 1]], ['event', [0, 1]], ['light', [2]], ['light', [2, 3]]],
+    [['encounter', [0, 1]], ['light', [1, 2]], ['dark', [2, 3]], ['dark', [3, 4]]],
+    [['light', [0]], ['dark', [1]], ['encounter', [1, 2]], ['light', [2, 3]], ['event', [3]]],
+    [['dark', [0]], ['merchant', [1]], ['dark', [2]], ['dark', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+}
+
+const ACT_I_RETAIL_TOPOLOGIES = [
+  RETAIL_TOPOLOGY[1],
+  [
+    [['encounter', [0, 1, 2]]],
+    [['event', [0]], ['event', [1]], ['event', [2]]],
+    [['event', [0]], ['encounter', [1, 2]], ['encounter', [2, 3]]],
+    [['encounter', [0, 1]], ['light', [1, 2]], ['event', [2]], ['event', [3]]],
+    [['dark', [0]], ['encounter', [0, 1]], ['dark', [1]], ['light', [2]]],
+    [['light', [0, 1]], ['light', [1, 2]], ['dark', [2]]],
+    [['treasure', [0]], ['treasure', [1, 2]], ['treasure', [2, 3]]],
+    [['encounter', [0]], ['event', [0, 1]], ['dark', [1]], ['encounter', [2]]],
+    [['dark', [0, 1]], ['light', [1, 2]], ['dark', [3]]],
+    [['light', [0]], ['encounter', [1]], ['event', [2]], ['light', [2, 3]]],
+    [['dark', [0]], ['merchant', [1]], ['dark', [2]], ['event', [3]]],
+    [['campfire', [0]], ['campfire', [0]], ['campfire', [0]], ['campfire', [0]]],
+    [['boss', []]],
+  ],
+]
 
 suite('map')
 
@@ -17,81 +83,155 @@ check('different seeds generate different maps', () => {
   assert(a !== b, 'two seeds should not produce identical maps')
 })
 
-check('every unlocked campaign map gets exactly one Burning Elite', () => {
-  for (let seed = 0; seed < 10_000; seed++) {
-    const rng = createRng(seed)
-    const map = generateMap(rng, 1)
-    const originalKinds = Object.fromEntries(Object.values(map.rooms).map((room) => [room.id, room.kind]))
-    const burning = Object.values(addBurningElite(rng, map).rooms).filter((room) => room.burning)
-    assertEqual(burning.length, 1, `seed ${seed} has no unique Burning Elite`)
-    assertEqual(burning[0].kind, 'elite')
-    assertEqual(originalKinds[burning[0].id], 'encounter', `seed ${seed} replaced a non-Encounter`)
-    assert(burning[0].row > 0)
+check('each act uses the exact printed retail rooms and paths', () => {
+  for (const act of [2, 3]) {
+    assertDeepEqual(topology(build(1, act)), RETAIL_TOPOLOGY[act], `Act ${act} topology drifted`)
+  }
+  const seen = new Set()
+  for (let seed = 0; seed < 100; seed++) {
+    const generated = JSON.stringify(topology(build(seed, 1)))
+    const variant = ACT_I_RETAIL_TOPOLOGIES.findIndex((expected) => JSON.stringify(expected) === generated)
+    assert(variant >= 0, `Act I seed ${seed} generated a non-retail topology`)
+    seen.add(variant)
+  }
+  assertEqual(seen.size, 2, 'Act I did not randomly choose both retail map faces')
+})
+
+check('printed paths preserve the retail light-dark adjacency rules', () => {
+  for (let seed = 0; seed < 10; seed++) {
+    for (const act of [1, 2, 3]) {
+      const map = build(seed, act)
+      for (const room of Object.values(map.rooms)) {
+        for (const exit of room.exits) {
+          const target = map.rooms[exit]
+          if (room.tokenBack === 'light') {
+            assert(target.tokenBack !== 'light' && !['merchant', 'campfire'].includes(target.kind),
+              `${room.id} light socket links to ${target.id} ${target.tokenBack ?? target.kind}`)
+          }
+          if (room.tokenBack === 'dark') {
+            assert(target.tokenBack !== 'dark' && target.kind !== 'elite',
+              `${room.id} dark socket links to ${target.id} ${target.tokenBack ?? target.kind}`)
+          }
+        }
+      }
+    }
   }
 })
 
-// p.9: the bottom row is a fixed encounter and the boss sits at the top.
-check('the map opens on a single encounter and ends at the boss', () => {
-  const map = build()
-  const first = map.rows[0]
-  assertEqual(first.length, 1, 'the party starts at one fixed room')
-  assertEqual(map.rooms[first[0]].kind, 'encounter', 'and it is an encounter')
-
-  const last = map.rows[map.rows.length - 1]
-  assertEqual(last.length, 1, 'the boss stands alone')
-  assertEqual(map.rooms[last[0]].kind, 'boss')
-})
-
-// p.9: the row below the boss on the Act I map is a row of campfires.
-check('the row below the boss is all campfires', () => {
-  const map = build()
-  const campfireRow = map.rows[map.rows.length - 2]
-  for (const id of campfireRow) {
-    assertEqual(map.rooms[id].kind, 'campfire', 'every room before the boss should be a campfire')
+check('map tokens come from the finite retail inventories without replacement', () => {
+  const limits = {
+    dark: { encounter: 3, elite: 3, event: 2 },
+    light: { campfire: 3, merchant: 2, treasure: 2 },
+  }
+  for (let seed = 0; seed < 100; seed++) {
+    for (const act of [1, 2, 3]) {
+      const map = build(seed, act)
+      for (const back of ['dark', 'light']) {
+        const rooms = Object.values(map.rooms).filter((room) => room.tokenBack === back)
+        const expectedCount = act === 2 ? 7 : (back === 'dark' ? 8 : 7)
+        assertEqual(rooms.length, expectedCount, `Act ${act} has the wrong ${back} socket count`)
+        for (const [kind, limit] of Object.entries(limits[back])) {
+          const count = rooms.filter((room) => room.kind === kind).length
+          assert(count <= limit, `Act ${act} used ${count}/${limit} ${back} ${kind} tokens`)
+          if (act !== 2) assertEqual(count, limit, `Act ${act} must use every ${back} ${kind} token`)
+        }
+        assert(rooms.every((room) => room.kind in limits[back]), `${back} token had an impossible face`)
+      }
+    }
   }
 })
 
-check('the map has the expected number of rows', () => {
-  const map = build()
-  // opening encounter + middle rows + campfire row + boss. The literal is the
-  // point: derived from ACT_SHAPE it holds however ACT_SHAPE drifts.
-  assertEqual(map.rows.length, 9, 'an act is nine rows deep')
-  assertEqual(ACT_SHAPE.middleRows, 6, 'six rows between the opening and the campfire')
+check('the Burning Elite replaces one of three physical dark Encounter tokens before setup', () => {
+  let actTwoHasBurning = false
+  let actTwoLeavesBurningUnused = false
+  for (let seed = 0; seed < 100; seed++) {
+    for (const act of [1, 2, 3]) {
+      const rng = createRng(seed)
+      const map = generateMap(rng, act)
+      const originalKinds = Object.fromEntries(Object.values(map.rooms).map((room) => [room.id, room.kind]))
+      const burning = Object.values(addBurningElite(rng, map).rooms).filter((room) => room.burning)
+      if (act === 2) {
+        assert(burning.length <= 1, `Act II seed ${seed} has multiple Burning Elites`)
+        actTwoHasBurning ||= burning.length === 1
+        actTwoLeavesBurningUnused ||= burning.length === 0
+      } else {
+        assertEqual(burning.length, 1, `Act ${act} seed ${seed} has no unique Burning Elite`)
+      }
+      if (burning[0]) {
+        assertEqual(burning[0].kind, 'elite')
+        assertEqual(burning[0].tokenBack, 'dark')
+        assertEqual(originalKinds[burning[0].id], 'encounter', `Act ${act} seed ${seed} replaced a non-Encounter`)
+      }
+    }
+  }
+  assert(actTwoHasBurning, 'Act II never dealt the Burning Elite')
+  assert(actTwoLeavesBurningUnused, 'Act II never left the Burning Elite unused')
+})
+
+check('Uncertain Future hides map tokens but leaves printed rooms visible', () => {
+  const map = addBurningElite(createRng(11), build(11))
+  const shown = visibleMap({ meta: { modifierIds: ['uncertain_future'] }, map })
+  for (const room of Object.values(shown.rooms)) {
+    if (room.tokenBack) {
+      assert(room.hidden, `${room.id} token face leaked`)
+      assertEqual(room.kind, 'encounter')
+      assertEqual(room.burning, undefined)
+    } else {
+      assert(!room.hidden, `${room.id} printed room was hidden`)
+      assertEqual(room.kind, map.rooms[room.id].kind)
+    }
+  }
+})
+
+check('Uncertain Future keeps legacy saved maps redacted after reconnect', () => {
+  const map = build(19)
+  for (const room of Object.values(map.rooms)) delete room.tokenBack
+  map.rooms[map.rows[0][0]].visited = true
+  const shown = visibleMap({ meta: { modifierIds: ['uncertain_future'] }, map })
+  for (const room of Object.values(shown.rooms)) {
+    assertEqual(Boolean(room.hidden), !room.visited, `${room.id} legacy visibility changed`)
+  }
 })
 
 check('every room is reachable from the row below it', () => {
-  for (let seed = 0; seed < 40; seed++) {
-    const map = build(seed)
-    for (let row = 1; row < map.rows.length; row++) {
-      const reached = new Set(map.rows[row - 1].flatMap((id) => map.rooms[id].exits))
-      for (const id of map.rows[row]) {
-        assert(reached.has(id), `seed ${seed}: ${id} on row ${row} has nothing leading to it`)
+  for (let seed = 0; seed < 10; seed++) {
+    for (const act of [1, 2, 3]) {
+      const map = build(seed, act)
+      for (let row = 1; row < map.rows.length; row++) {
+        const reached = new Set(map.rows[row - 1].flatMap((id) => map.rooms[id].exits))
+        for (const id of map.rows[row]) {
+          assert(reached.has(id), `${id} on row ${row} has nothing leading to it`)
+        }
       }
     }
   }
 })
 
 check('every room below the top has somewhere to go', () => {
-  for (let seed = 0; seed < 40; seed++) {
-    const map = build(seed)
-    for (let row = 0; row < map.rows.length - 1; row++) {
-      for (const id of map.rows[row]) {
-        assert(map.rooms[id].exits.length > 0, `seed ${seed}: ${id} is a dead end`)
+  for (let seed = 0; seed < 10; seed++) {
+    for (const act of [1, 2, 3]) {
+      const map = build(seed, act)
+      for (let row = 0; row < map.rows.length - 1; row++) {
+        for (const id of map.rows[row]) {
+          assert(map.rooms[id].exits.length > 0, `${id} is a dead end`)
+        }
       }
     }
   }
 })
 
 check('exits only ever point at the row directly above', () => {
-  for (let seed = 0; seed < 20; seed++) {
-    const map = build(seed)
-    for (const room of Object.values(map.rooms)) {
-      for (const exit of room.exits) {
-        assertEqual(
-          map.rooms[exit].row,
-          room.row + 1,
-          `${room.id} exits to ${exit}, which is not on the next row up`,
-        )
+  for (let seed = 0; seed < 10; seed++) {
+    for (const act of [1, 2, 3]) {
+      const map = build(seed, act)
+      for (const room of Object.values(map.rooms)) {
+        for (const exit of room.exits) {
+          assertEqual(
+            map.rooms[exit].row,
+            room.row + 1,
+            `${room.id} exits to ${exit}, which is not on the next row up`,
+          )
+        }
       }
     }
   }
@@ -131,16 +271,16 @@ check('only connected rooms are offered', () => {
 })
 
 check('a full climb from the bottom reaches the boss', () => {
-  for (let seed = 0; seed < 25; seed++) {
-    let map = build(seed)
+  for (const act of [1, 2, 3, 4]) {
+    let map = build(1, act)
     let steps = 0
     while (!isActComplete(map) && steps < 50) {
       const moves = availableMoves(map)
-      assert(moves.length > 0, `seed ${seed}: stranded at ${map.position} with no moves`)
+      assert(moves.length > 0, `Act ${act}: stranded at ${map.position} with no moves`)
       map = moveTo(map, moves[0].id)
       steps++
     }
-    assert(isActComplete(map), `seed ${seed}: never reached the boss in ${steps} steps`)
+    assert(isActComplete(map), `Act ${act}: never reached the boss in ${steps} steps`)
     assertEqual(currentRoom(map).kind, 'boss')
   }
 })
@@ -176,16 +316,17 @@ check('maps carry their act number', () => {
   assertEqual(build(1, 3).act, 3)
 })
 
-check('Ascension 11 adds Shield and Spear before the Heart', () => {
+check('Act IV follows its Boss card and Ascension 11 inserts Shield and Spear', () => {
   const base = build(11, 4)
-  assertEqual(base.rows.length, 1, 'base Act IV contains only the Heart')
-  assertEqual(base.rooms[base.rows[0][0]].kind, 'boss')
+  assertDeepEqual(base.rows.map((row) => base.rooms[row[0]].kind), ['campfire', 'merchant', 'boss'])
 
   const harder = build(11, 4, 11)
-  assertEqual(harder.rows.length, 2)
-  assertEqual(harder.rooms[harder.rows[0][0]].kind, 'elite')
-  assertEqual(harder.rooms[harder.rows[1][0]].kind, 'boss')
-  assertDeepEqual(harder.rooms[harder.rows[0][0]].exits, [harder.rows[1][0]])
+  assertDeepEqual(harder.rows.map((row) => harder.rooms[row[0]].kind), ['campfire', 'merchant', 'elite', 'boss'])
+})
+
+check('unsupported acts are rejected instead of inventing a map', () => {
+  assertThrows(() => build(1, 0))
+  assertThrows(() => build(1, 5))
 })
 
 // A run crashed at runtime because the encounter pool named an enemy that was
@@ -1496,57 +1637,47 @@ check('a boss room stands up a single boss that acts last', () => {
 })
 
 check('an elite room places one elite, not one per player', () => {
-  // Find a seed whose first reachable room from the start is an elite.
-  let found = false
-  for (let seed = 0; seed < 60 && !found; seed++) {
-    const run = postNeowRun(seed, [
-      { id: 'p1', name: 'Ironclad', character: 'ironclad' },
-      { id: 'p2', name: 'Silent', character: 'silent' },
-    ])
-    const start = enterRoom(run, roomChoices(run)[0].id)
-  const afterFight = skipRewards(resolveCombat({
-      ...start,
-      combat: { ...start.combat, phase: 'won', enemies: start.combat.enemies.map((e) => ({ ...e, dead: true })) },
-    }))
-    for (const choice of roomChoices(afterFight)) {
-      if (choice.kind !== 'elite') continue
-      const elite = enterRoom(afterFight, choice.id)
-      const main = elite.combat.enemies.find((enemy) => enemy.uid === 'elite')
-      assert(main && !main.isBoss, 'the main elite card is not a boss')
-      assertEqual(main.goldReward, 2, 'an Act I elite grants 2 gold')
-      assertEqual(main.cardReward, 'normal', 'an Act I elite grants a normal card')
+  const fixture = postNeowRun(0, [
+    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
+    { id: 'p2', name: 'Silent', character: 'silent' },
+  ])
+  const choice = Object.values(fixture.map.rooms).find((room) => room.kind === 'elite')
+  const from = Object.values(fixture.map.rooms).find((room) => room.exits.includes(choice.id))
+  fixture.phase = 'map'
+  fixture.map.position = from.id
+  fixture.map.rooms[from.id].visited = true
+  const elite = enterRoom(fixture, choice.id)
+  const main = elite.combat.enemies.find((enemy) => enemy.uid === 'elite')
+  assert(main && !main.isBoss, 'the main elite card is not a boss')
+  assertEqual(main.goldReward, 2, 'an Act I elite grants 2 gold')
+  assertEqual(main.cardReward, 'normal', 'an Act I elite grants a normal card')
 
-      for (const act of [2, 3]) {
-        const eliteCard = act === 2
-          ? { defId: 'book_of_stabbing', goldReward: 2, cardReward: 'upgraded' }
-          : { defId: 'giant_head', goldReward: 3, cardReward: 'upgraded' }
-        const later = enterRoom({
-          ...afterFight,
-          act,
-          enemyDecks: { act, first: [], encounter: [], elite: [eliteCard] },
-        }, choice.id)
-        const foe = later.combat.enemies.find((enemy) => enemy.uid === 'elite')
-        assertEqual(foe.goldReward, act === 3 ? 3 : 2, `Act ${act} elite gold`)
-        assertEqual(foe.cardReward, 'upgraded', `Act ${act} elite upgraded-card reward`)
-        const offered = resolveCombat({ ...later, combat: { ...later.combat, phase: 'won' } })
-        assert(offered.rewards.every((offer) => offer.upgraded), `Act ${act} offer is upgraded`)
-        const revealed = revealCardReward(offered, 'p1')
-        const collected = resolveCardRewards(revealed, { p1: 0, p2: null })
-        assert(collected.players[0].deck.at(-1).upgraded, `Act ${act} elite adds the upgraded face`)
-      }
-      for (const enemyDecks of [afterFight.enemyDecks, { act: 3, first: [], encounter: [], elite: [] }]) {
-        const recovered = enterRoom({ ...afterFight, act: 3, enemyDecks }, choice.id)
-        assert(['reptomancer', 'nemesis', 'giant_head'].includes(
-          recovered.combat.enemies.find((enemy) => enemy.uid === 'elite').defId,
-        ), 'a stale or empty Act III Elite deck produced an Elite from another Act')
-        assertEqual(recovered.enemyDecks.act, 3)
-        assertEqual(recovered.enemyDecks.elite.length, 3)
-      }
-      found = true
-      break
-    }
+  for (const act of [2, 3]) {
+    const eliteCard = act === 2
+      ? { defId: 'book_of_stabbing', goldReward: 2, cardReward: 'upgraded' }
+      : { defId: 'giant_head', goldReward: 3, cardReward: 'upgraded' }
+    const later = enterRoom({
+      ...fixture,
+      act,
+      enemyDecks: { act, first: [], encounter: [], elite: [eliteCard] },
+    }, choice.id)
+    const foe = later.combat.enemies.find((enemy) => enemy.uid === 'elite')
+    assertEqual(foe.goldReward, act === 3 ? 3 : 2, `Act ${act} elite gold`)
+    assertEqual(foe.cardReward, 'upgraded', `Act ${act} elite upgraded-card reward`)
+    const offered = resolveCombat({ ...later, combat: { ...later.combat, phase: 'won' } })
+    assert(offered.rewards.every((offer) => offer.upgraded), `Act ${act} offer is upgraded`)
+    const revealed = revealCardReward(offered, 'p1')
+    const collected = resolveCardRewards(revealed, { p1: 0, p2: null })
+    assert(collected.players[0].deck.at(-1).upgraded, `Act ${act} elite adds the upgraded face`)
   }
-  assert(found, 'expected at least one elite room within 60 seeds')
+  for (const enemyDecks of [fixture.enemyDecks, { act: 3, first: [], encounter: [], elite: [] }]) {
+    const recovered = enterRoom({ ...fixture, act: 3, enemyDecks }, choice.id)
+    assert(['reptomancer', 'nemesis', 'giant_head'].includes(
+      recovered.combat.enemies.find((enemy) => enemy.uid === 'elite').defId,
+    ), 'a stale or empty Act III Elite deck produced an Elite from another Act')
+    assertEqual(recovered.enemyDecks.act, 3)
+    assertEqual(recovered.enemyDecks.elite.length, 3)
+  }
 })
 
 // Transcribed from the enemy card scans. Comparing a definition to itself is a

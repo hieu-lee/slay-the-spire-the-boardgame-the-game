@@ -733,6 +733,7 @@ try {
   await soloGiveUpPage.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
   const soloGiveUpRoom = rooms.store.rooms.get(soloGiveUpCode)
   bypassRoomNeow(soloGiveUpRoom)
+  await soloGiveUpPage.mouse.move(0, 0)
   await soloGiveUpPage.locator('.room--reachable').first().click()
   await soloGiveUpPage.locator('.combat').waitFor()
   await soloGiveUpPage.press('body', 'Escape')

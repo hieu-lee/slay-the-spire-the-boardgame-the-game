@@ -13,7 +13,7 @@ import { createCampaignProgress, createSpireKeys, isActIVUnlocked, isColorlessUn
 import type { CampaignProgress } from '../campaign.ts'
 import { STARTER_DECKS } from '../cards.ts'
 import { buildEventDeck } from '../events.ts'
-import { ACT_SHAPE, addBurningElite, generateMap } from '../map.ts'
+import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
 import { normalizeModifierIds, rollDailyModifiers } from '../meta.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.ts'
@@ -177,7 +177,7 @@ export function createRun(
 
   const relicDecks = createRelicDecks(rng)
   const keys = createSpireKeys()
-  const baseMap = generateMap(rng, 1, ACT_SHAPE, ascension)
+  const baseMap = generateMap(rng, 1, ascension)
   const map = isActIVUnlocked(campaignProgress) ? addBurningElite(rng, baseMap) : baseMap
   const actBossDefId = rollActBoss(rng, 1)
   const colorlessUnlocked = isColorlessUnlocked(campaignProgress)

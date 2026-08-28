@@ -853,6 +853,14 @@ await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'spire'))
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players[0]?.character === 'ironclad')
 await bypassNeow()
 await page.locator('.room--reachable').waitFor()
+await page.waitForFunction(() => {
+  const map = document.querySelector('.map:not([inert])')
+  const room = map?.querySelector('.room--reachable')
+  if (!map || !room) return false
+  const port = map.getBoundingClientRect()
+  const node = room.getBoundingClientRect()
+  return node.top >= port.top && node.bottom <= port.bottom
+})
 
 // A run opens on the map with the boot beside the board (p.9).
 const opening = await readRun()
@@ -866,6 +874,14 @@ check('a run opens on the map with one way in', () => {
 const reachableAtStart = await page.locator('.room--reachable').count()
 check('exactly one room is reachable at the start', () => {
   assertEqual(reachableAtStart, 1, 'the opening encounter is the only way in')
+})
+
+check('the opening map starts scrolled to its reachable room', async () => {
+  const map = page.locator('.map:not([inert])')
+  const room = map.locator('.room--reachable')
+  const [port, node] = await Promise.all([map.boundingBox(), room.boundingBox()])
+  assert(port && node && node.y >= port.y && node.y + node.height <= port.y + port.height,
+    'the opening encounter is outside the map scrollport')
 })
 
 const rowSwitchPanel = page.getByText('Switch rows before the next combat', { exact: true }).locator('..')
@@ -1449,9 +1465,16 @@ await page.evaluate((baseline) => {
 }, combatAppearanceRun)
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
 check('a skipped post-roll Relic does not block local solo auto-end', () => assert(true))
-await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+const retargetRun = structuredClone(combatAppearanceRun)
+if (retargetRun.combat.players[0].hand.filter((card) => card.defId.startsWith('strike')).length < 2) {
+  const replacement = retargetRun.combat.players[0].hand.findIndex((card) => !card.defId.startsWith('strike'))
+  retargetRun.combat.players[0].hand[replacement] = {
+    uid: 'retarget-second-strike', defId: 'strike_ironclad', upgraded: false,
+  }
+}
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), retargetRun)
 await page.waitForFunction((uids) => JSON.stringify(window.__STS_DEBUG__.getState().players[0].hand.map((card) =>
-  card.uid)) === JSON.stringify(uids), combatAppearanceRun.combat.players[0].hand.map((card) => card.uid))
+  card.uid)) === JSON.stringify(uids), retargetRun.combat.players[0].hand.map((card) => card.uid))
 
 // Play a card by clicking it and then clicking an enemy, the way a player does.
 // Rows render highest-first, so the first enemy on screen is NOT enemies[0];
@@ -2618,6 +2641,18 @@ check('the newest line is rendered first and fully visible', () => {
 // string went silent from the second identical turn, and a one-turn check stays
 // green against exactly that. The observer counts mutations rather than reading
 // final text, so a repeat with identical wording still registers.
+await page.evaluate((source) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(source)
+  for (const player of run.combat.players) Object.assign(player, {
+    hp: 999, maxHp: 999, block: 999, dead: false,
+  })
+  for (const enemy of run.combat.enemies) Object.assign(enemy, {
+    defId: 'sentry_a', pendingDefId: undefined, actionIndex: 0,
+    hp: 999, maxHp: 999, block: 999, poison: 0, corpseExplosion: undefined, dead: false,
+  })
+  debug.setRun(run)
+}, combatAppearanceRun)
 await page.evaluate(() => {
   window.__ENEMY_REPORTS__ = []
   const region = document.querySelector('.combat__enemy-report')
@@ -2895,9 +2930,22 @@ check('winning hands the party back to the map with somewhere to go', () => {
   assertEqual(backOnMap.players[1].deck.length, deckSizesBeforeReward[1], 'skipping adds no card')
 })
 await page.waitForFunction(() => document.querySelector('.map__path--live') && document.querySelector('.room--here'))
+await page.waitForFunction(() => {
+  const map = document.querySelector('.map:not([inert])')
+  const room = map?.querySelector('.room--here')
+  if (!map || !room) return false
+  const port = map.getBoundingClientRect()
+  const node = room.getBoundingClientRect()
+  return node.top >= port.top && node.bottom <= port.bottom
+})
 const mapMotion = await page.evaluate(() => ({
   route: getComputedStyle(document.querySelector('.map__path--live')).animationName,
   marker: getComputedStyle(document.querySelector('.room--here'), '::after').animationName,
+  positionInView: (() => {
+    const map = document.querySelector('.map:not([inert])').getBoundingClientRect()
+    const room = document.querySelector('.map:not([inert]) .room--here').getBoundingClientRect()
+    return room.top >= map.top && room.bottom <= map.bottom
+  })(),
 }))
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
@@ -2917,6 +2965,7 @@ await page.evaluate(() => {
 check('the current map position and reachable route stay visibly alive', () => {
   assertEqual(mapMotion.route, 'map-trail')
   assertEqual(mapMotion.marker, 'map-ring')
+  assert(mapMotion.positionInView, 'the current room is outside the map scrollport')
 })
 await shot('05f-back-on-map')
 
@@ -3463,8 +3512,8 @@ await page.waitForFunction(() => document.querySelector(
   '.seat--viewer .combat-vfx[data-vfx-kind="orb"][data-vfx-asset="lightning-channel"]'))
 await page.locator('.seat--viewer .character-attack--defect').waitFor()
 const targetedChannelPlacement = await page.evaluate(() => ({
-  actor: document.querySelectorAll('.seat--viewer .combat-vfx[data-vfx-kind="orb"]').length,
-  enemies: document.querySelectorAll('.enemy .combat-vfx[data-vfx-kind="orb"]').length,
+  actor: document.querySelectorAll('.seat--viewer .combat-vfx[data-vfx-asset="lightning-channel"]').length,
+  enemies: document.querySelectorAll('.enemy .combat-vfx[data-vfx-asset="lightning-channel"]').length,
   attack: Boolean(document.querySelector('.seat--viewer .character-attack--defect')),
 }))
 check('targeted channel cards keep the Orb animation on the character', () => {
@@ -9145,6 +9194,10 @@ await page.locator(`.combat-vfx[data-vfx-seq="${defectStrikeSeq}"]`).waitFor({ s
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
+  while (run.combat.enemies.length < 3) {
+    const source = run.combat.enemies[0]
+    run.combat.enemies.push({ ...source, uid: `defect-volley-fixture-${run.combat.enemies.length}` })
+  }
   for (const enemy of run.combat.enemies.slice(0, 3)) Object.assign(enemy, { hp: Math.max(2, enemy.maxHp), dead: false })
   debug.setRun(run)
 })
@@ -13984,9 +14037,9 @@ for (const [engineName, phoneBrowser, deviceName] of [
   layout.handStable = ['top', 'height'].every((key) =>
     Math.abs(populatedHandLayout.hand[key] - emptyHandLayout.hand[key]) <= 1 &&
     Math.abs(populatedHandLayout.board[key] - emptyHandLayout.board[key]) <= 1)
-  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+  await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), retargetRun)
   await phonePage.waitForFunction((count) => document.querySelectorAll('.hand .card').length === count,
-    combatAppearanceRun.combat.players[0].hand.length)
+    retargetRun.combat.players[0].hand.length)
   await tap(phonePage.getByRole('button', { name: 'Map' }))
   const mapDialog = phonePage.getByRole('dialog', { name: /Act .* map/ })
   await mapDialog.waitFor()
@@ -14451,9 +14504,17 @@ for (const [engineName, phoneBrowser, deviceName] of [
   // on the board explicitly so the branch is exercised somewhere.
   await phonePage.evaluate((run) => window.__STS_DEBUG__.setRun(run), mapBeforeRoomSwitchCheck)
   await phonePage.locator('.map:not([inert]) .room--reachable').first().waitFor()
-  const lowestRoom = await phonePage.evaluate(() => {
-    const rooms = [...document.querySelectorAll('.map:not([inert]) .room')]
-    const lowest = rooms.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0]
+  const lowestRoom = await phonePage.evaluate(async () => {
+    const map = document.querySelector('.map:not([inert])')
+    if (!map) return null
+    map.scrollTop = map.scrollHeight
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    const port = map.getBoundingClientRect()
+    const rooms = [...map.querySelectorAll('.room')]
+    const lowest = rooms.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0]
+    if (!lowest) return null
+    map.scrollTop += lowest.getBoundingClientRect().bottom - port.bottom + 8
+    await new Promise((resolve) => requestAnimationFrame(resolve))
     return lowest?.dataset.room ?? null
   })
   if (lowestRoom) {

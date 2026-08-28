@@ -3336,6 +3336,7 @@ const onlineCatchUpPublicDetailsVisible = await neowPage.locator('.neow-face blo
 })
 await neowPage.screenshot({ path: join(outDir, 'catch-up-neow-online-compact-desktop.png'), fullPage: true })
 liveRoom.run = createRun(8801, onlineSeats.map(({ playerId: id, name, character }) => ({ id, name, character })), 0, liveRoom.campaignProgress, liveRoom.chooseYourRelic)
+liveRoom.run.neow.players[onlineSeats[0].playerId].cardId = 'neow_06'
 liveRoom.run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
 liveRoom.version += 1
 rooms.publishRoom(create.snapshot.code)
