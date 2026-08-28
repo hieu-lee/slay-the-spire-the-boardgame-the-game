@@ -27,7 +27,7 @@ import type { CombatState } from '../combat.ts'
 import { enemyDef } from '../enemies.ts'
 import { createEventRoom } from '../event-room.ts'
 import { EVENT_DEFINITIONS, buildEventDeck } from '../events.ts'
-import { ACT_SHAPE, actIVMap, addBurningElite, currentRoom, generateMap, isActComplete, moveTo } from '../map.ts'
+import { addBurningElite, currentRoom, generateMap, isActComplete, moveTo } from '../map.ts'
 import type { Room, SpireMap } from '../map.ts'
 import type { DailyModifierId } from '../meta.ts'
 import { createMerchant, createRelicReward } from '../noncombat.ts'
@@ -499,9 +499,9 @@ export function advanceAct(state: RunState): RunState {
   }))
 
   const colorlessUnlocked = isColorlessUnlocked(state.campaignProgress)
-  const baseMap = generateMap(rng, act, ACT_SHAPE, state.ascension)
+  const baseMap = generateMap(rng, act, state.ascension)
   const map = act === 4
-    ? actIVMap(state.ascension >= 11)
+    ? baseMap
     : !isActIVUnlocked(state.campaignProgress) || state.campaign.keys.emerald
       ? baseMap
       : addBurningElite(rng, baseMap)
@@ -557,9 +557,11 @@ export function roomChoices(state: RunState): Room[] {
 /** Redacts unvisited map tokens for Uncertain Future without leaking their room kind. */
 export function visibleMap(state: RunState): SpireMap {
   if (!hasModifier(state, 'uncertain_future')) return state.map
+  const hasTokenMetadata = Object.values(state.map.rooms).some((room) => room.tokenBack)
   return {
     ...state.map,
-    rooms: Object.fromEntries(Object.entries(state.map.rooms).map(([id, room]) => [id, room.visited
+    rooms: Object.fromEntries(Object.entries(state.map.rooms).map(([id, room]) => [id,
+      room.visited || (hasTokenMetadata && !room.tokenBack)
       ? { ...room }
       : { ...room, kind: 'encounter' as const, burning: undefined, hidden: true }])),
   }

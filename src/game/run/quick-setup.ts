@@ -11,7 +11,7 @@ import { gainGold, removeCard, transformCard, upgradeCard } from '../acquisition
 import { isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
 import { CARDS } from '../cards.ts'
 import { buildEventDeck } from '../events.ts'
-import { ACT_SHAPE, actIVMap, addBurningElite, generateMap } from '../map.ts'
+import { addBurningElite, generateMap } from '../map.ts'
 import { QUICK_START_TABLE, currentQuickSetupStep } from '../meta.ts'
 import type { QuickSetupState } from '../meta.ts'
 import { createMerchant } from '../noncombat.ts'
@@ -31,9 +31,9 @@ export function finishQuickSetup(state: RunState): RunState {
   const rng = { ...state.rng }
   const act = setup.targetAct
   const colorlessUnlocked = isColorlessUnlocked(state.campaignProgress)
-  const baseMap = generateMap(rng, act, ACT_SHAPE, state.ascension)
+  const baseMap = generateMap(rng, act, state.ascension)
   const map = act === 4
-    ? actIVMap(state.ascension >= 11)
+    ? baseMap
     : !isActIVUnlocked(state.campaignProgress) || state.campaign.keys.emerald
       ? baseMap
       : addBurningElite(rng, baseMap)

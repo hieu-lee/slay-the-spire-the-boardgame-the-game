@@ -127,8 +127,8 @@ export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } f
 export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
 export { enemyActingOrder, enemyTurn } from './combat.ts'
 
-export { ACT_SHAPE, actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
-export type { MapShape, Room, RoomKind, SpireMap } from './map.ts'
+export { actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
+export type { MapTokenBack, Room, RoomKind, SpireMap } from './map.ts'
 
 export { POTION_DECK, RELIC_DECK, RELICS, POTIONS, STARTING_RELIC, relicDef, potionDef } from './relics.ts'
 export type { PotionDef, RelicDef, RelicTrigger } from './relics.ts'

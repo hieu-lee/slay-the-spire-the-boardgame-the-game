@@ -197,6 +197,23 @@ export function MapScreen({
     wasBlocked.current = blocked
   }, [blocked])
 
+  // The retail boards are taller than the old generated map. Start each view
+  // at the party rather than at the boss end of the parchment.
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return undefined
+    const animation = requestAnimationFrame(() => {
+      const port = frame.closest<HTMLElement>('.map')
+      const target = frame.querySelector<HTMLElement>('.room--here')
+        ?? frame.querySelector<HTMLElement>('.room--reachable')
+      if (!port || !target) return
+      const viewport = port.getBoundingClientRect()
+      const box = target.getBoundingClientRect()
+      port.scrollTop += box.top + box.height / 2 - (viewport.top + port.clientHeight / 2)
+    })
+    return () => cancelAnimationFrame(animation)
+  }, [map.act, map.position])
+
   // A panel left open across a move would describe a room the party has already
   // left, and its "tap again to enter" would point at a node that is no longer
   // a choice. The two move independently — the shell blanks `choices` on its
