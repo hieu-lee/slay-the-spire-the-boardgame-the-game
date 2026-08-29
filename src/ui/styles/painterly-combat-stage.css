@@ -44,8 +44,8 @@
   min-height: 2.9rem;
   padding: 0.5rem clamp(0.75rem, 2vw, 2rem);
   color: #dfd4bb;
-  background: linear-gradient(180deg, rgb(18 27 33 / 0.96), rgb(10 15 19 / 0.88));
-  border-bottom: 1px solid rgb(160 196 206 / 0.22);
+  background: none;
+  border-bottom: 0;
   text-shadow: 0 2px 2px #000;
 }
 
