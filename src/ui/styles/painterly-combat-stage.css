@@ -98,7 +98,7 @@
   background:
     linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)),
     linear-gradient(0deg, rgb(3 5 7 / 0.12), transparent 45%);
-  box-shadow: inset 0 18px 34px rgb(0 0 0 / 0.42);
+  box-shadow: none;
   mask-image: none;
 }
 

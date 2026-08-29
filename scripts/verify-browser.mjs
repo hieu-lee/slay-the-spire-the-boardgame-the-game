@@ -973,12 +973,14 @@ const combatChrome = await page.evaluate(() => {
   const header = document.querySelector('.app-shell__header').getBoundingClientRect()
   const combat = document.querySelector('.combat').getBoundingClientRect()
   const bar = document.querySelector('.combat__bar')
+  const board = document.querySelector('.board')
   const root = document.documentElement
   return {
     headerBottom: header.bottom,
     combatTop: combat.top,
     barBackground: getComputedStyle(bar).backgroundImage,
     barBorder: getComputedStyle(bar).borderBottomWidth,
+    boardShadow: getComputedStyle(board).boxShadow,
     rootScrollbar: getComputedStyle(root).scrollbarWidth,
     rootWebkitScrollbar: getComputedStyle(root, '::-webkit-scrollbar').display,
   }
@@ -989,6 +991,7 @@ check('relic hover adds no scrollbar chrome and combat keeps one continuous stag
   assertEqual(combatChrome.headerBottom, combatChrome.combatTop)
   assertEqual(combatChrome.barBackground, 'none')
   assertEqual(combatChrome.barBorder, '0px')
+  assertEqual(combatChrome.boardShadow, 'none')
   assertEqual(combatChrome.rootScrollbar, 'none')
   assertEqual(combatChrome.rootWebkitScrollbar, 'none')
 })
