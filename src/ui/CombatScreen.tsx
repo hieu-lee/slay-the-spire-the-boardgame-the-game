@@ -49,6 +49,7 @@ import {
   characterAttackContactMs,
   isCharacterAttack,
   latestTargetPresentationEvent,
+  ORB_END_TURN_STAGGER_MS,
 } from './combat-screen/vfx.tsx'
 import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
@@ -388,6 +389,21 @@ function CombatScreenView({
     }
     return resolved
   }, [livePresentationEvents, state.players])
+  // A passive orb's end-of-turn effects can all land in the SAME state update
+  // (the engine resolves the whole ordered list before the client ever sees
+  // it), so without this every orb's burst would reveal on the same frame —
+  // one flash standing in for however many orbs actually fired. Staggering by
+  // arrival order lets each one read as its own beat: zap, then a pause, then
+  // the next. Other VFX kinds keep their own timing (attack contact, card
+  // reveal) and are untouched here.
+  const orbEndTurnRevealDelayMs = useMemo(() => {
+    const delays = new Map<number, number>()
+    const ordered = activeVfx
+      .filter(({ event }) => event.kind === 'orb' && event.sourceId === 'orb-end-turn')
+      .sort((a, b) => a.event.seq - b.event.seq)
+    ordered.forEach(({ event }, index) => delays.set(event.seq, index * ORB_END_TURN_STAGGER_MS))
+    return delays
+  }, [activeVfx])
   const actorVfxFor = (playerId: string) => activeVfx.filter(({ event }) => event.actorId === playerId)
   const playerVfxFor = (playerId: string) => activeVfx.filter(({ event, recipe }) =>
     event.actorId !== playerId && event.playerIds.includes(playerId) &&
@@ -2306,11 +2322,24 @@ function CombatScreenView({
     stageOrCommit({ ...pending, choiceConfirmed: true })
   }
 
+  // AoE potions, powers and evokes used to have exactly one way to pick a row:
+  // a "Target Row <name>" button in that row's own lane, separate from the
+  // board and separate from how every single-target effect is aimed — click
+  // the thing you mean to hit. This derives that same click from any enemy in
+  // the row, the way a `target: 'row'` CARD already works (see `pending.hitsRow`
+  // below): the enemy is just the anchor, its row is the actual target. The
+  // buttons stay for a row with nothing living in it to click — a boss-only
+  // lane, or one already cleared — where an anchor is not available.
   function onEnemyClick(enemy: Enemy) {
-    if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
-      pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) {
-      resolveTrigger(undefined, enemy.uid)
-      return
+    if (pendingTrigger && pendingTrigger.playerId === viewer?.id) {
+      if (pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) {
+        resolveTrigger(undefined, enemy.uid)
+        return
+      }
+      if (pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
+        resolveTrigger(enemy.row)
+        return
+      }
     }
     if (pendingStartEnemy) {
       chooseStartTurnEnemy(enemy.uid)
@@ -2321,6 +2350,11 @@ function CombatScreenView({
       return
     }
     if (pendingStartEvokeTarget) {
+      const rowTarget = pendingStartEvokeRows.find((target) => target.row === enemy.row)
+      if (rowTarget) {
+        chooseStartTurnEvokeEnemy(rowTarget.uid)
+        return
+      }
       if (pendingStartEvokeRows.length > 0) return
       chooseStartTurnEvokeEnemy(enemy.uid)
       return
@@ -2328,6 +2362,8 @@ function CombatScreenView({
     if (pendingPotion) {
       if (pendingPotionDef?.target === 'enemy') {
         consumePotion(pendingPotion, { enemyUid: enemy.uid })
+      } else if (pendingPotionDef?.target === 'row') {
+        consumePotion(pendingPotion, { enemyRow: enemy.row })
       } else if (!pendingPotionDef?.target && potionShivEnemyUids.length < pendingPotionOverflow) {
         const next = [...potionShivEnemyUids, enemy.uid]
         if (next.length === pendingPotionOverflow) {
@@ -2340,8 +2376,9 @@ function CombatScreenView({
       }
       return
     }
-    if (pendingPowerUid && pendingPowerDef && pendingPowerDef.target !== 'row') {
-      usePower(pendingPowerUid, { enemyUid: enemy.uid })
+    if (pendingPowerUid && pendingPowerDef) {
+      if (pendingPowerDef.target === 'row') usePower(pendingPowerUid, { enemyRow: enemy.row })
+      else usePower(pendingPowerUid, { enemyUid: enemy.uid })
       return
     }
     if (spendingShiv) {
@@ -2358,10 +2395,14 @@ function CombatScreenView({
       return
     }
     if (pending && pendingEvokeTarget >= 0 && choiceSatisfied) {
-      if (pendingEvokeUsesRows) return
-      if (!pendingEvokeTargetUids.has(enemy.uid)) return
       const targets = [...pending.evokeEnemyUids]
-      targets[pendingEvokeTarget] = enemy.uid
+      if (pendingEvokeUsesRows) {
+        if (!pendingEvokeTargetUids.has(lightningRowTarget(enemy.row))) return
+        targets[pendingEvokeTarget] = lightningRowTarget(enemy.row)
+      } else {
+        if (!pendingEvokeTargetUids.has(enemy.uid)) return
+        targets[pendingEvokeTarget] = enemy.uid
+      }
       stageOrCommit({ ...pending, evokeEnemyUids: targets })
       return
     }
@@ -2398,6 +2439,23 @@ function CombatScreenView({
         next.playerIds.length < next.playerChoices || next.needsSwitch) setPending(next)
       else commit(next)
     }
+  }
+
+  // Mirrors `onEnemyClick`'s row branches exactly: whatever this says yes to is
+  // exactly what a click on the enemy resolves, and the two are kept next to
+  // each other for that reason — a highlight that promised a row click and then
+  // fell through to nothing behind it would be worse than no highlight at all.
+  function isEnemyRowClickTargetable(enemy: Enemy): boolean {
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+      pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
+      return true
+    }
+    if (pendingStartEvokeTarget && pendingStartEvokeRows.some((target) => target.row === enemy.row)) return true
+    if (pendingPotion && pendingPotionDef?.target === 'row') return true
+    if (pendingPowerUid && pendingPowerDef?.target === 'row') return true
+    if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
+      pendingEvokeTargetUids.has(lightningRowTarget(enemy.row))) return true
+    return false
   }
 
   function onEvokeClick(slot: number) {
@@ -3341,6 +3399,7 @@ function CombatScreenView({
                     attackContactMs={prefersReducedMotion
                       ? 0
                       : characterAttackContactMs(state, enemy.uid, active.event)}
+                    revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
                   />
                 ))}
                 stageIndex={stageEnemies.length + index}
@@ -3353,7 +3412,8 @@ function CombatScreenView({
                   isStartTurnEnemyTarget(enemy.uid) ||
                   (pendingTrigger?.playerId === viewer.id &&
                     pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
-                  ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
+                  isEnemyRowClickTargetable(enemy) ||
+                  ((pendingPotionDef?.target === 'enemy' || pendingPowerDef || pendingPotionOverflow > 0) || spendingShiv || (
                   ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                     (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                 ))) && !enemy.dead}
@@ -3584,10 +3644,12 @@ function CombatScreenView({
                           </span>
                         ))}
                         {actorVfx.map((active) => (
-                          <CombatVfx key={`actor-${active.event.seq}-${active.recipe.asset}`} active={active} role="actor" />
+                          <CombatVfx key={`actor-${active.event.seq}-${active.recipe.asset}`} active={active} role="actor"
+                            revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)} />
                         ))}
                         {playerVfxFor(occupant.id).map((active) => (
-                          <CombatVfx key={`target-${active.event.seq}-${active.recipe.asset}`} active={active} role="target" />
+                          <CombatVfx key={`target-${active.event.seq}-${active.recipe.asset}`} active={active} role="target"
+                            revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)} />
                         ))}
                       </span>
                       {(hits.get(occupant.id) ?? []).map((hit) => (
@@ -3708,6 +3770,7 @@ function CombatScreenView({
                           attackContactMs={prefersReducedMotion
                             ? 0
                             : characterAttackContactMs(state, enemy.uid, active.event)}
+                          revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
                         />
                       ))}
                       stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
@@ -3719,7 +3782,8 @@ function CombatScreenView({
                         isStartTurnEnemyTarget(enemy.uid) ||
                         (pendingTrigger?.playerId === viewer.id &&
                           pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) ||
-                        ((pendingPotionDef?.target === 'enemy' || (pendingPowerDef && pendingPowerDef.target !== 'row') || pendingPotionOverflow > 0) || spendingShiv || (
+                        isEnemyRowClickTargetable(enemy) ||
+                        ((pendingPotionDef?.target === 'enemy' || pendingPowerDef || pendingPotionOverflow > 0) || spendingShiv || (
                         ((pendingEvokeTarget < 0 && pending?.needsEnemy === true && !enemyChoicesDone) ||
                           (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
                       ))) && !enemy.dead}
