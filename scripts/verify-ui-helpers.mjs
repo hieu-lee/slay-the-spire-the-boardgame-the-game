@@ -5,7 +5,7 @@ import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
-import { cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
+import { bossAttackMotionFor, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
 import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
   MIN_STAGE_SCALE,
@@ -91,6 +91,16 @@ check('repo-native card art is keyed by stable card ID, not printed face name', 
   assertEqual(base, `${CARD_ART_ROOT}/ironclad/bash.webp`)
   assertEqual(upgraded, base, 'base and upgrade share one text-free illustration')
   assertEqual(cardArtPath(CARDS.strike_silent), `${CARD_ART_ROOT}/silent/strike_silent.webp`)
+})
+
+check('Donu, Deca, and both Awakened One forms use the melee boss dash', () => {
+  assertDeepEqual([
+    'donu',
+    'deca',
+    'awakened_one_phase_1',
+    'awakened_one_phase_2',
+  ].map(bossAttackMotionFor), ['melee', 'melee', 'melee', 'melee'])
+  assertEqual(bossAttackMotionFor('corrupt_heart'), 'ranged')
 })
 
 check('every reachable card resolves a stable combat VFX recipe for every character', () => {

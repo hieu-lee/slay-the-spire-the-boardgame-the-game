@@ -10,6 +10,23 @@ export type VfxFamily =
 
 export type ActorMotion = 'none' | 'lunge' | 'recoil' | 'cast' | 'drink' | 'throw'
 
+const MELEE_BOSS_ART = new Set([
+  'slime_boss',
+  'guardian_attack',
+  'guardian_defensive',
+  'the_champ',
+  'bronze_automaton',
+  'awakened_one_phase_1',
+  'awakened_one_phase_2',
+  'time_eater',
+  'donu',
+  'deca',
+])
+
+export function bossAttackMotionFor(artId: string): 'melee' | 'ranged' {
+  return MELEE_BOSS_ART.has(artId) ? 'melee' : 'ranged'
+}
+
 export type VfxRecipe = Readonly<{
   family: VfxFamily
   actorMotion: ActorMotion
