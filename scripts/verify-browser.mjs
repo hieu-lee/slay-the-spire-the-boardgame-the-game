@@ -12166,21 +12166,35 @@ check('each campfire seat is named for the player it belongs to', () => {
 })
 
 const campfirePartyLayouts = []
-for (let living = 1; living <= 4; living += 1) {
-  await page.evaluate((count) => {
+const campfireCharacters = ['ironclad', 'silent', 'defect', 'watcher']
+for (let mask = 1; mask < 16; mask += 1) {
+  const expectedParty = campfireCharacters.filter((_, index) => mask & (1 << index)).join('_')
+  await page.evaluate((livingMask) => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())
-    run.players = run.players.map((player, index) => ({ ...player, dead: index >= count }))
+    run.players = run.players.map((player, index) => ({ ...player, dead: !(livingMask & (1 << index)) }))
     debug.setRun(run)
-  }, living)
-  await page.waitForFunction((count) => document.querySelector('.campfire')?.getAttribute('data-party-size') === String(count), living)
-  campfirePartyLayouts.push(await page.evaluate(() => ({
-    count: document.querySelectorAll('.campfire__seat').length,
-    loaded: [...document.querySelectorAll('.campfire__seat img')].every((image) => image.naturalWidth > 0),
-    optimized: [...document.querySelectorAll('.campfire__seat img')]
-      .every((image) => image.loading === 'eager' && image.decoding === 'async'),
-    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  })))
+  }, mask)
+  const expectedCount = expectedParty.split('_').length
+  await page.waitForFunction((count) => document.querySelector('.campfire')?.getAttribute('data-party-size') === String(count), expectedCount)
+  campfirePartyLayouts.push(await page.locator('.campfire').evaluate(async (campfire, { expected, decode }) => {
+    const background = getComputedStyle(campfire).backgroundImage
+    const url = background.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ?? ''
+    let loaded = true
+    if (decode) {
+      const image = new Image()
+      image.src = url
+      await image.decode()
+      loaded = image.naturalWidth === 1672 && image.naturalHeight === 941
+    }
+    return {
+      count: campfire.querySelectorAll('.campfire__seat').length,
+      expected,
+      selected: url.endsWith(`/${expected}_firecamp.png`),
+      loaded,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }
+  }, { expected: expectedParty, decode: [1, 3, 7, 15].includes(mask) }))
 }
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -12192,7 +12206,6 @@ await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribu
 const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)
-  await page.locator('.campfire__seat img').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
   campfireResponsiveLayouts.push({ ...viewport, ...await page.locator('.campfire').evaluate((campfire) => {
     const blockers = [...document.querySelectorAll('.log, .campfire__leave')].map((element) => element.getBoundingClientRect())
     const overlaps = (box) => blockers.some((blocker) =>
@@ -12200,38 +12213,22 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
     return {
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth ||
         document.documentElement.scrollHeight > document.documentElement.clientHeight,
-      images: [...campfire.querySelectorAll('.campfire__seat img')].map((image) => {
-        const canvas = document.createElement('canvas')
-        canvas.width = image.naturalWidth
-        canvas.height = image.naturalHeight
-        const context = canvas.getContext('2d')
-        context.drawImage(image, 0, 0)
-        const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data
-        let left = canvas.width, top = canvas.height, right = 0, bottom = 0
-        for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
-          if (alpha[(y * canvas.width + x) * 4 + 3] < 16) continue
-          left = Math.min(left, x)
-          top = Math.min(top, y)
-          right = Math.max(right, x + 1)
-          bottom = Math.max(bottom, y + 1)
-        }
-        const box = image.getBoundingClientRect()
-        const drawn = {
-          left: box.left + left / canvas.width * box.width,
-          top: box.top + top / canvas.height * box.height,
-          right: box.left + right / canvas.width * box.width,
-          bottom: box.top + bottom / canvas.height * box.height,
-        }
+      sceneFits: (innerWidth <= innerHeight
+        ? getComputedStyle(campfire, '::after')
+        : getComputedStyle(campfire)).backgroundSize.split(',').at(-1)?.trim() === (innerWidth <= innerHeight ? 'contain' : 'cover'),
+      seats: [...campfire.querySelectorAll('.campfire__seat')].map((seat) => {
+        const box = seat.getBoundingClientRect()
         return {
-          visible: drawn.left >= -1 && drawn.right <= innerWidth + 1 && drawn.top >= -1 && drawn.bottom <= innerHeight + 1,
-          covered: overlaps(drawn),
-          crisp: image.naturalWidth >= box.width && image.naturalHeight >= box.height,
+          visible: box.left >= -1 && box.right <= innerWidth + 1 && box.top >= -1 && box.bottom <= innerHeight + 1,
+          covered: overlaps(box),
         }
       }),
     }
   }) })
+  if (viewport.width === 320) await shot('12-campfire-scene-mobile')
 }
 await page.setViewportSize({ width: 1440, height: 900 })
+await shot('12-campfire-scene')
 await page.emulateMedia({ reducedMotion: 'reduce' })
 await page.locator('.campfire__seat').first().hover()
 const reducedCampfireLift = await page.locator('.campfire__seat').first()
@@ -12239,10 +12236,11 @@ const reducedCampfireLift = await page.locator('.campfire__seat').first()
 await page.mouse.move(0, 0)
 await page.emulateMedia({ reducedMotion: 'no-preference' })
 check('campfire party art covers every living party size without overflow', () => {
-  assertDeepEqual(campfirePartyLayouts.map((layout) => layout.count), [1, 2, 3, 4])
-  assert(campfirePartyLayouts.every((layout) => layout.loaded && layout.optimized && !layout.overflow), JSON.stringify(campfirePartyLayouts))
-  assert(campfireResponsiveLayouts.every((layout) => !layout.overflow &&
-    layout.images.every((image) => image.visible && !image.covered && image.crisp)), JSON.stringify(campfireResponsiveLayouts))
+  assertEqual(campfirePartyLayouts.length, 15)
+  assert(campfirePartyLayouts.every((layout) => layout.count === layout.expected.split('_').length &&
+    layout.selected && layout.loaded && !layout.overflow), JSON.stringify(campfirePartyLayouts))
+  assert(campfireResponsiveLayouts.every((layout) => !layout.overflow && layout.sceneFits &&
+    layout.seats.every((seat) => seat.visible && !seat.covered)), JSON.stringify(campfireResponsiveLayouts))
   assertEqual(reducedCampfireLift, 'none', 'the focused campfire character still lifts under reduced motion')
 })
 
@@ -12307,10 +12305,9 @@ for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521
     const deck = document.querySelector('.campfire__deck')
     const card = deck?.querySelector('.card')
     const seat = document.querySelector('.campfire__seat--2')
-    const seatImage = seat?.querySelector('img')
     const promptBox = prompt?.getBoundingClientRect()
     const cardBox = card?.getBoundingClientRect()
-    const seatBox = seatImage?.getBoundingClientRect()
+    const seatBox = seat?.getBoundingClientRect()
     const hit = seatBox && document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height / 2)
     return {
       documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
@@ -12362,11 +12359,10 @@ const compactReadySmith = await page.evaluate(() => {
     cardOverlaps: [...document.querySelectorAll('.campfire__deck .card')].filter((card) => overlaps(card, promptBox)).length,
     choiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => overlaps(choice)).length,
     seatOverlaps: [...document.querySelectorAll('button.campfire__seat')].filter((seat) => overlaps(seat)).length,
-    reachablePortraits: [...document.querySelectorAll('button.campfire__seat > img')].filter((portrait) => {
-      const box = portrait.getBoundingClientRect()
-      const seat = portrait.parentElement
+    reachableSeats: [...document.querySelectorAll('button.campfire__seat')].filter((seat) => {
+      const box = seat.getBoundingClientRect()
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return box.width > 0 && box.height > 0 && Boolean(seat && hit && (hit === seat || seat.contains(hit)))
+      return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
     }).length,
     seatCount: document.querySelectorAll('button.campfire__seat').length,
     logVisible: Boolean(document.querySelector('.log') && getComputedStyle(document.querySelector('.log')).display !== 'none'),
@@ -12390,7 +12386,7 @@ check('the enabled compact Campfire leave control stays clear of cards, choices,
   assertEqual(compactReadySmith.cardOverlaps, 0, JSON.stringify(compactReadySmith))
   assertEqual(compactReadySmith.choiceOverlaps, 0, JSON.stringify(compactReadySmith))
   assertEqual(compactReadySmith.seatOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.reachablePortraits, compactReadySmith.seatCount, JSON.stringify(compactReadySmith))
+  assertEqual(compactReadySmith.reachableSeats, compactReadySmith.seatCount, JSON.stringify(compactReadySmith))
   assert(!compactReadySmith.logVisible, `the Run Log covers the compact party strip: ${JSON.stringify(compactReadySmith)}`)
   assertEqual(compactReadySmith.headerChoiceOverlaps, 0, `the run header covers a Campfire choice: ${JSON.stringify(compactReadySmith)}`)
 })
@@ -13727,6 +13723,109 @@ check('Golden Eye resolves the selected physical Scry choice', () => {
   assertEqual(afterGoldenEye.players[0].relics[0].spent, true)
   assertEqual(afterGoldenEye.players[0].discard.at(-1).uid, 'ui-golden-eye-1')
 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.character = 'defect'
+  actor.orbs = ['lightning', 'frost', 'dark']
+  actor.relics = [
+    { defId: 'golden_eye', spent: false },
+    { defId: 'akabeko', spent: false },
+    { defId: 'calipers', spent: false },
+  ]
+  run.combat.phase = 'player'
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 470, height: 742 })
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 3)
+const compactRelicStrip = await page.evaluate(() => {
+  const buttons = [...document.querySelectorAll('.relic-actions > section > button')]
+    .map((button) => button.getBoundingClientRect())
+  const strip = document.querySelector('.relic-actions > section')?.getBoundingClientRect()
+  const important = [...document.querySelectorAll('.orbs .token, .seat__portrait, .seat__name')]
+    .map((element) => element.getBoundingClientRect())
+  return {
+    strip: strip ? { width: strip.width, height: strip.height } : null,
+    buttons: buttons.map((box) => ({ top: box.top, width: box.width, height: box.height })),
+    obscuresDefectInfo: Boolean(strip && important.some((box) =>
+      strip.left < box.right && strip.right > box.left && strip.top < box.bottom && strip.bottom > box.top)),
+  }
+})
+check('simple Relic activations stay in one compact icon strip on a Defect phone layout', () => {
+  assert(compactRelicStrip.strip && compactRelicStrip.strip.width < 300 && compactRelicStrip.strip.height < 70,
+    JSON.stringify(compactRelicStrip))
+  assert(compactRelicStrip.buttons.every((button) => button.width <= 84 && button.height <= 64),
+    JSON.stringify(compactRelicStrip))
+  assertEqual(new Set(compactRelicStrip.buttons.map((button) => Math.round(button.top))).size, 1,
+    JSON.stringify(compactRelicStrip))
+  assert(!compactRelicStrip.obscuresDefectInfo, JSON.stringify(compactRelicStrip))
+})
+await shot('manual-relic-mobile')
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.lostHpThisCombat = true
+  actor.powerPlayedThisTurn = true
+  actor.shuffledThisCombat = true
+  actor.shivs = 0
+  actor.relics = [
+    'golden_eye', 'akabeko', 'calipers', 'centennial_puzzle',
+    'dead_branch', 'mummified_hand', 'ninja_scroll', 'red_skull',
+  ].map((defId) => ({ defId, spent: false }))
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 320, height: 568 })
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 8)
+const scrollableRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
+  strip.scrollLeft = strip.scrollWidth
+  const outer = strip.getBoundingClientRect()
+  const last = strip.lastElementChild?.getBoundingClientRect()
+  return {
+    clientWidth: strip.clientWidth,
+    scrollWidth: strip.scrollWidth,
+    withinViewport: outer.left >= 0 && outer.right <= innerWidth,
+    lastReachable: Boolean(last && last.left >= outer.left && last.right <= outer.right),
+  }
+})
+check('a full simple Relic strip scrolls to every activation on a narrow phone', () => {
+  assert(scrollableRelicStrip.scrollWidth > scrollableRelicStrip.clientWidth, JSON.stringify(scrollableRelicStrip))
+  assert(scrollableRelicStrip.withinViewport, JSON.stringify(scrollableRelicStrip))
+  assert(scrollableRelicStrip.lastReachable, JSON.stringify(scrollableRelicStrip))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  actor.relics = [
+    { defId: 'blue_candle', spent: false },
+    { defId: 'golden_eye', spent: false },
+    { defId: 'calipers', spent: false },
+  ]
+  debug.setRun(run)
+})
+await page.setViewportSize({ width: 470, height: 742 })
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 2 &&
+  document.querySelectorAll('.relic-actions > section > details').length === 1)
+const mixedRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
+  const outer = strip.getBoundingClientRect()
+  const actions = [...strip.children].map((action) => action.getBoundingClientRect())
+  const important = [...document.querySelectorAll('.orbs .token, .seat__portrait, .seat__name')]
+    .map((element) => element.getBoundingClientRect())
+  return {
+    height: outer.height,
+    oneRow: new Set(actions.map((box) => Math.round(box.top))).size === 1,
+    obscuresDefectInfo: important.some((box) =>
+      outer.left < box.right && outer.right > box.left && outer.top < box.bottom && outer.bottom > box.top),
+  }
+})
+check('simple Relics stay compact beside a closed card-choice Relic on Defect', () => {
+  assert(mixedRelicStrip.height < 70, JSON.stringify(mixedRelicStrip))
+  assert(mixedRelicStrip.oneRow, JSON.stringify(mixedRelicStrip))
+  assert(!mixedRelicStrip.obscuresDefectInfo, JSON.stringify(mixedRelicStrip))
+})
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { assetPath } from '../game/assets.ts'
+import type { CSSProperties } from 'react'
+import { assetPath, campfireScenePath } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { CampfireDecision } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
@@ -40,7 +41,8 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   })
 
   return (
-    <section className="campfire" data-party-size={living.length}>
+    <section className="campfire" data-party-size={living.length}
+      style={{ '--campfire-scene': `url("${campfireScenePath(living.map((seat) => seat.character))}")` } as CSSProperties}>
       <div className="campfire__prompt">
         <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
         {player ? <div className="campfire__player" role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
@@ -120,12 +122,8 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
             aria-pressed={seat.id === player?.id}
             onClick={() => setFocusedId(seat.id)}
           >
-            <img
-              src={assetPath(`noncombat/campfire/${seat.character}-back.webp`)}
-              alt=""
-              loading="eager"
-              decoding="async"
-            />
+            <span>{seat.name}</span>
+            <small>{status}</small>
           </button>
         })}
       </div>
