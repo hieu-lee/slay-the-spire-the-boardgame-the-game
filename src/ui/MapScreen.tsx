@@ -200,6 +200,7 @@ export function MapScreen({
   // The retail boards are taller than the old generated map. Start each view
   // at the party rather than at the boss end of the parchment.
   useLayoutEffect(() => {
+    if (blocked) return undefined
     const frame = frameRef.current
     if (!frame) return undefined
     const animation = requestAnimationFrame(() => {
@@ -212,7 +213,7 @@ export function MapScreen({
       port.scrollTop += box.top + box.height / 2 - (viewport.top + port.clientHeight / 2)
     })
     return () => cancelAnimationFrame(animation)
-  }, [map.act, map.position])
+  }, [blocked, map.act, map.position])
 
   // A panel left open across a move would describe a room the party has already
   // left, and its "tap again to enter" would point at a node that is no longer
@@ -290,7 +291,7 @@ export function MapScreen({
   }, [reading])
 
   return (
-    <div className="map" inert={blocked || undefined} aria-disabled={blocked || undefined}>
+    <div className="map" hidden={blocked || undefined} inert={blocked || undefined} aria-disabled={blocked || undefined}>
       <p className="map__hint muted">
         {readOnly
           ? tapToRead ? 'Tap a room to read it.' : 'Hover a room to read it.'

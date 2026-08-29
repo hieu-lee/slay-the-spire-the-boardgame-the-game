@@ -3886,7 +3886,7 @@ try {
     }
   })
   const activeGames = [ownerGame, teammateGame]
-  await Promise.all(activeGames.map((game) => game.locator('.map[inert]').waitFor()))
+  await Promise.all(activeGames.map((game) => game.locator('.map[hidden][inert]').waitFor({ state: 'attached' })))
   const [ownerMapBlocked, teammateMapBlocked] = await Promise.all(activeGames.map((game) =>
     game.locator('.map').evaluate((map) => {
       const rooms = [...map.querySelectorAll('button')]
@@ -3895,7 +3895,7 @@ try {
         room.focus()
         if (document.activeElement === room) focusable++
       }
-      return { inert: map.inert, focusable }
+      return { inert: map.inert, hidden: map.hidden, display: getComputedStyle(map).display, focusable }
     })))
   const reachableDuringRelic = await ownerGame.locator('.room--reachable').count()
   const wingBootsDuringRelic = await ownerGame.getByRole('button', { name: /Ignore paths to/ }).count()
@@ -3905,6 +3905,9 @@ try {
     assertEqual(pendingOnCompact, 'empty_cage')
     assert(ownerMapBlocked.inert, 'the active owner map was not inert')
     assert(teammateMapBlocked.inert, 'the active teammate map was not inert')
+    assert(ownerMapBlocked.hidden && teammateMapBlocked.hidden, 'a pending Relic remained visible over the resolver')
+    assertEqual(ownerMapBlocked.display, 'none', 'author CSS overrode the owner map hidden attribute')
+    assertEqual(teammateMapBlocked.display, 'none', 'author CSS overrode the teammate map hidden attribute')
     assertEqual(ownerMapBlocked.focusable, 0, 'the owner map kept focusable progression controls')
     assertEqual(teammateMapBlocked.focusable, 0, 'the teammate map kept focusable progression controls')
     assertEqual(reachableDuringRelic, 0, 'map progression stayed visually reachable behind a mandatory Relic')
@@ -3919,7 +3922,7 @@ try {
   await b.reload({ waitUntil: 'domcontentloaded' })
   await b.locator('.connection--connected').waitFor()
   await teammateGame.getByRole('status').filter({ hasText: 'Waiting for Ann to resolve Empty Cage' }).waitFor()
-  await teammateGame.locator('.map[inert]').waitFor()
+  await teammateGame.locator('.map[hidden][inert]').waitFor({ state: 'attached' })
   const reconnectedMapBlocked = await teammateGame.locator('.map').evaluate((map) => {
     const rooms = [...map.querySelectorAll('button')]
     let focusable = 0
@@ -3927,9 +3930,9 @@ try {
       room.focus()
       if (document.activeElement === room) focusable++
     }
-    return map.inert && focusable === 0
+    return map.hidden && map.inert && getComputedStyle(map).display === 'none' && focusable === 0
   })
-  check('a non-owner reconnect keeps mandatory Relic progression inert', () => {
+  check('a non-owner reconnect keeps mandatory Relic progression hidden and inert', () => {
     assert(reconnectedMapBlocked)
   })
   const teammateHeaderControl = teammateGame.getByRole('button', { name: 'Settings' })
@@ -3950,9 +3953,15 @@ try {
     document.activeElement === control)
   const teammateMapFocusable = await teammateGame.locator('.room--reachable').first()
     .evaluate((room) => !room.closest('.map')?.inert && room.tabIndex >= 0)
-  check('resolving a mandatory Relic restores map access without stealing teammate focus', () => {
+  const teammateMapPositioned = await teammateGame.locator('.map:not([inert])').evaluate((map) => {
+    const room = map.querySelector('.room--reachable')?.getBoundingClientRect()
+    const port = map.getBoundingClientRect()
+    return Boolean(room && room.top >= port.top - 1 && room.bottom <= port.bottom + 1)
+  })
+  check('resolving a mandatory Relic restores the positioned map without stealing teammate focus', () => {
     assert(ownerMapFocusRestored)
     assert(teammateMapFocusable)
+    assert(teammateMapPositioned)
     assert(teammateHeaderFocusPreserved)
   })
   Object.assign(liveRoom.run, {

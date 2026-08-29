@@ -12138,21 +12138,21 @@ const localRelicSeats = await page.evaluate(() => {
 })
 await chooseSeat(localRelicSeats[0])
 await page.getByRole('heading', { name: 'Resolve Astrolabe' }).waitFor()
-await page.locator('.map[inert]').waitFor()
+await page.locator('.map[hidden][inert]').waitFor({ state: 'attached' })
 const localOwnerMapBlocked = await page.locator('.map').evaluate((map) => {
   const room = map.querySelector('button')
   room?.focus()
-  return map.inert && document.activeElement !== room
+  return map.hidden && map.inert && document.activeElement !== room
 })
 await chooseSeat(localRelicSeats[1])
 await page.getByRole('status').filter({ hasText: 'Waiting for Ironclad to resolve Astrolabe' }).waitFor()
-await page.locator('.map[inert]').waitFor()
+await page.locator('.map[hidden][inert]').waitFor({ state: 'attached' })
 const localTeammateMapBlocked = await page.locator('.map').evaluate((map) => {
   const room = map.querySelector('button')
   room?.focus()
-  return map.inert && document.activeElement !== room
+  return map.hidden && map.inert && document.activeElement !== room
 })
-check('a mandatory local Relic makes owner and teammate map progression inert', () => {
+check('a mandatory local Relic hides and blocks map progression for owner and teammate', () => {
   assert(localOwnerMapBlocked)
   assert(localTeammateMapBlocked)
 })
