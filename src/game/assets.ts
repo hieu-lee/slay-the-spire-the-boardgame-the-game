@@ -6,6 +6,7 @@
 import type { CardDef } from './cards.ts'
 import type { EnemyDef } from './enemies.ts'
 import type { PotionDef, RelicDef } from './relics.ts'
+import type { CharacterId } from './types.ts'
 
 /** Public asset URL under Vite's current deployment base. */
 export const assetPath = (path: string): string => `${import.meta.env?.BASE_URL ?? '/'}assets/${path}`
@@ -49,6 +50,13 @@ export function potionCardImagePath(def: PotionDef): string {
 
 export const relicIconPath = (id: string) => assetPath(`relic-icons/${id}.png`)
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
+
+const CAMPFIRE_CHARACTER_ORDER: CharacterId[] = ['ironclad', 'silent', 'defect', 'watcher']
+
+export function campfireScenePath(characters: CharacterId[]): string {
+  const party = CAMPFIRE_CHARACTER_ORDER.filter((character) => characters.includes(character)).join('_')
+  return assetPath(`noncombat/campfire/${party}_firecamp.png`)
+}
 
 /**
  * The tier directory a card's scan lives in. Player cards are filed by rarity:

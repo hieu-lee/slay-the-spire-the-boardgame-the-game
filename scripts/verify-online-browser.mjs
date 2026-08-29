@@ -3615,14 +3615,20 @@ try {
   const deadCampfireStatus = await teammateGame.getByRole('status').textContent()
   const deadCampfireControls = await teammateGame.locator('.campfire__prompt button, .campfire__leave').count()
   const livingCampfirePortraits = await teammateGame.locator('.campfire__seat').count()
-  const onlineCampfireImageHints = await teammateGame.locator('.campfire__seat img')
-    .evaluateAll((images) => images.every((image) => image.loading === 'eager' && image.decoding === 'async'))
+  const onlineCampfireScene = await teammateGame.locator('.campfire').evaluate(async (campfire) => {
+    const match = getComputedStyle(campfire).backgroundImage.match(/url\(["']?(.*?)["']?\)/)
+    const image = new Image()
+    image.src = match?.[1] ?? ''
+    await image.decode()
+    return { path: new URL(image.src).pathname, width: image.naturalWidth, height: image.naturalHeight }
+  })
   const ownerCampfireControls = await ownerGame.locator('.campfire__prompt button').count()
   check('a dead online viewer spectates the living Campfire without submitting a choice', () => {
     assert(deadCampfireStatus.includes('watching the surviving party'), deadCampfireStatus)
     assertEqual(deadCampfireControls, 0)
     assertEqual(livingCampfirePortraits, 1)
-    assert(onlineCampfireImageHints, 'online campfire character art is missing eager loading or async decoding')
+    assertEqual(onlineCampfireScene.path, '/assets/noncombat/campfire/ironclad_firecamp.png')
+    assertDeepEqual([onlineCampfireScene.width, onlineCampfireScene.height], [1672, 941])
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
   })
   await ownerGame.getByRole('button', { name: /Smith/ }).click()

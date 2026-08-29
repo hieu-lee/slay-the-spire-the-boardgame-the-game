@@ -15,6 +15,7 @@ import {
   cardImagePath,
   cardThumbPath,
   bossAnimationImagePath,
+  campfireScenePath,
   enemyImagePath,
   CARD_ART_ROOT,
   CARD_ASSET_ROOT,
@@ -52,6 +53,7 @@ const relicIconRoot = join(publicRoot, 'assets/relic-icons')
 const potionIconRoot = join(publicRoot, 'assets/potion-icons')
 const menuRoot = join(publicRoot, 'assets/menu')
 const compendiumIconRoot = join(menuRoot, 'compendium-icons')
+const campfireRoot = join(publicRoot, 'assets/noncombat/campfire')
 const fontRoot = join(publicRoot, 'assets/fonts')
 const sfxRoot = join(publicRoot, 'assets/sfx')
 
@@ -73,6 +75,7 @@ const powerIconFiles = listing(powerIconRoot, '.png')
 const relicIconFiles = listing(relicIconRoot, '.png')
 const potionIconFiles = listing(potionIconRoot, '.png')
 const compendiumIconFiles = listing(compendiumIconRoot, '.webp')
+const campfireSceneFiles = listing(campfireRoot, '.png')
 
 const cardIndex = JSON.parse(readFileSync(join(repoRoot, 'data/card-index.json'), 'utf8'))
 
@@ -119,6 +122,23 @@ const REQUIRED_ICONS = [
 ]
 
 suite('assets')
+
+check('every campfire party resolves to one complete wide PNG scene', () => {
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  const expected = Array.from({ length: 15 }, (_, index) => characters
+    .filter((_, characterIndex) => (index + 1) & (1 << characterIndex)))
+    .map((party) => campfireScenePath(party).split('/').pop())
+    .sort()
+  assertDeepEqual(campfireSceneFiles.sort(), expected)
+  for (const file of expected) {
+    const bytes = readFileSync(join(campfireRoot, file))
+    assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
+    assert(bytes.readUInt32BE(16) === 1672 && bytes.readUInt32BE(20) === 941,
+      `${file} is not 1672x941`)
+  }
+  assert(expected.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 32 * 1024 * 1024,
+    'campfire scenes exceed 32 MiB')
+})
 
 check('sound effects are complete, compact, and decodable', () => {
   const expected = [
@@ -749,6 +769,7 @@ check('every artwork file fully decodes', () => {
     [powerIconRoot, 'png', powerIconFiles.length],
     [relicIconRoot, 'png', relicIconFiles.length],
     [potionIconRoot, 'png', potionIconFiles.length],
+    [campfireRoot, 'png', campfireSceneFiles.length],
   ]) {
     if (count === 0) continue
     const result = spawnSync('ffmpeg', [

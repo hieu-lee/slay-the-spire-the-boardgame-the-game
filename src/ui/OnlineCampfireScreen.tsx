@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { campfireScenePath } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
@@ -33,7 +35,8 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   }, [saved?.cardUid, saved?.choice])
 
   return (
-    <section className="campfire" data-party-size={seats.length}>
+    <section className="campfire" data-party-size={seats.length}
+      style={{ '--campfire-scene': `url("${campfireScenePath(seats.map((seat) => seat.character))}")` } as CSSProperties}>
       <div className="campfire__prompt">
       <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
       {alive ? <div className="campfire__player">
@@ -68,12 +71,8 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
       </div>
       <div className="campfire__players" aria-label="Party around the campfire">
         {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
-          <img
-            src={`/assets/noncombat/campfire/${seat.character}-back.webp`}
-            alt=""
-            loading="eager"
-            decoding="async"
-          />
+          <span>{seat.name}</span>
+          <small>{decided.includes(seat.playerId) ? 'Ready' : 'Choosing'}</small>
         </div>)}
       </div>
       {alive ? <button

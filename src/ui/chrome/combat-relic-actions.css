@@ -18,6 +18,41 @@
 
 .relic-actions > section:empty { display: none; }
 
+/* The original game keeps immediately usable Relics as a compact icon strip.
+   Only targeted/card-choice Relics need the framed disclosure panel below. */
+.relic-actions > section:not(:has(details[open])) {
+  top: calc(100% - 0.1rem);
+  display: flex;
+  flex-wrap: nowrap;
+  width: auto;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  filter: none;
+}
+
+.relic-actions > section:not(:has(details[open])) > button,
+.relic-actions > section:not(:has(details[open])) > details {
+  flex: 0 0 auto;
+}
+
+.relic-actions > section:not(:has(details[open])) > details {
+  padding: 0;
+  border: 0;
+}
+
+.relic-actions > section > button { justify-self: start; }
+
+.relic-actions > section > button:has(.item-icon-image) { padding: 0.2rem 0.45rem; }
+
+.relic-actions > section > button:has(.item-icon-image) .item-icon-image {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
 /* Charon's Ashes, Blue Candle and Runic Pyramid drop a full hand picker
    (.campfire__deck) into this panel to choose a card to Exhaust. With 5+
    cards in hand only two and a half showed, and — the actual defect —

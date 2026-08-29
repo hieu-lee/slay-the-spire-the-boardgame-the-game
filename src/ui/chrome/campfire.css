@@ -1,6 +1,6 @@
 /* The rest site is staged from behind the party, with one shared smoke-cloud
-   choice panel. Keeping every seat in one scene covers any living subset of a
-   four-player party without multiplying layouts.
+   choice panel. Each living party combination has one baked scene so the
+   character-select designs keep a coherent seated pose around the fire.
 
    The prompt panel and the seated party are both positioned absolutely
    against `.campfire` itself, the same way the merchant scene floats its
@@ -20,7 +20,7 @@
   overflow: clip;
   background:
     linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
-    url('/assets/noncombat/campfire/scene.webp') center bottom / cover no-repeat;
+    var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / cover no-repeat;
   box-shadow: inset 0 0 9rem rgb(0 0 0 / 0.9);
   /* Now that every child is absolutely positioned, `.campfire` has no in-flow
      content to size itself by — it depends entirely on a definite height
@@ -40,6 +40,35 @@
      grow the prompt down into the party. Redefined per breakpoint wherever
      `.campfire__players`'s own height/bottom-offset changes. */
   --campfire-floor-reserve: clamp(18rem, 45vh, 28rem);
+}
+
+/* A wide four-seat painting cannot both cover a portrait phone and keep its
+   outer heroes in frame. Keep the full painting as the foreground there and
+   derive the extra height from a dimmed, blurred copy of the same scene. */
+@media (max-aspect-ratio: 1 / 1) {
+  .sts-scope .campfire { background: #06110c; }
+
+  .sts-scope .campfire::before,
+  .sts-scope .campfire::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .sts-scope .campfire::before {
+    z-index: 0;
+    inset: -1rem;
+    background: var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / cover no-repeat;
+    filter: blur(1rem) brightness(0.38);
+  }
+
+  .sts-scope .campfire::after {
+    z-index: 1;
+    background:
+      linear-gradient(180deg, rgb(2 8 10 / 0.12), transparent 46%, rgb(1 5 6 / 0.45)),
+      var(--campfire-scene, url('/assets/noncombat/campfire/ironclad_firecamp.png')) center / contain no-repeat;
+  }
 }
 
 .sts-scope .campfire__prompt {
@@ -235,58 +264,42 @@
 
 .sts-scope .campfire__players {
   position: absolute;
-  left: 50%;
-  bottom: 0;
-  translate: -50% 0;
-  width: min(76rem, 100%);
-  height: clamp(18rem, 45vh, 28rem);
+  z-index: 6;
+  left: 1rem;
+  right: 12rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .sts-scope .campfire__seat {
-  position: absolute;
-  bottom: -1.2rem;
-  display: block;
-  height: 100%;
-  padding: 0;
-  overflow: visible;
+  display: grid;
+  flex: 1 1 0;
+  width: 0;
+  max-width: 9rem;
+  min-width: var(--key-min-height);
+  min-height: var(--key-min-height);
+  padding: 0.35rem 0.55rem;
+  overflow: hidden;
   color: var(--ink);
-  background: none;
-  border: 0;
+  background: rgb(12 16 14 / 0.82);
+  border: 1px solid var(--trim-dim);
   cursor: pointer;
   transition: filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
 }
 
 .sts-scope div.campfire__seat { cursor: default; }
 
-.sts-scope .campfire__seat > img {
-  width: 100%;
-  height: calc(100% - 2.8rem);
-  object-fit: contain;
-  object-position: center bottom;
-  filter: drop-shadow(0 0.9rem 0.8rem rgb(0 0 0 / 0.8));
-}
+.sts-scope .campfire__seat > span,
+.sts-scope .campfire__seat > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sts-scope .campfire__seat > small { color: var(--ink-dim); }
 
 .sts-scope .campfire__seat:hover,
 .sts-scope .campfire__seat[aria-pressed='true'] { filter: brightness(1.12); transform: translateY(-0.3rem); }
-
-/* The scene art puts the fire pit on the right and leaves open floor to the
-   left, so the whole party sits there shoulder-to-shoulder, seat boxes
-   touching edge to edge, instead of spreading across the fire like it used
-   to (e.g. a 2-player game seating one hero on each side of the flames).
-   Width is set here per party size (not on the shared `.campfire__seat` rule
-   above) so seats never overlap into a neighbor's click target — these are
-   real buttons, not just decorative art — and percentages hold at every
-   viewport width, so there's no separate mobile pass to keep in sync. */
-.sts-scope .campfire[data-party-size='1'] .campfire__seat--0 { left: 6%; width: 22%; }
-.sts-scope .campfire[data-party-size='2'] .campfire__seat--0 { left: 2%; width: 20%; }
-.sts-scope .campfire[data-party-size='2'] .campfire__seat--1 { left: 22%; width: 20%; }
-.sts-scope .campfire[data-party-size='3'] .campfire__seat--0 { left: 0; width: 15%; }
-.sts-scope .campfire[data-party-size='3'] .campfire__seat--1 { left: 15%; width: 15%; }
-.sts-scope .campfire[data-party-size='3'] .campfire__seat--2 { left: 30%; width: 15%; }
-.sts-scope .campfire[data-party-size='4'] .campfire__seat--0 { left: 0; width: 12%; }
-.sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 12%; width: 12%; }
-.sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { left: 24%; width: 12%; }
-.sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { left: 36%; width: 12%; }
 
 .sts-scope .campfire__leave {
   position: absolute;
@@ -296,8 +309,7 @@
 }
 
 @media (max-width: 700px) {
-  /* `.campfire__players` is shorter here (16rem) but also sits 4.5rem off
-     the true bottom (see below), so the floor it occupies is the sum. */
+  /* Keep the player switcher above the fixed mobile Run Log tab. */
   .sts-scope .campfire { --campfire-floor-reserve: 20.5rem; }
   .sts-scope .campfire__prompt { width: calc(100% - 0.5rem); max-height: min(48vh, calc(100% - var(--campfire-floor-reserve) - 2.5rem)); }
   .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
@@ -305,18 +317,18 @@
   .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
   .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: calc(100% - 0.5rem); }
   .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
-  /* `bottom: 4.5rem`, not `0`: the floating Run Log tab sits fixed at the
-     viewport's bottom-left on mobile, and a seat pinned flush to the very
-     bottom would render underneath it. */
-  .sts-scope .campfire__players { height: 16rem; bottom: 4.5rem; }
-  /* At 12% width (the desktop-tuned value), a 4-player seat is a real
-     clickable button under 44px wide on a narrow phone — below a comfortable
-     tap target. Only party size 4 needs the bump; 1-3 are already wide
-     enough at every width down to 320px. */
-  .sts-scope .campfire[data-party-size='4'] .campfire__seat--0 { width: 14%; }
-  .sts-scope .campfire[data-party-size='4'] .campfire__seat--1 { left: 14%; width: 14%; }
-  .sts-scope .campfire[data-party-size='4'] .campfire__seat--2 { left: 28%; width: 14%; }
-  .sts-scope .campfire[data-party-size='4'] .campfire__seat--3 { left: 42%; width: 14%; }
+  .sts-scope .campfire__players { left: 0.5rem; right: 0.5rem; bottom: 4rem; }
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected),
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) {
+    --campfire-switcher-height: 8rem;
+  }
+
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__players,
+  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__players {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 4rem;
+  }
 }
 
 @media (max-height: 700px) {
@@ -337,8 +349,5 @@
     min-height: 2.75rem;
   }
   .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__choices button > img { display: none; }
-  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__players {
-    bottom: 3.125rem;
-    height: 7.5rem;
-  }
+  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__players { bottom: 4rem; }
 }
