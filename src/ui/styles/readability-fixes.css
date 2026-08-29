@@ -9,11 +9,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.log {
-  max-height: 8rem;
-  font-size: 0.8rem;
-}
-
 .combat__die {
   display: inline-flex;
   align-items: center;

@@ -2,7 +2,7 @@
    from every plate chrome.css paints, but it does NOT touch `filter`. That left the
    hard drop shadow of a now-transparent panel painting as a detached grey slab
    offset 6/8px — under the relic tooltip it read as redaction bars struck
-   through the text, and the same ghosts trailed Menu, Run log, the merchant
+   through the text, and the same ghosts trailed Menu, the merchant
    headings and Leave merchant.
 
    Zeroing the two tokens is the whole fix: all twelve consumers spend them

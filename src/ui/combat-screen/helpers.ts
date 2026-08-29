@@ -24,28 +24,6 @@ import { potionDef } from '../../game/relics.ts'
 import type { CardInstance, Player } from '../../game/types.ts'
 import { orbDisplayText } from '../TokenRow.tsx'
 
-/** A round divider in the log, styled apart from the events inside the round. */
-export const TURN_MARKER = /^Turn \d+ begins/
-
-/**
- * The current round, newest first, plus the divider that opened it.
- *
- * Everything since the last divider — never a fixed tail. A tail silently drops
- * lines, and if the box happens not to overflow there is nothing on screen to
- * say so.
- */
-export function roundLog(log: readonly string[]): string[] {
-  let start = -1
-  for (let i = log.length - 1; i >= 0; i--) {
-    if (TURN_MARKER.test(log[i]!)) {
-      start = i
-      break
-    }
-  }
-  const round = start >= 0 ? log.slice(start) : log.slice(-12)
-  return [...round].reverse()
-}
-
 /** The engine's phase names are for the engine; players get words. */
 export const PHASE_LABEL: Record<CombatState['phase'], string> = {
   player: 'Your turn',

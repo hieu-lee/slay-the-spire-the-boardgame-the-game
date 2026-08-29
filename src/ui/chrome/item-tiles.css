@@ -107,10 +107,7 @@
 /* These bands bleed past the shell's bottom padding unless an in-flow panel
    follows them — on the map a Wing Boots chooser can, and an unconditional pull
    would drag the painted band up underneath it.
-   NOT `:last-child`: the run log is rendered last in the DOM on every
-   non-combat phase, so `:last-child` matched nothing and the bleed never
-   happened at all. The log is `position: fixed` and takes no space, so what
-   matters is whether a laid-out `.room-screen` follows. */
+   What matters is whether a laid-out `.room-screen` follows. */
 /* How far the band pulls back depends on WHAT PRECEDES IT, not on whether a
    potion belt exists — an earlier version keyed on `.outside-potions + .map`
    and silently mis-pulled by 12px whenever a relic-resolve panel rendered
@@ -141,8 +138,7 @@
 .app-shell--online .online-mutations > .campfire:first-child { margin-top: -1.25rem; }
 
 /* A band with an in-flow panel after it must not bleed past the shell's
-   padding, or it is dragged up underneath that panel. The run log does not
-   count — it is `position: fixed` and occupies no row. */
+   padding, or it is dragged up underneath that panel. */
 .sts-scope .map:has(~ .room-screen),
 .sts-scope .campfire:has(~ .room-screen),
 .sts-scope .map:has(~ .map-row-switch) { margin-bottom: 0; }

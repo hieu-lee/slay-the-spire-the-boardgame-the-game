@@ -811,14 +811,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
 
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
-      {/* Not on Neow: it is a full-bleed painted scene with seat cards in the
-          bottom-left and Skip keys in the bottom-right, so the fixed log tab
-          covers content in either corner and there is no scroller to move it
-          clear. The log is supplementary and is on every other screen. */}
-      {run.phase !== 'combat' && run.phase !== 'neow' ? <details className="log">
-        <summary>Run log</summary>
-        {run.log.slice(-6).map((line, index) => <p key={`${index}-${line}`}>{line}</p>)}
-      </details> : null}
       </div>
       {/* OUTSIDE `.online-mutations`, which carries `inert` whenever another seat
           holds a card choice, a pending trigger or a discard. `inert` takes its

@@ -186,14 +186,6 @@
     min-height: 17.5rem;
   }
 
-  /* The round-end pause opens the log up, which is right on a big screen and
-     wrong on a small one: it squeezed the board until the enemy's hit-point
-     bar was sliced, exactly when the pause is asking you to read the board. */
-  .combat[data-phase='roundEnd'] .combat__log,
-  .combat[data-phase='enemy'] .combat__log {
-    max-height: min(calc(6 * 1.17rem + 0.75rem), 22vh);
-  }
-
 }
 
 /* Each pile is a little stack of cards with a number on it — the same object

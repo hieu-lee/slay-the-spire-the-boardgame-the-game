@@ -9,6 +9,9 @@ type AnchorProps = {
   children: React.ReactNode
   focusable?: boolean
   decorative?: boolean
+  name?: string
+  text?: string
+  kindLabel?: string
   /**
    * What the second tap will actually do, as a verb phrase — today "drink",
    * "aim", or "choose a replacement".
@@ -28,9 +31,11 @@ const tooltipListeners = new Set<(owner: object) => void>()
 
 /** An unclipped Potion tooltip anchor for either an icon or an action button. */
 export function PotionTooltipAnchor({
-  id, children, focusable = false, decorative = false, confirmLabel,
+  id, children, focusable = false, decorative = false, name, text, kindLabel = 'Potion', confirmLabel,
 }: AnchorProps) {
-  const def = potionDef(id)
+  const def = name === undefined || text === undefined ? potionDef(id) : undefined
+  const itemName = name ?? def!.name
+  const itemText = text ?? def!.text
   const anchor = useRef<HTMLSpanElement>(null)
   const tip = useRef<HTMLSpanElement>(null)
   const owner = useRef({}).current
@@ -152,7 +157,7 @@ export function PotionTooltipAnchor({
 
   return <span ref={anchor} className="potion-chip" tabIndex={focusable ? 0 : undefined}
     role={focusable ? 'img' : undefined} aria-hidden={decorative ? 'true' : undefined}
-    aria-label={focusable ? `${def.name}. Potion. ${def.text}` : undefined}
+    aria-label={focusable ? `${itemName}. ${kindLabel}. ${itemText}` : undefined}
     onMouseEnter={enterAnchor} onMouseLeave={leaveAnchor}
     onPointerDownCapture={(event) => {
       pointerActivatedAt.current = Date.now()
@@ -245,7 +250,7 @@ export function PotionTooltipAnchor({
         competes with them, and — since this renders once per potion anchor —
         it made `getByRole('status')` ambiguous for the suites. */}
     <span className="visually-hidden" aria-live="polite" aria-atomic="true">
-      {readingTap && confirmLabel ? `${def.name}. ${def.text} Activate again to ${confirmLabel}.` : ''}
+      {readingTap && confirmLabel ? `${itemName}. ${itemText} Activate again to ${confirmLabel}.` : ''}
     </span>
     {showing ? createPortal(<span ref={tip}
       className={`relic-tip potion-tip${readingTap || (!tapToRead && (hovered || tipHovered)) ? ' potion-tip--hoverable' : ''}`} aria-hidden="true"
@@ -257,9 +262,9 @@ export function PotionTooltipAnchor({
       // puts it away instead, which is the gesture a player reaches for and the
       // one the relic panel already has by being a child of its own chip.
       onClick={() => setReadingTap(false)}>
-        <strong className="relic-tip__name">{def.name}</strong>
-        <span className="relic-tip__pool">Potion</span>
-        <span className="relic-tip__text">{def.text}</span>
+        <strong className="relic-tip__name">{itemName}</strong>
+        <span className="relic-tip__pool">{kindLabel}</span>
+        <span className="relic-tip__text">{itemText}</span>
         {/* Only while a tap is holding the panel open, and only where the call
             site has said what the next tap commits to. */}
         {readingTap && confirmLabel

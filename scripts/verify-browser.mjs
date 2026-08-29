@@ -792,8 +792,7 @@ await page.locator('.map').waitFor()
 // counting only non-empty text passes even when the repeat is silent.
 await page.evaluate(() => {
   window.__MORPH_SPOKEN__ = []
-  const region = [...document.querySelectorAll('p.visually-hidden[aria-live="polite"]')]
-    .find((node) => !node.classList.contains('combat__enemy-report'))
+  const region = document.querySelector('p.visually-hidden[aria-live="polite"]')
   if (!region) return
   window.__MORPH_REGION__ = region
   new MutationObserver(() => window.__MORPH_SPOKEN__.push(region.textContent.trim()))
@@ -2551,9 +2550,8 @@ async function playOutCombat(limit = 60) {
 }
 
 const finished = await playOutCombat()
-// Sampled from a FOUR-player round, which is where rounds actually run long.
-// Against a short round these all pass trivially: a tail keeps every line, so
-// the fixed-tail regression they exist to catch slips straight through.
+// A busy four-player round proves the engine retains its diagnostic history
+// without putting a battle-log control on the playable board.
 await page.evaluate(() => window.__STS_DEBUG__.reset(4, 'log-round'))
 await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players.length === 4)
@@ -2561,86 +2559,17 @@ await enterFirstRoom()
 await endTurn()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'enemy')
 
-await page.getByText('Battle log', { exact: true }).click()
-const logShape = await page.evaluate(() => {
-  const list = document.querySelector('.combat__log')
-  if (!list) return null
-  const items = [...list.querySelectorAll('li')]
-  const listBox = list.getBoundingClientRect()
-  const engineNewest = window.__STS_DEBUG__.getState().log.at(-1)
-  const showing = items.find((li) => li.textContent.trim() === engineNewest.trim())
-  const box = showing?.getBoundingClientRect()
-  const colourOf = (el) => (el ? getComputedStyle(el).color : '')
-  return {
-    engineNewest,
-    engineLines: window.__STS_DEBUG__.getState().log.length,
-    // Everything since the round opened — what the panel is supposed to show.
-    engineRound: (() => {
-      const log = window.__STS_DEBUG__.getState().log
-      let start = -1
-      for (let i = log.length - 1; i >= 0; i--) {
-        if (/^Turn \d+ begins/.test(log[i])) {
-          start = i
-          break
-        }
-      }
-      return (start >= 0 ? log.slice(start) : log).map((line) => line.trim())
-    })(),
-    rendered: items.map((li) => li.textContent.trim()),
-    found: showing != null,
-    isFirst: showing != null && showing === items[0],
-    fullyVisible: box != null && box.top >= listBox.top - 1 && box.bottom <= listBox.bottom + 1,
-    overflowing: list.scrollHeight > list.clientHeight + 1,
-    newestColour: colourOf(items[0]),
-    // NOT the last item: that is usually the round divider, which has a colour
-    // of its own — so the comparison passed even with the emphasis removed.
-    olderColour: colourOf(
-      items.slice(1).find((li) => !li.className.includes('combat__log-turn')) ?? null,
-    ),
-  }
-})
-check('the log shows the whole round, dropping nothing', () => {
-  // A fixed tail silently dropped lines — a four-player enemy turn ran to
-  // fifteen and rendered ten, losing a "hit for 4" without the box even
-  // overflowing to hint that anything was missing.
-  assert(logShape, 'expected a combat log on screen')
-  assert(logShape.engineLines > 4, `the fight produced only ${logShape.engineLines} lines`)
-  // Long enough that the tail this exists to catch would ACTUALLY cut it. The
-  // regression was a fixed `slice(-10)`, so the round has to exceed ten lines
-  // or the check passes with that bug still in place — which it did at nine.
-  assert(
-    logShape.engineRound.length > 10,
-    `this round is only ${logShape.engineRound.length} lines; a 10-line tail would keep them all`,
-  )
-  assert(logShape.rendered.length > 1, 'more than one line should be rendered')
-  const missing = logShape.engineRound.filter((line) => !logShape.rendered.includes(line))
-  assertEqual(
-    missing.length,
-    0,
-    `the log dropped ${missing.length} line(s) of this round: ${missing.join(' | ')}`,
-  )
-})
-check('the newest line is rendered first and fully visible', () => {
-  assert(
-    logShape.found,
-    `the engine's newest line "${logShape.engineNewest}" is not rendered: ${logShape.rendered.join(' | ')}`,
-  )
-  assert(logShape.isFirst, `the newest line should lead the list, not "${logShape.rendered[0]}"`)
-  assert(
-    logShape.fullyVisible,
-    `the newest line "${logShape.engineNewest}" is clipped or scrolled out of its box`,
-  )
+const battleLogUi = await page.evaluate(() => ({
+  lines: window.__STS_DEBUG__.getState().log.length,
+  drawer: document.querySelector('.combat-log-drawer'),
+  report: document.querySelector('.combat__enemy-report'),
+}))
+check('combat keeps debug logs without rendering battle-log UI', () => {
+  assert(battleLogUi.lines > 4, 'the engine stopped recording combat events')
+  assertEqual(battleLogUi.drawer, null)
+  assertEqual(battleLogUi.report, null)
 })
 
-// Driven AFTER the log assertions on purpose: these end extra turns, which
-// changes the round the log checks above measure.
-//
-// The battle log lives in a collapsed <details>, so what the enemy did reaches a
-// screen reader only through the live region. TWO enemy turns are driven: a live
-// region announces on DOM MUTATION, so an earlier version that re-set the same
-// string went silent from the second identical turn, and a one-turn check stays
-// green against exactly that. The observer counts mutations rather than reading
-// final text, so a repeat with identical wording still registers.
 await page.evaluate((source) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(source)
@@ -2653,20 +2582,6 @@ await page.evaluate((source) => {
   })
   debug.setRun(run)
 }, combatAppearanceRun)
-await page.evaluate(() => {
-  window.__ENEMY_REPORTS__ = []
-  const region = document.querySelector('.combat__enemy-report')
-  if (!region) return
-  // EVERY mutation, empty ones included. Recording only non-empty text cannot
-  // catch the bug this guards: a live region announces on mutation, so the
-  // failure is "same string set twice, no mutation, silence" — and two turns
-  // that happen to differ still mutate twice without the fix. The clear-to-""
-  // between reports is the thing that makes a REPEAT audible, so that is what
-  // gets asserted.
-  new MutationObserver(() => {
-    window.__ENEMY_REPORTS__.push(region.textContent.trim())
-  }).observe(region, { childList: true, characterData: true, subtree: true })
-})
 // Two turns, each blurring the focused control while End turn is unmounted.
 // That blur is the point: `endTurn()` routes through the seat menu and parks
 // focus on a <summary> which SURVIVES the round, and the effect is supposed to
@@ -2715,7 +2630,6 @@ for (let enemyTurn = 0; enemyTurn < 2; enemyTurn += 1) {
     'the round passed between frames, the button survived it, or nothing held focus — ' +
     'either way the restore below tests nothing')
 }
-const enemyTurnReports = await page.evaluate(() => window.__ENEMY_REPORTS__ ?? [])
 // `waitForAutomaticTurn` polls the store, but the focus restore is a React
 // effect that runs after commit — waiting on the DOM removes that race rather
 // than relying on two Playwright round-trips of slack.
@@ -2726,18 +2640,6 @@ const endTurnFocus = await page.evaluate(() => ({
   onEndTurn: document.activeElement?.classList?.contains('combat__end-turn') ?? false,
   active: document.activeElement?.className || document.activeElement?.tagName || '<body>',
 }))
-check('every enemy turn reaches the live region, including a repeat', () => {
-  const spoken = enemyTurnReports.filter(Boolean)
-  assert(spoken.length >= 2,
-    `expected one announcement per enemy turn, got ${JSON.stringify(enemyTurnReports)}`)
-  // Between the two reports the region must have gone empty. Without that a
-  // second identical enemy turn re-sets the same string, React bails on
-  // Object.is, no mutation fires, and the player hears nothing.
-  const firstReport = enemyTurnReports.indexOf(spoken[0])
-  const secondReport = enemyTurnReports.indexOf(spoken[1], firstReport + 1)
-  assert(enemyTurnReports.slice(firstReport + 1, secondReport).some((entry) => entry === ''),
-    `the region was never cleared between turns: ${JSON.stringify(enemyTurnReports)}`)
-})
 check("focus returns to End turn once the board is the player's again", () => {
   assertEqual(endTurnFocus.phase, 'player')
   assert(endTurnFocus.onEndTurn, `focus landed on ${endTurnFocus.active}`)
@@ -2772,14 +2674,6 @@ check('resolving a start of turn does not hand focus to End turn', () => {
 // there changes where a later Tab walk starts — the fanned-card checks measure
 // scroll after a Shift+Tab/Tab pair and pick up 5px of drift from it.
 await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
-
-check('the newest line is visibly emphasised, not just positioned', () => {
-  assert(logShape.olderColour, 'need a non-divider older line to compare against')
-  assert(
-    logShape.newestColour !== logShape.olderColour,
-    `the newest line looks identical to an older one (${logShape.newestColour})`,
-  )
-})
 
 check('a whole encounter can be fought to its end', () => {
   assert(
@@ -12234,7 +12128,7 @@ const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)
   campfireResponsiveLayouts.push({ ...viewport, ...await page.locator('.campfire').evaluate((campfire) => {
-    const blockers = [...document.querySelectorAll('.log, .campfire__leave')].map((element) => element.getBoundingClientRect())
+    const blockers = [...document.querySelectorAll('.campfire__leave')].map((element) => element.getBoundingClientRect())
     const header = document.querySelector('.app-shell__header')?.getBoundingClientRect()
     const heading = campfire.querySelector('h2')?.getBoundingClientRect()
     const overlaps = (box) => blockers.some((blocker) =>
@@ -12387,7 +12281,6 @@ const compactReadySmith = await page.evaluate(() => {
       return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
     }).length,
     switcherCount: document.querySelectorAll('.campfire__turn-nav button').length,
-    logVisible: Boolean(document.querySelector('.log') && getComputedStyle(document.querySelector('.log')).display !== 'none'),
     headerChoiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => {
       const box = choice.getBoundingClientRect()
       const visible = promptBox ? {
@@ -12409,7 +12302,6 @@ check('the enabled compact Campfire leave control stays clear of cards, choices,
   assertEqual(compactReadySmith.choiceOverlaps, 0, JSON.stringify(compactReadySmith))
   assertEqual(compactReadySmith.switcherOverlaps, 0, JSON.stringify(compactReadySmith))
   assertEqual(compactReadySmith.reachableSwitchers, compactReadySmith.switcherCount, JSON.stringify(compactReadySmith))
-  assert(!compactReadySmith.logVisible, `the Run Log covers the compact player controls: ${JSON.stringify(compactReadySmith)}`)
   assertEqual(compactReadySmith.headerChoiceOverlaps, 0, `the run header covers a Campfire choice: ${JSON.stringify(compactReadySmith)}`)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -13759,9 +13651,9 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 470, height: 742 })
-await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 3)
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 3)
 const compactRelicStrip = await page.evaluate(() => {
-  const buttons = [...document.querySelectorAll('.relic-actions > section > button')]
+  const buttons = [...document.querySelectorAll('.relic-actions > section > .potion-chip > button')]
     .map((button) => button.getBoundingClientRect())
   const strip = document.querySelector('.relic-actions > section')?.getBoundingClientRect()
   const important = [...document.querySelectorAll('.orbs .token, .seat__portrait, .seat__name')]
@@ -13798,7 +13690,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 320, height: 568 })
-await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 8)
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 8)
 const scrollableRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
   strip.scrollLeft = strip.scrollWidth
   const outer = strip.getBoundingClientRect()
@@ -13827,7 +13719,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.setViewportSize({ width: 470, height: 742 })
-await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > button').length === 2 &&
+await page.waitForFunction(() => document.querySelectorAll('.relic-actions > section > .potion-chip > button').length === 2 &&
   document.querySelectorAll('.relic-actions > section > details').length === 1)
 const mixedRelicStrip = await page.locator('.relic-actions > section').evaluate((strip) => {
   const outer = strip.getBoundingClientRect()
@@ -13893,9 +13785,25 @@ await page.evaluate(() => {
     { defId: 'loaded_die', spent: false },
     { defId: 'charons_ashes', spent: false },
     { defId: 'the_abacus', spent: false },
+    { defId: 'gambling_chip', spent: false },
   ]
   debug.setRun(run)
 })
+const gamblingChip = page.getByRole('button', { name: /^Use Gambling Chip:/ })
+const gamblingChipVisual = await gamblingChip.evaluate((button) => ({
+  text: button.textContent?.trim(),
+  icon: button.querySelector('img')?.getAttribute('src'),
+}))
+await gamblingChip.hover()
+const gamblingChipTip = page.locator('.potion-tip')
+await gamblingChipTip.waitFor({ state: 'visible' })
+const gamblingChipTipText = await gamblingChipTip.textContent()
+check('Gambling Chip uses its relic icon with its effect on hover', () => {
+  assertEqual(gamblingChipVisual.text, '')
+  assert(gamblingChipVisual.icon?.includes('/relic-icons/gambling_chip.png'), gamblingChipVisual.icon)
+  assert(gamblingChipTipText?.includes('Once per room: reroll the die.'), gamblingChipTipText)
+})
+await shot('manual-relic-gambling-chip')
 const invalidPostRollRelics = await page.getByRole('button', {
   name: /Use (Dolly's Mirror|Nilry's Codex|Loaded Die|Charon's Ashes)/,
 }).count()

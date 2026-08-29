@@ -21,7 +21,7 @@
 /* The original game keeps immediately usable Relics as a compact icon strip.
    Only targeted/card-choice Relics need the framed disclosure panel below. */
 .relic-actions > section:not(:has(details[open])) {
-  top: calc(100% - 0.1rem);
+  position: static;
   display: flex;
   flex-wrap: nowrap;
   width: auto;
@@ -35,7 +35,8 @@
 }
 
 .relic-actions > section:not(:has(details[open])) > button,
-.relic-actions > section:not(:has(details[open])) > details {
+.relic-actions > section:not(:has(details[open])) > details,
+.relic-actions > section:not(:has(details[open])) > .potion-chip {
   flex: 0 0 auto;
 }
 
@@ -52,6 +53,16 @@
   width: 2.25rem;
   height: 2.25rem;
 }
+
+.relic-actions > section > .potion-chip { justify-self: start; }
+
+.relic-actions > section > .potion-chip > button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.45rem;
+}
+
+.relic-actions > section > .potion-chip > button .item-icon-image { width: 2.25rem; height: 2.25rem; }
 
 /* Charon's Ashes, Blue Candle and Runic Pyramid drop a full hand picker
    (.campfire__deck) into this panel to choose a card to Exhaust. With 5+
@@ -72,10 +83,7 @@
    review rounds) either stretched every OTHER relic sharing this same
    single-column grid to match (a plain "Use The Abacus" icon button
    ballooning to fill the wider column) or pushed the panel's left-anchored
-   right edge into the right-anchored battle-log drawer's territory
-   (`.combat-log-drawer`, `styles/damage-reactions.css`) at ordinary desktop
-   widths, silently eating its clicks since this panel sits on top of it (z-index 70
-   vs 15). Keeping the existing cap means the same handful of cards shows
+   right edge off a compact desktop. Keeping the existing cap means the same handful of cards shows
    at a glance as before the fix — the deck's OWN horizontal scroller (now
    actually reachable) is how the rest of a large hand gets seen, the same
    pattern already used for every other case a card row cannot fully fit.

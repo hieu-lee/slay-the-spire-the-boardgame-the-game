@@ -98,7 +98,8 @@
 }
 
 .combat__actions button,
-.relic-actions > section > button {
+.relic-actions > section > button,
+.relic-actions > section > .potion-chip > button {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -111,7 +112,9 @@
 }
 
 .relic-actions > section > button .item-icon-image,
-.relic-actions > section > button .icon {
+.relic-actions > section > button .icon,
+.relic-actions > section > .potion-chip > button .item-icon-image,
+.relic-actions > section > .potion-chip > button .icon {
   width: 2.8rem;
   height: 2.8rem;
 }

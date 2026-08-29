@@ -36,8 +36,7 @@
      `.run-modifiers` caption-summary, and the start menu's own settings inputs.
      46px, not 44: scripts/verify-online-browser.mjs measures the RENDERED rect,
      and an ancestor transform on the reward screen shrinks it ~2%, so a rule of
-     exactly 44 lands at 43.1 and fails. Named once because the run log's
-     backdrop offset is derived from it — hard-coding both let them drift. */
+     exactly 44 lands at 43.1 and fails. */
   --key-min-height: 46px;
 
   /* LERP_SPEED 7 per frame with a half-pixel snap ~= 140ms on this curve. */
