@@ -6,7 +6,7 @@
 // derived state the screen renders from or plays the sound the change calls for.
 // What they watch arrives as arguments or from the browser; none of them reaches
 // into the component that calls it.
-import { characterAttackContactMs, latestTargetPresentationEvent } from './vfx.tsx'
+import { characterAttackContactMs, latestTargetPresentationEvent, ORB_END_TURN_STAGGER_MS } from './vfx.tsx'
 import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { drawnCardUids } from '../board-signals.ts'
 import { cardSfxRecipe, potionSfxRecipe, shivSfxRecipe } from '../combat-sfx.ts'
@@ -360,16 +360,30 @@ export function usePresentationEvents(
       ...current.filter((event) => !unseen.some((next) => next.seq === event.seq)),
       ...unseen,
     ])
+    // Multiple end-of-turn orbs can arrive in this same batch (the engine
+    // resolves the whole ordered list before the client sees any of it), and
+    // CombatScreen staggers their reveal so the later ones do not flash on the
+    // same frame as the first — see ORB_END_TURN_STAGGER_MS. That stagger is
+    // wasted if THIS timer still unmounts the later event on the ORIGINAL
+    // schedule: a third orb reveal starting at +760ms has nothing left to show
+    // by the unstaggered ~900ms cutoff. Each orb-end-turn event's lifetime is
+    // extended by its own position among its same-batch siblings.
+    const orbEndTurnOrder = unseen
+      .filter((event) => event.kind === 'orb' && event.sourceId === 'orb-end-turn')
+      .sort((a, b) => a.seq - b.seq)
     for (const event of unseen) {
       const prior = timers.current.get(event.seq)
       if (prior) clearTimeout(prior)
       const lastTarget = event.enemyIds.at(-1)
+      const staggerIndex = event.kind === 'orb' && event.sourceId === 'orb-end-turn'
+        ? orbEndTurnOrder.findIndex((candidate) => candidate.seq === event.seq)
+        : 0
       const lifetime = Math.max(900, lastTarget
         // The target burst runs for 300ms after contact. Leave one frame-budget
         // margin for a busy mobile renderer so the event cannot unmount before
         // the delayed final impact paints.
         ? characterAttackContactMs(state, lastTarget, event) + 420
-        : 0)
+        : 0) + staggerIndex * ORB_END_TURN_STAGGER_MS
       timers.current.set(event.seq, setTimeout(() => {
         timers.current.delete(event.seq)
         setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))

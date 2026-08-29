@@ -1822,7 +1822,17 @@ function evokeOrb(state: CombatState, actor: Player, context: PlayContext, times
   return orb
 }
 
-/** Resolves one Orb's end-turn effect; each Orb is separately ordered (p.16). */
+/**
+ * Resolves one Orb's end-turn effect; each Orb is separately ordered (p.16).
+ *
+ * A passive orb used to change the board with no `presentationEvent` at all —
+ * every OTHER source of damage or Block gets one, so this was the one place a
+ * player watched numbers move with no lightning bolt, no glow, nothing marking
+ * which orb had just gone off. `sourceId: 'orb-end-turn'` is distinct from
+ * channelling's `'orb-channel'` so the two can be styled differently
+ * (CombatScreen staggers same-turn orbs by this sourceId) without conflating
+ * "I just channelled this" with "this just fired on its own".
+ */
 export function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: number, targetUid?: string): boolean {
   const orb = actor.orbs[slot]
   if (orb === 'lightning') {
@@ -1837,12 +1847,20 @@ export function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: n
         `${actor.name}'s Lightning orb`,
       )
     }
+    addPresentationEvent(state, {
+      kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
+      enemyIds: targets.map((target) => target.uid), playerIds: [],
+    })
   } else if (orb === 'frost') {
     const before = actor.block
     grantBlock(state, actor, 1 + (actor.orbEndTurnBonus ?? 0))
     if (actor.block > before) {
       state.log = [...state.log, `${actor.name}'s Frost orb gives ${actor.block - before} Block`]
     }
+    addPresentationEvent(state, {
+      kind: 'orb', orb, actorId: actor.id, sourceId: 'orb-end-turn',
+      enemyIds: [], playerIds: [],
+    })
   }
   return true
 }

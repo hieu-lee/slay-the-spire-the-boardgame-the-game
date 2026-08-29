@@ -12,6 +12,19 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
   'slash', 'blunt', 'projectile', 'shiv', 'lightning', 'frost', 'dark',
 ])
 
+/**
+ * How far apart consecutive end-of-turn orb reveals land, in ms.
+ *
+ * The engine resolves every ordered orb before the client sees any of it, so
+ * two or three orbs can arrive in the SAME state update — with nothing here,
+ * they would all flash on the same frame, one burst standing in for however
+ * many orbs actually fired. `usePresentationEvents` extends each such event's
+ * lifetime by this much per sibling ahead of it in the same arrival batch, and
+ * CombatScreen delays its reveal by the same amount, so they read as separate
+ * beats — zap, pause, zap — rather than one.
+ */
+export const ORB_END_TURN_STAGGER_MS = 380
+
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
   event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
   (event.kind === 'shiv' || cardDef(event.sourceId).type === 'attack' || OFFENSIVE_VFX_FAMILIES.has(recipe.family))
@@ -53,10 +66,14 @@ export function CombatVfx({
   active,
   role,
   attackContactMs = 0,
+  revealDelayMs = 0,
 }: {
   active: ActiveCombatVfx
   role: 'actor' | 'target'
   attackContactMs?: number
+  /** Staggers this event's own reveal behind an earlier one in the same
+   * state update — see CombatScreen's `orbEndTurnRevealDelayMs`. */
+  revealDelayMs?: number
 }) {
   const { event, recipe } = active
 
@@ -77,6 +94,7 @@ export function CombatVfx({
         '--vfx-image': `url("${vfxAssetPath(recipe)}")`,
         '--vfx-tone-color': vfxToneColor(recipe.tone),
         ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs - 60}ms` } : {}),
+        ...(revealDelayMs > 0 ? { '--vfx-reveal-delay': `${revealDelayMs}ms` } : {}),
       } as React.CSSProperties}
       aria-hidden="true"
     />
