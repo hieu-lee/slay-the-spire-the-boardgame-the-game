@@ -508,6 +508,14 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {viewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${viewer.hp} of ${viewer.maxHp}`}>{viewer.hp}/{viewer.maxHp}</span> : null}
           {viewer ? <span className="pip"><IconValue name="gold" value={viewer.gold} size={20} /></span> : null}
           {viewer ? <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} /> : null}
+          {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
+          !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
+            <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
+              potionLimit={run.ascension >= 4 ? 2 : 3}
+              disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard}
+              onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
+              onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
+          ) : null}
         </div>
         <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
           volume={settings.voiceVolume} compact />
@@ -653,13 +661,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
         /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} pledge={snapshot.courierPledge} online onReveal={(kind) => room.act({ kind: 'courierReveal', itemKind: kind })} onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
-      ) : null}
-      {run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
-      !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
-        <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
-          potionLimit={run.ascension >= 4 ? 2 : 3}
-          onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
-          onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
       ) : null}
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}

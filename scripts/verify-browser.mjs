@@ -11972,6 +11972,33 @@ const potionSeatIds = await page.evaluate(() => {
   return run.players.map((player) => player.id)
 })
 await chooseSeat(potionSeatIds[0])
+await page.setViewportSize({ width: 390, height: 844 })
+await page.waitForTimeout(60)
+const outsidePotionHud = await page.locator('.outside-potions').evaluate((bar) => {
+  const box = bar.getBoundingClientRect()
+  const header = bar.closest('.app-shell__header')?.getBoundingClientRect()
+  const label = bar.querySelector(':scope > strong')
+  return {
+    inHeader: Boolean(header),
+    directShellChild: bar.parentElement?.classList.contains('app-shell'),
+    labelVisible: Boolean(label && getComputedStyle(label).display !== 'none'),
+    height: box.height,
+    insideHeader: Boolean(header && box.top >= header.top && box.bottom <= header.bottom),
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: innerWidth,
+  }
+})
+check('held Potions stay in compact top-HUD slots on a phone', () => {
+  assert(outsidePotionHud.inHeader && outsidePotionHud.insideHeader,
+    `the Potion inventory escaped the header: ${JSON.stringify(outsidePotionHud)}`)
+  assert(!outsidePotionHud.directShellChild, 'the Potion inventory still owns a separate shell row')
+  assert(!outsidePotionHud.labelVisible, 'the redundant Potions label is still visible')
+  assert(outsidePotionHud.height >= 30 && outsidePotionHud.height <= 48,
+    `the Potion slots are ${outsidePotionHud.height}px tall`)
+  assert(outsidePotionHud.documentWidth <= outsidePotionHud.viewportWidth,
+    `the Potion HUD widened the page to ${outsidePotionHud.documentWidth}px`)
+})
+await page.setViewportSize({ width: 1440, height: 900 })
 const outsidePotionIcon = page.locator('.outside-potions .potion-chip').first()
 const outsidePotionLabel = await outsidePotionIcon.getAttribute('aria-label')
 await outsidePotionIcon.evaluate((element) => {
@@ -12451,7 +12478,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
-await page.locator('.campfire__seat').click()
+const soloCampfireSummaryVisible = await page.locator('.campfire__players').isVisible()
 await page.locator('.campfire__prompt').getByRole('button', { name: /Smith/ }).click()
 await page.locator('.campfire__deck--smith .card').first().click()
 await page.setViewportSize({ width: 320, height: 568 })
@@ -12473,6 +12500,7 @@ const compactSoloSmith = await page.evaluate(() => {
   }
 })
 check('a compact solo Smith picker uses the full scene instead of reserving a player switcher', () => {
+  assert(!soloCampfireSummaryVisible, 'the solo Campfire shows a redundant player summary before choosing')
   assert(!compactSoloSmith.playersVisible, `the solo portrait still consumes picker height: ${JSON.stringify(compactSoloSmith)}`)
   assert(!compactSoloSmith.documentScrolls, `the solo picker makes the page scroll: ${JSON.stringify(compactSoloSmith)}`)
   assert(!compactSoloSmith.deckScrollsHorizontally, `the solo picker scrolls sideways: ${JSON.stringify(compactSoloSmith)}`)

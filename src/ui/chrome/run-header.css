@@ -94,3 +94,16 @@
 }
 
 .run-status .icon-value__number { color: var(--sts-gold); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55); }
+
+/* On a short screen the game title is the one expendable HUD item. Keep its
+   heading semantics while giving health, relics and Potions a single row. */
+@media (max-width: 1350px), (max-height: 600px) {
+  .app-shell > .app-shell__header:has(.outside-potions) > h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

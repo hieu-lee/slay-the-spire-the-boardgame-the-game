@@ -929,17 +929,19 @@ function measureRug() {
   // to free it. Nothing here floats over the rug, so anything covering it is
   // the rug covering itself, and a player has no reason to think a tile that
   // does nothing would start working after a scroll.
-  const topmost = (selector) => [...board.querySelectorAll(selector)].filter((element) => {
+  const buried = (selector) => [...board.querySelectorAll(selector)].filter((element) => {
     const first = element.getBoundingClientRect()
     if (first.width < 4 || first.height < 4) return false
     element.scrollIntoView({ block: 'nearest' })
     const box = element.getBoundingClientRect()
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
     return !(hit && (hit === element || element.contains(hit) || hit.contains(element)))
-  }).length
-  const buriedControls = topmost('button')
-  const buriedPrices = topmost('.room-price')
-  const buriedCards = topmost('.card')
+  })
+  const buriedControlElements = buried('button')
+  const buriedControls = buriedControlElements.length
+  const buriedControlLabels = buriedControlElements.map((button) => button.getAttribute('aria-label') || button.textContent?.trim())
+  const buriedPrices = buried('.room-price').length
+  const buriedCards = buried('.card').length
   const leave = document.querySelector('.merchant-stage > .room-proceed')
   leave.scrollIntoView({ block: 'nearest' })
   const leaveBox = leave.getBoundingClientRect()
@@ -1051,7 +1053,7 @@ function measureRug() {
   const stageHeight = stage.clientHeight
   const stageOverflow = Math.round(stage.scrollHeight - stage.clientHeight)
   const stageScrolls = ['auto', 'scroll', 'overlay'].includes(getComputedStyle(stage).overflowY)
-  return { buriedControls, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
+  return { buriedControls, buriedControlLabels, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
     rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread, buriedByOpenLog,
     overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
     cardRulesFont, cardRulesClipped, cardFaceWidth, colorlessCardWidth, discountMarked,
@@ -1568,7 +1570,8 @@ check('the shop reports a measurement for every stocked state', () => {
 for (const shopCase of shopCases) {
   const where = `${shopCase.width}x${shopCase.height}${shopCase.touch ? ' touch' : ''}${shopCase.belt ? ' belt' : ''}${shopCase.colorless ? ' colorless' : ''}`
   check(`the shop keeps ${where} reachable, aligned and legible`, () => {
-    assertEqual(shopCase.buriedControls, 0, `${where}: ${shopCase.buriedControls} shop control(s) buried`)
+    assertEqual(shopCase.buriedControls, 0,
+      `${where}: ${shopCase.buriedControls} shop control(s) buried: ${shopCase.buriedControlLabels.join(', ')}`)
     assertEqual(shopCase.buriedPrices, 0, `${where}: ${shopCase.buriedPrices} price(s) buried`)
     assertEqual(shopCase.buriedCards, 0, `${where}: ${shopCase.buriedCards} card face(s) buried`)
     assert(shopCase.leaveOwns, `${where}: Leave merchant was not clickable across its width`)
@@ -2933,6 +2936,8 @@ const beltGeometry = await page.evaluate(async () => {
   const panel = document.querySelector('.room-screen, .reward-screen, .room-stage')
   const measured = {
     belt: belt ? Math.round(belt.getBoundingClientRect().height) : 0,
+    inHeader: Boolean(belt?.closest('.app-shell__header')),
+    directShellChild: belt?.parentElement?.classList.contains('app-shell') ?? false,
     panelTop: panel ? Math.round(panel.getBoundingClientRect().top) : 0,
     viewport: window.innerHeight,
   }
@@ -3031,9 +3036,11 @@ check('reward rows share one set of columns', () => {
   assertEqual(rewardColumns.leftSpread, 0, `reward action columns start ${rewardColumns.leftSpread}px apart`)
   assertEqual(rewardColumns.widthSpread, 0, `reward action columns differ in width by ${rewardColumns.widthSpread}px`)
 })
-check('the potion belt stays a strip instead of taking the shell\'s tall row', () => {
-  assert(beltGeometry.belt > 0, 'the potion belt did not render for a party holding potions')
-  assert(beltGeometry.belt <= 96, `the potion belt stretched to ${beltGeometry.belt}px`)
+check('held Potions stay in the top HUD instead of taking a shell row', () => {
+  assert(beltGeometry.belt > 0, 'the Potion HUD did not render for a party holding Potions')
+  assert(beltGeometry.inHeader && !beltGeometry.directShellChild,
+    `the Potion HUD still owns a shell row: ${JSON.stringify(beltGeometry)}`)
+  assert(beltGeometry.belt <= 48, `the Potion HUD stretched to ${beltGeometry.belt}px`)
   assert(beltGeometry.panelTop < beltGeometry.viewport / 2,
     `the reward panel started ${beltGeometry.panelTop}px down a ${beltGeometry.viewport}px window`)
 })

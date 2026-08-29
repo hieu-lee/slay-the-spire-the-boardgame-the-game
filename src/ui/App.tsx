@@ -380,6 +380,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
                 <IconValue name="gold" value={viewer.gold} size={20} />
               </span>
               <RelicBar relics={viewer.relics} label={`${viewer.name}'s relics`} />
+              {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
+              !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
+                <OutsidePotionBar players={run.players} viewerId={viewerId}
+                  potionLimit={run.ascension >= 4 ? 2 : 3}
+                  onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
+                  onUse={(potionId, replacePotionId) => setRun((current) =>
+                    usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -452,14 +460,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           mutationsEnabled={!run.courier.offer}
           onChange={updateCombat}
         /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} usedBy={run.courier.usedBy} offer={run.courier.offer} onReveal={(kind) => setRun((current) => revealCourier(current, viewerId, kind))} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
-      ) : null}
-      {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
-      !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
-        <OutsidePotionBar players={run.players} viewerId={viewerId}
-          potionLimit={run.ascension >= 4 ? 2 : 3}
-          onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
-          onUse={(potionId, replacePotionId) => setRun((current) =>
-            usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
       ) : null}
       {pendingPreview ? <RelicResolvePanel key={pendingPreview.relicId}
         pending={pendingPreview}

@@ -3644,6 +3644,9 @@ try {
       const promptBox = prompt?.getBoundingClientRect()
       const cardBox = card?.getBoundingClientRect()
       const leaveBox = leave?.getBoundingClientRect()
+      const header = document.querySelector('.app-shell__header')
+      const runStatus = header?.querySelector('.run-status')
+      const potionHud = header?.querySelector('.outside-potions')
       const leaveOverlaps = (element, clip) => {
         const box = element.getBoundingClientRect()
         const visible = clip ? {
@@ -3661,6 +3664,9 @@ try {
         documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
         documentHeight: document.documentElement.scrollHeight,
         viewportHeight: document.documentElement.clientHeight,
+        headerHeight: header?.getBoundingClientRect().height ?? 0,
+        runStatusHeight: runStatus?.getBoundingClientRect().height ?? 0,
+        potionHudWidth: potionHud?.getBoundingClientRect().width ?? 0,
         deckScrollsHorizontally: Boolean(card?.parentElement && card.parentElement.scrollWidth > card.parentElement.clientWidth + 1),
         cardHeight: cardBox?.height ?? 0,
         visibleCardHeight: promptBox && cardBox
@@ -3966,13 +3972,20 @@ try {
     .evaluateAll((images) => images.length > 0 && images.every((image) => image.naturalWidth > 0))
   const compactPotionLayout = await a.locator('.outside-potions').evaluate((bar) => ({
     width: bar.clientWidth, scrollWidth: bar.scrollWidth, height: bar.getBoundingClientRect().height,
+    headerHeight: bar.closest('.app-shell__header')?.getBoundingClientRect().height ?? 0,
+    inHeader: Boolean(bar.closest('.app-shell__header')),
+    directShellChild: bar.parentElement?.classList.contains('app-shell'),
   }))
   check('revealed Potion rewards are shared without foreign controls', () => {
     assertEqual(foreignPotionGain, 0)
     assert(onlinePotionCardLoaded, 'the revealed Potion omitted its icon artwork')
     assert(compactPotionLayout.scrollWidth <= compactPotionLayout.width,
       'the outside Potion controls overflow the compact desktop viewport')
-    assert(compactPotionLayout.height < 160, 'the Potion inventory stretched into the reward stage')
+    assert(compactPotionLayout.inHeader && !compactPotionLayout.directShellChild,
+      'the Potion inventory did not render as part of the top HUD')
+    assert(compactPotionLayout.height <= 48, 'the Potion inventory stretched beyond its HUD slots')
+    assert(compactPotionLayout.headerHeight <= 64,
+      `the compact top HUD wrapped to ${compactPotionLayout.headerHeight}px`)
   })
   await a.screenshot({ path: join(outDir, '08b-compact-desktop-potion-replacement.png'), fullPage: true })
   let skippedPotionStatus = 0
@@ -4168,6 +4181,18 @@ try {
   iris.potions = ['entropic_brew', 'entropic_brew', 'energy_potion']
   await roomAction(fourPages[0], { kind: 'cardReward', choice: null })
   const brewUses = fourPages[0].locator('.outside-potions').getByRole('button', { name: 'Use Entropic Brew', exact: true })
+  const heldPotionSlots = await fourPages[0].locator('.outside-potions__item').evaluateAll((items) =>
+    items.map((item) => {
+      const chip = item.querySelector(':scope > .potion-chip')
+      const box = chip?.getBoundingClientRect()
+      const style = chip ? getComputedStyle(chip) : null
+      return {
+        art: item.querySelectorAll(':scope > .potion-chip .item-icon-image').length,
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+        background: style?.backgroundColor,
+      }
+    }))
   await brewUses.first().click()
   const duplicateBrewTargets = await fourPages[0].locator('.outside-potions__targets').count()
   const expandedBrewButtons = await brewUses.evaluateAll((buttons) =>
@@ -4181,6 +4206,10 @@ try {
     .evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   await fourPages[0].screenshot({ path: join(outDir, '09-outside-potion-replacement.png'), fullPage: true })
   check('duplicate Entropic Brews open one replacement group', () => {
+    assertDeepEqual(heldPotionSlots.map((slot) => slot.art), [1, 1, 1], 'a held Potion rendered duplicate slot artwork')
+    assert(heldPotionSlots.every((slot) => Math.abs(slot.width - heldPotionSlots[0].width) <= 1 &&
+      Math.abs(slot.height - heldPotionSlots[0].height) <= 1 && slot.background !== 'rgba(0, 0, 0, 0)'),
+    `ordinary and usable Potion slots do not share one frame: ${JSON.stringify(heldPotionSlots)}`)
     assertEqual(duplicateBrewTargets, 1)
     assertDeepEqual(expandedBrewButtons, ['true', 'false'])
     assertDeepEqual(brewReplacementIcons, [true])
