@@ -899,8 +899,8 @@ async function stockShop(page, { belt, colorless, broke }) {
     // `isBroke` matters: a disabled tile's tint out-specifies the sale colour, so
     // an unaffordable discount lost the only marker it has.
     run.players = run.players.map((player) => ({ ...player, gold: isBroke ? 0 : 40, potions: holdsPotion ? ['fire_potion'] : [] }))
-    // A real run's log, not a fresh one's: the open panel grows with the run, and
-    // with three entries it covered nothing, so its size caps went unmeasured.
+    // Keep normal run history in this dense fixture: it remains available to
+    // diagnostics without taking space from the playable room.
     run.log = Array.from({ length: 30 }, (_, index) => `The party does something noteworthy, entry ${index + 1}.`)
     // FULLY stocked, deliberately. A Sold slot prints no rules line, so a
     // fixture with two of them makes the rug shorter than a real shop's and hid
@@ -1028,33 +1028,11 @@ function measureRug() {
   // On a phone the stage takes every pixel below the header, less the belt's band.
   // The desktop belt height carries the same specificity and sits later in the
   // file, so unscoped it silently stole 42px of stage from a phone holding a potion.
-  // With the log's panel OPEN. No fixture had ever opened it, so its size caps and
-  // its dock could both be deleted with every check green — and an open panel is a
-  // normal state, not an edge case. Measured over the whole STAGE, since the panel
-  // can reach the Leave banner as well as the rug.
-  const logPanel = document.querySelector('details.log')
-  const buriedByOpenLog = (() => {
-    if (!logPanel) return 0
-    const wasOpen = logPanel.open
-    logPanel.open = true
-    const covered = [...stage.querySelectorAll('button, .room-price')].filter((element) => {
-      const box = element.getBoundingClientRect()
-      if (box.width < 4 || box.height < 4) return false
-      return !['nearest', 'start', 'end'].some((block) => {
-        element.scrollIntoView({ block })
-        const spot = element.getBoundingClientRect()
-        const hit = document.elementFromPoint(spot.left + spot.width / 2, spot.top + spot.height / 2)
-        return Boolean(hit && (hit === element || element.contains(hit) || hit.contains(element)))
-      })
-    }).length
-    logPanel.open = wasOpen
-    return covered
-  })()
   const stageHeight = stage.clientHeight
   const stageOverflow = Math.round(stage.scrollHeight - stage.clientHeight)
   const stageScrolls = ['auto', 'scroll', 'overlay'].includes(getComputedStyle(stage).overflowY)
   return { buriedControls, buriedControlLabels, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
-    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread, buriedByOpenLog,
+    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread,
     overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
     cardRulesFont, cardRulesClipped, cardFaceWidth, colorlessCardWidth, discountMarked,
     sideways: Math.round(board.scrollWidth - board.clientWidth) + Math.round(stage.scrollWidth - stage.clientWidth) }
@@ -1134,6 +1112,7 @@ const wingPrompt = await page.evaluate(async () => {
   run.phase = 'map'
   run.neow = null
   run.roomState = null
+  run.log = Array.from({ length: 30 }, (_, index) => `Entry number ${index + 1} of the run log.`)
   // A room whose next row holds something its own exits do not reach.
   // TWO or more destinations, or the strip cannot be told from a stack: with one
   // option every button trivially shares one row and the check cannot fail.
@@ -1157,12 +1136,6 @@ const wingPrompt = await page.evaluate(async () => {
     relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
   debug.setRun(run)
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  // With the log's panel OPEN, and at a phone width too. The prompt is a bottom
-  // strip, so an open panel landed straight on its destinations — a real click on
-  // a Wing Boots option timed out with the run still on the map.
-  const openLog = document.querySelector('details.log')
-  if (openLog) openLog.open = true
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   const prompt = document.querySelector('.map-prompt')
   const map = document.querySelector('.map')
   const options = [...(prompt?.querySelectorAll('button') ?? [])]
@@ -1179,11 +1152,8 @@ const wingPrompt = await page.evaluate(async () => {
       return Boolean(hit && (hit === option || option.contains(hit)))
     }),
     rows: new Set(options.map((option) => Math.round(option.getBoundingClientRect().top))).size,
-    coveredByLog: openLog ? options.filter((option) => {
-      const box = option.getBoundingClientRect()
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return Boolean(hit && (hit === openLog || openLog.contains(hit)))
-    }).length : 0,
+    debugLines: run.log.length,
+    hasRunLogUi: Boolean(document.querySelector('.log')),
     // Nothing on the map may be unreachable once the prompt takes its share.
     // Scrolled in FIRST and then hit-tested: a node still half below the map's
     // fold has its centre outside the map's clip, where the prompt sits — which
@@ -1201,72 +1171,14 @@ const wingPrompt = await page.evaluate(async () => {
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   return measured
 })
-// The same prompt at a PHONE width, for the log-coverage half. The strip's shape
-// assertions above are desktop figures, but the collision the dock prevents only
-// happens where the panel and the strip share the bottom of the screen.
-await page.setViewportSize({ width: 390, height: 844 })
-const wingPromptPhone = await page.evaluate(async () => {
-  const debug = window.__STS_DEBUG__
-  const before = structuredClone(debug.getRun())
-  const run = structuredClone(before)
-  run.phase = 'map'
-  run.neow = null
-  run.roomState = null
-  run.log = Array.from({ length: 30 }, (_, index) => `Entry number ${index + 1} of the run log.`)
-  let from = null
-  let offPath = []
-  for (const row of run.map.rows.slice(0, -1)) {
-    for (const candidate of row) {
-      const room = run.map.rooms[candidate]
-      const next = run.map.rows[room.row + 1] ?? []
-      const unreached = next.filter((id) => !room.exits.includes(id))
-      if (unreached.length > offPath.length) {
-        from = candidate
-        offPath = unreached
-      }
-    }
-  }
-  if (offPath.length < 1) return { reachable: false }
-  run.map.position = from
-  run.map.rooms[from] = { ...run.map.rooms[from], visited: true }
-  run.players = run.players.map((player) => ({ ...player, row: run.map.rooms[from].row,
-    relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }] }))
-  debug.setRun(run)
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const log = document.querySelector('details.log')
-  if (log) log.open = true
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const options = [...(document.querySelectorAll('.map-prompt button') ?? [])]
-  const measured = {
-    reachable: true,
-    options: options.length,
-    coveredByLog: log ? options.filter((option) => {
-      const box = option.getBoundingClientRect()
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return Boolean(hit && (hit === log || log.contains(hit)))
-    }).length : 0,
-  }
-  if (log) log.open = false
-  debug.setRun(before)
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  return measured
-})
-await page.setViewportSize({ width: 1440, height: 900 })
-check('a phone Wing Boots prompt stays clear of the open run log', () => {
-  assert(wingPromptPhone.reachable, 'the phone map fixture offered no off-path room')
-  assert(wingPromptPhone.options >= 1, 'the phone prompt offered no destination')
-  assertEqual(wingPromptPhone.coveredByLog, 0,
-    `${wingPromptPhone.coveredByLog} of ${wingPromptPhone.options} destination(s) sat under the open run log`)
-})
-
 check('the Wing Boots prompt is a strip that leaves the map usable', () => {
   assert(wingPrompt.reachable, 'the map fixture offered no off-path room to walk to')
   assert(wingPrompt.rendered, 'the Wing Boots prompt did not render')
   assert(wingPrompt.options >= 2,
     `the prompt offered ${wingPrompt.options} destination(s); two are needed to tell a strip from a stack`)
   assert(wingPrompt.hittable, 'a Wing Boots destination was not clickable at its own centre')
-  assertEqual(wingPrompt.coveredByLog, 0,
-    `${wingPrompt.coveredByLog} Wing Boots destination(s) sat under the open run log`)
+  assertEqual(wingPrompt.debugLines, 30, 'the debug run history was not retained')
+  assertEqual(wingPrompt.hasRunLogUi, false, 'the playable map rendered a Run log control')
   assertEqual(wingPrompt.rows, 1, `the prompt stacked its ${wingPrompt.options} options over ${wingPrompt.rows} rows`)
   assert(wingPrompt.height <= 80, `the prompt is ${wingPrompt.height}px tall, which is a panel rather than a strip`)
   assertEqual(wingPrompt.unreachableNodes, 0, `${wingPrompt.unreachableNodes} map node(s) became unreachable`)
@@ -1585,10 +1497,6 @@ for (const shopCase of shopCases) {
       const expected = shopCase.belt ? 730 : 780
       assert(shopCase.stageHeight >= expected - 2,
         `${where}: the phone stage took only ${shopCase.stageHeight}px of the ${expected}px below the header`)
-    }
-    if (shopCase.width >= 761) {
-      assertEqual(shopCase.buriedByOpenLog, 0,
-        `${where}: ${shopCase.buriedByOpenLog} control(s) unreachable with the run log open`)
     }
     assert(shopCase.stageScrolls,
       `${where}: the rug cannot be scrolled, so anything below the fold is lost`)
@@ -2059,7 +1967,6 @@ const compactEventShape = await page.evaluate(() => {
   const stageBox = stage?.getBoundingClientRect()
   const card = document.querySelector('.event-cards--deck .card')?.getBoundingClientRect()
   const actions = [...document.querySelectorAll('.event-resolve-actions button')].map((button) => button.getBoundingClientRect())
-  const log = document.querySelector('.log')?.getBoundingClientRect()
   return {
     horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
     panelScrolls: Boolean(panel && ['auto', 'scroll'].includes(getComputedStyle(panel).overflowY)),
@@ -2072,7 +1979,6 @@ const compactEventShape = await page.evaluate(() => {
     completeCard: Boolean(card && card.top >= 0 && card.left >= 0 && card.right <= innerWidth && card.bottom <= innerHeight),
     actionsVisible: actions.length === 2 && actions.every((box) => box.top >= (stageBox?.top ?? 0) && box.bottom <= innerHeight),
     actionsShareRow: actions.length === 2 && Math.abs(actions[0].top - actions[1].top) < 1,
-    actionsClearLog: !log || actions.every((box) => box.right <= log.left || box.left >= log.right || box.bottom <= log.top || box.top >= log.bottom),
   }
 })
 await page.screenshot({ path: join(outDir, 'event-card-picker-compact.png'), fullPage: true })
@@ -2083,7 +1989,6 @@ check('compact Event resolution keeps one reachable scroll surface', () => {
   assert(compactEventShape.completeCard, `compact Event showed no complete card: ${JSON.stringify(compactEventShape)}`)
   assert(compactEventShape.actionsVisible && compactEventShape.actionsShareRow,
     `compact Event split or hid its resolver actions: ${JSON.stringify(compactEventShape)}`)
-  assert(compactEventShape.actionsClearLog, `the run log covered a compact Event action: ${JSON.stringify(compactEventShape)}`)
 })
 await page.setViewportSize({ width: 1280, height: 800 })
 await page.getByRole('button', { name: 'Back to choices' }).click()

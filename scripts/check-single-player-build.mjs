@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 
 const dist = resolve(process.argv[2] ?? 'dist')
@@ -14,5 +14,7 @@ assert(!output.match(/["'(]\/assets\//), 'single-player build contains a domain-
 assert(!output.match(/["']--combat-stage-image["']:/), 'combat background still resolves relative to the CSS bundle')
 assert(!output.match(/["']--campfire-scene["']:`url\("\$\{[\w$]+\(/), 'campfire scene still resolves relative to the CSS bundle')
 assert(readFileSync(join(dist, 'index.html'), 'utf8').includes('./assets/'), 'entry assets are not relative')
+assert(existsSync(join(dist, 'assets/cards/relics__boss__empty-cage.webp')), 'Empty Cage card is missing from Pages output')
+assert(existsSync(join(dist, 'assets/relic-icons/empty_cage.png')), 'Empty Cage icon is missing from Pages output')
 
 console.log(`single-player Pages build verified (${files.length} text files)`)

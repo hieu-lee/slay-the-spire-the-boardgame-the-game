@@ -622,14 +622,6 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
       {allocatingCampaignMarks ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p><div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && run.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => { setSeedText(crypto.randomUUID()); setChoosingNextCharacter(true); onClose() }}>Begin next run →</button> : null}</div></section> : null}
 
-      {/* Not on Neow: it is a full-bleed painted scene with seat cards in the
-          bottom-left and Skip keys in the bottom-right, so the fixed log tab
-          covers content in either corner and there is no scroller to move it
-          clear. The log is supplementary and is on every other screen. */}
-      {run.phase !== 'combat' && run.phase !== 'neow' ? <details className="log">
-        <summary>Run log</summary>
-        {run.log.slice(-6).map((line, i) => <p key={`${i}-${line}`}>{line}</p>)}
-      </details> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       {/* `aria-live` rather than `role="status"`: the run already has status
           regions ("Choice locked. Waiting for the party…"), and a second one

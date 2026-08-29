@@ -3022,8 +3022,6 @@ try {
 
   const energyBeforeLostResponse = (await snapshot(a)).run.combat.players
     .find((player) => player.id === aView.you.playerId).energy
-  const boMiracleLogsBefore = await a.locator('.combat__log li')
-    .filter({ hasText: 'Bo spends a Miracle for 1 Energy' }).count()
   const aResponseLossCredentials = await credentials(a)
   let committedPotionStatus = 0
   let postCommitted = false
@@ -3072,8 +3070,6 @@ try {
         data: JSON.stringify({ type: 'snapshot', snapshot }),
       }))
     }, interleavedSnapshot)
-    await a.locator('.combat__log li').filter({ hasText: 'Bo spends a Miracle for 1 Energy' })
-      .nth(boMiracleLogsBefore).waitFor({ state: 'attached' })
     interleavedSnapshotSeen = true
     const response = await route.fetch()
     committedPotionStatus = response.status()
@@ -3279,10 +3275,6 @@ try {
     }
     return result
   })
-  await b.waitForFunction((before) => {
-    const lines = [...document.querySelectorAll('.combat__log li')].map((line) => line.textContent ?? '')
-    return lines.some((line) => line.includes('Strike')) || lines.length > before
-  }, beforeRemoteAction.run.combat.log.length)
   const afterPlay = await snapshot(b)
   const afterRemotePlayer = afterPlay.run.combat.players.find((player) => player.id === aView.you.playerId)
   const shownDraw = Number(await a.locator('.pile[title="Draw pile"] .pile__count').textContent())
@@ -3327,10 +3319,12 @@ try {
     await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame))
     return board.scrollTop
   })
+  const remoteVfxSeq = await a.locator('.enemy .combat-vfx--target[data-vfx-kind="card"]')
+    .evaluateAll((effects) => Math.max(-1, ...effects.map((effect) => Number(effect.getAttribute('data-vfx-seq')))))
   await b.getByRole('button', { name: /^Strike,/ }).first().click()
   if (await b.locator('.prompt').count()) await b.locator('.enemy:not([disabled])').first().click()
-  await a.waitForFunction(() => [...document.querySelectorAll('.combat__log li')]
-    .some((line) => /Bo played/.test(line.textContent ?? '')))
+  await a.waitForFunction((previousSeq) => [...document.querySelectorAll('.enemy .combat-vfx--target[data-vfx-kind="card"]')]
+    .some((effect) => Number(effect.getAttribute('data-vfx-seq')) > previousSeq), remoteVfxSeq)
   await a.waitForTimeout(100)
   const afterRemoteScroll = await a.locator('.board').evaluate((board) => board.scrollTop)
   check('a teammate action preserves deliberate inspection of another row', () => {

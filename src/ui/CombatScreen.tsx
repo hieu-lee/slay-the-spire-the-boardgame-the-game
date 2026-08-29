@@ -9,7 +9,6 @@
 // vfx.tsx for the effect overlay a play puts on it.
 import {
   PHASE_LABEL,
-  TURN_MARKER,
   canAfford,
   cardShivsOnPlay,
   describeSeat,
@@ -17,7 +16,6 @@ import {
   gainedShivs,
   pendingFor,
   revealViewerRow,
-  roundLog,
   rowsOf,
 } from './combat-screen/helpers.ts'
 import {
@@ -666,9 +664,8 @@ function CombatScreenView({
     setPotionOverflowRequired(0)
   }, [orderingStage])
 
-  // Only the coordinator can act on the order, so only they are shown it
-  // unasked: everyone else keeps the battle log this panel would cover — and
-  // keeps a panel they opened themselves, so this only ever opens.
+  // Only the coordinator can act on the order, and everyone else keeps a panel
+  // they opened themselves, so this only ever opens.
   useEffect(() => {
     if (orderingStage && viewerId === endTurnCoordinatorId) setEndTurnOrderOpen(true)
   }, [orderingStage, viewerId, endTurnCoordinatorId])
@@ -1002,41 +999,7 @@ function CombatScreenView({
     setEndTurnOrder(savedEndTurnOrder)
   }, [savedEndTurnKey, state.phase, viewerId])
 
-  // Newest-first means a scrolled log stays where the player left it, so a new
-  // line lands above the visible area and is never seen.
-  const logRef = useRef<HTMLOListElement | null>(null)
   const endTurnRef = useRef<HTMLButtonElement | null>(null)
-  // The battle log records what the enemy did, but it lives in a collapsed
-  // <details> with no live region, so a screen-reader player was never told —
-  // they had to go and look. Announce the lines added while the board was the
-  // enemy's, once, when it hands back. Not the player's own turn: those lines
-  // are the direct result of their own keypress and announcing them would be
-  // chatter. A reactive trigger the player resolves DURING the enemy phase does
-  // land in this report — the UI for those is not phase-gated — which reads as
-  // useful context rather than noise.
-  const enemyTurnMark = useRef<number | null>(null)
-  const [enemyReport, setEnemyReport] = useState('')
-
-  useEffect(() => {
-    if (state.phase === 'enemy') {
-      if (enemyTurnMark.current === null) {
-        enemyTurnMark.current = state.log.length
-        // Cleared on the way IN, not just written on the way out. A live region
-        // announces on DOM mutation, and two enemy turns often produce a
-        // byte-identical line — "Cultist gained 1 Strength" every single turn —
-        // so re-setting the same string is an `Object.is` bail, no mutation, and
-        // silence from the second turn onward. Emptying it first guarantees the
-        // text really changes when the report lands.
-        setEnemyReport('')
-      }
-      return
-    }
-    if (enemyTurnMark.current === null) return
-    const added = state.log.slice(enemyTurnMark.current)
-    enemyTurnMark.current = null
-    if (added.length > 0) setEnemyReport(added.join('. '))
-  }, [state.phase, state.log])
-
   // Focus is dropped to <body> when the enemy's turn replaces the board, so a
   // keyboard player restarted their Tab walk from the page header every round.
   // Put them back on End turn — only when focus is genuinely nowhere, so this
@@ -1061,9 +1024,6 @@ function CombatScreenView({
     // drags the hand scroller with it — which the fanned-card checks catch.
     endTurnRef.current?.focus({ preventScroll: true })
   }, [state.phase])
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = 0
-  }, [state.log.length])
   const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
   const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
   const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
@@ -1091,18 +1051,11 @@ function CombatScreenView({
   //
   // A layout effect, not a plain one: this must run before paint, or the board
   // is briefly drawn scrolled to the wrong row and then jumps.
-  // Also on a phase change: the log grows during the Enemy Turn and the pause,
-  // which shrinks the board while `scrollTop` stays where it was — pushing the
-  // row you control, and the enemy you are fighting, out of view exactly when
-  // you are meant to be reading them.
+  // Also on a phase change, when the board's rows can change height.
   useLayoutEffect(() => {
     followViewerRow.current = true
     recenterViewerRow()
   }, [viewerId, state.turn, state.phase, stageLayoutKey])
-
-  useLayoutEffect(() => {
-    if (followViewerRow.current) recenterViewerRow()
-  }, [state.log.length])
 
   useEffect(() => {
     const board = boardRef.current
@@ -3143,12 +3096,17 @@ function CombatScreenView({
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
+            const simpleAction = <PotionTooltipAnchor id={held.defId} key={`${held.defId}-${relicIndex}`}
+              name={def.name} text={def.text} kindLabel="Relic" confirmLabel="use">
+              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${def.text}`}
+                onClick={() => useRelic(relicIndex)}>
+                <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
+              </button>
+            </PotionTooltipAnchor>
             const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
             if (!canActivateRelic(state, viewer, relicIndex)) return []
-            if (held.defId === 'golden_eye') return [<button type="button" key={relicIndex}
-              aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}><img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
-            if (held.defId === 'gambling_chip') return [<button type="button" key={relicIndex}
-              onClick={() => useRelic(relicIndex)}>Reroll with {def.name}</button>]
+            if (held.defId === 'golden_eye') return [simpleAction]
+            if (held.defId === 'gambling_chip') return [simpleAction]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
               <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
@@ -3170,8 +3128,7 @@ function CombatScreenView({
             </details>]
             if (held.defId === 'ninja_scroll') {
               const overflow = overflowShivCount(state, 2)
-              if (overflow === 0) return [<button type="button" key={relicIndex}
-                aria-label={`Use ${def.name}`} onClick={() => useRelic(relicIndex)}><img className="item-icon-image" src={relicIconPath(held.defId)} alt="" /></button>]
+              if (overflow === 0) return [simpleAction]
               return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
                 <p>Choose {overflow} immediate Shiv target{overflow === 1 ? '' : 's'}.</p>
                 {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
@@ -3209,10 +3166,7 @@ function CombatScreenView({
                   })))}
               </details>]
             }
-            return [<button type="button" key={relicIndex} aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}`}
-              onClick={() => useRelic(relicIndex)}>
-              <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
-            </button>]
+            return [simpleAction]
           })}
           </section>
         </div>
@@ -3796,19 +3750,6 @@ function CombatScreenView({
           )
         })}
       </div>
-
-      <p className="visually-hidden combat__enemy-report" aria-live="polite">{enemyReport}</p>
-      {state.log.length > 0 ? (
-        <details className="combat-log-drawer">
-          <summary>Battle log</summary>
-          <ol className="combat__log" aria-label="Combat log" ref={logRef} tabIndex={0}>
-            {roundLog(state.log).map((line, i) => (
-              <li key={`${state.log.length - i}-${line}`}
-                className={TURN_MARKER.test(line) ? 'combat__log-turn' : undefined}>{line}</li>
-            ))}
-          </ol>
-        </details>
-      ) : null}
 
       <footer className="hand-area">
         <div className="hand-area__stats">

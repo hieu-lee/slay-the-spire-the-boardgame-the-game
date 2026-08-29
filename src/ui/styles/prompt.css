@@ -110,10 +110,12 @@
 }
 
 .relic-actions {
-  position: absolute;
+  position: relative;
   z-index: 70;
-  top: 3.3rem;
-  left: .75rem;
+  align-self: flex-start;
+  max-width: calc(100vw - 2rem);
+  margin-inline: 0.75rem;
+  flex: none;
   padding: 0;
   border: 0;
   background: none;

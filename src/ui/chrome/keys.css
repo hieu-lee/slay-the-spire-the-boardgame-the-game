@@ -259,8 +259,6 @@
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
 ):focus-visible,
-.log > summary:focus-visible,
-.combat-log-drawer > summary:focus-visible,
 .online-lobby__settings > summary:focus-visible,
 .start-menu__meta > summary:focus-visible {
   outline: 3px solid var(--sts-gold);

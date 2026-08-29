@@ -201,7 +201,6 @@
 
 @media (max-width: 700px) {
   .sts-scope .campfire:has(.campfire__deck) { min-height: 100%; }
-  .sts-scope:has(.campfire .campfire__deck) .log { display: none; }
 
   .sts-scope .campfire:has(.campfire__deck) .campfire__prompt {
     top: 3.5rem;

@@ -37,8 +37,8 @@
    purpose, so the equal-specificity rules before them lose to them rather than
    needing !important.
 
-   That late-cascade group is the last five partials in the list below, from
-   `shell-growing-row` to `map-prompts`. They come last on purpose, not by
+   That late-cascade group is the last four partials in the list below, from
+   `shop-gap` to `map-prompts`. They come last on purpose, not by
    accident of when they were written. THE IMPORT ORDER IS THE CASCADE — append
    new sections at the end.
 
@@ -55,8 +55,6 @@
 @import './chrome/relic-bar.css';
 @import './chrome/run-header.css';
 @import './chrome/disclosures.css';
-@import './chrome/run-log.css';
-@import './chrome/battle-log.css';
 @import './chrome/combat-relic-actions.css';
 @import './chrome/framed-screens.css';
 @import './chrome/campfire.css';
@@ -66,7 +64,6 @@
 @import './chrome/proceed-arrow.css';
 @import './chrome/treasure.css';
 @import './chrome/courier.css';
-@import './chrome/reward-screen-clearance.css';
 @import './chrome/reward-screen-keys.css';
 @import './chrome/potion-belt.css';
 @import './chrome/item-tiles.css';
@@ -84,7 +81,6 @@
 @import './chrome/party-room.css';
 @import './chrome/settings.css';
 @import './chrome/merchant-rug.css';
-@import './chrome/shell-growing-row.css';
 @import './chrome/shop-gap.css';
 @import './chrome/shop.css';
 @import './chrome/rewards.css';

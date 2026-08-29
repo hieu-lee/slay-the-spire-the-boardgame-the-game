@@ -165,8 +165,7 @@
   }
 
   /* A held Potion can wrap the compact HUD onto one extra line. Keep the shop
-     scroller inside the remaining viewport so its fixed Run Log cannot bury
-     the last Potion tile. */
+     scroller inside the remaining viewport so the last Potion tile stays visible. */
   .sts-scope:has(.outside-potions) .merchant-stage { min-height: calc(100dvh - 7.125rem); }
 }
 
