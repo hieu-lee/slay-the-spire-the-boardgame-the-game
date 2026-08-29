@@ -146,14 +146,15 @@ check('every campfire party resolves to one complete wide PNG scene', () => {
     .filter((_, characterIndex) => (index + 1) & (1 << characterIndex)))
     .map((party) => campfireScenePath(party).split('/').pop())
     .sort()
-  assertDeepEqual(campfireSceneFiles.sort(), expected)
-  for (const file of expected) {
+  const scenes = [...expected, 'empty_firecamp.png'].sort()
+  assertDeepEqual(campfireSceneFiles.sort(), scenes)
+  for (const file of scenes) {
     const bytes = readFileSync(join(campfireRoot, file))
     assert(bytes.subarray(1, 4).toString() === 'PNG', `${file} is not a PNG`)
     assert(bytes.readUInt32BE(16) === 1672 && bytes.readUInt32BE(20) === 941,
       `${file} is not 1672x941`)
   }
-  assert(expected.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 32 * 1024 * 1024,
+  assert(scenes.reduce((bytes, file) => bytes + statSync(join(campfireRoot, file)).size, 0) < 32 * 1024 * 1024,
     'campfire scenes exceed 32 MiB')
 })
 
@@ -791,11 +792,12 @@ print(json.dumps(faults))
 })
 
 check('Downfall noncombat poses are complete, transparent, and edge-capped', () => {
+  const base = ['ironclad', 'silent', 'defect', 'watcher']
   const downfall = ['guardian', 'hermit', 'hexaghost', 'slime_boss']
   assertDeepEqual(
-    campfireCharacterFiles.filter((file) => downfall.some((id) => file === `${id}-back.webp`)).sort(),
-    downfall.map((id) => `${id}-back.webp`).sort(),
-    'Downfall campfire pose inventory',
+    campfireCharacterFiles.sort(),
+    [...base, ...downfall].map((id) => `${id}-back.webp`).sort(),
+    'mixed-party campfire pose inventory',
   )
   assertDeepEqual(
     merchantCharacterFiles.filter((file) => downfall.some((id) => file === `${id}-standing.webp`)).sort(),
@@ -803,7 +805,7 @@ check('Downfall noncombat poses are complete, transparent, and edge-capped', () 
     'Downfall merchant pose inventory',
   )
   const groups = [
-    [campfireCharacterRoot, downfall.map((id) => `${id}-back.webp`), CAMPFIRE_CHARACTER_EDGE],
+    [campfireCharacterRoot, [...base, ...downfall].map((id) => `${id}-back.webp`), CAMPFIRE_CHARACTER_EDGE],
     [merchantCharacterRoot, downfall.map((id) => `${id}-standing.webp`), MERCHANT_CHARACTER_EDGE],
   ]
   for (const [root, names, [floor, cap]] of groups) {

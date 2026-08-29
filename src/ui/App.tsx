@@ -621,7 +621,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
               {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
               !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
                 <OutsidePotionBar players={run.players} viewerId={viewerId}
-                  potionLimit={run.ascension >= 4 ? 2 : 3}
+                  ascension={run.ascension}
                   ruleset={run.meta.ruleset ?? 'base'}
                   onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
                   onUse={(potionId, replacePotionId) => setRun((current) =>

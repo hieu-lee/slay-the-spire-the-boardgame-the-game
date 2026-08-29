@@ -527,7 +527,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
-              potionLimit={run.ascension >= 4 ? 2 : 3}
+              ascension={run.ascension}
               ruleset={run.meta.ruleset ?? 'base'}
               disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard}
               onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}

@@ -13194,7 +13194,31 @@ await page.evaluate((viewerId) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.players = run.players.map((player) => player.id === viewerId
-    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion'] }
+    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion', 'energy_potion'],
+        relics: [...player.relics.filter((relic) => relic.defId !== 'potion_belt'), { defId: 'potion_belt', spent: false }] }
+    : { ...player, potions: ['fire_potion', 'skill_potion', 'block_potion'],
+        relics: [...player.relics.filter((relic) => relic.defId !== 'potion_belt'), { defId: 'potion_belt', spent: false }] })
+  debug.setRun(run)
+}, potionViewerId)
+await page.waitForFunction(() => {
+  const use = document.querySelector('[aria-label="Use Entropic Brew"]')
+  const give = document.querySelector('[aria-label="Give Entropic Brew"]')
+  return use && !use.hasAttribute('aria-expanded') && give && !give.disabled
+})
+const potionBeltActions = await page.locator('.outside-potions').evaluate((bar) => ({
+  brewExpanded: bar.querySelector('[aria-label="Use Entropic Brew"]')?.getAttribute('aria-expanded'),
+  giveDisabled: bar.querySelector('[aria-label="Give Entropic Brew"]')?.disabled,
+}))
+check('Potion Belt capacity permits a direct Brew use and a trade to a three-Potion recipient', () => {
+  assertEqual(potionBeltActions.brewExpanded, null)
+  assertEqual(potionBeltActions.giveDisabled, false)
+})
+await page.evaluate((viewerId) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players = run.players.map((player) => player.id === viewerId
+    ? { ...player, potions: ['entropic_brew', 'energy_potion', 'energy_potion'],
+        relics: player.relics.filter((relic) => relic.defId !== 'potion_belt') }
     : player)
   debug.setRun(run)
 }, potionViewerId)
@@ -13348,6 +13372,49 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => document.querySelector('.campfire')?.getAttribute('data-party-size') === '4')
+const customCampfireLayouts = []
+for (const characters of [
+  ['guardian', 'hermit', 'hexaghost', 'slime_boss'],
+  ['ironclad', 'guardian', 'silent', 'hermit'],
+]) {
+  await page.evaluate((party) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.players = run.players.map((player, index) => ({ ...player, character: party[index], dead: false }))
+    debug.setRun(run)
+  }, characters)
+  await page.waitForFunction((party) => {
+    const campfire = document.querySelector('.campfire[data-character-cutouts="true"]')
+    return campfire?.querySelectorAll('.campfire__party img').length === party.length
+  }, characters)
+  customCampfireLayouts.push(await page.locator('.campfire').evaluate(async (campfire) => {
+    const url = getComputedStyle(campfire).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] ?? ''
+    const images = [...campfire.querySelectorAll('.campfire__party img')]
+    await Promise.all(images.map((image) => image.decode()))
+    return {
+      scene: new URL(url).pathname,
+      characters: images.map((image) => new URL(image.src).pathname.split('/').pop()),
+      decoded: images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0),
+    }
+  }))
+}
+check('Downfall-only and mixed parties render every rear-view character on the empty campfire scene', () => {
+  assert(customCampfireLayouts.every((layout) => layout.scene.endsWith('/empty_firecamp.png')),
+    JSON.stringify(customCampfireLayouts))
+  assertDeepEqual(customCampfireLayouts[0].characters,
+    ['guardian-back.webp', 'hermit-back.webp', 'hexaghost-back.webp', 'slime_boss-back.webp'])
+  assertDeepEqual(customCampfireLayouts[1].characters,
+    ['ironclad-back.webp', 'guardian-back.webp', 'silent-back.webp', 'hermit-back.webp'])
+  assert(customCampfireLayouts.every((layout) => layout.decoded), JSON.stringify(customCampfireLayouts))
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  run.players = run.players.map((player, index) => ({ ...player, character: characters[index] }))
+  debug.setRun(run)
+})
+await page.waitForFunction(() => !document.querySelector('.campfire')?.hasAttribute('data-character-cutouts'))
 const campfireResponsiveLayouts = []
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 667, height: 375 }]) {
   await page.setViewportSize(viewport)

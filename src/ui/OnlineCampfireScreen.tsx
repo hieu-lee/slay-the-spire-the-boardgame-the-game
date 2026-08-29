@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { campfireScenePath } from '../game/assets.ts'
+import { campfireCharacterImagePath, campfireScenePath, campfireUsesCharacterCutouts } from '../game/assets.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
@@ -30,14 +30,20 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.choice === 'ruby' || decision?.cardUid !== undefined
   const alive = seats.some((seat) => seat.playerId === player.id)
+  const seatCharacters = seats.map((seat) => seat.character)
+  const characterCutouts = campfireUsesCharacterCutouts(seatCharacters)
 
   useEffect(() => {
     if (saved) setDecision(saved)
   }, [saved?.cardUid, saved?.choice, saved?.removeCardUid, saved?.transformCardUid])
 
   return (
-    <section className="campfire" data-party-size={seats.length}
-      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seats.map((seat) => seat.character)), window.location.href).href}")` } as CSSProperties}>
+    <section className="campfire" data-party-size={seats.length} data-character-cutouts={characterCutouts || undefined}
+      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seatCharacters), window.location.href).href}")` } as CSSProperties}>
+      {characterCutouts ? <div className="campfire__party" aria-hidden="true"
+        style={{ '--campfire-party-size': seats.length } as CSSProperties}>
+        {seats.map((seat) => <img key={seat.playerId} src={campfireCharacterImagePath(seat.character)} alt="" />)}
+      </div> : null}
       <div className="campfire__prompt">
       <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
       {alive ? <div className="campfire__player">
