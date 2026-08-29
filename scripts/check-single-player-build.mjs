@@ -12,6 +12,7 @@ assert(!output.includes('/api/rooms'), 'single-player build still contains the r
 assert(!output.includes('Play online'), 'single-player build still contains the multiplayer entry')
 assert(!output.match(/["'(]\/assets\//), 'single-player build contains a domain-root asset URL')
 assert(!output.match(/["']--combat-stage-image["']:/), 'combat background still resolves relative to the CSS bundle')
+assert(!output.match(/["']--campfire-scene["']:`url\("\$\{[\w$]+\(/), 'campfire scene still resolves relative to the CSS bundle')
 assert(readFileSync(join(dist, 'index.html'), 'utf8').includes('./assets/'), 'entry assets are not relative')
 
 console.log(`single-player Pages build verified (${files.length} text files)`)

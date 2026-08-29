@@ -36,7 +36,7 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
 
   return (
     <section className="campfire" data-party-size={seats.length}
-      style={{ '--campfire-scene': `url("${campfireScenePath(seats.map((seat) => seat.character))}")` } as CSSProperties}>
+      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(seats.map((seat) => seat.character)), window.location.href).href}")` } as CSSProperties}>
       <div className="campfire__prompt">
       <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
       {alive ? <div className="campfire__player">

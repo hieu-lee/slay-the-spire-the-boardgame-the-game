@@ -42,7 +42,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
 
   return (
     <section className="campfire" data-party-size={living.length}
-      style={{ '--campfire-scene': `url("${campfireScenePath(living.map((seat) => seat.character))}")` } as CSSProperties}>
+      style={{ '--campfire-scene': `url("${new URL(campfireScenePath(living.map((seat) => seat.character)), window.location.href).href}")` } as CSSProperties}>
       <div className="campfire__prompt">
         <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
         {player ? <div className="campfire__player" role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
