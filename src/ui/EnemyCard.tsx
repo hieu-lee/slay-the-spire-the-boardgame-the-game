@@ -11,6 +11,7 @@ import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand } from './board-signals.ts'
 import { revealDecodedImage } from './Card.tsx'
+import { bossAttackMotionFor } from './combat-vfx.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -44,17 +45,6 @@ type EnemyCardProps = {
   defender?: Pick<Player, 'vulnerable' | 'powers'>
   onClick?: (enemy: Enemy) => void
 }
-
-const MELEE_BOSS_ART = new Set([
-  'slime_boss',
-  'guardian_attack',
-  'guardian_defensive',
-  'the_champ',
-  'bronze_automaton',
-  'awakened_one_phase_1',
-  'awakened_one_phase_2',
-  'time_eater',
-])
 
 type IntentPart = {
   icon: IconName
@@ -370,7 +360,7 @@ export function EnemyCard({
       if (attackPreload.current === preload) attackPreload.current = null
     }
   }, [bossAttackArt, def.artId, def.id])
-  const bossAttackMotion = animatedBoss && MELEE_BOSS_ART.has(def.artId ?? def.id) ? 'melee' : 'ranged'
+  const bossAttackMotion = animatedBoss ? bossAttackMotionFor(def.artId ?? def.id) : 'ranged'
   const abilities = enemyAbilities(def)
   // Curiosity adds the defender's Power count to every hit, so it belongs in the
   // preview for the same reason Strength and Weak do.
