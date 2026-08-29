@@ -26,6 +26,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
   const living = players.filter((player) => !player.dead)
   const [focusedId, setFocusedId] = useState(living[0]?.id ?? '')
   const player = living.find((candidate) => candidate.id === focusedId) ?? living[0]
+  const focusedIndex = Math.max(0, living.findIndex((candidate) => candidate.id === player?.id))
   const decision = player ? decisions[player.id] : undefined
   const coffee = player?.relics.some((relic) => relic.defId === 'coffee_dripper') ?? false
   const hammer = player?.relics.some((relic) => relic.defId === 'fusion_hammer') ?? false
@@ -46,7 +47,15 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
       <div className="campfire__prompt">
         <h2><Icon name="burn" size={26} /> Campfire <small>Rest Site</small></h2>
         {player ? <div className="campfire__player" role="group" aria-label={`${player.name}, ${player.hp} of ${player.maxHp} HP`}>
-          <span className="campfire__name">What will {player.name} do? · {player.hp}/{player.maxHp} HP</span>
+          <div className="campfire__name-row">
+            <span className="campfire__name">What will {player.name} do? · {player.hp}/{player.maxHp} HP</span>
+            {living.length > 1 ? <span className="campfire__turn-nav">
+              <button type="button" aria-label={`Previous campfire player: ${living[(focusedIndex - 1 + living.length) % living.length]!.name}`}
+                onClick={() => setFocusedId(living[(focusedIndex - 1 + living.length) % living.length]!.id)}>‹</button>
+              <button type="button" aria-label={`Next campfire player: ${living[(focusedIndex + 1) % living.length]!.name}`}
+                onClick={() => setFocusedId(living[(focusedIndex + 1) % living.length]!.id)}>›</button>
+            </span> : null}
+          </div>
           <div className="campfire__choices">
                 {blocked ? <button type="button"
                   className={decision?.choice === 'leave' ? 'is-chosen' : ''}
@@ -108,24 +117,6 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
             ))}
           </div> : null}
         </div> : null}
-      </div>
-
-      <div className="campfire__players" aria-label="Party around the campfire">
-        {living.map((seat, index) => {
-          const choice = decisions[seat.id]
-          const status = choice?.choice === 'smith' && !choice.cardUid ? 'Choose a card' : choice ? choice.choice : 'Choose'
-          return <button
-            type="button"
-            className={`campfire__seat campfire__seat--${index}`}
-            key={seat.id}
-            aria-label={`${seat.name}, ${seat.hp} of ${seat.maxHp} HP, ${status}`}
-            aria-pressed={seat.id === player?.id}
-            onClick={() => setFocusedId(seat.id)}
-          >
-            <span>{seat.name}</span>
-            <small>{status}</small>
-          </button>
-        })}
       </div>
 
       <button type="button" className="campfire__leave" disabled={!settled} onClick={() => onResolve(decisions)}>
