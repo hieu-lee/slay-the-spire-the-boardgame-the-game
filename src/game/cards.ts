@@ -103,6 +103,9 @@ export type CountOf =
   | 'attackingEnemies'
   | 'clawCubesGainedThisCombat'
 
+/** Status-token fields a card can count on an enemy. */
+export type EnemyTokenKind = 'strength' | 'vulnerable' | 'weak' | 'poison'
+
 /**
  * A number the board works out as the card resolves, rather than one printed
  * flat on the face.
@@ -131,8 +134,8 @@ export type Amount =
       per?: CountOf
       /** Multiplies the counted units; Heavy Blade changes each Strength token. */
       scale?: number
-      /** Choke adds the target's Weak and Poison tokens to one hit. */
-      targetTokens?: readonly ('weak' | 'poison')[]
+      /** Choke adds every Strength, Vulnerable, Weak, and Poison token on its target to one hit. */
+      targetTokens?: readonly EnemyTokenKind[]
     }
 
 /**
@@ -2657,8 +2660,8 @@ export const CARDS: Record<string, CardDef> = {
   }),
   choke: card({
     id: 'choke', name: 'Choke', owner: 'silent', type: 'attack', rarity: 'uncommon', cost: 2,
-    effects: [{ kind: 'hit', amount: { base: 3, targetTokens: ['weak', 'poison'] } }],
-    upgrade: { effects: [{ kind: 'hit', amount: { base: 4, targetTokens: ['weak', 'poison'] } }] },
+    effects: [{ kind: 'hit', amount: { base: 3, targetTokens: ['strength', 'vulnerable', 'weak', 'poison'] } }],
+    upgrade: { effects: [{ kind: 'hit', amount: { base: 4, targetTokens: ['strength', 'vulnerable', 'weak', 'poison'] } }] },
   }),
   footwork: card({
     id: 'footwork', name: 'Footwork', owner: 'silent', type: 'power', rarity: 'uncommon', cost: 2,

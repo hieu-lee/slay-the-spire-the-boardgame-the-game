@@ -7330,7 +7330,7 @@ check('the four Silent modifier cards render scans and complete spoken rules', (
   assert(silentModifierCards.some((card) => card.label.startsWith('Envenom+') &&
     card.label.includes('each hit also applies 1 Poison')))
   assert(silentModifierCards.some((card) => card.label.startsWith('Choke+') &&
-    card.label.includes('Weak and Poison on the target')))
+    card.label.includes('Strength, Vulnerable, Weak, and Poison on the target')))
 })
 await shot('07o-silent-modifier-cards-ready')
 await page.getByRole('button', { name: /^Accuracy\+,/ }).click()

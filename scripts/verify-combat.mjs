@@ -7205,17 +7205,36 @@ check('Inner Peace draws in Calm and otherwise enters Calm', () => {
   }
 })
 
-check('Choke adds every Weak and Poison token on its target to one hit', () => {
+check('Choke adds every enemy Strength, Vulnerable, Weak, and Poison token to one hit', () => {
   for (const upgraded of [false, true]) {
-    const choke = instance('choke', upgraded)
-    const state = combat(
-      [makePlayer({ character: 'silent', hand: [choke] })],
-      [makeEnemy({ hp: 20, maxHp: 20, weak: 2, poison: 3 })],
+    for (const token of ['strength', 'vulnerable', 'weak', 'poison']) {
+      const choke = instance('choke', upgraded)
+      const state = combat(
+        [makePlayer({ character: 'silent', hand: [choke] })],
+        [makeEnemy({ hp: 30, maxHp: 30, [token]: 1 })],
+      )
+      const played = playCard(state, 'p1', choke.uid, { enemyUid: 'e1', playerId: null })
+      const countedHit = (upgraded ? 4 : 3) + 1
+      const damage = token === 'vulnerable' ? countedHit * 2 : countedHit
+      assertEqual(played.enemies[0].hp, 30 - damage, `Choke did not count enemy ${token}`)
+      assertEqual(played.enemies[0][token], token === 'vulnerable' ? 0 : 1,
+        `Choke changed enemy ${token} instead of only reading it`)
+    }
+
+    const combinedChoke = instance('choke', upgraded)
+    const combined = combat(
+      // Cancel the ordinary hit modifiers so this assertion isolates the sum
+      // of every cube, including counts above one.
+      [makePlayer({ character: 'silent', hand: [combinedChoke], weak: 1 })],
+      [makeEnemy({ hp: 40, maxHp: 40, strength: 2, vulnerable: 2, weak: 3, poison: 4 })],
     )
-    const played = playCard(state, 'p1', choke.uid, { enemyUid: 'e1', playerId: null })
-    assertEqual(played.enemies[0].hp, upgraded ? 11 : 12)
-    assertEqual(played.enemies[0].weak, 2, 'Choke reads but does not spend enemy Weak')
-    assertEqual(played.enemies[0].poison, 3, 'Choke reads but does not spend Poison')
+    const combinedPlay = playCard(combined, 'p1', combinedChoke.uid, { enemyUid: 'e1', playerId: null })
+    assertEqual(combinedPlay.enemies[0].hp, upgraded ? 25 : 26,
+      'Choke must count every cube, not only each present token type')
+    assertEqual(combinedPlay.enemies[0].strength, 2)
+    assertEqual(combinedPlay.enemies[0].vulnerable, 1, 'the hit spends one Vulnerable after counting both')
+    assertEqual(combinedPlay.enemies[0].weak, 3)
+    assertEqual(combinedPlay.enemies[0].poison, 4)
   }
 })
 
