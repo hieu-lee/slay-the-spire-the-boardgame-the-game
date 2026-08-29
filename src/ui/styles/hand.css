@@ -14,6 +14,38 @@
   color: var(--ink-dim);
 }
 
+.hermit-prompt,
+.hermit-chamber {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgb(203 158 83 / 0.55);
+  border-radius: 8px;
+  background: rgb(34 24 20 / 0.92);
+}
+
+.hermit-prompt__choice,
+.hermit-chamber__cards,
+.hermit-chamber__card,
+.hermit-chamber__targets {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hermit-chamber__cards .card {
+  width: calc(var(--card-width) * 0.62);
+}
+
+.hermit-chamber__empty {
+  width: calc(var(--card-width) * 0.62);
+  aspect-ratio: 1 / var(--card-ratio);
+  border: 1px dashed rgb(203 158 83 / 0.45);
+  border-radius: 7px;
+}
+
 .pip--energy {
   width: 3rem;
   height: 3rem;
@@ -74,6 +106,18 @@
   height: 100%;
   object-fit: cover;
   border-radius: 6px;
+}
+
+.card__gem {
+  position: absolute;
+  right: -5%;
+  bottom: -4%;
+  z-index: 3;
+  width: 40%;
+  border: 1px solid rgb(231 225 211 / 0.9);
+  border-radius: 4px;
+  box-shadow: 0 2px 7px rgb(0 0 0 / 0.72);
+  pointer-events: none;
 }
 
 .card--selected {

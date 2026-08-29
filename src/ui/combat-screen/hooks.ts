@@ -417,7 +417,9 @@ export function usePersonalCombatSoundEffects(
       const target = event.enemyIds[0]
       const contact = !reducedMotion && target ? characterAttackContactMs(state, target, event) : 0
       pending.current.set(event.seq,
-        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+        playCombatSound(cardSfxRecipe(
+          actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType,
+        ),
           contact))
       if (contact > 0) impactDue.current.set(event.seq, performance.now() + contact)
     }

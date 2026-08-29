@@ -1,9 +1,10 @@
 // The campfire: rest, upgrade, or whatever the party's relics turned it into.
-import { canUpgradeCard, hasModifier, hasRelic } from './rules.ts'
+import { canUpgradeCard, hasModifier, hasRelic, nextRunUid } from './rules.ts'
 import type { CampfireDecision, RunState } from './types.ts'
-import { healingCapFor, removeCard } from '../acquisition.ts'
+import { healingCapFor, removeCard, transformCard } from '../acquisition.ts'
 import { isActIVUnlocked } from '../campaign.ts'
 import { currentRoom } from '../map.ts'
+import { queueNewGuardianSockets } from './guardian-gems.ts'
 
 /**
  * A campfire: each player chooses Rest (heal 3) or Smith (upgrade a card),
@@ -23,7 +24,16 @@ export function resolveCampfire(
   if (hasModifier(state, 'night_terrors') && live.some((player) => choices[player.id]?.choice === 'rest')) return state
   const ruby = isActIVUnlocked(state.campaignProgress) && !state.campaign.keys.ruby && live.length > 0
     && live.every((player) => choices[player.id]?.choice === 'ruby')
+  if (live.some((player) => {
+    const decision = choices[player.id]
+    if (!decision?.transformCardUid) return false
+    const target = player.deck.find((card) => card.uid === decision.transformCardUid)
+    return decision.choice !== 'rest' || !hasRelic(player, 'straight_razor') || !target ||
+      target.uid === decision.removeCardUid || target.defId === 'ascenders_bane' ||
+      player.cardRewards.length === 0
+  })) return state
 
+  let uid = nextRunUid(state.players)
   const players = state.players.map((player) => {
     const decision = choices[player.id]
     if (!decision || player.dead) return player
@@ -36,10 +46,12 @@ export function resolveCampfire(
         ? player.deck.find((card) => card.uid === decision.removeCardUid)
         : undefined
       const rested = removable ? removeCard(player, removable.uid) : player
-      const healed = Math.min(rested.maxHp, rested.hp + 3 + (hasRelic(rested, 'regal_pillow') ? 3 : 0))
+      const transformed = decision.transformCardUid
+        ? transformCard(state.rng, rested, decision.transformCardUid, `c${uid++}`) : rested
+      const healed = Math.min(transformed.maxHp, transformed.hp + 3 + (hasRelic(transformed, 'regal_pillow') ? 3 : 0))
       return {
-        ...rested,
-        hp: Math.min(healingCapFor(rested), healed),
+        ...transformed,
+        hp: Math.min(healingCapFor(transformed, state.meta.ruleset), healed),
       }
     }
 
@@ -59,11 +71,11 @@ export function resolveCampfire(
     }
   })
 
-  return {
+  return queueNewGuardianSockets(state, {
     ...state,
     phase: 'map',
     players,
     campaign: ruby ? { ...state.campaign, keys: { ...state.campaign.keys, ruby: true } } : state.campaign,
     log: [...state.log, ruby ? 'The party claims the Ruby Key.' : 'The party rests at a campfire.'],
-  }
+  })
 }

@@ -6,9 +6,10 @@
 // without pulling in behaviour.
 import type { Effect, TargetScope } from '../cards.ts'
 import type { EnemyAction, SummonSupply } from '../enemies.ts'
+import type { RuleSet } from '../meta.ts'
 import type { RngState } from '../rng.ts'
 import type { Trigger } from '../triggers.ts'
-import type { CardInstance, CardType, Enemy, OrbType, Player } from '../types.ts'
+import type { CardInstance, CardType, Enemy, GuardianMode, OrbType, Player } from '../types.ts'
 
 export type CombatPhase =
   /** Reset, draw, and roll are done; ordered Start-of-Turn abilities remain. */
@@ -27,6 +28,7 @@ export type CombatState = {
   combatId: string
   /** Optional p.23 rule; it changes deaths only while a Boss is in this fight. */
   lastStand: boolean
+  ruleset?: RuleSet
   rng: RngState
   turn: number
   /** One shared die roll drives every die effect for the whole round (p.12). */
@@ -46,6 +48,22 @@ export type CombatState = {
     strength?: number
     strengthDefId?: string
     strengthPerPower?: boolean
+  }[]
+  /** Plunder row switches still owed; serialized so reconnect cannot lose the choice. */
+  pendingPlunderSwitches?: { playerId: string; sourceUid: string }[]
+  /** Chamber cards waiting to be played by their owner, preserved across reconnects. */
+  pendingHermitChamberPlays?: { playerId: string; sourceCardId: string; cardUids: string[]; free: boolean }[]
+  /** Dead or Alive rewards waiting for an explicit living-player recipient. */
+  pendingHermitStrengthRewards?: { playerId: string; sourceUid: string }[]
+  /** Each Hermit must Load the private card drawn by their start-of-combat board ability. */
+  pendingHermitSetupLoads?: { playerId: string }[]
+  pendingDieRelicChoices?: {
+    playerId: string
+    relicDefId: string
+    abilityIndex: number
+    sourceLabel: string
+    enemyUid: string | null
+    targetPlayerId: string | null
   }[]
   /** Face-down physical potion deck. Never included in a client snapshot. */
   potionDeck: string[]
@@ -75,9 +93,13 @@ export type CombatState = {
       drewFrom: number
       sources: { playerId: string; sourceId: string }[]
       ordered: boolean
+      /** Mysterious Sphere interrupts after Draw and before Roll. */
+      pauseAfterDraw?: boolean
     }
     /** The Draw step paused on a trigger before the shared die was rolled. */
-    rollPending?: { drewFrom: number }
+    rollPending?: { drewFrom: number; pauseAfterDraw?: boolean }
+    /** Opening hands are visible; Mysterious Sphere's party choice is next. */
+    pauseAfterDraw?: { drewFrom: number }
     /** Tools of the Trade drew; only its owner may choose the card to discard. */
     discard?: { playerId: string; sourceId: string; pendingTriggers: PendingTrigger[] }
     forcedCard?: {
@@ -90,6 +112,8 @@ export type CombatState = {
       pendingTriggers?: PendingTrigger[]
       /** Havoc cards waiting for their immediately-played child to finish. */
       deferredHavocs?: DeferredHavoc[]
+      /** Revenge Protocol was used before unresolved Start-of-Turn abilities. */
+      resumeOpenStart?: boolean
     }
   }
   /** Physical cards waiting to resolve after their virtual copy. */
@@ -97,20 +121,27 @@ export type CombatState = {
     playerId: string
     card: CardInstance
     energySpent: number
-    resumePhase: 'start' | 'player'
+    resumePhase: 'start' | 'player' | 'discard'
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: DeferredHavoc[]
     /** Parent-card triggers waiting for this nested copy to finish. */
     deferredTriggers?: PendingTrigger[]
     /** The sole play-twice effect applied to this card. */
-    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
+    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Haunting Echo' | 'Omniscience' | 'Overexert' | 'Replication' | 'Weave' | 'Rapid Fire')[]
+    hermitRapidFireCard?: boolean
+    /** Wait for a foreign Guardian card's Corrupted Shard mode before counting Rapid Fire. */
+    deferRapidFire?: boolean
+    /** A deferred Rapid Fire remains a copy even when it is the last queued resolution. */
+    finalResolutionCopied?: boolean
     /** Doppelganger queues only a virtual card, with no physical original to clean up. */
     virtualOnly?: boolean
     /** Additional physical Weaves discarded by the same Scry, in reveal order. */
     queuedWeaves?: CardInstance[]
     /** Next-card modifiers consumed only if this queued card is allowed to play. */
     queuedCopySources?: CopySource[]
+    /** Overexert waits for an unresolved Guardian mode before deciding whether to repeat. */
+    repeatIfAttack?: boolean
     consumeFreeCard?: boolean
     consumeFreeAttack?: boolean
   }
@@ -119,10 +150,19 @@ export type CombatState = {
   /** Golden Eye's private top-three reveal, persisted across reconnects. */
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] }
   /** Ordered public Attack/Skill plays used by Doppelganger this turn. */
-  playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
+  playedCardsThisTurn: PlayedCard[]
+  partyAttackDiscount?: boolean
   /** Recent public actions for player-facing animation; reconnecting clients baseline the sequence. */
   presentationEvents: CombatPresentationEvent[]
   log: string[]
+}
+
+export type PlayedCard = {
+  playerId: string
+  card: CardInstance
+  copied: boolean
+  /** The card's resolved combat type at play time, including Guardian Mode. */
+  type?: CardType
 }
 
 export type PresentationTargets = {
@@ -135,14 +175,14 @@ export type PresentationTargets = {
 }
 
 export type CombatPresentationEvent = PresentationTargets & (
-  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
+  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number; resolvedType?: CardType }
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
 )
 
 export type NewPresentationEvent = Omit<PresentationTargets, 'seq'> & (
-  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number }
+  | { kind: 'card'; upgraded: boolean; copied: boolean; energy: number; mode?: number; resolvedType?: CardType }
   | { kind: 'potion' }
   | { kind: 'shiv' }
   | { kind: 'orb'; orb: OrbType }
@@ -156,7 +196,7 @@ export type PendingTrigger = {
   enemyUid?: string
 }
 
-export type CopySource = 'Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience'
+export type CopySource = 'Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience' | 'Rapid Fire'
 
 export type DeferredHavoc = {
   card: CardInstance
@@ -167,7 +207,7 @@ export type DeferredHavoc = {
   virtualOnly?: boolean
   /** A copied Havoc waits until its immediate child finishes. */
   copySourceNames?: CopySource[]
-  copyResumePhase?: 'start' | 'player'
+  copyResumePhase?: 'start' | 'player' | 'discard'
 }
 
 export type DiscardOrders = Readonly<Record<string, readonly string[]>>
@@ -197,6 +237,9 @@ export type StartTurnAbility = {
   targets?: { uid: string; label: string }[]
   /** A supporting relic may give its effect to any living player. */
   players?: { id: string; label: string }[]
+  exhaustCards?: CardInstance[]
+  /** Guardian's printed optional board action. */
+  guardianModeShift?: true
   /** The staged direct target was killed by an earlier ordered ability. */
   enemyTargetStale?: boolean
   /** Shivs this ability cannot take from the shared supply and may throw now. */
@@ -218,6 +261,8 @@ export type StartTurnChoice = {
   id: string
   enemyUid?: string
   targetPlayerId?: string
+  exhaustUids?: string[]
+  guardianModeShift?: boolean
   /** One living enemy id or explicit skip per overflow Shiv. */
   shivEnemyUids: (string | null)[]
   /** Chosen Orb slot and Lightning/Dark target for each forced Evoke, in order. */
@@ -279,10 +324,49 @@ export type PlayContext = {
   enemyRow?: number | null
   /** Player chosen for supportive effects that may target an ally. */
   playerId: string | null
+  slimeUids?: string[]
+  slimeChoiceIndex?: number
+  /** One independently chosen enemy for each Command that can target an enemy. */
+  slimeEnemyUids?: string[]
+  slimeEnemyChoiceIndex?: number
+  /** Leeching Slime Commands waiting for the current card/trigger text to finish. */
+  pendingSlimeCommandUids?: string[]
+  invalidSlimeChoice?: boolean
+  /** Hermit's private hand/discard/Chamber choices, supplied atomically. */
+  loadUids?: string[]
+  chamberUids?: string[]
+  hermitEnemyUids?: string[]
+  hermitDieRelics?: {
+    playerId: string
+    relicIndex: number
+    abilityIndex: number
+    enemyUid?: string | null
+    targetPlayerId?: string | null
+    discardUids?: string[]
+  }[]
+  loadChoiceIndex?: number
+  chamberChoiceIndex?: number
+  hermitEnemyChoiceIndex?: number
+  hermitDieRelicChoiceIndex?: number
+  invalidHermitChoice?: boolean
   /** Energy chosen for an X-cost card. Must meet `CardDef.minimumX`. */
   energySpent?: number
+  /** Guardian Vigor cubes voluntarily moved to the Spent zone with this play. */
+  spendVigor?: number
+  /** Optional printed "You may Mode Shift" choice on Guardian cards/Gems. */
+  guardianModeShift?: boolean
+  /** Bauble Burst's independently optional second Amethyst trigger. */
+  secondGuardianModeShift?: boolean
+  /** Corrupted Shard's first foreign Guardian card enters the chosen Mode. */
+  corruptedShardMode?: GuardianMode
+  /** Body Crash's chosen Block payment. */
+  guardianBlockSpend?: number
+  /** Defense-mode Power Beam's chosen Power from hand or discard. */
+  guardianPowerCardUid?: string
   /** One enemy per independently targeted printed token. Duplicates are legal. */
   enemyUids?: string[]
+  /** One chosen enemy (or row anchor) for each Soulburn spent by a card. */
+  soulburnEnemyUids?: string[]
   /** One player per independently targeted printed Block icon. Duplicates are legal. */
   playerIds?: string[]
   /** Another living player whose row is optionally exchanged with the caster's. */
@@ -300,6 +384,7 @@ export type PlayContext = {
   /** Cards chosen to move from discard, in selection order. */
   recoverDiscardUids?: string[]
   recoverExhaustUid?: string
+  recoverExhaustUids?: string[]
   /** Cards chosen from a privately revealed draw pile by Seek. */
   searchDrawUids?: string[]
   /** Spend one Miracle atomically with this card, which may take Energy above 6. */
@@ -308,6 +393,8 @@ export type PlayContext = {
   shivEnemyUids?: (string | null)[]
   /** Of the cards a Scry revealed, the ones the player bins. */
   scryDiscardUids?: string[]
+  /** Secret Technique/Weapon's optional eligible card among the Scry reveal. */
+  scryToHandUid?: string
   /**
    * Which orb slot to evoke, when the player has a choice. The board game lets
    * you evoke ANY orb, unlike the video game's fixed front slot (p.16).
@@ -339,6 +426,10 @@ export type PlayContext = {
   shortfall?: boolean
   /** Internal cursor while multiple gain-Shiv clauses consume target choices. */
   shivTargetIndex?: number
+  /** Internal cursor while independent Weak/Vulnerable tokens resolve. */
+  enemyChoiceIndex?: number
+  /** Internal cursor while card-spent Soulburn resolves. */
+  soulburnTargetIndex?: number
   /** A queued overflow attack named an enemy killed by an earlier queued attack. */
   invalidShivTarget?: boolean
   /** Internal cursor while a card resolves its ordered evokes. */
@@ -356,7 +447,7 @@ export type PlayContext = {
   /** Enemy token gains whose per-token reactions wait until this card finishes. */
   pendingEnemyTokenTriggers?: { playerId: string; enemyUid: string }[]
   /** Enemy reactions wait until all text on the current card has resolved. */
-  pendingEnemyDamage?: { enemyUid: string; amount: number }[]
+  pendingEnemyDamage?: { enemyUid: string; amount: number; attack: boolean }[]
   pendingEnemyDeathUids?: string[]
   pendingAttackTargets?: string[]
   /** Nested reactions whose abilities wait until this card finishes. */
@@ -393,22 +484,39 @@ export type PlayContext = {
   sourceCardUid?: string
   /** Face of the physical card currently resolving. */
   sourceCardUpgraded?: boolean
+  /** Guardian Gem permanently socketed under the resolving physical card. */
+  sourceAttachedGemId?: string
   /** Weave's bonus while it is being played after a Scry discard. */
   sourceScryDamageBonus?: number
+  /** Hermit origin/copy bookkeeping survives JSON and pending-copy resolution. */
+  sourceHermitDeadOn?: boolean
+  sourcePlayedFromChamber?: boolean
+  hermitDeadOnTriggered?: boolean
+  hermitRapidFireCard?: boolean
+  loadSelf?: boolean
+  /** Occupied Chamber slot replaced when a played card Loads itself. */
+  loadSelfReplaceUid?: string
+  /** Optional Tracking Shots/Gestalt choice supplied by the caller. */
+  chooseLoadSelf?: boolean
+  /** A Slime Command hit ignores its owner's combat modifiers and enemy Vulnerable. */
+  slimeCommand?: boolean
+  /** Internal authorization set only by playHermitChamberCard. */
+  hermitChamberPlay?: boolean
   /** Virtual play-twice copies cannot attach a physical card. */
   sourceIsCopy?: boolean
   /** The eligible card selected by a physical Doppelganger resolution. */
   doppelgangerCopy?: CardInstance
   /** Effect that queued `doppelgangerCopy`; the shared copy pipeline serves both cards. */
-  queuedCopySource?: 'Doppelganger' | 'Foreign Influence' | 'Weave' | 'Omniscience'
+  queuedCopySource?: 'Doppelganger' | 'Foreign Influence' | 'Haunting Echo' | 'Omniscience' | 'Overexert' | 'Replication' | 'Weave' | 'Rapid Fire'
   /** Whether the queued copy has no physical card to clean up. */
   queuedCopyVirtualOnly?: boolean
   /** Omniscience resolves its queued physical card twice. */
   queuedCopyTwice?: boolean
+  queuedCopyTwiceIfAttack?: boolean
   /** Omniscience Exhausts the queued physical card after both plays. */
   queuedCopyForcedExhaust?: boolean
   /** Every pending resolution label for a card that has not started resolving yet. */
-  queuedCopySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
+  queuedCopySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Haunting Echo' | 'Omniscience' | 'Overexert' | 'Replication' | 'Weave' | 'Rapid Fire')[]
   queuedCopySources?: CopySource[]
   consumeQueuedFreeCard?: boolean
   consumeQueuedFreeAttack?: boolean
@@ -426,7 +534,7 @@ export type PlayContext = {
 }
 
 export type CardChoicePreview = {
-  kind: 'discard' | 'scry' | 'topdeck' | 'search'
+  kind: 'discard' | 'scry' | 'scryToHand' | 'topdeck' | 'search' | 'load' | 'loadAny'
   cards: CardInstance[]
 }
 
@@ -441,16 +549,38 @@ export type PotionContext = {
   die?: number
   /** Held Potion discarded when Entropic Brew would exceed the slot limit. */
   replacePotionId?: string
+  /** Transforming Brew's chosen non-Curse card in hand. */
+  transformHandUid?: string
+  /** Liquid Void's chosen face-up Exhaust card. */
+  recoverExhaustUid?: string
+  /** Destiny Draught's chosen die-relic face. */
+  targetRelicPlayerId?: string
+  targetRelicIndex?: number
+  targetAbilityIndex?: number
 }
 
 export type CountablePlayer = Pick<Player, 'id' | 'row' | 'orbs' | 'block' | 'strength' | 'miracles' | 'stance' |
-  'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat'> & {
+  'attacksPlayedThisTurn' | 'exhaust' | 'clawCubesGainedThisCombat' | 'heat' | 'slimes' | 'chamber' |
+  'guardianMode'> & {
   hand: readonly CardInstance[] | null
+  powers?: readonly CardInstance[]
 }
 
 export type EvokeChoice = { index: number; options: { slot: number; orb: OrbType }[] }
 
-export type PowerContext = { enemyUid?: string | null; enemyRow?: number | null }
+export type PowerContext = {
+  enemyUid?: string | null
+  enemyRow?: number | null
+  playerId?: string | null
+  exhaustUids?: string[]
+  guardianModeShift?: boolean
+  loadUids?: string[]
+  chamberUids?: string[]
+  hermitEnemyUids?: string[]
+  scryDiscardUids?: string[]
+  /** Revenge Protocol's privately selected Attack in hand. */
+  cardUid?: string
+}
 
 export type StartTurnSource = {
   ability: Omit<StartTurnAbility, 'overflowShivs'>
@@ -459,6 +589,7 @@ export type StartTurnSource = {
   enemyBlock?: number
   enemyAction?: EnemyAction
   facingPlayerId?: string
+  guardianModeShiftPlayerId?: string
 }
 
 export type TriggerSource = {
@@ -482,10 +613,22 @@ export type PendingTriggerAbility = {
   rows?: { row: number; label: string }[]
   targets?: { uid: string; label: string }[]
   players?: { id: string; label: string }[]
+  exhaustCards?: CardInstance[]
+  hermitChoices?: {
+    loadCards: CardInstance[]
+    chamberCards: CardInstance[]
+    loadAmount: number
+    loadMinimum: number
+    chamberAmount: number
+    chamberMinimum: number
+  }
+  slimeChoice?: { cards: { uid: string; label: string }[]; amount: number; minimum: number }
+  slimeEnemyAmount: number
 }
 
 export type RelicContext = {
   enemyUid?: string | null
+  targetPlayerId?: string | null
   cardUids?: string[]
   targetRelicPlayerId?: string
   targetRelicIndex?: number
@@ -493,4 +636,6 @@ export type RelicContext = {
   die?: number
   scryDiscardUids?: string[]
   shivEnemyUids?: string[]
+  /** Shot Glass's held Potion returned to the physical supply. */
+  discardPotionId?: string
 }

@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from 'react'
 import { potionDef } from '../game/relics.ts'
 import { healingCapFor } from '../game/run.ts'
 import type { Player } from '../game/types.ts'
+import type { RuleSet } from '../game/meta.ts'
 import { ItemImage } from './ItemImage.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
 
@@ -9,13 +10,14 @@ type Props = {
   players: Player[]
   viewerId: string
   potionLimit: number
+  ruleset: RuleSet
   disabled?: boolean
   onTrade: (potionId: string, playerId: string) => void
   onUse: (potionId: string, replacePotionId?: string) => void
 }
 
 /** Potions are the only tradeable component, and only outside combat (p.8). */
-export function OutsidePotionBar({ players, viewerId, potionLimit, disabled = false, onTrade, onUse }: Props) {
+export function OutsidePotionBar({ players, viewerId, potionLimit, ruleset, disabled = false, onTrade, onUse }: Props) {
   const [giving, setGiving] = useState<{ index: number; id: string; context: string } | null>(null)
   const [replacing, setReplacing] = useState<{ index: number; id: string; context: string } | null>(null)
   const viewer = players.find((player) => player.id === viewerId)
@@ -50,7 +52,7 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, disabled = fa
           else's control, and the belt kept spending potions on first touch. */}
       {id === 'blood_potion' ? <PotionTooltipAnchor id={id} confirmLabel="drink">
         <button type="button" aria-label={`Use ${potionDef(id).name}`}
-          title={`Use ${potionDef(id).name}`} disabled={unavailable || viewer.hp >= healingCapFor(viewer)}
+          title={`Use ${potionDef(id).name}`} disabled={unavailable || viewer.hp >= healingCapFor(viewer, ruleset)}
           onClick={() => onUse(id)}><ItemImage kind="potion" id={id} /></button>
       </PotionTooltipAnchor> : null}
       {/* Entropic Brew only drinks when there is room for what it pours; on a

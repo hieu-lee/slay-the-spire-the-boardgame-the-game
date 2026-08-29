@@ -7,9 +7,28 @@ import type { Effect, TargetScope } from './cards.ts'
 import { shuffle, type RngState } from './rng.ts'
 import type { RelicInstance } from './types.ts'
 import type { Trigger } from './triggers.ts'
+import {
+  DOWNFALL_BOSS_RELICS,
+  DOWNFALL_BOSS_RELIC_DECK,
+  DOWNFALL_POTIONS,
+  DOWNFALL_RELICS,
+  DOWNFALL_RELIC_DECK,
+  downfallRelicId,
+  itemId as downfallItemId,
+  resolveDownfallItem,
+} from './downfall/items.ts'
 
 /** Relics and Powers share one trigger vocabulary; see triggers.ts. */
 export type RelicTrigger = Trigger
+
+export type RelicAbility = {
+  trigger: RelicTrigger
+  effects: Effect[]
+  target?: TargetScope
+  supportTarget?: TargetScope
+  /** The owner may decline the chosen face without receiving its payoff. */
+  optional?: boolean
+}
 
 export type RelicDef = {
   id: string
@@ -24,7 +43,7 @@ export type RelicDef = {
   target?: TargetScope
   supportTarget?: TargetScope
   /** Additional automatic abilities printed on the same relic. */
-  abilities?: { trigger: RelicTrigger; effects: Effect[]; target?: TargetScope; supportTarget?: TargetScope }[]
+  abilities?: RelicAbility[]
   /** A face-down relic is restored at the printed boundary. */
   activation?: 'oncePerCombat' | 'oncePerRoom'
   /** Finite uses printed on the component; the instance owns the remaining count. */
@@ -69,6 +88,32 @@ export const RELICS: Record<string, RelicDef> = {
     trigger: { kind: 'startOfCombat' },
     effects: [{ kind: 'gainMiracle', amount: 1 }],
     text: 'Start of combat: gain 1 Miracle.',
+  },
+  hexaghost_starting_relic: {
+    id: 'hexaghost_starting_relic',
+    // The prototype component is deliberately unlabeled; this is an internal descriptor.
+    name: 'Hexaghost Starting Relic',
+    pool: 'starting',
+    trigger: { kind: 'startOfCombat' },
+    effects: [{ kind: 'gainSoulburn', amount: 1 }],
+    text: 'Start of Combat: gain 1 Soulburn.',
+  },
+  slime_boss_starting_relic: {
+    id: 'slime_boss_starting_relic',
+    // The character board prints the ability beside an unlabeled top-hat component.
+    name: 'Slime Boss Starting Relic',
+    pool: 'starting',
+    effects: [],
+    text: 'Start of Combat: Summon Bruiser Slime.',
+    rule: 'Bruiser Slime is created by Slime Boss combat setup.',
+  },
+  guardian_starting_relic: {
+    id: 'guardian_starting_relic', name: 'Guardian Starting Relic', pool: 'starting', effects: [],
+    text: 'Start of Combat: Enter Attack Mode.', rule: 'Attack Mode is initialized by Guardian combat setup.',
+  },
+  hermit_starting_relic: {
+    id: 'hermit_starting_relic', name: 'Hermit Starting Relic', pool: 'starting', effects: [],
+    text: 'Hermit starting setup component.', rule: 'Reserved for the audited Hermit setup rule.',
   },
   prismatic_shard: {
     id: 'prismatic_shard',
@@ -348,6 +393,60 @@ boss({ id: 'wrist_blade', name: 'Wrist Blade', effects: [],
   rule: 'Each hit of a 0-cost Attack, including a Shiv, deals +1 damage.',
   text: 'Your 0-cost Attacks deal +1 damage on each hit, including Shivs.' })
 
+function registerDownfallRelics(): void {
+  const add = (item: (typeof DOWNFALL_RELICS)[number] | (typeof DOWNFALL_BOSS_RELICS)[number], pool: 'ordinary' | 'boss') => {
+    const id = downfallRelicId(item.name)
+    if (RELICS[id]) return
+    const resolved = resolveDownfallItem(item, { relics: RELICS, potions: {}, cards: {} })
+    if (resolved.kind !== 'downfall') throw new Error(`invalid Downfall relic definition: ${item.name}`)
+    const rule = resolved.rule
+    const base = Object.values(RELICS).find((candidate) => candidate.name === item.name)
+    const def: RelicDef = {
+      id, name: item.name, pool, effects: [], text: item.text, rule: item.text,
+      ...(base?.cost === undefined ? {} : { cost: base.cost }),
+    }
+    if (rule.kind === 'abilities') {
+      const [first, ...rest] = rule.abilities
+      if (first && !first.optional && !first.condition) {
+        def.trigger = first.trigger
+        def.effects = [...first.effects]
+        def.target = first.target
+        def.supportTarget = first.supportTarget
+      }
+      const automatic = rest.filter((entry) => !entry.optional && !entry.condition)
+      if (automatic.length > 0) def.abilities = automatic.map((entry) => ({
+        trigger: entry.trigger, effects: [...entry.effects], target: entry.target, supportTarget: entry.supportTarget,
+      }))
+    } else if (rule.kind === 'activation') {
+      def.activation = rule.timing === 'room' ? 'oncePerRoom' : 'oncePerCombat'
+      def.effects = [...rule.effects]
+    } else if (rule.kind === 'passive' && rule.trigger && rule.effects) {
+      def.trigger = rule.trigger
+      def.effects = [...rule.effects]
+    } else if (rule.kind === 'discardPotionForStrength') def.activation = 'oncePerCombat'
+    RELICS[id] = def
+  }
+  for (const item of DOWNFALL_RELICS) add(item, 'ordinary')
+  for (const item of DOWNFALL_BOSS_RELICS) add(item, 'boss')
+  Object.assign(RELICS.snecko_egg!, {
+    trigger: { kind: 'dieRelic', faces: [1, 6] }, effects: [{ kind: 'setNextCardCost', amount: 1 }],
+  })
+  Object.assign(RELICS.dented_plate!, {
+    trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'gainEnergy', amount: 1 }],
+  })
+  Object.assign(RELICS.chronometer!, {
+    trigger: { kind: 'startOfTurn' }, effects: [{ kind: 'setNextCardCost', amount: 1 }],
+  })
+  RELICS.fuel_canister!.activation = 'oncePerCombat'
+  RELICS.corrupted_shard = {
+    id: 'corrupted_shard', name: 'Corrupted Shard', pool: 'special', effects: [],
+    rule: 'Foreign Downfall mechanics: start combat with 1 Chamber slot and 1 Heat; the first referenced Guardian Mode may be chosen.',
+    text: 'Start combat with 1 Chamber slot and 1 Heat. The first time you use a card that references a Guardian Mode, enter a Mode of your choice. Character-native restrictions still apply.',
+  }
+}
+
+registerDownfallRelics()
+
 RELICS.loaded_die = {
   id: 'loaded_die',
   name: 'Loaded Die',
@@ -359,11 +458,29 @@ RELICS.loaded_die = {
 }
 
 /** All automatic faces of a relic, in their printed order. */
-export function relicAbilities(def: RelicDef): { trigger: RelicTrigger; effects: Effect[]; target?: TargetScope; supportTarget?: TargetScope }[] {
+export function relicAbilities(def: RelicDef): RelicAbility[] {
   return [
     ...(def.trigger ? [{ trigger: def.trigger, effects: def.effects, target: def.target, supportTarget: def.supportTarget }] : []),
     ...(def.abilities ?? []),
   ]
+}
+
+/** Die faces that another effect may choose, including optional faces that do not fire automatically. */
+export function chosenDieRelicAbilities(def: RelicDef): RelicAbility[] {
+  const abilities = relicAbilities(def)
+  const id = def.id.replace(/^downfall_/, '')
+  if (id === 'fuel_canister') return [...abilities, {
+      trigger: { kind: 'dieRelic' as const, faces: [1, 2] },
+      effects: [{ kind: 'exhaustFromHand' as const, amount: 1 }, { kind: 'gainEnergy' as const, amount: 1 }],
+      optional: true,
+    }]
+  if (id === 'charons_ashes') return [...abilities, {
+    trigger: { kind: 'dieRelic' as const, faces: [1, 2] },
+    effects: [{ kind: 'exhaustFromHand' as const, amount: 1 }, { kind: 'damage' as const, amount: 2 }],
+    target: 'enemy' as const,
+    optional: true,
+  }]
+  return abilities
 }
 
 export const ORDINARY_RELIC_IDS = Object.freeze(Object.values(RELICS)
@@ -372,10 +489,16 @@ export const BOSS_RELIC_IDS = Object.freeze(Object.values(RELICS)
   .filter((def) => def.pool === 'boss').map((def) => def.id))
 
 /** Setup uses two independently shuffled, server-owned decks (rulebook p.4). */
-export function createRelicDecks(rng: RngState): { relicDeck: string[]; bossRelicDeck: string[] } {
+export function createRelicDecks(rng: RngState, ruleset: 'base' | 'downfall' = 'base'): { relicDeck: string[]; bossRelicDeck: string[] } {
+  const downfallOnlyBosses = new Set([
+    'dented_plate', 'wheel_of_change', 'knowing_skull', 'battle_buddies',
+    'forbidden_fruit', 'chronometer', 'shuriken',
+  ])
   return {
-    relicDeck: shuffle(rng, [...ORDINARY_RELIC_IDS]),
-    bossRelicDeck: shuffle(rng, [...BOSS_RELIC_IDS]),
+    relicDeck: shuffle(rng, [...(ruleset === 'downfall' ? DOWNFALL_RELIC_DECK : RELIC_DECK)]),
+    bossRelicDeck: shuffle(rng, [...(ruleset === 'downfall'
+      ? DOWNFALL_BOSS_RELIC_DECK
+      : BOSS_RELIC_IDS.filter((id) => !id.startsWith('downfall_') && !downfallOnlyBosses.has(id)))]),
   }
 }
 
@@ -409,7 +532,7 @@ export function createRelicInstance(defId: string): RelicInstance {
     cubes: def.cubes,
     pending: [
       'war_paint', 'whetstone', 'astrolabe', 'empty_cage', 'enchiridion',
-      'orrery', 'pandoras_box', 'tiny_house',
+      'downfall_enchiridion', 'orrery', 'pandoras_box', 'tiny_house', 'forbidden_fruit',
     ].includes(defId) || undefined,
   }
 }
@@ -426,6 +549,10 @@ export const STARTING_RELIC: Record<string, string> = {
   silent: 'ring_of_the_snake',
   defect: 'cracked_core',
   watcher: 'pure_water',
+  hexaghost: 'hexaghost_starting_relic',
+  slime_boss: 'slime_boss_starting_relic',
+  guardian: 'guardian_starting_relic',
+  hermit: 'hermit_starting_relic',
 }
 
 export type PotionDef = {
@@ -590,6 +717,23 @@ export const POTIONS: Record<string, PotionDef> = {
     effects: [{ kind: 'doubleNextSkill' }],
     text: 'The next Skill you play is played twice.',
   },
+}
+
+for (const item of DOWNFALL_POTIONS) {
+  const id = downfallItemId(item.name)
+  if (POTIONS[id]) continue
+  const resolved = resolveDownfallItem(item)
+  if (resolved.kind !== 'downfall') throw new Error(`invalid Downfall potion definition: ${item.name}`)
+  const rule = resolved.rule
+  POTIONS[id] = {
+    id,
+    name: item.name,
+    quantity: item.multiplicity,
+    effects: rule.kind === 'effects' ? [...rule.effects] : [],
+    target: id === 'greed_potion' ? 'enemy' : undefined,
+    supportTarget: id === 'whale_ale' ? 'allPlayers' : undefined,
+    text: item.text,
+  }
 }
 
 /** One entry per physical card; shuffle once, then return every used card to the bottom. */

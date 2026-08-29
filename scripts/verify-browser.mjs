@@ -530,7 +530,7 @@ const characterSelection = await page.locator('.start-menu__character-select').e
 await shot('00-title-character-select')
 await page.getByRole('button', { name: 'Back', exact: true }).click()
 check('Single Player opens a contained visual character picker before starting', () => {
-  assertEqual(characterSelection.choices, 4)
+  assertEqual(characterSelection.choices, 8)
   assert(characterSelection.contained, 'character selection needs a nested scrollbar')
   assert(characterSelection.heroContained, 'selected character art leaves the selection frame')
   for (const [name, special] of Object.entries({
@@ -594,7 +594,17 @@ const upgradedZeroCostNames = await page.locator('.compendium-card').evaluateAll
   cards.map((card) => card.getAttribute('aria-label')))
 await page.getByRole('button', { name: 'Any energy cost', exact: true }).click()
 await page.getByPlaceholder('Search').fill('')
+await page.getByRole('button', { name: 'Guardian' }).click()
+await page.getByPlaceholder('Search').fill('Crystal Edge')
+const guardianGemLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+const guardianGemFallbackType = await page.locator('.compendium-card .card-face__type').first().textContent()
 await page.getByRole('button', { name: 'Curses' }).click()
+await page.getByPlaceholder('Search').fill('Scorn')
+const hermitCurseLabel = await page.locator('.compendium-card').first().getAttribute('aria-label')
+await page.getByRole('checkbox', { name: 'curse', exact: true }).check()
+const curseRarityLabels = await page.locator('.compendium-card').evaluateAll((cards) =>
+  cards.map((card) => card.getAttribute('aria-label')))
+await page.getByRole('checkbox', { name: 'curse', exact: true }).uncheck()
 await page.getByPlaceholder('Search').fill('Clumsy')
 const curseUpgradeSource = await page.locator('.compendium-card img').first().getAttribute('src')
 // Waited for, not sampled. The grid reads the 448px thumbnail tier and the zoom
@@ -632,7 +642,7 @@ await page.getByPlaceholder('Search').fill('')
 await page.getByRole('button', { name: 'Ironclad' }).click()
 await shot('00a-compendium')
 check('the compendium filters the real card catalog and opens card detail', () => {
-  assertEqual(poolIconView.length, 8, 'one painted icon per card pool')
+  assertEqual(poolIconView.length, 12, 'one painted icon per card pool')
   assert(poolIconView.every((entry) => entry.loaded && entry.source?.includes('/assets/menu/compendium-icons/')),
     `compendium pool icons did not load: ${JSON.stringify(poolIconView)}`)
   assert(poolIconView.every((entry) => entry.border.every((width) => width === '0px')),
@@ -653,6 +663,11 @@ check('the compendium filters the real card catalog and opens card detail', () =
   assert(upgradedBashSource?.endsWith('ironclad__starter__bash+.webp'), upgradedBashSource)
   assert(upgradedZeroCostNames.some((label) => label?.startsWith('Havoc+, cost 0,')),
     `upgraded cost filter omitted Havoc+: ${upgradedZeroCostNames.join(' / ')}`)
+  assert(guardianGemLabel?.includes(', Gem Attack,'), guardianGemLabel)
+  assertEqual(guardianGemFallbackType, 'Gem Attack')
+  assert(hermitCurseLabel?.startsWith('Scorn') && hermitCurseLabel.includes(', unplayable, curse,'), hermitCurseLabel)
+  assert(curseRarityLabels.length > 0 && curseRarityLabels.every((label) => label?.endsWith(', curse')),
+    `curse rarity filtering leaked: ${curseRarityLabels.join(' / ')}`)
   assertEqual(detailOpen, 1)
   assert(detailModal, 'card detail should use native modal semantics')
   assert(curseUpgradeSource?.endsWith('curses__clumsy.webp') && !curseUpgradeSource.includes('clumsy+'),
@@ -787,15 +802,28 @@ check('a new local run presents Neow and deals one public face per seat', () => 
 await page.getByRole('button', { name: 'Skip 3 Gold' }).click()
 await page.getByRole('button', { name: 'Reveal Card Reward' }).click()
 await page.getByRole('heading', { name: 'Choose a Card' }).waitFor()
+await page.locator('.neow-action--offer .card').first().waitFor()
+const neowRewardChoiceCount = await page.evaluate(() =>
+  Object.values(window.__STS_DEBUG__.getRun().neow.players)[0].redReward.choices.length)
 const neowRewardCards = await page.locator('.neow-action--offer .card').evaluateAll((cards) => cards.map((card) => {
   const box = card.getBoundingClientRect()
   return { top: box.top, bottom: box.bottom, visible: box.top >= 0 && box.bottom <= innerHeight }
 }))
+const baseNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  Object.values(run.neow.players)[0].redReward.upgraded = true
+  window.__STS_DEBUG__.setRun(run)
+})
+await page.waitForFunction(() => document.querySelector('.neow-action--offer .card')?.getAttribute('title')?.endsWith('+'))
+const upgradedNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
 const staleNeowRewardLabel = await page.getByText('Resolve face-up reward', { exact: true }).count()
 await shot('00b-neow-card-reward')
 check('Neow shows complete face-up reward cards on the desktop stage', () => {
-  assertEqual(neowRewardCards.length, 3)
+  assert(neowRewardChoiceCount > 0, 'Neow revealed no selectable card')
+  assertEqual(neowRewardCards.length, neowRewardChoiceCount)
   assert(neowRewardCards.some((card) => card.visible), `no complete reward card is visible: ${JSON.stringify(neowRewardCards)}`)
+  assertEqual(upgradedNeowRewardTitle, `${baseNeowRewardTitle}+`, 'an upgraded Boon offer rendered its base card face')
   assertEqual(staleNeowRewardLabel, 0)
 })
 await bypassNeow()
@@ -900,6 +928,23 @@ check('the opening map starts scrolled to its reachable room', async () => {
     'the opening encounter is outside the map scrollport')
 })
 
+await page.evaluate(() => {
+  const run = structuredClone(window.__STS_DEBUG__.getRun())
+  run.meta.ruleset = 'downfall'
+  run.actBossDefId = 'downfall_inferno'
+  run.selfBossRerolled = false
+  window.__STS_DEBUG__.setRun(run)
+})
+const selfBossReroll = page.getByRole('button', { name: 'Reroll The Inferno' })
+await selfBossReroll.waitFor()
+await selfBossReroll.click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().actBossDefId !== 'downfall_inferno')
+const rerolledBoss = (await readRun()).actBossDefId
+check('the opening map exposes and spends the optional Downfall self-boss reroll', () => {
+  assert(rerolledBoss !== 'downfall_inferno', 'the self-boss was not rerolled')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), opening)
+await page.waitForFunction((boss) => window.__STS_DEBUG__.getRun().actBossDefId === boss, opening.actBossDefId)
 const rowSwitchPanel = page.getByText('Switch rows before the next combat', { exact: true }).locator('..')
 const rowSwitches = rowSwitchPanel.locator('select')
 const rowSwitchCount = await rowSwitches.count()
@@ -1182,6 +1227,642 @@ await page.evaluate(() => {
 await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/facing-the-elite.mp3'), awakeEliteMusicBefore)
 check('combat music follows each act and Lagavulin changes themes when it wakes', () => {
   assert(true)
+})
+
+const evilBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const template = next.combat.enemies[0]
+  next.combat.phase = 'enemy'
+  next.combat.enemies = [
+    ['downfall_inferno', 0],
+    ['downfall_witch', 1],
+    ['downfall_orb_master', 0],
+    ['downfall_wrathful', 0],
+  ].map(([defId, actionIndex], index) => ({
+    ...template,
+    uid: `evil-hero-${index}`,
+    defId,
+    row: 0,
+    isBoss: true,
+    hp: 20,
+    maxHp: 20,
+    block: 0,
+    actionIndex,
+    dead: false,
+  }))
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.keyboard.press('Escape')
+await pauseMenu.waitFor()
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = 'hidden' })
+await page.waitForFunction(() => document.querySelectorAll('.enemy--boss img[src$="-attack.webp"]').length === 4)
+const evilBossAttackSources = await page.locator('.enemy--boss img[src$="-attack.webp"]').evaluateAll((images) =>
+  images.map((image) => image.getAttribute('src')))
+await shot('02c-downfall-evil-hero-boss-attacks')
+check('evil hero boss attack fixture renders four clean left-attacking animation assets', () => {
+  assertDeepEqual(evilBossAttackSources, [
+    '/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_silent-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_defect-attack.webp',
+    '/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp',
+  ])
+})
+await page.locator('.pause-menu').evaluate((dialog) => { dialog.style.visibility = '' })
+await page.keyboard.press('Escape')
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+await page.evaluate((count) => { window.__SFX_PLAYS__.length = count }, evilBossSoundCount)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', energy: 3,
+    powers: [{ uid: 'ui-crystallize', defId: 'guardian_crystallize', upgraded: false,
+      attachedGemId: 'guardian_amethyst' }],
+    hand: [{ uid: 'ui-crystallize-strike', defId: 'guardian_strike', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const socketedCard = page.getByRole('button', { name: /^Strike,.*socketed with Amethyst:/ })
+await socketedCard.waitFor()
+const socketedGem = await socketedCard.locator('img.card__gem').evaluate((image) => ({
+  source: image.getAttribute('src'),
+  title: image.getAttribute('title'),
+  loaded: image.complete && image.naturalWidth > 0,
+}))
+check('Crystallize inheritance shows and announces the exact official Gem face on starter Strikes', () => {
+  assert(socketedGem.source?.endsWith('/guardian__normal__amethyst.webp'), socketedGem.source)
+  assert(socketedGem.title?.startsWith('Amethyst:'), socketedGem.title)
+  assert(socketedGem.loaded, 'the socketed Gem thumbnail did not decode')
+})
+
+await page.evaluate(async (run) => {
+  const { preparePlayerTurn } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(player, { character: 'guardian', guardianMode: 'attack', guardianModeLocked: false,
+    hand: [], powers: [] })
+  next.combat.players = [player]
+  next.combat = preparePlayerTurn({ ...next.combat, phase: 'roundEnd' })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('group', { name: /Mode Shift\?/ }).waitFor()
+await page.getByRole('button', { name: 'Mode Shift', exact: true }).click()
+await page.getByRole('button', { name: 'Resolve start of turn' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].guardianMode === 'defense')
+check('Guardian can make the printed optional Mode Shift at start of turn', async () => {
+  assertEqual((await readRun()).combat.players[0].guardianMode, 'defense')
+})
+
+const downfallChoiceResults = {}
+const downfallCardAssets = []
+async function readDownfallCardAsset(name) {
+  const image = page.getByRole('button', { name }).locator('img.card__art')
+  await image.waitFor()
+  await image.evaluate((element) => element.decode())
+  return image.evaluate((element) => ({ source: element.getAttribute('src'), width: element.naturalWidth }))
+}
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, block: 2, vigor: 1, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-body-crash', defId: 'guardian_body_crash', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Body Crash,/))
+await page.getByRole('button', { name: /^Body Crash,/ }).click()
+await page.getByRole('button', { name: 'Spend 0 Vigor' }).click()
+await page.getByRole('button', { name: 'Spend 2 Block' }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardian = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].block, combat.enemies[0].hp]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const ally = structuredClone(player)
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-stasis-field', defId: 'guardian_stasis_field', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'attack', powers: [],
+  })
+  Object.assign(ally, {
+    id: 'ui-guardian-ally', name: 'Defect', character: 'defect', row: player.row + 1,
+    hand: [], draw: [], discard: [], exhaust: [], powers: [], block: 0, dead: false,
+  })
+  next.combat.players = [player, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Stasis Field,/ }).click()
+await page.locator('button.seat').nth(0).click()
+await page.locator('button.seat').nth(1).click()
+await page.locator('button.seat').nth(1).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardianStasis = await page.evaluate(() =>
+  window.__STS_DEBUG__.getRun().combat.players.map((player) => player.block))
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  const ally = structuredClone(player)
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [],
+    pendingHermitSetupLoads: [], partyAttackDiscount: false })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 2, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    freeAttacksThisTurn: 1,
+    hand: [{ uid: 'ui-guardian-whirl', defId: 'guardian_guardian_whirl', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  Object.assign(ally, {
+    id: 'ui-whirl-ally', name: 'Defect', character: 'defect', row: player.row + 1,
+    hand: [], draw: [], discard: [], exhaust: [], powers: [], block: 0, dead: false,
+  })
+  next.combat.players = [player, ally]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+await page.getByRole('button', { name: 'Spend 2' }).click()
+await page.locator('.seat--targetable:not(.seat--viewer)').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.guardianWhirl = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].freeAttacksThisTurn, combat.players[1].block, combat.enemies[0].hp,
+    combat.presentationEvents.at(-1)?.resolvedType]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [],
+    pendingHermitSetupLoads: [], startTurnProgress: undefined })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', energy: 5, block: 0, vigor: 0, vigorSpentThisTurn: 0,
+    hand: [{ uid: 'ui-power-beam', defId: 'guardian_power_beam', upgraded: false }],
+    discard: [{ uid: 'ui-power-beam-choice', defId: 'guardian_future_plans', upgraded: false }],
+    chamber: [], slimes: [], soulburn: 0, guardianMode: 'defense', powers: [],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Power Beam,/))
+await page.getByRole('button', { name: /^Power Beam,/ }).click()
+await page.getByRole('button', { name: 'Play Future Plans for 0' }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].powers
+  .some((power) => power.uid === 'ui-power-beam-choice'))
+downfallChoiceResults.guardianPowerBeam = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].energy, combat.enemies[0].hp,
+    combat.players[0].powers.some((power) => power.uid === 'ui-power-beam-choice')]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', vigor: 0, strength: 0, weak: 0, hand: [
+      { uid: 'ui-jasper-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-jasper-b', defId: 'guardian_strike', upgraded: false },
+    ], exhaust: [], powers: [
+      { uid: 'ui-floating-ruby', defId: 'guardian_floating_orbs', upgraded: false, attachedGemId: 'guardian_ruby' },
+      { uid: 'ui-floating-jasper', defId: 'guardian_floating_orbs', upgraded: false, attachedGemId: 'guardian_jasper' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const rubyOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Ruby' })
+await rubyOrbs.click()
+await page.waitForFunction(() =>
+  document.querySelector('[aria-label="Use Floating Orbs with Ruby"]')?.getAttribute('aria-pressed') === 'true')
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp === 19)
+const jasperOrbs = page.getByRole('button', { name: 'Use Floating Orbs with Jasper' })
+await jasperOrbs.click()
+await page.waitForFunction(() =>
+  document.querySelector('[aria-label="Use Floating Orbs with Jasper"]')?.getAttribute('aria-pressed') === 'true')
+await page.getByLabel('Exhaust Defend').check()
+await page.getByLabel('Exhaust Strike').check()
+await page.getByRole('button', { name: 'Confirm 2' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.length === 2)
+downfallChoiceResults.guardianPowerGems = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.enemies[0].hp, combat.players[0].exhaust.length]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', hand: [
+      { uid: 'ui-finder-hand-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-hand-b', defId: 'guardian_strike', upgraded: false },
+    ], draw: [
+      { uid: 'ui-finder-draw-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-draw-b', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-finder-draw-c', defId: 'guardian_harden', upgraded: false },
+    ], discard: [], exhaust: [], powers: [
+      { uid: 'ui-finder-ruby', defId: 'guardian_gem_finder', upgraded: false, attachedGemId: 'guardian_ruby' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use Gem Finder with Ruby' }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).waitFor()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+assertEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 20,
+  'Gem Finder resolved its Ruby before the private Scry was confirmed')
+await page.locator('.prompt').getByRole('button', { name: 'Defend', exact: true }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).click()
+await page.waitForFunction(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return combat.enemies[0].hp === 19 && combat.players[0].discard.some((card) => card.uid === 'ui-finder-draw-a')
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'guardian', guardianMode: 'attack', hand: [
+      { uid: 'ui-finder-exhaust-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-exhaust-b', defId: 'guardian_strike', upgraded: false },
+    ], draw: [
+      { uid: 'ui-finder-jasper-draw-a', defId: 'guardian_defend', upgraded: false },
+      { uid: 'ui-finder-jasper-draw-b', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-finder-jasper-draw-c', defId: 'guardian_harden', upgraded: false },
+    ], discard: [], exhaust: [], powers: [
+      { uid: 'ui-finder-jasper', defId: 'guardian_gem_finder', upgraded: false, attachedGemId: 'guardian_jasper' },
+    ], powerTriggersUsedThisTurn: [],
+  })
+  next.combat.players = [player]
+  next.combat.powerTriggersUsedThisTurn = []
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: 'Use Gem Finder with Jasper' }).click()
+await page.locator('.prompt').getByRole('button', { name: 'Strike', exact: true }).click()
+await page.getByRole('button', { name: 'Confirm Scry' }).click()
+await page.getByRole('button', { name: 'Scry confirmed' }).waitFor()
+assertEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].discard.length), 0,
+  'Gem Finder resolved its Scry before Jasper was confirmed')
+await page.getByLabel('Exhaust Defend').check()
+await page.getByRole('button', { name: 'Confirm 1' }).click()
+await page.waitForFunction(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return player.discard.some((card) => card.uid === 'ui-finder-jasper-draw-b') &&
+    player.exhaust.some((card) => card.uid === 'ui-finder-exhaust-a')
+})
+downfallChoiceResults.guardianGemFinder = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.discard.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'guardian', energy: 3, powers: [], discard: [],
+    hand: [{ uid: 'ui-deep-breath', defId: 'deep_breath', upgraded: true }],
+    exhaust: [
+      { uid: 'ui-deep-strike', defId: 'guardian_strike', upgraded: false },
+      { uid: 'ui-deep-defend', defId: 'guardian_defend', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Deep Breath\+,/ }).click()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: /^Defend,/ }).click()
+await page.getByRole('button', { name: 'Put selected cards on top of your discard pile' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].discard.length === 2)
+downfallChoiceResults.deepBreath = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.discard.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, powers: [], draw: [],
+    hand: [{ uid: 'ui-eerie-expedition', defId: 'eerie_expedition', upgraded: false }],
+    exhaust: [
+      { uid: 'ui-eerie-strike', defId: 'strike_hexaghost', upgraded: false },
+      { uid: 'ui-eerie-defend', defId: 'defend_hexaghost', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Eerie Expedition,/ }).click()
+await page.getByRole('dialog', { name: 'Choose up to 2 cards from your Exhaust pile' }).waitFor()
+await page.getByRole('button', { name: /^Strike,/ }).click()
+await page.getByRole('button', { name: 'Put selected card on top of your draw pile' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].draw.length === 1)
+downfallChoiceResults.eerieExpedition = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.draw.map((card) => card.uid), player.exhaust.map((card) => card.uid)]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3,
+    hand: [{ uid: 'ui-lick', defId: 'slime_boss_lick', upgraded: false }], chamber: [], soulburn: 0,
+    slimes: [{ card: { uid: 'ui-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+      level: 1, vigor: 0, temporaryVigor: 0, vigorTriggerUsedThisTurn: false }], powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Lick,/))
+await page.getByRole('button', { name: /^Lick,/ }).click()
+await page.getByRole('button', { name: /Bruiser Slime · level 1/ }).click()
+await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.slime = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [],
+    hand: [{ uid: 'ui-replication', defId: 'slime_boss_replication', upgraded: false }],
+    draw: [{ uid: 'ui-replication-slime', defId: 'slime_boss_bruiser_slime', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Replication,/ }).click()
+const replicationDialog = page.getByRole('dialog', { name: 'Choose a Slime from your draw pile' })
+await replicationDialog.getByRole('button', { name: /^Bruiser Slime,/ }).click()
+downfallChoiceResults.replicationPrompt = await replicationDialog.getByRole('button', {
+  name: 'Play selected Slime and shuffle',
+}).innerText()
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.phase = 'enemy'
+  window.__STS_DEBUG__.setRun(next)
+})
+await replicationDialog.waitFor({ state: 'hidden' })
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [], draw: [],
+    hand: [{ uid: 'ui-empty-replication', defId: 'slime_boss_replication', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Replication,/ }).click()
+const emptyReplicationDialog = page.getByRole('dialog', { name: 'No Slime is in your draw pile' })
+downfallChoiceResults.emptyReplicationPrompt = await emptyReplicationDialog.getByRole('button', {
+  name: 'Shuffle and continue',
+}).innerText()
+await emptyReplicationDialog.getByRole('button', { name: 'Shuffle and continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', guardianMode: null, energy: 3, powers: [], slimes: [], discard: [],
+    hand: [{ uid: 'ui-overexert', defId: 'slime_boss_overexert', upgraded: false }],
+    draw: [
+      { uid: 'ui-overexert-whirl', defId: 'guardian_guardian_whirl', upgraded: false },
+      { uid: 'ui-overexert-strike', defId: 'strike_ironclad', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Overexert,/ }).click()
+const overexertDialog = page.getByRole('dialog', { name: 'Choose a playable card from your hand' })
+await overexertDialog.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+downfallChoiceResults.overexertDefensePrompt = await overexertDialog.getByRole('button', {
+  name: 'Play selected card',
+}).innerText()
+await overexertDialog.getByRole('button', { name: /^Guardian Whirl,/ }).click()
+await overexertDialog.getByRole('button', { name: /^Strike,/ }).click()
+downfallChoiceResults.overexertPrompt = await overexertDialog.getByRole('button', {
+  name: 'Play selected Attack twice',
+}).innerText()
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.phase = 'enemy'
+  window.__STS_DEBUG__.setRun(next)
+})
+await overexertDialog.waitFor({ state: 'hidden' })
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'slime_boss', energy: 3, powers: [], slimes: [], discard: [], draw: [],
+    hand: [{ uid: 'ui-empty-overexert', defId: 'slime_boss_overexert', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Overexert,/ }).click()
+const emptyOverexertDialog = page.getByRole('dialog', { name: 'No playable card remains' })
+downfallChoiceResults.emptyOverexertPrompt = await emptyOverexertDialog.getByRole('button', { name: 'Continue' }).innerText()
+await emptyOverexertDialog.getByRole('button', { name: 'Continue' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, block: 0, dead: false })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, heat: 1, soulburn: 2,
+    hand: [{ uid: 'ui-living-bomb', defId: 'living_bomb', upgraded: false }], chamber: [], slimes: [], powers: [],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Living Bomb,/))
+await page.getByRole('button', { name: /^Living Bomb,/ }).click()
+for (let index = 0; index < 3; index++) await page.locator('.enemy:not(.enemy--dead)').first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.hexaghost = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].soulburn, combat.enemies[0].hp]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(next.combat.enemies[0], { hp: 20, maxHp: 20, weak: 0, vulnerable: 0, dead: false })
+  Object.assign(player, {
+    character: 'hexaghost', energy: 3, heat: 2, soulburn: 0,
+    hand: [{ uid: 'ui-bright-ritual', defId: 'bright_ritual', upgraded: false }],
+    chamber: [], slimes: [], powers: [],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Bright Ritual,/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.brightRitual = await page.evaluate(() => {
+  const combat = window.__STS_DEBUG__.getRun().combat
+  return [combat.players[0].heat, combat.enemies[0].weak, combat.enemies[0].vulnerable]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  next.combat.enemies = [next.combat.enemies[0]]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hermit', energy: 3, chamber: [], chamberSlots: 2, slimes: [], soulburn: 0, powers: [],
+    hand: [
+      { uid: 'ui-covet', defId: 'hermit_covet', upgraded: false },
+      { uid: 'ui-hermit-strike', defId: 'hermit_strike', upgraded: false },
+    ],
+  })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+downfallCardAssets.push(await readDownfallCardAsset(/^Covet,/))
+await page.getByRole('button', { name: /^Covet,/ }).click()
+const loadDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await loadDialog.getByRole('button', { name: /^Strike,/ }).click()
+await loadDialog.getByRole('button', { name: 'Load 1 card' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber.length === 1)
+downfallChoiceResults.hermit = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].chamber[0].defId)
+
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  const player = next.combat.players[0]
+  const chamberCard = player.chamber[0]
+  player.cardPlayLocked = true
+  next.combat.pendingHermitChamberPlays = [{
+    playerId: player.id, sourceCardId: 'ui-mandatory-chamber', cardUids: [chamberCard.uid], free: true,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.getByRole('button', { name: 'Skip unplayable Strike' }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.pendingHermitChamberPlays.length === 0)
+downfallChoiceResults.hermitMandatorySkip = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.chamber[0]?.defId, player.hand.length]
+})
+
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [] })
+  Object.assign(player, {
+    character: 'hermit', energy: 3, chamberSlots: 2, slimes: [], soulburn: 0, powers: [],
+    chamber: [
+      { uid: 'ui-full-old', defId: 'hermit_defend', upgraded: false },
+      { uid: 'ui-full-kept', defId: 'hermit_strike', upgraded: false },
+    ],
+    hand: [
+      { uid: 'ui-full-covet', defId: 'hermit_covet', upgraded: false },
+      { uid: 'ui-full-load', defId: 'hermit_snapshot', upgraded: false },
+    ],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.getByRole('button', { name: /^Covet,/ }).click()
+const fullLoadDialog = page.getByRole('dialog', { name: /Choose 1 to Load/ })
+await fullLoadDialog.getByRole('button', { name: /^Snapshot,/ }).click()
+await fullLoadDialog.getByRole('button', { name: 'Load 1 card' }).click()
+await page.locator('.prompt__mode').filter({ hasText: /^Defend$/ }).click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+downfallChoiceResults.hermitFullChamber = await page.evaluate(() => {
+  const player = window.__STS_DEBUG__.getRun().combat.players[0]
+  return [player.chamber.map((card) => card.defId), player.discard.map((card) => card.defId)]
+})
+
+check('Downfall combat choices are reachable from the real card UI', () => {
+  assertDeepEqual(downfallCardAssets.map(({ width }) => width), [448, 448, 448, 448, 448],
+    'Downfall hand cards use decoded scan thumbnails')
+  assert(downfallCardAssets.every(({ source }) => source?.startsWith('/assets/cards-sm/')),
+    `Downfall card scan paths: ${JSON.stringify(downfallCardAssets)}`)
+  assertDeepEqual(downfallChoiceResults.guardian, [0, 16], 'Guardian spends chosen Block after its Vigor choice')
+  assertDeepEqual(downfallChoiceResults.guardianStasis, [2, 1],
+    'Guardian assigns every Stasis Field Block icon independently')
+  assertDeepEqual(downfallChoiceResults.guardianWhirl, [1, 2, 20, 'skill'],
+    'Defense Mode Guardian Whirl keeps its Attack discount and targets an ally')
+  assertDeepEqual(downfallChoiceResults.guardianPowerBeam, [3, 17, true],
+    'Defense Mode Power Beam chooses and plays a Power for 0 Energy')
+  assertDeepEqual(downfallChoiceResults.guardianPowerGems, [19, 2],
+    'Floating Orbs collects offensive and private Jasper socket choices')
+  assertDeepEqual(downfallChoiceResults.guardianGemFinder,
+    [['ui-finder-jasper-draw-b'], ['ui-finder-exhaust-a']],
+    'Gem Finder submits private Scry and socketed Gem choices atomically')
+  assertDeepEqual(downfallChoiceResults.deepBreath,
+    [['ui-deep-strike', 'ui-deep-defend'], ['ui-deep-breath']],
+    'Deep Breath requires and preserves the chosen Exhaust-pile order')
+  assertDeepEqual(downfallChoiceResults.eerieExpedition,
+    [['ui-eerie-strike'], ['ui-eerie-defend', 'ui-eerie-expedition']],
+    'Eerie Expedition permits a partial up-to selection')
+  assertEqual(downfallChoiceResults.slime, 19, 'Slime Boss can choose and Command a Slime')
+  assertEqual(downfallChoiceResults.replicationPrompt, 'Play selected Slime and shuffle')
+  assertEqual(downfallChoiceResults.emptyReplicationPrompt, 'Shuffle and continue')
+  assertEqual(downfallChoiceResults.overexertDefensePrompt, 'Play selected card')
+  assertEqual(downfallChoiceResults.overexertPrompt, 'Play selected Attack twice')
+  assertEqual(downfallChoiceResults.emptyOverexertPrompt, 'Continue')
+  assertDeepEqual(downfallChoiceResults.hexaghost, [0, 17], 'Hexaghost assigns every Soulburn hit')
+  assertDeepEqual(downfallChoiceResults.brightRitual, [1, 0, 0],
+    'low-Heat Bright Ritual plays without inactive enemy target prompts')
+  assertEqual(downfallChoiceResults.hermit, 'hermit_strike', 'Hermit can choose a card to Load')
+  assertDeepEqual(downfallChoiceResults.hermitMandatorySkip, ['hermit_strike', 0],
+    'an impossible mandatory Chamber play can advance without moving its card')
+  assertDeepEqual(downfallChoiceResults.hermitFullChamber,
+    [['hermit_snapshot', 'hermit_strike'], ['hermit_defend', 'hermit_covet']],
+    'full Chamber Load lets the player choose and discard the replaced card')
+})
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+const musicBeforeBoss = await page.evaluate(() => window.__SFX_PLAYS__)
+check('ordinary combat does not start boss music', () => {
+  assert(!musicBeforeBoss.some((sound) => sound.startsWith('/assets/bgm/')))
 })
 const bossMusic = [
   ['hexaghost', 'the-guardian-emerges.mp3'],
@@ -1616,7 +2297,7 @@ await page.locator('.enemy').first().click()
 const afterPlay = await readState()
 
 check('clicking a card then an enemy actually plays it', () => {
-  assertEqual(afterPlay.players[0].hand.length, 4, 'the card leaves hand')
+  assertEqual(afterPlay.players[0].hand.length, beforePlay.players[0].hand.length - 1, 'the card leaves hand')
   assertEqual(afterPlay.players[0].energy, 2, 'energy is spent')
   assertEqual(afterPlay.players[0].discard.length, 1, 'and the card is discarded')
   assert(
@@ -1930,7 +2611,7 @@ await page.evaluate((run) => {
   Object.assign(player, {
     character: 'watcher',
     hand: [{ uid: 'drag-ragnarok', defId: 'ragnarok', upgraded: false }],
-    draw: [], discard: [], exhaust: [], energy: 3,
+    draw: [], discard: [], exhaust: [], slimes: [], energy: 3,
   })
   next.combat.enemies = next.combat.enemies.slice(0, 2)
   for (const enemy of next.combat.enemies) Object.assign(enemy, {
@@ -12897,6 +13578,22 @@ check('Peace Pipe keeps local player navigation available with or without a remo
   assert(peacePipeNextControl, 'the next-player control stayed hidden or covered after a Peace Pipe choice')
 })
 
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.players[0].relics.push({ defId: 'straight_razor', spent: false })
+  debug.setRun(run)
+})
+await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
+const sharedCampfireCard = page.locator('.campfire__deck--transform .card').first()
+await sharedCampfireCard.click()
+await page.locator('.campfire__deck--remove .card').first().click()
+const staleCampfireTransforms = await page.locator('.campfire__deck--transform .card.is-selected').count()
+check('Peace Pipe clears Straight Razor when both selected the same card', () => {
+  assertEqual(staleCampfireTransforms, 0,
+    'removing the transform target left a stale hidden selection')
+})
+
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-solo'))
 await bypassNeow()
 await page.evaluate(() => {
@@ -14416,8 +15113,28 @@ const calendarHpChanges = calendarAfter.enemies.map((enemy, index) =>
   enemy.hp - calendarBefore.enemies[index].hp)
 check('Loaded Die lets Stone Calendar choose and damage an enemy', () => {
   assert(calendarTargetName?.includes('→'), `Stone Calendar had no target: ${calendarTargetName}`)
+  assert(calendarTargetName?.includes('die 4'), `Stone Calendar ability had no die-face label: ${calendarTargetName}`)
   assertDeepEqual(calendarHpChanges.sort((a, b) => a - b), [-4, ...Array(calendarHpChanges.length - 1).fill(0)])
   assertEqual(calendarAfter.players[0].relics[0].spent, true)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const combat = run.combat
+  const actor = combat.players[0]
+  actor.powers = [{ uid: 'ui-combo-priority', defId: 'hermit_combo', upgraded: false }]
+  combat.phase = 'player'
+  combat.pendingTriggers = [{ id: 9191, playerId: actor.id, sourceId: 'power:ui-combo-priority' }]
+  combat.pendingDieRelicChoices = [{
+    playerId: actor.id, relicDefId: 'wheel_of_change', abilityIndex: 0,
+    sourceLabel: 'Cheat', enemyUid: null, targetPlayerId: actor.id,
+  }]
+  debug.setRun(run)
+})
+await page.getByRole('status').filter({ hasText: 'Cheat — finish the chosen die Relic' }).waitFor()
+const staleComboControls = await page.locator('.prompt').getByText(/Combo/).count()
+check('a pending Cheat payment hides stale Combo controls', () => {
+  assertEqual(staleComboControls, 0)
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -14425,6 +15142,9 @@ await page.evaluate(() => {
   const actor = run.combat.players[0]
   run.combat.phase = 'start'
   run.combat.die = 3
+  run.combat.pendingTriggers = []
+  run.combat.pendingDieRelicChoices = []
+  actor.powers = []
   actor.potions = ['gamblers_brew']
   actor.relics = [
     { defId: 'dollys_mirror', spent: false },
@@ -14800,6 +15520,16 @@ for (const [engineName, phoneBrowser, deviceName] of [
     await phonePage.setViewportSize({ width: 568, height: 320 })
     await phonePage.waitForFunction(() => innerWidth >= 1280 && innerHeight >= 700)
   } else {
+    await phonePage.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      const player = run.combat.players[0]
+      if (player.hand.filter((card) => card.defId.startsWith('strike')).length < 2) {
+        player.hand.push({ uid: 'mobile-cancel-strike', defId: 'strike_ironclad', upgraded: false })
+        window.__STS_DEBUG__.setRun(run)
+      }
+    })
+    await phonePage.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].hand
+      .filter((card) => card.defId.startsWith('strike')).length >= 2)
     const before = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand.length)
     const attackIndex = await phonePage.evaluate(() => window.__STS_DEBUG__.getState().players[0].hand
       .findIndex((card) => card.defId.startsWith('strike')))
@@ -15193,6 +15923,9 @@ for (const [engineName, phoneBrowser, deviceName] of [
     return lowest?.dataset.room ?? null
   })
   if (lowestRoom) {
+    await phonePage.locator(`.map:not([inert]) [data-room="${lowestRoom}"]`).evaluate((node) =>
+      node.scrollIntoView({ block: 'end' }))
+    await phonePage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await tap(phonePage.locator(`.map:not([inert]) [data-room="${lowestRoom}"]`))
     await phonePage.waitForFunction(() => document.querySelector('.room--reading'),
       null, { timeout: 4000 }).catch(() => {})

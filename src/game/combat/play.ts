@@ -27,39 +27,54 @@ import {
   exhaustCards,
   finishDeferredHavocs,
   fireTriggers,
+  growSlimeWithTriggers,
   releasePendingTriggers,
+  recordAttackPlayed,
   resolveDiscardReactions,
   resolveEnraged,
   resolveExhaustReaction,
+  resolveSlimeCommand,
+  resolvePendingSlimeCommands,
   settle,
   triggerEnemyDeath,
 } from './effects.ts'
-import { forgetRetain, grantShiftBlock, triggerAngry } from './pieces.ts'
+import { addStatus, forgetRetain, grantShiftBlock, playerCanGainBlock, triggerAngry } from './pieces.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
 import {
   amountOf,
+  activePowerWindow,
+  cardHasRetain,
   cardEnemyChoiceCount,
   cardIsPlayable,
   cardModeIsAvailable,
   cardNeedsChoicePreview,
   cardNeedsEnemy,
+  cardReferencesGuardianMode,
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   copySourcesFor,
   effectIsActive,
+  effectiveCombatCardDef,
   evokePlan,
+  guardianCardNeedsAlly,
+  guardianGemForCard,
+  guardianPowerBeamCards,
   hasInvalidChosenPlayer,
   hasInvalidRowSwitch,
   invalidPlayChoice,
   latestPlayableAllyAttack,
+  mandatoryChoicePending,
   needsChosenEnemy,
   omniscienceEligibleCards,
   overflowShivCount,
   playCost,
   reachedTimeWarpLimit,
   resolutionContext,
+  slimeCommandEnemyChoiceCount,
 } from './queries.ts'
-import { finishCardCopy, finishForcedCardPlay } from './start-turn.ts'
+import { finishCardCopy, finishForcedCardPlay, preparePlayerTurnThroughDraw, startPlayerTurnWithChoices } from './start-turn.ts'
+import { cardNeedsCorruptedShard } from '../downfall/items.ts'
+import { createRelicInstance } from '../relics.ts'
 import type {
   CardChoicePreview,
   CombatState,
@@ -76,6 +91,13 @@ import { addToDrawTop } from '../piles.ts'
 import { nextInt } from '../rng.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Player } from '../types.ts'
+import { slimeDef } from '../downfall/slime-boss.ts'
+
+function skillExhausts(state: CombatState, actor: Player, def: CardDef): boolean {
+  return def.type === 'skill' && (actor.powers.some((power) => cardDef(power.defId).corruptSkills) ||
+    state.enemies.some((enemy) => !enemy.dead && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+      .some((ability) => ability.kind === 'corruptSkills')))
+}
 
 function presentationEnemyScope(
   def: CardDef,
@@ -83,9 +105,12 @@ function presentationEnemyScope(
   actor: Player,
   includeEvokes: boolean,
   energySpent: number,
+  attachedGemId?: string,
+  energyCharged = energySpent,
 ): TargetScope {
   const active = def.modes ? { ...def, modes: undefined, effects: [...effects] } : def
-  return cardNeedsEnemy(active, actor, includeEvokes, energySpent) ? def.target ?? 'enemy' : 'self'
+  return cardNeedsEnemy(active, actor, includeEvokes, energySpent, false, attachedGemId, undefined, energyCharged)
+    ? def.target ?? 'enemy' : 'self'
 }
 
 function presentationCardContext(
@@ -113,6 +138,44 @@ function consumeCopySource(actor: Player, sources: readonly CopySource[]): void 
   else if (sources.includes('Burst')) actor.doubledSkillsThisTurn = actor.doubledSkillsThisTurn! - 1
 }
 
+function hermitRapidFireCount(def: CardDef, actor: Player, sourceInHand = true): number {
+  let count = def.hermit?.rapidFire ?? 0
+  if (def.hermit?.rapidFireBy === 'curseInChamber') {
+    count += Number(actor.chamber.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse'))
+  } else if (def.hermit?.rapidFireBy === 'curses') {
+    count += [...actor.hand, ...actor.chamber].filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse').length
+  } else if (def.hermit?.rapidFireBy === 'otherCardsInHand') {
+    count += Math.max(0, actor.hand.length - Number(sourceInHand))
+  }
+  const highNoon = actor.powers.find((power) => power.defId === 'hermit_high_noon')
+  if (highNoon && def.rarity === 'starter' && (def.name === 'Strike' || highNoon.upgraded && def.name === 'Defend')) count++
+  if (def.type === 'attack') count += actor.nextAttackRapidFire ?? 0
+  if (count > 0 && actor.powers.some((power) => power.defId === 'hermit_no_holds_barred')) count++
+  return count
+}
+
+type CardCopySourceName = NonNullable<CombatState['pendingCardCopy']>['sourceNames'][number]
+
+function queuedRapidFire(
+  card: CardInstance,
+  actor: Player,
+  baseSources: CardCopySourceName[],
+): Pick<NonNullable<CombatState['pendingCardCopy']>, 'sourceNames' | 'hermitRapidFireCard' | 'deferRapidFire'> {
+  const printedDef = faceOf(cardDef(card.defId), card.upgraded)
+  if (printedDef.guardianVariableType && actor.character !== 'guardian' && actor.guardianMode === null) {
+    return { sourceNames: baseSources, deferRapidFire: true }
+  }
+  const def = effectiveCombatCardDef(printedDef, actor.guardianMode)
+  const rapidFire = hermitRapidFireCount(def, actor, false)
+  return {
+    sourceNames: [
+      ...baseSources,
+      ...Array.from({ length: rapidFire * baseSources.length }, () => 'Rapid Fire' as const),
+    ],
+    hermitRapidFireCard: rapidFire > 0,
+  }
+}
+
 /**
  * Privately previews a post-reveal choice without advancing the real RNG or
  * changing combat. The played card is held outside every pile, as it will be
@@ -124,12 +187,15 @@ export function previewCardChoice(
   cardUid: string,
 ): CardChoicePreview | null {
   const forced = state.startTurnProgress?.forcedCard
-  if (state.phase !== 'player' && !(state.phase === 'start' && forced?.playerId === playerId &&
+  if (state.phase !== 'player' && !((state.phase === 'start' || state.phase === 'discard') &&
+    forced?.playerId === playerId &&
     forced.cardUid === cardUid)) return null
   const player = findPlayer(state, playerId)
   const held = player?.hand.find((card) => card.uid === cardUid)
   if (!player || player.dead || !held) return null
-  const def = faceOf(cardDef(held.defId), held.upgraded)
+  if (mandatoryChoicePending(state, held.hermitDeadOn === true)) return null
+  const printedDef = faceOf(cardDef(held.defId), held.upgraded)
+  const def = effectiveCombatCardDef(printedDef, player.guardianMode)
   const printedCost = forced?.cardUid === cardUid ? 0 : playCost(def, player, held)
   const cost = printedCost === 'X' ? player.energy : printedCost
   if (reachedTimeWarpLimit(state, player) || !cardIsPlayable(def, state, player) ||
@@ -145,15 +211,27 @@ export function previewCardChoice(
       return { kind: 'search', cards: effect.kind === 'searchDraw'
         ? actor.draw
         : omniscienceEligibleCards(preview, actor) }
+    } else if ((effect as { kind: string }).kind === 'replicateSlime') {
+      return { kind: 'search', cards: actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime') }
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor), [])
       drew = true
+    } else if (drew && (effect as { kind: string }).kind === 'overexert') {
+      return { kind: 'search', cards: actor.hand.filter((card) => {
+        const candidate = faceOf(cardDef(card.defId), card.upgraded)
+        return cardIsPlayable(candidate, preview, actor) && (candidate.minimumX ?? 0) === 0
+      }) }
     } else if (effect.kind === 'scry') {
       return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+    } else if (effect.kind === 'scryToHand') {
+      return { kind: 'scryToHand', cards: actor.draw.slice(0, effect.amount) }
     } else if (drew && effect.kind === 'discard') {
       return { kind: 'discard', cards: actor.hand }
     } else if (drew && effect.kind === 'topdeck') {
       return { kind: 'topdeck', cards: actor.hand }
+    } else if (drew && effect.kind === 'load') {
+      const source = effect.source ?? 'hand'
+      return { kind: effect.upTo ? 'loadAny' : 'load', cards: actor[source] }
     }
   }
   return null
@@ -175,7 +253,17 @@ function cardResolutionChoicesAreValid(
   context: PlayContext,
   energySpent: number,
   sourceCardUid?: string,
+  sourceAttachedGemId?: string,
+  energyCharged = energySpent,
 ): boolean {
+  const powerBeamCards = guardianPowerBeamCards(player, sourceCardUid)
+  const powerBeamDefense = player.guardianMode === 'defense' ||
+    player.guardianMode === null && context.corruptedShardMode === 'defense'
+  if (def.id === 'guardian_power_beam') {
+    if (powerBeamDefense && powerBeamCards.length > 0) {
+      if (!powerBeamCards.some((card) => card.uid === context.guardianPowerCardUid)) return false
+    } else if (context.guardianPowerCardUid !== undefined) return false
+  } else if (context.guardianPowerCardUid !== undefined) return false
   if (effects.some((effect) => effect.kind === 'copyLastAllyAttack') &&
     !latestPlayableAllyAttack(state, player, sourceCardUid)) {
     return false
@@ -191,7 +279,9 @@ function cardResolutionChoicesAreValid(
     shivChoices.some((uid, index) => (index < mandatoryShivs && uid === null) ||
       (uid !== null && !livingEnemies(state).some((enemy) => enemy.uid === uid)))) return false
 
-  const enemyChoiceCount = cardEnemyChoiceCount(def, context.mode)
+  const enemyChoiceCount = effects.reduce((sum, effect) => sum + (!effectIsActive(effect, state, player) ? 0 :
+    effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' || effect.kind === 'weakChoices' ||
+      effect.kind === 'vulnerableChoices' ? effect.targets : 0), 0)
   const enemyChoices = context.enemyUids ?? []
   const requiresDistinct = effects.some((effect) => effect.kind === 'hitChoices' && effect.distinct)
   if (enemyChoiceCount > 0 && (
@@ -199,6 +289,16 @@ function cardResolutionChoicesAreValid(
     (requiresDistinct && new Set(enemyChoices).size !== enemyChoices.length) ||
     enemyChoices.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))
   )) return false
+  const soulburnSpend = effects.find((effect) => effect.kind === 'useAllSoulburn')
+  if (soulburnSpend) {
+    const gained = effects.slice(0, effects.indexOf(soulburnSpend)).reduce((sum, effect) =>
+      sum + (effect.kind === 'gainSoulburn' && effectIsActive(effect, state, player)
+        ? amountOf(effect.amount, state, player, undefined, { enemyUid: null, playerId: player.id, energySpent })
+        : 0), 0)
+    const required = Math.min(6, player.soulburn + gained)
+    if ((context.soulburnEnemyUids?.length ?? 0) !== required ||
+      context.soulburnEnemyUids?.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return false
+  } else if (context.soulburnEnemyUids !== undefined) return false
   const playerChoiceCount = cardPlayerChoiceCount(def, context.mode)
   if (playerChoiceCount > 0 && (
     context.playerIds?.length !== playerChoiceCount ||
@@ -221,6 +321,15 @@ function cardResolutionChoicesAreValid(
     if ((required === 1 && (!chosen || !player.exhaust.some((card) => card.uid === chosen))) ||
       (required === 0 && chosen !== undefined)) return false
   }
+  const expedition = effects.find((effect) =>
+    effect.kind === 'recoverExhaustToDraw' || effect.kind === 'recoverExhaustToDiscard')
+  if (expedition) {
+    const chosen = context.recoverExhaustUids ?? []
+    const maximum = Math.min(expedition.amount, player.exhaust.length)
+    if (chosen.length > maximum || expedition.kind === 'recoverExhaustToDiscard' && chosen.length !== maximum ||
+      new Set(chosen).size !== chosen.length ||
+      chosen.some((uid) => !player.exhaust.some((card) => card.uid === uid))) return false
+  }
   const search = effects.find((effect) => effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
   if (search) {
     const chosen = context.searchDrawUids ?? []
@@ -242,9 +351,30 @@ function cardResolutionChoicesAreValid(
     )
     if (!targetPlan.complete || targetPlan.index !== context.evokeEnemyUids.length) return false
   }
-  return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids, energySpent, context.mode) &&
+  if (guardianCardNeedsAlly(def, player, sourceAttachedGemId) && context.playerId !== null &&
+    !state.players.some((candidate) => candidate.id === context.playerId && !candidate.dead)) return false
+  return !needsChosenEnemy(state, def, context.enemyUid, player, !context.evokeEnemyUids,
+    energySpent, context.mode, sourceAttachedGemId, sourceCardUid, energyCharged) &&
     !hasInvalidChosenPlayer(state, def, context.playerId) &&
     !hasInvalidRowSwitch(state, effects, context.switchWithPlayerId, player)
+}
+
+function slimeCommandTargetsAreValid(
+  state: CombatState,
+  player: Player,
+  def: CardDef,
+  effects: readonly Effect[],
+  context: PlayContext,
+  energySpent: number,
+  energyCharged = energySpent,
+  playedCard?: CardInstance,
+): boolean {
+  const active = { ...def, modes: undefined, effects: [...effects] }
+  const targets = context.slimeEnemyUids ?? []
+  return targets.length === slimeCommandEnemyChoiceCount(
+    active, state, player, context.slimeUids ?? [], energySpent, energyCharged,
+    playedCard,
+  ) && targets.every((uid) => livingEnemies(state).some((enemy) => enemy.uid === uid))
 }
 
 function cleanupPlayedCard(
@@ -256,18 +386,83 @@ function cleanupPlayedCard(
   forcedExhaust = false,
 ): void {
   const played = context.sourceCounter === undefined
-    ? forgetRetain(held)
-    : { ...forgetRetain(held), counter: context.sourceCounter }
+    ? { ...forgetRetain(held), hermitDeadOn: undefined }
+    : { ...forgetRetain(held), counter: context.sourceCounter, hermitDeadOn: undefined }
   if (context.sourceAttached) return
-  if (def.exhaust || forcedExhaust ||
-    (def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills))) {
+  if (context.loadSelf) {
+    const replacementIndex = context.loadSelfReplaceUid
+      ? actor.chamber.findIndex((card) => card.uid === context.loadSelfReplaceUid)
+      : -1
+    if (replacementIndex >= 0) {
+      const [replaced] = actor.chamber.splice(replacementIndex, 1, played)
+      actor.discard.push(forgetRetain(replaced!))
+      state.log = [...state.log, `${actor.name} discards ${cardDef(replaced!.defId).name} from the Chamber`]
+    } else actor.chamber = [...actor.chamber, played]
+    return
+  }
+  const exhaustNext = actor.exhaustNextCardAfterUid !== undefined && actor.exhaustNextCardAfterUid !== held.uid
+  if (exhaustNext) actor.exhaustNextCardAfterUid = undefined
+  if (def.exhaust || forcedExhaust || exhaustNext || skillExhausts(state, actor, def)) {
     exhaustCards(state, actor, [played], context)
+  } else if (def.cardKind === 'slime') {
+    const slime = {
+      card: { ...played, growOnPlay: undefined }, level: 1, vigor: 0,
+      commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+    }
+    actor.slimes = [...actor.slimes, slime]
+    if (held.growOnPlay) {
+      growSlimeWithTriggers(state, actor, slime, 1, context)
+      resolvePendingSlimeCommands(state, actor, context)
+    }
   } else if (def.type === 'power') {
     actor.powers = [...actor.powers, played]
   } else if (def.toDrawTop) {
     actor.draw = addToDrawTop(actor, [played]).draw
   } else {
     actor.discard = [...actor.discard, played]
+  }
+}
+
+function resolveSpreadingSlimes(
+  state: CombatState,
+  actor: Player,
+  energySpent: number,
+  context: PlayContext,
+): void {
+  if (energySpent < 2) return
+  for (const slime of actor.slimes ?? []) {
+    if (combatIsOver(state)) break
+    if (slimeDef(slime).slimeTrigger !== 'onSpendTwoEnergy') continue
+    if (!resolveSlimeCommand(state, actor, slime, context)) continue
+    state.log = [...state.log, `${actor.name} Commands ${slimeDef(slime).name} after spending ${energySpent} Energy`]
+  }
+}
+
+function resolveSlimeBossPlayReactions(
+  state: CombatState,
+  actor: Player,
+  played: CardDef,
+  playedCard: CardInstance,
+  context: PlayContext,
+): void {
+  if (combatIsOver(state)) return
+  if (played.name.includes('Tackle')) for (const power of actor.powers) {
+    if (power.defId === 'slime_boss_goop_armor') {
+      const amount = power.upgraded ? 2 : 1
+      if (playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, amount)
+      state.log = [...state.log, `Goop Armor: ${actor.name} gains ${amount} Block`]
+    } else if (power.defId === 'slime_boss_consult_playbook' &&
+      !state.powerTriggersUsedThisTurn.includes(`power:${power.uid}`)) {
+      state.powerTriggersUsedThisTurn.push(`power:${power.uid}`)
+      drawInto(state, actor, power.upgraded ? 2 : 1)
+      actor.energy = Math.min(CAPS.energy, actor.energy + 1)
+      state.log = [...state.log, `Consult Playbook: ${actor.name} draws and gains 1 Energy`]
+    }
+  }
+  if (cardHasRetain(actor, playedCard) &&
+    actor.powers.some((power) => power.defId === 'slime_boss_darkling_duo')) {
+    const bruiser = actor.slimes?.find((slime) => slime.card.defId === 'slime_boss_bruiser_slime')
+    if (bruiser) resolveSlimeCommand(state, actor, bruiser, context, 'Darkling Duo')
   }
 }
 
@@ -298,11 +493,18 @@ function resolvePendingEnemyReactions(state: CombatState, actor: Player, context
       }
       if (abilities.some((ability) => ability.kind === 'shift')) grantShiftBlock(state, enemy, lost)
       triggerAngry(state, enemy, (context.pendingEnemyDamage ?? [])
-        .filter((event) => event.enemyUid === enemy.uid).length)
+        .filter((event) => event.enemyUid === enemy.uid && event.attack).length)
       if (attacked.has(enemy.uid) && abilities.some((ability) => ability.kind === 'reactiveReroll')) {
         state.die = nextInt(state.rng, 6) + 1
         state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} rerolled enemy intents to ${state.die}`]
       }
+    }
+    const flameBarrier = abilities.find((ability) => ability.kind === 'burnOnAttackWhileSlot')
+    if (attacked.has(enemy.uid) && flameBarrier?.kind === 'burnOnAttackWhileSlot' &&
+      enemy.actionIndex === flameBarrier.slot) {
+      const gained = addStatus(state, actor, 'burn', flameBarrier.amount, enemy.uid)
+      if (gained > 0) state.log = [...state.log,
+        `${enemyLabel(state.enemies, enemy)} gives ${actor.name} ${gained} Burn`]
     }
     const thorns = abilities.find((ability) => ability.kind === 'thorns')
     const sharpHide = abilities.find((ability) => ability.kind === 'sharpHide')
@@ -333,9 +535,10 @@ export function playCard(
   cardUid: string,
   context: PlayContext = { enemyUid: null, playerId: null },
 ): CombatState {
-  if ((state.pendingTriggers?.length ?? 0) > 0) return state
+  if ((state.pendingTriggers?.length ?? 0) > 0 ||
+    mandatoryChoicePending(state, context.hermitChamberPlay === true)) return state
   const forced = state.startTurnProgress?.forcedCard
-  const forcedPlay = (state.phase === 'start' || state.phase === 'player') &&
+  const forcedPlay = (state.phase === 'start' || state.phase === 'player' || state.phase === 'discard') &&
     forced?.playerId === playerId && forced.cardUid === cardUid
   if (forced && !forcedPlay) return state
   if (state.phase !== 'player' && !forcedPlay) return state
@@ -345,7 +548,13 @@ export function playCard(
   const held = player.hand.find((card) => card.uid === cardUid)
   if (!held) return state
 
-  const def = faceOf(cardDef(held.defId), held.upgraded)
+  const printedDef = faceOf(cardDef(held.defId), held.upgraded)
+  const attachedGemId = guardianGemForCard(player, held)
+  const corruptedModeChoice = player.character !== 'guardian' && player.guardianMode === null &&
+    cardReferencesGuardianMode(printedDef, attachedGemId)
+  if (corruptedModeChoice && context.corruptedShardMode !== 'attack' && context.corruptedShardMode !== 'defense') return state
+  const guardianMode = corruptedModeChoice ? context.corruptedShardMode : player.guardianMode
+  const def = effectiveCombatCardDef(printedDef, guardianMode)
   if (player.cardPlayLocked) return forcedPlay ? abandonForcedCard(state, playerId) : state
   if (reachedTimeWarpLimit(state, player)) {
     return forcedPlay ? abandonForcedCard(state, playerId) : state
@@ -356,6 +565,7 @@ export function playCard(
     if (!cardModeIsAvailable(def, state, player, context.mode!, player.draw.length, held.uid)) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
+  const rapidFire = hermitRapidFireCount(def, player)
   const resolvesOnPlay = def.type !== 'power' || def.resolvesOnPlay === true
   const printedCost = forcedPlay ? 0 : playCost(def, player, held)
   if (def.cost === 'X' && printedCost !== 'X' && printedCost < (def.minimumX ?? 0)) return state
@@ -364,6 +574,13 @@ export function playCard(
     context.energySpent! > player.energy)) return state
   if (!xCost && context.energySpent !== undefined && context.energySpent !== 0) return state
   const cost = xCost ? context.energySpent! : printedCost
+  const vigorSpent = context.spendVigor ?? 0
+  if (!Number.isSafeInteger(vigorSpent) || vigorSpent < 0 || vigorSpent > player.vigor ||
+    (vigorSpent > 0 && (player.guardianMode === null ||
+      def.type !== 'attack' && def.type !== 'skill'))) return state
+  const blockSpent = context.guardianBlockSpend ?? 0
+  if (!Number.isSafeInteger(blockSpent) || blockSpent < 0 || blockSpent > player.block ||
+    (blockSpent > 0 && def.id !== 'guardian_body_crash')) return state
   const effectEnergy = def.cost === 'X' ? cost : 0
   const miracleOnCard = context.spendMiracle === true
   if (forcedPlay && miracleOnCard) return state
@@ -373,15 +590,24 @@ export function playCard(
   if (cost > player.energy + (miracleOnCard ? 1 : 0)) return state
   // Choices are checked together at the trust boundary. The same validator is
   // reused when the physical card resolves after its separately targeted copy.
-  if (resolvesOnPlay && !cardResolutionChoicesAreValid(
-    state, player, def, effects, context, effectEnergy, held.uid,
+  if (!slimeCommandTargetsAreValid(
+    state, player, def, resolvesOnPlay ? effects : [], context, effectEnergy, cost, held,
+  ) || resolvesOnPlay && !cardResolutionChoicesAreValid(
+    state, player, def, effects, context, effectEnergy, held.uid, attachedGemId, cost,
   )) return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   // The player was just found in `state`, so a clone must contain them too.
   // Returning `state` here would masquerade as "illegal move" and hide a bug.
   if (!actor) throw new Error(`player ${playerId} vanished from the cloned state`)
+  if (cardNeedsCorruptedShard(actor.character, def) && !actor.relics.some((relic) => relic.defId === 'corrupted_shard')) {
+    actor.relics.push(createRelicInstance('corrupted_shard'))
+    next.log = [...next.log, `${actor.name} gains Corrupted Shard for using ${def.name}`]
+  }
+  if (corruptedModeChoice) actor.guardianMode = context.corruptedShardMode!
   const akabeko = def.type === 'attack' && (actor.akabekoAttacks ?? 0) > 0
+  const pizzazStrength = def.type === 'attack' ? actor.nextAttackStrength ?? 0 : 0
+  if (pizzazStrength > 0) actor.nextAttackStrength = 0
   if (akabeko) {
     actor.strength = gainStrength(actor.strength, 1)
     actor.akabekoAttacks!--
@@ -401,23 +627,38 @@ export function playCard(
     upgraded: held.upgraded,
     copied: doubled,
     energy: cost,
+    resolvedType: def.type,
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
-      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy),
-      def.supportTarget ?? 'self', presentationCardContext(def, effects, context)),
+      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, effectEnergy, attachedGemId, cost),
+      guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
+      presentationCardContext(def, effects, context)),
   })
 
   // The card leaves hand before resolving and belongs to no pile until cleanup,
   // which is what stops a card that draws from drawing itself (p.12).
-  const forcedChoices = forcedPlay ? [...(state.startTurnProgress?.choices ?? [])] : null
+  const forcedChoices = forcedPlay && state.phase === 'start' && !forced?.resumeOpenStart
+    ? [...(state.startTurnProgress?.choices ?? [])] : null
   if (forcedPlay) next.startTurnProgress = undefined
   actor.hand = actor.hand.filter((card) => card.uid !== cardUid)
   actor.energy -= cost
+  actor.energySpentThisTurn = (actor.energySpentThisTurn ?? 0) + cost
+  actor.vigor -= vigorSpent
+  actor.vigorSpentThisTurn += vigorSpent
   actor.nextCardCost = null
+  actor.enemyNextCardCost = null
+  if (def.type === 'power' || def.cardKind === 'slime') actor.nextPowerOrSlimeDiscount = undefined
   if ((actor.freeCardsThisTurn ?? 0) > 0) actor.freeCardsThisTurn = actor.freeCardsThisTurn! - 1
-  if (def.type === 'attack' && (actor.freeAttacksThisTurn ?? 0) > 0) {
+  if (def.type === 'attack' && next.partyAttackDiscount) {
+    for (const member of next.players) member.freeAttacksThisTurn = Math.max(0, (member.freeAttacksThisTurn ?? 0) - 1)
+    next.partyAttackDiscount = false
+  } else if (def.type === 'attack' && (actor.freeAttacksThisTurn ?? 0) > 0) {
     actor.freeAttacksThisTurn = actor.freeAttacksThisTurn! - 1
   }
+  if (def.guardian?.printedType.startsWith('Gem') && (actor.freeGemCardsThisTurn ?? 0) > 0) {
+    actor.freeGemCardsThisTurn!--
+  }
+  if (def.type === 'power' && (actor.freePowersThisTurn ?? 0) > 0) actor.freePowersThisTurn!--
   if (miracleOnCard) {
     actor.miracles -= 1
     actor.energy += 1
@@ -428,7 +669,7 @@ export function playCard(
   if (def.type === 'attack' || def.type === 'skill') {
     next.playedCardsThisTurn = [
       ...(next.playedCardsThisTurn ?? []),
-      { playerId: actor.id, card: forgetRetain(held), copied: doubled },
+      { playerId: actor.id, card: forgetRetain(held), copied: doubled, type: def.type },
     ]
   }
 
@@ -448,7 +689,9 @@ export function playCard(
   // request, so they go on a copy. The caller's object is theirs: in the UI it
   // is assembled out of React state, and writing a scratch field back into it
   // would be a mutation from a function that is otherwise pure.
-  const ctx = resolutionContext(context, def, held, effectEnergy, doubled)
+  const ctx = resolutionContext(context, def,
+    attachedGemId ? { ...held, attachedGemId } : held, effectEnergy, doubled)
+  ctx.hermitRapidFireCard = rapidFire > 0
   let remainingEffects: Effect[] | undefined
   if (resolvesOnPlay) {
     for (const [index, effect] of effects.entries()) {
@@ -458,6 +701,7 @@ export function playCard(
       // card. Nothing printed later, nor cleanup or play triggers, resolves.
       if (cardResolutionIsOver(next, ctx, actor)) {
         if (akabeko) actor.strength = Math.max(0, actor.strength - 1)
+        if (pizzazStrength > 0) actor.strength = Math.max(0, actor.strength - pizzazStrength)
         return finishForcedCardPlay(settle(next), forcedChoices)
       }
       if (ctx.doppelgangerCopy) {
@@ -466,13 +710,21 @@ export function playCard(
       }
     }
   }
+  resolvePendingSlimeCommands(next, actor, ctx)
+  if (invalidPlayChoice(ctx)) return state
+  if (cardResolutionIsOver(next, ctx, actor)) {
+    if (akabeko) actor.strength = Math.max(0, actor.strength - 1)
+    if (pizzazStrength > 0) actor.strength = Math.max(0, actor.strength - pizzazStrength)
+    return finishForcedCardPlay(settle(next), forcedChoices)
+  }
   if (akabeko) actor.strength = Math.max(0, actor.strength - 1)
+  if (pizzazStrength > 0) actor.strength = Math.max(0, actor.strength - pizzazStrength)
 
   // Havoc's child is part of Havoc's resolution. Its own cleanup, card-play
   // triggers, and Enraged reaction therefore wait until that child finishes.
   // A Havoc drawn by another Havoc extends the same small stack.
   if (def.id === 'havoc' && next.startTurnProgress?.forcedCard) {
-    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    const corrupt = skillExhausts(next, actor, def)
     next.startTurnProgress.forcedCard.deferredHavocs = [
       ...(forced?.deferredHavocs ?? []),
       { card: forgetRetain(held), exhaust: def.exhaust === true ||
@@ -507,13 +759,24 @@ export function playCard(
     if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
   }
 
+  if (def.type === 'attack' && (actor.nextAttackRapidFire ?? 0) > 0) actor.nextAttackRapidFire = 0
+
   if (ctx.doppelgangerCopy) {
-    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    resolveSpreadingSlimes(next, actor, cost, ctx)
+    if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+    const corrupt = skillExhausts(next, actor, def)
+    const deferredCopySources = [
+      ...copySources,
+      ...Array(rapidFire * (copySources.length + 1)).fill('Rapid Fire' as const),
+    ]
+    const baseSources = ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
+      ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
+      : [ctx.queuedCopySource ?? 'Doppelganger'])
     next.pendingCardCopy = {
       playerId: actor.id,
       card: ctx.doppelgangerCopy,
       energySpent: effectEnergy,
-      resumePhase: state.phase === 'start' ? 'start' : 'player',
+      resumePhase: state.phase === 'start' ? 'start' : state.phase === 'discard' ? 'discard' : 'player',
       forcedExhaust: ctx.queuedCopyForcedExhaust === true,
       forcedChoices,
       deferredHavocs: [
@@ -523,8 +786,8 @@ export function playCard(
           exhaust: def.exhaust === true ||
             (forcedPlay && forced.exhaustNonPower && def.type !== 'power') || corrupt,
           remainingEffects,
-          ...(doubled ? {
-            copySourceNames: copySources,
+          ...(deferredCopySources.length > 0 ? {
+            copySourceNames: deferredCopySources,
             copyResumePhase: state.phase === 'start' ? 'start' as const : 'player' as const,
           } : {}),
         },
@@ -533,9 +796,8 @@ export function playCard(
         ...(forced?.pendingTriggers ?? []),
         ...(ctx.pendingTriggers ?? []),
       ],
-      sourceNames: ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
-        ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
-        : [ctx.queuedCopySource ?? 'Doppelganger']),
+      ...queuedRapidFire(ctx.doppelgangerCopy, actor, baseSources),
+      ...(ctx.queuedCopyTwiceIfAttack ? { repeatIfAttack: true } : {}),
       virtualOnly: ctx.queuedCopyVirtualOnly ?? true,
       queuedWeaves: ctx.queuedWeaves,
       queuedCopySources: ctx.queuedCopySources,
@@ -551,6 +813,19 @@ export function playCard(
 
   if (!doubled) cleanupPlayedCard(next, actor, held, def, ctx,
     forcedPlay && forced.exhaustNonPower && def.type !== 'power')
+  if (invalidPlayChoice(ctx)) return state
+  if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+  resolveSpreadingSlimes(next, actor, cost, ctx)
+  if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+  resolveSlimeBossPlayReactions(next, actor, def, held, ctx)
+  if (combatIsOver(next)) return finishForcedCardPlay(settle(next), forcedChoices)
+
+  if (def.guardian?.printedType.startsWith('Gem') &&
+    actor.powers.some((power) => power.defId === 'guardian_brilliant_scales')) {
+    const before = actor.block
+    if (playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, 1)
+    if (actor.block > before) next.log = [...next.log, `${actor.name}'s Brilliant Scales grants 1 Block`]
+  }
 
   for (const pending of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pending.playerId)
@@ -571,7 +846,7 @@ export function playCard(
   }
 
   if (def.type === 'attack' && !ctx.sourceAttackCounted) {
-    actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+    recordAttackPlayed(next, actor)
   }
 
   // "Abilities triggered by a card do not take effect until the card has
@@ -590,11 +865,12 @@ export function playCard(
       playerId: actor.id,
       card: { ...held },
       energySpent: effectEnergy,
-      resumePhase: state.phase === 'start' ? 'start' : 'player',
+      resumePhase: state.phase === 'start' ? 'start' : state.phase === 'discard' ? 'discard' : 'player',
       forcedExhaust: forcedPlay && forced.exhaustNonPower && def.type !== 'power',
       forcedChoices,
       deferredHavocs: [...(forced?.deferredHavocs ?? [])],
-      sourceNames: copySources,
+      sourceNames: [...copySources, ...Array(rapidFire * (copySources.length + 1)).fill('Rapid Fire' as const)],
+      hermitRapidFireCard: rapidFire > 0,
     }
     next.phase = 'copy'
     next.log = [...next.log, `${actor.name}'s ${copySources[0]} copy finished; ${def.name} remains to resolve`]
@@ -605,12 +881,146 @@ export function playCard(
       : settled
   }
 
+  if (rapidFire > 0) {
+    next.pendingCardCopy = {
+      playerId: actor.id,
+      card: { ...held },
+      energySpent: effectEnergy,
+      resumePhase: state.phase === 'start' ? 'start' : state.phase === 'discard' ? 'discard' : 'player',
+      forcedExhaust: false,
+      forcedChoices,
+      deferredHavocs: [...(forced?.deferredHavocs ?? [])],
+      deferredTriggers: [...(ctx.pendingTriggers ?? [])],
+      sourceNames: Array(rapidFire).fill('Rapid Fire'),
+      virtualOnly: true,
+      hermitRapidFireCard: true,
+    }
+    next.phase = 'copy'
+    return settle(next)
+  }
+
   const resumedTriggers = finishDeferredHavocs(next, actor, forced?.deferredHavocs ?? [])
   ctx.pendingTriggers = [
     ...(forced?.pendingTriggers ?? []), ...(ctx.pendingTriggers ?? []), ...resumedTriggers,
   ]
   releasePendingTriggers(next, ctx)
   return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), forcedChoices)
+}
+
+function stageHermitChamberCard(state: CombatState, playerId: string, cardUid: string): CombatState | null {
+  const player = findPlayer(state, playerId)
+  const card = player?.chamber.find((held) => held.uid === cardUid)
+  if (!player || player.dead || !card || state.phase !== 'player' || state.pendingCardCopy) return null
+  const pending = state.pendingHermitChamberPlays?.[0]
+  if (pending && (pending.playerId !== playerId || pending.cardUids[0] !== cardUid)) return null
+  const staged = clone(state)
+  const actor = findPlayer(staged, playerId)!
+  actor.chamber = actor.chamber.filter((held) => held.uid !== cardUid)
+  actor.hand.push({ ...card, hermitDeadOn: true, ...(pending?.free ? { freeThisTurn: true } : {}) })
+  if (pending) {
+    const rest = pending.cardUids.slice(1)
+    staged.pendingHermitChamberPlays = rest.length
+      ? [{ ...pending, cardUids: rest }, ...(staged.pendingHermitChamberPlays?.slice(1) ?? [])]
+      : staged.pendingHermitChamberPlays?.slice(1)
+  }
+  return staged
+}
+
+/** Privately previews a Chamber card whose draw is followed by a Load choice. */
+export function previewHermitChamberCardChoice(
+  state: CombatState,
+  playerId: string,
+  cardUid: string,
+): CardChoicePreview | null {
+  const staged = stageHermitChamberCard(state, playerId, cardUid)
+  return staged ? previewCardChoice(staged, playerId, cardUid) : null
+}
+
+/** Plays a private Chamber card through the ordinary authoritative card pipeline. */
+export function playHermitChamberCard(
+  state: CombatState,
+  playerId: string,
+  cardUid: string,
+  context: PlayContext = { enemyUid: null, playerId: null },
+): CombatState {
+  const staged = stageHermitChamberCard(state, playerId, cardUid)
+  if (!staged) return state
+  const actor = findPlayer(staged, playerId)!
+  const card = actor.hand.find((held) => held.uid === cardUid)!
+  const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode)
+  const pending = state.pendingHermitChamberPlays?.[0]
+  if (pending && (reachedTimeWarpLimit(staged, actor) || !cardIsPlayable(def, staged, actor))) {
+    const next = clone(state)
+    const rest = pending.cardUids.slice(1)
+    next.pendingHermitChamberPlays = rest.length
+      ? [{ ...pending, cardUids: rest }, ...(next.pendingHermitChamberPlays?.slice(1) ?? [])]
+      : next.pendingHermitChamberPlays?.slice(1)
+    next.log = [...next.log, `${actor.name}'s mandatory Chamber play of ${def.name} was skipped because it cannot be played`]
+    return settle(next)
+  }
+  const resolved = playCard(staged, playerId, cardUid, { ...context, hermitChamberPlay: true })
+  return resolved === staged ? state : resolved
+}
+
+/** Assigns Dead or Alive's Strength to one living player. */
+export function resolveHermitStrengthReward(state: CombatState, ownerId: string, targetPlayerId: string): CombatState {
+  const pending = state.pendingHermitStrengthRewards?.[0]
+  const target = state.players.find((player) => player.id === targetPlayerId && !player.dead)
+  if (!pending || pending.playerId !== ownerId || !target) return state
+  const next = clone(state)
+  const recipient = findPlayer(next, targetPlayerId)!
+  recipient.strength = gainStrength(recipient.strength, 1)
+  next.pendingHermitStrengthRewards = next.pendingHermitStrengthRewards?.slice(1)
+  next.log = [...next.log, `${recipient.name} gains 1 Strength from Dead or Alive`]
+  return settle(next)
+}
+
+/** Resolves the Hermit's private start-of-combat draw-and-Load board ability. */
+export function resolveHermitSetupLoad(
+  state: CombatState,
+  playerId: string,
+  cardUid: string,
+  enemyUid: string | null = null,
+  pauseAfterDraw = false,
+): CombatState {
+  const pending = state.pendingHermitSetupLoads?.[0]
+  const player = findPlayer(state, playerId)
+  if (!pending || pending.playerId !== playerId || !player || player.dead ||
+    player.chamber.length >= player.chamberSlots || !player.hand.some((card) => card.uid === cardUid)) return state
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  const context: PlayContext = { enemyUid, playerId: null, loadUids: [cardUid], loadChoiceIndex: 0,
+    invalidHermitChoice: false }
+  applyEffect(next, actor, { kind: 'load', amount: 1 }, 'self', 'self', context, 'Hermit board')
+  if (context.invalidHermitChoice || actor.hand.some((card) => card.uid === cardUid)) return state
+  next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
+  const settled = settle(next)
+  return settled.turn === 0 && settled.pendingHermitSetupLoads?.length === 0
+    ? pauseAfterDraw ? preparePlayerTurnThroughDraw(settled) : startPlayerTurnWithChoices(settled)
+    : settled
+}
+
+/** Drops a disconnected Hermit's unresolved private setup choice. */
+export function abandonHermitSetupLoad(state: CombatState, playerId: string, pauseAfterDraw = false): CombatState {
+  const pending = state.pendingHermitSetupLoads?.[0]
+  if (!pending || pending.playerId !== playerId) return state
+  const next = clone(state)
+  next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
+  next.log = [...next.log, `${findPlayer(next, playerId)?.name ?? 'Hermit'}'s setup Load was skipped after disconnecting`]
+  const settled = settle(next)
+  return settled.turn === 0 && settled.pendingHermitSetupLoads?.length === 0
+    ? pauseAfterDraw ? preparePlayerTurnThroughDraw(settled) : startPlayerTurnWithChoices(settled)
+    : settled
+}
+
+/** Drops a disconnected Hermit's unresolved private Chamber play. */
+export function abandonHermitChamberPlay(state: CombatState, playerId: string): CombatState {
+  const pending = state.pendingHermitChamberPlays?.[0]
+  if (!pending || pending.playerId !== playerId) return state
+  const next = clone(state)
+  next.pendingHermitChamberPlays = next.pendingHermitChamberPlays?.slice(1)
+  next.log = [...next.log, `${findPlayer(next, playerId)?.name ?? 'Hermit'}'s Chamber play was skipped after disconnecting`]
+  return settle(next)
 }
 
 /** Resolves the physical original after its separately targeted virtual copy. */
@@ -626,7 +1036,13 @@ export function playCardCopy(
   if (!player || player.dead) return state
   if (player.cardPlayLocked) return skipCardCopy(state, playerId, 'was skipped by Conclude')
   if (reachedTimeWarpLimit(state, player)) return skipCardCopy(state, playerId, 'was skipped by Time Warp')
-  const def = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
+  const printedDef = faceOf(cardDef(pending.card.defId), pending.card.upgraded)
+  const attachedGemId = guardianGemForCard(player, pending.card)
+  const corruptedModeChoice = player.character !== 'guardian' && player.guardianMode === null &&
+    cardReferencesGuardianMode(printedDef, attachedGemId)
+  if (corruptedModeChoice && context.corruptedShardMode !== 'attack' && context.corruptedShardMode !== 'defense') return state
+  const guardianMode = corruptedModeChoice ? context.corruptedShardMode : player.guardianMode
+  const def = effectiveCombatCardDef(printedDef, guardianMode)
   const sourceName = pending.sourceNames[0]
   if ((sourceName === 'Double Tap' && def.type !== 'attack') ||
     (sourceName === 'Blasphemy' && def.type !== 'attack') ||
@@ -640,29 +1056,56 @@ export function playCardCopy(
     if (!cardModeIsAvailable(def, state, player, context.mode!)) return state
   } else if (context.mode !== undefined) return state
   const effects = def.modes ? def.modes[context.mode!]!.effects : def.effects
-  if (!cardResolutionChoicesAreValid(state, player, def, effects, context, pending.energySpent)) return state
+  if (!slimeCommandTargetsAreValid(state, player, def, effects, context, pending.energySpent, 0, pending.card) ||
+    !cardResolutionChoicesAreValid(state, player, def, effects, context,
+    pending.energySpent, pending.card.uid, attachedGemId)) return state
 
   const next = clone(state)
   const copy = next.pendingCardCopy!
   const actor = findPlayer(next, playerId)!
+  if (copy.repeatIfAttack) {
+    delete copy.repeatIfAttack
+    if (def.type === 'attack') copy.sourceNames = [...copy.sourceNames, 'Overexert']
+  }
+  if (copy.deferRapidFire) {
+    delete copy.deferRapidFire
+    const rapidFire = hermitRapidFireCount(def, actor, false)
+    copy.sourceNames = [
+      ...copy.sourceNames,
+      ...Array.from({ length: rapidFire * copy.sourceNames.length }, () => 'Rapid Fire' as const),
+    ]
+    copy.hermitRapidFireCard = rapidFire > 0
+  }
+  const sourceIsCopy = copy.finalResolutionCopied === true || copy.virtualOnly === true || copy.sourceNames.length > 1
+  if (cardNeedsCorruptedShard(actor.character, def) && !actor.relics.some((relic) => relic.defId === 'corrupted_shard')) {
+    actor.relics.push(createRelicInstance('corrupted_shard'))
+    next.log = [...next.log, `${actor.name} gains Corrupted Shard for copying ${def.name}`]
+  }
+  if (corruptedModeChoice) actor.guardianMode = context.corruptedShardMode!
   addPresentationEvent(next, {
     kind: 'card',
     actorId: actor.id,
     sourceId: def.id,
     upgraded: copy.card.upgraded,
-    copied: copy.virtualOnly === true || copy.sourceNames.length > 1,
+    copied: sourceIsCopy,
     energy: copy.energySpent,
+    resolvedType: def.type,
     ...(context.mode === undefined ? {} : { mode: context.mode }),
     ...presentationTargets(next, actor.id,
-      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids, pending.energySpent),
-      def.supportTarget ?? 'self', presentationCardContext(def, effects, context)),
+      presentationEnemyScope(def, effects, actor, !context.evokeEnemyUids,
+        pending.energySpent, attachedGemId),
+      guardianCardNeedsAlly(def, actor, attachedGemId) ? 'anyPlayer' : def.supportTarget ?? 'self',
+      presentationCardContext(def, effects, context)),
   })
   if ((copy.queuedCopySources?.length ?? 0) > 0) {
     consumeCopySource(actor, copy.queuedCopySources!)
     copy.queuedCopySources = []
   }
   if (copy.consumeFreeCard) actor.freeCardsThisTurn = Math.max(0, (actor.freeCardsThisTurn ?? 0) - 1)
-  if (copy.consumeFreeAttack) actor.freeAttacksThisTurn = Math.max(0, (actor.freeAttacksThisTurn ?? 0) - 1)
+  if (copy.consumeFreeAttack && def.type === 'attack') {
+    actor.freeAttacksThisTurn = Math.max(0, (actor.freeAttacksThisTurn ?? 0) - 1)
+  }
+  if (def.type === 'attack' && (actor.nextAttackRapidFire ?? 0) > 0) actor.nextAttackRapidFire = 0
   actor.cardsPlayedThisTurn = (actor.cardsPlayedThisTurn ?? 0) + 1
   if (def.type === 'attack' || def.type === 'skill') {
     next.playedCardsThisTurn = [
@@ -670,14 +1113,16 @@ export function playCardCopy(
       {
         playerId: actor.id,
         card: forgetRetain(copy.card),
-        copied: copy.virtualOnly === true || copy.sourceNames.length > 1,
+        copied: sourceIsCopy,
+        type: def.type,
       },
     ]
   }
   const ctx = resolutionContext(
-    context, def, copy.card, copy.energySpent,
-    copy.virtualOnly === true || copy.sourceNames.length > 1,
+    context, def, attachedGemId ? { ...copy.card, attachedGemId } : copy.card, copy.energySpent,
+    sourceIsCopy,
   )
+  ctx.hermitRapidFireCard = copy.hermitRapidFireCard === true
   next.log = [...next.log, `${actor.name} played ${def.name}`]
 
   let remainingEffects: Effect[] | undefined
@@ -692,6 +1137,12 @@ export function playCardCopy(
       remainingEffects = effects.slice(index + 1)
       break
     }
+  }
+  resolvePendingSlimeCommands(next, actor, ctx)
+  if (invalidPlayChoice(ctx)) return state
+  if (cardResolutionIsOver(next, ctx, actor)) {
+    delete next.pendingCardCopy
+    return finishForcedCardPlay(settle(next), copy.forcedChoices)
   }
   // The forced child is part of a copied Havoc. Suspend this copy until that
   // child finishes, just as the copied Havoc does above.
@@ -733,7 +1184,10 @@ export function playCardCopy(
   }
   const finalCopy = copy.sourceNames.length === 1
   if (ctx.doppelgangerCopy) {
-    const corrupt = def.type === 'skill' && actor.powers.some((power) => cardDef(power.defId).corruptSkills)
+    const corrupt = skillExhausts(next, actor, def)
+    const baseSources = ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
+      ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
+      : [ctx.queuedCopySource ?? 'Doppelganger'])
     next.pendingCardCopy = {
       playerId: actor.id,
       card: ctx.doppelgangerCopy,
@@ -752,9 +1206,8 @@ export function playCardCopy(
           } : {}) },
       ],
       deferredTriggers: [...(copy.deferredTriggers ?? []), ...(ctx.pendingTriggers ?? [])],
-      sourceNames: ctx.queuedCopySourceNames ?? (ctx.queuedCopyTwice
-        ? [ctx.queuedCopySource ?? 'Doppelganger', ctx.queuedCopySource ?? 'Doppelganger']
-        : [ctx.queuedCopySource ?? 'Doppelganger']),
+      ...queuedRapidFire(ctx.doppelgangerCopy, actor, baseSources),
+      ...(ctx.queuedCopyTwiceIfAttack ? { repeatIfAttack: true } : {}),
       virtualOnly: ctx.queuedCopyVirtualOnly ?? true,
       queuedWeaves: ctx.queuedWeaves,
       queuedCopySources: ctx.queuedCopySources,
@@ -768,6 +1221,22 @@ export function playCardCopy(
       : settled
   }
   if (finalCopy && !copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
+  if (invalidPlayChoice(ctx)) return state
+  if (combatIsOver(next)) {
+    delete next.pendingCardCopy
+    return finishForcedCardPlay(settle(next), copy.forcedChoices)
+  }
+  resolveSlimeBossPlayReactions(next, actor, def, copy.card, ctx)
+  if (combatIsOver(next)) {
+    delete next.pendingCardCopy
+    return finishForcedCardPlay(settle(next), copy.forcedChoices)
+  }
+  if (def.guardian?.printedType.startsWith('Gem') &&
+    actor.powers.some((power) => power.defId === 'guardian_brilliant_scales')) {
+    const before = actor.block
+    if (playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, 1)
+    if (actor.block > before) next.log = [...next.log, `${actor.name}'s Brilliant Scales grants 1 Block`]
+  }
   for (const pendingExhaust of ctx.pendingExhaustTriggers ?? []) {
     const owner = findPlayer(next, pendingExhaust.playerId)
     if (owner) resolveExhaustReaction(next, owner, pendingExhaust.card)
@@ -794,7 +1263,7 @@ export function playCardCopy(
   }
 
   if (def.type === 'attack' && !ctx.sourceAttackCounted) {
-    actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+    recordAttackPlayed(next, actor)
   }
   fireTriggers(next, { kind: 'onPlayCard', cardType: def.type }, actor, copy.card.uid)
   if (def.type === 'skill') resolveEnraged(next, actor)
@@ -859,7 +1328,9 @@ function skipCardCopy(state: CombatState, playerId: string, reason: string): Com
   if (!actor) return state
   delete next.pendingCardCopy
   next.phase = copy.resumePhase
-  const def = faceOf(cardDef(copy.card.defId), copy.card.upgraded)
+  const def = effectiveCombatCardDef(
+    faceOf(cardDef(copy.card.defId), copy.card.upgraded), actor.guardianMode,
+  )
   const ctx = resolutionContext({ enemyUid: null, playerId }, def, copy.card, copy.energySpent)
   if (!copy.virtualOnly) cleanupPlayedCard(next, actor, copy.card, def, ctx, copy.forcedExhaust)
   for (const woven of copy.queuedWeaves ?? []) actor.discard.push(forgetRetain(woven))
@@ -902,17 +1373,29 @@ export function previewCardCopyChoice(state: CombatState, playerId: string): Car
       return { kind: 'search', cards: effect.kind === 'searchDraw'
         ? actor.draw
         : omniscienceEligibleCards(preview, actor) }
+    } else if ((effect as { kind: string }).kind === 'replicateSlime') {
+      return { kind: 'search', cards: actor.draw.filter((card) => cardDef(card.defId).cardKind === 'slime') }
     } else if (effect.kind === 'draw') {
       drawInto(preview, actor, amountOf(effect.amount, preview, actor, undefined, {
         enemyUid: null, playerId, energySpent: pending.energySpent,
       }), [])
       drew = true
+    } else if (drew && (effect as { kind: string }).kind === 'overexert') {
+      return { kind: 'search', cards: actor.hand.filter((card) => {
+        const candidate = faceOf(cardDef(card.defId), card.upgraded)
+        return cardIsPlayable(candidate, preview, actor) && (candidate.minimumX ?? 0) === 0
+      }) }
     } else if (effect.kind === 'scry') {
       return { kind: 'scry', cards: actor.draw.slice(0, effect.amount) }
+    } else if (effect.kind === 'scryToHand') {
+      return { kind: 'scryToHand', cards: actor.draw.slice(0, effect.amount) }
     } else if (drew && effect.kind === 'discard') {
       return { kind: 'discard', cards: actor.hand }
     } else if (drew && effect.kind === 'topdeck') {
       return { kind: 'topdeck', cards: actor.hand }
+    } else if (drew && effect.kind === 'load') {
+      const source = effect.source ?? 'hand'
+      return { kind: effect.upTo ? 'loadAny' : 'load', cards: actor[source] }
     }
   }
   return null
@@ -925,45 +1408,90 @@ export function activatePower(
   powerUid: string,
   context: PowerContext = {},
 ): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+  if (!activePowerWindow(state) || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = findPlayer(state, playerId)
   const held = player?.powers.find((power) => power.uid === powerUid)
   if (!player || player.dead || !held) return state
   const def = faceOf(cardDef(held.defId), held.upgraded)
-  if (!def.activeAbility || !def.oncePerTurn || powerAbilityUsed(state, playerId, powerUid)) return state
+  if (!def.activeAbility || def.oncePerTurn && powerAbilityUsed(state, playerId, powerUid)) return state
+  if (held.defId === 'guardian_revenge_protocol') {
+    const selected = player.hand.find((card) => card.uid === context.cardUid)
+    const selectedDef = selected && faceOf(cardDef(selected.defId), selected.upgraded)
+    const selectedType = selectedDef && effectiveCombatCardDef(selectedDef, player.guardianMode).type
+    if (player.guardianMode !== 'attack' || !selected || !selectedDef || selectedType !== 'attack' ||
+      !cardIsPlayable(selectedDef, state, player)) return state
+    const next = clone(state)
+    next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, powerUid))
+    next.startTurnProgress = { choices: [], forcedCard: {
+      playerId, cardUid: selected.uid, sourceCardId: held.defId, exhaustNonPower: false,
+      ...(state.phase === 'start' ? { resumeOpenStart: true } : {}),
+    } }
+    next.log = [...next.log, `${player.name}'s Revenge Protocol makes ${selectedDef.name} cost 0`]
+    return next
+  }
+  const energyCost = def.effects.reduce((sum, effect) => sum + (effect.kind === 'spendEnergy' ? effect.amount : 0), 0)
+  if (player.energy < energyCost) return state
   if (def.target === 'row') {
     if (!rowExists(state, context.enemyRow)) return state
-  } else if (cardNeedsEnemy(def, player, true, undefined, true) &&
+  } else if (cardNeedsEnemy(def, player, true, undefined, true, held.attachedGemId) &&
     resolveEnemyTargets(state, def.target ?? 'enemy', context.enemyUid ?? null).length === 0) return state
+  if (guardianCardNeedsAlly(def, player, held.attachedGemId) && context.playerId !== undefined &&
+    !state.players.some((candidate) => candidate.id === context.playerId && !candidate.dead)) return state
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
-  next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, powerUid))
+  if (def.oncePerTurn) next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, powerUid))
   const playContext: PlayContext = {
     enemyUid: context.enemyUid ?? null,
     enemyRow: context.enemyRow,
-    playerId,
+    playerId: context.playerId ?? playerId,
+    exhaustUids: context.exhaustUids,
+    guardianModeShift: context.guardianModeShift,
     sourcePowerUid: powerUid,
+    loadUids: context.loadUids,
+    chamberUids: context.chamberUids,
+    hermitEnemyUids: context.hermitEnemyUids,
+    scryDiscardUids: context.scryDiscardUids,
+    sourceAttachedGemId: held.attachedGemId,
   }
   for (const effect of def.effects) {
     applyEffect(next, actor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', playContext,
       `${actor.name}'s ${def.name}`)
     if (combatIsOver(next)) return settle(next)
   }
+  if (invalidPlayChoice(playContext)) return state
   return settle(next)
+}
+
+/** Private top-of-draw preview for active Powers such as Gem Finder. */
+export function previewPowerChoice(
+  state: CombatState,
+  playerId: string,
+  powerUid: string,
+): CardChoicePreview | null {
+  if (!activePowerWindow(state) || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
+    (state.pendingTriggers?.length ?? 0) > 0) return null
+  const player = findPlayer(state, playerId)
+  const held = player?.powers.find((power) => power.uid === powerUid)
+  if (!player || player.dead || !held || powerAbilityUsed(state, playerId, powerUid)) return null
+  const def = faceOf(cardDef(held.defId), held.upgraded)
+  return held.defId === 'guardian_gem_finder' && def.activeAbility
+    ? { kind: 'scry', cards: player.draw.slice(0, held.upgraded ? 4 : 3) }
+    : null
 }
 
 /** Settles a disconnected owner's private forced card and resumes queued abilities. */
 export function abandonForcedCard(state: CombatState, playerId: string): CombatState {
   const forced = state.startTurnProgress?.forcedCard
-  if ((state.phase !== 'start' && state.phase !== 'player') || forced?.playerId !== playerId ||
+  if ((state.phase !== 'start' && state.phase !== 'player' && state.phase !== 'discard') || forced?.playerId !== playerId ||
     typeof forced.cardUid !== 'string') return state
   const next = clone(state)
   const actor = findPlayer(next, playerId)
   const card = actor?.hand.find((held) => held.uid === forced.cardUid)
   if (!actor || !card) return state
-  const choices = [...(next.startTurnProgress?.choices ?? [])]
+  const choices = state.phase === 'start' && !forced.resumeOpenStart
+    ? [...(next.startTurnProgress?.choices ?? [])] : null
   next.startTurnProgress = undefined
   if (forced.exhaustNonPower && faceOf(cardDef(card.defId), card.upgraded).type !== 'power') {
     actor.hand = actor.hand.filter((held) => held.uid !== card.uid)

@@ -26,13 +26,14 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
   const coffee = player.relics.some((relic) => relic.defId === 'coffee_dripper')
   const hammer = player.relics.some((relic) => relic.defId === 'fusion_hammer')
   const peacePipe = player.relics.some((relic) => relic.defId === 'peace_pipe')
+  const straightRazor = player.relics.some((relic) => relic.defId === 'straight_razor')
   const restHeal = 3 + (player.relics.some((relic) => relic.defId === 'regal_pillow') ? 3 : 0)
   const ready = decision?.choice === 'rest' || decision?.choice === 'leave' || decision?.choice === 'ruby' || decision?.cardUid !== undefined
   const alive = seats.some((seat) => seat.playerId === player.id)
 
   useEffect(() => {
     if (saved) setDecision(saved)
-  }, [saved?.cardUid, saved?.choice])
+  }, [saved?.cardUid, saved?.choice, saved?.removeCardUid, saved?.transformCardUid])
 
   return (
     <section className="campfire" data-party-size={seats.length}
@@ -58,7 +59,18 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
         </div>
         {decision?.choice === 'rest' && peacePipe ? <div className="campfire__deck campfire__deck--remove">
           {deck.filter((card) => card.defId !== 'ascenders_bane').map((card) => <Card key={card.uid} card={card} selected={card.uid === decision.removeCardUid}
-            onClick={() => setDecision({ ...decision, removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid })} />)}
+            onClick={() => setDecision({
+              ...decision,
+              removeCardUid: decision.removeCardUid === card.uid ? undefined : card.uid,
+              transformCardUid: decision.removeCardUid !== card.uid && decision.transformCardUid === card.uid
+                ? undefined : decision.transformCardUid,
+            })} />)}
+        </div> : null}
+        {decision?.choice === 'rest' && straightRazor ? <div className="campfire__deck campfire__deck--transform">
+          {deck.filter((card) => card.defId !== 'ascenders_bane' && card.uid !== decision.removeCardUid).map((card) =>
+            <Card key={card.uid} card={card} selected={card.uid === decision.transformCardUid}
+              onClick={() => setDecision({ ...decision,
+                transformCardUid: decision.transformCardUid === card.uid ? undefined : card.uid })} />)}
         </div> : null}
         {decision?.choice === 'smith' ? (
           <div className="campfire__deck campfire__deck--smith">

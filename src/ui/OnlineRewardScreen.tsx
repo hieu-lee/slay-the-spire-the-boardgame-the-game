@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { cardDef } from '../game/cards.ts'
+import { cardDef, cardIsCurse } from '../game/cards.ts'
 import type { VisibleRun } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { ItemImage } from './ItemImage.tsx'
 import { RewardItem } from './RewardScreen.tsx'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { RewardSource } from '../game/run.ts'
+import { rewardSourceLabel } from './reward-source.ts'
+import { potionLimit } from '../game/acquisition.ts'
 
 type Props = {
   run: VisibleRun
@@ -79,7 +81,7 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
               ) : typeof offer.potion === 'string' ? (
                 <RewardItem kind="potion" id={offer.potion} title={potionDef(offer.potion).name}>
                   {mine ? <>
-                    <button type="button" disabled={player.potions.length >= (run.ascension >= 4 ? 2 : 3) ||
+                    <button type="button" disabled={player.potions.length >= potionLimit(run.ascension, player) ||
                       player.relics.some((relic) => relic.defId === 'sozu')}
                       onClick={() => onAction({ kind: 'potionReward', choice: 'gain' })}>Gain</button>
                     <button className="reward-screen__skip" type="button" onClick={() => onAction({ kind: 'potionReward', choice: 'skip' })}>Skip</button>
@@ -87,7 +89,7 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
                       disabled={player.relics.some((relic) => relic.defId === 'sozu')}
                       onClick={() => onAction({ kind: 'potionReward', choice: 'replace', potionId: held })}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
                     {run.players.filter((target) => target.id !== player.id && !target.dead &&
-                      target.potions.length < (run.ascension >= 4 ? 2 : 3) &&
+                      target.potions.length < potionLimit(run.ascension, target) &&
                       !target.relics.some((relic) => relic.defId === 'sozu')).map((target) => <button type="button" key={target.id}
                       onClick={() => onAction({ kind: 'potionReward', choice: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
                   </> : null}
@@ -95,7 +97,7 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
               ) : null}
               {offer.transformReward ? mine ? <div className="reward-screen__transform">
                 <strong>Transform a card</strong>
-                <div className="reward-screen__cards">{(player.deck ?? []).filter((card) => cardDef(card.defId).owner !== 'curse').map((card) =>
+                <div className="reward-screen__cards">{(player.deck ?? []).filter((card) => !cardIsCurse(card.defId)).map((card) =>
                   <Card key={card.uid} card={card} playable
                     onClick={() => onAction({ kind: 'transformReward', cardUid: card.uid })} />)}</div>
                 <button className="reward-screen__skip" type="button" onClick={() => onAction({ kind: 'transformReward', cardUid: null })}>Skip Transform</button>
@@ -109,7 +111,7 @@ export function OnlineRewardScreen({ run, viewerId, choice, decided, confirmed, 
                       {(offer.availableSources ?? []).map((source) => <label key={source}><input type="checkbox"
                         checked={selectedSources.includes(source)} onChange={(event) => setSources(() => event.target.checked
                           ? selectedSources.length < 3 ? [...selectedSources, source] : selectedSources
-                          : selectedSources.filter((candidate) => candidate !== source))} /> {source}</label>)}
+                          : selectedSources.filter((candidate) => candidate !== source))} /> {rewardSourceLabel(source)}</label>)}
                       <button type="button" disabled={selectedSources.length !== 3}
                         onClick={() => onAction({ kind: 'cardReward', choice: 'reveal', sources: selectedSources })}>Reveal chosen decks</button>
                     </fieldset> : <button type="button" onClick={() => onAction({ kind: 'cardReward', choice: 'reveal' })}>

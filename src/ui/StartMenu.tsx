@@ -38,6 +38,10 @@ const HEROES: { id: CharacterId; name: string }[] = [
   { id: 'silent', name: 'Silent' },
   { id: 'defect', name: 'Defect' },
   { id: 'watcher', name: 'Watcher' },
+  { id: 'slime_boss', name: 'Slime Boss' },
+  { id: 'guardian', name: 'Guardian' },
+  { id: 'hexaghost', name: 'Hexaghost' },
+  { id: 'hermit', name: 'Hermit' },
 ]
 
 const HERO_COPY: Record<CharacterId, string> = {
@@ -45,6 +49,10 @@ const HERO_COPY: Record<CharacterId, string> = {
   silent: 'A deadly huntress from the foglands who eradicates foes with daggers and poison. She can stack lasting Poison or gather Shivs for explosive turns, rewarding patience and careful preparation.',
   defect: 'An ancient combat automaton that became self-aware and learned to manipulate Orbs. Channel Lightning, Frost, and Dark, then Evoke them at the right moment to turn stored power into victory.',
   watcher: 'A blind ascetic who came to evaluate the Spire and mastered its divine Stances. Shift between Calm and Wrath to control risk, use Miracles for extra Energy, and Scry toward the perfect turn.',
+  slime_boss: 'A many-bodied monarch who commands a growing gang of Slimes. Split, combine, and direct the right Slime for each turn while keeping the whole horde alive.',
+  guardian: 'An ancient construct that alternates between offense and defense. Socket Gems into cards, build Vigor, and shift modes to turn careful setup into a crushing counterattack.',
+  hexaghost: 'A restless spirit bound to six flames. Advance and Retract the Heat track, gather Soulburn, and time its strongest effects for the hottest moments of the fight.',
+  hermit: 'A lone gunslinger haunted by the Spire. Load cards into the Chamber, line up Dead On attacks, and unleash carefully prepared shots when the moment is right.',
 }
 
 export function StartMenu({
@@ -75,7 +83,8 @@ export function StartMenu({
   const runSettingsDialog = useRef<HTMLDialogElement>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const hero = HEROES.find((candidate) => candidate.id === characters[0]) ?? HEROES[0]!
-  const special = relicDef(STARTING_RELIC[hero.id]!)
+  const startingRelic = STARTING_RELIC[hero.id]
+  const special = startingRelic ? relicDef(startingRelic) : null
   return (
     <main className="start-menu">
       <div className="start-menu__profile" aria-label="Current profile">
@@ -108,7 +117,7 @@ export function StartMenu({
           <p>Choose your character</p>
           <h1 id="character-select-title">{hero.name}</h1>
           <p>{HERO_COPY[hero.id]}</p>
-          <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p>
+          {special ? <p className="start-menu__character-special"><strong>{special.name}</strong> · {special.text}</p> : null}
           <small>Ascension {ascension}</small>
         </div>
         <img className="start-menu__character-hero" src={assetPath(characterHeroArt(hero.id))} alt={hero.name} />

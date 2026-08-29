@@ -1,4 +1,5 @@
-import type { CharacterId } from '../game/types.ts'
+import { CHARACTER_IDS } from '../game/types.ts'
+import type { CardType, CharacterId } from '../game/types.ts'
 import { CARDS } from '../game/cards.ts'
 import { POTIONS } from '../game/relics.ts'
 import { cardVfxRecipe, potionVfxRecipe, type VfxFamily, type VfxRecipe } from './combat-vfx.ts'
@@ -61,11 +62,15 @@ const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {
   silent: 1.08,
   defect: 1.14,
   watcher: 1.02,
+  slime_boss: 0.88,
+  guardian: 0.92,
+  hexaghost: 1.16,
+  hermit: 0.98,
 }
 
 const POTION_IDS = Object.keys(POTIONS).sort()
 const CARD_IDS = Object.keys(CARDS).sort()
-const CHARACTERS: readonly CharacterId[] = ['ironclad', 'silent', 'defect', 'watcher']
+const CHARACTERS: readonly CharacterId[] = CHARACTER_IDS
 const IDENTITY_SOUNDS: readonly CombatSound[] = [
   'ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak',
 ]
@@ -112,9 +117,10 @@ export function cardSfxRecipe(
   cardId: string,
   mode?: number,
   upgraded = cardId.endsWith('+'),
+  resolvedType?: CardType,
 ): CombatSfxRecipe {
   const baseId = cardId.endsWith('+') ? cardId.slice(0, -1) : cardId
-  const visual = cardVfxRecipe(character, baseId, mode, upgraded)
+  const visual = cardVfxRecipe(character, baseId, mode, upgraded, resolvedType)
   const slot = CHARACTERS.indexOf(character) * CARD_IDS.length + CARD_IDS.indexOf(baseId)
   return tunedRecipe(
     `card:${character}:${baseId}:${mode ?? 'base'}`,

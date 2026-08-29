@@ -1,6 +1,6 @@
 import { cardDef } from '../game/cards.ts'
 import { bossAnimationImagePath, cardThumbPath, enemyImagePath } from '../game/assets.ts'
-import { abilityText, actionsForEnemy, enemyAbilities, enemyDef } from '../game/enemies.ts'
+import { abilityText, actionsForEnemy, enemyAbilities, enemyAttackBonus, enemyDef } from '../game/enemies.ts'
 import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
 import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
@@ -15,6 +15,7 @@ import { bossAttackContactLeftFor, bossAttackMotionFor, bossAttackScaleFor } fro
 
 type EnemyCardProps = {
   enemy: Enemy
+  enemies: readonly Enemy[]
   /** The finished display name, built by the engine so the log agrees. */
   label: string
   /** The round's shared die, which decides what a die-pattern enemy will do. */
@@ -42,7 +43,7 @@ type EnemyCardProps = {
    * and Power count both change it. An AoE hits every row, but the occupant of
    * this row is the reading that matters to whoever owns it.
    */
-  defender?: Pick<Player, 'vulnerable' | 'powers'>
+  defender?: Pick<Player, 'row' | 'vulnerable' | 'powers'>
   onClick?: (enemy: Enemy) => void
 }
 
@@ -129,6 +130,16 @@ function intentParts(action: EnemyAction, swing: (printed: number) => number): I
       return [{ icon: 'monster', value: action.defIds.length, label: 'summons', visibleLabel: 'Summon' }]
     case 'summonUntil':
       return [{ icon: 'monster', value: action.perPlayer, label: 'summons per player', visibleLabel: 'Summon per player' }]
+    case 'shuffleCurse':
+      return [{ icon: 'monster', value: action.amount, aoe: action.aoe, label: 'Curses shuffled into each deck', visibleLabel: 'Curse' }]
+    case 'reviveMatching':
+      return [{ icon: 'monster', label: 'revives defeated summons', visibleLabel: 'Revive' }]
+    case 'doubleNamedHp':
+      return [{ icon: 'monster', label: `doubles ${action.defId.replaceAll('_', ' ')} HP`, visibleLabel: 'Double HP' }]
+    case 'healMatching':
+      return [{ icon: 'monster', value: action.amount, label: 'heals matching summons', visibleLabel: 'Heal' }]
+    case 'gainSelfVulnerable':
+      return [{ icon: 'vulnerable', value: action.amount, label: 'Vulnerable to self' }]
     case 'leave':
       return [{ icon: 'monster', label: 'leaves combat', visibleLabel: 'Leaves' }]
     case 'die':
@@ -255,6 +266,7 @@ function displayedAbilityText(
 
 export function EnemyCard({
   enemy,
+  enemies,
   label,
   die,
   acting = false,
@@ -415,16 +427,13 @@ export function EnemyCard({
     }
   }, [art, bossAttacking, bossAttackContactLeft, bossAttackMotion])
   const abilities = enemyAbilities(def)
-  // Curiosity adds the defender's Power count to every hit, so it belongs in the
-  // preview for the same reason Strength and Weak do.
-  const curiosity = abilities.some((ability) => ability.kind === 'curiosity')
   const mods = attackerModsOfEnemy(visibleEnemy)
-  const swing = (printed: number) => swingDamage(
-    printed + (curiosity ? defender?.powers.length ?? 0 : 0),
-    mods,
-    { vulnerable: defender?.vulnerable ?? 0 },
-  )
-  const intent = actions.flatMap((action) => intentParts(action, swing))
+  const intent = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
+    printed + (defender ? enemyAttackBonus(enemies, visibleEnemy, action, defender) : 0),
+    mods, { vulnerable: defender?.vulnerable ?? 0 },
+  )))
+  const swing = (printed: number) => swingDamage(printed, mods,
+    { vulnerable: defender?.vulnerable ?? 0 })
   if ((visibleEnemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
     intent.push(...intentParts({ kind: 'actsLast' }, swing))
   }

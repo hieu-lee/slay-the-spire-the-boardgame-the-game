@@ -15,6 +15,8 @@ type MapScreenProps = {
    * party mid-act can see what it is building a deck against.
    */
   bossDefId?: string | null
+  canRerollBoss?: boolean
+  onRerollBoss?: () => void
   /**
    * Shown for reading, not for walking — the in-combat map view. Nothing is
    * reachable, but unlike `blocked` the nodes stay hoverable and focusable,
@@ -116,7 +118,7 @@ function jitter(id: string): { x: number; y: number } {
  * the only reliable source of a room's position is the DOM.
  */
 export function MapScreen({
-  map, choices, blocked = false, bossDefId, readOnly = false, onEnter,
+  map, choices, blocked = false, bossDefId, canRerollBoss = false, onRerollBoss, readOnly = false, onEnter,
 }: MapScreenProps) {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const wasBlocked = useRef(blocked)
@@ -303,6 +305,11 @@ export function MapScreen({
                 ? 'Enter the Spire.'
                 : 'Choose the next room.'}
       </p>
+      {canRerollBoss && onRerollBoss ? (
+        <button type="button" onClick={onRerollBoss}>
+          Reroll {bossDefId ? enemyDef(bossDefId, 0).name : 'boss'}
+        </button>
+      ) : null}
 
       {/* Present at all times and only its TEXT changes: a live region inserted
           together with its content is the classic case assistive technology

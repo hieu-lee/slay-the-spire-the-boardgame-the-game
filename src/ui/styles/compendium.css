@@ -30,10 +30,12 @@
 .compendium__pools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.2rem; margin: 0.75rem 0; }
 .compendium__pools button { display: grid; aspect-ratio: 1; place-items: center; padding: 0.12rem; border: 0; background: none; }
 .compendium__pools img { width: 100%; height: 100%; object-fit: contain; opacity: 0.64; filter: grayscale(0.6) brightness(0.72); transition: opacity var(--motion-fast) var(--ease), filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
+.compendium__pool-label { color: #c8bba2; font-size: 0.65rem; font-weight: 700; line-height: 1.05; text-align: center; }
 .compendium__pools button:hover img,
 .compendium__pools button:focus-visible img { opacity: 0.9; filter: grayscale(0.15) brightness(0.95); transform: translateY(-0.12rem) scale(1.05); }
 .compendium__pools button[aria-pressed='true'] { background: none; box-shadow: none; }
 .compendium__pools button[aria-pressed='true'] img { opacity: 1; filter: drop-shadow(0 0 0.42rem rgb(244 205 91 / 0.78)); transform: scale(1.08); }
+.compendium__pools button[aria-pressed='true'] .compendium__pool-label { color: #f4d765; text-shadow: 0 0 0.42rem rgb(244 205 91 / 0.78); }
 
 .compendium__filter-block { margin: 0.25rem 0; border: 1px solid #30484c; border-radius: 0.25rem; background: rgb(18 43 47 / 0.62); }
 .compendium__filter-block h2,

@@ -28,7 +28,7 @@ import {
 import { applyEnemyAction } from './enemy-turn.ts'
 import { canActivatePotion, canActivateRelic } from './items.ts'
 import { addStatus, damageEnemy } from './pieces.ts'
-import { effectEvokePlan, effectIsActive, reachesEnemy } from './queries.ts'
+import { effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, reachesEnemy } from './queries.ts'
 import type {
   CombatState,
   EvokeChoice,
@@ -39,14 +39,18 @@ import type {
   StartTurnScryPreview,
   StartTurnSource,
   TriggerSource,
+  PlayContext,
 } from './types.ts'
 import { cardDef } from '../cards.ts'
-import { gainBlock } from '../damage.ts'
+import { gainBlock, gainVulnerable } from '../damage.ts'
 import { drawSummon, enemyAbilities, enemyDef, startingHp } from '../enemies.ts'
 import { nextInt } from '../rng.ts'
 import type { TriggerEvent } from '../triggers.ts'
 import { CAPS } from '../types.ts'
 import type { Enemy, OrbType, Player } from '../types.ts'
+import { clearSlimeTurn } from '../downfall/slime-boss.ts'
+import { shiftGuardianMode } from '../downfall/guardian.ts'
+import { chosenDieRelicAbilities, relicDef } from '../relics.ts'
 
 /**
  * Begins a Player Turn: either the first of the combat, or the one that
@@ -59,9 +63,18 @@ import type { Enemy, OrbType, Player } from '../types.ts'
  * whose Enemy Turn has just ended.
  */
 export function preparePlayerTurn(state: CombatState): CombatState {
+  if (mandatoryChoicePending(state)) return state
   const opening = state.turn === 0
   if (!opening && state.phase !== 'roundEnd') return state
   return beginPlayerTurn(clone(state))
+}
+
+/** Begins a turn but pauses after opening hands, before the shared Roll. */
+export function preparePlayerTurnThroughDraw(state: CombatState): CombatState {
+  if (mandatoryChoicePending(state)) return state
+  const opening = state.turn === 0
+  if (!opening && state.phase !== 'roundEnd') return state
+  return beginPlayerTurn(clone(state), true)
 }
 
 export function resolveDueSummons(next: CombatState, timing: 'startOfTurn' | 'endOfTurn'): void {
@@ -79,14 +92,16 @@ export function resolveDueSummons(next: CombatState, timing: 'startOfTurn' | 'en
       }
       const def = enemyDef(defId, ascension)
       const hp = startingHp(def, next.players.length)
+      const summonBuff = source && enemyAbilities(enemyDef(source.defId, source.ascension))
+        .find((ability) => ability.kind === 'buffSummons' && defId.startsWith(ability.defIdPrefix))
       const summoned: Enemy = {
         uid: `${summon.sourceUid}-summon-${next.turn}-${summon.row}-${index}`,
         defId, row: summon.row, isBoss: summon.isBoss ?? false, ascension,
-        hp, maxHp: hp, block: 0,
+        hp, maxHp: hp, block: summonBuff?.kind === 'buffSummons' ? summonBuff.block : 0,
         strength: (summon.strengthDefId === undefined || summon.strengthDefId === name ? summon.strength ?? 0 : 0) +
           (summon.strengthPerPower
             ? Math.max(0, ...next.players.filter((player) => !player.dead).map((player) => player.powers.length))
-            : 0),
+            : 0) + (summonBuff?.kind === 'buffSummons' ? summonBuff.strength : 0),
         vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
         actionIndex: 0, phase: 0, abilityUsed: false, dead: false,
       }
@@ -107,7 +122,7 @@ export function finishStartTurnDraw(next: CombatState, drewFrom: number, roll: b
       enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'confusion'))
     const confusion = snecko && enemyAbilities(enemyDef(snecko.defId, snecko.ascension))
       .find((ability) => ability.kind === 'confusion')
-    if (confusion?.kind === 'confusion') player.nextCardCost = confusion.byRoll[next.die] ?? null
+    if (confusion?.kind === 'confusion') player.enemyNextCardCost = confusion.byRoll[next.die] ?? null
     if (player.relics.some((relic) => relic.defId === 'snecko_eye') && next.die >= 5) {
       player.nextCardCost = next.die === 5 ? 2 : 0
     }
@@ -119,11 +134,11 @@ export function finishStartTurnDraw(next: CombatState, drewFrom: number, roll: b
   ]
 }
 
-function continueStartTurnDraw(next: CombatState, drewFrom: number): CombatState {
+function continueStartTurnDraw(next: CombatState, drewFrom: number, pauseAfterDraw = false): CombatState {
   for (const player of next.players) {
     if (player.dead) continue
     for (const relic of player.relics) {
-      if (['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(relic.defId)) relic.spent = false
+      if (['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'downfall_nilrys_codex', 'loaded_die', 'fuel_canister'].includes(relic.defId)) relic.spent = false
     }
     drawInto(next, player, 5)
   }
@@ -134,7 +149,11 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number): CombatState
     return settle(next)
   }
   if (next.pendingTriggers.length > 0) {
-    next.startTurnProgress = { choices: [], rollPending: { drewFrom } }
+    next.startTurnProgress = { choices: [], rollPending: { drewFrom, pauseAfterDraw } }
+    return next
+  }
+  if (pauseAfterDraw) {
+    next.startTurnProgress = { choices: [], pauseAfterDraw: { drewFrom } }
     return next
   }
   // One roll per round; every die effect this round reads this value. It comes
@@ -144,7 +163,7 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number): CombatState
 }
 
 /** Start of Turn: reset, draw 5, then roll the shared die (p.12). Mutates `next`. */
-function beginPlayerTurn(next: CombatState): CombatState {
+function beginPlayerTurn(next: CombatState, pauseAfterDraw = false): CombatState {
   const opening = next.turn === 0
   next.phase = 'start'
   next.turn += 1
@@ -156,10 +175,34 @@ function beginPlayerTurn(next: CombatState): CombatState {
     enemy.actionIndex = 0
     next.log = [...next.log, `${enemyLabel(next.enemies, enemy)} enters Defensive Mode`]
   }
+  for (const source of next.enemies.filter((enemy) => !enemy.dead)) {
+    for (const ability of enemyAbilities(enemyDef(source.defId, source.ascension))) {
+      if (ability.kind === 'startRoundSelfVulnerable') {
+        const before = source.vulnerable
+        source.vulnerable = gainVulnerable(source.vulnerable, ability.amount)
+        if (source.vulnerable > before) next.log = [...next.log,
+          `${enemyLabel(next.enemies, source)} gains ${source.vulnerable - before} Vulnerable`]
+      }
+      if (ability.kind === 'reviveOnePerRow') for (const row of new Set(next.players
+        .filter((player) => !player.dead).map((player) => player.row))) {
+        const target = next.enemies.find((enemy) => enemy.dead && enemy.row === row &&
+          enemy.defId.startsWith(ability.defIdPrefix))
+        if (!target) continue
+        target.dead = false
+        target.hp = startingHp(enemyDef(target.defId, target.ascension), next.players.length)
+        target.block = target.vulnerable = target.weak = target.poison = 0
+        target.strength = 0
+        target.actionIndex = 0
+        target.abilityUsed = false
+        next.log = [...next.log, `${enemyLabel(next.enemies, target)} revives through Infinite Blades`]
+      }
+    }
+  }
   next.discardedThisTurn = []
   next.stanceChangedThisTurn = []
   next.powerTriggersUsedThisTurn = []
   next.playedCardsThisTurn = []
+  next.partyAttackDiscount = false
   next.startTurnStage = 'effects'
   next.startTurnProgress = undefined
   // Where this round's log starts, so the divider can be placed above anything
@@ -180,7 +223,10 @@ function beginPlayerTurn(next: CombatState): CombatState {
     const leftover = !opening && player.relics.some((relic) => relic.defId === 'ice_cream') ? player.energy : 0
     player.energy = Math.min(CAPS.energy, 3 + leftover)
     player.nextCardCost = null
-    const keepBlock = player.powers.some((power) => cardDef(power.defId).retainBlock) || player.calipersArmed
+    player.enemyNextCardCost = null
+    const shieldCharger = player.powers.find((power) => power.defId === 'guardian_shield_charger')
+    if (shieldCharger) player.block = Math.min(player.block, shieldCharger.upgraded ? 3 : 2)
+    const keepBlock = Boolean(shieldCharger) || player.powers.some((power) => cardDef(power.defId).retainBlock) || player.calipersArmed
     if (!keepBlock) player.block = 0
     player.calipersArmed = false
     player.drawLocked = false
@@ -188,6 +234,8 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.hpLossLimitThisRound = undefined
     player.freeCardsThisTurn = 0
     player.freeAttacksThisTurn = 0
+    player.freeGemCardsThisTurn = 0
+    player.freePowersThisTurn = 0
     player.cardPlayLocked = false
     player.doubledAttacksThisTurn = 0
     player.tripledAttacksThisTurn = 0
@@ -195,10 +243,17 @@ function beginPlayerTurn(next: CombatState): CombatState {
     player.doubledSkillsThisTurn = 0
     player.retainCardsThisTurn = 0
     player.cardsPlayedThisTurn = 0
+    player.energySpentThisTurn = 0
+    player.nextPowerOrSlimeDiscount = undefined
     player.powerPlayedThisTurn = false
     player.damageDealtZeroThisTurn = false
+    player.soulburnUsedThisTurn = false
+    player.nextSoulburnDamageBonus = 0
+    player.exhaustNextCardAfterUid = undefined
     player.attacksPlayedThisTurn = 0
-    for (const pile of ['hand', 'draw', 'discard', 'exhaust', 'powers'] as const) {
+    for (const slime of player.slimes) clearSlimeTurn(slime)
+    player.nextAttackRapidFire = 0
+    for (const pile of ['hand', 'draw', 'discard', 'exhaust', 'powers', 'chamber'] as const) {
       player[pile] = player[pile].map(({
         freeThisTurn: _free,
         costReductionThisTurn: _reduction,
@@ -212,11 +267,11 @@ function beginPlayerTurn(next: CombatState): CombatState {
     })))
   if (beforeDraw.length > 0) {
     next.startTurnProgress = {
-      choices: [], beforeDraw: { drewFrom, sources: beforeDraw, ordered: beforeDraw.length === 1 },
+      choices: [], beforeDraw: { drewFrom, sources: beforeDraw, ordered: beforeDraw.length === 1, pauseAfterDraw },
     }
     return next
   }
-  return continueStartTurnDraw(next, drewFrom)
+  return continueStartTurnDraw(next, drewFrom, pauseAfterDraw)
 }
 
 export function startTurnScryPreview(state: CombatState): StartTurnScryPreview | undefined {
@@ -276,7 +331,18 @@ export function continueBeforeDraw(state: CombatState): CombatState {
   if (state.pendingCardCopy) return state
   if (!progress || progress.sources.length > 0 || state.pendingTriggers.length > 0) return settle(state)
   state.startTurnProgress = undefined
-  return finishPreparedStartTurnWithChoices(continueStartTurnDraw(state, progress.drewFrom))
+  const continued = continueStartTurnDraw(state, progress.drewFrom, progress.pauseAfterDraw)
+  return progress.pauseAfterDraw ? continued : finishPreparedStartTurnWithChoices(continued)
+}
+
+/** Continues Mysterious Sphere from its printed after-Draw interruption. */
+export function resumePlayerTurnAfterDraw(state: CombatState): CombatState {
+  const pending = state.startTurnProgress?.pauseAfterDraw
+  if (state.phase !== 'start' || !pending || state.pendingTriggers.length > 0) return state
+  const next = clone(state)
+  next.startTurnProgress = undefined
+  finishStartTurnDraw(next, pending.drewFrom, true)
+  return finishPreparedStartTurnWithChoices(next)
 }
 
 /** Resolves the current owner's private pre-draw Scry and advances the Draw step. */
@@ -313,7 +379,7 @@ export function triggerTargets(state: CombatState, player: Player, source: Trigg
 
 function startTurnSources(state: CombatState): StartTurnSource[] {
   if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
-    state.startTurnProgress?.discard) return []
+    state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard) return []
   const events: TriggerEvent[] = [
     ...(state.turn === 1 ? [{ kind: 'startOfCombat' as const }] : []),
     { kind: 'startOfTurn' },
@@ -349,6 +415,17 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
     })) : []
   }
   const enemySources: StartTurnSource[] = []
+  const guardianSources: StartTurnSource[] = state.players.filter((player) =>
+    !player.dead && player.character === 'guardian' && player.guardianMode !== null && !player.guardianModeLocked)
+    .map((player) => ({
+      guardianModeShiftPlayerId: player.id,
+      ability: {
+        id: `guardian:${player.id}/mode-shift`,
+        playerId: player.id,
+        label: `${player.name} — Mode Shift`,
+        guardianModeShift: true,
+      },
+    }))
   if (owner) for (const enemy of livingEnemies(state)) {
     const def = enemyDef(enemy.defId, enemy.ascension)
     const amount = state.turn === 1 ? def.startingBlock ?? 0 : 0
@@ -358,7 +435,8 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
         label: `${enemyLabel(state.enemies, enemy)} — ${amount} Block` },
     })
   }
-  const regrow = owner && state.enemies.some((enemy) => enemy.dead && enemy.defId.startsWith('darkling')) &&
+  const regrow = owner && state.enemies.some((enemy) => enemy.dead &&
+    (enemy.defId.startsWith('darkling') || enemy.defId.startsWith('downfall_darkling_'))) &&
     livingEnemies(state).find((enemy) =>
       enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'regrow'))
   if (owner && regrow) enemySources.push({
@@ -366,7 +444,7 @@ function startTurnSources(state: CombatState): StartTurnSource[] {
     ability: { id: 'enemy:darkling/regrow', playerId: owner.id,
       label: `${enemyLabel(state.enemies, regrow)} — Regrow` },
   })
-  return [...playerSources, ...enemySources]
+  return [...guardianSources, ...playerSources, ...enemySources]
 }
 
 function pendingStartTurnSources(state: CombatState): StartTurnSource[] {
@@ -463,6 +541,10 @@ function startTurnAbilitiesFor(
       .map((enemy) => ({ uid: enemy.uid, label: enemyLabel(plannedEnemies, enemy) }))
     const choice = choiceById.get(id)
     if (!entry.source) {
+      if (entry.guardianModeShiftPlayerId && choice?.guardianModeShift) {
+        planningPlayer.guardianMode = shiftGuardianMode(planningPlayer.guardianMode!)
+        plannedState = simulationState
+      }
       const enemy = entry.enemyUid && plannedEnemies.find((candidate) => candidate.uid === entry.enemyUid)
       if (!planningBlocked && enemy) {
         if (entry.enemyAction) applyEnemyAction(simulationState, enemy, entry.enemyAction)
@@ -574,7 +656,7 @@ function startTurnAbilitiesFor(
         const exactPlayer = findPlayer(exact, entry.ability.playerId)!
         if (resolveTriggerSource(
           exact, exactPlayer, entry.source, false, choice?.shivEnemyUids, choice?.enemyUid, undefined,
-          choice?.evokeSlots, choice?.evokeEnemyUids, undefined, choice?.targetPlayerId,
+          choice?.evokeSlots, choice?.evokeEnemyUids, undefined, choice?.targetPlayerId, choice?.exhaustUids,
         )) {
           plannedState = exact
           if (combatIsOver(exact)) planningEnded = true
@@ -587,6 +669,9 @@ function startTurnAbilitiesFor(
     return {
       ...entry.ability, targets, enemyTargetStale,
       players: entry.ability.players,
+      exhaustCards: entry.source.effects.some((effect) => effect.kind === 'exhaustFromHand')
+        ? planningPlayer.hand
+        : undefined,
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
       evokeChoice, evokeTargets, evokeOrbs, evokeTargetIndex,
@@ -609,6 +694,8 @@ export function defaultStartTurnChoices(state: CombatState): StartTurnChoice[] {
     id: ability.id,
     enemyUid: ability.targets?.[0]?.uid,
     targetPlayerId: ability.players?.[0]?.id,
+    exhaustUids: ability.exhaustCards?.slice(0, 1).map((card) => card.uid),
+    guardianModeShift: ability.guardianModeShift ? false : undefined,
     shivEnemyUids: Array(ability.overflowShivs).fill(null),
     evokeSlots: [] as number[],
     evokeEnemyUids: [] as (string | null)[],
@@ -661,7 +748,7 @@ export function resolveStartPlayerTurn(
 ): CombatState {
   if (state.phase !== 'start' || state.startTurnProgress?.forcedCard ||
     state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
-    state.startTurnProgress?.discard ||
+    state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const sources = pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
@@ -749,13 +836,22 @@ export function continueStartTurn(
       (ability.players
         ? !ability.players.some((candidate) => candidate.id === choice.targetPlayerId)
         : choice.targetPlayerId !== undefined) ||
+      (ability.guardianModeShift
+        ? typeof choice.guardianModeShift !== 'boolean'
+        : choice.guardianModeShift !== undefined) ||
       !validStartTurnShivChoice(next, player, ability.overflowShivs, choice.shivEnemyUids) ||
       !validStartTurnEvokeChoice(next, player, entry.source, choice)) {
       next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return rollback ?? next
     }
     if (!entry.source) {
-      if (entry.facingPlayerId) {
+      if (entry.guardianModeShiftPlayerId) {
+        if (choice.guardianModeShift && player.guardianMode !== null && !player.guardianModeLocked) {
+          player.guardianMode = shiftGuardianMode(player.guardianMode)
+          next.log = [...next.log,
+            `${player.name} enters ${player.guardianMode === 'attack' ? 'Attack' : 'Defense'} Mode`]
+        }
+      } else if (entry.facingPlayerId) {
         const facingPlayer = findPlayer(next, entry.facingPlayerId)
         const enemy = next.enemies.find((candidate) => !candidate.dead && candidate.uid === choice.enemyUid)
         if (!facingPlayer) return rollback ?? next
@@ -785,7 +881,7 @@ export function continueStartTurn(
     const checkpoint = rollback ? null : clone(next)
     if (!resolveTriggerSource(
       next, player, entry.source, false, choice.shivEnemyUids, choice.enemyUid, undefined,
-      choice.evokeSlots, choice.evokeEnemyUids, undefined, choice.targetPlayerId,
+      choice.evokeSlots, choice.evokeEnemyUids, undefined, choice.targetPlayerId, choice.exhaustUids,
     )) {
       if (rollback) return rollback
       checkpoint!.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
@@ -839,7 +935,84 @@ export function finishForcedCardPlay(
     state.startTurnProgress.choices = choices.map((choice) => ({ ...choice }))
     return state
   }
+  if ((state.pendingDieRelicChoices?.length ?? 0) > 0) {
+    state.startTurnProgress = { choices: choices.map((choice) => ({ ...choice })) }
+    return state
+  }
   return continueStartTurn(state, choices)
+}
+
+function resumeAfterDieRelicChoice(state: CombatState): CombatState {
+  if ((state.pendingDieRelicChoices?.length ?? 0) === 0) flushPendingTriggers(state)
+  const settled = settle(state)
+  return (settled.pendingDieRelicChoices?.length ?? 0) === 0 && settled.phase === 'start' &&
+    (settled.pendingTriggers?.length ?? 0) === 0 &&
+    settled.startTurnProgress && !settled.startTurnProgress.forcedCard &&
+    !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending &&
+    !settled.startTurnProgress.pauseAfterDraw &&
+    !settled.startTurnProgress.discard
+    ? continueStartTurn(settled, settled.startTurnProgress.choices)
+    : settled
+}
+
+export function resolvePendingDieRelicChoice(
+  state: CombatState,
+  playerId: string,
+  context: Pick<PlayContext, 'discardUids' | 'exhaustUids'>,
+): CombatState {
+  const pending = state.pendingDieRelicChoices?.[0]
+  if (!pending || pending.playerId !== playerId) return state
+  const next = clone(state)
+  let first = true
+  while (next.pendingDieRelicChoices?.length) {
+    const queued = next.pendingDieRelicChoices[0]!
+    const owner = findPlayer(next, queued.playerId)
+    const ability = owner && chosenDieRelicAbilities(relicDef(queued.relicDefId))[queued.abilityIndex]
+    if (!owner || !ability || ability.trigger.kind !== 'dieRelic') return state
+    const privateEffect = ability.effects.find((effect) =>
+      effect.kind === 'discard' || effect.kind === 'exhaustFromHand')
+    if (!first && privateEffect) break
+    const selected = privateEffect?.kind === 'discard' ? context.discardUids ?? [] : context.exhaustUids ?? []
+    const required = privateEffect ? Math.min(privateEffect.amount, owner.hand.length) : 0
+    if (privateEffect && (new Set(selected).size !== selected.length ||
+      selected.some((uid) => !owner.hand.some((card) => card.uid === uid)) ||
+      (ability.optional ? selected.length !== 0 && selected.length !== required : selected.length !== required))) return state
+    next.pendingDieRelicChoices = next.pendingDieRelicChoices.slice(1)
+    if (!(ability.optional && selected.length === 0)) {
+      const nestedContext: PlayContext = {
+        enemyUid: queued.enemyUid,
+        playerId: queued.targetPlayerId,
+        ...(privateEffect?.kind === 'discard' ? { discardUids: selected } : {}),
+        ...(privateEffect?.kind === 'exhaustFromHand' ? { exhaustUids: selected } : {}),
+        shortfall: false,
+        invalidDiscardChoice: false,
+        invalidExhaustChoice: false,
+        pendingTriggers: [],
+      }
+      for (const effect of ability.effects) {
+        applyEffect(next, owner, effect, ability.target ?? 'enemy', ability.supportTarget ?? 'self', nestedContext,
+          queued.sourceLabel)
+        if (invalidPlayChoice(nestedContext)) return state
+      }
+      if (nestedContext.pendingTriggers?.length) {
+        next.pendingTriggers = [...nestedContext.pendingTriggers, ...(next.pendingTriggers ?? [])]
+      }
+    }
+    first = false
+  }
+  return resumeAfterDieRelicChoice(next)
+}
+
+/** Deterministic disconnect fallback: mandatory payments resolve; optional ones are declined. */
+export function defaultPendingDieRelicChoice(state: CombatState, playerId: string): CombatState {
+  const pending = state.pendingDieRelicChoices?.[0]
+  const owner = pending && findPlayer(state, playerId)
+  const ability = pending && owner && chosenDieRelicAbilities(relicDef(pending.relicDefId))[pending.abilityIndex]
+  if (!pending || pending.playerId !== playerId || !owner || !ability) return state
+  const effect = ability.effects.find((candidate) => candidate.kind === 'discard' || candidate.kind === 'exhaustFromHand')
+  const chosen = ability.optional || !effect ? [] : owner.hand.slice(0, effect.amount).map((card) => card.uid)
+  return resolvePendingDieRelicChoice(state, playerId, effect?.kind === 'discard'
+    ? { discardUids: chosen } : { exhaustUids: chosen })
 }
 
 export function finishCardCopy(
@@ -943,7 +1116,9 @@ export function startTurnNeedsChoice(
   if (hasPostRollStartTurnChoice(state)) return true
   const abilities = knownAbilities ?? startTurnAbilities(state)
   // An ability that cannot be resolved without input, whatever else is queued.
-  if (abilities.some((ability) => ability.overflowShivs > 0 || (ability.targets?.length ?? 0) > 1 ||
+  if (abilities.some((ability) => (ability.exhaustCards?.length ?? 0) > 0 || ability.overflowShivs > 0 ||
+    ability.guardianModeShift ||
+    (ability.targets?.length ?? 0) > 1 ||
     (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true
   if (abilities.some((ability) => ability.id === 'enemy:darkling/regrow') &&
     abilities.some((ability) => (ability.targets?.length ?? 0) > 0)) return true

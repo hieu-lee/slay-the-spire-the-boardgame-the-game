@@ -12,17 +12,21 @@ import { addCard, characterRewardDeck, createItemDecks } from '../acquisition.ts
 import { createCampaignProgress, createSpireKeys, isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
 import type { CampaignProgress } from '../campaign.ts'
 import { STARTER_DECKS } from '../cards.ts'
+import { bruiserSlime } from '../downfall/slime-boss.ts'
+import { GUARDIAN_PHYSICAL_DECKS } from '../downfall/guardian.ts'
+import { queueNewGuardianSockets } from './guardian-gems.ts'
 import { buildEventDeck } from '../events.ts'
 import { addBurningElite, generateMap } from '../map.ts'
 import type { RoomKind } from '../map.ts'
-import { normalizeModifierIds, rollDailyModifiers } from '../meta.ts'
+import { normalizeModifierIds, rollDailyModifiers, rulesetForCharacters } from '../meta.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions } from '../meta.ts'
-import { dealNeow } from '../neow.ts'
+import { dealBlessings, neowCard } from '../neow.ts'
 import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
 import { createRng, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import { createDamageStats } from '../damage.ts'
+import { DOWNFALL_CHARACTER_IDS } from '../types.ts'
 import type { CardInstance, CharacterId, Player } from '../types.ts'
 
 /**
@@ -92,6 +96,8 @@ export function createPlayer(
     maxHp,
     block: 0,
     energy: 3,
+    nextCardCost: null,
+    enemyNextCardCost: null,
     gold: 0,
     deck,
     draw: shuffle(rng, [...deck]),
@@ -133,10 +139,19 @@ export function createPlayer(
     orbEndTurnBonus: 0,
     lightningEndTurnBonus: 0,
     damageStats: createDamageStats(),
-    relics: [{ defId: STARTING_RELIC[character] ?? 'burning_blood', spent: false }],
+    chamber: [],
+    chamberSlots: character === 'hermit' ? 2 : 0,
+    heat: character === 'hexaghost' ? 1 : 0,
+    soulburn: 0,
+    guardianMode: character === 'guardian' ? 'attack' : null,
+    vigor: 0,
+    vigorSpentThisTurn: 0,
+    slimes: character === 'slime_boss' ? [bruiserSlime()] : [],
+    relics: STARTING_RELIC[character] ? [{ defId: STARTING_RELIC[character], spent: false }] : [],
     potions: [],
     cardRewards: rewardDecks?.cardRewards ?? shuffle(rng, characterRewardDeck(character, false, campaignProgress)),
     rareRewards: rewardDecks?.rareRewards ?? shuffle(rng, characterRewardDeck(character, true, campaignProgress)),
+    lootChests: 0,
     dead: false,
   }
 }
@@ -177,22 +192,25 @@ export function createRun(
   }
   if (ascension >= 9) for (const player of players) player.hp -= 1
 
-  const relicDecks = createRelicDecks(rng)
+  const ruleset = rulesetForCharacters(party.map((member) => member.character), metaOptions.ruleset)
+  const relicDecks = createRelicDecks(rng, ruleset)
   const keys = createSpireKeys()
   const baseMap = generateMap(rng, 1, ascension)
   const map = isActIVUnlocked(campaignProgress) ? addBurningElite(rng, baseMap) : baseMap
-  const actBossDefId = rollActBoss(rng, 1)
+  const actBossDefId = rollActBoss(rng, 1, ruleset)
   const colorlessUnlocked = isColorlessUnlocked(campaignProgress)
-  const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character))
+  const itemDecks = createItemDecks(rng, colorlessUnlocked || modifier('all_star') || modifier('prismatic_shard'), campaignProgress, party.map((member) => member.character), ruleset)
   itemDecks.relics = [...relicDecks.relicDeck]
-  const dealt = dealNeow(rng, players.map((player) => player.id), colorlessUnlocked)
+  const dealt = dealBlessings(rng, players, colorlessUnlocked, ruleset)
   const neow: NeowState = {
     deck: dealt.deck,
+    heartDeck: dealt.heartDeck,
     players: Object.fromEntries(players.map((player) => {
       return [player.id, {
         cardId: dealt.dealt[player.id]!,
-        redGoldPending: true,
+        redGoldPending: neowCard(dealt.dealt[player.id]!)?.source !== 'heart',
         redRewardPending: true,
+        redRewardsRemaining: neowCard(dealt.dealt[player.id]!)?.source === 'heart' ? 3 : 1,
         redReward: null,
         blueOption: null,
         pendingEffect: null,
@@ -206,6 +224,7 @@ export function createRun(
   const nextRunNumber = (campaignProgress.nextRunNumber ?? 0) + 1
   const nextCampaignProgress = { ...campaignProgress, nextRunNumber }
   let nextUid = nextRunUid(players)
+  const playersBeforeModifiers = players
   if (modifier('all_star')) players = players.map((player) => {
     let owner = player
     for (const defId of itemDecks.colorless.splice(0, 5)) owner = addCard(owner, defId, `c${nextUid++}`)
@@ -253,17 +272,24 @@ export function createRun(
     bossRelicDeck: relicDecks.bossRelicDeck,
     pendingBossDefId: null,
     actBossDefId,
+    selfBossRerolled: false,
+    guardianGemDeck: ruleset === 'downfall' ? shuffle(rng, [...GUARDIAN_PHYSICAL_DECKS.gems]) : [],
+    pendingGuardianSockets: [],
     rewards: [],
     rewardDestination: null,
     itemDecks,
-    eventDeck: buildEventDeck(rng, 1, ascension, colorlessUnlocked),
+    eventDeck: buildEventDeck(rng, 1, ascension, colorlessUnlocked, ruleset),
     eventsVisited: 0,
     roomState: null,
     eventCombat: null,
     courier: { usedBy: [], offer: null },
     chooseYourRelic: chooseYourRelic && party.length > 1,
     lastStand: lastStand && party.length > 1,
-    meta: { mode, modifierIds },
+    meta: {
+      mode,
+      modifierIds,
+      ruleset,
+    },
     setup,
     campaignProgress: nextCampaignProgress,
     campaign: {
@@ -277,6 +303,7 @@ export function createRun(
     },
     log: ['The party enters the Spire.'],
   }
+  run = queueNewGuardianSockets({ ...run, players: playersBeforeModifiers }, run)
   if (modifier('heirloom')) run = grantHeirlooms(run, players.map((player) => player.id))
   return run
 }
@@ -286,9 +313,11 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
   const adding = state.phase === 'neow' && state.setup?.kind === 'catch-up' && Boolean(state.neow)
   if ((!adding && (state.phase !== 'map' || state.map.position !== null)) || state.act < 2 || state.act > 4 ||
     members.length < 1 || state.players.length + members.length > 4 || hasPendingRelicAcquisition(state)) return state
+  const ruleset = rulesetForCharacters(state.players.map((player) => player.character), state.meta.ruleset)
   const ids = new Set(state.players.map((player) => player.id))
   const characters = new Set(state.players.map((player) => player.character))
-  if (members.some((member) => ids.has(member.id) || characters.has(member.character)) ||
+  if (members.some((member) => ids.has(member.id) || characters.has(member.character) ||
+      ruleset === 'base' && DOWNFALL_CHARACTER_IDS.some((character) => character === member.character)) ||
     new Set(members.map((member) => member.id)).size !== members.length ||
     new Set(members.map((member) => member.character)).size !== members.length) return state
   const rng = { ...state.rng }
@@ -307,6 +336,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     return player
   })
   let catchUpUid = nextRunUid([...state.players, ...newPlayers])
+  const playersBeforeModifiers = [...state.players, ...newPlayers]
   if (hasModifier(state, 'all_star')) newPlayers = newPlayers.map((player) => {
     let owner = player
     for (const defId of itemDecks.colorless.splice(0, 5)) owner = addCard(owner, defId, `c${catchUpUid++}`)
@@ -329,10 +359,12 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     ...Object.fromEntries(newPlayers.map((player) => [player.character, state.campaign.bossesDefeated])) }
   if (adding && state.neow && state.setup) {
     const deck = [...state.neow.deck]
+    const heartDeck = [...(state.neow.heartDeck ?? [])]
     const progress = Object.fromEntries(newPlayers.map((player) => {
-      const cardId = deck.shift()
+      const downfall = ruleset === 'downfall'
+      const cardId = downfall ? heartDeck.shift() : deck.shift()
       return [player.id, {
-        cardId: cardId!, redGoldPending: true, redRewardPending: true,
+        cardId: cardId!, redGoldPending: !downfall, redRewardPending: true, redRewardsRemaining: downfall ? 3 : 1,
         redReward: null, blueOption: null, pendingEffect: null, rewardKind: null,
         reward: null, rewardQueue: [], done: false,
       }]
@@ -343,15 +375,16 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
       rng,
       players: [...state.players, ...newPlayers],
       itemDecks,
-      neow: { deck, players: { ...state.neow.players, ...progress } },
+      neow: { deck, heartDeck, players: { ...state.neow.players, ...progress } },
       setup: { ...state.setup, playerIds: [...state.setup.playerIds, ...newPlayers.map((player) => player.id)] },
       campaign: { ...state.campaign, joinedAfterBosses },
       log: [...state.log, `${newPlayers.map((player) => player.name).join(' and ')} join Catch Up.`],
     }, itemDecks)
+    next = queueNewGuardianSockets({ ...next, players: playersBeforeModifiers }, next)
     if (hasModifier(state, 'heirloom')) next = grantHeirlooms(next, newPlayers.map((player) => player.id))
     return next
   }
-  const dealt = dealNeow(rng, newPlayers.map((player) => player.id), isColorlessUnlocked(state.campaignProgress))
+  const dealt = dealBlessings(rng, newPlayers, isColorlessUnlocked(state.campaignProgress), ruleset)
   let next = mirrorItemSupplies({
     ...state,
     rng,
@@ -360,8 +393,10 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     itemDecks,
     neow: {
       deck: dealt.deck,
+      heartDeck: dealt.heartDeck,
       players: Object.fromEntries(newPlayers.map((player) => [player.id, {
-        cardId: dealt.dealt[player.id]!, redGoldPending: true, redRewardPending: true,
+        cardId: dealt.dealt[player.id]!, redGoldPending: neowCard(dealt.dealt[player.id]!)?.source !== 'heart', redRewardPending: true,
+        redRewardsRemaining: neowCard(dealt.dealt[player.id]!)?.source === 'heart' ? 3 : 1,
         redReward: null, blueOption: null, pendingEffect: null, rewardKind: null,
         reward: null, rewardQueue: [], done: false,
       }])),
@@ -373,6 +408,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     campaign: { ...state.campaign, joinedAfterBosses },
     log: [...state.log, `${newPlayers.map((player) => player.name).join(' and ')} catch up at the start of Act ${state.act}.`],
   }, itemDecks)
+  next = queueNewGuardianSockets({ ...next, players: playersBeforeModifiers }, next)
   if (hasModifier(state, 'heirloom')) next = grantHeirlooms(next, newPlayers.map((player) => player.id))
   return next
 }

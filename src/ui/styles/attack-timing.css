@@ -204,6 +204,8 @@
 .character-attack__pose--defect-release { animation: defect-release-pose 1650ms both; }
 .character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
 .character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
+.character-attack__pose--downfall-ready { animation: ironclad-ready-pose 860ms both; }
+.character-attack__pose--downfall-impact { animation: ironclad-impact-pose 860ms both; }
 
 @keyframes ironclad-ready-pose {
   0%, 34.99% { opacity: 1; }

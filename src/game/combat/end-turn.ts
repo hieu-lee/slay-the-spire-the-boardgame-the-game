@@ -23,22 +23,27 @@ import {
   rowExists,
 } from './board.ts'
 import {
+  applyEffect,
   damagePlayer,
   exhaustCards,
   flushPendingTriggers,
   losePlayerHp,
+  pendingTriggerSlimeEnemyChoiceCount,
   resolveOrbAtEndOfTurn,
   resolveQueuedTriggerSource,
   resolveTriggerSource,
   settle,
   triggerEnemyDeath,
   triggerNeedsEnemyChoice,
+  triggerNeedsHermitChoice,
   triggerNeedsPlayerChoice,
   triggerNeedsRowChoice,
+  triggerSlimeChoice,
+  triggerHermitChoices,
   triggerSourceById,
   triggerSources,
 } from './effects.ts'
-import { forgetRetain, grantShiftBlock, loseEnemyHp, recordPoisonDamage } from './pieces.ts'
+import { forgetRetain, grantShiftBlock, loseEnemyHp, playerCanGainBlock, playerCanGainDebuffs, recordPoisonDamage } from './pieces.ts'
 import {
   continueBeforeDraw,
   continueStartTurn,
@@ -47,18 +52,27 @@ import {
   triggerTargets,
 } from './start-turn.ts'
 import { chooseEndTurnTarget, defaultEndTurnOrder, endTurnChoiceId, endTurnChoiceTarget } from './types.ts'
-import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PendingTriggerAbility } from './types.ts'
+import { cardHasRetain, mandatoryChoicePending } from './queries.ts'
+import type { CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, PendingTriggerAbility, TriggerSource } from './types.ts'
 import { cardDef, faceOf } from '../cards.ts'
 import { gainBlock, gainWeak } from '../damage.ts'
 import { enemyAbilities, enemyDef } from '../enemies.ts'
 import { discardHand } from '../piles.ts'
 import type { CardInstance, Player } from '../types.ts'
+import { commandSlime, removeTemporarySlimeVigor, slimeDef } from '../downfall/slime-boss.ts'
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
     .map((source) => {
       const loop = source.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
-      const targets = loop ? loopOrbTargets(player) : triggerTargets(state, player, source)
+      const stasis = source.powerUid && player.powers.some((power) =>
+        power.uid === source.powerUid && power.defId === 'guardian_stasis_engine')
+      const targets = stasis
+        ? [...player.hand.map((card) => ({ uid: card.uid, label: cardDef(card.defId).name })),
+          { uid: 'skip', label: 'Retain no card' }]
+        : source.effects.some((effect) => effect.kind === 'optionalPreventRoundHpLoss')
+          ? [{ uid: 'use', label: 'Exhaust to prevent HP loss' }, { uid: 'skip', label: 'Keep Invincible' }]
+          : loop ? loopOrbTargets(player) : triggerTargets(state, player, source)
       return {
         id: source.id,
         label: source.name.replace(`${player.name}'s `, ''),
@@ -71,6 +85,15 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
     })
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
+  }
+  for (const slime of player.slimes) {
+    const def = slimeDef(slime)
+    if (def.slimeEndOfTurn) {
+      const scope = commandSlimePreviewScope(slime)
+      abilities.push({ id: `slime:${slime.card.uid}`, label: `${def.name} — Command`,
+        targets: scope === 'enemy' ? livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })) : undefined })
+    }
+    if (slime.vigorLossAtEndOfTurn > 0) abilities.push({ id: `slime-vigor:${slime.card.uid}`, label: `${def.name} — Lose temporary Vigor` })
   }
   player.orbs.forEach((orb, slot) => {
     if (orb === 'lightning') {
@@ -91,7 +114,20 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
       abilities.push({ id: `card:${held.uid}`, label: `${def.name}${def.ethereal ? ' — Exhaust' : ''}` })
     }
   }
+  for (const enemy of livingEnemies(state)) {
+    const slimed = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+      .find((ability) => ability.kind === 'slimedHandHpLoss')
+    if (slimed?.kind === 'slimedHandHpLoss') abilities.push({
+      id: `downfall-slimed:${enemy.uid}`,
+      label: `${enemyLabel(state.enemies, enemy)} — Slimed HP loss`,
+    })
+  }
   return abilities
+}
+
+function commandSlimePreviewScope(slime: Player['slimes'][number]) {
+  const def = slimeDef(slime)
+  return def.id === 'slime_boss_evolution_slime' && slime.level >= 3 ? 'allEnemies' : (def.slimeTarget ?? 'enemy')
 }
 
 /** Every ability the party may interleave at end of turn (p.12). */
@@ -112,10 +148,15 @@ export function endTurnAbilities(state: CombatState): EndTurnAbility[] {
     playerId: player.id,
     label: `${player.name} — ${ability.label}`,
   })))
+  const berserk = state.enemies.flatMap((enemy) => enemy.dead ? [] :
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'berserkHpLossPerPlayer')
+      ? [{ id: `berserk:${enemy.uid}`, playerId: null, label: `${enemyLabel(state.enemies, enemy)} — Berserk` }]
+      : [])
   return [
     ...playerAbilities.filter((ability) => ability.orbChoice),
     ...poison,
     ...beat,
+    ...berserk,
     ...playerAbilities.filter((ability) => !ability.orbChoice),
   ]
 }
@@ -148,6 +189,9 @@ function refreshEndTurnTargets(state: CombatState, order: EndTurnOrder): EndTurn
     const source = player && (localId.startsWith('relic:') || localId.startsWith('power:'))
       ? triggerSources(player, { kind: 'endOfTurn' }).find((candidate) => candidate.id === localId)
       : undefined
+    const stasis = source?.powerUid && player?.powers.some((power) =>
+      power.uid === source.powerUid && power.defId === 'guardian_stasis_engine')
+    if (stasis) return chooseEndTurnTarget(id, 'skip')
     // A row-targeting ability keeps its chosen row even when its enemy anchor died.
     if (source?.scope === 'row' && state.enemies.some((enemy) => enemy.uid === target)) return choice
     const loopTarget = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
@@ -165,12 +209,17 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
   const held = player.hand.find((card) => card.uid === uid)
   if (!held) return
   const def = faceOf(cardDef(held.defId), held.upgraded)
+  const fireBreathing = held.defId === 'burn'
+    ? livingEnemies(state).flatMap((enemy) => enemyAbilities(enemyDef(enemy.defId, enemy.ascension)))
+      .find((ability) => ability.kind === 'fireBreathing')
+    : undefined
   for (const effect of def.handEndOfTurn ?? []) {
     if ('handSizeAtMost' in effect && effect.handSizeAtMost !== undefined &&
       player.hand.length > effect.handSizeAtMost) continue
     if (effect.kind === 'damage') {
       const block = player.block
-      const outcome = damagePlayer(state, player, effect.amount)
+      const amount = fireBreathing?.kind === 'fireBreathing' ? fireBreathing.burnDamage : effect.amount
+      const outcome = damagePlayer(state, player, amount)
       const lost = outcome.hpLost
       const blocked = block - player.block
       state.log = [...state.log, lost > 0
@@ -182,6 +231,7 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
       const lost = losePlayerHp(state, player, effect.amount, true)
       if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
     } else if (effect.kind === 'gainWeak') {
+      if (!playerCanGainDebuffs(player)) continue
       const before = player.weak
       player.weak = gainWeak(player.weak, effect.amount)
       if (player.weak > before) {
@@ -194,10 +244,11 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
     }
     if (player.dead) {
       state.log = [...state.log, `${player.name} has fallen`]
-      return
+      if (!fireBreathing) return
+      break
     }
   }
-  if (!def.ethereal) return
+  if (!def.ethereal && !fireBreathing) return
 
   player.hand = player.hand.filter((card) => card.uid !== uid)
   const before = new Set(player.hand.map((card) => card.uid))
@@ -205,7 +256,7 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
   // FAQ: Dark Embrace draws caused by an end-turn Ethereal Exhaust ignore
   // end-turn/Ethereal text and are not discarded during this step.
   for (const card of player.hand) if (!before.has(card.uid)) card.endTurnProtected = true
-  state.log = [...state.log, `${player.name} exhausts ${def.name} (Ethereal)`]
+  state.log = [...state.log, `${player.name} exhausts ${def.name}${def.ethereal ? ' (Ethereal)' : ''}`]
 }
 
 function continueEndPlayerTurn(
@@ -273,6 +324,19 @@ function continueEndPlayerTurn(
           }
         }
       }
+    } else if (id.startsWith('berserk:')) {
+      const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(8) && !candidate.dead)
+      const berserk = enemy && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .find((ability) => ability.kind === 'berserkHpLossPerPlayer')
+      if (enemy && berserk?.kind === 'berserkHpLossPerPlayer') {
+        const outcome = loseEnemyHp(next, enemy, berserk.amount * next.players.length)
+        enemy.hp = outcome.hp
+        next.log = [...next.log, `${enemyLabel(next.enemies, enemy)} loses ${outcome.hpLost} HP to Berserk`]
+        if (enemy.hp === 0) {
+          enemy.dead = true
+          triggerEnemyDeath(next, enemy)
+        }
+      }
     } else {
       const slash = id.indexOf('/')
       const player = findPlayer(next, id.slice(0, slash))
@@ -282,6 +346,20 @@ function continueEndPlayerTurn(
         const source = triggerSources(player, { kind: 'endOfTurn' })
           .find((candidate) => candidate.id === localId)
         const target = endTurnChoiceTarget(choice)
+        const stasis = source?.powerUid && player.powers.some((power) =>
+          power.uid === source.powerUid && power.defId === 'guardian_stasis_engine')
+        if (stasis) {
+          const card = target === 'skip' ? undefined : player.hand.find((held) => held.uid === target)
+          if (card) {
+            card.retainThisTurn = true
+            card.stasisRetained = true
+            next.log = [...next.log,
+              `${player.name}'s Stasis Engine Retains ${cardDef(card.defId).name}`]
+          }
+          continue
+        }
+        const optionalInvincible = source?.effects.some((effect) => effect.kind === 'optionalPreventRoundHpLoss')
+        if (optionalInvincible && target === 'skip') continue
         const loop = source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
         const loopChoice = loop ? parseLoopOrbTarget(target) : undefined
         // A row is chosen when the order is submitted. Preserve that row if
@@ -296,7 +374,15 @@ function continueEndPlayerTurn(
         const selectedRow = selected?.isBoss && livingMinionRows.length === 1
           ? livingMinionRows[0]
           : selected?.row
-        if (source && (loop
+        if (source && triggerNeedsHermitChoice(next, player, source)) {
+          next.pendingTriggers ??= []
+          next.nextTriggerId ??= 0
+          next.pendingTriggers.push({
+            id: next.nextTriggerId++, playerId: player.id, sourceId: source.id,
+          })
+        } else if (source && (optionalInvincible
+          ? !resolveTriggerSource(next, player, source)
+          : loop
           ? !resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
             loopChoice ? [loopChoice.slot] : undefined, loopChoice ? [loopChoice.enemyUid] : undefined)
           : ((source.scope !== 'row' && triggerTargets(next, player, source) &&
@@ -311,6 +397,18 @@ function continueEndPlayerTurn(
           next.log = [...next.log, `${player.name} loses ${loss} Strength at end of turn`]
         }
         player.strengthLossAtEndOfTurn = 0
+      } else if (localId.startsWith('slime-vigor:')) {
+        const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(13))
+        if (slime) removeTemporarySlimeVigor(slime)
+      } else if (localId.startsWith('slime:')) {
+        const slime = player.slimes.find((candidate) => candidate.card.uid === localId.slice(6))
+        const command = slime && commandSlime(slime)
+        if (command && slime) for (const effect of command.effects) {
+          applyEffect(next, player, effect, command.scope, 'self', {
+            enemyUid: endTurnChoiceTarget(choice) ?? null, playerId: null,
+            slimeUids: [slime.card.uid], slimeChoiceIndex: 0, slimeCommand: true,
+          }, slimeDef(slime).name)
+        }
       } else if (localId.startsWith('orb:')) {
         if (!resolveOrbAtEndOfTurn(next, player, Number(localId.slice(4)), endTurnChoiceTarget(choice))) {
           continue
@@ -325,6 +423,17 @@ function continueEndPlayerTurn(
         if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
       } else if (localId.startsWith('card:')) {
         resolveHandEndTurn(next, player, localId.slice(5))
+      } else if (localId.startsWith('downfall-slimed:')) {
+        const enemy = next.enemies.find((candidate) => candidate.uid === localId.slice('downfall-slimed:'.length) && !candidate.dead)
+        const slimed = enemy && enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+          .find((ability) => ability.kind === 'slimedHandHpLoss')
+        if (enemy && slimed?.kind === 'slimedHandHpLoss') {
+          const count = player.hand.filter((card) => card.defId === 'slimed').length
+          const lost = losePlayerHp(next, player, count * slimed.amount)
+          if (lost > 0) next.log = [...next.log,
+            `${enemyLabel(next.enemies, enemy)} makes ${player.name} lose ${lost} HP for Slimed in hand`]
+          if (player.dead) next.log = [...next.log, `${player.name} has fallen`]
+        }
       }
     }
     if (combatIsOver(next)) break
@@ -385,10 +494,10 @@ export function discardNeedsChoice(player: Player): boolean {
   if (player.dead) return false
   if ((player.retainCardsThisTurn ?? 0) > 0) return true
   const discarding = player.hand.filter((card) => !card.endTurnProtected && !card.retainThisTurn &&
-    !faceOf(cardDef(card.defId), card.upgraded).retain)
+    !cardHasRetain(player, card))
   if (discarding.length <= 1) return false
   // Every pile, not just the hand: the card that cares may still be undrawn.
-  return [player.hand, player.draw, player.discard, player.exhaust, player.powers]
+  return [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber]
     .some((pile) => pile.some(readsDiscardTop))
 }
 
@@ -492,14 +601,15 @@ export function beginEndPlayerTurn(
   state: CombatState,
   order: EndTurnOrder = defaultEndTurnOrder(endTurnAbilities(state)),
 ): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const abilities = endTurnAbilities(state)
   if (!validEndTurnOrder(abilities, order)) return state
   if (abilities.some((ability) => ability.orbChoice)) return beginEndTurnResolution(state)
   const next = clone(state)
   for (const player of next.players) {
-    if (player.block === 0 && player.relics.some((relic) => relic.defId === 'orichalcum')) {
+    player.hand = player.hand.map(({ stasisRetained: _stasis, ...card }) => card)
+    if (player.block === 0 && playerCanGainBlock(player) && player.relics.some((relic) => relic.defId === 'orichalcum')) {
       player.block = gainBlock(player.block, 1)
       next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
     }
@@ -514,7 +624,7 @@ export function discardOrderIsValid(player: Player, order: readonly string[]): b
   const ordered = new Set(order)
   const optionallyRetained = player.hand.filter((card) =>
     !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
-      !faceOf(cardDef(card.defId), card.upgraded).retain)
+      !cardHasRetain(player, card))
   return optionallyRetained.length <= (player.retainCardsThisTurn ?? 0)
 }
 
@@ -547,19 +657,20 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
       : player.hand
     const chosenRetain = new Set(player.hand
       .filter((card) => !ordered.has(card.uid) && !card.endTurnProtected && !card.retainThisTurn &&
-        !faceOf(cardDef(card.defId), card.upgraded).retain)
+        !cardHasRetain(player, card))
       .map((card) => card.uid))
     const keep = hand
       .filter((held) => chosenRetain.has(held.uid) || held.endTurnProtected || held.retainThisTurn ||
-        faceOf(cardDef(held.defId), held.upgraded).retain)
+        cardHasRetain(player, held))
       .map((held) => held.uid)
     const piles = discardHand({ ...player, hand }, keep)
     player.draw = piles.draw
     player.hand = piles.hand.map((held) => {
       const clean = forgetRetain({ ...held, endTurnProtected: undefined })
       return chosenRetain.has(held.uid) || held.retainThisTurn ||
-        faceOf(cardDef(held.defId), held.upgraded).retain
-        ? { ...clean, retainedLastTurn: true }
+        cardHasRetain(player, held)
+        ? { ...clean, retainedLastTurn: true,
+          ...(held.stasisRetained ? { stasisRetained: true } : {}) }
         : clean
     })
     player.discard = piles.discard.map(forgetRetain)
@@ -568,6 +679,8 @@ export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders =
       next.log = [...next.log, `${player.name} discards ${discarded} at end of turn`]
     }
     player.retainCardsThisTurn = 0
+    // Guardian's Spent zone empties after every Player Turn; cubes return to the supply.
+    player.vigorSpentThisTurn = 0
   }
 
   resolveDueSummons(next, 'endOfTurn')
@@ -580,6 +693,8 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
   const player = pending && findPlayer(state, pending.playerId)
   const source = player && pending ? triggerSourceById(player, pending.sourceId) : undefined
   if (!player || !source) return undefined
+  const choicePlayer = triggerChoicePlayer(state, player, source)
+  const hermitChoices = triggerHermitChoices(choicePlayer, source)
   return {
     id: pending.id,
     playerId: player.id,
@@ -587,7 +702,7 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
     rows: triggerNeedsRowChoice(state, player, source)
       ? combatRows(state).map((row) => ({ row, label: combatRowLabel(state, row) }))
       : undefined,
-    targets: triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)
+    targets: triggerNeedsEnemyChoice(state, choicePlayer, source, pending.enemyUid)
       ? livingEnemies(state).map((enemy) => ({
         uid: enemy.uid,
         label: enemyLabel(state.enemies, enemy),
@@ -596,7 +711,21 @@ export function pendingTriggerAbility(state: CombatState): PendingTriggerAbility
     players: triggerNeedsPlayerChoice(state, source)
       ? state.players.filter((candidate) => !candidate.dead).map((candidate) => ({ id: candidate.id, label: candidate.name }))
       : undefined,
+    hermitChoices,
+    slimeChoice: triggerSlimeChoice(state, player, source),
+    slimeEnemyAmount: pendingTriggerSlimeEnemyChoiceCount(state, pending.id, []),
   }
+}
+
+function triggerChoicePlayer(state: CombatState, player: Player, source: TriggerSource): Player {
+  if (source.presentationSourceId !== 'hermit_combo') return player
+  const preview = clone(state)
+  const choicePlayer = findPlayer(preview, player.id)!
+  const draw = source.effects.find((effect) => effect.kind === 'draw')
+  if (draw) applyEffect(preview, choicePlayer, draw, source.scope, source.supportScope, {
+    enemyUid: null, playerId: choicePlayer.id, pendingTriggers: [],
+  }, source.name)
+  return choicePlayer
 }
 
 /** Resolve the oldest triggered ability before any other combat action. */
@@ -607,40 +736,57 @@ export function resolvePendingTrigger(
   enemyRow?: number,
   enemyUid?: string,
   targetPlayerId?: string,
+  hermitChoices?: { loadUids?: string[]; chamberUids?: string[]; hermitEnemyUids?: string[]; slimeUids?: string[]; slimeEnemyUids?: string[] },
 ): CombatState {
+  if ((state.pendingDieRelicChoices?.length ?? 0) > 0) return state
   const pending = state.pendingTriggers?.[0]
   if (!pending || pending.playerId !== playerId || pending.id !== triggerId) return state
   const player = findPlayer(state, playerId)
   const source = player && triggerSourceById(player, pending.sourceId)
   if (!player || player.dead || !source) return state
+  const choicePlayer = triggerChoicePlayer(state, player, source)
   const needsRow = triggerNeedsRowChoice(state, player, source)
-  const needsEnemy = triggerNeedsEnemyChoice(state, player, source, pending.enemyUid)
+  const needsEnemy = triggerNeedsEnemyChoice(state, choicePlayer, source, pending.enemyUid)
   const needsPlayer = triggerNeedsPlayerChoice(state, source)
+  const needsHermit = triggerNeedsHermitChoice(state, choicePlayer, source)
+  const needsSlime = triggerSlimeChoice(state, player, source)
+  const slimeEnemyAmount = pendingTriggerSlimeEnemyChoiceCount(state, triggerId, hermitChoices?.slimeUids ?? [])
   if ((needsRow && !rowExists(state, enemyRow)) || (!needsRow && enemyRow !== undefined)) return state
   if ((needsEnemy && !livingEnemies(state).some((enemy) => enemy.uid === enemyUid)) ||
     (!needsEnemy && enemyUid !== undefined)) return state
   if ((needsPlayer && !state.players.some((candidate) => !candidate.dead && candidate.id === targetPlayerId)) ||
     (!needsPlayer && targetPlayerId !== undefined)) return state
+  if (!needsHermit && (hermitChoices?.loadUids !== undefined || hermitChoices?.chamberUids !== undefined ||
+    hermitChoices?.hermitEnemyUids !== undefined)) return state
+  if (!needsSlime && hermitChoices?.slimeUids !== undefined) return state
+  if ((hermitChoices?.slimeEnemyUids?.length ?? 0) !== slimeEnemyAmount ||
+    hermitChoices?.slimeEnemyUids?.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return state
 
   const next = clone(state)
   const actor = findPlayer(next, playerId)!
   const queued = next.pendingTriggers.shift()!
   const liveSource = triggerSourceById(actor, queued.sourceId)!
-  resolveQueuedTriggerSource(
+  const resolved = resolveQueuedTriggerSource(
     next,
     actor,
     liveSource,
-    queued.enemyUid ?? (needsEnemy ? enemyUid : liveSource.scope === 'enemy'
+    queued.enemyUid ?? (needsEnemy ? enemyUid : liveSource.scope === 'enemy' || needsHermit
       ? livingEnemies(next)[0]?.uid
       : undefined),
     needsRow ? enemyRow : liveSource.scope === 'row' ? combatRows(next)[0] : undefined,
     targetPlayerId,
+    hermitChoices,
   )
+  if (!resolved) return state
   flushPendingTriggers(next)
   const rollPending = next.startTurnProgress?.rollPending
   if (rollPending && (next.pendingTriggers.length === 0 || combatIsOver(next))) {
-    next.startTurnProgress = undefined
-    finishStartTurnDraw(next, rollPending.drewFrom, !combatIsOver(next))
+    next.startTurnProgress = rollPending.pauseAfterDraw && !combatIsOver(next)
+      ? { choices: [], pauseAfterDraw: { drewFrom: rollPending.drewFrom } }
+      : undefined
+    if (!rollPending.pauseAfterDraw || combatIsOver(next)) {
+      finishStartTurnDraw(next, rollPending.drewFrom, !combatIsOver(next))
+    }
   }
   if (next.pendingTriggers.length === 0 && next.startTurnProgress?.beforeDraw) {
     return continueBeforeDraw(next)
@@ -649,6 +795,7 @@ export function resolvePendingTrigger(
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.phase === 'start' &&
     settled.startTurnProgress && !settled.startTurnProgress.forcedCard &&
     !settled.startTurnProgress.beforeDraw && !settled.startTurnProgress.rollPending &&
+    !settled.startTurnProgress.pauseAfterDraw &&
     !settled.startTurnProgress.discard) {
     return continueStartTurn(settled, settled.startTurnProgress.choices)
   }

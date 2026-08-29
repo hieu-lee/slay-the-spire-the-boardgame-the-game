@@ -34,7 +34,7 @@
 
 /* Enemy/ally targeting is communicated by the glowing game pieces. Keep the
    status for assistive technology without painting a website-style banner. */
-.prompt:not(:has(button)) {
+.prompt:not(:has(button)):not(:has(input)) {
   width: 1px;
   height: 1px;
   padding: 0;

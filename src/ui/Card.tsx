@@ -72,9 +72,16 @@ const COUNT_LABEL: Record<CountOf, string> = {
   strikesInHand: 'other card in hand containing Strike',
   skillsInHand: 'Skill in hand',
   attacksInHand: 'Attack in hand',
+  otherAttacksInHand: 'other Attack in hand',
   attacksPlayedThisTurn: 'other Attack played this turn',
+  attacksInExhaust: 'Attack in your Exhaust pile',
   attackingEnemies: 'enemy intending to attack you',
   clawCubesGainedThisCombat: 'Claw cube gained this combat',
+  heat: 'Heat',
+  attacksInChamber: 'Attack in your Chamber',
+  cursesInHandAndChamber: 'Curse in your hand or Chamber',
+  starterCardsInHandAndChamber: 'starter Strike or Defend in your hand or Chamber',
+  otherCardsInHand: 'other card in your hand',
 }
 
 const TARGET_TOKEN_LABEL: Record<EnemyTokenKind, string> = {
@@ -112,6 +119,13 @@ function conditionText(condition: Condition): string {
     case 'handEmpty': return 'your hand is empty'
     case 'drewSkill': return 'the card just drawn is a Skill'
     case 'retainedLastTurn': return 'this card was Retained last turn'
+    case 'heatAtLeast': return `you have at least ${condition.amount} Heat`
+    case 'heatBelow': return `you have less than ${condition.amount} Heat`
+    case 'cardsInExhaustAtLeast': return `you have at least ${condition.amount} cards in your Exhaust pile`
+    case 'soulburnUsedThisTurn': return 'you used Soulburn this turn'
+    case 'hasCurseInChamber': return 'you have a Curse in your Chamber'
+    case 'hasDeadOnAttackInChamber': return 'you have a Dead On Attack in your Chamber'
+    case 'hpAtMost': return `you have ${condition.amount} or fewer hit points`
   }
 }
 
@@ -153,16 +167,26 @@ function timesText(times: Amount): string {
 function effectText(effect: Effect): string {
   const condition = effect.when ? ` if ${conditionText(effect.when)}` : ''
   switch (effect.kind) {
+    case 'sequence': return `${effect.effects.map(effectText).join(', then ')}${condition}`
+    case 'branch': return `if ${conditionText(effect.condition)}, ${effect.effects.map(effectText).join(', then ')}; otherwise, ${effect.otherwise.map(effectText).join(', then ')}${condition}`
     case 'hit': return typeof effect.amount !== 'number' && effect.amount.per === 'miracles' &&
       effect.amount.base === 0 && !effect.amount.bonus && !effect.amount.targetTokens
       ? `deal ${effect.amount.scale ?? 1} damage per ${COUNT_LABEL.miracles}${condition}`
       : `deal ${amountText(effect.amount, true)} damage${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
+    case 'rowHit': return `deal ${amountText(effect.amount, true)} damage to a row and any boss${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
     case 'hitChoices': return effect.targets === 1
       ? `deal ${amountText(effect.amount, true)} damage to one enemy${condition}`
       : effect.distinct
         ? `deal ${amountText(effect.amount, true)} damage to ${effect.targets} distinct enemies${condition}`
         : `deal ${effect.targets} separately targeted hits for ${amountText(effect.amount, true)} damage each${condition}`
     case 'damage': return `deal ${amountText(effect.amount)} damage${condition}`
+    case 'advance': return `Advance${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
+    case 'retract': return `Retract${effect.times ? ` ${timesText(effect.times)}` : ''}${condition}`
+    case 'gainSoulburn': return `gain ${amountText(effect.amount)} Soulburn${condition}`
+    case 'nextSoulburnDamageBonus': return `your next Soulburn deals +${effect.amount} damage${condition}`
+    case 'useAllSoulburn': return `use all Soulburn on ${effect.target === 'row' ? 'a row and any boss' : 'one enemy'}${effect.regain ? ', then regain that Soulburn' : ''}${condition}`
+    case 'spendEnergy': return `spend ${effect.amount} Energy${condition}`
+    case 'exhaustNextCard': return `exhaust the next card you play${condition}`
     case 'damagePerAttackIntent': return `deal ${effect.amount} damage to each enemy attacking you per Attack icon in its intent${condition}`
     case 'loseHp': return `lose ${effect.amount} hit points${condition}`
     case 'loseOwnHp': return `lose ${effect.amount} hit points${condition}`
@@ -173,7 +197,9 @@ function effectText(effect: Effect): string {
     case 'blockChoices': return `assign ${effect.targets} separate ${amountText(effect.amount)} Block icons to any players${condition}`
     case 'applyVulnerable': return `apply ${effect.amount} Vulnerable${condition}`
     case 'applyWeak': return `apply ${amountText(effect.amount)} Weak${condition}`
-    case 'gainStrength': return `gain ${effect.amount} Strength${condition}`
+    case 'weakChoices': return `assign ${effect.targets} separate ${effect.amount} Weak tokens to enemies${condition}`
+    case 'vulnerableChoices': return `assign ${effect.targets} separate ${effect.amount} Vulnerable tokens to enemies${condition}`
+    case 'gainStrength': return `gain ${amountText(effect.amount)} Strength${condition}`
     case 'doubleStrength': return `double your Strength, maximum Strength 8${condition}`
     case 'gainTemporaryStrength': return effect.loseGainedOnly
       ? `gain ${amountText(effect.amount)} Strength, lose that Strength at end of turn${condition}`
@@ -184,6 +210,7 @@ function effectText(effect: Effect): string {
     case 'attachCorpseExplosion': return `attach this card to the target; when it dies, deal ${effect.damage} damage to its row and discard this card${condition}`
     case 'copyLastPlayed': return 'play a copy of the last Attack or Skill played by any player this turn with cost equal to X'
     case 'copyLastAllyAttack': return "play a copy of the last Attack another player played this turn"
+    case 'copyLastAttack': return `play a copy of the last Attack you played this turn${condition}`
     case 'draw': return `draw ${amountText(effect.amount)} ${effect.amount === 1 ? 'card' : 'cards'}${condition}`
     case 'drawThenDiscard': return `draw ${effect.amount} card then discard 1 card`
     case 'drawToHandSize': return `draw until you have ${effect.size} cards in hand${condition}`
@@ -192,6 +219,7 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'preventCardPlay': return 'cannot play additional cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
+    case 'setNextCardCost': return `your next card this turn costs ${effect.amount}`
     case 'discountNextAttack': return 'your next Attack this turn costs 0'
     case 'discountHand': return 'cards currently in your hand cost 0 this turn'
     case 'discountRetainedCards': return `cards Retained last turn cost ${effect.amount} less this turn`
@@ -209,7 +237,7 @@ function effectText(effect: Effect): string {
     case 'countdownDamage': return `place a cube; at ${effect.cubes} cubes deal ${effect.damage} damage to every enemy, then exhaust this Power`
     case 'countdownExhaust': return `place a cube; at ${effect.cubes} cubes exhaust this Power`
     case 'switchRows': return 'may switch rows with another player'
-    case 'gainEnergy': return `gain ${effect.amount} Energy${condition}`
+    case 'gainEnergy': return `gain ${amountText(effect.amount)} Energy${condition}`
     case 'gainEnergyPerDiscard': return `gain 1 Energy per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
     case 'gainShiv': return `gain ${effect.amount} Shivs${condition}`
     case 'gainShivPerDiscard': return `gain 1 Shiv per card discarded${effect.bonus ? ` plus ${effect.bonus}` : ''}${condition}`
@@ -235,6 +263,9 @@ function effectText(effect: Effect): string {
         : ''}`
     }
     case 'recoverExhaust': return 'put a card from your Exhaust pile into your hand'
+    case 'recoverExhaustToDraw': return `put up to ${effect.amount} card${effect.amount === 1 ? '' : 's'} from your Exhaust pile on top of your draw pile${condition}`
+    case 'recoverExhaustToDiscard': return `put ${effect.amount} card${effect.amount === 1 ? '' : 's'} from your Exhaust pile on top of your discard pile${condition}`
+    case 'scryToHand': return `scry ${effect.amount}, then you may put one revealed ${effect.cardType} into your hand${condition}`
     case 'searchDraw': return `search your draw pile for ${effect.amount} card${effect.amount === 1 ? '' : 's'}, put ${effect.amount === 1 ? 'it' : 'them'} in your hand, then shuffle`
     case 'searchDrawAndPlayTwice': return 'search your draw pile for an Attack or Skill, play it twice for 0 Energy, then exhaust it'
     case 'drawAndPlayFree': return effect.exhaustNonPower
@@ -273,6 +304,25 @@ function effectText(effect: Effect): string {
     case 'exhaustDrawPile': return `exhaust your draw pile${condition}`
     case 'gainBlockPerExhaust': return `gain ${effect.amount} Block per card exhausted${condition}`
     case 'hitPerExhaust': return `deal ${effect.amount} as a separate hit per card exhausted${condition}`
+    case 'exhaustDrawTop': return `exhaust the top ${effect.amount} cards of your draw pile${condition}`
+    case 'preventDebuffs': return 'cannot gain Weak or Vulnerable'
+    case 'preventBlock': return 'cannot gain Block'
+    case 'optionalPreventRoundHpLoss': return 'at end of turn, may exhaust this Power to prevent all hit point loss this round'
+    case 'load': return `Load ${effect.upTo ? 'up to ' : ''}${effect.amount} card${effect.amount === 1 ? '' : 's'}${condition}`
+    case 'loadSelf': return `${effect.optional ? 'may ' : ''}Load this card${condition}`
+    case 'playChamber': return `play ${effect.amount === 'all' ? 'every card' : `${effect.amount} card`} in your Chamber${effect.free ? ' for 0 Energy' : ''}${condition}`
+    case 'gainChamberSlot': return `gain ${effect.amount} Chamber slot${effect.amount === 1 ? '' : 's'}${condition}`
+    case 'discardChamber': return `${effect.optional ? 'may ' : ''}discard ${effect.amount} ${effect.curseOnly ? 'Curse ' : ''}from your Chamber${effect.then?.length ? `, then ${effect.then.map(effectText).join(', ')}` : ''}${condition}`
+    case 'discountChamber': return `choose ${effect.amount} Chamber card to cost 0 this turn${condition}`
+    case 'deadOnEffects': return `Dead On: ${effect.effects.map(effectText).join(', then ')}`
+    case 'deadOnPrintedBlock': return `gain ${effect.amount} Block from printed damage`
+    case 'drawLastHitDamage': return 'draw cards equal to the damage dealt'
+    case 'grantNextAttackRapidFire': return 'the next Attack you play gains Rapid Fire'
+    case 'discardHand': return 'discard your hand'
+    case 'triggerDieRelic': return `trigger ${effect.amount} die relic${effect.amount === 1 ? '' : 's'}`
+    case 'goldenBullet': return `deal ${effect.amount} damage; Dead On quadruples Vulnerable damage`
+    case 'roulette': return 'resolve the row matching the shared die'
+    case 'attachBounty': return `apply ${effect.vulnerable} Vulnerable and attach this card as a bounty`
   }
 }
 
@@ -295,6 +345,10 @@ function triggerText(trigger: Trigger): string {
     case 'onEnterStance': return trigger.stance
       ? `whenever you enter ${trigger.stance}`
       : 'whenever you switch Stances'
+    case 'onAdvance': return 'whenever you Advance'
+    case 'onRetract': return 'whenever you Retract'
+    case 'onUseSoulburn': return 'whenever you use Soulburn'
+    case 'onHermitDeadOn': return 'after you activate Dead On'
     case 'onScry': return 'whenever you scry'
     case 'onGainBlock': return 'whenever you gain Block'
     case 'onApplyPoison': return 'when you put Poison on an enemy'
@@ -351,6 +405,8 @@ export function cardRulesText(def: CardDef): string {
   const cacheKey = `${def.id}\0${def.name}`
   const cached = rulesTextCache.get(cacheKey)
   if (cached !== undefined) return cached
+  const printed = def.printedText ?? def.guardian?.sourceText
+  if (printed) return printed
   const rules = [
     // A row always takes the boss too, wherever the boss stands (p.15). Saying
     // only "a whole row" tells a player picking a distant row that the boss is
@@ -403,7 +459,7 @@ export function cardPlayText(def: CardDef, cost = def.cost): string {
 
 export function cardAccessibleName(def: CardDef, cost = def.cost): string {
   const [playability, ...rules] = cardPlayText(def, cost).split(', ')
-  return [def.name, playability, def.type, ...rules].filter(Boolean).join(', ')
+  return [def.name, playability, def.guardian?.printedType ?? def.type, ...rules].filter(Boolean).join(', ')
 }
 
 export function cardKeywordTips(def: CardDef): readonly {
@@ -498,9 +554,11 @@ export function Card({
   onLostPointerCapture,
 }: CardProps) {
   const def = faceOf(cardDef(card.defId), card.upgraded)
+  const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
   const scan = cardThumbPath(def, card.upgraded)
-  const [scanUnavailable, setScanUnavailable] = useState(false)
-  useEffect(() => setScanUnavailable(false), [scan])
+  const hasPublisherScan = def.publisherScan !== false
+  const [scanUnavailable, setScanUnavailable] = useState(!hasPublisherScan)
+  useEffect(() => setScanUnavailable(!hasPublisherScan), [hasPublisherScan, scan])
   const className = [
     'card',
     extraClassName ?? '',
@@ -539,11 +597,12 @@ export function Card({
         }
         onClick?.(card)
       }}
-      aria-label={cardAccessibleName(def, cost)}
+      aria-label={`${cardAccessibleName(def, cost)}${attachedGem
+        ? `, socketed with ${attachedGem.name}: ${cardRulesText(attachedGem)}` : ''}`}
       aria-pressed={selected || picked}
       title={def.name}
     >
-      <img
+      {hasPublisherScan ? <img
         className="card__art"
         src={scan}
         alt=""
@@ -564,8 +623,10 @@ export function Card({
           event.currentTarget.style.visibility = 'hidden'
           setScanUnavailable(true)
         }}
-      />
+      /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
+      {attachedGem ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
+        draggable={false} title={`${attachedGem.name}: ${cardRulesText(attachedGem)}`} /> : null}
       {def.target === 'row' ? (
         // The burst printed on Cleave and its like. Marked hidden because
         // `accessibleName` already says "affects a whole row" — announced here as

@@ -3,6 +3,10 @@
 // the card rather than an interpretation of it. One resolver reads them all.
 import type { CardInstance, CardType, CharacterId, OrbType, Rarity, Stance } from './types.ts'
 import type { Trigger } from './triggers.ts'
+import { HEXAGHOST_CARDS } from './downfall/hexaghost.ts'
+import { GUARDIAN_CARD_DEFS, GUARDIAN_PHYSICAL_DECKS } from './downfall/guardian.ts'
+import { DOWNFALL_COLORLESS_CARD_DEFS } from './downfall/items.ts'
+import { HERMIT_CARD_DEFS, HERMIT_PHYSICAL_DECKS } from './downfall/hermit.ts'
 
 /** Who an effect lands on. Resolved against a chosen target when the card is played. */
 export type TargetScope =
@@ -82,6 +86,13 @@ export type Condition =
   | { kind: 'drewSkill' }
   /** Outmaneuver: this exact card was kept by Retain last turn. */
   | { kind: 'retainedLastTurn' }
+  | { kind: 'heatAtLeast'; amount: number }
+  | { kind: 'heatBelow'; amount: number }
+  | { kind: 'cardsInExhaustAtLeast'; amount: number }
+  | { kind: 'soulburnUsedThisTurn' }
+  | { kind: 'hpAtMost'; amount: number }
+  | { kind: 'hasCurseInChamber' }
+  | { kind: 'hasDeadOnAttackInChamber' }
 
 /** Something on the board a card can count. Barrage deals one hit per Orb. */
 export type CountOf =
@@ -99,9 +110,16 @@ export type CountOf =
   | 'strikesInHand'
   | 'skillsInHand'
   | 'attacksInHand'
+  | 'otherAttacksInHand'
   | 'attacksPlayedThisTurn'
+  | 'attacksInExhaust'
   | 'attackingEnemies'
   | 'clawCubesGainedThisCombat'
+  | 'heat'
+  | 'attacksInChamber'
+  | 'cursesInHandAndChamber'
+  | 'starterCardsInHandAndChamber'
+  | 'otherCardsInHand'
 
 /** Status-token fields a card can count on an enemy. */
 export type EnemyTokenKind = 'strength' | 'vulnerable' | 'weak' | 'poison'
@@ -136,6 +154,8 @@ export type Amount =
       scale?: number
       /** Choke adds every Strength, Vulnerable, Weak, and Poison token on its target to one hit. */
       targetTokens?: readonly EnemyTokenKind[]
+      perSlime?: number
+      plusHighestSlimeLevel?: boolean
     }
 
 /**
@@ -155,12 +175,27 @@ export type HandEndOfTurnEffect =
   | { kind: 'loseBlock'; amount: number }
 
 type EffectKind =
+  /** Evaluate one condition once, then resolve the printed clauses in order. */
+  | { kind: 'sequence'; effects: Effect[]; guardianAction?: 'card'; guardianGemId?: string }
+  | { kind: 'branch'; condition: Condition; effects: Effect[]; otherwise: Effect[] }
   /** A hit: modified by Strength, Weak and Vulnerable. `times` is a multi-hit. */
   | { kind: 'hit'; amount: Amount; times?: Amount }
+  | { kind: 'rowHit'; amount: Amount; times?: Amount }
   /** Separate hits, each independently assigned to a living enemy. */
   | { kind: 'hitChoices'; amount: Amount; targets: number; distinct?: boolean }
   /** Plain damage: blockable, but NOT modified by Strength/Weak/Vulnerable. */
   | { kind: 'damage'; amount: Amount }
+  /** Move Hexaghost's Heat track once per `times`; movement still triggers at a cap. */
+  | { kind: 'advance'; times?: Amount }
+  | { kind: 'retract'; times?: Amount }
+  | { kind: 'gainSoulburn'; amount: Amount }
+  | { kind: 'nextSoulburnDamageBonus'; amount: number }
+  /** Spend every Soulburn as its ordinary plain-damage action. */
+  | { kind: 'useAllSoulburn'; target: 'enemy' | 'row'; regain?: boolean }
+  /** Pay Energy as part of a manually activated Power. */
+  | { kind: 'spendEnergy'; amount: number }
+  /** The next card played after this source finishes goes to Exhaust. */
+  | { kind: 'exhaustNextCard' }
   /** Flame Barrier: direct damage per printed Attack icon in each enemy's current intent. */
   | { kind: 'damagePerAttackIntent'; amount: number }
   /** Ignores Block entirely. */
@@ -172,7 +207,9 @@ type EffectKind =
   | { kind: 'blockChoices'; amount: Amount; targets: number }
   | { kind: 'applyVulnerable'; amount: number }
   | { kind: 'applyWeak'; amount: Amount }
-  | ({ kind: 'gainStrength'; amount: number } & Redirectable)
+  | { kind: 'weakChoices'; amount: number; targets: number }
+  | { kind: 'vulnerableChoices'; amount: number; targets: number }
+  | ({ kind: 'gainStrength'; amount: Amount } & Redirectable)
   | { kind: 'doubleStrength' }
   /** Strength that is removed during this Player Turn's end-of-turn step. */
   | { kind: 'gainTemporaryStrength'; amount: Amount; loseGainedOnly?: boolean }
@@ -186,6 +223,7 @@ type EffectKind =
   | { kind: 'copyLastPlayed' }
   /** Foreign Influence: queue the latest non-copy Attack played by another player. */
   | { kind: 'copyLastAllyAttack' }
+  | { kind: 'copyLastAttack' }
   | ({ kind: 'draw'; amount: Amount } & Redirectable)
   /** Tools of the Trade: draw, then pause for its owner's private discard choice. */
   | { kind: 'drawThenDiscard'; amount: number }
@@ -199,6 +237,7 @@ type EffectKind =
   | { kind: 'preventCardPlay' }
   /** The next card played this turn costs 0 Energy. */
   | { kind: 'discountNextCard' }
+  | { kind: 'setNextCardCost'; amount: 1 }
   /** The next Attack played this turn costs 0 Energy. */
   | { kind: 'discountNextAttack' }
   /** Every card currently in the caster's hand costs 0 this turn. */
@@ -229,7 +268,7 @@ type EffectKind =
   | { kind: 'countdownExhaust'; cubes: number }
   /** Optionally exchange the caster's row with another living player. */
   | { kind: 'switchRows' }
-  | ({ kind: 'gainEnergy'; amount: number } & Redirectable)
+  | ({ kind: 'gainEnergy'; amount: Amount } & Redirectable)
   /** Gain one Energy per card this card's preceding variable discard took, plus a flat bonus. */
   | { kind: 'gainEnergyPerDiscard'; bonus: number }
   | ({ kind: 'gainShiv'; amount: number } & Redirectable)
@@ -276,6 +315,9 @@ type EffectKind =
   | { kind: 'recoverDiscard'; amount: number; toHand?: boolean; retain?: boolean }
   /** Put one chosen card from the face-up Exhaust pile into hand. */
   | { kind: 'recoverExhaust'; amount: 1 }
+  | { kind: 'recoverExhaustToDraw'; amount: number }
+  | { kind: 'recoverExhaustToDiscard'; amount: number }
+  | { kind: 'scryToHand'; amount: number; cardType: 'attack' | 'skill'; optional: true }
   /** Choose cards from the private draw pile, put them in hand, then shuffle it. */
   | { kind: 'searchDraw'; amount: number }
   /** Omniscience: search an Attack or Skill and play it twice for free, then Exhaust it. */
@@ -310,13 +352,55 @@ type EffectKind =
   | { kind: 'gainBlockPerExhaust'; amount: number }
   /** Deal one separate hit per card taken by this card's preceding automatic Exhaust. */
   | { kind: 'hitPerExhaust'; amount: number }
+  | { kind: 'exhaustDrawTop'; amount: number }
+  | { kind: 'preventDebuffs' }
+  | { kind: 'preventBlock' }
+  | { kind: 'optionalPreventRoundHpLoss' }
+  /** Hermit's private Chamber operations. Choices travel in PlayContext. */
+  | { kind: 'load'; amount: number; upTo?: boolean; source?: 'hand' | 'discard'; discount?: boolean }
+  | { kind: 'loadSelf'; optional?: boolean }
+  | { kind: 'playChamber'; amount: number | 'all'; free: boolean }
+  | { kind: 'gainChamberSlot'; amount: number }
+  | { kind: 'discardChamber'; amount: number; curseOnly?: boolean; optional?: boolean; then?: Effect[] }
+  | { kind: 'discountChamber'; amount: number }
+  | { kind: 'deadOnEffects'; effects: Effect[] }
+  | { kind: 'deadOnPrintedBlock'; amount: number }
+  | { kind: 'drawLastHitDamage' }
+  | { kind: 'grantNextAttackRapidFire' }
+  | { kind: 'discardHand' }
+  | { kind: 'triggerDieRelic'; amount: number; upTo?: boolean }
+  | { kind: 'goldenBullet'; amount: number }
+  | { kind: 'roulette'; byRoll: Record<number, Effect[]> }
+  | { kind: 'attachBounty'; vulnerable: number }
 
 export type CardDef = {
   id: string
   name: string
+  /** False when this expansion card intentionally uses the repo-native face. */
+  publisherScan?: boolean
   /** `colorless`, `curse` and `status` are pools rather than characters. */
   owner: CharacterId | 'colorless' | 'curse' | 'status'
   type: CardType
+  /** Slime cards enter the serialized Slime play area rather than the Power row. */
+  cardKind?: 'slime'
+  /** Guardian's two ??? cards acquire this type from the current Mode in combat. */
+  guardianVariableType?: boolean
+  /** Audited Guardian metadata used by Vigor and Socket rules. */
+  guardian?: {
+    printedType: string
+    socket: boolean
+    grantsSocket: boolean
+    sourceText: string
+  }
+  /** Audited Hermit metadata used by Chamber, Dead On, Rapid Fire, and costs. */
+  hermit?: {
+    sourceText: string
+    deadOn?: boolean
+    rapidFire?: number
+    rapidFireBy?: 'curseInChamber' | 'curses' | 'otherCardsInHand'
+    costReductionBy?: 'attacksInChamber' | 'starterCards' | 'attacksPlayed' | 'curses'
+    costZeroWhenDeadOn?: boolean
+  }
   rarity: Rarity
   /** `'X'` spends any amount of energy; the effects read the amount spent. */
   cost: number | 'X'
@@ -324,6 +408,10 @@ export type CardDef = {
   minimumX?: number
   /** Reduce this card's Energy cost for each Power its owner has in play. */
   powerCostReduction?: number
+  /** Reduce cost by this much for each card in the owner's Exhaust pile. */
+  exhaustCostReduction?: number
+  /** Incorporeal: reduce cost by this much per current Heat. */
+  heatCostReduction?: number
   /** Replace the printed cost after this player has lost HP in this combat. */
   costAfterHpLoss?: number
   effects: Effect[]
@@ -361,6 +449,8 @@ export type CardDef = {
    * happens when it is played — a Power with a trigger does nothing on play.
    */
   trigger?: Trigger
+  /** A Power may react to more than one event with separately printed effects. */
+  additionalTriggers?: { trigger: Trigger; effects: Effect[] }[]
   /** This Power may resolve at most once between Start of Turn resets. */
   oncePerTurn?: boolean
   /** This Power is activated by its owner during the Player Turn. */
@@ -373,6 +463,17 @@ export type CardDef = {
   corruptSkills?: boolean
   /** While this Power is in play, its owner keeps leftover Block at Start of Turn. */
   retainBlock?: boolean
+  printedText?: string | null
+  printedCost?: number | 'X' | null
+  multiplicity?: number
+  slimeLevels?: Readonly<Record<number, readonly Effect[]>>
+  slimeTarget?: TargetScope
+  slimeEndOfTurn?: boolean
+  slimeCommandLimit?: number
+  slimeTrigger?: 'onGrow' | 'onSpendTwoEnergy' | 'onGainVigor'
+  retainCostReduction?: boolean
+  tackleCostReduction?: boolean
+  costAfterSpentTwoEnergy?: number
   /** What changes when upgraded. Merged over the base definition. */
   upgrade?: Partial<Omit<CardDef, 'id' | 'upgrade'>>
 }
@@ -434,6 +535,9 @@ function starterDefend(owner: CharacterId): CardDef {
  * Vigilance.
  */
 export const CARDS: Record<string, CardDef> = {
+  ...(HEXAGHOST_CARDS as unknown as Record<string, CardDef>),
+  ...GUARDIAN_CARD_DEFS,
+  ...(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>),
   strike_silent: starterStrike('silent'),
   defend_silent: starterDefend('silent'),
   strike_defect: { ...starterStrike('defect'), upgrade: { cost: 0 } },
@@ -2814,11 +2918,34 @@ CARDS.burn = {
   cost: 0, unplayable: true, handEndOfTurn: [{ kind: 'damage', amount: 1 }], effects: [],
 }
 
+const REGISTERED_CARD_POOLS: Record<string, CardDef> = {}
+
+export function registerCardDefinitions(definitions: Readonly<Record<string, CardDef>>): void {
+  Object.assign(REGISTERED_CARD_POOLS, definitions)
+  Object.assign(CARDS, definitions)
+}
+
+export function registeredCardDefinitions(): Readonly<Record<string, CardDef>> {
+  return REGISTERED_CARD_POOLS
+}
+
 export function cardDef(id: string): CardDef {
-  const def = CARDS[id]
+  const def = CARDS[id] ?? REGISTERED_CARD_POOLS[id]
   if (!def) throw new Error(`unknown card id: ${id}`)
   return def
 }
+
+export function cardIsCurse(defId: string): boolean {
+  return CARDS[defId]?.type === 'curse'
+}
+
+/** Printed starter identity; Downfall uses owner-prefixed ids. */
+export function isStarterStrikeOrDefend(defId: string, name: 'Strike' | 'Defend'): boolean {
+  const def = CARDS[defId]
+  return def?.rarity === 'starter' && def.name === name
+}
+
+registerCardDefinitions(DOWNFALL_COLORLESS_CARD_DEFS)
 
 const repeat = (id: string, times: number): string[] => Array.from({ length: times }, () => id)
 
@@ -2828,4 +2955,8 @@ export const STARTER_DECKS: Record<CharacterId, string[]> = {
   silent: [...repeat('strike_silent', 5), ...repeat('defend_silent', 5), 'neutralize', 'survivor'],
   defect: [...repeat('strike_defect', 4), ...repeat('defend_defect', 4), 'zap', 'dual_cast'],
   watcher: [...repeat('strike_watcher', 4), ...repeat('defend_watcher', 4), 'eruption', 'vigilance'],
+  hexaghost: [...repeat('strike_hexaghost', 4), ...repeat('defend_hexaghost', 4), 'kindle', 'sear'],
+  slime_boss: [],
+  guardian: [...GUARDIAN_PHYSICAL_DECKS.starter],
+  hermit: [...HERMIT_PHYSICAL_DECKS.starter],
 }

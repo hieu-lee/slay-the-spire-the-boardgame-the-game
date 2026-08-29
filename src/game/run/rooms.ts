@@ -16,13 +16,14 @@ import {
   victoryIsTerminal,
 } from './rules.ts'
 import { enteringRoom } from './setup.ts'
+import { queueNewGuardianSockets } from './guardian-gems.ts'
 import { merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardOffer, RunPhase, RunState } from './types.ts'
 import { healingCapFor, transformCard } from '../acquisition.ts'
 import { canEnterActIV, finishCampaign, isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
 import type { CampaignProgress, SpireKeys } from '../campaign.ts'
-import { CARDS } from '../cards.ts'
-import { createCombat, startPlayerTurnWithChoices } from '../combat.ts'
+import { CARDS, cardIsCurse } from '../cards.ts'
+import { createCombat, preparePlayerTurnThroughDraw, startPlayerTurnWithChoices } from '../combat.ts'
 import type { CombatState } from '../combat.ts'
 import { enemyDef } from '../enemies.ts'
 import { createEventRoom } from '../event-room.ts'
@@ -35,13 +36,38 @@ import { bossRelicOfferSize, relicDef } from '../relics.ts'
 import { nextInt, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import type { Player } from '../types.ts'
+import { DOWNFALL_BOSSES, DOWNFALL_SELF_BOSS_REROLLS } from '../downfall/enemies.ts'
+
+export function canRerollDownfallSelfBoss(state: RunState): boolean {
+  const current = state.actBossDefId
+  return state.meta.ruleset === 'downfall' && !state.selfBossRerolled && current !== null &&
+    (state.phase === 'neow' || state.phase === 'map') && state.map.position === null &&
+    state.players.some((player) => player.character in DOWNFALL_SELF_BOSS_REROLLS &&
+      DOWNFALL_SELF_BOSS_REROLLS[player.character as keyof typeof DOWNFALL_SELF_BOSS_REROLLS]?.includes(current))
+}
+
+/** Spend the FAQ's optional reroll when the shown Downfall boss matches a hero. */
+export function rerollDownfallSelfBoss(state: RunState): RunState {
+  if (!canRerollDownfallSelfBoss(state)) return state
+  const candidates = (DOWNFALL_BOSSES[state.act] ?? []).filter((id) => id !== state.actBossDefId)
+  if (candidates.length === 0) return state
+  const rng = { ...state.rng }
+  const actBossDefId = candidates[nextInt(rng, candidates.length)]!
+  return {
+    ...state,
+    rng,
+    actBossDefId,
+    selfBossRerolled: true,
+    log: [...state.log, `The party rerolls its self-boss into ${enemyDef(actBossDefId).name}.`],
+  }
+}
 
 /**
  * Moves the party into a room and starts whatever that room is. Returns the
  * SAME state reference when the move is illegal, matching the combat engine.
  */
 export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: string): RunState {
-  if (state.phase !== 'map' || state.players.some((player) => player.relics.some((relic) => relic.pending))) return state
+  if (state.phase !== 'map' || hasPendingRelicAcquisition(state)) return state
   let map = moveTo(state.map, roomId)
   let wingBootsUsed = false
   if (map === state.map && wingBootsPlayerId) {
@@ -97,13 +123,13 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     const first = state.act === 1 && state.map.position === null && room.id === state.map.rows[0]?.[0]
     const { enemies, summonSupply, nextBossDefId } = buildEncounter(
       rng, enemyDecks, state.act, players, room.kind, first, state.ascension,
-      undefined, state.actBossDefId,
+      undefined, state.actBossDefId, state.meta.ruleset,
     )
     // Start the first Player Turn immediately: entering a room with no cards in
     // hand and nothing to do is not a state the game ever sits in.
     const combat = startPlayerTurnWithChoices(createCombat(
       rng, players, enemies, room.id, state.potionDeck, state.ascension >= 4 ? 2 : 3, summonSupply,
-      state.lastStand,
+      state.lastStand, state.meta.ruleset,
     ))
     return {
       ...next,
@@ -119,8 +145,10 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
   if (room.kind === 'merchant') {
     const itemDecks = structuredClone(state.itemDecks)
     itemDecks.potions = [...state.potionDeck]
-    const roomState = createMerchant(merchantItemDecks(state, itemDecks), roomPlayers)
-    return mirrorItemSupplies({ ...next, phase: 'room', roomState }, itemDecks)
+    const guardianGemDeck = [...(state.guardianGemDeck ?? [])]
+    const roomState = createMerchant(merchantItemDecks(state, itemDecks), roomPlayers, guardianGemDeck,
+      state.meta.ruleset)
+    return mirrorItemSupplies({ ...next, phase: 'room', roomState, guardianGemDeck }, itemDecks)
   }
   if (room.kind === 'treasure') {
     const itemDecks = structuredClone(state.itemDecks)
@@ -132,7 +160,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     itemDecks.potions = [...state.potionDeck]
     const eventDeck = [...state.eventDeck]
     let card = eventDeck.shift()
-    while (state.eventsVisited === 0 && (card?.id === 'encounter_redraw' || card?.id === 'merchant_redraw' || card?.id === 'dead_adventurer')) {
+    while (state.eventsVisited === 0 && (card?.firstEventRedraw || card?.id === 'encounter_redraw' || card?.id === 'merchant_redraw' || card?.id === 'dead_adventurer')) {
       eventDeck.push(card)
       card = eventDeck.shift()
     }
@@ -167,6 +195,16 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
       const revealed = roomPlayers.filter((player) => !player.dead).map((player) => [player, shuffle(rng, player.deck.filter((entry) => entry.defId !== 'ascenders_bane')).slice(0, 3)] as const)
       roomState.revealedCards = Object.fromEntries(revealed.map(([player, cards]) => [player.id, cards.map((entry) => entry.uid)]))
       roomState.revealedCardDefs = Object.fromEntries(revealed.map(([player, cards]) => [player.id, cards.map((entry) => entry.defId)]))
+    }
+    if (card.id === 'downfall_event_act3_mysterious_sphere') {
+      const players = roomPlayers.map((player) => readyForCombat(rng, player))
+      const encounter = buildEncounter(rng, enemyDecks, state.act, players, 'encounter', false, state.ascension, undefined, undefined, state.meta.ruleset)
+      const prepared = createCombat(
+        rng, players, encounter.enemies, room.id, state.potionDeck,
+        state.ascension >= 4 ? 2 : 3, encounter.summonSupply, state.lastStand, state.meta.ruleset,
+      )
+      roomState.preparedCombat = prepared.pendingHermitSetupLoads?.length
+        ? prepared : preparePlayerTurnThroughDraw(prepared)
     }
     return mirrorItemSupplies({
       ...next,
@@ -204,13 +242,15 @@ function preparePendingBossCombat(
     false,
     state.ascension,
     state.pendingBossDefId!,
+    undefined,
+    state.meta.ruleset,
   )
   return {
     rng,
     players: prepared,
     combat: startPlayerTurnWithChoices(createCombat(
       rng, prepared, enemies, undefined, state.potionDeck, state.ascension >= 4 ? 2 : 3, summonSupply,
-      state.lastStand,
+      state.lastStand, state.meta.ruleset,
     )),
   }
 }
@@ -245,7 +285,8 @@ export function resolveCombat(state: RunState): RunState {
   const wasBoss = room?.kind === 'boss' && !state.eventCombat
   const wasBonusBoss = state.eventCombat?.mindBloom === true
   const wasElite = room?.kind === 'elite' || state.eventCombat?.kind === 'elite' || state.eventCombat?.mindBloom === true
-  const printedBossRewards = wasBoss && state.act <= 2
+  const baseBoss = wasBoss && state.meta.ruleset !== 'downfall'
+  const printedBossRewards = baseBoss && state.act <= 2
   const lastStandActEnd = state.lastStand && combat.players.some((player) => player.dead) &&
     (wasBoss || state.eventCombat?.kind === 'boss')
   const sharedReward = wasElite || wasBoss || state.eventCombat?.kind === 'boss'
@@ -260,16 +301,29 @@ export function resolveCombat(state: RunState): RunState {
     const canGainGold = !hasRelic(after, 'ectoplasm')
     const goldenIdol = hasRelic(after, 'golden_idol') ? 1 : 0
     const meatHp = hasRelic(after, 'meat_on_the_bone') && after.hp < 4 ? 4 : after.hp
-    const hp = Math.min(healingCapFor(after), meatHp)
+    const hp = Math.min(healingCapFor(after, state.meta.ruleset), meatHp)
+    const transformed = new Map(after.deck.map((card) => [card.uid, card]))
     return {
       ...player,
-      deck: player.deck.filter((card) => CARDS[card.defId]?.owner !== 'status'),
+      deck: player.deck.map((card) => {
+        const replacement = transformed.get(card.uid)
+        return replacement ? {
+          uid: replacement.uid,
+          defId: replacement.defId,
+          upgraded: replacement.upgraded,
+          ...(replacement.attachedGemId ? { attachedGemId: replacement.attachedGemId } : {}),
+        } : card
+      }).filter((card) => CARDS[card.defId]?.owner !== 'status'),
       hp,
+      maxHp: after.maxHp,
       gold: after.gold + (canGainGold ? rewardGold + goldenIdol : 0),
+      cardRewards: after.cardRewards,
+      rareRewards: after.rareRewards,
       row: after.row,
       potions: after.potions,
       relics: after.relics,
       damageStats: after.damageStats,
+      lootChests: after.lootChests,
       dead: after.dead,
     }
   })
@@ -283,7 +337,7 @@ export function resolveCombat(state: RunState): RunState {
   let dailyUid = nextRunUid(players)
   if (modifier('insanity')) players = players.map((player) => {
     if (player.dead) return player
-    const eligible = player.deck.filter((card) => CARDS[card.defId]?.owner !== 'curse')
+    const eligible = player.deck.filter((card) => !cardIsCurse(card.defId))
     const card = eligible[nextInt(rng, eligible.length)]
     return card ? transformCard(rng, player, card.uid, `c${dailyUid++}`) : player
   })
@@ -298,8 +352,11 @@ export function resolveCombat(state: RunState): RunState {
     eventCombat: null,
     rewards: [],
     rewardDestination: null,
+    pendingGuardianSockets: [],
     log: [...state.log, ...epitaph, 'The party falls to a Daily modifier.'],
   }, itemDecks)
+  state = queueNewGuardianSockets(state, { ...state, players })
+  players = state.players
 
   const betweenBosses = wasBoss && Boolean(state.pendingBossDefId) && !lastStandActEnd
   const finalBoss = wasBoss && state.act >= 4
@@ -310,7 +367,7 @@ export function resolveCombat(state: RunState): RunState {
   const rewards = players.flatMap<CardRewardOffer>((player) => {
     if (player.dead) return []
     const whitePotion: false | null = hasRelic(player, 'white_beast_statue') ? null : false
-    if (betweenBosses || finalBoss || wasBoss && !printedBossRewards) return whitePotion === false ? [] : [{
+    if (betweenBosses || finalBoss || baseBoss && !printedBossRewards) return whitePotion === false ? [] : [{
       playerId: player.id,
       cardReward: false,
       choices: null,
@@ -331,7 +388,7 @@ export function resolveCombat(state: RunState): RunState {
     const potionCount = Number(source?.potionReward === true) + Number(hasRelic(player, 'white_beast_statue'))
     const potion: false | null = potionCount > 0 ? null : false
     // Elite relics are resolved by the shared physical room reward below.
-    const relic: false | null = (source?.relicReward === true && !wasElite || vintageReward) ? null : false
+    const relic: false | null = (source?.relicReward === true && !wasElite || vintageReward || state.eventCombat?.relicReward) ? null : false
     if (!cardReward && !transformedReward && potion === false && relic === false && !printedBossRewards) return []
     return [{
       playerId: player.id,
@@ -427,6 +484,7 @@ export function giveUpRun(state: RunState): RunState {
   }
   return {
     ...surrendered,
+    pendingGuardianSockets: [],
     players: surrendered.players.map((player) => ({
       ...player,
       relics: player.relics.filter((relic) => !relic.pending),
@@ -493,7 +551,7 @@ export function advanceAct(state: RunState): RunState {
   const act = requestedAct
   const players = state.players.map((player) => ({
     ...player,
-    hp: Math.min(healingCapFor(player), state.ascension >= 6 ? player.hp + 4 : player.maxHp),
+    hp: Math.min(healingCapFor(player, state.meta.ruleset), state.ascension >= 6 ? player.hp + 4 : player.maxHp),
     // Skipped common/uncommon rewards are shuffled back between Acts; rares
     // deliberately keep their order (setup p.4).
     cardRewards: shuffle(rng, [...player.cardRewards]),
@@ -516,8 +574,10 @@ export function advanceAct(state: RunState): RunState {
     players,
     combat: null,
     pendingBossDefId: null,
-    actBossDefId: rollActBoss(rng, act),
-    eventDeck: act === 4 ? [] : buildEventDeck(rng, act as 1 | 2 | 3, state.ascension, colorlessUnlocked),
+    actBossDefId: rollActBoss(rng, act, state.meta.ruleset),
+    selfBossRerolled: false,
+    guardianGemDeck: shuffle(rng, [...(state.guardianGemDeck ?? [])]),
+    eventDeck: act === 4 ? [] : buildEventDeck(rng, act as 1 | 2 | 3, state.ascension, colorlessUnlocked, state.meta.ruleset),
     eventsVisited: 0,
     roomState: null,
     eventCombat: null,
@@ -543,7 +603,7 @@ export function finishRun(state: RunState): RunState {
 
 /** Rooms the party may move to right now, or none if it is not their choice. */
 export function roomChoices(state: RunState): Room[] {
-  if (state.phase !== 'map') return []
+  if (state.phase !== 'map' || hasPendingRelicAcquisition(state)) return []
   const map = state.map
   if (map.position === null) {
     const first = map.rows[0]?.[0]
@@ -570,7 +630,7 @@ export function visibleMap(state: RunState): SpireMap {
 
 /** Unconnected rooms exactly one row above that Wing Boots may reach. */
 export function wingBootChoices(state: RunState, playerId: string): Room[] {
-  if (state.phase !== 'map' || state.map.position === null) return []
+  if (state.phase !== 'map' || state.map.position === null || hasPendingRelicAcquisition(state)) return []
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player?.relics.some((relic) => relic.defId === 'wing_boots' && (relic.uses ?? 0) > 0)) return []
   const current = state.map.rooms[state.map.position]

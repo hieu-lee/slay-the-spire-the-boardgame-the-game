@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { CARDS } from "../game/cards.ts";
-import { assetPath } from "../game/assets.ts";
+import { CARDS, cardIsCurse } from "../game/cards.ts";
+import { assetPath, enemyImagePath } from "../game/assets.ts";
+import { enemyDef } from "../game/enemies.ts";
+import { startTurnScryAbilities, startTurnScryPreview } from "../game/combat.ts";
 import { potionDef, relicDef } from "../game/relics.ts";
 import type { EventDecision, EventRoomState } from "../game/event-room.ts";
 import type {
@@ -11,12 +13,15 @@ import type {
   TreasureDecision,
 } from "../game/noncombat.ts";
 import { courierCost } from "../game/noncombat.ts";
+import { merchantCardCost, potionLimit } from "../game/acquisition.ts";
 import { relicOptionLabel, RelicOptionText } from "./RelicChip.tsx";
 import { useHoverUnavailable } from "./touch-input.ts";
 import { Card } from "./Card.tsx";
+import { CHARACTER_IDS } from "../game/types.ts";
 import type { Player } from "../game/types.ts";
 import type { EventEffect } from "../game/events.ts";
 import type { RewardSource } from "../game/run.ts";
+import { rewardSourceLabel } from "./reward-source.ts";
 import { ItemImage } from "./ItemImage.tsx";
 import { RewardItem } from "./RewardScreen.tsx";
 
@@ -35,6 +40,9 @@ type Props = {
   onResumeMerchant?: () => void;
   onRelic: (playerId: string, decision: TreasureDecision) => void;
   onEvent: (playerId: string, decision: EventDecision) => void;
+  onPreparedHermitSetup?: (cardUid: string, enemyUid: string | null) => void;
+  onPreparedStartTurnScryOrder?: (order: string[]) => void;
+  onPreparedStartTurnScry?: (sourceId: string, discardUids: string[]) => void;
   sapphireAvailable?: boolean;
   merchantPledges?: PropsPledgeMap;
   merchantReady?: string[];
@@ -81,7 +89,7 @@ function eventCardSlots(effects: readonly EventEffect[], die: number | undefined
       const def = CARDS[card.defId];
       if (card.defId === "ascenders_bane") return false;
       if (effect.tag === "upgrade-card" && (card.upgraded || !def?.upgrade)) return false;
-      if (effect.tag === "transform-card" && (def?.owner === "curse" || (player.cardRewards.length === 0 && ((player as PublicPlayerCounts).cardRewardCount ?? 0) === 0))) return false;
+      if (effect.tag === "transform-card" && (cardIsCurse(card.defId) || (player.cardRewards.length === 0 && ((player as PublicPlayerCounts).cardRewardCount ?? 0) === 0))) return false;
       if (effect.tag === "trade-card" && !players.some((candidate) => candidate.id !== player.id && !candidate.dead && (candidate.deck.some((entry) => entry.defId !== "ascenders_bane") || ((candidate as PublicPlayerCounts).tradableDeckCount ?? 0) > 0))) return false;
       if (effect.filter === "starter Strike") return def?.rarity === "starter" && def.name === "Strike";
       if (effect.filter === "rare or uncommon") return ["rare", "uncommon"].includes(def?.rarity ?? "");
@@ -142,7 +150,7 @@ export function CourierPanel({ players, viewerId, ascension, usedBy, offer, pled
     }).filter(([, paid]) => paid > 0));
   })();
   const potionBlocked = offer.kind === 'potion' && hasSozu(owner);
-  const potionFull = offer.kind === 'potion' && owner.potions.length >= (ascension >= 4 ? 2 : 3);
+  const potionFull = offer.kind === 'potion' && owner.potions.length >= potionLimit(ascension, owner);
   const canFund = !viewer.dead && !potionBlocked && cost !== null && (pledge ? contribution > 0 : (!online || viewer.id === owner.id) && partyCanAfford) && (!online || viewer.id === owner.id || Boolean(pledge)) && (!potionFull || Boolean(pledge?.discardPotionId ?? discardPotionId));
   return <aside className="courier-panel" aria-label="The Courier offer"><strong>The Courier · {offer.kind === 'relic' ? relicDef(offer.id).name : potionDef(offer.id).name}</strong><ItemImage kind={offer.kind} id={offer.id} card={offer.kind === 'relic'} /><span className="room-item-text">{offer.kind === 'relic' ? relicDef(offer.id).text : potionDef(offer.id).text}</span><span>{potionBlocked ? 'Sozu prevents gaining Potions' : cost === null ? 'Cannot be bought' : `◉ ${cost}${funded ? ` · ${remaining} remaining` : ''}`}</span>{potionFull && !potionBlocked && viewer.id === owner.id && !pledge ? <fieldset className="item-replacement" aria-label="Replace Potion"><legend>Replace Potion</legend>{owner.potions.map((id, index) => <button type="button" key={`${id}-${index}`} aria-pressed={discardPotionId === id} onClick={() => setDiscardPotionId((current) => current === id ? '' : id)}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset> : null}<button type="button" disabled={!canFund} onClick={() => onResolve('buy', payments, pledge?.discardPotionId ?? (discardPotionId || undefined))}>Buy / pledge ◉ {contribution}</button>{viewer.id === owner.id ? <button type="button" onClick={() => onResolve('discard')}>Discard offer</button> : null}</aside>;
 }
@@ -199,7 +207,6 @@ function MerchantScreen({
   const pointAtTarget = (id: string) => pointAt(merchantStage.current?.querySelector<HTMLElement>(`[data-merchant-target="${id}"]`) ?? null);
   const validDiscardPotionId = buyer.potions.includes(discardPotionId) ? discardPotionId : "";
   const buyerHasSozu = hasSozu(buyer);
-  const potionLimit = ascension >= 4 ? 2 : 3;
   const removalUsed = room.removalUsed.includes(buyer.id);
   const removalCost = ascension >= 8 ? 4 : 3;
   const removalKey = `remove/${buyer.id}`;
@@ -392,7 +399,7 @@ function MerchantScreen({
             const funding = cost === null ? null : pledge(buyer.id, "potion", slot, cost);
             const pending = funding ? merchantPledges[funding.key] : undefined;
             const replacement = pending?.discardPotionId ?? validDiscardPotionId;
-            const beltFull = buyer.potions.length >= potionLimit;
+            const beltFull = buyer.potions.length >= potionLimit(ascension, buyer);
             return (
               <button
                 className="merchant-item"
@@ -433,12 +440,7 @@ function MerchantScreen({
           <h3>{buyer.name} · Card Rewards</h3>
           {room.cards[buyer.id]?.choices.map((id, slot) => {
             const card = CARDS[id];
-            const cost =
-              card?.rarity === "common"
-                ? 2
-                : card?.rarity === "uncommon"
-                  ? 3
-                  : 6;
+            const cost = merchantCardCost(id) ?? 0;
             const funding = pledge(buyer.id, "card", slot, cost);
             // The shop shows the card itself, the way the reward screen two
             // rooms over already does — a name and a rarity word is not enough
@@ -486,7 +488,7 @@ function MerchantScreen({
             <h3>Colorless</h3>
             {room.colorless.map((id, slot) => {
               const card = id ? CARDS[id] : undefined;
-              const cost = card?.rarity === "uncommon" ? 3 : 6;
+              const cost = merchantCardCost(id ?? "") ?? 0;
               const funding = pledge(buyer.id, "colorless", slot, cost);
               // Same treatment as the card shelf above.
               const blocked = !id || !canPledge(funding) || sharedReserved("colorless", slot, funding.key) || Boolean(onWithdraw && buyer.id !== player.id && !merchantPledges[funding.key]);
@@ -685,6 +687,9 @@ function EventScreen({
   viewerId,
   ascension,
   onEvent,
+  onPreparedHermitSetup,
+  onPreparedStartTurnScryOrder,
+  onPreparedStartTurnScry,
   eventForwardRooms = [],
   eventPledge,
   onWithdraw,
@@ -713,6 +718,9 @@ function EventScreen({
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [rewardSources, setRewardSources] = useState<RewardSource[]>([]);
   const [rareRewardSources, setRareRewardSources] = useState<RewardSource[]>([]);
+  const [guardianGemIds, setGuardianGemIds] = useState<string[]>([]);
+  const [preparedScryOrder, setPreparedScryOrder] = useState<string[]>([]);
+  const [preparedScryPicked, setPreparedScryPicked] = useState<string[]>([]);
   const focusedEvent = useRef("");
   const focusedEventOption = useRef<HTMLButtonElement | null>(null);
   const focusedEventOptionId = useRef("");
@@ -721,6 +729,7 @@ function EventScreen({
   // The Compendium overlay can replay effects; only a real Event-stage change clears its draft.
   const draftStages = useRef<Record<string, string>>({});
   const rewardOffers = room.rewardOffers?.[player.id];
+  const guardianGemOffers = room.guardianGemOffers?.[player.id] ?? [];
   const eventArt = { "--event-art": `url('${assetPath(`noncombat/events/${room.card.id}.webp`)}')` } as CSSProperties;
   const itemOffers = room.itemOffers?.[player.id];
   const pendingTrade = room.pendingTrade;
@@ -729,7 +738,7 @@ function EventScreen({
   const draftOptionIds = decided ? [] : pendingDecision?.optionIds ?? selectedOptions;
   const selectionOpen = draftOptionIds.length > 0;
   const itemOfferStage = JSON.stringify([itemOffers, pendingDecision?.rewardItemIds?.length ?? 0]);
-  const rewardOfferStage = JSON.stringify([rewardOffers, pendingDecision?.rewardIndexes?.length ?? 0]);
+  const rewardOfferStage = JSON.stringify([rewardOffers, guardianGemOffers, pendingDecision?.rewardIndexes?.length ?? 0]);
   const [rewardIndexes, setRewardIndexes] = useState<number[]>(() =>
     Array(room.rewardOffers?.[player.id]?.length ?? 0).fill(-2),
   );
@@ -765,6 +774,7 @@ function EventScreen({
     if (draftStages.current.reward === rewardDraftStage) return;
     draftStages.current.reward = rewardDraftStage;
     setRewardIndexes(Array(rewardOffers?.length ?? 0).fill(-2));
+    setGuardianGemIds([]);
   }, [rewardDraftStage]);
   const pendingDie = room.pendingRolls?.[player.id]?.at(-1);
   const repeatScrap = room.card.id === "scrap_ooze" && Boolean(pendingDecision) && (pendingDie ?? 3) <= 2;
@@ -965,6 +975,7 @@ function EventScreen({
       targetPlayerId: pendingDecision?.targetPlayerId ?? (targetPlayerId || undefined),
       roomId: roomId || undefined,
       rewardIndexes,
+      guardianGemIds,
       rewardSources: selectedRewardSources,
       payments: paymentFor(optionIds),
     });
@@ -1006,8 +1017,7 @@ function EventScreen({
     const pendingRelic = pendingEffects.some((effect) => effect.tag === "lose-relic" && !effect.random);
     const pendingTarget = pendingEffects.some((effect) => effect.target === "one-player");
     const potionChoicesLegal = (() => {
-      const limit = ascension >= 4 ? 2 : 3;
-      const free = new Map(players.map((candidate) => [candidate.id, limit - candidate.potions.length]));
+      const free = new Map(players.map((candidate) => [candidate.id, potionLimit(ascension, candidate) - candidate.potions.length]));
       const replacements = new Map<string, number>();
       let potionAt = 0;
       for (const [index, offer] of itemOffers.entries()) {
@@ -1044,7 +1054,7 @@ function EventScreen({
         <button type="button" disabled={takeBlocked} aria-pressed={rewardItemChoices[index] === 'take'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'take' : choice))}>Take</button>
         <button type="button" aria-pressed={rewardItemChoices[index] === 'skip'} onClick={() => setRewardItemChoices((current) => current.map((choice, choiceIndex) => choiceIndex === index ? 'skip' : choice))}>Skip</button>
         {offer.kind === 'potion' ? <>
-          <label>Pass to<select aria-label="Pass to" value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < (ascension >= 4 ? 2 : 3)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+          <label>Pass to<select aria-label="Pass to" value={potionRecipientIds[at] ?? ''} onChange={(event) => setPotionRecipientIds((current) => current.map((id, idIndex) => idIndex === at ? event.target.value : id))}><option value="">{hasSozu(player) ? 'Choose a recipient' : 'Keep or replace yours'}</option>{players.filter((candidate) => candidate.id !== player.id && !candidate.dead && !hasSozu(candidate) && candidate.potions.length < potionLimit(ascension, candidate)).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
           {!hasSozu(player) ? <fieldset className="event-potion-replacement" aria-label="Replace"><legend>Replace</legend><button type="button" aria-pressed={!potionReplacementIds[at]} onClick={() => setPotionReplacementIds((current) => current.map((id, idIndex) => idIndex === at ? null : id))}>None</button>{player.potions.map((id, heldIndex) => <button type="button" key={`${id}-${heldIndex}`} aria-pressed={potionReplacementIds[at] === id} onClick={() => setPotionReplacementIds((current) => current.map((held, idIndex) => idIndex === at ? id : held))}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}</fieldset> : null}
         </> : null}
       </RewardItem>;
@@ -1079,16 +1089,32 @@ function EventScreen({
                   key={`${offerIndex}-${id}-${index}`}
                   card={{ uid: `event-reward-${offerIndex}-${index}`, defId: id, upgraded: false }}
                   selected={rewardIndexes[offerIndex] === index}
-                  onClick={() =>
+                  onClick={() => {
+                    setGuardianGemIds([]);
                     setRewardIndexes((current) =>
                       current.map((value, at) =>
                         at === offerIndex ? index : value,
                       ),
-                    )
-                  }
+                    );
+                  }}
                 />
               ))}
-              <button type="button" aria-pressed={rewardIndexes[offerIndex] === -1} onClick={() => setRewardIndexes((current) => current.map((value, at) => at === offerIndex ? -1 : value))}>Skip this reward</button>
+              {CARDS[offer[rewardIndexes[offerIndex] ?? -1]!]?.guardian?.socket && guardianGemOffers[offerIndex]?.length ? (
+                <div className="event-cards" aria-label="Choose a Gem">
+                  {guardianGemOffers[offerIndex]!.map((id) => <Card key={id}
+                    card={{ uid: `event-gem-${offerIndex}-${id}`, defId: id, upgraded: false }}
+                    selected={guardianGemIds[offerIndex] === id}
+                    onClick={() => setGuardianGemIds((current) => {
+                      const next = [...current];
+                      next[offerIndex] = id;
+                      return next;
+                    })} />)}
+                </div>
+              ) : null}
+              <button type="button" aria-pressed={rewardIndexes[offerIndex] === -1} onClick={() => {
+                setGuardianGemIds([]);
+                setRewardIndexes((current) => current.map((value, at) => at === offerIndex ? -1 : value));
+              }}>Skip this reward</button>
             </fieldset>
           ))}
           <button
@@ -1096,7 +1122,9 @@ function EventScreen({
             type="button"
             disabled={
               rewardIndexes.length !== rewardOffers.length ||
-              rewardIndexes.some((index) => index < -1)
+              rewardIndexes.some((index) => index < -1) ||
+              rewardOffers.some((offer, index) => CARDS[offer[rewardIndexes[index] ?? -1]!]?.guardian?.socket &&
+                !guardianGemOffers[index]?.includes(guardianGemIds[index]!))
             }
             onClick={() =>
               submit(room.pendingDecisions?.[player.id]?.optionIds ?? [])
@@ -1108,6 +1136,93 @@ function EventScreen({
       </section>
     );
   const latestDie = room.dieRolls[player.id]?.at(-1);
+  const openingHand = room.preparedCombat?.players.find((candidate) => candidate.id === player.id)?.hand ?? [];
+  const preparedEnemies = room.preparedCombat?.enemies ?? [];
+  const encounterPreview = preparedEnemies.length > 0 ? <fieldset className="event-encounter-preview">
+    <legend>Prepared encounter</legend>
+    {preparedEnemies.filter((enemy) => !enemy.dead).map((enemy) => {
+      const def = enemyDef(enemy.defId, enemy.ascension);
+      return <figure key={enemy.uid}>
+        <img src={enemyImagePath(def)} alt="" />
+        <figcaption><strong>{def.name}</strong><span>Row {enemy.row + 1} · {enemy.hp}/{enemy.maxHp} HP</span></figcaption>
+      </figure>;
+    })}
+  </fieldset> : null;
+  const preparedSetup = room.preparedCombat?.pendingHermitSetupLoads?.[0];
+  const localPreparedScries = room.preparedCombat ? startTurnScryAbilities(room.preparedCombat) : [];
+  const preparedScries = room.preparedStartTurnScryAbilities ?? localPreparedScries;
+  const localPreparedScry = room.preparedCombat ? startTurnScryPreview(room.preparedCombat) : undefined;
+  const preparedScry = room.preparedStartTurnScry ?? localPreparedScry;
+  const preparedScryIds = preparedScryOrder.length === preparedScries.length &&
+    preparedScryOrder.every((id) => preparedScries.some((ability) => ability.id === id))
+    ? preparedScryOrder : preparedScries.map((ability) => ability.id);
+  const effectivePreparedScryPicked = preparedScryPicked.filter((uid) =>
+    preparedScry?.cards?.some((card) => card.uid === uid));
+  if (preparedSetup) {
+    const owner = players.find((candidate) => candidate.id === preparedSetup.playerId);
+    const setupCard = preparedSetup.playerId === player.id ? openingHand[0] : undefined;
+    const needsTarget = setupCard && ["hermit_grudge", "hermit_malice", "hermit_horror"].includes(setupCard.defId);
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
+      <div className="event-art" aria-hidden="true" />
+      <div className="event-panel event-panel--resolver">
+        <div className="room-banner"><span>Event</span><h2 id="event-title">{room.card.name}</h2>
+          <p>{preparedSetup.playerId === player.id
+            ? "Hermit setup — Load the private setup card before viewing the opening hand."
+            : `Waiting for ${owner?.name ?? "the Hermit"} to finish their private setup Load.`}</p></div>
+        {encounterPreview}
+        {setupCard ? <fieldset className="event-cards"><legend>Hermit setup</legend>
+          <Card card={setupCard} className="card--preview" playable={false} />
+          {needsTarget ? room.preparedCombat?.enemies.filter((enemy) => !enemy.dead).map((enemy) =>
+            <button type="button" key={enemy.uid} onClick={() => onPreparedHermitSetup?.(setupCard.uid, enemy.uid)}>
+              Load and target row {enemy.row + 1}
+            </button>) : <button type="button" onClick={() => onPreparedHermitSetup?.(setupCard.uid, null)}>
+              Load {CARDS[setupCard.defId]?.name}
+            </button>}
+        </fieldset> : null}
+      </div>
+    </section>;
+  }
+  if (preparedScries.length > 0 || preparedScry) {
+    const coordinatorId = room.preparedStartTurnCoordinatorId ?? player.id;
+    const scryOwner = players.find((candidate) => candidate.id === preparedScry?.playerId);
+    return <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
+      <div className="event-art" aria-hidden="true" />
+      <div className="event-panel event-panel--resolver">
+        <div className="room-banner"><span>Event</span><h2 id="event-title">{room.card.name}</h2>
+          <p>{preparedScries.length > 0
+            ? coordinatorId === player.id ? "Order the pre-draw Scries before revealing opening hands." : "Waiting for the Scry order."
+            : preparedScry?.playerId === player.id ? `${preparedScry.label} — choose any revealed cards to discard.`
+              : `Waiting for ${scryOwner?.name ?? "the Scry owner"} to finish their private Scry.`}</p></div>
+        {encounterPreview}
+        {preparedScries.length > 0 && coordinatorId === player.id ? <fieldset className="event-cards"><legend>Pre-draw Scry order</legend>
+          {preparedScryIds.map((id, index) => {
+            const ability = preparedScries.find((candidate) => candidate.id === id)!;
+            return <div key={id}><strong>{ability.label}</strong>
+              <button type="button" disabled={index === 0} onClick={() => setPreparedScryOrder((current) => {
+                const order = current.length === preparedScries.length ? [...current] : preparedScries.map((candidate) => candidate.id);
+                [order[index - 1], order[index]] = [order[index]!, order[index - 1]!];
+                return order;
+              })}>Earlier</button>
+              <button type="button" disabled={index === preparedScryIds.length - 1} onClick={() => setPreparedScryOrder((current) => {
+                const order = current.length === preparedScries.length ? [...current] : preparedScries.map((candidate) => candidate.id);
+                [order[index], order[index + 1]] = [order[index + 1]!, order[index]!];
+                return order;
+              })}>Later</button></div>;
+          })}
+          <button type="button" onClick={() => onPreparedStartTurnScryOrder?.(preparedScryIds)}>Confirm Scry order</button>
+        </fieldset> : null}
+        {preparedScry?.playerId === player.id && preparedScry.cards ? <fieldset className="event-cards"><legend>{preparedScry.label} · Scry {preparedScry.amount}</legend>
+          {preparedScry.cards.map((card) => <Card key={card.uid} card={card}
+            selected={effectivePreparedScryPicked.includes(card.uid)}
+            onClick={() => setPreparedScryPicked((picked) => picked.includes(card.uid)
+              ? picked.filter((uid) => uid !== card.uid) : [...picked, card.uid])} />)}
+          <button type="button" onClick={() => onPreparedStartTurnScry?.(preparedScry.id, effectivePreparedScryPicked)}>
+            {effectivePreparedScryPicked.length > 0 ? `Discard ${effectivePreparedScryPicked.length} and draw` : "Keep all and draw"}
+          </button>
+        </fieldset> : null}
+      </div>
+    </section>;
+  }
   return (
     <section className="room-stage event-stage" style={eventArt} aria-labelledby="event-title">
       <div className="event-art" aria-hidden="true" />
@@ -1134,6 +1249,8 @@ function EventScreen({
             <p className="event-party-reveal" key={id}><strong>{players.find((candidate) => candidate.id === id)?.name ?? "Teammate"} revealed:</strong> {cardIds.map((id) => CARDS[id]?.name).join(", ")}</p>
           ))}
         </div>
+        {encounterPreview}
+        {openingHand.length > 0 ? <fieldset className="event-cards"><legend>Your opening hand · choose for the party</legend>{openingHand.map((card) => <Card key={card.uid} card={card} className="card--preview" playable={false} />)}</fieldset> : null}
         {resolverOpen ? <p className="event-choice-summary">
           {draftOptionIds.map((id) => room.card.options.find((choice) => choice.id === id))
             .filter((choice) => choice)
@@ -1160,7 +1277,7 @@ function EventScreen({
               <input type="checkbox" checked={effectiveRewardSources.includes(source)}
                 disabled={Boolean(pendingDecision?.rewardSources?.length) || !rewardSources.includes(source) && rewardSources.length >= 3}
                 onChange={(event) => setRewardSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
-              {source === "colorless" ? "Colorless" : source[0]!.toUpperCase() + source.slice(1)}
+              {rewardSourceLabel(source)}
             </label>)}
           </fieldset> : null}
           {hasPrismaticShard && hasPrismaticRareReward ? <fieldset className="event-cards"><legend>Prismatic Shard · Rare Reward · choose 3 reward decks</legend>
@@ -1168,7 +1285,7 @@ function EventScreen({
               <input type="checkbox" checked={effectiveRareRewardSources.includes(source)}
                 disabled={Boolean(pendingDecision?.rewardSources?.length) || !rareRewardSources.includes(source) && rareRewardSources.length >= 3}
                 onChange={(event) => setRareRewardSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
-              {source === "colorless" ? "Colorless" : source[0]!.toUpperCase() + source.slice(1)}
+              {rewardSourceLabel(source)}
             </label>)}
           </fieldset> : null}
           {needsTarget ? <label>
@@ -1180,15 +1297,15 @@ function EventScreen({
             >
               <option value="">None</option>
               {players
-                .filter((candidate) => !candidate.dead && (!(trade || otherCharacter) || candidate.id !== player.id) && (!trade || canTradeWith(candidate)))
+                .filter((candidate) => !candidate.dead && (!(trade || otherCharacter) || candidate.id !== player.id) && (!trade || canTradeWith(candidate)) && (!otherCharacter || availableCardSources.includes(candidate.character)))
                 .map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.name}
                   </option>
                 ))}
-              {otherCharacter ? (["ironclad", "silent", "defect", "watcher"] as const)
-                .filter((character) => !players.some((candidate) => candidate.character === character))
-                .map((character) => <option key={character} value={character}>{character.charAt(0).toUpperCase() + character.slice(1)} reward deck</option>) : null}
+              {otherCharacter ? CHARACTER_IDS
+                .filter((character) => availableCardSources.includes(character) && !players.some((candidate) => candidate.character === character))
+                .map((character) => <option key={character} value={character}>{rewardSourceLabel(character)} reward deck</option>) : null}
             </select>
           </label> : null}
           {needsRelic && !paymentLocked && player.relics.length ? (

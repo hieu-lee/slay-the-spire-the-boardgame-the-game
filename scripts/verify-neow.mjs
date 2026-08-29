@@ -4,6 +4,7 @@ import { NEOW_CARDS } from '../src/game/neow.ts'
 import {
   chooseNeow,
   createRun,
+  GOLDEN_TICKET,
   neowPreview,
   pendingRelicEligibleCards,
   pendingRelicPreview,
@@ -34,6 +35,12 @@ const forceCard = (run, cardId) => ({
   ...run,
   neow: { ...run.neow, players: { ...run.neow.players, p1: { ...run.neow.players.p1, cardId } } },
 })
+
+const beginHeart = (seed, cardId) => {
+  let run = createRun(seed, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+  while (run.neow.players.p1.redRewardPending) run = resolveNeowReward(run, 'p1', null)
+  return forceCard(run, cardId)
+}
 
 const choiceUids = (run, option) => {
   const selection = option.effects.find((effect) => ['upgrade', 'remove', 'transform'].includes(effect.kind) && !effect.random)
@@ -308,6 +315,40 @@ check('two Colorless rewards resolve sequentially and conserve their shared phys
   assertEqual(run.players[0].deck.some((card) => card.defId === first[0]), true)
 })
 
+check("Heart's Boon conserves unchosen Relics and duplicate random Card Rewards", () => {
+  for (const [index, cardId] of ['heart_boon_12', 'heart_boon_14'].entries()) {
+    let run = beginHeart(4450 + index, cardId)
+    const offer = ['anchor', 'happy_flower', 'vajra']
+    const tail = run.relicDeck.filter((id) => !offer.includes(id))
+    run = { ...run, relicDeck: [...offer, ...tail], itemDecks: { ...run.itemDecks, relics: [...offer, ...tail] } }
+    run = chooseNeow(run, 'p1', 2)
+    run = revealNeowReward(run, 'p1')
+    assertDeepEqual(run.neow.players.p1.reward.choices, offer)
+    run = resolveNeowReward(run, 'p1', 1)
+    assert(run.players[0].relics.some((relic) => relic.defId === 'happy_flower'))
+    assertEqual(run.relicDeck.length, offer.length + tail.length - 1)
+    assertDeepEqual(run.relicDeck.slice(-2), ['anchor', 'vajra'])
+    assertDeepEqual(run.itemDecks.relics, run.relicDeck)
+  }
+
+  let duplicate = beginHeart(4452, 'heart_boon_15')
+  const deckSize = duplicate.players[0].deck.length
+  duplicate.players[0].cardRewards = ['anger', 'anger', ...duplicate.players[0].cardRewards]
+  duplicate = chooseNeow(duplicate, 'p1', 2)
+  duplicate = resolveNeowEffect(duplicate, 'p1', true)
+  assertEqual(duplicate.players[0].deck.length, deckSize + 2)
+  assertDeepEqual(duplicate.players[0].deck.slice(-2).map((card) => card.defId), ['anger', 'anger'])
+  assertEqual(duplicate.players[0].cardRewards[0] === 'anger' && duplicate.players[0].cardRewards[1] === 'anger', false)
+
+  let tickets = beginHeart(4453, 'heart_boon_15')
+  const rares = tickets.players[0].rareRewards.slice(0, 2)
+  tickets.players[0].cardRewards = [GOLDEN_TICKET, GOLDEN_TICKET, ...tickets.players[0].cardRewards]
+  tickets = chooseNeow(tickets, 'p1', 2)
+  tickets = resolveNeowEffect(tickets, 'p1', true)
+  assertDeepEqual(tickets.players[0].deck.slice(-2).map((card) => card.defId), rares)
+  assertDeepEqual(tickets.players[0].cardRewards.slice(-2), [GOLDEN_TICKET, GOLDEN_TICKET])
+})
+
 check('three Potion icons are independent offers with pass, replace, skip, and A4 conservation', () => {
   let run = forceCard(beginBlue(4501), 'neow_04')
   run = { ...run, ascension: 4 }
@@ -442,6 +483,52 @@ check('Prismatic Neow bottoms every unused physical card without overwriting its
   assertDeepEqual(run.players.find((player) => player.id === 'p2').cardRewards, ['backflip'])
   assertDeepEqual(run.players.find((player) => player.id === 'p3').cardRewards, ['leap', 'claw'])
   assert(run.players.find((player) => player.id === 'p1').deck.some((card) => card.defId === 'acrobatics'))
+})
+
+check('Guardian Neow offers reveal and settle Socket Gems with the draft', () => {
+  const guardian = [{ id: 'p1', name: 'Guardian', character: 'guardian' }]
+  const stage = (seed, kind) => {
+    const run = createRun(seed, guardian, 0, createCampaignProgress(), false, false, { ruleset: 'downfall' })
+    const progress = run.neow.players.p1
+    return {
+      ...run,
+      neow: { ...run.neow, players: { p1: { ...progress, redGoldPending: false,
+        redRewardPending: false, redReward: null, rewardKind: kind, reward: null } } },
+    }
+  }
+
+  let run = stage(4852, 'card')
+  run.players[0].cardRewards = ['guardian_crystal_edge', 'guardian_orb_slam', 'guardian_fortify']
+  run.guardianGemDeck = ['guardian_ruby', 'guardian_onyx', ...run.guardianGemDeck.slice(2)]
+  const gems = run.guardianGemDeck.slice(0, 2)
+  run = revealNeowReward(run, 'p1')
+  assertDeepEqual(run.neow.players.p1.reward.guardianGems, gems)
+  assertEqual(run.guardianGemDeck.length, 22)
+  run = resolveNeowReward(run, 'p1', 0)
+  assertDeepEqual(run.pendingGuardianSockets[0].gemIds, gems)
+
+  let skipped = stage(4853, 'rare')
+  skipped.players[0].rareRewards = ['guardian_bauble_burst', 'guardian_destroy', 'guardian_overclock']
+  const rareGems = skipped.guardianGemDeck.slice(0, 2)
+  skipped = revealNeowReward(skipped, 'p1')
+  assertDeepEqual(skipped.neow.players.p1.reward.guardianGems, rareGems)
+  skipped = resolveNeowReward(skipped, 'p1', null)
+  assertDeepEqual(skipped.guardianGemDeck.slice(-2), rareGems)
+
+  let prismatic = stage(4854, 'card')
+  prismatic.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
+  prismatic.neow.players.p1.rewardRequest = { look: 3, upgraded: true }
+  prismatic.players[0].cardRewards = ['guardian_crystal_edge']
+  prismatic.itemDecks.characterCards = {
+    ...prismatic.itemDecks.characterCards,
+    guardian: ['guardian_crystal_edge'], ironclad: ['anger'], silent: ['acrobatics'],
+  }
+  const prismaticGems = prismatic.guardianGemDeck.slice(0, 2)
+  prismatic = revealNeowReward(prismatic, 'p1', ['guardian', 'ironclad', 'silent'])
+  assertDeepEqual(prismatic.neow.players.p1.reward.guardianGems, prismaticGems)
+  assertEqual(prismatic.neow.players.p1.reward.upgraded, true)
+  prismatic = resolveNeowReward(prismatic, 'p1', 0)
+  assert(prismatic.players[0].deck.some((card) => card.defId === 'guardian_crystal_edge' && card.upgraded))
 })
 
 check('Transformed Neow does not require irrelevant Prismatic reward sources', () => {

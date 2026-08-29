@@ -10,6 +10,9 @@ import { relicDef } from '../relics.ts'
 import { createRng, nextInt, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import type { Enemy, Player } from '../types.ts'
+import type { RuleSet } from '../meta.ts'
+import { DOWNFALL_BOSSES, DOWNFALL_BOSS_ENCOUNTERS } from '../downfall/enemies.ts'
+import { bruiserSlime } from '../downfall/slime-boss.ts'
 
 /** Implemented main-enemy cards, including the Act-specific printed reward. */
 const ACT_ENCOUNTERS: Record<number, EncounterCard[]> = {
@@ -120,8 +123,9 @@ export const BOSSES: Record<number, string[]> = {
  * existing seed deals the same cards and lays out the same map as it did before
  * this roll moved from the boss room to the map.
  */
-export function rollActBoss(rng: RngState, act: number): string {
-  const deck = BOSSES[act] ?? BOSSES[1]!
+export function rollActBoss(rng: RngState, act: number, ruleset: RuleSet = 'base'): string {
+  const bosses = ruleset === 'downfall' ? DOWNFALL_BOSSES : BOSSES
+  const deck = bosses[act] ?? bosses[1]!
   return deck[nextInt(createRng(rng.seed + act * 0x9e3779b1), deck.length)]!
 }
 
@@ -204,13 +208,15 @@ export function buildEncounter(
   ascension = 0,
   forcedBossDefId?: string,
   actBossDefId?: string | null,
+  ruleset: RuleSet = 'base',
 ): { enemies: Enemy[]; summonSupply: SummonSupply; nextBossDefId?: string } {
   const count = players.length
-  const summonSupply = createSummonSupply(rng)
+  const summonSupply = createSummonSupply(rng, ruleset, act)
 
   if (kind === 'boss') {
     const row = Math.max(0, ...players.map((player) => player.row))
-    const deck = BOSSES[act] ?? BOSSES[1]!
+    const bosses = ruleset === 'downfall' ? DOWNFALL_BOSSES : BOSSES
+    const deck = bosses[act] ?? bosses[1]!
     // `actBossDefId` is the roll the map already made and showed the party;
     // `forcedBossDefId` overrides even that (Mind Bloom, the Ascension 13
     // second boss). The fallback roll is for a run saved before either existed.
@@ -219,15 +225,21 @@ export function buildEncounter(
     const nextBossDefId = !forcedBossDefId && act === 3 && ascension >= 13
       ? deck[(chosen + 1 + nextInt(rng, deck.length - 1)) % deck.length]!
       : undefined
+    const downfallEncounter = ruleset === 'downfall' ? DOWNFALL_BOSS_ENCOUNTERS[defId] : undefined
     const enemies = [spawn(
       defId,
       'boss-0',
       row,
       startingHp(enemyDef(defId, ascension), count),
       true,
-      act <= 2 ? ascension >= 10 ? 2 : 3 : 0,
-      act <= 2 ? 'normal' : null,
+      downfallEncounter
+        ? ascension >= (downfallEncounter.ascensionReward?.min ?? Number.POSITIVE_INFINITY)
+          ? downfallEncounter.ascensionReward!.goldReward : downfallEncounter.goldReward
+        : act <= 2 ? ascension >= 10 ? 2 : 3 : 0,
+      downfallEncounter?.cardReward ?? (act <= 2 ? 'normal' : null),
       ascension,
+      false,
+      downfallEncounter?.relicReward === true,
     )]
     const summon = (boss: Enemy, group: string, summonRow: number, uid: string, isBoss = false) => {
       const defId = drawSummon(summonSupply, group)
@@ -237,7 +249,25 @@ export function buildEncounter(
       ))
     }
     for (const boss of [...enemies]) {
-      if (boss.defId === 'bronze_automaton') {
+      const encounter = ruleset === 'downfall' ? DOWNFALL_BOSS_ENCOUNTERS[boss.defId] : undefined
+      if (encounter) {
+        for (const summonId of encounter.summons ?? []) {
+          enemies.splice(enemies.indexOf(boss), 0, spawn(
+            summonId, `${boss.uid}-summon-${enemies.length}`, boss.row,
+            startingHp(enemyDef(summonId, ascension), count), enemyDef(summonId, ascension).isBoss === true,
+            0, null, ascension,
+          ))
+        }
+        for (const player of players) {
+          for (const group of encounter.summonsPerPlayer ?? []) {
+            summon(boss, group, player.row, `${boss.uid}-${group}-${player.row}`)
+          }
+          for (let index = 0; index < (encounter.randomSummonsPerPlayer?.count ?? 0); index++) {
+            summon(boss, encounter.randomSummonsPerPlayer!.group, player.row,
+              `${boss.uid}-summon-${player.row}-${index}`)
+          }
+        }
+      } else if (boss.defId === 'bronze_automaton') {
         for (const player of players) summon(boss, 'bronze_orb', player.row, `${boss.uid}-orb-${player.row}`)
       } else if (boss.defId === 'awakened_one_phase_1') {
         for (const player of players) for (let index = 0; index < 2; index++) {
@@ -372,6 +402,7 @@ export function buildEncounter(
 /** Resets a player's piles for a fresh combat: everything back to the deck. */
 export function readyForCombat(rng: RngState, player: Player): Player {
   const deck = [...player.deck]
+  const corruptedShard = player.relics.some((relic) => relic.defId === 'corrupted_shard')
   return {
     ...player,
     block: 0,
@@ -404,6 +435,14 @@ export function readyForCombat(rng: RngState, player: Player): Player {
     darkOrbEvokeBonus: 0,
     orbEndTurnBonus: 0,
     lightningEndTurnBonus: 0,
+    chamber: [],
+    chamberSlots: player.character === 'hermit' ? 2 : corruptedShard ? 1 : player.chamberSlots === 1 ? 1 : 0,
+    heat: player.character === 'hexaghost' ? 1 : corruptedShard ? 1 : player.heat > 0 ? 1 : 0,
+    soulburn: 0,
+    guardianMode: player.character === 'guardian' ? 'attack' : corruptedShard ? null : player.guardianMode,
+    vigor: 0,
+    vigorSpentThisTurn: 0,
+    slimes: player.character === 'slime_boss' ? [bruiserSlime()] : [],
     starterStrikeDamageBonus: 0,
     clawCubesGainedThisCombat: 0,
     starterDefendBlockBonus: 0,

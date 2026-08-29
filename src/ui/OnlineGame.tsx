@@ -22,7 +22,7 @@ import { RunSummary } from './RunSummary.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
 import type { SummarySeat } from './RunSummary.tsx'
-import { RelicResolvePanel } from './RelicResolvePanel.tsx'
+import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { wingBootLabel } from './wing-boots.ts'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
@@ -47,6 +47,10 @@ const CHARACTERS = [
   ['silent', 'Silent'],
   ['defect', 'Defect'],
   ['watcher', 'Watcher'],
+  ['slime_boss', 'Slime Boss'],
+  ['guardian', 'Guardian'],
+  ['hexaghost', 'Hexaghost'],
+  ['hermit', 'Hermit'],
 ] as const
 
 type Props = {
@@ -61,6 +65,7 @@ function playerForUi(player: VisiblePlayer): Player {
     deck: player.deck ?? [],
     draw: [],
     hand: player.hand ?? [],
+    chamber: player.chamber ?? [],
     cardRewards: [],
     rareRewards: [],
   }
@@ -484,7 +489,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const run = snapshot.run
   const viewer = run.players.find((player) => player.id === snapshot.you.playerId)
   const canGiveUp = Boolean(viewer) && canGiveUpRun(run, snapshot.campaignProgress)
-  const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const pendingSocket = run.pendingGuardianSockets?.[0]
+  const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
+  const pendingAcquisition = hasPendingRelicAcquisition(run) || Boolean(pendingSocket)
   // Derived once: the map prompt needs the list twice, for the guard and for the
   // labels, and each label compares against the whole set.
   const wingTargets = wingChoices(run.map, viewer)
@@ -521,6 +528,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
               potionLimit={run.ascension >= 4 ? 2 : 3}
+              ruleset={run.meta.ruleset ?? 'base'}
               disabled={giveUpStartPending || room.connection !== 'connected' || foreignCardChoice || foreignTrigger || foreignStartTurnDiscard}
               onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
               onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
@@ -657,6 +665,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           partyStartTurnDiscard={snapshot.startTurnDiscard}
           savedDiscardOrder={snapshot.discardOrder}
           cardPreview={snapshot.cardPreview}
+          powerPreview={snapshot.powerPreview}
+          authoritativePendingTrigger={run.combat?.pendingTriggerAbility ?? null}
           authoritativeVersion={snapshot.version}
           authoritativeRefresh={room.refreshEpoch}
           authoritativeRestoration={room.restorationEpoch}
@@ -671,6 +681,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : null}
       {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}
+        canRerollBoss={!pendingAcquisition && run.canRerollDownfallSelfBoss}
+        onRerollBoss={() => room.act({ kind: 'rerollDownfallSelfBoss' })}
         onEnter={(roomId) => room.act({ kind: 'enterRoom', roomId })} />
         {!pendingAcquisition && wingTargets.length > 0 ? <section className="room-screen map-prompt"><strong>Wing Boots</strong>
           {wingTargets.map((target) => <button type="button" key={target.id}
@@ -689,6 +701,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={snapshot.pendingRelic.relicId}
         pending={snapshot.pendingRelic} deck={viewer.deck}
         onResolve={(cardUids, rewardIndices) => room.act({ kind: 'resolvePendingRelic', cardUids, rewardIndices })} /> : null}
+      {pendingSocket && pendingSocket.playerId === snapshot.you.playerId && viewer?.deck ? (
+        <GuardianSocketPanel key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
+          pending={pendingSocket} deck={viewer.deck}
+          onResolve={(gemId) => room.act({ kind: 'resolveGuardianSocket', gemId })} />
+      ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
+        Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
+      </section> : null}
       {run.phase !== 'neow' && !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
@@ -697,7 +716,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         players={run.players}
         progress={run.neow.players}
         viewerId={snapshot.you.playerId}
-        potionLimit={run.ascension >= 4 ? 2 : 3}
+        ascension={run.ascension}
         enabled={room.connection === 'connected' && !pendingAcquisition}
         disabledMessage={room.connection !== 'connected'
           ? 'Reconnecting… your Blessing is preserved.'
@@ -778,6 +797,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           onFinishMerchant={() => room.act({ kind: 'merchantFinish' })}
           onRelic={(playerId, decision) => room.act({ kind: 'relicReward', playerId, decision })}
           onEvent={(playerId, decision) => room.act({ kind: 'event', playerId, decision })}
+          onPreparedHermitSetup={(cardUid, enemyUid) => room.act({ kind: 'resolveHermitSetupLoad', cardUid, enemyUid })}
+          onPreparedStartTurnScryOrder={(order) => room.act({ kind: 'orderStartTurnScries', order })}
+          onPreparedStartTurnScry={(sourceId, discardUids) => room.act({ kind: 'resolveStartTurnScry', sourceId, discardUids })}
           eventCanSkip={snapshot.eventCanSkip}
           unavailableEventOptionIds={snapshot.unavailableEventOptionIds}
           onSkipEvent={(playerId) => room.act({ kind: 'eventSkip', playerId })}

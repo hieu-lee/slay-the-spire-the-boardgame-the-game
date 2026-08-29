@@ -1,5 +1,7 @@
 import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
+import { DOWNFALL_EVENT_CARDS } from './downfall/events.ts'
+import type { RuleSet } from './meta.ts'
 
 export type EventScope = 'player' | 'party' | 'automatic'
 
@@ -13,12 +15,15 @@ export type EventEffectTag =
   | 'gain-potion'
   | 'gain-relic'
   | 'heal'
+  | 'apply-vulnerable'
   | 'lose-gold'
   | 'lose-hp'
+  | 'lose-max-hp'
   | 'lose-potion'
   | 'lose-relic'
   | 'merchant'
   | 'move'
+  | 'mode-shift'
   | 'nothing'
   | 'pay-gold'
   | 'rare-reward'
@@ -42,6 +47,9 @@ export type EventEffect = {
   filter?: string
   perPriorChoice?: boolean
   results?: Partial<Record<1 | 2 | 3 | 4 | 5 | 6, readonly EventEffect[]>>
+  combatReward?: 'relic-each-player'
+  /** Resolve after the ensuing combat has drawn opening hands. */
+  combatStart?: boolean
 }
 
 export type EventOption = {
@@ -66,6 +74,7 @@ export type EventCard = EventDefinition & {
   act: 1 | 2 | 3
   minAscension: 0 | 3
   requiresColorlessUnlock: boolean
+  firstEventRedraw?: boolean
 }
 
 const fx = (tag: EventEffectTag, fields: Omit<EventEffect, 'tag'> = {}): EventEffect => ({ tag, ...fields })
@@ -458,10 +467,14 @@ export function buildEventDeck(
   act: 1 | 2 | 3,
   ascension: number,
   colorlessUnlocked: boolean,
+  ruleset: RuleSet = 'base',
 ): EventCard[] {
+  const cards = ruleset === 'downfall' && ascension >= 3
+    ? [...EVENT_CARDS, ...DOWNFALL_EVENT_CARDS]
+    : EVENT_CARDS
   return shuffle(
     rng,
-    EVENT_CARDS.filter(
+    cards.filter(
       (card) => card.act === act
         && ascension >= card.minAscension
         && (!card.requiresColorlessUnlock || colorlessUnlocked),

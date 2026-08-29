@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CombatPhase, CombatPresentationEvent, EndTurnAbility, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
+import type { CombatPhase, CombatPresentationEvent, EndTurnAbility, PendingTriggerAbility, PlayedCard, StartTurnAbility, StartTurnChoice, StartTurnScryAbility } from '../game/combat.ts'
 import type { SpireMap } from '../game/map.ts'
-import type { CampfireChoice, CardRewardOffer, PendingRelicPreview, RunPhase } from '../game/run.ts'
+import type { CampfireChoice, CardRewardOffer, PendingGuardianSocket, PendingRelicPreview, RunPhase } from '../game/run.ts'
 import type { DailyModifierId, QuickSetupState, RunMetaOptions, RunMetaState } from '../game/meta.ts'
 import type { EventDecision, EventRoomState } from '../game/event-room.ts'
 import type { CourierOffer, MerchantState, RelicRewardState } from '../game/noncombat.ts'
@@ -23,10 +23,11 @@ export type PublicSeat = {
 
 export type VisiblePlayer = Omit<
   Player,
-  'deck' | 'draw' | 'hand' | 'cardRewards' | 'rareRewards'
+  'deck' | 'draw' | 'hand' | 'chamber' | 'cardRewards' | 'rareRewards'
 > & {
   deck: CardInstance[] | null
   hand: CardInstance[] | null
+  chamber: CardInstance[] | null
   deckCount: number
   tradableDeckCount: number
   drawCount: number
@@ -47,6 +48,7 @@ export type VisibleCombat = {
   enemies: Enemy[]
   powerTriggersUsedThisTurn: string[]
   pendingTriggers: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
+  pendingTriggerAbility: PendingTriggerAbility | null
   nextTriggerId: number
   startTurnProgress?: {
     choices: StartTurnChoice[]
@@ -55,6 +57,7 @@ export type VisibleCombat = {
       sources: { playerId: string; sourceId: string }[]
       ordered: boolean
     }
+    rollPending?: { drewFrom: number }
     discard?: { playerId: string; sourceId: string; pendingTriggers: VisibleCombat['pendingTriggers'] }
     forcedCard?: {
       playerId: string
@@ -68,7 +71,7 @@ export type VisibleCombat = {
     playerId: string
     card: CardInstance
     energySpent: number
-    resumePhase: 'start' | 'player'
+    resumePhase: 'start' | 'player' | 'discard'
     forcedExhaust: boolean
     forcedChoices: StartTurnChoice[] | null
     deferredHavocs: {
@@ -76,16 +79,16 @@ export type VisibleCombat = {
       exhaust: boolean
       virtualOnly?: boolean
       copySourceNames?: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Omniscience')[]
-      copyResumePhase?: 'start' | 'player'
+      copyResumePhase?: 'start' | 'player' | 'discard'
     }[]
     deferredTriggers?: { id: number; playerId: string; sourceId: string; enemyUid?: string }[]
-    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Omniscience' | 'Weave')[]
+    sourceNames: ('Double Tap' | 'Blasphemy' | 'Echo Form' | 'Burst' | 'Doppelganger' | 'Foreign Influence' | 'Haunting Echo' | 'Omniscience' | 'Overexert' | 'Replication' | 'Weave' | 'Rapid Fire')[]
     virtualOnly?: boolean
     queuedWeaves?: CardInstance[]
   }
   pendingDistilled?: { playerId: string; cards: CardInstance[] | null }
   pendingRelicScry?: { playerId: string; relicIndex: number; cards: CardInstance[] | null }
-  playedCardsThisTurn: { playerId: string; card: CardInstance; copied: boolean }[]
+  playedCardsThisTurn: PlayedCard[]
   presentationEvents: CombatPresentationEvent[]
   pendingSummons: {
     sourceUid: string
@@ -125,8 +128,10 @@ export type VisibleRun = {
     } | null>
   } | null
   pendingBossDefId: string | null
+  pendingGuardianSockets: PendingGuardianSocket[]
   /** This act's boss. Rolled in the open at setup, so it is not redacted. */
   actBossDefId: string | null
+  canRerollDownfallSelfBoss?: boolean
   map: SpireMap
   log: string[]
   players: VisiblePlayer[]
@@ -181,11 +186,16 @@ export type RoomSnapshot = {
   cardPreview?: {
     cardUid: string
     copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck' | 'search'
+    chamber?: boolean
+    kind: 'discard' | 'scry' | 'scryToHand' | 'topdeck' | 'search' | 'load' | 'loadAny'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null
+    energySpent?: number
+    slimeUids?: string[]
+    slimeEnemyUids?: string[]
   }
+  powerPreview?: { powerUid: string; kind: 'scry'; cards: CardInstance[] }
   cardChoicePlayerId?: string
   merchantPledges?: Record<string, { buyerId: string; section?: string; slot?: number; kind?: 'removal'; cardUid?: string; potionRecipientId?: string; discardPotionId?: string; payments: Record<string, number> }>
   merchantReady?: string[]

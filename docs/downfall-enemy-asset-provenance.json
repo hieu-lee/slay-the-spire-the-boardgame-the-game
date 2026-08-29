@@ -1,0 +1,263 @@
+{
+  "upstream": {
+    "repository": "https://github.com/mikemayhemdev/DownfallSTS",
+    "commit": "030ff7d4a7419a3e21c3075661550b1b479f3502",
+    "steamApp": "1865780"
+  },
+  "assets": [
+    {
+      "artId": "downfall_pc_ironclad",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/ironclad.webp",
+      "upstreamCode": "src/main/java/charbosses/bosses/Ironclad/CharBossIronclad.java",
+      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_pc_ironclad.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_ironclad-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp"
+      ],
+      "sourceSha256": "284dd6549edd2fe6a2f6efadede1018a97d125f66682ec156b3ed9fa1e8546ee",
+      "upstreamCodeSha256": "ca5f9de8b450f232252eb1709a694e88dae1e271c0ebc61e1b813f9057954903",
+      "runtimeSha256": {
+      "public/assets/combat/enemies/downfall_pc_ironclad.webp": "97401ad04a081430b155a4ced6d679a8485972eae326d935fa00775dd3e862d9",
+      "public/assets/combat/enemies/animations/downfall_pc_ironclad-idle.webp": "09af3d86ff3cd58fee0cd4cd57eecb2d1027967049fe2c8190ef398d171db113",
+      "public/assets/combat/enemies/animations/downfall_pc_ironclad-attack.webp": "62896735edc4896539e3c548e4a9567585af10e85e37b0db3e61eef4a258edaf"
+      },
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
+    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+    },
+    {
+      "artId": "downfall_pc_silent",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/silent.webp",
+      "upstreamCode": "src/main/java/charbosses/bosses/Silent/CharBossSilent.java",
+      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_pc_silent.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_silent-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_silent-attack.webp"
+      ],
+      "sourceSha256": "45364aac4a8284c5899298fdbf0ccff381205b51c2dc72b307bd074033e3e5f1",
+      "upstreamCodeSha256": "88711007afeb78bca78433c58bd20b7241cd83de09772955a92eeeb3af2182e3",
+      "runtimeSha256": {
+      "public/assets/combat/enemies/downfall_pc_silent.webp": "c360503b99156300e6f5aac01c32317225d0155590ee488ecd871c4e3df80499",
+      "public/assets/combat/enemies/animations/downfall_pc_silent-idle.webp": "bc053707d9b5d4ad7c40cf3a3c461745b9f5058d3f41e3e1fb34a6dd836ad0fc",
+      "public/assets/combat/enemies/animations/downfall_pc_silent-attack.webp": "e9a367a937f603d16c66fccc9771ba31803faa2ce1cbe4794865018adaafbd1c"
+      },
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
+    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+    },
+    {
+      "artId": "downfall_pc_defect",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/defect.webp",
+      "upstreamCode": "src/main/java/charbosses/bosses/Defect/CharBossDefect.java",
+      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_pc_defect.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_defect-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_defect-attack.webp"
+      ],
+      "sourceSha256": "6326b5cf923167f63c0fa70c0368af48b615c2a0222486d3f503604f603df7df",
+      "upstreamCodeSha256": "b8130f76a61f7f650388aa021335ada9ae7ba3e47dab1debaee983a9b2a8de89",
+      "runtimeSha256": {
+      "public/assets/combat/enemies/downfall_pc_defect.webp": "3a69e8eefedd52ded106b7efaa31ce45a1994be6606680693de180a7c377b828",
+      "public/assets/combat/enemies/animations/downfall_pc_defect-idle.webp": "5667edb935c768e0a6eb46f7802ee18ad014e90f6cd224d01562dd1ebe4c8349",
+      "public/assets/combat/enemies/animations/downfall_pc_defect-attack.webp": "778464c02de80fd0f65b5bbc5388ba96f665c20c75d76b261c8a9b59d31dc18d"
+      },
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
+    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+    },
+    {
+      "artId": "downfall_pc_watcher",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/watcher.webp",
+      "upstreamCode": "src/main/java/charbosses/bosses/Watcher/CharBossWatcher.java",
+      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_pc_watcher.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp"
+      ],
+      "sourceSha256": "e84c385aac820e94f6244e3ddc7408f76bdf54a8af475c9154992c6202492f96",
+      "upstreamCodeSha256": "48e3552e6e2a7a6de8ba3713e39947d360052f6564ecb6b2004f1a7b2fe67340",
+      "runtimeSha256": {
+      "public/assets/combat/enemies/downfall_pc_watcher.webp": "141d897be797bcc3fec16cb49582de4fac2b161e60b1e77d238ce1976590a7e4",
+      "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp": "7c99a5e5f74f434eff06da0a0b76030a0f86c7044de9221fb296d455050269d1",
+      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "ab03f6b4e6ea7dd751bd5f8a0a6e4409bfbe4d40433893cf8df25794b5118588"
+      },
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
+    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+    },
+    {
+      "artId": "downfall_pc_neow",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/neow.webp",
+      "upstreamCode": "src/main/java/downfall/monsters/NeowBoss.java",
+      "pipeline": "PC capture -> transparent cutout -> idle and left-attacking key frames",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_pc_neow.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_neow-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_pc_neow-attack.webp"
+      ],
+      "sourceSha256": "d3460cfbea54e66e9e8caf0cf179263098ba21afc718ee67e499d7f1abd7815b",
+      "upstreamCodeSha256": "89c23ed9c5b7d04fef7ff3467506c57efbb004f70f3fdb828be444d3dd62c2bb",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_pc_neow.webp": "aeee69178535498313ad64f5ba6c5d3452359ff21a2bb3c39d692d9a816d4725",
+        "public/assets/combat/enemies/animations/downfall_pc_neow-idle.webp": "30cd7249408586ef19370c07a243f145db9566315f51ab371448ab10ea35ebc6",
+        "public/assets/combat/enemies/animations/downfall_pc_neow-attack.webp": "bc847817d25184f1c74018319762358c86b36b423460c6b117f2be4eeeb71932"
+      }
+    },
+    {
+      "artId": "downfall_corrupted",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/corrupted-sheet.webp",
+      "upstreamCode": "src/main/resources/expansioncontentResources/images/1024/bg_boss_heart.png",
+      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_corrupted.webp",
+        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp"
+      ],
+      "sourceSha256": "5a1479311f75cc9e8a573e76f65fe5dd38dd29ed8bc7eea2db3417c5d52e08fb",
+      "upstreamCodeSha256": "1d1e36d70c314b1e66885d04a51adbd7056861816df3eddd15c4a06f3438bba4",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_corrupted.webp": "66a18ca161068f922f53e0b2ad91eb83ff7ec392f48ad78ca68d3fffd174f599",
+        "public/assets/combat/enemies/animations/downfall_corrupted-idle.webp": "42c8067712555cd67516a3961d2e23de3a9e2f334929850b2929973244355a3e",
+        "public/assets/combat/enemies/animations/downfall_corrupted-attack.webp": "9fe1e148fe09f9b5f19e914f7f16e80d1dc5f6e8063332d88322797be2c62e30"
+      }
+    },
+    {
+      "artId": "downfall_dark_core",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/dark-core-sheet.webp",
+      "upstreamCode": "src/main/resources/downfallResources/images/ui/heartRug.png",
+      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_dark_core.webp",
+        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp"
+      ],
+      "sourceSha256": "39ba3c394e31e5b2480a8bc3a631acb55cd6141ab7aad1b3e76bca0086da0978",
+      "upstreamCodeSha256": "49db1924d262d293c875e147fc745961dfe0faee8505e0e8ca3703beae98119a",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_dark_core.webp": "d74a2aec15838237a5b71458a2a581b8e5282f96bc37dc42ba1594c87b9799d5",
+        "public/assets/combat/enemies/animations/downfall_dark_core-idle.webp": "67ad5bb2df44a2deb624ecf316976f4c55b8ca97da32c7e5cbd0ededcff3617c",
+        "public/assets/combat/enemies/animations/downfall_dark_core-attack.webp": "cd569dc2fffedf87ae8681744c11ce17a073f6a42eddeb3932a411a1d19b0dad"
+      }
+    },
+    {
+      "artId": "downfall_demon",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/demon-sheet.webp",
+      "upstreamCode": "src/main/java/awakenedOne/powers/DemonGlyphPower.java",
+      "pipeline": "PC capture sheet -> transparent cutout -> idle and left-attacking key frames",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_demon.webp",
+        "public/assets/combat/enemies/animations/downfall_demon-idle.webp",
+        "public/assets/combat/enemies/animations/downfall_demon-attack.webp"
+      ],
+      "sourceSha256": "38c9e817bca5497dadf6ae529556e5a70e354e09d93c3ce3b15105c3b0945a76",
+      "upstreamCodeSha256": "79c1d144b7713050c41d696670e721da7c82534d8b0f2125584a5980f724789c",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_demon.webp": "c5507a6a8f8240e9f446bec61652b2f800398d21bea00c0f61c7890036f85569",
+        "public/assets/combat/enemies/animations/downfall_demon-idle.webp": "73359768c3ca59e100b5da4caa853bdda0423466f68504296c2fdf23a3533a25",
+        "public/assets/combat/enemies/animations/downfall_demon-attack.webp": "79b125c73174ab345ef45117b1edb201e6b97ab515ce7bf98a8939b20ecab50f"
+      }
+    },
+    {
+      "artId": "spire_shield",
+      "sourceKind": "base-game-extraction-via-pc-downfall",
+      "source": "docs/downfall-enemy-sources/base/spire-shield-capture.webp",
+      "upstreamCode": "src/main/java/charbosses/monsters/Fortification.java",
+      "pipeline": "PC Downfall/base-game render -> transparent cutout -> idle and left-attacking key frames",
+      "runtime": [
+        "public/assets/combat/enemies/spire_shield.webp",
+        "public/assets/combat/enemies/animations/spire_shield-idle.webp",
+        "public/assets/combat/enemies/animations/spire_shield-attack.webp"
+      ],
+      "sourceSha256": "0f1d1e76128ed4938c786976b385f3bb17a6ec5f6e645287f22c8dd85721a3fc",
+      "upstreamCodeSha256": "eb36651d76b723cf059762b4f21978369cc7eb9f97e73a676367297e963a2255",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/spire_shield.webp": "1b9ce13db433d2505951e3cb04ca54bb657a7f33bf0fbbd079ba7954a9b0594a",
+        "public/assets/combat/enemies/animations/spire_shield-idle.webp": "892ac44143095ef05d959f02ab98bc7b0b9f586140ce42ba32a5a9b01cfa54fa",
+        "public/assets/combat/enemies/animations/spire_shield-attack.webp": "8a984632d126a2b80d8fc0c934b7ea6e53c45a036e1de2566b170832d2fa3301"
+      }
+    },
+    {
+      "artId": "downfall_lightning_orb",
+      "sourceKind": "base-game-exact-reuse",
+      "source": "public/assets/combat/vfx/actions/lightning-channel.webp",
+      "upstreamCode": "src/main/java/charbosses/orbs/EnemyLightning.java",
+      "pipeline": "exact reuse of the existing base-game Lightning orb runtime asset",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_lightning_orb.webp"
+      ],
+      "sourceSha256": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837",
+      "upstreamCodeSha256": "d2db232a15627800f52006e8be70b127a9171a7fe7debdddde4b9459c4876068",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_lightning_orb.webp": "5feace259617aa706edbcadf76bf0d2231adfa3eab20399bddd146e023b82837"
+      }
+    },
+    {
+      "artId": "downfall_frost_orb",
+      "sourceKind": "base-game-exact-reuse",
+      "source": "public/assets/combat/vfx/actions/frost-channel.webp",
+      "upstreamCode": "src/main/java/charbosses/orbs/EnemyFrost.java",
+      "pipeline": "exact reuse of the existing base-game Frost orb runtime asset",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_frost_orb.webp"
+      ],
+      "sourceSha256": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522",
+      "upstreamCodeSha256": "85104226af475806af18d300be7227cccbe927a59c5dcafd19a8601c51b700be",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_frost_orb.webp": "547263e9c70fc183f42dd0b041f348e322be251a1c4e0e2210674c9f4c7e0522"
+      }
+    },
+    {
+      "artId": "downfall_dark_orb",
+      "sourceKind": "base-game-exact-reuse",
+      "source": "public/assets/combat/vfx/actions/dark-channel.webp",
+      "upstreamCode": "src/main/java/charbosses/orbs/EnemyDark.java",
+      "pipeline": "exact reuse of the existing base-game Dark orb runtime asset",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_dark_orb.webp"
+      ],
+      "sourceSha256": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2",
+      "upstreamCodeSha256": "0d2484a3d72957960d417c1c4d19ebaf01d2dfa7eb97a5da86d80e691b379f76",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_dark_orb.webp": "24efbd9a817e3bc557ff102d28a3bdf790bb18eac183f15ad068dff4fa6a34e2"
+      }
+    },
+    {
+      "artId": "downfall_shiv",
+      "sourceKind": "base-game-exact-reuse",
+      "source": "public/assets/icons/shiv.png",
+      "upstreamCode": "src/main/java/charbosses/cards/colorless/EnShiv.java",
+      "pipeline": "existing base-game Shiv icon -> lossless WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_shiv.webp"
+      ],
+      "sourceSha256": "f4de2853d9c99b2399aa70d54c1f55cb296ee81ba6a1ce2cc273a99ee036a50a",
+      "upstreamCodeSha256": "98788e2da8e2ee8e74227b807bd0879c2cb41dfe6af91c976105a18f468bdbeb",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_shiv.webp": "7a4084bb766f897b637701804d36f04ee63fcfa4373c5f13f2eb787d948357cf"
+      }
+    },
+    {
+      "artId": "downfall_loot_chest",
+      "sourceKind": "pc-downfall-extraction",
+      "source": "docs/downfall-enemy-sources/pc/chest-sheet.webp",
+      "upstreamCode": "src/main/java/downfall/events/HeartEvent.java",
+      "pipeline": "PC Downfall capture -> ImageGen transparent isolation -> transparent WebP",
+      "runtime": [
+        "public/assets/combat/enemies/downfall_loot_chest.webp"
+      ],
+      "sourceSha256": "166f8b19338a0e9628c57d3ab07a5fb2e19fd5b407a0eed277c8088afcc26d1d",
+      "upstreamCodeSha256": "f33e1e7a13ad270105ef58e60fac51e75944866a7b7f264da1985dd1118d04be",
+      "runtimeSha256": {
+        "public/assets/combat/enemies/downfall_loot_chest.webp": "735b3e0ac6e417175deb097e4d287ef8a6141a9c4a4939dec227de35e92161f1"
+      }
+    }
+  ]
+}

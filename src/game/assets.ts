@@ -48,7 +48,7 @@ export function potionCardImagePath(def: PotionDef): string {
   return `${CARD_ASSET_ROOT}/potions__${name}.webp`
 }
 
-export const relicIconPath = (id: string) => assetPath(`relic-icons/${id}.png`)
+export const relicIconPath = (id: string) => assetPath(`relic-icons/${id.replace(/^downfall_/, '')}.png`)
 export const potionIconPath = (id: string) => assetPath(`potion-icons/${id}.png`)
 
 const CAMPFIRE_CHARACTER_ORDER: CharacterId[] = ['ironclad', 'silent', 'defect', 'watcher']

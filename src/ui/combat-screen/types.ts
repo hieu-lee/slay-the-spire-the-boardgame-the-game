@@ -4,12 +4,14 @@ import type {
   CombatPresentationEvent,
   CombatState,
   EndTurnAbility,
+  PendingTriggerAbility,
   StartTurnAbility,
   StartTurnChoice,
   StartTurnScryAbility,
   StartTurnScryPreview,
+  PlayContext,
 } from '../../game/combat.ts'
-import type { CardInstance, OrbType } from '../../game/types.ts'
+import type { CardInstance, GuardianMode, OrbType } from '../../game/types.ts'
 import type { ActionOutcome } from '../../multiplayer/useRoomSession.ts'
 import type { cardMotionDestination } from '../board-signals.ts'
 import type { VfxRecipe } from '../combat-vfx.ts'
@@ -31,11 +33,18 @@ export type CombatScreenProps = {
   cardPreview?: {
     cardUid: string
     copy?: boolean
-    kind: 'discard' | 'scry' | 'topdeck' | 'search'
+    chamber?: boolean
+    kind: 'discard' | 'scry' | 'scryToHand' | 'topdeck' | 'search' | 'load' | 'loadAny'
     cards: CardInstance[]
     spendMiracle: boolean
     enemyUid: string | null
+    energySpent?: number
+    slimeUids?: string[]
+    slimeEnemyUids?: string[]
   }
+  powerPreview?: { powerUid: string; kind: 'scry'; cards: CardInstance[] }
+  /** Owner-private authoritative trigger choices supplied by an online room. */
+  authoritativePendingTrigger?: PendingTriggerAbility | null
   partyEndTurnAbilities?: EndTurnAbility[]
   partyStartTurnAbilities?: StartTurnAbility[]
   partyStartTurnScryAbilities?: StartTurnScryAbility[]
@@ -130,6 +139,8 @@ export type CharacterAttackMotion = {
 export type PendingStartChoice =
   | { kind: 'enemy'; ability: StartTurnAbility }
   | { kind: 'player'; ability: StartTurnAbility }
+  | { kind: 'exhaust'; ability: StartTurnAbility }
+  | { kind: 'guardianModeShift'; ability: StartTurnAbility }
   | { kind: 'shiv'; ability: StartTurnAbility; index: number }
   | { kind: 'evokeTarget'; ability: StartTurnAbility; index: number }
   | { kind: 'evoke'; ability: StartTurnAbility }
@@ -139,10 +150,14 @@ export type Pending = {
   card: CardInstance
   /** False for a physical original resolving after its virtual copy. */
   cardInHand: boolean
+  /** The physical source is in the private Chamber, rather than the hand or copy queue. */
+  chamberPlay: boolean
   /** Energy chosen for an X-cost card; null until the player decides. */
   energySpent: number | null
   /** Effective X after a fixed-cost override; never sent as a player choice. */
   effectEnergy: number | null
+  /** Energy actually charged for spend-based triggers; copies always charge 0. */
+  energyCharged: number | null
   needsEnemy: boolean
   /**
    * The card can land its support on someone other than the caster, as Defend+,
@@ -164,6 +179,7 @@ export type Pending = {
   evokeSlots: number[]
   evokeEnemyUids: (string | null | undefined)[]
   mode: number | null
+  corruptedShardMode: GuardianMode | null
   enemyUid: string | null
   playerId: string | null
   switchPlayerId: string | null
@@ -177,7 +193,7 @@ export type Pending = {
   hitsRow: boolean
   /** Cards that must be picked, as Survivor, Acrobatics and Third Eye require. */
   choice: {
-    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search'
+    kind: 'discard' | 'discardAny' | 'exhaust' | 'exhaustAny' | 'scry' | 'scryToHand' | 'topdeck' | 'recover' | 'recoverExhaust' | 'search' | 'load' | 'loadAny'
     amount: number
     minimum?: number
   } | null
@@ -185,4 +201,33 @@ export type Pending = {
   choiceCards: CardInstance[] | null
   choiceConfirmed: boolean
   picked: string[]
+  slimeChoice: { amount: number; minimum: number } | null
+  slimeUids: string[]
+  slimeChoiceConfirmed: boolean
+  slimeEnemyUids: string[]
+  chamberChoice: {
+    kind: 'play' | 'discard' | 'discount' | 'replace'
+    amount: number
+    minimum: number
+    eligibleUids: string[]
+    /** Existing choices precede any full-slot replacements in chamberUids. */
+    baseAmount?: number
+    openAfterBase?: number
+    loadSelf?: boolean
+  } | null
+  chamberUids: string[]
+  chamberChoiceConfirmed: boolean
+  hermitEnemyUids: string[]
+  hermitDieRelicChoice: { amount: number; minimum: number } | null
+  hermitDieRelics: NonNullable<PlayContext['hermitDieRelics']>
+  hermitDieRelicChoiceConfirmed: boolean
+  soulburnChoices: number
+  soulburnEnemyUids: string[]
+  chooseLoadSelf: boolean | null
+  spendVigor: number | null
+  guardianModeShift: boolean | null
+  secondGuardianModeShift: boolean | null
+  guardianBlockSpend: number | null
+  guardianPowerCardUid: string | null
+  scryToHandUid?: string
 }

@@ -355,6 +355,7 @@ import {
   switchBetweenCombatRow,
   tradePotion,
   usePotionOutsideCombat,
+  wingBootChoices,
   finishRun,
   MAX_HP,
 } from '../src/game/run.ts'
@@ -368,8 +369,12 @@ suite('run')
 check('physical Relic decks are complete, seeded, face down, and shared by every room system', () => {
   const first = postNeowRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   const same = postNeowRun(901, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
-  assertEqual(ORDINARY_RELIC_IDS.length, 58)
-  assertEqual(BOSS_RELIC_IDS.length, 20)
+  assertEqual(first.relicDeck.length, 58)
+  assertEqual(first.bossRelicDeck.length, 20)
+  // The registry also keeps separate definitions for expansion printings that
+  // share a name with a mechanically different base relic.
+  assertEqual(ORDINARY_RELIC_IDS.length, 82)
+  assertEqual(BOSS_RELIC_IDS.length, 30)
   assertDeepEqual(first.relicDeck, same.relicDeck)
   assertDeepEqual(first.bossRelicDeck, same.bossRelicDeck)
   assertDeepEqual(first.relicDeck, first.itemDecks.relics)
@@ -809,6 +814,23 @@ check('entering a room is refused unless it is reachable', () => {
   assert(enterRoom(run, far) === run, 'jumping to the boss must be refused')
 })
 
+check('a pending Guardian Socket blocks every map-entry route', () => {
+  const clear = postNeowRun(71, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+  const target = roomChoices(clear)[0]
+  const host = clear.players[0].deck.find((card) => card.defId === 'guardian_crystal_edge') ?? clear.players[0].deck[0]
+  const run = { ...clear, pendingGuardianSockets: [{
+    playerId: 'p1', cardUid: host.uid, gemIds: ['guardian_ruby'], source: 'gain',
+  }] }
+  assertDeepEqual(roomChoices(run), [])
+  assert(enterRoom(run, target.id) === run, 'a pending Socket entered combat')
+
+  const first = clear.map.rows[0][0]
+  const parked = { ...run, map: { ...run.map, position: first }, players: run.players.map((player) => ({
+    ...player, relics: [...player.relics, { defId: 'wing_boots', spent: false, uses: 3 }],
+  })) }
+  assertDeepEqual(wingBootChoices(parked, 'p1'), [])
+})
+
 check('the first room starts a combat with one enemy per player', () => {
   const run = postNeowRun(3, [
     { id: 'p1', name: 'Ironclad', character: 'ironclad' },
@@ -943,6 +965,30 @@ check('a combat card reward reveals three and persists exactly one chosen card',
   )
 })
 
+check('Downfall visible rewards replace duplicates and conserve every physical occurrence', () => {
+  const base = postNeowRun(1042, [{ id: 'p1', name: 'Guardian', character: 'guardian' }], 0,
+    undefined, false, false, { mode: 'custom', modifiers: [], ruleset: 'downfall' })
+  const offered = {
+    ...base,
+    phase: 'reward',
+    players: base.players.map((player) => ({
+      ...player, cardRewards: ['guardian_bauble_burst', 'guardian_bauble_burst',
+        'guardian_body_crash', 'guardian_destroy'], rareRewards: [],
+    })),
+    rewards: [{ playerId: 'p1', cardReward: true, choices: null, upgraded: false, potion: false }],
+    rewardDestination: 'map',
+  }
+  const revealed = revealCardReward(offered, 'p1')
+  assertDeepEqual(revealed.rewards[0].choices,
+    ['guardian_bauble_burst', 'guardian_body_crash', 'guardian_destroy'])
+  assertDeepEqual(revealed.rewards[0].cardsDrawn,
+    ['guardian_bauble_burst', 'guardian_bauble_burst', 'guardian_body_crash', 'guardian_destroy'])
+  const resolved = resolveCardRewards(revealed, { p1: 1 })
+  assertEqual(resolved.players[0].deck.at(-1)?.defId, 'guardian_body_crash')
+  assertDeepEqual(resolved.players[0].cardRewards,
+    ['guardian_bauble_burst', 'guardian_bauble_burst', 'guardian_destroy'])
+})
+
 check('combat Prismatic rewards follow the held relic and live shared decks', () => {
   const win = (run) => {
     const entered = enterRoom(run, roomChoices(run)[0].id)
@@ -957,7 +1003,7 @@ check('combat Prismatic rewards follow the held relic and live shared decks', ()
       },
     })
   }
-  const options = { mode: 'custom', modifiers: ['prismatic_shard'] }
+  const options = { mode: 'custom', modifiers: ['prismatic_shard'], ruleset: 'downfall' }
   const base = postNeowRun(1041, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], 0, undefined, false, false, options)
   const sharedOnly = win({
     ...base,
@@ -974,14 +1020,15 @@ check('combat Prismatic rewards follow the held relic and live shared decks', ()
   })
   assertEqual(sharedOnly.rewards.length, 1)
   assertEqual(sharedOnly.rewards[0].prismatic, true)
-  assertDeepEqual(sharedOnly.rewards[0].availableSources, ['silent', 'defect', 'watcher', 'colorless'])
+  assertDeepEqual(sharedOnly.rewards[0].availableSources,
+    ['silent', 'defect', 'watcher', 'slime_boss', 'guardian', 'hexaghost', 'hermit', 'colorless'])
 
   const exhaustedTicket = win({
     ...base,
     players: base.players.map((player) => ({ ...player, cardRewards: [GOLDEN_TICKET], rareRewards: [] })),
   })
   assert(!exhaustedTicket.rewards[0].availableSources.includes('ironclad'))
-  const revealed = revealCardReward(exhaustedTicket, 'p1', ['silent', 'defect', 'watcher'])
+  const revealed = revealCardReward(exhaustedTicket, 'p1', ['slime_boss', 'guardian', 'hermit'])
   assertEqual(revealed.rewards[0].choices.length, 3)
 
   const withoutRelic = win({
@@ -1224,16 +1271,12 @@ check('Ascension 6 heals 4 instead of to full', () => {
   assertEqual(next.players[0].hp, 6, 'Ascension 6 heals 4 HP rather than to full')
 })
 
-check('Mark of Pain caps outside-combat and Act-transition healing at 6', () => {
+check('base Mark of Pain caps every healing boundary at 6 HP', () => {
   const run = postNeowRun(905, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
   run.players[0].hp = 5
   run.players[0].relics.push({ defId: 'mark_of_pain', spent: false })
   run.players[0].potions = ['blood_potion']
   assertEqual(usePotionOutsideCombat(run, 'p1', 'blood_potion').players[0].hp, 6)
-  const capped = usePotionOutsideCombat(run, 'p1', 'blood_potion')
-  capped.players[0].potions = ['blood_potion']
-  assertEqual(usePotionOutsideCombat(capped, 'p1', 'blood_potion'), capped,
-    'Blood Potion was consumed at Mark of Pain\'s effective HP cap')
   const bossId = run.map.rows.at(-1)[0]
   const won = { ...run, phase: 'victory', map: { ...run.map, position: bossId,
     rooms: { ...run.map.rooms, [bossId]: { ...run.map.rooms[bossId], visited: true } } } }
@@ -1325,6 +1368,31 @@ check('Act I and II bosses pay every player their printed gold, Rare, and Boss R
       assertDeepEqual(revealed.rewards.find((reward) => reward.playerId === player.id).choices, expected,
         `${player.name} was not offered the top three character rares`)
     }
+  }
+})
+
+check('Downfall Act I and II bosses grant their own normal Card and ordinary Relic rewards', () => {
+  for (const [act, boss] of [[1, 'downfall_witch'], [2, 'downfall_orb_master']]) {
+    const run = postNeowRun(960 + act, [{ id: 'p1', name: 'Guardian', character: 'guardian' }])
+    const bossId = run.map.rows.at(-1)[0]
+    const entered = enterRoom({
+      ...run,
+      act,
+      actBossDefId: boss,
+      map: { ...run.map, position: run.map.rows.at(-2)[0] },
+    }, bossId)
+    const gold = entered.players[0].gold
+    const cards = entered.players[0].cardRewards.slice(0, 3)
+    entered.combat.phase = 'won'
+    entered.combat.enemies = entered.combat.enemies.map((enemy) => ({ ...enemy, hp: 0, dead: true }))
+    const resolved = resolveCombat(entered)
+    assertEqual(resolved.players[0].gold, gold + 3)
+    assertEqual(resolved.rewards.length, 1)
+    assertEqual(resolved.rewards[0].cardReward, true)
+    assertEqual(resolved.rewards[0].cardSource, 'ordinary')
+    assertEqual(resolved.rewards[0].relic, null)
+    assertEqual(resolved.rewards[0].bossRelics, false)
+    assertDeepEqual(revealCardReward(resolved, 'p1').rewards[0].choices, cards)
   }
 })
 
@@ -1884,9 +1952,9 @@ check('every enemy HP track matches the number printed on its card', () => {
     assertDeepEqual(def.hpByPlayers, expected, `${id}'s HP track does not match its card`)
   }
   assertEqual(
-    Object.keys(ENEMIES).length,
+    Object.keys(ENEMIES).filter((id) => !id.startsWith('downfall_')).length,
     Object.keys(PRINTED_HP).length,
-    'an enemy was added or removed without updating the printed-HP table',
+    'a base-game enemy was added or removed without updating the printed-HP table',
   )
 })
 

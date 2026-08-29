@@ -1,5 +1,7 @@
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
+import { DOWNFALL_CHARACTER_IDS } from './types.ts'
+import type { CharacterId } from './types.ts'
 
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 export type DailyModifierSection = 'upper' | 'lower'
@@ -23,6 +25,7 @@ export type DailyModifier = (typeof DAILY_MODIFIERS)[number]
 export type DailyModifierId = DailyModifier['id']
 
 export type RunMode = 'standard' | 'daily' | 'custom'
+export type RuleSet = 'base' | 'downfall'
 
 export type RunMetaOptions = Readonly<{
   mode?: RunMode
@@ -30,12 +33,26 @@ export type RunMetaOptions = Readonly<{
   modifiers?: readonly DailyModifierId[]
   /** Act 1 is the ordinary setup; Acts 2–4 use the Quick Start table. */
   quickStartAct?: 1 | 2 | 3 | 4
+  /** Downfall swaps in its public-v1.47 bosses, Events, items, and Heart's Boons. */
+  ruleset?: RuleSet
 }>
 
 export type RunMetaState = Readonly<{
   mode: RunMode
   modifierIds: readonly DailyModifierId[]
+  /** Absent on older saves and therefore equivalent to the base game. */
+  ruleset?: RuleSet
 }>
+
+/** Downfall content is mandatory for a party containing a Downfall character. */
+export function rulesetForCharacters(
+  characters: readonly CharacterId[],
+  requested: RuleSet = 'base',
+): RuleSet {
+  return characters.some((character) => DOWNFALL_CHARACTER_IDS.some((id) => id === character))
+    ? 'downfall'
+    : requested
+}
 
 export const DAILY_MODIFIER_SECTIONS: Readonly<Record<DailyModifierSection, readonly DailyModifier[]>> = {
   upper: DAILY_MODIFIERS.slice(0, 6),

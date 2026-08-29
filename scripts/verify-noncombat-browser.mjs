@@ -95,6 +95,27 @@ await page.getByRole('button', { name: 'Close' }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 const localDailyRunIds = await page.evaluate(() => window.__STS_DEBUG__.getRun().meta.modifierIds)
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const host = { uid: 'browser-guardian-socket', defId: 'guardian_crystal_edge', upgraded: false }
+  run.players[0].deck.push(host)
+  run.pendingGuardianSockets = [{
+    playerId: run.players[0].id,
+    cardUid: host.uid,
+    gemIds: ['guardian_ruby', 'guardian_onyx'],
+    source: 'gain',
+  }]
+  debug.setRun(run)
+})
+const socketPanel = page.getByRole('heading', { name: /Socket a Gem into Crystal Edge/ }).locator('..')
+await socketPanel.locator('button[title="Ruby"]').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
+const localGuardianSocket = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck
+  .find((card) => card.uid === 'browser-guardian-socket')?.attachedGemId)
+check('local Guardian acquisitions visibly pause for the published Gem choice', () => {
+  assertEqual(localGuardianSocket, 'guardian_ruby')
+})
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 await page.setViewportSize({ width: 1280, height: 720 })
@@ -1723,6 +1744,28 @@ await page.evaluate(() => {
   const index = run.players.findIndex((player) => player.id === 'p1')
   run.players[index] = { ...run.players[index], relics: run.players[index].relics.filter((relic) => relic.defId !== 'sozu') }
   debug.setRun(run)
+})
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const owner = run.players.find((player) => player.id === 'p1')
+  owner.gold = 3
+  run.players = run.players.map((player) => player.id === owner.id ? owner : { ...player, gold: 0 })
+  run.roomState.cards[owner.id] = {
+    choices: ['hermit_scorn', '', ''], cardsDrawn: ['hermit_scorn'], raresDrawn: [],
+  }
+  debug.setRun(run)
+})
+const hermitCurseGroup = page.getByRole('group', { name: 'Scorn, 3 Gold' })
+await hermitCurseGroup.getByRole('button').click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().players
+  .find((player) => player.id === 'p1').deck.some((card) => card.defId === 'hermit_scorn'))
+const boughtHermitCurse = await page.evaluate(() => {
+  const owner = window.__STS_DEBUG__.getRun().players.find((player) => player.id === 'p1')
+  return { gold: owner.gold, count: owner.deck.filter((card) => card.defId === 'hermit_scorn').length }
+})
+check('Merchant renders and purchases a Hermit Curse at its authoritative 3-Gold price', () => {
+  assertDeepEqual(boughtHermitCurse, { gold: 0, count: 1 })
 })
 await setRoom('merchant')
 await openMerchantShop()
@@ -4356,6 +4399,73 @@ check('a pending map Relic owns the compact screen instead of stacking over the 
   assert(compactPendingRelic.rulesVisible, 'the Relic rules were hidden behind the map')
   assert(compactPendingRelic.actionVisible && compactPendingRelic.actionHittable,
     `the Relic action was not visible and clickable: ${JSON.stringify(compactPendingRelic)}`)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const owner = run.players[0]
+  const scryCards = Array.from({ length: 3 }, (_, index) => ({
+    uid: `browser-sphere-scry-${index}`, defId: index % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: false,
+  }))
+  run.phase = 'room'
+  run.roomState = {
+    kind: 'event',
+    card: {
+      id: 'downfall_event_act3_mysterious_sphere', instanceId: 'browser-sphere-scry', act: 3,
+      minAscension: 0, requiresColorlessUnlock: false, name: 'Mysterious Sphere', scope: 'party',
+      prompt: 'Fight an encounter. After drawing opening hands, choose for the party.',
+      options: [
+        { id: 'open', label: 'Open Sphere', description: 'Vulnerable and treasure.', effects: [] },
+        { id: 'charge', label: 'Charge In', description: 'Mode Shift.', effects: [] },
+      ],
+    },
+    decisions: {}, dieRolls: {},
+    preparedCombat: {
+      players: run.players.map((player) => ({ id: player.id, hand: player.id === owner.id ? [] : null })),
+      enemies: [{ uid: 'sphere-cultist', defId: 'cultist', row: 0, isBoss: false, ascension: 0,
+        hp: 20, maxHp: 20, dead: false }],
+    },
+    preparedStartTurnScryAbilities: [],
+    preparedStartTurnScry: { id: 'sphere/1/foresight', playerId: owner.id, label: 'Foresight', amount: 3, cards: scryCards },
+    preparedStartTurnCoordinatorId: owner.id,
+  }
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'Mysterious Sphere' }).waitFor()
+const spherePreview = await page.evaluate(() => ({
+  encounter: document.querySelector('.event-encounter-preview')?.textContent ?? '',
+  scryCards: document.querySelectorAll('.event-cards .card').length,
+  options: document.querySelectorAll('.event-options button').length,
+  overflow: document.documentElement.scrollWidth > innerWidth,
+}))
+await page.screenshot({ path: join(outDir, 'mysterious-sphere-private-scry.png'), fullPage: true })
+check('Mysterious Sphere shows its encounter and private Scry before event choices', () => {
+  assert(spherePreview.encounter.includes('Cultist'))
+  assertEqual(spherePreview.scryCards, 3)
+  assertEqual(spherePreview.options, 0)
+  assertEqual(spherePreview.overflow, false)
+})
+
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const owner = run.players[0]
+  run.roomState.preparedStartTurnScry = undefined
+  run.roomState.preparedCombat.players.find((player) => player.id === owner.id).hand = [
+    { uid: 'browser-sphere-opening', defId: 'strike_ironclad', upgraded: false },
+  ]
+  debug.setRun(run)
+})
+const openingPreview = page.getByRole('group', { name: 'Your opening hand · choose for the party' })
+await openingPreview.waitFor()
+const openingPreviewStyle = await openingPreview.locator('.card').evaluate((card) => ({
+  filter: getComputedStyle(card).filter,
+  disabled: card.getAttribute('aria-disabled'),
+}))
+check('Mysterious Sphere opening-hand cards stay readable but read-only', () => {
+  assertEqual(openingPreviewStyle.filter, 'none')
+  assertEqual(openingPreviewStyle.disabled, 'true')
 })
 
 writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ failures }, null, 2))

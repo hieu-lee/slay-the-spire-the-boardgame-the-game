@@ -7,9 +7,10 @@ import { availableRewardSources } from './rewards.ts'
 import { canUpgradeCard, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
 import { merchantItemDecks } from './supplies.ts'
 import type { CardRewardOffer, RewardSource, RunState } from './types.ts'
+import { queueNewGuardianSockets } from './guardian-gems.ts'
 import { gainGold, removeCard, transformCard, upgradeCard } from '../acquisition.ts'
 import { isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
-import { CARDS } from '../cards.ts'
+import { cardIsCurse } from '../cards.ts'
 import { buildEventDeck } from '../events.ts'
 import { addBurningElite, generateMap } from '../map.ts'
 import { QUICK_START_TABLE, currentQuickSetupStep } from '../meta.ts'
@@ -45,8 +46,9 @@ export function finishQuickSetup(state: RunState): RunState {
     setup: null,
     map,
     enemyDecks: createEnemyDecks(rng, act, state.ascension),
-    actBossDefId: rollActBoss(rng, act),
-    eventDeck: act === 4 ? [] : buildEventDeck(rng, act, state.ascension, colorlessUnlocked),
+    actBossDefId: rollActBoss(rng, act, state.meta.ruleset),
+    selfBossRerolled: false,
+    eventDeck: act === 4 ? [] : buildEventDeck(rng, act, state.ascension, colorlessUnlocked, state.meta.ruleset),
     eventsVisited: 0,
     roomState: null,
     log: [...state.log, `Quick Start for Act ${act} is complete.`],
@@ -146,7 +148,10 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
     if (cardUids.length > 0) return state
     const players = setup.kind === 'catch-up'
       ? state.players.filter((player) => setup.playerIds.includes(player.id)) : state.players
-    return { ...state, phase: 'room', roomState: createMerchant(merchantItemDecks(state, state.itemDecks), players) }
+    const guardianGemDeck = [...(state.guardianGemDeck ?? [])]
+    return { ...state, phase: 'room', guardianGemDeck,
+      roomState: createMerchant(merchantItemDecks(state, state.itemDecks), players, guardianGemDeck,
+        state.meta.ruleset) }
   }
 
   if (!player) return state
@@ -157,7 +162,7 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
   } else {
     const eligible = step.kind === 'upgrade' ? owner.deck.filter(canUpgradeCard)
       : step.kind === 'cardRemove' ? owner.deck.filter((card) => card.defId !== 'ascenders_bane')
-        : owner.deck.filter((card) => CARDS[card.defId]?.owner !== 'curse')
+        : owner.deck.filter((card) => !cardIsCurse(card.defId))
     const required = Math.min(1, eligible.length)
     if (cardUids.length !== required || cardUids.some((uid) => !eligible.some((card) => card.uid === uid))) return state
     const uid = cardUids[0]
@@ -165,5 +170,6 @@ export function advanceQuickSetup(state: RunState, cardUids: readonly string[] =
     else if (uid && step.kind === 'cardRemove') owner = removeCard(owner, uid)
     else if (uid) owner = transformCard(state.rng, owner, uid, `c${nextRunUid(state.players)}`)
   }
-  return withAdvancedSetup({ ...state, players: state.players.map((candidate) => candidate.id === owner.id ? owner : candidate) })
+  return queueNewGuardianSockets(state,
+    withAdvancedSetup({ ...state, players: state.players.map((candidate) => candidate.id === owner.id ? owner : candidate) }))
 }

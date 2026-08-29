@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetPath, characterHeroArt } from '../game/assets.ts'
-import { cardDef } from '../game/cards.ts'
+import { cardDef, cardIsCurse } from '../game/cards.ts'
 import type { NeowCard, NeowDecision, NeowImmediateReward, NeowPlayerState, NeowRewardOffer } from '../game/neow.ts'
 import { neowCard } from '../game/neow.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { PotionRewardDecision, RewardSource } from '../game/run.ts'
+import { rewardSourceLabel } from './reward-source.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import type { CardInstance, Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { IconValue } from './Icon.tsx'
 import { ItemImage } from './ItemImage.tsx'
 import { RewardItem } from './RewardScreen.tsx'
+import { potionLimit } from '../game/acquisition.ts'
 
 type NeowUiPlayer = Pick<Player, 'id' | 'name' | 'character' | 'hp' | 'maxHp' | 'gold' | 'potions' | 'relics'> & {
   deck: CardInstance[] | null
@@ -29,7 +31,7 @@ type Props = {
   viewerId: string
   enabled?: boolean
   disabledMessage?: string
-  potionLimit: number
+  ascension: number
   onViewer?: (playerId: string) => void
   onGold: (playerId: string, gain: boolean) => void
   onReveal: (playerId: string, stage: 'red' | 'reward', sources: RewardSource[]) => void
@@ -58,15 +60,15 @@ function selectableCards(player: NeowUiPlayer, effect: NeowImmediateReward | nul
     effect.kind === 'upgrade' && effect.random) return { cards: [] as CardInstance[], count: 0 }
   const cards = effect.kind === 'upgrade' ? player.deck.filter(canUpgradeCard)
     : effect.kind === 'remove' ? player.deck.filter((card) => card.defId !== 'ascenders_bane')
-      : player.deck.filter((card) => cardDef(card.defId).owner !== 'curse')
+      : player.deck.filter((card) => !cardIsCurse(card.defId))
   return { cards, count: Math.min('count' in effect ? effect.count : 0, cards.length) }
 }
 
-function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }: {
+function OfferChoice({ offer, player, players, ascension, enabled, onResolve }: {
   offer: NeowRewardOffer
   player: NeowUiPlayer
   players: NeowUiPlayer[]
-  potionLimit: number
+  ascension: number
   enabled: boolean
   onResolve: (choice: number | null | PotionRewardDecision) => void
 }) {
@@ -77,7 +79,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
   if (offer.kind === 'potion') {
     const potionId = offer.choices[0]
     const blocked = player.relics.some((relic) => relic.defId === 'sozu')
-    const limit = potionLimit
+    const limit = potionLimit(ascension, player)
     return <div className="neow-offer neow-offer--potion item-offer-list">
       <RewardItem kind="potion" id={potionId} title={potionId ? potionDef(potionId).name : 'Empty Potion supply'}
         note={potionId ? undefined : 'No Potion remains in the supply.'}>
@@ -88,7 +90,8 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
             disabled={!enabled || blocked} onClick={() => onResolve({ kind: 'replace', potionId: held })}>
             <ItemImage kind="potion" id={held} /> Replace {potionDef(held).name}
           </button>)}
-          {players.filter((candidate) => candidate.id !== player.id && !candidate.relics.some((relic) => relic.defId === 'sozu') && candidate.potions.length < limit)
+          {players.filter((candidate) => candidate.id !== player.id && !candidate.relics.some((relic) => relic.defId === 'sozu') &&
+            candidate.potions.length < potionLimit(ascension, candidate))
             .map((candidate) => <button type="button" key={candidate.id} disabled={!enabled}
               onClick={() => onResolve({ kind: 'pass', playerId: candidate.id })}>Pass to {candidate.name}</button>)}
         </> : null}
@@ -99,13 +102,12 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
   }
 
   if (offer.kind === 'relic') {
-    const relicId = offer.choices[0]
-    return <div className="neow-offer neow-offer--relic">
-      <h3>{relicId ? relicDef(relicId).name : 'Empty Relic supply'}</h3>
-      {relicId ? <ItemImage kind="relic" id={relicId} card /> : null}
-      {relicId ? <p className="room-item-text">{relicDef(relicId).text}</p> : null}
+    return <div className="neow-offer neow-offer--relic item-offer-list">
+      {offer.choices.length > 0 ? offer.choices.map((relicId, index) =>
+        <RewardItem key={`${relicId}-${index}`} kind="relic" id={relicId} title={relicDef(relicId).name}>
+          <button type="button" disabled={!enabled} onClick={() => onResolve(index)}>Take Relic</button>
+        </RewardItem>) : <RewardItem kind="relic" title="Empty Relic supply" note="No Relic remains in the supply." />}
       <div className="neow-offer__actions">
-        {relicId ? <button type="button" disabled={!enabled} onClick={() => onResolve(0)}>Take Relic</button> : null}
         <button type="button" disabled={!enabled} onClick={() => onResolve(null)}>Skip Relic</button>
       </div>
     </div>
@@ -115,10 +117,17 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
     <p className="muted">These cards are face-up to the whole party. Choose one or skip.</p>
     <div className="neow-offer__cards">
       {offer.choices.map((defId, index) => <Card key={`${defId}-${index}`}
-        card={{ uid: `neow-offer-${index}`, defId, upgraded: false }}
+        card={{ uid: `neow-offer-${index}`, defId, upgraded: offer.upgraded === true }}
         selected={choice === index} playable={enabled}
         onClick={() => enabled && setChoice(index)} />)}
     </div>
+    {offer.guardianGems?.length ? <>
+      <p><strong>Socket Gems:</strong> These were revealed with the card offer.</p>
+      <div className="neow-offer__cards" aria-label="Revealed Socket Gems">
+        {offer.guardianGems.map((defId, index) => <Card key={`${defId}-${index}`}
+          card={{ uid: `neow-gem-${index}`, defId, upgraded: false }} playable={false} />)}
+      </div>
+    </> : null}
     <div className="neow-offer__actions">
       <button type="button" aria-pressed={choice === null} disabled={!enabled}
         onClick={() => setChoice(null)}>Skip reward</button>
@@ -128,7 +137,7 @@ function OfferChoice({ offer, player, players, potionLimit, enabled, onResolve }
   </div>
 }
 
-export function NeowScreen({ players, progress, viewerId, potionLimit, enabled = true, disabledMessage, onViewer, onGold, onReveal, onReward, onEffect, onChoose, onArmCardGain }: Props) {
+export function NeowScreen({ players, progress, viewerId, ascension, enabled = true, disabledMessage, onViewer, onGold, onReveal, onReward, onEffect, onChoose, onArmCardGain }: Props) {
   const participants = players.filter((player) => progress[player.id])
   const viewerParticipates = participants.some((player) => player.id === viewerId)
   const viewer = participants.find((player) => player.id === viewerId) ?? participants[0]
@@ -147,6 +156,7 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
   const activeProgress = viewerProgress
   const card = activeProgress.card ?? (activeProgress.cardId ? neowCard(activeProgress.cardId) : undefined)
   const currentOffer = activeProgress.redReward ?? activeProgress.reward
+  const heartsBoon = card?.source === 'heart'
   const prismaticSources = activeProgress.availableSources ?? []
   const unrevealedStage = !activeProgress.redGoldPending && activeProgress.redRewardPending && !activeProgress.redReward && !activeProgress.pendingEffect ? 'red'
     : activeProgress.rewardKind && !activeProgress.reward ? 'reward' : null
@@ -160,10 +170,10 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
   return <section className="neow-screen" aria-labelledby="neow-title">
-    <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" />
+    {!heartsBoon ? <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" /> : null}
     <img className="neow-screen__hero" src={assetPath(characterHeroArt(viewer.character))} alt={viewer.name} />
     <header className="neow-screen__header">
-      <h2 id="neow-title">Neow’s Blessing</h2>
+      <h2 id="neow-title">{heartsBoon ? "The Heart’s Boon" : 'Neow’s Blessing'}</h2>
       <span className="neow-screen__progress" role="status">{Object.values(progress).filter((seat) => seat?.done).length}/{participants.length} ready</span>
     </header>
 
@@ -175,7 +185,9 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
         return <article key={player.id} className={`neow-face${participants.length === 1 ? ' neow-face--solo' : ''}${player.id === viewerId ? ' neow-face--active' : ''}${state?.done ? ' neow-face--done' : ''}`}>
           <div className="neow-face__owner"><strong>{player.name}</strong><span>{state?.done ? 'Ready' : state?.redGoldPending || state?.redRewardPending || state?.redReward ? 'Red reward' : state?.blueOption !== null ? 'Resolving' : 'Choosing'}</span></div>
           <blockquote>“{face?.text ?? '…'}”</blockquote>
-          <div className="neow-face__red"><IconValue name="gold" value={3} size={18} /> + Card Reward</div>
+          <div className="neow-face__red">{face?.source === 'heart'
+            ? '3 Card Rewards'
+            : <><IconValue name="gold" value={3} size={18} /> + Card Reward</>}</div>
           <ol>{face?.options.map((option, index) => <li key={option.label} data-picked={state?.blueOption === index || undefined}>{option.label}</li>)}</ol>
           {revealed.length ? <p className="neow-face__reveal"><span>Face-up:</span> {revealed.join(', ') || 'empty supply'}</p> : null}
           {onViewer && player.id !== viewerId && !state?.done ? <button type="button" onClick={() => onViewer(player.id)}>Resolve {player.name}</button> : null}
@@ -200,7 +212,7 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
             <input type="checkbox" checked={selectedSources.includes(source)}
               disabled={!enabled || !selectedSources.includes(source) && selectedSources.length >= 3}
               onChange={(event) => setSelectedSources((current) => event.target.checked ? [...current, source] : current.filter((id) => id !== source))} />
-            {source === 'colorless' ? 'Colorless' : source[0]!.toUpperCase() + source.slice(1)}
+            {rewardSourceLabel(source)}
           </label>)}
         </fieldset> : null}
         {activeProgress.prismatic && prismaticSources.length < 3 ? <p role="status">Fewer than 3 reward decks remain. Skip this reward unseen.</p> : null}
@@ -211,7 +223,7 @@ export function NeowScreen({ players, progress, viewerId, potionLimit, enabled =
         </div>
       </div> : null}
       {currentOffer ? <OfferChoice key={`${viewer.id}:${currentOffer.kind}:${currentOffer.cardsDrawn.join(',')}`}
-        offer={currentOffer} player={viewer} players={players} potionLimit={potionLimit} enabled={enabled}
+        offer={currentOffer} player={viewer} players={players} ascension={ascension} enabled={enabled}
         onResolve={(choice) => onReward(viewer.id, choice, viewerProgress.redReward ? 'red' : 'reward')} /> : null}
       {blueReady && card ? <div className="neow-options">
         {card.options.map((option, index) => <button type="button" key={option.label} disabled={!enabled}

@@ -21,6 +21,7 @@ import {
 } from './rules.ts'
 import { mirrorLegacySupplies } from './supplies.ts'
 import type { PotionRewardDecision, RewardSource, RunState } from './types.ts'
+import { bottomGuardianGems, queueNewGuardianSockets, revealGuardianDraftGems } from './guardian-gems.ts'
 import {
   addCard,
   bottomCardChoices,
@@ -30,17 +31,17 @@ import {
   transformCard,
   upgradeCard,
 } from '../acquisition.ts'
-import { CARDS } from '../cards.ts'
+import { CARDS, cardIsCurse } from '../cards.ts'
 import { neowCard } from '../neow.ts'
 import type { NeowDecision, NeowImmediateReward, NeowQueuedEffect, NeowRewardKind, NeowRewardOffer } from '../neow.ts'
 import { createRelicInstance } from '../relics.ts'
 import { pickMany } from '../rng.ts'
 import type { CardInstance, Player } from '../types.ts'
 
-function neowCardOffer(player: Player, kind: 'card' | 'rare'): NeowRewardOffer {
-  if (kind === 'card') return { kind, ...drawCardChoices(player) }
-  const cardsDrawn = player.rareRewards.slice(0, 3)
-  return { kind, choices: [...cardsDrawn], cardsDrawn, raresDrawn: [] }
+function neowCardOffer(player: Player, kind: 'card' | 'rare', look: 3 | 5 = 3, upgraded = false, replaceDuplicates = false): NeowRewardOffer {
+  if (kind === 'card') return { kind, ...drawCardChoices(player, look, replaceDuplicates), look, upgraded }
+  const cardsDrawn = player.rareRewards.slice(0, look)
+  return { kind, choices: [...cardsDrawn], cardsDrawn, raresDrawn: [], look, upgraded }
 }
 
 export function nextNeowReward(state: RunState, playerId: string): RunState {
@@ -58,7 +59,22 @@ export function nextNeowReward(state: RunState, playerId: string): RunState {
         players: { ...next.neow.players, [playerId]: { ...progress, rewardKind: kind, reward: null, rewardQueue } },
       },
     }
-    if (['upgrade', 'remove', 'transform', 'gold', 'randomRare'].includes(kind.kind)) return {
+    if (kind.kind === 'reward' || kind.kind === 'relic') return {
+      ...next,
+      neow: {
+        ...next.neow,
+        players: { ...next.neow.players, [playerId]: {
+          ...progress,
+          rewardKind: kind.kind === 'reward' ? kind.reward : 'relic',
+          rewardRequest: kind.kind === 'reward'
+            ? { look: kind.look, upgraded: kind.upgraded }
+            : { relicChoices: kind.choices },
+          reward: null,
+          rewardQueue,
+        } },
+      },
+    }
+    if (['upgrade', 'remove', 'transform', 'gold', 'randomRare', 'randomCards'].includes(kind.kind)) return {
       ...next,
       neow: {
         ...next.neow,
@@ -69,12 +85,14 @@ export function nextNeowReward(state: RunState, playerId: string): RunState {
     const curse = kind.kind === 'curse' && owner && !owner.relics.some((relic) => relic.defId === 'omamori')
       ? next.itemDecks.curses[0] : undefined
     const hp = owner && kind.kind === 'loseHp' ? Math.max(0, owner.hp - kind.amount) : undefined
+    const maxHp = owner && kind.kind === 'loseMaxHp' ? Math.max(1, owner.maxHp - kind.amount) : undefined
     next = {
       ...next,
       players: next.players.map((candidate) => candidate.id !== playerId ? candidate
         : curse ? addCard(candidate, curse, `c${nextRunUid(next.players)}`)
           : kind.kind === 'loseGold' ? { ...candidate, gold: Math.max(0, candidate.gold - kind.amount) }
-            : hp === undefined ? candidate : { ...candidate, hp, dead: hp === 0 }),
+            : maxHp !== undefined ? { ...candidate, maxHp, hp: Math.min(candidate.hp, maxHp) }
+              : hp === undefined ? candidate : { ...candidate, hp, dead: hp === 0 }),
       itemDecks: curse ? { ...next.itemDecks, curses: next.itemDecks.curses.slice(1) } : next.itemDecks,
       neow: {
         ...next.neow,
@@ -189,27 +207,34 @@ export function revealNeowReward(state: RunState, playerId: string, sources: rea
   let relicDeck = state.relicDeck
   let offer: NeowRewardOffer
   if (kind === 'colorless') {
-    const choices = state.itemDecks.colorless.slice(0, 3)
+    const choices = state.itemDecks.colorless.slice(0, progress.rewardRequest?.look ?? 3)
     itemDecks = { ...state.itemDecks, colorless: state.itemDecks.colorless.slice(choices.length) }
-    offer = { kind, choices, cardsDrawn: [...choices], raresDrawn: [] }
+    offer = { kind, choices, cardsDrawn: [...choices], raresDrawn: [], ...progress.rewardRequest }
   } else if (kind === 'potion') {
     const potionId = state.potionDeck[0]
     potionDeck = potionId ? state.potionDeck.slice(1) : state.potionDeck
     itemDecks = { ...state.itemDecks, potions: [...potionDeck] }
     offer = { kind, choices: potionId ? [potionId] : [], cardsDrawn: potionId ? [potionId] : [], raresDrawn: [] }
   } else if (kind === 'relic') {
-    const relicId = state.relicDeck[0]
-    relicDeck = relicId ? state.relicDeck.slice(1) : state.relicDeck
+    const choices = state.relicDeck.slice(0, progress.rewardRequest?.relicChoices ?? 1)
+    relicDeck = state.relicDeck.slice(choices.length)
     itemDecks = { ...state.itemDecks, relics: [...relicDeck] }
-    offer = { kind, choices: relicId ? [relicId] : [], cardsDrawn: relicId ? [relicId] : [], raresDrawn: [] }
+    offer = { kind, choices, cardsDrawn: [...choices], raresDrawn: [] }
   } else if (hasRelic(player, 'prismatic_shard')) {
     const available = neowRewardSources(state, playerId)
     if (sources.length !== 3 || new Set(sources).size !== 3 || sources.some((source) => !available.includes(source))) return state
     const reserved = reservePrismaticDraws(state, sources, kind === 'rare')
     state = reserved.state
     itemDecks = state.itemDecks
-    offer = { kind, choices: reserved.choices, cardsDrawn: reserved.choices, raresDrawn: [], prismaticDraws: reserved.draws }
-  } else offer = neowCardOffer(player, kind)
+    offer = { kind, choices: reserved.choices, cardsDrawn: reserved.choices, raresDrawn: [],
+      prismaticDraws: reserved.draws, ...progress.rewardRequest }
+  } else offer = neowCardOffer(player, kind, progress.rewardRequest?.look, progress.rewardRequest?.upgraded,
+    state.meta.ruleset === 'downfall')
+  if (kind === 'card' || kind === 'rare') {
+    const revealed = revealGuardianDraftGems(state, offer.choices)
+    state = revealed.state
+    offer = { ...offer, guardianGems: revealed.gemIds }
+  }
   return {
     ...state,
     itemDecks,
@@ -240,11 +265,12 @@ export function resolveNeowReward(
   if (!kind) return state
   if (!offer) {
     if (choice !== null) return state
+    const redRemaining = red ? (progress.redRewardsRemaining ?? 1) : 0
     let next: RunState = {
       ...state,
       neow: { ...neow, players: { ...neow.players, [playerId]: red
-        ? { ...progress, redRewardPending: false }
-        : { ...progress, rewardKind: null } } },
+        ? { ...progress, redRewardPending: redRemaining > 1, redRewardsRemaining: Math.max(0, redRemaining - 1) }
+        : { ...progress, rewardKind: null, rewardRequest: undefined } } },
     }
     if (red) return next
     next = nextNeowReward(next, playerId)
@@ -256,12 +282,13 @@ export function resolveNeowReward(
     let players = state.players
     let returned: string[] = []
     if (potionId) {
-      const limit = potionLimitFor(state.ascension)
+      const limit = potionLimitFor(state.ascension, player)
       let recipient = player
       if (choice.kind === 'skip') returned = [potionId]
       else if (choice.kind === 'pass') {
         const target = state.players.find((candidate) => candidate.id === choice.playerId)
-        if (!target || target.dead || target.id === playerId || !canGainPotion(target, limit)) return state
+        if (!target || target.dead || target.id === playerId ||
+          !canGainPotion(target, potionLimitFor(state.ascension, target))) return state
         recipient = target
       } else if (choice.kind === 'replace') {
         const held = player.potions.indexOf(choice.potionId)
@@ -279,7 +306,7 @@ export function resolveNeowReward(
       ...state,
       players,
       potionDeck: [...state.potionDeck, ...returned],
-      neow: { ...neow, players: { ...neow.players, [playerId]: { ...progress, rewardKind: null, reward: null } } },
+      neow: { ...neow, players: { ...neow.players, [playerId]: { ...progress, rewardKind: null, rewardRequest: undefined, reward: null } } },
     })
     next = nextNeowReward(next, playerId)
     return finishNeowStep(next, playerId)
@@ -290,7 +317,7 @@ export function resolveNeowReward(
     const settled = settlePrismaticDraws(state, offer.kind === 'rare', offer.prismaticDraws, offer.choices, choice)
     state = settled.state
     owner = state.players.find((candidate) => candidate.id === playerId) ?? owner
-    if (settled.selectedId) owner = addCard(owner, settled.selectedId, `c${nextRunUid(state.players)}`)
+    if (settled.selectedId) owner = addCard(owner, settled.selectedId, `c${nextRunUid(state.players)}`, offer.upgraded)
   } else if (offer.kind === 'card') {
     const draw = { choices: offer.choices, cardsDrawn: offer.cardsDrawn, raresDrawn: offer.raresDrawn }
     owner = bottomCardChoices(owner, draw, choice)
@@ -300,28 +327,41 @@ export function resolveNeowReward(
   } else if (offer.kind === 'colorless') {
     const selected = choice === null ? undefined : offer.choices[choice]
     const unused = offer.choices.filter((_id, index) => index !== choice)
-    owner = selected ? addCard(owner, selected, `c${nextRunUid(state.players)}`) : owner
+    owner = selected ? addCard(owner, selected, `c${nextRunUid(state.players)}`, offer.upgraded) : owner
     const itemDecks = { ...state.itemDecks, colorless: [...state.itemDecks.colorless, ...unused] }
     state = { ...state, itemDecks }
   } else {
     const relicId = choice === null ? undefined : offer.choices[choice]
     if (choice === null) {
       state = mirrorLegacySupplies({ ...state, relicDeck: [...state.relicDeck, ...offer.cardsDrawn] })
-    } else if (relicId) state = acquireRelic(state, playerId, relicId)
+    } else if (relicId) {
+      state = mirrorLegacySupplies({ ...state, relicDeck: [
+        ...state.relicDeck, ...offer.cardsDrawn.filter((_id, index) => index !== choice),
+      ] })
+      state = acquireRelic(state, playerId, relicId)
+    }
     owner = state.players.find((candidate) => candidate.id === playerId) ?? owner
   }
   const selected = choice === null ? undefined : offer.choices[choice]
-  if (!offer.prismaticDraws && selected && (offer.kind === 'card' || offer.kind === 'rare')) owner = addCard(owner, selected, `c${nextRunUid(state.players)}`)
+  if (!offer.prismaticDraws && selected && (offer.kind === 'card' || offer.kind === 'rare')) {
+    owner = addCard(owner, selected, `c${nextRunUid(state.players)}`, offer.upgraded)
+  }
+  const redRemaining = red ? (progress.redRewardsRemaining ?? 1) : 0
   let next: RunState = {
     ...state,
     players: state.players.map((candidate) => candidate.id === playerId ? owner : candidate),
     neow: {
       ...neow,
       players: { ...neow.players, [playerId]: red
-        ? { ...progress, redRewardPending: false, redReward: null }
-        : { ...progress, rewardKind: null, reward: null } },
+        ? { ...progress, redRewardPending: redRemaining > 1, redRewardsRemaining: Math.max(0, redRemaining - 1), redReward: null }
+        : { ...progress, rewardKind: null, rewardRequest: undefined, reward: null } },
     },
   }
+  if (offer.guardianGems !== undefined) {
+    next = selected && CARDS[selected]?.guardian?.socket
+      ? queueNewGuardianSockets(state, next, 2, [offer.guardianGems])
+      : bottomGuardianGems(next, offer.guardianGems)
+  } else next = queueNewGuardianSockets(state, next, 2)
   if (red) return next
   next = nextNeowReward(next, playerId)
   return finishNeowStep(next, playerId)
@@ -329,9 +369,12 @@ export function resolveNeowReward(
 
 function neowEffectCards(player: Player, effect: NeowImmediateReward): { eligible: CardInstance[]; required: number } {
   if (!['upgrade', 'remove', 'transform'].includes(effect.kind)) return { eligible: [], required: 0 }
-  const eligible = effect.kind === 'upgrade' ? player.deck.filter(canUpgradeCard)
-    : effect.kind === 'remove' ? player.deck.filter((card) => card.defId !== 'ascenders_bane')
-      : player.deck.filter((card) => CARDS[card.defId]?.owner !== 'curse')
+  const starter = 'starter' in effect && effect.starter
+  const matchesStarter = (card: CardInstance) => !starter ||
+    CARDS[card.defId]?.rarity === 'starter' && CARDS[card.defId]?.name.toLowerCase() === starter
+  const eligible = effect.kind === 'upgrade' ? player.deck.filter((card) => canUpgradeCard(card) && matchesStarter(card))
+    : effect.kind === 'remove' ? player.deck.filter((card) => card.defId !== 'ascenders_bane' && matchesStarter(card))
+      : player.deck.filter((card) => !cardIsCurse(card.defId))
   const supply = effect.kind === 'transform' ? availableTransformRewards(player) : Number.POSITIVE_INFINITY
   return { eligible, required: Math.min('count' in effect ? effect.count : 0, eligible.length, supply) }
 }
@@ -366,22 +409,53 @@ export function resolveNeowEffect(
     } else if (effect.kind === 'remove') {
       for (const cardUid of cardUids) owner = removeCard(owner, cardUid)
     } else if (effect.kind === 'transform') {
-      for (const cardUid of cardUids) owner = transformCard(rng, owner, cardUid, `c${uid++}`)
+      for (const cardUid of cardUids) {
+        const replacementUid = `c${uid++}`
+        owner = transformCard(rng, owner, cardUid, replacementUid)
+        if (effect.upgrade) owner = upgradeCard(owner, replacementUid)
+      }
     } else if (effect.kind === 'gold') owner = gainGold(owner, effect.amount)
-    else {
+    else if (effect.kind === 'randomRare') {
       const [rare, ...rareRewards] = owner.rareRewards
-      if (rare) owner = addCard({ ...owner, rareRewards }, rare, `c${uid++}`)
+      if (rare) owner = addCard({ ...owner, rareRewards }, rare, `c${uid++}`, effect.upgraded)
+    } else {
+      if (effect.source === 'colorless') {
+        const drawn = state.itemDecks.colorless.slice(0, effect.count)
+        state = { ...state, itemDecks: { ...state.itemDecks, colorless: state.itemDecks.colorless.slice(drawn.length) } }
+        for (const defId of drawn) owner = addCard(owner, defId, `c${uid++}`, effect.upgraded)
+      } else {
+        const draw = drawCardChoices(owner, effect.count)
+        owner = {
+          ...owner,
+          cardRewards: [
+            ...owner.cardRewards.slice(draw.cardsDrawn.length),
+            ...draw.cardsDrawn.filter((defId) => defId === GOLDEN_TICKET),
+          ],
+          rareRewards: owner.rareRewards.slice(draw.raresDrawn.length),
+        }
+        let rareIndex = 0
+        const drawnCards = draw.cardsDrawn.map((defId) => defId === GOLDEN_TICKET
+          ? draw.raresDrawn[rareIndex++] : defId).filter((defId): defId is string => Boolean(defId))
+        for (const defId of drawnCards) owner = addCard(owner, defId, `c${uid++}`, effect.upgraded)
+      }
     }
   }
   const transformedRed = progress.redRewardPending
+  const redRemaining = transformedRed ? (progress.redRewardsRemaining ?? 1) : 0
+  const currentNeow = state.neow
+  if (!currentNeow) return state
   let next: RunState = {
     ...state,
     rng,
     players: state.players.map((candidate) => candidate.id === playerId ? owner : candidate),
-    neow: { ...state.neow, players: { ...state.neow.players, [playerId]: {
-      ...progress, pendingEffect: null, redRewardPending: transformedRed ? false : progress.redRewardPending,
+    neow: { ...currentNeow, players: { ...currentNeow.players, [playerId]: {
+      ...progress,
+      pendingEffect: null,
+      redRewardPending: transformedRed ? redRemaining > 1 : progress.redRewardPending,
+      redRewardsRemaining: transformedRed ? Math.max(0, redRemaining - 1) : progress.redRewardsRemaining,
     } } },
   }
+  next = queueNewGuardianSockets(state, next)
   if (transformedRed) return next
   next = nextNeowReward(next, playerId)
   return finishNeowStep(next, playerId)
@@ -406,9 +480,9 @@ export function chooseNeow(
   let next: RunState = state
   let queue: NeowQueuedEffect[] = []
   for (const effect of option.effects) {
-    if (effect.kind === 'reward') queue.push(...Array(effect.count).fill(effect.reward))
+    if (effect.kind === 'reward') queue.push(...Array.from({ length: effect.count }, () => ({ ...effect, count: 1 as const })))
     else if (effect.kind === 'potions') queue.push(...Array(effect.count).fill('potion' as const))
-    else if (effect.kind === 'relic') queue.push('relic')
+    else if (effect.kind === 'relic' && !effect.choices) queue.push('relic')
     else queue.push(effect)
   }
   next = {

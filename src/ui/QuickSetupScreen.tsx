@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react'
-import { cardDef } from '../game/cards.ts'
+import { cardIsCurse } from '../game/cards.ts'
 import type { QuickStartStep } from '../game/meta.ts'
 import { canUpgradeCard } from '../game/run.ts'
 import type { CardInstance, Player } from '../game/types.ts'
@@ -43,7 +43,7 @@ function selectableCards(player: Player | undefined, kind: QuickStartStep['kind'
   if (!player) return []
   if (kind === 'upgrade') return player.deck.filter(canUpgradeCard)
   if (kind === 'cardRemove') return player.deck.filter((card) => card.defId !== 'ascenders_bane')
-  if (kind === 'transform') return player.deck.filter((card) => cardDef(card.defId).owner !== 'curse')
+  if (kind === 'transform') return player.deck.filter((card) => !cardIsCurse(card.defId))
   return []
 }
 

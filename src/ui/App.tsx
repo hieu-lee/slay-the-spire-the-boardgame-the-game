@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CombatState } from '../game/combat.ts'
+import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../game/combat.ts'
 import { assetPath } from '../game/assets.ts'
 import {
   advanceAct,
   advanceQuickSetup,
   canGiveUpRun,
+  canRerollDownfallSelfBoss,
   canSkipEvent,
   chooseNeow,
   decideCourier,
@@ -28,6 +29,7 @@ import {
   revealCardReward,
   revealPotionReward,
   revealRelicReward,
+  rerollDownfallSelfBoss,
   unavailableEventOptionIds,
   resolveRelicReward,
   resolveBossRelicReward,
@@ -35,6 +37,7 @@ import {
   resolveTransformReward,
   pendingRelicPreview,
   resolvePendingRelic,
+  resolveGuardianSocket,
   resolveCardRewards,
   resolveCombat,
   revealCourier,
@@ -66,7 +69,7 @@ import { relicDef } from '../game/relics.ts'
 import { IconValue } from './Icon.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
-import { RelicResolvePanel } from './RelicResolvePanel.tsx'
+import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { CourierPanel, RoomScreen } from './RoomScreen.tsx'
@@ -97,6 +100,10 @@ const ROSTER: { character: CharacterId; name: string }[] = [
   { character: 'silent', name: 'Silent' },
   { character: 'defect', name: 'Defect' },
   { character: 'watcher', name: 'Watcher' },
+  { character: 'slime_boss', name: 'Slime Boss' },
+  { character: 'guardian', name: 'Guardian' },
+  { character: 'hexaghost', name: 'Hexaghost' },
+  { character: 'hermit', name: 'Hermit' },
 ]
 const DEFAULT_CHARACTERS = ROSTER.map((entry) => entry.character)
 
@@ -525,7 +532,9 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     () => Object.values(run.map.rooms).filter((room) => room.visited).length,
     [run.map.rooms],
   )
-  const pendingAcquisition = hasPendingRelicAcquisition(run)
+  const pendingSocket = run.pendingGuardianSockets?.[0]
+  const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
+  const pendingAcquisition = hasPendingRelicAcquisition(run) || Boolean(pendingSocket)
   // Derived once per render: `visibleMap` rebuilds the room table (and clones
   // every room under Uncertain Future), and the map phase asked for it four
   // times — twice in one `MapScreen` line, then again per Wing Boots option.
@@ -613,6 +622,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
               !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
                 <OutsidePotionBar players={run.players} viewerId={viewerId}
                   potionLimit={run.ascension >= 4 ? 2 : 3}
+                  ruleset={run.meta.ruleset ?? 'base'}
                   onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
                   onUse={(potionId, replacePotionId) => setRun((current) =>
                     usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
@@ -694,6 +704,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         pending={pendingPreview}
         deck={viewer?.deck ?? []} onResolve={(cardUids, rewardIndices) => setRun((current) =>
           resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
+      {pendingSocket && pendingSocketOwner ? <GuardianSocketPanel
+        key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
+        pending={pendingSocket}
+        deck={pendingSocketOwner.deck}
+        onResolve={(gemId) => setRun((current) => {
+          const choice = current.pendingGuardianSockets?.[0]
+          return choice ? resolveGuardianSocket(current, choice.playerId, gemId) : current
+        })} /> : null}
       {run.phase !== 'neow' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
@@ -703,7 +721,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         players={run.players}
         progress={Object.fromEntries(Object.keys(run.neow.players).map((id) => [id, neowPreview(run, id)]))}
         viewerId={viewerId}
-        potionLimit={run.ascension >= 4 ? 2 : 3}
+        ascension={run.ascension}
         enabled={!pendingAcquisition}
         disabledMessage={pendingOwner && pendingRelic
           ? `Waiting for ${pendingOwner.name} to resolve ${relicDef(pendingRelic.defId).name}.`
@@ -728,6 +746,8 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         <>
           <MapScreen map={seenMap} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: seenMap })} blocked={pendingAcquisition}
             bossDefId={run.actBossDefId}
+            canRerollBoss={!pendingAcquisition && canRerollDownfallSelfBoss(run)}
+            onRerollBoss={() => setRun(rerollDownfallSelfBoss)}
             onEnter={(roomId) => setRun((current) => enterRoom(current, roomId))} />
           {!pendingAcquisition && wingChoices.length > 0 ? <section className="room-screen map-prompt">
             <strong>Wing Boots</strong>
@@ -762,7 +782,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
           onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
           onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
-          potionLimit={run.ascension >= 4 ? 2 : 3}
+          ascension={run.ascension}
         />
       ) : null}
 
@@ -804,6 +824,29 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           onFinishMerchant={() => setRun((current) => finishMerchant(current))}
           onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
           onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
+          onPreparedHermitSetup={(cardUid, enemyUid) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = resolveHermitSetupLoad(current.roomState.preparedCombat, viewerId, cardUid, enemyUid, true)
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
+          onPreparedStartTurnScryOrder={(order) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = orderStartTurnScries(current.roomState.preparedCombat, order)
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
+          onPreparedStartTurnScry={(sourceId, discardUids) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = resolveStartTurnScry(
+              current.roomState.preparedCombat, viewerId, sourceId, discardUids,
+            )
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
           eventCanSkip={canSkipEvent(run, viewerId)}
           unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
           onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
