@@ -53,7 +53,8 @@
    the gutter too. Clipping the axis costs nothing and makes the overhang
    impossible. `clip`, not `hidden`: `hidden` would make this a scroll
    container and break every `position: fixed` and `sticky` descendant. */
-html { overflow-x: clip; }
+html { overflow-x: clip; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
 
 /* Kreon is already a wide slab face; the client adds no tracking to it, and
    adding some is what makes a fan copy read as a "fantasy web page". */

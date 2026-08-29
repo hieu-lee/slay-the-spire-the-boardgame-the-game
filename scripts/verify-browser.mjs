@@ -967,6 +967,32 @@ check('the first room is an encounter and starts a combat', () => {
   assertEqual(openingDealMotion, 'card-draw', 'the opening hand should deal into place')
 })
 
+await page.locator('.relic-chip').first().hover()
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.relic-tip')).visibility === 'visible')
+const combatChrome = await page.evaluate(() => {
+  const header = document.querySelector('.app-shell__header').getBoundingClientRect()
+  const combat = document.querySelector('.combat').getBoundingClientRect()
+  const bar = document.querySelector('.combat__bar')
+  const root = document.documentElement
+  return {
+    headerBottom: header.bottom,
+    combatTop: combat.top,
+    barBackground: getComputedStyle(bar).backgroundImage,
+    barBorder: getComputedStyle(bar).borderBottomWidth,
+    rootScrollbar: getComputedStyle(root).scrollbarWidth,
+    rootWebkitScrollbar: getComputedStyle(root, '::-webkit-scrollbar').display,
+  }
+})
+await page.mouse.move(0, 0)
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.relic-tip')).visibility === 'hidden')
+check('relic hover adds no scrollbar chrome and combat keeps one continuous stage', () => {
+  assertEqual(combatChrome.headerBottom, combatChrome.combatTop)
+  assertEqual(combatChrome.barBackground, 'none')
+  assertEqual(combatChrome.barBorder, '0px')
+  assertEqual(combatChrome.rootScrollbar, 'none')
+  assertEqual(combatChrome.rootWebkitScrollbar, 'none')
+})
+
 await page.keyboard.press('Escape')
 const pauseMenu = page.getByRole('dialog', { name: 'Slay the Spire' })
 await pauseMenu.waitFor()
