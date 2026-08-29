@@ -69,12 +69,6 @@ export function OnlineCampfireScreen({ player, saved, decided, seats, onAction, 
         ) : null}
       </div> : <p className="campfire__spectator" role="status">Your climb has ended. You are watching the surviving party choose.</p>}
       </div>
-      <div className="campfire__players" aria-label="Party around the campfire">
-        {seats.map((seat, index) => <div className={`campfire__seat campfire__seat--${index}`} key={seat.playerId} role="group" aria-label={`${seat.name}, ${decided.includes(seat.playerId) ? 'ready' : 'choosing'}`}>
-          <span>{seat.name}</span>
-          <small>{decided.includes(seat.playerId) ? 'Ready' : 'Choosing'}</small>
-        </div>)}
-      </div>
       {alive ? <button
         type="button"
         className="campfire__leave"

@@ -3614,7 +3614,7 @@ try {
   await Promise.all([ownerGame, teammateGame].map((game) => game.getByRole('heading', { name: /Campfire/ }).waitFor()))
   const deadCampfireStatus = await teammateGame.getByRole('status').textContent()
   const deadCampfireControls = await teammateGame.locator('.campfire__prompt button, .campfire__leave').count()
-  const livingCampfirePortraits = await teammateGame.locator('.campfire__seat').count()
+  const multiplayerCampfireStatusCards = await teammateGame.locator('.campfire__players, .campfire__seat').count()
   const onlineCampfireScene = await teammateGame.locator('.campfire').evaluate(async (campfire) => {
     const match = getComputedStyle(campfire).backgroundImage.match(/url\(["']?(.*?)["']?\)/)
     const image = new Image()
@@ -3626,7 +3626,7 @@ try {
   check('a dead online viewer spectates the living Campfire without submitting a choice', () => {
     assert(deadCampfireStatus.includes('watching the surviving party'), deadCampfireStatus)
     assertEqual(deadCampfireControls, 0)
-    assertEqual(livingCampfirePortraits, 1)
+    assertEqual(multiplayerCampfireStatusCards, 0)
     assertEqual(onlineCampfireScene.path, '/assets/noncombat/campfire/ironclad_firecamp.png')
     assertDeepEqual([onlineCampfireScene.width, onlineCampfireScene.height], [1672, 941])
     assert(ownerCampfireControls >= 2, 'the living player lost their Campfire controls')
@@ -3659,8 +3659,7 @@ try {
       return {
         panels: prompt?.querySelectorAll('.campfire__preview').length ?? 0,
         saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
-        decorativeSeats: [...campfire.querySelectorAll('div.campfire__seat')]
-          .filter((seat) => getComputedStyle(seat).display !== 'none' && seat.getBoundingClientRect().height > 0).length,
+        statusCards: campfire.querySelectorAll('.campfire__players, .campfire__seat').length,
         documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
         documentHeight: document.documentElement.scrollHeight,
         viewportHeight: document.documentElement.clientHeight,
@@ -3683,7 +3682,7 @@ try {
     for (const shape of compactOnlineSmith) {
       assertEqual(shape.panels, 0)
       assert(!shape.saysBecomes)
-      assertEqual(shape.decorativeSeats, 0, `decorative online seats consume picker height: ${JSON.stringify(shape)}`)
+      assertEqual(shape.statusCards, 0, `online player status cards returned: ${JSON.stringify(shape)}`)
       assert(!shape.documentScrolls, `the online page scrolls: ${JSON.stringify(shape)}`)
       assert(!shape.deckScrollsHorizontally, `the online deck scrolls sideways: ${JSON.stringify(shape)}`)
       assert(shape.visibleCardHeight >= shape.cardHeight - 1,

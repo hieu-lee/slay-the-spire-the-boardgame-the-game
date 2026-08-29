@@ -49,9 +49,7 @@
   .map .room--reachable::before,
   .sts-scope .campfire h2 .icon { animation: none; }
 
-  .sts-scope .merchant-arrival__merchant:is(:hover, :focus-visible) img,
-  .sts-scope .campfire__seat:hover,
-  .sts-scope .campfire__seat[aria-pressed='true'] { transform: none; transition: none; }
+  .sts-scope .merchant-arrival__merchant:is(:hover, :focus-visible) img { transform: none; transition: none; }
 
   /* The crawling trail is the same trap seen from the other side: frozen at an
      arbitrary dashoffset it can land mid-gap and leave the live path invisible.

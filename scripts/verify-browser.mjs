@@ -12182,14 +12182,14 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
-const campfireSeatNames = await page.evaluate(() => [...document.querySelectorAll('.campfire__seat')]
-  .map((seat) => ({ role: seat.getAttribute('role') ?? seat.tagName.toLowerCase(), label: seat.getAttribute('aria-label') })))
-check('each campfire seat is named for the player it belongs to', () => {
-  assert(campfireSeatNames.length > 1, 'expected more than one seat')
-  assert(campfireSeatNames.every((seat) => seat.role === 'button' && /\d+ of \d+ HP/.test(seat.label ?? '')),
-    `seats not individually named: ${JSON.stringify(campfireSeatNames)}`)
-  assertEqual(new Set(campfireSeatNames.map((seat) => seat.label)).size, campfireSeatNames.length,
-    'two seats share a name')
+const campfirePlayerControls = await page.evaluate(() => ({
+  statusCards: document.querySelectorAll('.campfire__players, .campfire__seat').length,
+  navigation: [...document.querySelectorAll('.campfire__turn-nav button')].map((button) => button.getAttribute('aria-label')),
+}))
+check('multiplayer campfires omit player status cards but keep accessible player navigation', () => {
+  assertEqual(campfirePlayerControls.statusCards, 0)
+  assert(campfirePlayerControls.navigation[0]?.startsWith('Previous campfire player: '), JSON.stringify(campfirePlayerControls))
+  assert(campfirePlayerControls.navigation[1]?.startsWith('Next campfire player: '), JSON.stringify(campfirePlayerControls))
 })
 
 const campfirePartyLayouts = []
@@ -12215,7 +12215,7 @@ for (let mask = 1; mask < 16; mask += 1) {
       loaded = image.naturalWidth === 1672 && image.naturalHeight === 941
     }
     return {
-      count: campfire.querySelectorAll('.campfire__seat').length,
+      statusCards: campfire.querySelectorAll('.campfire__players, .campfire__seat').length,
       expected,
       selected: url.endsWith(`/${expected}_firecamp.png`),
       loaded,
@@ -12235,6 +12235,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
   await page.setViewportSize(viewport)
   campfireResponsiveLayouts.push({ ...viewport, ...await page.locator('.campfire').evaluate((campfire) => {
     const blockers = [...document.querySelectorAll('.log, .campfire__leave')].map((element) => element.getBoundingClientRect())
+    const header = document.querySelector('.app-shell__header')?.getBoundingClientRect()
+    const heading = campfire.querySelector('h2')?.getBoundingClientRect()
     const overlaps = (box) => blockers.some((blocker) =>
       blocker.left < box.right && blocker.right > box.left && blocker.top < box.bottom && blocker.bottom > box.top)
     return {
@@ -12243,8 +12245,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
       sceneFits: (innerWidth <= innerHeight
         ? getComputedStyle(campfire, '::after')
         : getComputedStyle(campfire)).backgroundSize.split(',').at(-1)?.trim() === (innerWidth <= innerHeight ? 'contain' : 'cover'),
-      seats: [...campfire.querySelectorAll('.campfire__seat')].map((seat) => {
-        const box = seat.getBoundingClientRect()
+      headingClearOfHeader: Boolean(header && heading && heading.top >= header.bottom - 1),
+      switchers: [...campfire.querySelectorAll('.campfire__turn-nav button')].map((button) => {
+        const box = button.getBoundingClientRect()
         return {
           visible: box.left >= -1 && box.right <= innerWidth + 1 && box.top >= -1 && box.bottom <= innerHeight + 1,
           covered: overlaps(box),
@@ -12256,19 +12259,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
 }
 await page.setViewportSize({ width: 1440, height: 900 })
 await shot('12-campfire-scene')
-await page.emulateMedia({ reducedMotion: 'reduce' })
-await page.locator('.campfire__seat').first().hover()
-const reducedCampfireLift = await page.locator('.campfire__seat').first()
-  .evaluate((seat) => getComputedStyle(seat).transform)
-await page.mouse.move(0, 0)
-await page.emulateMedia({ reducedMotion: 'no-preference' })
 check('campfire party art covers every living party size without overflow', () => {
   assertEqual(campfirePartyLayouts.length, 15)
-  assert(campfirePartyLayouts.every((layout) => layout.count === layout.expected.split('_').length &&
+  assert(campfirePartyLayouts.every((layout) => layout.statusCards === 0 &&
     layout.selected && layout.loaded && !layout.overflow), JSON.stringify(campfirePartyLayouts))
-  assert(campfireResponsiveLayouts.every((layout) => !layout.overflow && layout.sceneFits &&
-    layout.seats.every((seat) => seat.visible && !seat.covered)), JSON.stringify(campfireResponsiveLayouts))
-  assertEqual(reducedCampfireLift, 'none', 'the focused campfire character still lifts under reduced motion')
+  assert(campfireResponsiveLayouts.every((layout) => !layout.overflow && layout.sceneFits && layout.headingClearOfHeader &&
+    layout.switchers.every((button) => button.visible && !button.covered)), JSON.stringify(campfireResponsiveLayouts))
 })
 
 const leaveLockedBefore = await page.locator('.campfire__leave').isDisabled()
@@ -12276,11 +12272,9 @@ check('a campfire will not let the party leave until everyone has chosen', () =>
   assert(leaveLockedBefore, 'the leave button must be disabled while a choice is outstanding')
 })
 
-const campfireSeats = page.locator('.campfire__seat')
 const campfirePrompt = page.locator('.campfire__prompt')
-await campfireSeats.nth(0).click()
 await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
-await campfireSeats.nth(1).click()
+await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
 await campfirePrompt.getByRole('button', { name: /Smith/ }).click()
 await page.waitForSelector('.campfire__deck .card')
 await page.setViewportSize({ width: 1244, height: 409 })
@@ -12331,11 +12325,11 @@ for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521
     const prompt = document.querySelector('.campfire__prompt')
     const deck = document.querySelector('.campfire__deck')
     const card = deck?.querySelector('.card')
-    const seat = document.querySelector('.campfire__seat--2')
+    const switcher = document.querySelector('button[aria-label^="Next campfire player: "]')
     const promptBox = prompt?.getBoundingClientRect()
     const cardBox = card?.getBoundingClientRect()
-    const seatBox = seat?.getBoundingClientRect()
-    const hit = seatBox && document.elementFromPoint(seatBox.left + seatBox.width / 2, seatBox.top + seatBox.height / 2)
+    const switcherBox = switcher?.getBoundingClientRect()
+    const hit = switcherBox && document.elementFromPoint(switcherBox.left + switcherBox.width / 2, switcherBox.top + switcherBox.height / 2)
     return {
       documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
       deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
@@ -12345,7 +12339,7 @@ for (const viewport of [{ width: 1244, height: 409 }, { width: 1244, height: 521
         ? Math.max(0, Math.min(promptBox.bottom, cardBox.bottom) - Math.max(promptBox.top, cardBox.top)) : 0,
       previewCount: document.querySelectorAll('.campfire__preview').length,
       saysBecomes: /\bBecomes\b/.test(prompt?.textContent ?? ''),
-      seatReachable: Boolean(seat && seatBox && seatBox.width > 0 && seatBox.height > 0 && hit && (hit === seat || seat.contains(hit))),
+      switcherReachable: Boolean(switcher && switcherBox && switcherBox.width > 0 && switcherBox.height > 0 && hit && (hit === switcher || switcher.contains(hit))),
     }
   }) })
 }
@@ -12357,14 +12351,15 @@ check('selecting a Smith card on a compact screen keeps the picker and next play
       `the selected picker clips the first card: ${JSON.stringify(shape)}`)
     assertEqual(shape.previewCount, 0, `the removed upgrade preview returned: ${JSON.stringify(shape)}`)
     assert(!shape.saysBecomes, `the removed "Becomes" copy returned: ${JSON.stringify(shape)}`)
-    assert(shape.seatReachable, `the next player seat is unreachable: ${JSON.stringify(shape)}`)
+    assert(shape.switcherReachable, `the next player control is unreachable: ${JSON.stringify(shape)}`)
   }
 })
-for (const index of [2, 3]) {
-  await campfireSeats.nth(index).click()
+for (let remaining = 2; remaining > 0; remaining -= 1) {
+  await campfirePrompt.getByRole('button', { name: 'Next campfire player' }).click()
   await campfirePrompt.getByRole('button', { name: /Rest/ }).click()
 }
-await campfireSeats.nth(1).click()
+await campfirePrompt.getByRole('button', { name: 'Previous campfire player' }).click()
+await campfirePrompt.getByRole('button', { name: 'Previous campfire player' }).click()
 await page.waitForSelector('.campfire__deck--smith .card--selected')
 const compactReadySmith = await page.evaluate(() => {
   const leave = document.querySelector('.campfire__leave')
@@ -12385,13 +12380,13 @@ const compactReadySmith = await page.evaluate(() => {
     leaveEnabled: leave instanceof HTMLButtonElement && !leave.disabled,
     cardOverlaps: [...document.querySelectorAll('.campfire__deck .card')].filter((card) => overlaps(card, promptBox)).length,
     choiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => overlaps(choice)).length,
-    seatOverlaps: [...document.querySelectorAll('button.campfire__seat')].filter((seat) => overlaps(seat)).length,
-    reachableSeats: [...document.querySelectorAll('button.campfire__seat')].filter((seat) => {
-      const box = seat.getBoundingClientRect()
+    switcherOverlaps: [...document.querySelectorAll('.campfire__turn-nav button')].filter((button) => overlaps(button)).length,
+    reachableSwitchers: [...document.querySelectorAll('.campfire__turn-nav button')].filter((button) => {
+      const box = button.getBoundingClientRect()
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-      return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
+      return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
     }).length,
-    seatCount: document.querySelectorAll('button.campfire__seat').length,
+    switcherCount: document.querySelectorAll('.campfire__turn-nav button').length,
     logVisible: Boolean(document.querySelector('.log') && getComputedStyle(document.querySelector('.log')).display !== 'none'),
     headerChoiceOverlaps: [...document.querySelectorAll('.campfire__choices button')].filter((choice) => {
       const box = choice.getBoundingClientRect()
@@ -12408,13 +12403,13 @@ const compactReadySmith = await page.evaluate(() => {
   }
 })
 await shot('12b-compact-ready-campfire')
-check('the enabled compact Campfire leave control stays clear of cards, choices, and player seats', () => {
+check('the enabled compact Campfire leave control stays clear of cards, choices, and player navigation', () => {
   assert(compactReadySmith.leaveEnabled, `the ready party cannot leave: ${JSON.stringify(compactReadySmith)}`)
   assertEqual(compactReadySmith.cardOverlaps, 0, JSON.stringify(compactReadySmith))
   assertEqual(compactReadySmith.choiceOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.seatOverlaps, 0, JSON.stringify(compactReadySmith))
-  assertEqual(compactReadySmith.reachableSeats, compactReadySmith.seatCount, JSON.stringify(compactReadySmith))
-  assert(!compactReadySmith.logVisible, `the Run Log covers the compact party strip: ${JSON.stringify(compactReadySmith)}`)
+  assertEqual(compactReadySmith.switcherOverlaps, 0, JSON.stringify(compactReadySmith))
+  assertEqual(compactReadySmith.reachableSwitchers, compactReadySmith.switcherCount, JSON.stringify(compactReadySmith))
+  assert(!compactReadySmith.logVisible, `the Run Log covers the compact player controls: ${JSON.stringify(compactReadySmith)}`)
   assertEqual(compactReadySmith.headerChoiceOverlaps, 0, `the run header covers a Campfire choice: ${JSON.stringify(compactReadySmith)}`)
 })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -12437,7 +12432,7 @@ check('Rest heals and Smith upgrades, and the party returns to the map', () => {
 })
 
 // Peace Pipe uses the same full-card picker as Smith but has no upgrade preview.
-// A selected removal must still return the local party switcher so another
+// A selected removal must keep local player navigation available so another
 // player can finish their campfire choice.
 await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'campfire-peace-pipe'))
 await bypassNeow()
@@ -12450,22 +12445,21 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
-await page.locator('.campfire__seat').first().click()
 await page.locator('.campfire__prompt').getByRole('button', { name: /Rest/ }).click()
-const peacePipeSkipSeat = await page.locator('.campfire__seat').nth(1).evaluate((seat) => {
-  const box = seat.getBoundingClientRect()
+const peacePipeSkipControl = await page.getByRole('button', { name: 'Next campfire player' }).evaluate((button) => {
+  const box = button.getBoundingClientRect()
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
+  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
 })
 await page.locator('.campfire__deck--remove .card').first().click()
-const peacePipeNextSeat = await page.locator('.campfire__seat').nth(1).evaluate((seat) => {
-  const box = seat.getBoundingClientRect()
+const peacePipeNextControl = await page.getByRole('button', { name: 'Next campfire player' }).evaluate((button) => {
+  const box = button.getBoundingClientRect()
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === seat || seat.contains(hit)))
+  return box.width > 0 && box.height > 0 && Boolean(hit && (hit === button || button.contains(hit)))
 })
-check('Peace Pipe keeps the local player switcher available with or without a removal', () => {
-  assert(peacePipeSkipSeat, 'the next player seat is hidden or covered before the optional removal is chosen')
-  assert(peacePipeNextSeat, 'the next player seat stayed hidden or covered after a Peace Pipe choice')
+check('Peace Pipe keeps local player navigation available with or without a removal', () => {
+  assert(peacePipeSkipControl, 'the next-player control is hidden or covered before the optional removal is chosen')
+  assert(peacePipeNextControl, 'the next-player control stayed hidden or covered after a Peace Pipe choice')
 })
 
 await page.evaluate(() => window.__STS_DEBUG__.reset(1, 'campfire-solo'))
@@ -12478,7 +12472,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForSelector('.campfire')
-const soloCampfireSummaryVisible = await page.locator('.campfire__players').isVisible()
+const soloCampfireSummaryCount = await page.locator('.campfire__players, .campfire__seat, .campfire__turn-nav').count()
 await page.locator('.campfire__prompt').getByRole('button', { name: /Smith/ }).click()
 await page.locator('.campfire__deck--smith .card').first().click()
 await page.setViewportSize({ width: 320, height: 568 })
@@ -12489,9 +12483,8 @@ const compactSoloSmith = await page.evaluate(() => {
   const card = deck?.querySelector('.card')
   const cardBox = card?.getBoundingClientRect()
   const promptBox = prompt?.getBoundingClientRect()
-  const players = document.querySelector('.campfire__players')
   return {
-    playersVisible: Boolean(players && getComputedStyle(players).display !== 'none'),
+    redundantPlayerUi: document.querySelectorAll('.campfire__players, .campfire__seat, .campfire__turn-nav').length,
     documentScrolls: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
     deckScrollsHorizontally: Boolean(deck && deck.scrollWidth > deck.clientWidth + 1),
     cardHeight: cardBox?.height ?? 0,
@@ -12500,8 +12493,8 @@ const compactSoloSmith = await page.evaluate(() => {
   }
 })
 check('a compact solo Smith picker uses the full scene instead of reserving a player switcher', () => {
-  assert(!soloCampfireSummaryVisible, 'the solo Campfire shows a redundant player summary before choosing')
-  assert(!compactSoloSmith.playersVisible, `the solo portrait still consumes picker height: ${JSON.stringify(compactSoloSmith)}`)
+  assertEqual(soloCampfireSummaryCount, 0, 'the solo Campfire shows redundant player UI before choosing')
+  assertEqual(compactSoloSmith.redundantPlayerUi, 0, `the solo player UI still consumes picker height: ${JSON.stringify(compactSoloSmith)}`)
   assert(!compactSoloSmith.documentScrolls, `the solo picker makes the page scroll: ${JSON.stringify(compactSoloSmith)}`)
   assert(!compactSoloSmith.deckScrollsHorizontally, `the solo picker scrolls sideways: ${JSON.stringify(compactSoloSmith)}`)
   assert(compactSoloSmith.visibleCardHeight >= compactSoloSmith.cardHeight - 1,

@@ -1,16 +1,6 @@
-/* The rest site is staged from behind the party, with one shared smoke-cloud
-   choice panel. Each living party combination has one baked scene so the
-   character-select designs keep a coherent seated pose around the fire.
-
-   The prompt panel and the seated party are both positioned absolutely
-   against `.campfire` itself, the same way the merchant scene floats its
-   title and party over a fixed backdrop instead of stacking them in normal
-   flow. Opening the Smith card picker grows the prompt panel a lot — in flex
-   flow that shoved the seats (and the whole party) down the page, sliding
-   them off their spot on the ground since the background doesn't move with
-   its content. Anchoring the seats to the bottom of `.campfire` independent
-   of the prompt's height keeps them glued to the floor no matter what the
-   prompt is showing. */
+/* Each living party combination has one baked scene so the character-select
+   designs keep a coherent seated pose around the fire. The prompt floats over
+   that scene instead of moving the painted party when a card picker opens. */
 .sts-scope .campfire {
   position: relative;
   isolation: isolate;
@@ -34,12 +24,6 @@
      reasonable minimum (`42rem`). */
   flex-shrink: 0;
   min-height: max(42rem, 100%, calc(100dvh - 5rem));
-  /* How much of `.campfire`'s own height, measured up from the bottom, the
-     seated party's box (`.campfire__players`) occupies — shared with the
-     prompt panel's max-height below so a big Smith/Peace Pipe deck can't
-     grow the prompt down into the party. Redefined per breakpoint wherever
-     `.campfire__players`'s own height/bottom-offset changes. */
-  --campfire-floor-reserve: clamp(18rem, 45vh, 28rem);
 }
 
 /* A wide four-seat painting cannot both cover a portrait phone and keep its
@@ -78,7 +62,7 @@
   left: 50%;
   translate: -50% 0;
   width: min(47rem, calc(100% - 2rem));
-  max-height: min(43vh, 24rem, calc(100% - var(--campfire-floor-reserve) - 2.5rem));
+  max-height: min(55vh, 24rem, calc(100% - 6rem));
   overflow: auto;
   padding: 0.75rem clamp(0.8rem, 2vw, 1.5rem) 1rem;
   text-align: center;
@@ -122,6 +106,12 @@
 }
 
 .sts-scope .campfire__name { color: var(--light-yellow); text-shadow: 2px 2px 0 rgb(0 0 0 / 0.6); }
+
+.sts-scope .campfire__turn-nav button {
+  min-width: var(--key-min-height);
+  min-height: var(--key-min-height);
+  padding: 0 0.65rem;
+}
 
 /* Rest and Smith are the decision of the screen; they get the size to say so. */
 .sts-scope .campfire__choices button {
@@ -177,31 +167,6 @@
   min-height: calc(100dvh - 5rem);
 }
 
-.sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__players,
-.sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__players,
-.sts-scope .campfire:has(.campfire__deck--smith):not(:has(.campfire__deck--smith .card--selected)) .campfire__players {
-  display: none;
-}
-
-/* Once Smith is picked, or while optional Peace Pipe removal is open, reserve
-   one responsive seat strip so local parties can always move to the next player. */
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected),
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) {
-  --campfire-switcher-height: clamp(4rem, 12vh, 12rem);
-}
-
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
-  max-height: calc(100% - var(--campfire-switcher-height) - 0.75rem);
-}
-
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__players,
-.sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__players {
-  z-index: 6;
-  bottom: 0.25rem;
-  height: var(--campfire-switcher-height);
-}
-
 .sts-scope .campfire:has(.campfire__deck) .campfire__leave:disabled { display: none; }
 
 .sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button {
@@ -214,8 +179,7 @@
 .sts-scope .campfire__prompt:has(.campfire__deck) .campfire__choices button > img { display: none; }
 
 @media (max-height: 600px) {
-  .sts-scope .campfire__prompt:has(.campfire__deck--smith .card--selected) h2,
-  .sts-scope .campfire__prompt:has(.campfire__deck--remove) h2 {
+  .sts-scope .campfire__prompt:has(.campfire__deck) h2 {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -236,17 +200,12 @@
 }
 
 @media (max-width: 700px) {
-  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) { min-height: 100%; }
+  .sts-scope .campfire:has(.campfire__deck) { min-height: 100%; }
   .sts-scope:has(.campfire .campfire__deck) .log { display: none; }
 
   .sts-scope .campfire:has(.campfire__deck) .campfire__prompt {
     top: 3.5rem;
-    max-height: calc(100% - 4rem);
-  }
-
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__prompt,
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__prompt {
-    max-height: calc(100% - var(--campfire-switcher-height) - 3.75rem);
+    max-height: calc(100% - 8rem);
   }
 
   .sts-scope .campfire:has(.campfire__deck) .campfire__leave:not(:disabled) {
@@ -256,52 +215,7 @@
     max-width: 40%;
   }
 
-  .sts-scope .campfire:has(.campfire__deck):not(:has(button.campfire__seat)) .campfire__prompt,
-  .sts-scope .campfire[data-party-size='1']:has(.campfire__deck) .campfire__prompt {
-    max-height: calc(100% - 8rem);
-  }
 }
-
-.sts-scope .campfire__players {
-  position: absolute;
-  z-index: 6;
-  left: 1rem;
-  right: 12rem;
-  bottom: 1rem;
-  display: flex;
-  align-items: flex-end;
-  gap: 0.4rem;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.sts-scope .campfire[data-party-size='1'] .campfire__players { display: none; }
-
-.sts-scope .campfire__seat {
-  display: grid;
-  flex: 1 1 0;
-  width: 0;
-  max-width: 9rem;
-  min-width: var(--key-min-height);
-  min-height: var(--key-min-height);
-  padding: 0.35rem 0.55rem;
-  overflow: hidden;
-  color: var(--ink);
-  background: rgb(12 16 14 / 0.82);
-  border: 1px solid var(--trim-dim);
-  cursor: pointer;
-  transition: filter var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
-}
-
-.sts-scope div.campfire__seat { cursor: default; }
-
-.sts-scope .campfire__seat > span,
-.sts-scope .campfire__seat > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.sts-scope .campfire__seat > small { color: var(--ink-dim); }
-
-.sts-scope .campfire__seat:hover,
-.sts-scope .campfire__seat[aria-pressed='true'] { filter: brightness(1.12); transform: translateY(-0.3rem); }
 
 .sts-scope .campfire__leave {
   position: absolute;
@@ -311,26 +225,11 @@
 }
 
 @media (max-width: 700px) {
-  /* Keep the player switcher above the fixed mobile Run Log tab. */
-  .sts-scope .campfire { --campfire-floor-reserve: 20.5rem; }
-  .sts-scope .campfire__prompt { width: calc(100% - 0.5rem); max-height: min(48vh, calc(100% - var(--campfire-floor-reserve) - 2.5rem)); }
+  .sts-scope .campfire__prompt { top: 3.5rem; width: calc(100% - 0.5rem); max-height: min(58vh, calc(100% - 5rem)); }
   .sts-scope .campfire__choices { flex-wrap: wrap; justify-content: center; }
   .sts-scope .campfire__choices button { min-width: 7rem; min-height: 5.4rem; }
   .sts-scope .campfire__choices button > img { width: 5rem; height: 2.8rem; }
-  .sts-scope .campfire__prompt:has(.campfire__deck) { max-height: calc(100% - 0.5rem); }
   .sts-scope .campfire__deck { --card-width: clamp(6.5rem, 31vw, 8rem); justify-content: flex-start; }
-  .sts-scope .campfire__players { left: 0.5rem; right: 0.5rem; bottom: 4rem; }
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected),
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) {
-    --campfire-switcher-height: 8rem;
-  }
-
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--smith .card--selected) .campfire__players,
-  .sts-scope .campfire:not([data-party-size='1']):has(button.campfire__seat):has(.campfire__deck--remove) .campfire__players {
-    left: 0.5rem;
-    right: 0.5rem;
-    bottom: 4rem;
-  }
 }
 
 @media (max-height: 700px) {
@@ -340,7 +239,6 @@
 }
 
 @media (max-height: 520px) {
-  .sts-scope .campfire:not(:has(.campfire__deck)) { --campfire-floor-reserve: 10.625rem; }
   .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__prompt {
     top: 0.25rem;
     padding-block: 0.35rem;
@@ -351,5 +249,4 @@
     min-height: 2.75rem;
   }
   .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__choices button > img { display: none; }
-  .sts-scope .campfire:not(:has(.campfire__deck)) .campfire__players { bottom: 4rem; }
 }
