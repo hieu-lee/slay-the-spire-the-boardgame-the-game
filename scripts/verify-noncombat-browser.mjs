@@ -4405,6 +4405,7 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const owner = run.players[0]
+  run.players.forEach((player) => player.relics.forEach((relic) => { relic.pending = false }))
   const scryCards = Array.from({ length: 3 }, (_, index) => ({
     uid: `browser-sphere-scry-${index}`, defId: index % 2 ? 'defend_ironclad' : 'strike_ironclad', upgraded: false,
   }))
