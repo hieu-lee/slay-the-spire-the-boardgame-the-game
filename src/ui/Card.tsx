@@ -2,7 +2,7 @@ import type React from 'react'
 import { useEffect, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
-import type { Amount, Condition, CountOf, Effect } from '../game/cards.ts'
+import type { Amount, Condition, CountOf, Effect, EnemyTokenKind } from '../game/cards.ts'
 import type { HandEndOfTurnEffect } from '../game/cards.ts'
 import { cardThumbPath } from '../game/assets.ts'
 import { CardFace } from './CardFace.tsx'
@@ -75,6 +75,19 @@ const COUNT_LABEL: Record<CountOf, string> = {
   clawCubesGainedThisCombat: 'Claw cube gained this combat',
 }
 
+const TARGET_TOKEN_LABEL: Record<EnemyTokenKind, string> = {
+  strength: 'Strength',
+  vulnerable: 'Vulnerable',
+  weak: 'Weak',
+  poison: 'Poison',
+}
+
+function targetTokenText(tokens: readonly EnemyTokenKind[]): string {
+  const labels = tokens.map((token) => TARGET_TOKEN_LABEL[token])
+  if (labels.length < 2) return labels[0] ?? ''
+  return `${labels.slice(0, -1).join(', ')}${labels.length > 2 ? ',' : ''} and ${labels.at(-1)}`
+}
+
 function conditionText(condition: Condition): string {
   switch (condition.kind) {
     case 'hasShiv': return 'you have a Shiv'
@@ -117,7 +130,7 @@ function amountText(amount: Amount, hit = false): string {
     parts.push(`${scale} per ${COUNT_LABEL[amount.per]}`)
   }
   if (amount.targetTokens) {
-    parts.push(`1 per ${amount.targetTokens.map((token) => token === 'weak' ? 'Weak' : 'Poison').join(' and ')} on the target`)
+    parts.push(`1 per ${targetTokenText(amount.targetTokens)} on the target`)
   }
   return parts.join(' plus ')
 }
@@ -130,7 +143,7 @@ function timesText(times: Amount): string {
   if (times.bonus) parts.push(`${count(times.bonus.plus)} if ${conditionText(times.bonus.when)}`)
   if (times.per) parts.push(`${count(times.scale ?? 1)} per ${COUNT_LABEL[times.per]}`)
   if (times.targetTokens) {
-    parts.push(`once per ${times.targetTokens.map((token) => token === 'weak' ? 'Weak' : 'Poison').join(' and ')} on the target`)
+    parts.push(`once per ${targetTokenText(times.targetTokens)} on the target`)
   }
   return parts.join(' plus ') || '0 times'
 }
