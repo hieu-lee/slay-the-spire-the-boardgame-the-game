@@ -275,6 +275,8 @@
   overflow-x: auto;
 }
 
+.sts-scope .campfire[data-party-size='1'] .campfire__players { display: none; }
+
 .sts-scope .campfire__seat {
   display: grid;
   flex: 1 1 0;

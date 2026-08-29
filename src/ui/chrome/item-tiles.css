@@ -137,13 +137,6 @@
 .app-shell--online .map,
 .app-shell--online .campfire { margin-bottom: -1.5rem; }
 
-/* Inside `.online-mutations` (a gapless flex column) a band that follows the
-   belt already touches it; one that is FIRST still has the header's 20px above
-   it — which is the common case, not a rare one: right after Neow, whenever
-   nobody holds a potion, and whenever a pending relic suppresses the belt. */
-.app-shell--online .outside-potions + .map,
-.app-shell--online .outside-potions + .campfire { margin-top: 0; }
-
 .app-shell--online .online-mutations > .map:first-child,
 .app-shell--online .online-mutations > .campfire:first-child { margin-top: -1.25rem; }
 

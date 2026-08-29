@@ -9,37 +9,39 @@ type Props = {
   players: Player[]
   viewerId: string
   potionLimit: number
+  disabled?: boolean
   onTrade: (potionId: string, playerId: string) => void
   onUse: (potionId: string, replacePotionId?: string) => void
 }
 
 /** Potions are the only tradeable component, and only outside combat (p.8). */
-export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUse }: Props) {
+export function OutsidePotionBar({ players, viewerId, potionLimit, disabled = false, onTrade, onUse }: Props) {
   const [giving, setGiving] = useState<{ index: number; id: string; context: string } | null>(null)
   const [replacing, setReplacing] = useState<{ index: number; id: string; context: string } | null>(null)
   const viewer = players.find((player) => player.id === viewerId)
   const viewerDead = viewer?.dead ?? true
+  const unavailable = viewerDead || disabled
   const inventory = viewer?.potions.join('\0') ?? ''
-  const recipients = viewerDead ? [] : players.filter((player) => player.id !== viewerId && !player.dead &&
+  const recipients = unavailable ? [] : players.filter((player) => player.id !== viewerId && !player.dead &&
     player.potions.length < potionLimit && !player.relics.some((relic) => relic.defId === 'sozu'))
   const recipientIds = recipients.map((player) => player.id).join('\0')
   const sozu = viewer?.relics.some((relic) => relic.defId === 'sozu') ?? false
-  const inventoryContext = `${viewerId}\0${inventory}\0${sozu}\0${viewerDead}`
+  const inventoryContext = `${viewerId}\0${inventory}\0${sozu}\0${unavailable}`
   const giveContext = `${inventoryContext}\0${recipientIds}`
   useLayoutEffect(() => {
     setGiving(null)
     setReplacing(null)
-  }, [viewerId, inventory, recipientIds, sozu, viewerDead])
+  }, [viewerId, inventory, recipientIds, sozu, unavailable])
   // Whether this item's replacement chooser is already open. Its button toggles,
   // so with the chooser up the next press only collapses it — free and
   // reversible, which is nothing to read first and nothing to promise.
   const choosingReplacement = (index: number, id: string) =>
     replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
   if (!viewer?.potions.length) return null
-  return <aside className="outside-potions" aria-label="Potion inventory">
+  return <aside className="outside-potions" aria-label="Potion inventory" aria-disabled={disabled || undefined}>
     <strong>Potions</strong>
     {viewer.potions.map((id, index) => <div className="outside-potions__item" key={`${id}-${index}`}>
-      <PotionIcon id={id} />
+      {id !== 'blood_potion' && id !== 'entropic_brew' ? <PotionIcon id={id} /> : null}
       {/* The anchor WRAPS the button rather than sitting inside it, the way the
           combat action bar arranges the same pair. That nesting is what lets the
           anchor gate its own button on a device with no hover, so the potion's
@@ -48,7 +50,7 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
           else's control, and the belt kept spending potions on first touch. */}
       {id === 'blood_potion' ? <PotionTooltipAnchor id={id} confirmLabel="drink">
         <button type="button" aria-label={`Use ${potionDef(id).name}`}
-          title={`Use ${potionDef(id).name}`} disabled={viewerDead || viewer.hp >= healingCapFor(viewer)}
+          title={`Use ${potionDef(id).name}`} disabled={unavailable || viewer.hp >= healingCapFor(viewer)}
           onClick={() => onUse(id)}><ItemImage kind="potion" id={id} /></button>
       </PotionTooltipAnchor> : null}
       {/* Entropic Brew only drinks when there is room for what it pours; on a
@@ -60,24 +62,25 @@ export function OutsidePotionBar({ players, viewerId, potionLimit, onTrade, onUs
         <button type="button" aria-label={`Use ${potionDef(id).name}`}
           aria-expanded={!sozu && viewer.potions.length - 1 + 2 > potionLimit
             ? replacing?.context === inventoryContext && replacing.index === index && replacing.id === id : undefined}
-          title={`Use ${potionDef(id).name}`} disabled={viewerDead} onClick={() => {
+          title={`Use ${potionDef(id).name}`} disabled={unavailable} onClick={() => {
           if (sozu || viewer.potions.length - 1 + 2 <= potionLimit) onUse(id)
           else setReplacing(replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
             ? null : { index, id, context: inventoryContext })
         }}><ItemImage kind="potion" id={id} /></button>
       </PotionTooltipAnchor> : null}
-      {id === 'entropic_brew' && !viewerDead && !sozu && replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
+      {id === 'entropic_brew' && !unavailable && !sozu && replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
         ? <div className="outside-potions__targets">
         {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, heldIndex) =>
           <button type="button" key={`${held}:${heldIndex}`} onClick={() => {
             onUse(id, held); setReplacing(null)
           }}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
       </div> : null}
-      <button type="button" aria-label={`Give ${potionDef(id).name}`} disabled={recipients.length === 0}
+      <button type="button" className="outside-potions__give" aria-label={`Give ${potionDef(id).name}`}
+        title={`Give ${potionDef(id).name}`} disabled={recipients.length === 0}
         aria-expanded={recipients.length > 0
           ? giving?.context === giveContext && giving.index === index && giving.id === id : undefined} onClick={() =>
         setGiving(giving?.context === giveContext && giving.index === index && giving.id === id
-          ? null : { index, id, context: giveContext })}>Give</button>
+          ? null : { index, id, context: giveContext })}><span aria-hidden="true">⇢</span></button>
       {recipients.length > 0 && giving?.context === giveContext && giving.index === index && giving.id === id
         ? <div className="outside-potions__targets">
         {recipients.map((player) =>

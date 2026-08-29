@@ -160,16 +160,6 @@
   opacity: 0.72;
 }
 
-.outside-potions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-block: 1px solid var(--edge);
-  background: rgb(8 7 6 / 86%);
-  overflow-x: auto;
-}
-
 .outside-potions__item {
   position: relative;
   display: flex;
@@ -178,7 +168,6 @@
   min-width: max-content;
 }
 
-.outside-potions button,
 .outside-potions__targets button {
   min-height: 44px;
   padding: 0.35rem 0.65rem;
@@ -188,21 +177,30 @@
   border-radius: 4px;
 }
 
-.outside-potions button:hover:not(:disabled),
-.outside-potions button:focus-visible {
+.outside-potions__targets button:hover:not(:disabled),
+.outside-potions__targets button:focus-visible {
   color: var(--gold);
   border-color: var(--gold);
 }
 
-.outside-potions button:disabled {
+.outside-potions__targets button:disabled {
   color: var(--ink-dim);
   background: #181510;
   opacity: 0.65;
 }
 
 .outside-potions__targets {
-  display: flex;
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  display: grid;
   gap: 6px;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.4rem;
+  background: rgb(8 7 6 / 96%);
+  box-shadow: 0 0.5rem 1.2rem rgb(0 0 0 / 0.55);
 }
 
 .outside-potions__targets .item-icon-image {

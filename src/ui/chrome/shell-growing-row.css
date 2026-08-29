@@ -1,30 +1,3 @@
-/* What the potion belt costs the SHELL, named because the shop subtracts it from
-   its own height. Its row plus the gap under it, not the 62px painted box — the
-   box overlaps the gap, so reserving the box over-reserved by about 12px and left
-   a short window scrolling for space it already had.
-   A DESKTOP measurement. On a phone the belt's row costs about 14px, so the phone
-   stage gives up roughly 36px it could keep; the rug there already scrolls, so it
-   costs scroll length rather than visible stock. */
-.sts-scope { --belt-band: 3.125rem; }
-
-/* `grid-template-rows: auto 1fr auto` hands the tall row to the shell's SECOND
-   child, and once a player holds a potion that child is the belt — a 3rem strip
-   that then stretched to fill the window and pushed the screen below it into an
-   auto row. On the reward screen that read as a band of dead space above the
-   panel that only appeared after the party picked up its first potion. */
-.app-shell:has(> .outside-potions) { grid-template-rows: auto auto 1fr; }
-
-/* Desktop only. `:has(.outside-potions)` makes this MORE specific than the phone
-   block's plain `.sts-scope .merchant-stage`, so unscoped it won there regardless
-   of order — a phone holding a potion lost 42px of stage to a desktop height it
-   was never meant to use. */
-@media (min-width: 761px) {
-  .sts-scope:has(.outside-potions) .merchant-stage {
-    height: calc(100dvh - 6.6rem - var(--belt-band));
-    min-height: min(34rem, calc(100dvh - 6.6rem - var(--belt-band)));
-  }
-}
-
 /* The shop is the one screen whose stock reaches all four corners, so the log is
    docked out of the stock's way entirely rather than moved from one corner of it
    to another. TOP right, over the decorative merchant art, which is the only

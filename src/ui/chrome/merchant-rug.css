@@ -156,24 +156,18 @@
   .settings-volume { grid-template-columns: 1fr; }
   .settings-toggle, .settings-action, .settings-select { grid-template-columns: minmax(0, 1fr) auto; }
 
-  /* A phone cannot show the whole rug, so the STAGE is the one scroller and it
-     is given every pixel below the header — the desktop `max-height` left it
-     shorter than that for no gain. The belt variant is spelled out because the
-     desktop `:has(.outside-potions)` height carries the same specificity, so
-     whichever comes later wins; that rule is scoped to `min-width: 761px` for
-     exactly this reason. Everything below the fold is reached by scrolling the
-     stage. */
-  .sts-scope .merchant-stage,
-  .sts-scope:has(.outside-potions) .merchant-stage {
+  /* A phone cannot show the whole rug, so the stage scrolls below the header. */
+  .sts-scope .merchant-stage {
     display: block;
     height: auto;
     max-height: none;
     min-height: calc(100dvh - 4rem);
   }
-  /* The belt is a sibling strip, so its band comes off the stage's share or the
-     page starts scrolling behind the stage's own scroll. */
-  .sts-scope:has(.outside-potions) .merchant-stage { min-height: calc(100dvh - 4rem - var(--belt-band)); }
 
+  /* A held Potion can wrap the compact HUD onto one extra line. Keep the shop
+     scroller inside the remaining viewport so its fixed Run Log cannot bury
+     the last Potion tile. */
+  .sts-scope:has(.outside-potions) .merchant-stage { min-height: calc(100dvh - 7.125rem); }
 }
 
 /* Whenever the hover tip is not a usable way to read an item, the shelf tile
