@@ -4312,9 +4312,47 @@ await page.evaluate(() => {
   run.neow = null
   run.roomState = null
   run.campaign.finalized = false
+  run.players[0].damageStats = { attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 }
+  run.players.push({
+    ...structuredClone(run.players[0]),
+    id: 'damage-watcher',
+    name: 'Watcher',
+    character: 'watcher',
+    damageStats: { attack: 8, poison: 0, special: 2, taken: 3, blocked: 1 },
+  })
   debug.setRun(run)
 })
 await page.getByRole('heading', { name: 'Act 3 complete' }).waitFor()
+const damageRow = page.locator('.run-summary__damage-row').first()
+const dealtTrack = damageRow.locator('.run-summary__damage-track--dealt')
+const takenTrack = damageRow.locator('.run-summary__damage-track--taken')
+await dealtTrack.hover()
+const damageChart = await page.evaluate(() => {
+  const row = document.querySelector('.run-summary__damage-row')
+  const icon = row?.querySelector('.run-summary__damage-icon')
+  const tip = row?.querySelector('.run-summary__damage-track--dealt .run-summary__damage-tip')
+  const filledWidth = (track) => [...track?.querySelectorAll('b') ?? []]
+    .reduce((total, segment) => total + segment.getBoundingClientRect().width, 0)
+  const dealt = row?.querySelector('.run-summary__damage-track--dealt')
+  const peerDealt = document.querySelectorAll('.run-summary__damage-track--dealt')[1]
+  return {
+    icon: icon?.getAttribute('src'),
+    segments: row?.querySelectorAll('.run-summary__damage-track b').length,
+    totals: [...row?.querySelectorAll('.run-summary__damage-track em') ?? []].map((item) => item.textContent),
+    dealtWidth: filledWidth(dealt),
+    peerDealtWidth: filledWidth(peerDealt),
+    tip: tip ? getComputedStyle(tip).visibility : null,
+    tipBackground: tip ? getComputedStyle(tip).backgroundColor : null,
+    tipOpacity: tip ? getComputedStyle(tip).opacity : null,
+    detail: tip?.textContent,
+  }
+})
+await page.screenshot({ path: join(outDir, 'run-summary-damage-chart.png'), fullPage: true })
+await takenTrack.hover()
+const takenChart = await takenTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+  shown: getComputedStyle(tip).visibility,
+  detail: tip.textContent,
+}))
 const summaryDensity = await page.evaluate(() => ({
   scrolls: document.documentElement.scrollHeight > innerHeight + 1,
   roomBackground: getComputedStyle(document.querySelector('.room-screen')).backgroundImage,
@@ -4330,6 +4368,19 @@ check('run completion keeps facts and players out of nested cards', () => {
   assertEqual(summaryDensity.roomBackground, 'none')
   assert(summaryDensity.tallies.every((item) => item.background === 'none' && item.shadow === 'none'))
   assert(summaryDensity.seats.every((background) => background === 'none'))
+})
+check('run completion shows compendium portraits and separate hoverable damage totals', () => {
+  assert(damageChart.icon?.includes('/assets/menu/compendium-icons/ironclad.webp'), `wrong portrait ${damageChart.icon}`)
+  assertEqual(damageChart.segments, 5)
+  assertDeepEqual(damageChart.totals, ['20', '9'])
+  assert(Math.abs(damageChart.dealtWidth - damageChart.peerDealtWidth * 2) < 1,
+    `damage bars are not proportional: ${damageChart.dealtWidth}/${damageChart.peerDealtWidth}`)
+  assertEqual(damageChart.tip, 'visible')
+  assertEqual(damageChart.tipBackground, 'rgb(30, 41, 44)')
+  assertEqual(damageChart.tipOpacity, '1')
+  assert(damageChart.detail?.includes('Poison damage') && !damageChart.detail.includes('Damage blocked'), damageChart.detail)
+  assertEqual(takenChart.shown, 'visible')
+  assert(takenChart.detail?.includes('Damage blocked') && !takenChart.detail.includes('Poison damage'), takenChart.detail)
 })
 
 await page.setViewportSize({ width: 1024, height: 492 })

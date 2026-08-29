@@ -2875,7 +2875,7 @@ function redactCombat(combat, viewerId) {
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
-    enemies: combat.enemies,
+    enemies: combat.enemies.map(({ poisonSources, ...enemy }) => enemy),
     players: combat.players.map((player) => redactPlayer(player, viewerId)),
   }
 }
@@ -2939,6 +2939,7 @@ function redactPlayer(player, viewerId) {
     darkOrbEvokeBonus: player.darkOrbEvokeBonus ?? 0,
     orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     lightningEndTurnBonus: player.lightningEndTurnBonus ?? 0,
+    damageStats: structuredClone(player.damageStats),
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,

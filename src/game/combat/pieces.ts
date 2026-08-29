@@ -7,7 +7,7 @@
 // or a Relic, and that lives a layer up, in the resolver.
 import { enemyLabel, playersInRowOf } from './board.ts'
 import type { CombatState } from './types.ts'
-import { applyDamage, applyHpLoss, gainBlock, gainPoison, gainStrength, totalPoisonInPlay } from '../damage.ts'
+import { applyDamage, applyHpLoss, gainBlock, gainPoison, gainStrength, recordDamageDealt, totalPoisonInPlay } from '../damage.ts'
 import { enemyAbilities, enemyDef, startingHp } from '../enemies.ts'
 import { addToDiscardTop } from '../piles.ts'
 import { CAPS } from '../types.ts'
@@ -91,11 +91,27 @@ export function triggerAngry(state: CombatState, enemy: Enemy, damagingHits: num
 }
 
 /** Adds Poison through the shared cube cap. */
-export function putPoison(state: CombatState, target: Enemy, amount: number): number {
+export function putPoison(state: CombatState, target: Enemy, amount: number, ownerId?: string): number {
   if (target.dead) return 0
   const before = target.poison
   target.poison = gainPoison(target.poison, amount, totalPoisonInPlay(state.enemies))
-  return target.poison - before
+  const gained = target.poison - before
+  if (gained > 0 && ownerId) target.poisonSources = {
+    ...target.poisonSources,
+    [ownerId]: (target.poisonSources?.[ownerId] ?? 0) + gained,
+  }
+  return gained
+}
+
+/** Credit Poison's actual HP loss to the players whose tokens are on the enemy. */
+export function recordPoisonDamage(state: CombatState, target: Enemy, amount: number): void {
+  let remaining = Math.max(0, amount)
+  for (const [playerId, tokens] of Object.entries(target.poisonSources ?? {})) {
+    const credited = Math.min(remaining, tokens)
+    recordDamageDealt(state.players.find((player) => player.id === playerId), 'poison', credited)
+    remaining -= credited
+    if (remaining === 0) return
+  }
 }
 
 function enemyInGroup(enemy: Enemy, group: 'gremlin' | 'darkling'): boolean {
@@ -111,6 +127,7 @@ export function reviveAll(state: CombatState, group: 'gremlin' | 'darkling'): nu
     target.dead = false
     target.hp = group === 'darkling' ? 4 : startingHp(enemyDef(target.defId, target.ascension), state.players.length)
     target.block = target.strength = target.vulnerable = target.weak = target.poison = 0
+    delete target.poisonSources
     target.actionIndex = 0
     target.abilityUsed = false
     revived++

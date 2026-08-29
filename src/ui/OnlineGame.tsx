@@ -82,6 +82,7 @@ function onlineSummarySeat(player: VisiblePlayer): SummarySeat {
     gold: player.gold,
     dead: player.dead,
     relics: player.relics,
+    damageStats: player.damageStats,
     deck: player.deck ?? undefined,
   }
 }

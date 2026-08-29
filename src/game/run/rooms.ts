@@ -269,6 +269,7 @@ export function resolveCombat(state: RunState): RunState {
       row: after.row,
       potions: after.potions,
       relics: after.relics,
+      damageStats: after.damageStats,
       dead: after.dead,
     }
   })
