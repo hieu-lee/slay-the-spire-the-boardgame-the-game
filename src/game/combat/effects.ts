@@ -65,6 +65,9 @@ import {
   gainVulnerable,
   gainWeak,
   hitDamage,
+  recordDamageBlocked,
+  recordDamageDealt,
+  recordDamageTaken,
 } from '../damage.ts'
 import { actionsForEnemy, enemyAbilities, enemyDef } from '../enemies.ts'
 import { addToDrawTop, drawCards, scry } from '../piles.ts'
@@ -162,7 +165,7 @@ export function triggerEnemyDeath(state: CombatState, enemy: Enemy): void {
     for (const target of state.enemies.filter((candidate) =>
       !candidate.dead && (enemy.isBoss || candidate.row === enemy.row || candidate.isBoss))) {
       if (target.dead) continue
-      damageEnemyLogged(state, target, attachment.damage, 'Corpse Explosion')
+      damageEnemyLogged(state, target, attachment.damage, 'Corpse Explosion', owner)
     }
     if (owner) discardByCardEffect(state, owner, [attachment.card])
   }
@@ -180,10 +183,12 @@ export function damageEnemyLogged(
   enemy: Enemy,
   damage: number,
   source?: string,
+  actor?: Player,
 ): void {
   const wasAlive = !enemy.dead
   const hpBefore = enemy.hp
   const result = damageEnemy(state, enemy, damage)
+  recordDamageDealt(actor, 'special', result.blocked + result.hpLost)
   const name = enemyLabel(state.enemies, enemy)
   if (source) {
     const lost = hpBefore - enemy.hp
@@ -230,7 +235,7 @@ function preventPlayerHpLoss(state: CombatState, player: Player, amount: number)
   return true
 }
 
-export function losePlayerHp(state: CombatState, player: Player, amount: number): number {
+export function losePlayerHp(state: CombatState, player: Player, amount: number, countsAsDamage = false): number {
   const remaining = remainingRoundHpLoss(player)
   const limited = remaining === undefined
     ? amount
@@ -241,6 +246,7 @@ export function losePlayerHp(state: CombatState, player: Player, amount: number)
   if (outcome.hpLost > 0) {
     player.lostHpThisCombat = true
     player.hpLostThisRound = (player.hpLostThisRound ?? 0) + outcome.hpLost
+    if (countsAsDamage) recordDamageTaken(player, outcome.hpLost)
   }
   player.hp = outcome.hp
   if (player.hp === 0) {
@@ -266,8 +272,9 @@ export function losePlayerHp(state: CombatState, player: Player, amount: number)
 
 export function damagePlayer(state: CombatState, player: Player, damage: number): { fullyBlocked: boolean; hpLost: number } {
   const outcome = applyDamage(player.block, player.hp, damage)
+  recordDamageBlocked(player, player.block - outcome.block)
   player.block = outcome.block
-  return { fullyBlocked: outcome.fullyBlocked, hpLost: losePlayerHp(state, player, outcome.hpLost) }
+  return { fullyBlocked: outcome.fullyBlocked, hpLost: losePlayerHp(state, player, outcome.hpLost, true) }
 }
 
 export function releasePendingTriggers(state: CombatState, context: PlayContext): void {
@@ -374,6 +381,7 @@ export function applyEffect(
           if (actor.damageDealtZeroThisTurn) amount = 0
           if (flying?.kind === 'flying') amount = Math.min(amount, flying.maxDamagePerHit)
           const result = damageEnemy(state, target, amount, context.sourceCardType !== undefined)
+          recordDamageDealt(actor, 'attack', result.blocked + result.hpLost)
           blocked += result.blocked
           curled = result.curled || curled
           if (result.hpLost > 0) {
@@ -381,7 +389,7 @@ export function applyEffect(
             context.pendingEnemyDamage?.push({ enemyUid: target.uid, amount: result.hpLost })
           }
           if (!target.dead && actor.hitPoison > 0) {
-            const gained = putPoison(state, target, actor.hitPoison)
+            const gained = putPoison(state, target, actor.hitPoison, actor.id)
             poisonAppliedTotal += gained
             if (gained > 0) poisonEvents += 1
           }
@@ -453,7 +461,7 @@ export function applyEffect(
     case 'damage': {
       // Not a hit: blockable, but unmodified by Strength/Weak/Vulnerable.
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : amountOf(effect.amount, state, actor, target, context), who)
+        damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : amountOf(effect.amount, state, actor, target, context), who, actor)
         if (combatIsOver(state)) return
       }
       return
@@ -470,7 +478,7 @@ export function applyEffect(
           }
           return total
         }, 0)
-        if (icons > 0) damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * icons, who)
+        if (icons > 0) damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : effect.amount * icons, who, actor)
         if (combatIsOver(state)) return
       }
       return
@@ -579,7 +587,7 @@ export function applyEffect(
     }
     case 'poison': {
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
-        const gained = putPoison(state, target, amountOf(effect.amount, state, actor, target, context))
+        const gained = putPoison(state, target, amountOf(effect.amount, state, actor, target, context), actor.id)
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
@@ -601,7 +609,7 @@ export function applyEffect(
       for (const target of resolveEnemyTargets(state, scope, context.enemyUid, context.enemyRow)) {
         const before = target.poison
         const added = before * Math.max(0, effect.factor - 1)
-        const gained = putPoison(state, target, added)
+        const gained = putPoison(state, target, added, actor.id)
         if (gained > 0) {
           note(`${enemyLabel(state.enemies, target)} takes ${gained} Poison`)
           poisonApplied(state, actor, context)
@@ -1751,7 +1759,7 @@ function applyOrbEvokeEffect(
     const targets = lightningDamageTargets(state, actor, chosenTarget, sourceCardId)
     if (!targets) return false
     for (const target of targets) {
-      damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`)
+      damageEnemyLogged(state, target, actor.damageDealtZeroThisTurn ? 0 : 2 + (actor.orbEvokeBonus ?? 0), `${actor.name}'s Lightning orb`, actor)
     }
   } else if (orb === 'frost') {
     const before = actor.block
@@ -1770,6 +1778,7 @@ function applyOrbEvokeEffect(
       actor.damageDealtZeroThisTurn ? 0 :
         3 + actor.powers.length + (actor.orbEvokeBonus ?? 0) + (actor.darkOrbEvokeBonus ?? 0),
       `${actor.name}'s Dark orb`,
+      actor,
     )
   }
   return true
@@ -1845,6 +1854,7 @@ export function resolveOrbAtEndOfTurn(state: CombatState, actor: Player, slot: n
         actor.damageDealtZeroThisTurn ? 0 :
           1 + (actor.orbEndTurnBonus ?? 0) + (actor.lightningEndTurnBonus ?? 0),
         `${actor.name}'s Lightning orb`,
+        actor,
       )
     }
     addPresentationEvent(state, {

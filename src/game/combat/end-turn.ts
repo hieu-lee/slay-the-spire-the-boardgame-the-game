@@ -36,7 +36,7 @@ import {
   triggerSourceById,
   triggerSources,
 } from './effects.ts'
-import { forgetRetain, grantShiftBlock, loseEnemyHp } from './pieces.ts'
+import { forgetRetain, grantShiftBlock, loseEnemyHp, recordPoisonDamage } from './pieces.ts'
 import {
   continueBeforeDraw,
   continueStartTurn,
@@ -168,7 +168,7 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
           ? `${player.name} blocks ${def.name} (${blocked} spent)`
           : `${def.name} did no damage to ${player.name}${blocked > 0 ? ` (${blocked} blocked)` : ''}`]
     } else if (effect.kind === 'loseHp') {
-      const lost = losePlayerHp(state, player, effect.amount)
+      const lost = losePlayerHp(state, player, effect.amount, true)
       if (lost > 0) state.log = [...state.log, `${def.name}: ${player.name} loses ${lost} HP`]
     } else if (effect.kind === 'gainWeak') {
       const before = player.weak
@@ -211,6 +211,7 @@ function continueEndPlayerTurn(
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
       if (enemy && !enemy.dead && enemy.poison > 0) {
         const outcome = loseEnemyHp(next, enemy, enemy.poison)
+        recordPoisonDamage(next, enemy, outcome.hpLost)
         const name = enemyLabel(next.enemies, enemy)
         next.log = [...next.log, `${name} loses ${outcome.hpLost} to Poison`]
         enemy.hp = outcome.hp

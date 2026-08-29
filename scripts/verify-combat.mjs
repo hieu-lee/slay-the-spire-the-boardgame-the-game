@@ -44,6 +44,7 @@ import {
   startTurnNeedsChoice,
 } from '../src/game/combat.ts'
 import { CARDS, STARTER_DECKS, cardDef, faceOf } from '../src/game/cards.ts'
+import { damagePlayer } from '../src/game/combat/effects.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { createRng } from '../src/game/rng.ts'
 import { CAPS } from '../src/game/types.ts'
@@ -147,6 +148,31 @@ check('playing Strike damages the chosen enemy', () => {
   assertEqual(next.players[0].energy, 2, 'Strike costs 1 energy')
   assertEqual(next.players[0].hand.length, 0, 'the card leaves hand')
   assertEqual(next.players[0].discard.length, 1, 'and lands in the discard pile')
+})
+
+check('run damage totals separate attacks, Poison, effects, damage taken, and Block', () => {
+  const strike = instance('strike_ironclad')
+  const poison = instance('deadly_poison')
+  let state = combat([makePlayer({ hand: [strike, poison], energy: 3, block: 1, potions: ['fire_potion'] })], [
+    makeEnemy({ hp: 20, maxHp: 20, block: 1 }),
+  ])
+  state = playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
+  state = activatePotion(state, 'p1', 'fire_potion', { enemyUid: 'e1' })
+  damagePlayer(state, state.players[0], 3)
+  state = playCard(state, 'p1', poison.uid, { enemyUid: 'e1', playerId: null })
+  state = endPlayerTurn(state)
+  assertDeepEqual(state.players[0].damageStats, { attack: 1, poison: 1, special: 4, taken: 2, blocked: 1 })
+})
+
+check('finished combats retain damage totals for the run summary', () => {
+  const run = createRun(91, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }])
+  const completed = { ...run, phase: 'combat', combat: {
+    ...combat([makePlayer({ damageStats: { attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 } })], [
+      makeEnemy({ hp: 0, dead: true }),
+    ]),
+    phase: 'won',
+  } }
+  assertDeepEqual(resolveCombat(completed).players[0].damageStats, { attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 })
 })
 
 check('accepted card and potion actions append bounded public presentation events', () => {

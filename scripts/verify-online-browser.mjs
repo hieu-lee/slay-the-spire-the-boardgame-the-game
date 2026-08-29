@@ -822,6 +822,25 @@ try {
   await Promise.all([a.getByRole('heading', { name: 'The party has fallen' }).waitFor(),
     b.getByRole('heading', { name: 'The party has fallen' }).waitFor()])
   const surrenderedOnlineRun = await snapshot(a)
+  liveRoom.run.players[0].damageStats = { attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 }
+  liveRoom.run.players[1].damageStats = { attack: 8, poison: 0, special: 4, taken: 6, blocked: 1 }
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  const onlineDamageRow = a.locator('.run-summary__damage-row').first()
+  await a.waitForFunction(() => document.querySelector('.run-summary__damage-track em')?.textContent === '20')
+  const onlineDealtTrack = onlineDamageRow.locator('.run-summary__damage-track--dealt')
+  const onlineTakenTrack = onlineDamageRow.locator('.run-summary__damage-track--taken')
+  await onlineDealtTrack.hover()
+  const onlineDamageSnapshot = await snapshot(a)
+  const onlineDealtDetails = await onlineDealtTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+    shown: getComputedStyle(tip).visibility,
+    text: tip.textContent,
+  }))
+  await onlineTakenTrack.hover()
+  const onlineTakenDetails = await onlineTakenTrack.locator('.run-summary__damage-tip').evaluate((tip) => ({
+    shown: getComputedStyle(tip).visibility,
+    text: tip.textContent,
+  }))
   await a.press('body', 'Escape')
   const terminalPause = a.getByRole('dialog', { name: 'Slay the Spire' })
   await terminalPause.waitFor()
@@ -847,6 +866,14 @@ try {
       giveUpBounds.top >= 0 && giveUpBounds.bottom <= giveUpBounds.height,
     `give-up panel leaves the viewport: ${JSON.stringify(giveUpBounds)}`)
     assertEqual(surrenderedOnlineRun.run.phase, 'defeat')
+    assertDeepEqual(onlineDamageSnapshot.run.players.map((player) => player.damageStats), [
+      { attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 },
+      { attack: 8, poison: 0, special: 4, taken: 6, blocked: 1 },
+    ])
+    assertEqual(onlineDealtDetails.shown, 'visible')
+    assert(onlineDealtDetails.text.includes('Poison damage') && !onlineDealtDetails.text.includes('Damage blocked'), onlineDealtDetails.text)
+    assertEqual(onlineTakenDetails.shown, 'visible')
+    assert(onlineTakenDetails.text.includes('Damage blocked') && !onlineTakenDetails.text.includes('Poison damage'), onlineTakenDetails.text)
     assertEqual(terminalGiveUpCount, 0, 'terminal online pause offered a no-op Give up action')
   })
 

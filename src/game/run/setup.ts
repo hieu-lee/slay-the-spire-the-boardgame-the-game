@@ -22,6 +22,7 @@ import type { NeowState } from '../neow.ts'
 import { STARTING_RELIC, createRelicDecks, createRelicInstance } from '../relics.ts'
 import { createRng, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
+import { createDamageStats } from '../damage.ts'
 import type { CardInstance, CharacterId, Player } from '../types.ts'
 
 /**
@@ -131,6 +132,7 @@ export function createPlayer(
     darkOrbEvokeBonus: 0,
     orbEndTurnBonus: 0,
     lightningEndTurnBonus: 0,
+    damageStats: createDamageStats(),
     relics: [{ defId: STARTING_RELIC[character] ?? 'burning_blood', spent: false }],
     potions: [],
     cardRewards: rewardDecks?.cardRewards ?? shuffle(rng, characterRewardDeck(character, false, campaignProgress)),

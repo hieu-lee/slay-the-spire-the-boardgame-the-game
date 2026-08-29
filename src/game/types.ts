@@ -7,6 +7,15 @@ export type Rarity = 'starter' | 'common' | 'uncommon' | 'rare' | 'special'
 export type OrbType = 'lightning' | 'frost' | 'dark'
 export type Stance = 'neutral' | 'calm' | 'wrath'
 
+/** Cumulative combat totals retained for the finished-run damage chart. */
+export type DamageStats = {
+  attack: number
+  poison: number
+  special: number
+  taken: number
+  blocked: number
+}
+
 /**
  * Every limit the board game imposes. These are not balance knobs — running out
  * of a token is a real rule ("the effect is ignored", rulebook p.18), so the
@@ -158,6 +167,9 @@ export type Player = {
   /** Static Discharge adds only to Lightning end-of-turn effects. */
   lightningEndTurnBonus?: number
 
+  /** Optional so runs saved before the damage chart remain loadable. */
+  damageStats?: DamageStats
+
   relics: RelicInstance[]
   /** Potion ids held. Limited to CAPS.potions (2 at Ascension 4). */
   potions: string[]
@@ -189,6 +201,8 @@ export type Enemy = {
   vulnerable: number
   weak: number
   poison: number
+  /** Poison is shared on the board, but the chart credits each applied token. */
+  poisonSources?: Record<string, number>
 
   /** Face-up Corpse Explosion card attached until this enemy dies. */
   corpseExplosion?: { card: CardInstance; playerId: string; damage: number }

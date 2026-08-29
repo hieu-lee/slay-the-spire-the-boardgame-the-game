@@ -171,7 +171,7 @@ export function activateRelic(
     exhaustCards(next, actor, [card])
     const target = livingEnemies(next).find((enemy) => enemy.uid === context.enemyUid)
     if (!target) return state
-    damageEnemyLogged(next, target, actor.damageDealtZeroThisTurn ? 0 : 2, source)
+    damageEnemyLogged(next, target, actor.damageDealtZeroThisTurn ? 0 : 2, source, actor)
   } else if (['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)) {
     const owner = findPlayer(next, context.targetRelicPlayerId!)!
     const ability = relicAbilities(relicDef(owner.relics[context.targetRelicIndex!]!.defId))[context.targetAbilityIndex ?? 0]!

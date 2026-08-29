@@ -1,7 +1,32 @@
 // Damage arithmetic. Small, but it is where a port of this game is most likely
 // to be quietly wrong, so every rule here cites the rulebook.
 import { CAPS } from './types.ts'
-import type { Enemy, Player } from './types.ts'
+import type { DamageStats, Enemy, Player } from './types.ts'
+
+export function createDamageStats(): DamageStats {
+  return { attack: 0, poison: 0, special: 0, taken: 0, blocked: 0 }
+}
+
+function recorded(amount: number): number {
+  return Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
+}
+
+export function recordDamageDealt(player: Player | undefined, kind: 'attack' | 'poison' | 'special', amount: number): void {
+  const total = recorded(amount)
+  if (!player || total === 0) return
+  const stats = player.damageStats ??= createDamageStats()
+  stats[kind] += total
+}
+
+export function recordDamageTaken(player: Player, amount: number): void {
+  const total = recorded(amount)
+  if (total > 0) (player.damageStats ??= createDamageStats()).taken += total
+}
+
+export function recordDamageBlocked(player: Player, amount: number): void {
+  const total = recorded(amount)
+  if (total > 0) (player.damageStats ??= createDamageStats()).blocked += total
+}
 
 /** Everything about an attacker that changes a hit's damage. */
 export type AttackerMods = {

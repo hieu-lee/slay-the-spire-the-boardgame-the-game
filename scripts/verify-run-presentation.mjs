@@ -8,11 +8,18 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { diffDeckMorphs, planMorphs } from '../src/ui/useCardMorphs.ts'
-import { deckHighlights } from '../src/ui/run-summary-data.ts'
+import { damageTotals, deckHighlights } from '../src/ui/run-summary-data.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('run presentation')
+
+check('damage summary totals include every chart segment and accept legacy saves', () => {
+  assertDeepEqual(damageTotals({ attack: 12, poison: 3, special: 5, taken: 7, blocked: 2 }), {
+    attack: 12, poison: 3, special: 5, taken: 7, blocked: 2, dealt: 20, received: 9,
+  })
+  assertDeepEqual(damageTotals(), { attack: 0, poison: 0, special: 0, taken: 0, blocked: 0, dealt: 0, received: 0 })
+})
 
 check('every event has its own full-screen background', () => {
   const files = Object.keys(EVENT_DEFINITIONS).map((id) => new URL(`../public/assets/noncombat/events/${id}.webp`, import.meta.url))

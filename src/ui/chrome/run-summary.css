@@ -37,6 +37,29 @@
   text-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
 }
 
+.sts-scope .run-summary__damage { display: grid; gap: 0.4rem; }
+.sts-scope .run-summary__damage h3 { margin: 0; color: var(--light-yellow); font-family: 'Kreon', Georgia, serif; font-size: 1.1rem; }
+.sts-scope .run-summary__damage-list { display: grid; gap: 0.35rem; width: calc(100% - 22rem); min-width: 24rem; margin: 0; padding: 0; list-style: none; }
+.sts-scope .run-summary__damage-row { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.5rem; align-items: center; padding: 0.2rem; }
+.sts-scope .run-summary__damage-icon { width: 2.35rem; height: 2.35rem; object-fit: contain; filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.6)); }
+.sts-scope .run-summary__damage-tracks { display: grid; gap: 0.22rem; min-width: 0; }
+.sts-scope .run-summary__damage-track { position: relative; display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) 2.6rem; gap: 0.3rem; align-items: center; padding: 0.08rem 0.15rem; color: #9b8a6a; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 0.2rem; outline: none; }
+.sts-scope .run-summary__damage-track:hover, .sts-scope .run-summary__damage-track:focus { z-index: 1; background: rgb(255 243 194 / 0.08); }
+.sts-scope .run-summary__damage-track:focus-visible { box-shadow: 0 0 0 2px var(--sts-gold); }
+.sts-scope .run-summary__damage-track i { display: flex; height: 0.56rem; overflow: hidden; background: rgb(0 0 0 / 0.55); border: 1px solid rgb(217 180 91 / 0.35); box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.65); }
+.sts-scope .run-summary__damage-track b { display: block; min-width: 0; }
+.sts-scope .run-summary__damage--attack { background: #fee17e; }
+.sts-scope .run-summary__damage--poison { background: #50be6d; }
+.sts-scope .run-summary__damage--special { background: #c34bce; }
+.sts-scope .run-summary__damage--taken { background: #d66a62; }
+.sts-scope .run-summary__damage--blocked { background: #b9b8aa; }
+.sts-scope .run-summary__damage-track em { color: var(--cream); font-family: 'Kreon', Georgia, serif; font-size: 0.88rem; font-style: normal; font-variant-numeric: tabular-nums; letter-spacing: 0; text-align: right; }
+.sts-scope .run-summary__damage-tip { position: absolute; z-index: 4; top: 0; left: calc(100% + 0.6rem); display: grid; gap: 0.16rem; width: min(21rem, calc(100vw - 2rem)); margin: 0; padding: 0.65rem 0.8rem; color: var(--cream); letter-spacing: 0; text-transform: none; background-color: #1e292c; border: 2px solid #69767a; box-shadow: 3px 4px 0 rgb(0 0 0 / 0.45); pointer-events: none; transform: translateX(-0.2rem); transition: transform 120ms ease; visibility: hidden; }
+.sts-scope .run-summary__damage-track:hover .run-summary__damage-tip, .sts-scope .run-summary__damage-track:focus .run-summary__damage-tip { transform: translateX(0); visibility: visible; }
+.sts-scope .run-summary__damage-tip > div { display: flex; justify-content: space-between; gap: 1rem; }
+.sts-scope .run-summary__damage-tip dt { font-family: 'Kreon', Georgia, serif; font-size: 0.9rem; }
+.sts-scope .run-summary__damage-tip dd { margin: 0; color: var(--light-yellow); font-family: 'Kreon', Georgia, serif; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
 .sts-scope .run-summary__seats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
@@ -156,6 +179,9 @@
    width: auto; max-width: none` from the general narrow rule, which matches
    this tip too; restating them here was four dead declarations. */
 @media (max-width: 47.99rem) {
+  .sts-scope .run-summary__damage-list { width: 100%; min-width: 0; }
+  .sts-scope .run-summary__damage-tip { top: calc(100% + 0.35rem); left: 0; transform: translateY(-0.2rem); }
+  .sts-scope .run-summary__damage-track:hover .run-summary__damage-tip, .sts-scope .run-summary__damage-track:focus .run-summary__damage-tip { transform: translateY(0); }
   .sts-scope .run-summary__seat { position: relative; }
   .sts-scope .run-summary .run-summary__seat .relic-bar { position: static; }
 }

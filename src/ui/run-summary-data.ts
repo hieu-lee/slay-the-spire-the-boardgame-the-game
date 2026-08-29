@@ -5,7 +5,7 @@
 // JSX from `.tsx`, so a plain `verify-*.mjs` can only import it from here.
 // Living next to the component it feeds, in the same directory.
 import { cardDef, faceOf } from '../game/cards.ts'
-import type { Player, RelicInstance } from '../game/types.ts'
+import type { DamageStats, Player, RelicInstance } from '../game/types.ts'
 
 export const CHARACTER_LABEL: Record<string, string> = {
   ironclad: 'Ironclad',
@@ -24,6 +24,7 @@ export type SummarySeat = {
   gold: number
   dead: boolean
   relics: readonly RelicInstance[]
+  damageStats?: DamageStats
   /** Absent online, where the server does not send other seats' decks. */
   deck?: readonly { defId: string; upgraded: boolean }[]
 }
@@ -38,8 +39,19 @@ export function summarySeat(player: Player): SummarySeat {
     gold: player.gold,
     dead: player.dead,
     relics: player.relics,
+    damageStats: player.damageStats,
     deck: player.deck,
   }
+}
+
+export function damageTotals(stats?: DamageStats): DamageStats & { dealt: number; received: number } {
+  const value = (key: keyof DamageStats) => Math.max(0, Math.floor(stats?.[key] ?? 0))
+  const attack = value('attack')
+  const poison = value('poison')
+  const special = value('special')
+  const taken = value('taken')
+  const blocked = value('blocked')
+  return { attack, poison, special, taken, blocked, dealt: attack + poison + special, received: taken + blocked }
 }
 
 /**

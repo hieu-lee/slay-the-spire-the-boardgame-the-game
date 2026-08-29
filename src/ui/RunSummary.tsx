@@ -6,7 +6,8 @@
 // run state; none of it was on screen.
 import { RelicBar } from './RelicChip.tsx'
 import { IconValue } from './Icon.tsx'
-import { CHARACTER_LABEL, deckHighlights } from './run-summary-data.ts'
+import { assetPath } from '../game/assets.ts'
+import { CHARACTER_LABEL, damageTotals, deckHighlights } from './run-summary-data.ts'
 import type { SummarySeat } from './run-summary-data.ts'
 
 // Re-exported so call sites keep importing the summary from one place.
@@ -28,6 +29,9 @@ export function RunSummary({ act, roomsCleared, ascension, seats }: {
   ascension: number
   seats: readonly SummarySeat[]
 }) {
+  const chart = seats.map((seat) => ({ seat, totals: damageTotals(seat.damageStats) }))
+  const greatestDealt = Math.max(1, ...chart.map(({ totals }) => totals.dealt))
+  const greatestReceived = Math.max(1, ...chart.map(({ totals }) => totals.received))
   return (
     <div className="run-summary">
       <dl className="run-summary__tallies">
@@ -35,6 +39,39 @@ export function RunSummary({ act, roomsCleared, ascension, seats }: {
         <div><dt>Rooms this act</dt><dd>{roomsCleared}</dd></div>
         <div><dt>Ascension</dt><dd>{ascension}</dd></div>
       </dl>
+      <section className="run-summary__damage" aria-labelledby="run-summary-damage-heading">
+        <h3 id="run-summary-damage-heading">Damage chart</h3>
+        <ul className="run-summary__damage-list">
+          {chart.map(({ seat, totals }) => {
+            const dealtWidth = (value: number) => `${value / greatestDealt * 100}%`
+            const receivedWidth = (value: number) => `${value / greatestReceived * 100}%`
+            return (
+              <li key={seat.id} className="run-summary__damage-row">
+                <img className="run-summary__damage-icon" src={assetPath(`menu/compendium-icons/${seat.character}.webp`)} alt="" />
+                <div className="run-summary__damage-tracks">
+                  <div className="run-summary__damage-track run-summary__damage-track--dealt" role="group" tabIndex={0} aria-label={`${seat.name} damage dealt`}>
+                    <span aria-hidden="true">Dealt</span><i aria-hidden="true"><b className="run-summary__damage--attack" style={{ width: dealtWidth(totals.attack) }} /><b className="run-summary__damage--poison" style={{ width: dealtWidth(totals.poison) }} /><b className="run-summary__damage--special" style={{ width: dealtWidth(totals.special) }} /></i><em aria-hidden="true">{totals.dealt}</em>
+                    <dl className="run-summary__damage-tip">
+                      <div><dt>Total damage dealt</dt><dd>{totals.dealt}</dd></div>
+                      <div><dt>Attack damage</dt><dd>{totals.attack}</dd></div>
+                      <div><dt>Poison damage</dt><dd>{totals.poison}</dd></div>
+                      <div><dt>Special damage</dt><dd>{totals.special}</dd></div>
+                    </dl>
+                  </div>
+                  <div className="run-summary__damage-track run-summary__damage-track--taken" role="group" tabIndex={0} aria-label={`${seat.name} damage taken`}>
+                    <span aria-hidden="true">Taken</span><i aria-hidden="true"><b className="run-summary__damage--taken" style={{ width: receivedWidth(totals.taken) }} /><b className="run-summary__damage--blocked" style={{ width: receivedWidth(totals.blocked) }} /></i><em aria-hidden="true">{totals.received}</em>
+                    <dl className="run-summary__damage-tip">
+                      <div><dt>Total damage taken</dt><dd>{totals.received}</dd></div>
+                      <div><dt>Damage taken</dt><dd>{totals.taken}</dd></div>
+                      <div><dt>Damage blocked</dt><dd>{totals.blocked}</dd></div>
+                    </dl>
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
       <ul className="run-summary__seats">
         {seats.map((seat) => {
           const highlights = seat.deck ? deckHighlights(seat.deck) : []
