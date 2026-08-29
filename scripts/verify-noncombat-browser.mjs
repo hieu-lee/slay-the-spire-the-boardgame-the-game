@@ -4332,6 +4332,52 @@ check('run completion keeps facts and players out of nested cards', () => {
   assert(summaryDensity.seats.every((background) => background === 'none'))
 })
 
+await page.setViewportSize({ width: 1024, height: 492 })
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  run.phase = 'map'
+  run.neow = null
+  run.roomState = null
+  run.players[0].relics = [
+    ...run.players[0].relics.filter((relic) => !relic.pending),
+    { defId: 'whetstone', spent: false, pending: true },
+  ]
+  debug.setRun(run)
+})
+await page.getByRole('heading', { name: 'Resolve Whetstone' }).waitFor()
+const compactPendingRelic = await page.evaluate(() => {
+  const panel = document.querySelector('.relic-resolve')?.getBoundingClientRect()
+  const heading = document.querySelector('.relic-resolve h2')?.getBoundingClientRect()
+  const rules = document.querySelector('.relic-resolve .room-item-text')?.getBoundingClientRect()
+  const action = document.querySelector('.relic-resolve > button:last-child')?.getBoundingClientRect()
+  const cards = [...document.querySelectorAll('.relic-resolve .card')]
+  const map = document.querySelector('.map')
+  const visible = (box) => Boolean(box && panel && box.top >= panel.top - 1 && box.bottom <= panel.bottom + 1)
+  const hit = action ? document.elementFromPoint(action.left + action.width / 2, action.top + action.height / 2) : null
+  return {
+    visibleMaps: document.querySelectorAll('.map:not([hidden])').length,
+    mapBlocked: Boolean(map?.hidden && map.inert),
+    mapDisplay: map ? getComputedStyle(map).display : null,
+    cards: cards.length,
+    headingVisible: visible(heading),
+    rulesVisible: visible(rules),
+    actionVisible: visible(action),
+    actionHittable: Boolean(hit?.closest('.relic-resolve > button:last-child')),
+  }
+})
+await page.screenshot({ path: join(outDir, 'relic-resolve-whetstone-compact.png'), fullPage: true })
+check('a pending map Relic owns the compact screen instead of stacking over the map', () => {
+  assertEqual(compactPendingRelic.visibleMaps, 0, 'the map remained visible beneath the Relic resolver')
+  assert(compactPendingRelic.mapBlocked, 'the hidden map stopped preserving its progression lock')
+  assertEqual(compactPendingRelic.mapDisplay, 'none', 'author CSS overrode the map hidden attribute')
+  assert(compactPendingRelic.cards > 0, 'the Whetstone fixture offered no Attack to upgrade')
+  assert(compactPendingRelic.headingVisible, 'the Relic name was clipped out of its resolver')
+  assert(compactPendingRelic.rulesVisible, 'the Relic rules were hidden behind the map')
+  assert(compactPendingRelic.actionVisible && compactPendingRelic.actionHittable,
+    `the Relic action was not visible and clickable: ${JSON.stringify(compactPendingRelic)}`)
+})
+
 writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ failures }, null, 2))
 check('non-combat surfaces reported no browser errors', () => assertEqual(failures.length, 0, failures.join('\n')))
 await browser.close()

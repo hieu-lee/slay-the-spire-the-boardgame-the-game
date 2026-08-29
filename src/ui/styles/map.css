@@ -13,6 +13,10 @@
   padding: 0.5rem 0;
 }
 
+.map[hidden] {
+  display: none;
+}
+
 .map__hint {
   margin: 0;
   letter-spacing: 0.08em;
