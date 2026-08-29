@@ -176,6 +176,10 @@
   pointer-events: none;
 }
 
+.hand-area[data-character='hermit'] .hand {
+  padding-left: 15rem;
+}
+
 .hand-scroll::-webkit-scrollbar {
   display: none;
 }
@@ -399,6 +403,10 @@
     padding-inline: 5.4rem 18rem;
   }
 
+  .hand-area[data-character='hermit'] .hand {
+    padding-left: 13rem;
+  }
+
   .hand .card {
     transform: none;
     margin-inline: -0.25rem;
@@ -433,6 +441,10 @@
 }
 
 @media (orientation: portrait) and (max-width: 480px) {
+  .combat[data-character='slime_boss'] .combat__end-turn {
+    top: 5.4rem;
+  }
+
   .combat__end-turn {
     position: absolute;
     top: 3.25rem;

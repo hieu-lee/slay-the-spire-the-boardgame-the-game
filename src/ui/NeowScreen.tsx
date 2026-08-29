@@ -170,7 +170,7 @@ export function NeowScreen({ players, progress, viewerId, ascension, enabled = t
       : effect ? `${effect.kind} ${effect.count} card${effect.count === 1 ? '' : 's'}` : ''
 
   return <section className="neow-screen" aria-labelledby="neow-title">
-    {!heartsBoon ? <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" /> : null}
+    <img className="neow-screen__neow" src={assetPath('neow/neow.webp')} alt="Neow" />
     <img className="neow-screen__hero" src={assetPath(characterHeroArt(viewer.character))} alt={viewer.name} />
     <header className="neow-screen__header">
       <h2 id="neow-title">{heartsBoon ? "The Heart’s Boon" : 'Neow’s Blessing'}</h2>

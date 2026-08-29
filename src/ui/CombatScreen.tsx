@@ -3526,6 +3526,7 @@ function CombatScreenView({
     <div
       className="combat"
       data-act={stageAct}
+      data-character={viewer.character}
       data-phase={state.phase}
       style={{
         backgroundImage: `linear-gradient(90deg, rgb(2 5 8 / 0.38), transparent 22%, transparent 74%, rgb(2 5 8 / 0.32)), url("${assetPath(`backgrounds/boss-act-${stageAct}.webp`)}")`,
@@ -3543,6 +3544,22 @@ function CombatScreenView({
         <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
           ? `Resolve ${copyResolutionLabel ?? 'card'}`
           : PHASE_LABEL[state.phase]}</span>
+        {viewer.character === 'slime_boss' && viewer.slimes.length > 0 ? (
+          <span className="combat__slime-status" aria-label="Slime status">
+            {viewer.slimes.map((slime) => {
+              const def = cardDef(slime.card.defId)
+              const name = def.name.replace(/ Slime\+?$/, '')
+              const commandReady = def.slimeCommandLimit === undefined ||
+                slime.commandsThisTurn < def.slimeCommandLimit
+              return <span key={slime.card.uid} tabIndex={0}
+                aria-label={`${def.name}, level ${slime.level}, Vigor ${slime.vigor}, ` +
+                  `${slime.commandsThisTurn} Commands this turn, ` +
+                  (commandReady ? 'ready to Command' : 'Command limit reached')}>
+                {name} · L{slime.level} · Vigor {slime.vigor} · Cmd {slime.commandsThisTurn}
+              </span>
+            })}
+          </span>
+        ) : null}
         <span className="combat__actions">
           {!viewer.dead && !relicScry && !voluntaryActionsBlocked && (state.phase === 'player' || state.phase === 'discard' ||
             state.phase === 'start' && viewer.potions.includes('gamblers_brew')) ? (
@@ -4984,6 +5001,17 @@ function CombatScreenView({
                         </span>
                       </span>
                       <span className="seat__meta">
+                      {occupant.character === 'guardian' && occupant.guardianMode ? (
+                        <span className="seat__mechanic">
+                          {occupant.guardianMode === 'attack' ? 'Attack' : 'Defense'} · Vigor {occupant.vigor}
+                        </span>
+                      ) : null}
+                      {occupant.character === 'hermit' && occupant.id === viewerId && occupant.chamberSlots > 0 ? (
+                        <span className="seat__mechanic">Chamber {occupant.chamber.length}/{occupant.chamberSlots}</span>
+                      ) : null}
+                      {occupant.character === 'hexaghost' ? (
+                        <span className="seat__mechanic">Heat {occupant.heat}</span>
+                      ) : null}
                       {occupant.strengthLossAtEndOfTurn > 0 ? (
                         <span className="seat__pending">
                           −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
@@ -5151,19 +5179,6 @@ function CombatScreenView({
         })}
       </div>
 
-      <p className="visually-hidden combat__enemy-report" aria-live="polite">{enemyReport}</p>
-      {state.log.length > 0 ? (
-        <details className="combat-log-drawer">
-          <summary>Battle log</summary>
-          <ol className="combat__log" aria-label="Combat log" ref={logRef} tabIndex={0}>
-            {roundLog(state.log).map((line, i) => (
-              <li key={`${state.log.length - i}-${line}`}
-                className={TURN_MARKER.test(line) ? 'combat__log-turn' : undefined}>{line}</li>
-            ))}
-          </ol>
-        </details>
-      ) : null}
-
       {viewer && dieRelicPending?.playerId === viewer.id ? (() => {
         const ability = chosenDieRelicAbilities(relicDef(dieRelicPending.relicDefId))[dieRelicPending.abilityIndex]
         const effect = ability?.effects.find((candidate) =>
@@ -5172,7 +5187,7 @@ function CombatScreenView({
         const required = Math.min(effect.amount, viewer.hand.length)
         const discard = effect.kind === 'discard'
         const optional = ability?.optional === true
-        return <section className="hermit-prompt" aria-label="Die Relic card choice">
+        return <section className="hermit-prompt hermit-prompt--cards" aria-label="Die Relic card choice">
           <strong>{relicDef(dieRelicPending.relicDefId).name}: {optional ? 'you may ' : ''}
             {discard ? 'discard' : 'Exhaust'} {required}</strong>
           {viewer.hand.map((card) => {
@@ -5190,8 +5205,8 @@ function CombatScreenView({
       })() : null}
 
       {viewer && hermitSetupPending ? (
-        <section className="hermit-prompt" aria-label="Hermit start-of-combat Load">
-          <strong>Hermit board: Load 1 card</strong>
+        <section className="hermit-prompt hermit-prompt--compact" aria-label="Hermit start-of-combat Load">
+          <strong>Choose a card to Load</strong>
           {viewer.hand.map((card) => hermitTargetedCurses.has(card.defId)
             ? <span key={card.uid} className="hermit-prompt__choice">
                 <span>{cardDef(card.defId).name}</span>
@@ -5207,14 +5222,14 @@ function CombatScreenView({
         </section>
       ) : null}
       {viewer && hermitStrengthPending ? (
-        <section className="hermit-prompt" aria-label="Dead or Alive reward">
+        <section className="hermit-prompt hermit-prompt--compact" aria-label="Dead or Alive reward">
           <strong>Dead or Alive: choose a player to gain 1 Strength</strong>
           {state.players.filter((player) => !player.dead).map((player) => (
             <button key={player.id} type="button" onClick={() => submitHermitStrength(player.id)}>{player.name}</button>
           ))}
         </section>
       ) : null}
-      <footer className="hand-area">
+      <footer className="hand-area" data-character={viewer.character}>
         <div className="hand-area__stats">
           <span className={[
             'pip',
@@ -5244,7 +5259,7 @@ function CombatScreenView({
             ))}
           </span>
         </div>
-        {viewer.chamberSlots > 0 ? (
+        {viewer.chamber.length > 0 ? (
           <section className="hermit-chamber" aria-label={`Chamber, ${viewer.chamber.length} of ${viewer.chamberSlots} slots filled`}>
             <strong>Chamber {viewer.chamber.length}/{viewer.chamberSlots}</strong>
             <div className="hermit-chamber__cards">
@@ -5274,9 +5289,6 @@ function CombatScreenView({
                   ) : null}
                 </span>
               })}
-              {Array.from({ length: Math.max(0, viewer.chamberSlots - viewer.chamber.length) }, (_, index) => (
-                <span key={`empty-${index}`} className="hermit-chamber__empty" aria-label="Empty Chamber slot" />
-              ))}
             </div>
           </section>
         ) : null}

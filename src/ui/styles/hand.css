@@ -14,8 +14,7 @@
   color: var(--ink-dim);
 }
 
-.hermit-prompt,
-.hermit-chamber {
+.hermit-prompt {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -24,6 +23,50 @@
   border: 1px solid rgb(203 158 83 / 0.55);
   border-radius: 8px;
   background: rgb(34 24 20 / 0.92);
+}
+
+.combat > .hermit-prompt--compact {
+  position: absolute;
+  z-index: 69;
+  bottom: clamp(10rem, 22vh, 14rem);
+  left: clamp(5.5rem, 9vw, 9rem);
+  max-width: min(30rem, calc(100% - 12rem));
+  box-shadow: 0 0.65rem 1.4rem rgb(0 0 0 / 0.52);
+}
+
+.combat > .hermit-prompt--cards {
+  position: absolute;
+  z-index: 69;
+  right: 1rem;
+  bottom: clamp(8rem, 18vh, 11rem);
+  left: 1rem;
+  justify-content: center;
+  max-height: min(55vh, 28rem);
+  overflow-y: auto;
+  box-shadow: 0 0.65rem 1.4rem rgb(0 0 0 / 0.52);
+}
+
+.hermit-prompt--cards .card {
+  width: calc(var(--card-width) * 0.75);
+}
+
+.hermit-chamber {
+  position: absolute;
+  z-index: 9;
+  bottom: 0.35rem;
+  left: 5.2rem;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid rgb(203 158 83 / 0.55);
+  border-radius: 8px;
+  background: rgb(34 24 20 / 0.9);
+  pointer-events: auto;
+}
+
+.hermit-chamber > strong {
+  font-size: 0.72rem;
+  line-height: 1;
 }
 
 .hermit-prompt__choice,
@@ -36,14 +79,7 @@
 }
 
 .hermit-chamber__cards .card {
-  width: calc(var(--card-width) * 0.62);
-}
-
-.hermit-chamber__empty {
-  width: calc(var(--card-width) * 0.62);
-  aspect-ratio: 1 / var(--card-ratio);
-  border: 1px dashed rgb(203 158 83 / 0.45);
-  border-radius: 7px;
+  width: calc(var(--card-width) * 0.5);
 }
 
 .pip--energy {

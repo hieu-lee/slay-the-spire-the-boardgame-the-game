@@ -189,6 +189,7 @@ await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Embark' }).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+const soloNeowRun = await page.evaluate(() => structuredClone(window.__STS_DEBUG__.getRun()))
 const soloNeowLayout = await page.evaluate(() => {
   const neow = document.querySelector('.neow-screen__neow')?.getBoundingClientRect()
   const speech = document.querySelector('.neow-face--solo')?.getBoundingClientRect()
@@ -196,6 +197,29 @@ const soloNeowLayout = await page.evaluate(() => {
     gap: neow && speech ? Math.max(0, neow.left - speech.right, speech.left - neow.right) : Infinity,
     viewportWidth: innerWidth }
 })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.players[0].character = 'hermit'
+  const progress = Object.values(next.neow.players)[0]
+  progress.card = undefined
+  progress.cardId = 'heart_boon_00'
+  window.__STS_DEBUG__.setRun(next)
+}, soloNeowRun)
+await page.getByRole('heading', { name: 'The Heart’s Boon' }).waitFor()
+const heartsBoonNeowLayout = await page.evaluate(() => {
+  const neow = document.querySelector('.neow-screen__neow')
+  const hero = document.querySelector('.neow-screen__hero')
+  const neowBox = neow?.getBoundingClientRect()
+  const heroBox = hero?.getBoundingClientRect()
+  return {
+    decoded: neow instanceof HTMLImageElement && neow.complete && neow.naturalWidth > 0,
+    visible: !!neowBox && neowBox.width > 0 && neowBox.height > 0 && neowBox.left < innerWidth,
+    rightOfHero: !!neowBox && !!heroBox && neowBox.left > heroBox.right,
+  }
+})
+await page.screenshot({ path: join(outDir, 'hearts-boon-neow-present.png'), fullPage: true })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), soloNeowRun)
+await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -277,6 +301,12 @@ check('solo Neow dialogue stays on-screen beside Neow', () => {
     layout.actionLeft >= layout.stageLeft && layout.actionRight <= layout.stageRight &&
     layout.optionLeft >= layout.stageLeft && layout.optionRight <= layout.stageRight),
   `solo Neow choices clip near the compact breakpoint: ${JSON.stringify(soloNeowBoundaryLayouts)}`)
+})
+
+check('The Heart’s Boon keeps Neow on the right side of the scene', () => {
+  assert(heartsBoonNeowLayout.decoded, 'Neow art did not decode on the Heart boon screen')
+  assert(heartsBoonNeowLayout.visible, 'Neow escaped or disappeared from the Heart boon screen')
+  assert(heartsBoonNeowLayout.rightOfHero, 'Neow did not stay opposite the Downfall hero')
 })
 
 check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))

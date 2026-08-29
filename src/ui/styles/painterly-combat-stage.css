@@ -63,6 +63,33 @@
   background: rgb(15 19 21 / 0.72);
 }
 
+.combat__slime-status {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: min(42vw, 36rem);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.combat__slime-status > span {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid rgb(151 221 111 / 0.52);
+  border-radius: 999px;
+  background: rgb(12 31 19 / 0.82);
+  color: #d9f3bf;
+  font-size: 0.7rem;
+}
+
+@media (max-width: 480px) {
+  .combat__slime-status {
+    order: 4;
+    width: 100%;
+    max-width: none;
+  }
+}
+
 .combat__actions button {
   border-color: rgb(215 177 91 / 0.46);
   background: linear-gradient(#354956, #1d2c35);

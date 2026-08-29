@@ -1229,6 +1229,193 @@ check('combat music follows each act and Lagavulin changes themes when it wakes'
   assert(true)
 })
 
+const downfallMechanicLabels = {}
+let slimeHudAccess = null
+let slimeHudOverlapsEndTurn = true
+for (const fixture of [
+  { character: 'guardian', name: 'Guardian', fields: { guardianMode: 'attack', vigor: 3 } },
+  { character: 'hexaghost', name: 'Hexaghost', fields: { heat: 2, soulburn: 1 } },
+  { character: 'slime_boss', name: 'Slime Boss', fields: { slimes: [{
+    card: { uid: 'ui-hud-bruiser', defId: 'slime_boss_bruiser_slime', upgraded: false },
+    level: 2, vigor: 3, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
+  }, {
+    card: { uid: 'ui-hud-armored', defId: 'slime_boss_armored_slime', upgraded: false },
+    level: 3, vigor: 4, commandsThisTurn: 1, vigorLossAtEndOfTurn: 0,
+  }] } },
+]) {
+  await page.setViewportSize(fixture.character === 'slime_boss'
+    ? { width: 390, height: 844 }
+    : { width: 1440, height: 900 })
+  await page.evaluate(({ run, fixture }) => {
+    const next = structuredClone(run)
+    Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingHermitSetupLoads: [] })
+    Object.assign(next.combat.players[0], { character: fixture.character, name: fixture.name, chamber: [], chamberSlots: 0,
+      guardianMode: null, heat: 0, soulburn: 0, slimes: [], ...fixture.fields })
+    next.combat.players = [next.combat.players[0]]
+    window.__STS_DEBUG__.setRun(next)
+  }, { run: combatAppearanceRun, fixture })
+  const mechanicChips = page.locator(fixture.character === 'slime_boss'
+    ? '.combat__slime-status > span'
+    : '.seat__mechanic')
+  downfallMechanicLabels[fixture.character] = await mechanicChips.allInnerTexts()
+  if (fixture.character === 'slime_boss') {
+    const chips = []
+    await mechanicChips.first().focus()
+    for (let index = 0; index < await mechanicChips.count(); index++) {
+      const chip = mechanicChips.nth(index)
+      chips.push(await chip.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        const meta = element.parentElement?.getBoundingClientRect()
+        return {
+          focusable: element.tabIndex === 0,
+          focused: document.activeElement === element,
+          visible: !!meta && box.left >= meta.left - 1 && box.right <= meta.right + 1,
+          label: element.getAttribute('aria-label'),
+        }
+      }))
+      if (index + 1 < await mechanicChips.count()) await page.keyboard.press('Tab')
+    }
+    slimeHudAccess = chips
+    slimeHudOverlapsEndTurn = await page.evaluate(() => {
+      const status = document.querySelector('.combat__slime-status')?.getBoundingClientRect()
+      const endTurn = document.querySelector('.combat__end-turn')?.getBoundingClientRect()
+      return !status || !endTurn || status.left < endTurn.right && status.right > endTurn.left &&
+        status.top < endTurn.bottom && status.bottom > endTurn.top
+    })
+  }
+  await page.screenshot({ path: join(outDir, `downfall-${fixture.character}-compact-hud.png`) })
+}
+
+await page.setViewportSize({ width: 1518, height: 720 })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, {
+    phase: 'player', ruleset: 'downfall', pendingTriggers: [], pendingHermitSetupLoads: [{ playerId: player.id }],
+  })
+  Object.assign(player, {
+    character: 'hermit', name: 'Hermit', energy: 3, chamberSlots: 2, chamber: [], slimes: [], guardianMode: null,
+    hand: [{ uid: 'ui-compact-snapshot', defId: 'hermit_snapshot', upgraded: false }],
+  })
+  next.combat.players = [player]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.locator('[aria-label="Hermit start-of-combat Load"]').waitFor()
+await page.waitForTimeout(800)
+downfallMechanicLabels.hermit = await page.locator('.seat__mechanic').allInnerTexts()
+const hermitHudLayout = await page.evaluate(() => {
+  const prompt = document.querySelector('.combat > .hermit-prompt')?.getBoundingClientRect()
+  const chamber = document.querySelector('.hermit-chamber')?.getBoundingClientRect()
+  const card = document.querySelector('.hand .card')?.getBoundingClientRect()
+  const overlap = (a, b) => a && b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  return {
+    promptWidth: prompt?.width ?? Infinity,
+    chamberHidden: !chamber,
+    cardContained: !!card && card.top >= 0 && card.bottom <= innerHeight,
+    promptClearCard: !overlap(prompt, card),
+    battleLogHidden: !document.querySelector('.combat-log-drawer, .combat__enemy-report'),
+    documentContained: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-hermit-compact-hud.png') })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const viewer = next.combat.players[0]
+  const hermit = {
+    ...viewer,
+    id: 'ui-private-hermit',
+    name: 'Other Hermit',
+    row: viewer.row + 1,
+    character: 'hermit',
+    chamberSlots: 2,
+    chamber: [{ uid: 'ui-private-chamber-card', defId: 'hermit_snapshot', upgraded: false }],
+  }
+  next.combat.players = [viewer, hermit]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const opponentChamberLabels = await page.locator('.seat__mechanic').filter({ hasText: 'Chamber' }).count()
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  const actor = next.combat.players[0]
+  actor.hand = [
+    { uid: 'ui-die-1', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-die-2', defId: 'bash', upgraded: false },
+    { uid: 'ui-die-3', defId: 'strike_ironclad', upgraded: false },
+    { uid: 'ui-die-4', defId: 'defend_ironclad', upgraded: false },
+    { uid: 'ui-die-5', defId: 'strike_ironclad', upgraded: false },
+  ]
+  next.combat.players = [actor]
+  next.combat.pendingDieRelicChoices = [{
+    playerId: actor.id,
+    relicDefId: 'wheel_of_change',
+    abilityIndex: 0,
+    sourceLabel: 'Compact prompt fixture',
+    enemyUid: null,
+    targetPlayerId: actor.id,
+  }]
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const dieRelicPrompt = page.locator('.hermit-prompt--cards')
+await dieRelicPrompt.waitFor()
+const dieRelicResolve = dieRelicPrompt.getByRole('button', { name: /Resolve/ })
+await dieRelicResolve.scrollIntoViewIfNeeded()
+const dieRelicLayout = await dieRelicPrompt.evaluate((prompt) => {
+  const box = prompt.getBoundingClientRect()
+  const cards = [...prompt.querySelectorAll('.card')].map((card) => card.getBoundingClientRect())
+  const resolve = [...prompt.querySelectorAll('button')].at(-1)?.getBoundingClientRect()
+  return {
+    promptContained: box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && box.left >= 0,
+    cards: cards.length,
+    cardsContained: cards.every((card) => card.left >= 0 && card.right <= innerWidth),
+    resolveContained: !!resolve && resolve.top >= 0 && resolve.bottom <= innerHeight,
+    overflowY: getComputedStyle(prompt).overflowY,
+  }
+})
+await page.screenshot({ path: join(outDir, 'downfall-die-relic-compact.png') })
+check('Downfall mechanics use compact combat HUDs without clipping the hand', () => {
+  assertDeepEqual(downfallMechanicLabels, {
+    guardian: ['Attack · Vigor 3'],
+    hexaghost: ['Heat 2'],
+    slime_boss: [
+      'Bruiser · L2 · Vigor 3 · Cmd 1',
+      'Armored · L3 · Vigor 4 · Cmd 1',
+    ],
+    hermit: ['Chamber 0/2'],
+  })
+  assert(slimeHudAccess?.every((chip) => chip.focusable && chip.focused && chip.visible),
+    `Slime status chips are not keyboard-reachable in the narrow HUD: ${JSON.stringify(slimeHudAccess)}`)
+  assert(!slimeHudOverlapsEndTurn, 'Slime status overlaps End turn in the narrow HUD')
+  assert(slimeHudAccess?.[0]?.label?.includes('ready to Command'), 'Bruiser command availability is missing')
+  assert(slimeHudAccess?.[1]?.label?.includes('Command limit reached'), 'Armored command limit is missing')
+  assert(hermitHudLayout.promptWidth <= 480, `Hermit Load prompt is ${hermitHudLayout.promptWidth}px wide`)
+  assert(hermitHudLayout.chamberHidden, 'an empty Hermit Chamber still occupies the combat stage')
+  assert(hermitHudLayout.cardContained, 'Hermit hand card is clipped by the viewport')
+  assert(hermitHudLayout.promptClearCard, 'Hermit Load prompt overlaps the hand card')
+  assert(hermitHudLayout.battleLogHidden, 'combat rendered the removed battle-log UI')
+  assert(hermitHudLayout.documentContained, 'Hermit combat HUD creates document overflow')
+  assertEqual(opponentChamberLabels, 0, 'another player can see the Hermit Chamber fill count')
+  assert(dieRelicLayout.promptContained, 'Die Relic prompt escapes the compact viewport')
+  assertEqual(dieRelicLayout.cards, 5, 'Die Relic prompt does not expose the full hand')
+  assert(dieRelicLayout.cardsContained, 'Die Relic cards escape the compact viewport horizontally')
+  assert(dieRelicLayout.resolveContained, 'Die Relic resolution action cannot be reached by scrolling')
+  assertEqual(dieRelicLayout.overflowY, 'auto', 'Die Relic prompt cannot scroll vertically')
+})
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
+if (args.includes('--downfall-ui-only')) {
+  check('the focused Downfall browser run reported no errors', () => {
+    assert(consoleErrors.length === 0, `console errors:\n    ${consoleErrors.join('\n    ')}`)
+    assert(pageErrors.length === 0, `page errors:\n    ${pageErrors.join('\n    ')}`)
+    assert(requestFailures.length === 0, `failed requests:\n    ${requestFailures.join('\n    ')}`)
+  })
+  await browser.close()
+  await server.close()
+  report('Downfall combat UI')
+  process.exit(process.exitCode ?? 0)
+}
+
 const evilBossSoundCount = await page.evaluate(() => window.__SFX_PLAYS__.length)
 await page.evaluate((run) => {
   const next = structuredClone(run)
