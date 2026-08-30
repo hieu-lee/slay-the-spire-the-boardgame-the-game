@@ -24,6 +24,7 @@
 .seat--vfx-cast .seat__portrait > img,
 .seat--vfx-drink .seat__portrait > img,
 .seat--vfx-throw .seat__portrait > img {
+  will-change: opacity, transform;
   animation-duration: 620ms;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.25, 1);
   animation-fill-mode: both;
@@ -47,9 +48,9 @@
 @keyframes vfx-recoil-again { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
 @keyframes vfx-cast { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
 @keyframes vfx-cast-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
-/* Filter-free twins for `data-mobile-performance` (chrome/landscape-phones.css),
-   for the same reason as `attack-defect-mobile` below: the brightness flash is
-   the expensive part, the lift is a plain transform. Two names, not one, for the
+/* Filter-free twins for `data-mobile-performance` (chrome/landscape-phones.css):
+   the brightness flash is the expensive part, the lift is a plain transform.
+   Two names, not one, for the
    same reason the desktop pair is two names — casting twice in a row toggles
    between them so the animation restarts even though the class never changes,
    rather than replaying from a frozen mid-point. */
@@ -66,6 +67,7 @@
    holds her throw pose through the last dagger's return.
    Visual layers move; the button and its hit box stay in its lane. */
 .seat[class*='seat--attack-'] .seat__portrait > img {
+  will-change: opacity, transform;
   animation-duration: 1650ms;
   animation-delay: 0s;
   animation-fill-mode: both;
@@ -112,17 +114,6 @@
   70%, 100% { transform: translate(0) scale(1); }
 }
 
-@keyframes attack-ironclad-mobile {
-  0%, 20%, 100% { transform: translate(0) scale(1); }
-  30% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
-  35%, 65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  45% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.04, 0.97); }
-  55% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  70% { transform: translate(0) scale(1); }
-  80% { transform: translate(-1%, 0) scale(0.99, 1.01); }
-  90% { transform: translate(1%, 0) scale(1.01, 0.99); }
-}
-
 @keyframes attack-watcher {
   0%, 66.66% { opacity: 0; transform: translateY(0) rotate(0) scale(1); }
   66.67%, 100% { opacity: 1; }
@@ -144,20 +135,6 @@
   88.89% { transform: translateY(-1%) scale(1.01); }
 }
 
-/* Phones skip the two generated pose layers, so this keeps the base Defect
-   visible while retaining the same transform-only charge motion. */
-@keyframes attack-defect-mobile {
-  0%, 100% { transform: translateY(0) scale(1); }
-  11.11% { transform: translateY(2%) scale(0.98); }
-  22.22% { transform: translateY(1%) scale(0.99); }
-  33.33% { transform: translateY(-2%) scale(1.03); }
-  44.44% { transform: translateY(-3%) scale(1.035); }
-  55.56% { transform: translateY(-1%) scale(1.02); }
-  66.67% { transform: translateY(0) scale(1); }
-  77.78% { transform: translateY(1%) scale(0.99); }
-  88.89% { transform: translateY(-1%) scale(1.01); }
-}
-
 .character-attack {
   position: absolute;
   z-index: 5;
@@ -165,8 +142,9 @@
   overflow: visible;
   container-type: inline-size;
   pointer-events: none;
-  will-change: transform;
 }
+
+.character-attack--ironclad { will-change: transform; }
 
 .character-attack--ironclad::before {
   position: absolute;
@@ -200,6 +178,7 @@
   border-radius: 50%;
   filter: drop-shadow(0 0 0.35rem #ff6b28);
   opacity: 0;
+  will-change: opacity, transform;
   animation: attack-swing 550ms 630ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
 }
 
@@ -312,6 +291,7 @@
   clip-path: polygon(0 28%, 72% 28%, 100% 50%, 72% 72%, 0 72%, 14% 50%);
   filter: drop-shadow(0 0 0.25rem #92ffc1);
   opacity: 0;
+  will-change: opacity, transform;
   animation: attack-projectile 560ms var(--attack-delay) cubic-bezier(0.2, 0.72, 0.25, 1) both;
 }
 
@@ -383,6 +363,7 @@
   border-radius: 50%;
   background: none;
   box-shadow: 0 0 0.8rem #64e8ff, 0 0 1.35rem #477cff;
+  will-change: opacity, transform;
   animation: defect-core-charge 550ms ease-out both;
 }
 
@@ -407,6 +388,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+  will-change: opacity;
   animation: watcher-meteor-art 500ms calc(550ms + var(--attack-delay)) linear both;
 }
 
@@ -418,6 +400,7 @@
   aspect-ratio: 1;
   object-fit: contain;
   opacity: 0;
+  will-change: opacity, transform;
   animation: watcher-meteor-impact 550ms calc(1050ms + var(--attack-delay)) ease-out forwards;
 }
 
@@ -532,6 +515,7 @@
   pointer-events: none;
   background: center / contain no-repeat url('/assets/combat/vfx/hit-burst.webp');
   filter: drop-shadow(0 0 5px #ff923d);
+  will-change: opacity, transform;
   animation: impact-bloom 380ms var(--hit-delay, 0ms) var(--ease) both;
 }
 

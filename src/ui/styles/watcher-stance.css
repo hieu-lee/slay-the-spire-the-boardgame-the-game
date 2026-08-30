@@ -8,6 +8,7 @@
   background: center / contain no-repeat;
   mix-blend-mode: screen;
   pointer-events: none;
+  will-change: opacity, transform;
 }
 
 .stance-aura--calm {

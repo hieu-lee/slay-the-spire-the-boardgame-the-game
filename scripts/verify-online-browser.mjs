@@ -975,13 +975,11 @@ try {
   await liveHit.waitFor()
   releaseStaleGet()
   await a.waitForTimeout(20)
-  const liveHitAfterStaleGet = await liveHit.evaluate((enemy) =>
-    enemy.querySelector('.enemy__portrait')?.getAnimations()
-      .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0)
+  const liveHitAfterStaleGet = await liveHit.locator('.hit-vfx').count()
   await a.unroute(roomGetPattern)
   const staleGetFailures = failures.splice(staleFailureStart)
   check('a rejected stale REST snapshot does not cut short a newer socket hit', () => {
-    assert(liveHitAfterStaleGet > 0, 'the live hit flinch was cancelled by the stale response')
+    assert(liveHitAfterStaleGet > 0, 'the live hit feedback was cancelled by the stale response')
     assertEqual(staleGetFailures.length, 1)
     assert(staleGetFailures[0].includes('ERR_CONNECTION_RESET'), staleGetFailures[0])
   })

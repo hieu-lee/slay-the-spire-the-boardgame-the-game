@@ -439,6 +439,10 @@
 
 .enemy--boss.enemy--acting[data-attack-motion='melee'] {
   z-index: 9;
+  /* WebKit clips a transformed child to an ancestor's filter surface even when
+     both ancestors say overflow: visible. The art already owns the same shadow
+     and aura, so dropping the redundant card filter keeps the dash visible. */
+  filter: none;
 }
 
 .enemy--boss[data-animation='attack'] .enemy__portrait > .enemy__art--cutout {

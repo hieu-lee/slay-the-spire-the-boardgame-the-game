@@ -1,6 +1,5 @@
-/* Lethal damage wins over the flinch animation. The actor remains on the
-   physical board, but collapses while the generated ash and spirit ring mark
-   the one-time transition into that defeated state. */
+/* A defeated actor remains on the physical board, but collapses while the
+   generated ash and spirit ring mark the one-time transition. */
 .seat--dead,
 .enemy--dead {
   opacity: 1;

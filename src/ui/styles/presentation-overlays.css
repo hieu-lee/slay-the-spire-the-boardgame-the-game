@@ -13,6 +13,8 @@
   mix-blend-mode: screen;
   opacity: 0;
   pointer-events: none;
+  contain: layout style;
+  will-change: filter, opacity, transform;
   animation: combat-vfx-reveal 820ms ease-out both;
   /* Set only for end-of-turn orbs sharing a single state update with a sibling
      ahead of them (CombatScreen's `orbEndTurnRevealDelayMs`), so the second and
@@ -30,6 +32,7 @@
   content: '';
   position: absolute;
   pointer-events: none;
+  will-change: opacity, transform;
 }
 
 .combat-vfx::before {

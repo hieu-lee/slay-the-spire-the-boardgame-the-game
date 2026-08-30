@@ -76,7 +76,7 @@ export function usePrefersReducedMotion(): boolean {
   return reduced
 }
 
-/** Keeps overlapping HP-loss bursts and additive portrait flinches until each impact finishes. */
+/** Keeps overlapping HP-loss bursts until each impact finishes. */
 export function useStruck(
   state: CombatState,
   authoritativeRestoration?: number,
@@ -92,7 +92,6 @@ export function useStruck(
   const previousPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? -1)
   const nextBeats = useRef(new Map<string, number>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
-  const flinches = useRef(new Set<Animation>())
   const [hits, setHits] = useState<Map<string, { beat: number; damage: number; delayMs: number }[]>>(new Map())
 
   useEffect(() => {
@@ -125,8 +124,6 @@ export function useStruck(
     if (refreshed) {
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
-      for (const animation of flinches.current) animation.cancel()
-      flinches.current.clear()
       nextBeats.current.clear()
       setHits((current) => current.size === 0 ? current : new Map())
       return
@@ -135,8 +132,8 @@ export function useStruck(
 
     if (state.phase !== 'lost' && state.players.some((player) => hurt.has(player.id))) playSoundEffect('hurt')
 
-    // Each actor owns its contact, beat and expiry. Concurrent hits must not
-    // cancel one another, while a second hit must restart at weapon contact.
+    // Each actor owns its contact, beat and expiry so concurrent damage numbers
+    // do not cancel one another.
     for (const [id, amount] of hurt) {
       const beat = (nextBeats.current.get(id) ?? 0) + 1
       const token = `${id}:${beat}`
@@ -150,28 +147,6 @@ export function useStruck(
         next.set(id, [...(next.get(id) ?? []), { beat, damage: amount, delayMs: delay }])
         return next
       })
-      const flinch = () => {
-        timers.current.delete(`${token}:flinch`)
-        if (reducedEffects) return
-        const escaped = CSS.escape(id)
-        const portrait = document.querySelector<HTMLElement>(
-          `.enemy[data-enemy-id="${escaped}"] .enemy__portrait, ` +
-          `.seat[data-player-id="${escaped}"] .seat__portrait`,
-        )
-        const animation = portrait?.animate([
-          { transform: 'translateX(0)', composite: 'add' },
-          { transform: 'translateX(-7px) scale(0.98)', composite: 'add', offset: 0.18 },
-          { transform: 'translateX(5px)', composite: 'add', offset: 0.42 },
-          { transform: 'translateX(-2px)', composite: 'add', offset: 0.68 },
-          { transform: 'translateX(0)', composite: 'add' },
-        ], { duration: 380, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
-        if (animation) {
-          flinches.current.add(animation)
-          animation.onfinish = animation.oncancel = () => flinches.current.delete(animation)
-        }
-      }
-      if (delay > 0) timers.current.set(`${token}:flinch`, setTimeout(flinch, delay))
-      else flinch()
       timers.current.set(`${token}:cleanup`, setTimeout(() => {
         timers.current.delete(`${token}:cleanup`)
         setHits((current) => {
@@ -187,20 +162,7 @@ export function useStruck(
 
   useEffect(() => () => {
     for (const timer of timers.current.values()) clearTimeout(timer)
-    for (const animation of flinches.current) animation.cancel()
-    flinches.current.clear()
   }, [])
-
-  useEffect(() => {
-    if (!reducedEffects) return
-    for (const [key, timer] of timers.current) {
-      if (!key.endsWith(':flinch')) continue
-      clearTimeout(timer)
-      timers.current.delete(key)
-    }
-    for (const animation of flinches.current) animation.cancel()
-    flinches.current.clear()
-  }, [reducedEffects])
 
   return { hits }
 }

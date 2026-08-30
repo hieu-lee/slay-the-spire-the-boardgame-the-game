@@ -411,7 +411,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
 
       <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}
         onClose={() => { setSettingsOpen(false); if (settingsReturnToPause) setPauseOpen(true) }}
-        generalChildren={<>
+        generalChildren={run.meta.modifierIds.length > 0 || run.players.length > 1 ? <>
           {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
             <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
             <ul>{run.meta.modifierIds.map((id) => {
@@ -424,7 +424,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
               {run.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select>
           </label> : null}
-        </>} />
+        </> : undefined} />
 
       {giveUpOpen && canGiveUp ? <GiveUpPanel
         players={run.players} playerId={viewerId}

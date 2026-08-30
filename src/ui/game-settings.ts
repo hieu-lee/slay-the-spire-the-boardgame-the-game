@@ -4,7 +4,6 @@ export type GameSettings = {
   bgmVolume: number
   sfxVolume: number
   voiceVolume: number
-  screenShake: boolean
   reducedMotion: boolean
   highContrast: boolean
 }
@@ -16,7 +15,6 @@ const DEFAULTS: GameSettings = {
   bgmVolume: 20,
   sfxVolume: 100,
   voiceVolume: 100,
-  screenShake: true,
   reducedMotion: false,
   highContrast: false,
 }
@@ -35,7 +33,6 @@ export function loadGameSettings(): GameSettings {
       bgmVolume: volume(saved.bgmVolume, legacyMuted ? 0 : DEFAULTS.bgmVolume),
       sfxVolume: volume(saved.sfxVolume, legacyMuted ? 0 : DEFAULTS.sfxVolume),
       voiceVolume: volume(saved.voiceVolume, DEFAULTS.voiceVolume),
-      screenShake: typeof saved.screenShake === 'boolean' ? saved.screenShake : DEFAULTS.screenShake,
       reducedMotion: typeof saved.reducedMotion === 'boolean' ? saved.reducedMotion : DEFAULTS.reducedMotion,
       highContrast: typeof saved.highContrast === 'boolean' ? saved.highContrast : DEFAULTS.highContrast,
     }
@@ -60,7 +57,6 @@ export function useGameSettings() {
     }
     document.documentElement.dataset.reducedMotion = String(settings.reducedMotion)
     document.documentElement.dataset.highContrast = String(settings.highContrast)
-    document.documentElement.dataset.screenShake = String(settings.screenShake)
   }, [settings])
   return [settings, setSettings] as const
 }
