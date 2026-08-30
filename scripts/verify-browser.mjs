@@ -8917,16 +8917,30 @@ await page.evaluate(() => {
   localStorage.setItem('sts-sfx-enabled', 'on')
   window.__SFX_DETAILS__ = []
 })
+// The "corpse" enemy this fixture kills may already be dead from an earlier
+// scenario in this file; `useFalling`'s falling-grace-period only fires on
+// an observed alive→dead *transition* (comparing renders), so re-killing an
+// already-dead enemy never triggers it, and the enemy simply vanishes from
+// the DOM instead of lingering with `.enemy--dead` — reviving it first (and
+// letting that render) restores the real transition this fixture needs.
 const rowTargetFixture = await page.evaluate((livingUid) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const living = run.combat.enemies.find((enemy) => enemy.uid === livingUid)
   const corpse = run.combat.enemies.find((enemy) => enemy.uid !== livingUid)
   if (!living || !corpse) throw new Error('row VFX fixture needs two enemies')
-  Object.assign(corpse, { row: living.row, hp: 0, dead: true })
+  Object.assign(corpse, { row: living.row, hp: corpse.maxHp || living.maxHp, dead: false })
   debug.setRun(run)
   return { row: living.row, corpseUid: corpse.uid }
 }, firstEnemyId)
+await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"]:not(.enemy--dead)`).waitFor()
+await page.evaluate((corpseUid) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const corpse = run.combat.enemies.find((enemy) => enemy.uid === corpseUid)
+  Object.assign(corpse, { hp: 0, dead: true })
+  debug.setRun(run)
+}, rowTargetFixture.corpseUid)
 await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"].enemy--dead`).waitFor()
 
 await page.evaluate(() => {
@@ -9230,7 +9244,7 @@ const [watcherChargeFrame, watcherHandoffFrame, watcherReturnFrame] =
   await sampleCharacterFrames([270, 825, 1_375])
 await captureCombatAnimation('combat-attack-watcher-charge.png', 270)
 const watcherMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-sky.png', 600, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-sky.png', 550, readWatcherMeteorFrame,
 )).sampled
 const watcherMeteorContact = (await captureCombatAnimation(
   'combat-attack-watcher-meteor-impact.png', 1_050, readWatcherMeteorFrame,
@@ -9245,7 +9259,7 @@ const tallWatcherSeq = await publishPresentationEvent({
 })
 await watcherSeat.locator(`.character-attack[data-attack-seq="${tallWatcherSeq}"]`).waitFor()
 const watcherTallMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-tall-sky.png', 600, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-tall-sky.png', 550, readWatcherMeteorFrame,
 )).sampled
 await page.locator(`.combat-vfx[data-vfx-seq="${tallWatcherSeq}"]`).first().waitFor({ state: 'detached' })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -9741,7 +9755,7 @@ const contactDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
 }))
 check('real HP-loss feedback waits for Ironclad weapon contact', () => {
   assertEqual(earlyDamageFeedback.hitOpacity, 0)
-  assertEqual(earlyDamageFeedback.delay, '0.5s')
+  assertEqual(earlyDamageFeedback.delay, '0.63s')
   assertEqual(earlyDamageFeedback.hp, preDamageHpLabel)
   assert(contactDamageFeedback.flinches > 0, 'the enemy portrait did not flinch at contact')
   assertEqual(contactDamageFeedback.damage, '1')

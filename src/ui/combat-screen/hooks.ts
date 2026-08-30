@@ -268,6 +268,15 @@ export function useFalling(
   // Include a transition in the render that first observes it. Waiting for the
   // effect would let the board remove the dead enemy for one commit, remount it,
   // and lose EnemyCard's contact-timed HP/death snapshot.
+  //
+  // This only fires on an *observed* alive-to-dead transition, comparing this
+  // render against the last one this hook actually rendered. Re-killing an
+  // enemy that was already dead the last time this hook saw it (e.g. a test
+  // fixture reusing a corpse's uid without reviving it first) never satisfies
+  // `previous.current.get(id) === false`, so it skips straight to being
+  // filtered out of `displayedEnemies` with no grace period at all — revive it
+  // (and let that render) before killing it again if a falling/`.enemy--dead`
+  // transition needs to be observable.
   const refreshed = (authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current) ||
     authoritativeConnected === false || previousConnected.current === false || state.combatId !== previousCombat.current
   const visibleFalling = new Set(falling)
