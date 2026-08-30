@@ -93,13 +93,13 @@ check('repo-native card art is keyed by stable card ID, not printed face name', 
   assertEqual(cardArtPath(CARDS.strike_silent), `${CARD_ART_ROOT}/silent/strike_silent.webp`)
 })
 
-check('Donu, Deca, and both Awakened One forms use the melee boss dash', () => {
+check('melee bosses dash while Deca and Corrupt Heart cast from their lane', () => {
   assertDeepEqual([
     'donu',
-    'deca',
     'awakened_one_phase_1',
     'awakened_one_phase_2',
-  ].map(bossAttackMotionFor), ['melee', 'melee', 'melee', 'melee'])
+  ].map(bossAttackMotionFor), ['melee', 'melee', 'melee'])
+  assertEqual(bossAttackMotionFor('deca'), 'ranged')
   assertEqual(bossAttackMotionFor('corrupt_heart'), 'ranged')
 })
 

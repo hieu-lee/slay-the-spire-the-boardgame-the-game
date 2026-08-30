@@ -20,11 +20,36 @@ const MELEE_BOSS_ART = new Set([
   'awakened_one_phase_2',
   'time_eater',
   'donu',
-  'deca',
 ])
 
 export function bossAttackMotionFor(artId: string): 'melee' | 'ranged' {
   return MELEE_BOSS_ART.has(artId) ? 'melee' : 'ranged'
+}
+
+// Per-asset presentation metadata. Scale is measured against the idle cutout's
+// alpha height; contactLeft is the impact frame's first visible source pixel.
+const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: number]>([
+  ['awakened_one_phase_1', [0.928, 35]],
+  ['awakened_one_phase_2', [0.736, 34]],
+  ['bronze_automaton', [1.095, 66]],
+  ['corrupt_heart', [0.782, 24]],
+  ['deca', [0.947, 25]],
+  ['donu', [0.764, 24]],
+  ['guardian_attack', [1.12, 24]],
+  ['guardian_defensive', [1.091, 24]],
+  ['hexaghost', [1.031, 24]],
+  ['slime_boss', [1, 28]],
+  ['the_champ', [1.059, 24]],
+  ['the_collector', [1.072, 24]],
+  ['time_eater', [0.836, 42]],
+])
+
+export function bossAttackScaleFor(artId: string): number {
+  return BOSS_ATTACK_ART.get(artId)?.[0] ?? 1
+}
+
+export function bossAttackContactLeftFor(artId: string): number {
+  return BOSS_ATTACK_ART.get(artId)?.[1] ?? 24
 }
 
 export type VfxRecipe = Readonly<{

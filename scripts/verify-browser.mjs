@@ -3418,6 +3418,7 @@ check('Rainbow+ channels Lightning, Frost, and Dark in order without Exhausting'
   assertEqual(rainbow.players[0].exhaust.some((card) => card.uid === 'ui-rainbow'), false)
 })
 await shot('06r-rainbow-orbs')
+await page.locator('.seat--viewer .combat-vfx[data-vfx-kind="orb"]').first().waitFor({ state: 'detached' })
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -8975,6 +8976,7 @@ Object.assign(strikePresentation, await watcherSeat.evaluate((seat) => {
   const impact = attack?.querySelector('.character-attack__pose--ironclad-impact')
   return {
     actorAnimation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+    actorDuration: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationDuration,
     attackTarget: seat.getAttribute('data-attack-target'),
     attackTargetCount: Number(attack?.getAttribute('data-attack-target-count')),
     attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
@@ -8986,13 +8988,14 @@ Object.assign(strikePresentation, await watcherSeat.evaluate((seat) => {
   }
 }))
 const [ironcladReadyFrame, ironcladHandoffFrame, ironcladImpactFrame, ironcladReturnFrame] =
-  await sampleCharacterFrames([130, 413, 500, 670])
+  await sampleCharacterFrames([270, 585, 900, 1_500])
 ironcladReadyFrame.attackImpactOpacity = (await captureCombatAnimation(
-  'combat-attack-ironclad-ready.png', 130,
+  'combat-attack-ironclad-ready.png', 270,
 )).attackImpactOpacity
 ironcladImpactFrame.attackImpactOpacity = (await captureCombatAnimation(
-  'combat-attack-ironclad-impact.png', 500,
+  'combat-attack-ironclad-impact.png', 900,
 )).attackImpactOpacity
+await captureCombatAnimation('combat-attack-ironclad-recovery.png', 1_500)
 await vfxTarget().waitFor({ state: 'detached' })
 
 const rowDashFixture = await page.evaluate(({ livingUid, corpseUid }) => {
@@ -9076,6 +9079,7 @@ await page.waitForFunction((enemyId) => {
 }, firstEnemyId)
 const defectAttack = await watcherSeat.evaluate((seat) => ({
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  duration: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationDuration,
   core: getComputedStyle(seat.querySelector('.character-attack__core')).animationName,
   coreImage: seat.querySelector('.character-attack__core img')?.getAttribute('src') ?? '',
   charge: getComputedStyle(seat.querySelector('.character-attack__pose--defect-charge')).animationName,
@@ -9107,8 +9111,10 @@ const defectAttack = await watcherSeat.evaluate((seat) => ({
   })(),
 }))
 const [defectChargeFrame, defectHandoffFrame, defectReturnFrame] =
-  await sampleCharacterFrames([130, 413, 700])
-await captureCombatAnimation('combat-attack-defect.png', 380)
+  await sampleCharacterFrames([270, 825, 1_375])
+await captureCombatAnimation('combat-attack-defect-windup.png', 270)
+await captureCombatAnimation('combat-attack-defect-impact.png', 1_110)
+await captureCombatAnimation('combat-attack-defect-recovery.png', 1_375)
 check('Defect damage feedback lands with its emitted bolt', () => {
   assertEqual(earlyDefectFeedback, 0)
 })
@@ -9138,7 +9144,7 @@ const defectVolleyFollowupSeq = await publishPresentationEvent({
   playerIds: [], upgraded: false, copied: false, energy: 1,
 })
 await watcherSeat.locator(`.character-attack[data-attack-seq="${defectVolleyFollowupSeq}"]`).waitFor()
-await page.waitForTimeout(860)
+await page.waitForTimeout(1_250)
 const lateDefectImpact = await page.locator(
   `.enemy[data-enemy-id="${defectVolleyIds.at(-1)}"] .combat-vfx[data-vfx-seq="${defectVolleySeq}"]`,
 ).count()
@@ -9182,6 +9188,7 @@ await vfxTarget().waitFor()
 await watcherSeat.locator('.character-attack--watcher').waitFor()
 const watcherAttack = await watcherSeat.evaluate((seat) => ({
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  duration: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationDuration,
   target: seat.getAttribute('data-attack-target'),
   charge: getComputedStyle(seat.querySelector('.character-attack__pose--watcher-charge')).animationName,
   chargeImage: seat.querySelector('.character-attack__pose--watcher-charge img')?.getAttribute('src') ?? '',
@@ -9219,14 +9226,15 @@ const readWatcherMeteorFrame = () => watcherSeat.evaluate((seat) => {
   }
 })
 const [watcherChargeFrame, watcherHandoffFrame, watcherReturnFrame] =
-  await sampleCharacterFrames([77, 413, 700])
-await captureCombatAnimation('combat-attack-watcher-charge.png', 180)
+  await sampleCharacterFrames([270, 825, 1_375])
+await captureCombatAnimation('combat-attack-watcher-charge.png', 270)
 const watcherMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-sky.png', 100, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-sky.png', 600, readWatcherMeteorFrame,
 )).sampled
 const watcherMeteorContact = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-impact.png', 520, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-impact.png', 1_050, readWatcherMeteorFrame,
 )).sampled
+await captureCombatAnimation('combat-attack-watcher-recovery.png', 1_375)
 await vfxTarget().waitFor({ state: 'detached' })
 
 await page.setViewportSize({ width: 1440, height: 1200 })
@@ -9236,7 +9244,7 @@ const tallWatcherSeq = await publishPresentationEvent({
 })
 await watcherSeat.locator(`.character-attack[data-attack-seq="${tallWatcherSeq}"]`).waitFor()
 const watcherTallMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-tall-sky.png', 100, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-tall-sky.png', 600, readWatcherMeteorFrame,
 )).sampled
 await page.locator(`.combat-vfx[data-vfx-seq="${tallWatcherSeq}"]`).first().waitFor({ state: 'detached' })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -9297,6 +9305,7 @@ const mixedTargetPresentation = await page.evaluate(({ enemyId, playerId }) => (
 }), { enemyId: firstEnemyId, playerId: secondPlayerId })
 const silentAttack = await watcherSeat.evaluate((seat) => ({
   animation: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationName,
+  duration: getComputedStyle(seat.querySelector('.seat__portrait > img')).animationDuration,
   pose: getComputedStyle(seat.querySelector('.character-attack__pose--silent-throw')).animationName,
   poseImage: seat.querySelector('.character-attack__pose--silent-throw img')?.getAttribute('src') ?? '',
   daggers: seat.querySelectorAll('.character-attack__dagger').length,
@@ -9311,9 +9320,10 @@ const silentAttack = await watcherSeat.evaluate((seat) => ({
   attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
 }))
 const [silentEntryFrame, silentThrowFrame, silentReturnFrame] =
-  await sampleCharacterFrames([130, 480, 700])
-await captureCombatAnimation('combat-attack-silent.png', 480)
-await captureCombatAnimation('combat-attack-silent-return.png', 700)
+  await sampleCharacterFrames([170, 430, 800])
+await captureCombatAnimation('combat-attack-silent-windup.png', 170)
+await captureCombatAnimation('combat-attack-silent-impact.png', 400)
+await captureCombatAnimation('combat-attack-silent-recovery.png', 800)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
   assertEqual(mixedTargetPresentation.allyImpacts, 0)
@@ -9372,9 +9382,9 @@ const silentVolleyTimings = await silentVolley.locator('.character-attack__dagge
     const style = getComputedStyle(dagger)
     const duration = Number.parseFloat(style.animationDuration) * 1000
     const delay = Number.parseFloat(style.animationDelay) * 1000
-    return { duration, delay, contact: delay + duration / 2, return: delay + duration }
+    return { duration, delay, contact: delay + duration / 2 }
   }))
-await page.waitForTimeout(430)
+await page.waitForTimeout(320)
 const earlySilentHits = await Promise.all(rowDashFixture.ids.map((enemyId) =>
   page.locator(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`).last()
     .evaluate((hit) => Number(getComputedStyle(hit).opacity))))
@@ -9393,12 +9403,10 @@ await page.waitForFunction((enemyId) => {
 }, rowDashFixture.ids.at(-1))
 check('multi-target Silent daggers reach every enemy inside the contact window', () => {
   assertEqual(silentVolleyTimings.length, rowDashFixture.ids.length)
-  assert(silentVolleyTimings[0].contact >= 430 && silentVolleyTimings[0].contact <= 520,
+  assert(silentVolleyTimings[0].contact >= 390 && silentVolleyTimings[0].contact <= 410,
     `first dagger contact is ${silentVolleyTimings[0].contact}ms`)
-  assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 700,
+  assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 600,
     `a staggered dagger outlives contact: ${JSON.stringify(silentVolleyTimings)}`)
-  assert(Math.max(...silentVolleyTimings.map((timing) => timing.return)) < 1_000,
-    `a staggered dagger did not return inside the event lifetime: ${JSON.stringify(silentVolleyTimings)}`)
   assertDeepEqual(earlySilentHits, rowDashFixture.ids.map(() => 0))
   assert(staggeredSilentHits[0] > 0.5)
   assertEqual(staggeredSilentHits.at(-1), 0, 'all hit feedback appeared before the staggered daggers landed')
@@ -9423,6 +9431,7 @@ check('personal card and potion events render distinct authoritative recipes', (
   assertEqual(strikePresentation.family, 'slash')
   assertEqual(strikePresentation.motion, 'lunge')
   assertEqual(strikePresentation.actorAnimation, 'attack-ironclad')
+  assertEqual(strikePresentation.actorDuration, '1.8s')
   assertEqual(strikePresentation.attackTarget, firstEnemyId)
   assertEqual(strikePresentation.attackTargetCount, 1)
   assert(strikePresentation.attackX > 0, `Ironclad dash did not move toward its target: ${strikePresentation.attackX}`)
@@ -9474,6 +9483,7 @@ check('personal card and potion events render distinct authoritative recipes', (
   assertEqual(zapPresentation.family, 'lightning')
   assert(zapPresentation.image.includes('lightning-channel.webp'), zapPresentation.image)
   assertEqual(defectAttack.animation, 'attack-defect')
+  assertEqual(defectAttack.duration, '1.65s')
   assertEqual(defectAttack.core, 'defect-core-charge')
   assert(defectAttack.coreImage.endsWith('/defect-face-orb.webp'), defectAttack.coreImage)
   assertEqual(defectAttack.charge, 'defect-charge-pose')
@@ -9490,6 +9500,7 @@ check('personal card and potion events render distinct authoritative recipes', (
   assertEqual(prayPresentation.tone, 'mantra-cyan')
   assert(prayPresentation.image.includes('watcher-pray.webp'), prayPresentation.image)
   assertEqual(watcherAttack.animation, 'attack-watcher')
+  assertEqual(watcherAttack.duration, '1.65s')
   assertEqual(watcherAttack.target, defectVolleyIds[0])
   assertEqual(watcherAttack.charge, 'watcher-charge-pose')
   assert(watcherAttack.chargeImage.endsWith('/watcher-ready.webp'), watcherAttack.chargeImage)
@@ -9520,13 +9531,14 @@ check('personal card and potion events render distinct authoritative recipes', (
   assert(watcherMeteorContact.meteor.width >= 90, `Watcher meteor is still too small: ${watcherMeteorContact.meteor.width}px`)
   assertEqual(watcherAttack.auraDash, false)
   assertEqual(silentAttack.animation, 'attack-silent')
+  assertEqual(silentAttack.duration, '0.86s')
   assertEqual(silentAttack.pose, 'silent-throw-pose')
   assert(silentAttack.poseImage.endsWith('/silent-throw.webp'), silentAttack.poseImage)
   assertEqual(silentAttack.daggers, 1)
   assertEqual(silentAttack.target, firstEnemyId)
   assert(silentAttack.daggerImage.endsWith('/silent-knife.webp'), silentAttack.daggerImage)
   assertEqual(silentAttack.daggerAnimation, 'attack-dagger-round-trip')
-  assertEqual(silentAttack.daggerRoundTrip, true, 'Silent’s knife does not return along the exact outbound path')
+  assertEqual(silentAttack.daggerRoundTrip, true, 'Silent’s thrown knife did not return to her')
   assert(silentAttack.attackX > 0, 'the Silent target offset fixture is invalid')
   assertEqual(potionPresentation.kind, 'potion')
   assertEqual(potionPresentation.family, 'projectile')
@@ -13417,20 +13429,37 @@ check('an attacking boss swaps to its one-shot left-facing animation', () => {
   assert(bossAttack.image.endsWith('-attack.webp'), bossAttack.image)
 })
 await page.waitForFunction(() => document.querySelector('.enemy--boss[data-animation="attack"][data-attack-motion="melee"]'))
-const meleeBossMotion = await page.locator('.enemy--boss[data-animation="attack"][data-attack-motion="melee"]')
-  .first().locator('.enemy__art--cutout').evaluate((image) => getComputedStyle(image).animationName)
+const meleeBossArt = page.locator('.enemy--boss[data-animation="attack"][data-attack-motion="melee"]')
+  .first().locator('.enemy__art--cutout')
+const meleeBossMotion = await meleeBossArt.evaluate((image) => getComputedStyle(image).animationName)
 check('melee bosses dash toward the player side while attacking', () => {
   assert(meleeBossMotion === 'boss-melee-dash', meleeBossMotion)
 })
 await page.waitForTimeout(220)
-const meleeImpact = await page.locator('.board').evaluate((board) => ({
-  boss: board.querySelector('.enemy--boss[data-animation="attack"][data-attack-motion="melee"] .enemy__art--cutout')
-    .getBoundingClientRect().toJSON(),
-  player: board.querySelector('.seat__portrait > img').getBoundingClientRect().toJSON(),
-}))
+await meleeBossArt.evaluate((image) => {
+  for (const animation of image.getAnimations()) {
+    animation.currentTime = 800
+    animation.pause()
+  }
+})
+const meleeImpact = await page.locator('.board').evaluate((board) => {
+  const heroes = [...board.querySelectorAll('.seat__portrait > img')]
+  const animations = heroes.map((hero) => hero.style.animation)
+  for (const hero of heroes) hero.style.animation = 'none'
+  const heroRight = Math.max(...heroes.map((hero) => hero.getBoundingClientRect().right))
+  const art = board.querySelector('.enemy--boss[data-animation="attack"][data-attack-motion="melee"] .enemy__art--cutout')
+  const boss = art.getBoundingClientRect().toJSON()
+  const contactLeft = Number.parseFloat(getComputedStyle(art.closest('.enemy')).getPropertyValue('--boss-contact-left'))
+  heroes.forEach((hero, index) => { hero.style.animation = animations[index] ?? '' })
+  return {
+    boss,
+    visibleBossLeft: boss.left + contactLeft / art.naturalHeight * boss.height,
+    heroRight,
+  }
+})
 check('a melee boss reaches the player lane at its impact frame', () => {
-  assert(meleeImpact.boss.left <= meleeImpact.player.right && meleeImpact.boss.right >= meleeImpact.player.left,
-    `melee impact stops short of the player: ${JSON.stringify(meleeImpact)}`)
+  assert(Math.abs(meleeImpact.visibleBossLeft - meleeImpact.heroRight) <= 2,
+    `melee boss missed the rightmost hero edge: ${JSON.stringify(meleeImpact)}`)
 })
 await shot('17b-boss-attack', page.locator('.board'))
 await page.evaluate(() => {

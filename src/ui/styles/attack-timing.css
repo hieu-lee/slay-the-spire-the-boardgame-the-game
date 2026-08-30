@@ -2,15 +2,15 @@
    effects keep their immediate presentation. The short burst fits in the
    authoritative event lifetime even for the last staggered row projectile. */
 .combat-vfx.combat-vfx--attack-impact {
-  animation: combat-vfx-reveal 300ms var(--attack-impact-delay) ease-out both;
+  animation: combat-vfx-reveal 550ms var(--attack-impact-delay) ease-out both;
 }
 
 .combat-vfx.combat-vfx--attack-impact::before {
-  animation: combat-vfx-ring 300ms var(--attack-impact-delay) ease-out both;
+  animation: combat-vfx-ring 550ms var(--attack-impact-delay) ease-out both;
 }
 
 .combat-vfx.combat-vfx--attack-impact::after {
-  animation: combat-vfx-streak 260ms var(--attack-impact-delay) ease-out both;
+  animation: combat-vfx-streak 550ms var(--attack-impact-delay) ease-out both;
 }
 
 @keyframes mantra-ring {
@@ -61,13 +61,19 @@
 @keyframes vfx-throw-again { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }
 
 /* Character attacks use only authoritative targets already rendered on the
-   board. Visual layers move; the button and its hit box stay in its lane. */
+   board. Defect and Watcher spend 550ms each on windup, release and recovery.
+   Ironclad adds two 90ms travel beats between three 540ms body phases. Silent
+   keeps her original 860ms throw while each dagger makes a 500ms round trip.
+   Visual layers move; the button and its hit box stay in its lane. */
 .seat[class*='seat--attack-'] .seat__portrait > img {
-  animation-duration: 860ms;
+  animation-duration: 1650ms;
   animation-fill-mode: both;
   animation-iteration-count: 1;
   animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
+
+.seat.seat--attack-ironclad .seat__portrait > img { animation-duration: 1800ms; }
+.seat.seat--attack-silent .seat__portrait > img { animation-duration: 860ms; }
 
 .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
@@ -78,7 +84,7 @@
 }
 
 .seat--attack-ironclad .character-attack--ironclad {
-  animation-duration: 860ms;
+  animation-duration: 1800ms;
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
@@ -86,37 +92,38 @@
 .seat--attack-ironclad .character-attack--ironclad { animation-name: attack-ironclad-motion; }
 
 @keyframes attack-ironclad {
-  0%, 4%, 82%, 100% { opacity: 1; transform: translate(0) scale(1); }
-  4.01%, 81.99% { opacity: 0; }
-  10% { transform: translate(-1%, 0) scale(0.99, 1.01); }
-  42%, 64% { transform: translate(var(--attack-x), var(--attack-y)); }
-  80% { transform: translate(14%, 0) scale(0.98, 1.02); }
-  90% { transform: translate(2%, 0) scale(1.01, 0.99); }
+  0%, 69.99% { opacity: 0; transform: translate(0) scale(1); }
+  70%, 100% { opacity: 1; }
+  80% { transform: translate(-1%, 0) scale(0.99, 1.01); }
+  90% { transform: translate(1%, 0) scale(1.01, 0.99); }
 }
 
 @keyframes attack-ironclad-motion {
-  0%, 10%, 100% { transform: translate(0) scale(1); }
-  18% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
-  43%, 48% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  55% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.06, 0.95); }
-  65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  80% { transform: translate(14%, 0) scale(0.97, 1.03); }
-  92% { transform: translate(2%, 0) scale(1.01, 0.99); }
+  0%, 24%, 100% { transform: translate(0) scale(1); }
+  28% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
+  30% { transform: translate(0) scale(1); }
+  35%, 65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  46% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.045, 0.97); }
+  58% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  70%, 100% { transform: translate(0) scale(1); }
 }
 
 @keyframes attack-ironclad-mobile {
-  0%, 100% { transform: translate(0) scale(1); }
-  18% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
-  46%, 64% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
-  56% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.05, 0.95); }
-  82% { transform: translate(12%, 0) scale(0.98, 1.02); }
+  0%, 20%, 100% { transform: translate(0) scale(1); }
+  30% { transform: translate(-3%, 1%) scale(1.02, 0.98); }
+  35%, 65% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  45% { transform: translate(calc(var(--attack-x) + 3%), var(--attack-y)) scale(1.04, 0.97); }
+  55% { transform: translate(var(--attack-x), var(--attack-y)) scale(1); }
+  70% { transform: translate(0) scale(1); }
+  80% { transform: translate(-1%, 0) scale(0.99, 1.01); }
+  90% { transform: translate(1%, 0) scale(1.01, 0.99); }
 }
 
 @keyframes attack-watcher {
-  0%, 8%, 90%, 100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
-  8.01%, 89.99% { opacity: 0; }
-  20%, 80% { transform: translateY(2%) rotate(-2deg) scale(0.985); }
-  48%, 66% { transform: translateY(-2%) rotate(1deg) scale(1.025); }
+  0%, 66.66% { opacity: 0; transform: translateY(0) rotate(0) scale(1); }
+  66.67%, 100% { opacity: 1; }
+  77.78% { transform: translateY(1%) rotate(-1deg) scale(0.99); }
+  88.89% { transform: translateY(-1%) rotate(1deg) scale(1.01); }
 }
 
 @keyframes attack-silent {
@@ -127,19 +134,24 @@
 }
 
 @keyframes attack-defect {
-  0%, 10%, 90%, 100% { opacity: 1; transform: translateY(0) scale(1); }
-  10.01%, 89.99% { opacity: 0; }
-  20%, 80% { transform: translateY(2%) scale(0.98); }
-  48% { transform: translateY(-3%) scale(1.04); }
+  0%, 66.66% { opacity: 0; transform: translateY(0) scale(1); }
+  66.67%, 100% { opacity: 1; }
+  77.78% { transform: translateY(2%) scale(0.99); }
+  88.89% { transform: translateY(-1%) scale(1.01); }
 }
 
 /* Phones skip the two generated pose layers, so this keeps the base Defect
    visible while retaining the same transform-only charge motion. */
 @keyframes attack-defect-mobile {
   0%, 100% { transform: translateY(0) scale(1); }
-  28% { transform: translateY(3%) scale(0.96); }
-  48% { transform: translateY(-4%) scale(1.045); }
-  68% { transform: translateY(-2%) scale(1.02); }
+  11.11% { transform: translateY(2%) scale(0.98); }
+  22.22% { transform: translateY(1%) scale(0.99); }
+  33.33% { transform: translateY(-2%) scale(1.03); }
+  44.44% { transform: translateY(-3%) scale(1.035); }
+  55.56% { transform: translateY(-1%) scale(1.02); }
+  66.67% { transform: translateY(0) scale(1); }
+  77.78% { transform: translateY(1%) scale(0.99); }
+  88.89% { transform: translateY(-1%) scale(1.01); }
 }
 
 .character-attack {
@@ -164,12 +176,12 @@
   filter: blur(0.08rem);
   opacity: 0;
   transform-origin: right center;
-  animation: attack-speed-trail 860ms ease-in-out both;
+  animation: attack-speed-trail 1800ms ease-in-out both;
 }
 
 @keyframes attack-speed-trail {
-  0%, 20%, 43%, 67%, 100% { opacity: 0; transform: scaleX(0.25); }
-  32%, 78% { opacity: 0.72; transform: scaleX(1); }
+  0%, 29%, 36%, 64%, 71%, 100% { opacity: 0; transform: scaleX(0.25); }
+  32%, 68% { opacity: 0.72; transform: scaleX(1); }
 }
 
 .character-attack__swing {
@@ -184,7 +196,7 @@
   border-radius: 50%;
   filter: drop-shadow(0 0 0.35rem #ff6b28);
   opacity: 0;
-  animation: attack-swing 430ms 390ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
+  animation: attack-swing 550ms 630ms cubic-bezier(0.16, 0.82, 0.24, 1) both;
 }
 
 @keyframes attack-swing {
@@ -208,29 +220,31 @@
   object-position: center bottom;
 }
 
-.character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 860ms both; }
-.character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 860ms both; }
+.character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 1800ms both; }
+.character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 1800ms both; }
 .character-attack__pose--silent-throw { animation: silent-throw-pose 860ms both; }
-.character-attack__pose--defect-charge { animation: defect-charge-pose 860ms both; }
-.character-attack__pose--defect-release { animation: defect-release-pose 860ms both; }
-.character-attack__pose--watcher-charge { animation: watcher-charge-pose 860ms both; }
-.character-attack__pose--watcher-cast { animation: watcher-cast-pose 860ms both; }
+.character-attack__pose--defect-charge { animation: defect-charge-pose 1650ms both; }
+.character-attack__pose--defect-release { animation: defect-release-pose 1650ms both; }
+.character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
+.character-attack__pose--watcher-cast { animation: watcher-cast-pose 1650ms both; }
 
 @keyframes ironclad-ready-pose {
-  0%, 4%, 48%, 100% { opacity: 0; }
-  4.01%, 47.99% { opacity: 1; }
-  0%, 100% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.97); }
-  12%, 39% { transform: translate(0) rotate(0) scale(1); }
-  46% { transform: translate(2%, -1%) rotate(1deg) scale(1.025); }
+  0%, 34.99% { opacity: 1; }
+  35%, 100% { opacity: 0; }
+  0%, 100% { transform: translate(-2%, 1%) rotate(-2deg) scale(0.98); }
+  10% { transform: translate(-1%, 1%) rotate(-1deg) scale(0.99); }
+  20% { transform: translate(0) rotate(0) scale(1); }
+  30% { transform: translate(2%, -1%) rotate(1deg) scale(1.02); }
 }
 
 @keyframes ironclad-impact-pose {
-  0%, 47.99%, 82%, 100% { opacity: 0; }
-  48%, 81.99% { opacity: 1; }
+  0%, 34.99%, 70%, 100% { opacity: 0; }
+  35%, 69.99% { opacity: 1; }
   0%, 100% { transform: translate(-3%, -1%) rotate(-2deg) scale(0.96); }
-  49% { transform: translate(1%, 0) rotate(1deg) scale(1.035); }
-  56%, 66% { transform: translate(3%, 1%) rotate(2deg) scale(1.06); }
-  75% { transform: translate(0) rotate(0) scale(1); }
+  35% { transform: translate(1%, 0) rotate(1deg) scale(1.02); }
+  45% { transform: translate(3%, 1%) rotate(2deg) scale(1.04); }
+  55% { transform: translate(2%, 1%) rotate(1deg) scale(1.02); }
+  65% { transform: translate(0) rotate(0) scale(1); }
 }
 
 @keyframes silent-throw-pose {
@@ -243,35 +257,41 @@
 }
 
 @keyframes defect-charge-pose {
-  0%, 10%, 48%, 100% { opacity: 0; }
-  10.01%, 47.99% { opacity: 1; }
+  0%, 33.32% { opacity: 1; }
+  33.33%, 100% { opacity: 0; }
   0%, 100% { transform: translateY(2%) scale(0.97); }
-  20%, 42% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-1%) scale(1.025); }
+  11.11% { transform: translateY(1%) scale(0.985); }
+  22.22% { transform: translateY(0) scale(1); }
+  33.33% { transform: translateY(-1%) scale(1.02); }
 }
 
 @keyframes defect-release-pose {
-  0%, 47.99%, 90%, 100% { opacity: 0; }
-  48%, 89.99% { opacity: 1; }
+  0%, 32.99%, 67%, 100% { opacity: 0; }
+  33.33%, 66.66% { opacity: 1; }
   0%, 100% { transform: translateY(1%) scale(0.97); }
-  50%, 68% { transform: translateY(-2%) scale(1.04); }
-  76% { transform: translateY(0) scale(1); }
+  33.33% { transform: translateY(-2%) scale(1.03); }
+  44.44% { transform: translateY(-2%) scale(1.035); }
+  55.56% { transform: translateY(-1%) scale(1.02); }
+  66.67% { transform: translateY(0) scale(1); }
 }
 
 @keyframes watcher-charge-pose {
-  0%, 8%, 48%, 100% { opacity: 0; }
-  8.01%, 47.99% { opacity: 1; }
+  0%, 33.32% { opacity: 1; }
+  33.33%, 100% { opacity: 0; }
   0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.98); }
-  18%, 42% { transform: translateY(0) rotate(0) scale(1); }
-  50% { transform: translateY(-1%) rotate(1deg) scale(1.02); }
+  11.11% { transform: translateY(0) rotate(0) scale(0.99); }
+  22.22% { transform: translateY(0) rotate(0) scale(1); }
+  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.02); }
 }
 
 @keyframes watcher-cast-pose {
-  0%, 47.99%, 90%, 100% { opacity: 0; }
-  48%, 89.99% { opacity: 1; }
+  0%, 32.99%, 67%, 100% { opacity: 0; }
+  33.33%, 66.66% { opacity: 1; }
   0%, 100% { transform: translateY(1%) rotate(-1deg) scale(0.97); }
-  50%, 68% { transform: translateY(-1%) rotate(1deg) scale(1.035); }
-  76% { transform: translateY(0) rotate(0) scale(1); }
+  33.33% { transform: translateY(-1%) rotate(1deg) scale(1.03); }
+  44.44% { transform: translateY(-1%) rotate(1deg) scale(1.035); }
+  55.56% { transform: translateY(0) rotate(0) scale(1.02); }
+  66.67% { transform: translateY(0) rotate(0) scale(1); }
 }
 
 .character-attack__dagger,
@@ -298,7 +318,7 @@
   clip-path: none;
   filter: drop-shadow(0 0 0.22rem #92ffc1);
   animation-name: attack-dagger-round-trip;
-  animation-duration: 660ms;
+  animation-duration: 500ms;
   animation-delay: calc(150ms + var(--attack-delay));
 }
 
@@ -318,6 +338,10 @@
   background: none;
   clip-path: none;
   filter: drop-shadow(0 0 0.45rem #4ee9ff) drop-shadow(-0.65rem 0 0.28rem #4e8fff);
+}
+
+.character-attack--defect .character-attack__bolt {
+  animation-delay: calc(550ms + var(--attack-delay));
 }
 
 .character-attack__bolt > img,
@@ -353,7 +377,7 @@
   border-radius: 50%;
   background: none;
   box-shadow: 0 0 0.8rem #64e8ff, 0 0 1.35rem #477cff;
-  animation: defect-core-charge 700ms ease-out both;
+  animation: defect-core-charge 550ms ease-out both;
 }
 
 .character-attack__core > img { transform: translateX(-22%); }
@@ -370,14 +394,14 @@
   filter: drop-shadow(0 0 0.38rem #ff442d);
   opacity: 0;
   will-change: opacity, transform;
-  animation: watcher-meteor-fall 500ms calc(100ms + var(--attack-delay)) cubic-bezier(0.32, 0, 0.8, 0.24) both;
+  animation: watcher-meteor-fall 500ms calc(550ms + var(--attack-delay)) cubic-bezier(0.32, 0, 0.8, 0.24) both;
 }
 
 .character-attack__meteor-art {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  animation: watcher-meteor-art 500ms calc(100ms + var(--attack-delay)) linear both;
+  animation: watcher-meteor-art 500ms calc(550ms + var(--attack-delay)) linear both;
 }
 
 .character-attack__meteor-impact {
@@ -388,7 +412,7 @@
   aspect-ratio: 1;
   object-fit: contain;
   opacity: 0;
-  animation: watcher-meteor-impact 500ms calc(100ms + var(--attack-delay)) ease-out both;
+  animation: watcher-meteor-impact 550ms calc(1050ms + var(--attack-delay)) ease-out forwards;
 }
 
 @keyframes watcher-meteor-fall {
@@ -396,21 +420,20 @@
     opacity: 0;
     transform: translate(var(--attack-start-x), var(--attack-start-y)) translate(-89.65%, -86.13%);
   }
-  8%, 83% { opacity: 1; }
-  84%, 100% {
+  8%, 99% { opacity: 1; }
+  100% {
     opacity: 1;
     transform: translate(var(--attack-target-x), var(--attack-target-y)) translate(-89.65%, -86.13%);
   }
 }
 
 @keyframes watcher-meteor-art {
-  0%, 83% { opacity: 1; }
-  84%, 100% { opacity: 0; }
+  0%, 99% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 @keyframes watcher-meteor-impact {
-  0%, 83% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
-  84%, 92% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  0%, 78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.08); }
 }
 

@@ -5,13 +5,13 @@ import type { EnemyAction } from '../game/enemies.ts'
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
 import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
 import type { Enemy, Player } from '../game/types.ts'
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Icon, IconValue } from './Icon.tsx'
 import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand } from './board-signals.ts'
 import { revealDecodedImage } from './Card.tsx'
-import { bossAttackMotionFor } from './combat-vfx.ts'
+import { bossAttackContactLeftFor, bossAttackMotionFor, bossAttackScaleFor } from './combat-vfx.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -273,10 +273,16 @@ export function EnemyCard({
   defender,
   onClick,
 }: EnemyCardProps) {
+  const cardRef = useRef<HTMLButtonElement>(null)
   const [visibleEnemy, setVisibleEnemy] = useState(enemy)
   const displayTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
   const pendingVisuals = useRef(new Map<number, { eventSeq: number; enemy: Enemy }>())
   const attackPreload = useRef<HTMLImageElement | null>(null)
+  const bossAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [presentedBossAttack, setPresentedBossAttack] = useState<{
+    art: string
+    artId: string
+  } | null>(null)
   const displayBeat = useRef(0)
   const displayedEventSeq = useRef(visualEventSeq)
   const visualSignature = JSON.stringify(enemy)
@@ -294,6 +300,9 @@ export function EnemyCard({
       for (const timer of displayTimers.current.values()) clearTimeout(timer)
       displayTimers.current.clear()
       pendingVisuals.current.clear()
+      if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
+      bossAttackTimer.current = null
+      setPresentedBossAttack(null)
       displayedEventSeq.current = visualEventSeq
       setVisibleEnemy(enemy)
       return
@@ -337,12 +346,27 @@ export function EnemyCard({
   const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
   const actions = actionsForEnemy(visibleEnemy, die)
   const animatedBoss = Boolean(visibleEnemy.isBoss && animateBoss && !visibleEnemy.dead)
-  const bossAttacking = Boolean(animatedBoss && acting &&
+  const currentBossArtId = def.artId ?? def.id
+  const currentBossAttackArt = bossAnimationImagePath(def, 'attack')
+  const bossAttackTriggered = Boolean(animatedBoss && acting &&
     actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence'))
+  const bossAttacking = bossAttackTriggered || Boolean(animatedBoss && presentedBossAttack)
+  useEffect(() => {
+    if (!bossAttackTriggered) return
+    setPresentedBossAttack({ art: currentBossAttackArt, artId: currentBossArtId })
+    if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
+    bossAttackTimer.current = setTimeout(() => {
+      setPresentedBossAttack(null)
+      bossAttackTimer.current = null
+    }, 1830)
+  }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt])
+  useEffect(() => () => {
+    if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
+  }, [])
   const art = animatedBoss
-    ? bossAnimationImagePath(def, bossAttacking ? 'attack' : 'idle')
+    ? bossAttacking ? presentedBossAttack?.art ?? currentBossAttackArt : bossAnimationImagePath(def, 'idle')
     : enemyImagePath(def)
-  const bossAttackArt = animatedBoss ? bossAnimationImagePath(def, 'attack') : undefined
+  const bossAttackArt = animatedBoss ? currentBossAttackArt : undefined
   useEffect(() => {
     if (!bossAttackArt) return
     const link = document.createElement('link')
@@ -360,7 +384,36 @@ export function EnemyCard({
       if (attackPreload.current === preload) attackPreload.current = null
     }
   }, [bossAttackArt, def.artId, def.id])
-  const bossAttackMotion = animatedBoss ? bossAttackMotionFor(def.artId ?? def.id) : 'ranged'
+  const bossArtId = presentedBossAttack?.artId ?? currentBossArtId
+  const bossAttackMotion = animatedBoss ? bossAttackMotionFor(bossArtId) : 'ranged'
+  const bossAttackScale = bossAttackScaleFor(bossArtId)
+  const bossAttackContactLeft = bossAttackContactLeftFor(bossArtId)
+  useLayoutEffect(() => {
+    const card = cardRef.current
+    if (!card || !bossAttacking || bossAttackMotion !== 'melee') return
+    const boss = card.querySelector<HTMLImageElement>('.enemy__art--cutout')
+    const heroes = [...(card.closest('.board')?.querySelectorAll<HTMLElement>('.seat__portrait > img') ?? [])]
+    if (!boss || heroes.length === 0) return
+    const measure = () => {
+      if (boss.naturalHeight === 0) return
+      const heroAnimations = heroes.map((hero) => hero.style.animation)
+      for (const hero of heroes) hero.style.animation = 'none'
+      const heroRight = Math.max(...heroes.map((hero) => hero.getBoundingClientRect().right))
+      heroes.forEach((hero, index) => { hero.style.animation = heroAnimations[index] ?? '' })
+      const animation = boss.style.animation
+      boss.style.animation = 'none'
+      const bossRect = boss.getBoundingClientRect()
+      const visibleBossLeft = bossRect.left + bossAttackContactLeft / boss.naturalHeight * bossRect.height
+      boss.style.animation = animation
+      card.style.setProperty('--boss-dash-x', `${Math.min(0, heroRight - visibleBossLeft)}px`)
+    }
+    if (boss.complete && boss.naturalHeight > 0) measure()
+    else boss.addEventListener('load', measure, { once: true })
+    return () => {
+      boss.removeEventListener('load', measure)
+      card.style.removeProperty('--boss-dash-x')
+    }
+  }, [art, bossAttacking, bossAttackContactLeft, bossAttackMotion])
   const abilities = enemyAbilities(def)
   // Curiosity adds the defender's Power count to every hit, so it belongs in the
   // preview for the same reason Strength and Weak do.
@@ -394,6 +447,7 @@ export function EnemyCard({
 
   return (
     <button
+      ref={cardRef}
       type="button"
       className={className}
       data-sfx="enemy"
@@ -405,6 +459,8 @@ export function EnemyCard({
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
+        '--boss-attack-scale': bossAttackScale,
+        '--boss-contact-left': bossAttackContactLeft,
       } as CSSProperties}
       disabled={enemy.dead || disabled}
       onClick={() => { if (!enemy.dead) onClick?.(enemy) }}

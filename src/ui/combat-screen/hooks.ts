@@ -181,7 +181,7 @@ export function useStruck(
           else next.delete(id)
           return next
         })
-      }, delay + 520))
+      }, delay + 600))
     }
   }, [authoritativeConnected, authoritativeRestoration, reducedEffects, state])
 
@@ -378,12 +378,14 @@ export function usePresentationEvents(
       const staggerIndex = event.kind === 'orb' && event.sourceId === 'orb-end-turn'
         ? orbEndTurnOrder.findIndex((candidate) => candidate.seq === event.seq)
         : 0
-      const lifetime = Math.max(900, lastTarget
-        // The target burst runs for 300ms after contact. Leave one frame-budget
-        // margin for a busy mobile renderer so the event cannot unmount before
-        // the delayed final impact paints.
-        ? characterAttackContactMs(state, lastTarget, event) + 420
-        : 0) + staggerIndex * ORB_END_TURN_STAGGER_MS
+      const attackContact = lastTarget
+        // Contact is followed by a 500–600ms impact and a 500–600ms recovery.
+        // Leave one frame-budget margin so a busy mobile renderer cannot
+        // unmount the last pose before it paints.
+        ? characterAttackContactMs(state, lastTarget, event)
+        : 0
+      const lifetime = (attackContact > 0 ? Math.max(1_800, attackContact + 1_200) : 900) +
+        staggerIndex * ORB_END_TURN_STAGGER_MS
       timers.current.set(event.seq, setTimeout(() => {
         timers.current.delete(event.seq)
         setActive((current) => current.filter((candidate) => candidate.seq !== event.seq))

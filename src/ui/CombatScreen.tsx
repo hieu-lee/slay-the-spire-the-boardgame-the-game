@@ -1430,7 +1430,7 @@ function CombatScreenView({
           setAutoAdvanceRetry((attempt) => attempt + 1)
         }
       } else onChange?.(startPlayerTurnWithChoices(state))
-    }, 450)
+    }, 730)
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn])
 

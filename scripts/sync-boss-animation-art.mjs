@@ -1,4 +1,4 @@
-// Packages Imagegen 2x2 RGBA boss sheets into compact idle/attack WebPs.
+// Packages Imagegen 2x2 RGBA boss sheets into idle and four-phase attack WebPs.
 // Usage: node scripts/sync-boss-animation-art.mjs boss_id=/path/to/sheet.png [...]
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = join(repoRoot, 'public/assets/combat/enemies/animations')
+const padScript = join(repoRoot, 'scripts/pad-boss-attack-frames.py')
+const reworkScript = join(repoRoot, 'scripts/rework-boss-attack-frames.py')
 const sheets = process.argv.slice(2).map((arg) => {
   const split = arg.indexOf('=')
   const id = arg.slice(0, split)
@@ -15,11 +17,14 @@ const sheets = process.argv.slice(2).map((arg) => {
   if (split < 1 || !/^[a-z0-9_]+$/.test(id) || !existsSync(path)) {
     throw new Error(`expected boss_id=/existing/sheet.png, got: ${arg}`)
   }
+  if (id.startsWith('awakened_one_phase_')) {
+    throw new Error(`${id} uses its custom claw/fire animation workflow, not a 2x2 sheet`)
+  }
   return { id, path }
 })
 
 if (sheets.length === 0) throw new Error('pass at least one boss_id=/path/to/sheet.png')
-for (const command of ['cwebp', 'img2webp']) {
+for (const command of ['cwebp', 'img2webp', 'webpmux', 'python3']) {
   if (spawnSync(command, ['-version'], { stdio: 'ignore' }).error) {
     throw new Error(`missing ${command}; install the WebP tools first`)
   }
@@ -70,9 +75,12 @@ for (const { id, path } of sheets) {
     run('img2webp', [
       '-loop', '1', '-min_size',
       '-d', '170', join(temp, 'windup.webp'),
-      '-d', '330', join(temp, 'impact.webp'),
+      '-d', '500', join(temp, 'impact.webp'),
       '-o', join(outDir, `${id}-attack.webp`),
     ])
+    const attack = join(outDir, `${id}-attack.webp`)
+    run('python3', [padScript, attack])
+    run('python3', [reworkScript, attack])
   } finally {
     rmSync(temp, { recursive: true, force: true })
   }
