@@ -9335,10 +9335,10 @@ const silentAttack = await watcherSeat.evaluate((seat) => ({
   attackX: Number.parseFloat(getComputedStyle(seat).getPropertyValue('--attack-x')),
 }))
 const [silentEntryFrame, silentThrowFrame, silentReturnFrame] =
-  await sampleCharacterFrames([170, 430, 800])
+  await sampleCharacterFrames([170, 1_025, 1_899])
 await captureCombatAnimation('combat-attack-silent-windup.png', 170)
 await captureCombatAnimation('combat-attack-silent-impact.png', 1_025)
-await captureCombatAnimation('combat-attack-silent-recovery.png', 800)
+await captureCombatAnimation('combat-attack-silent-recovery.png', 1_899)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
   assertEqual(mixedTargetPresentation.allyImpacts, 0)
@@ -9546,7 +9546,7 @@ check('personal card and potion events render distinct authoritative recipes', (
   assert(watcherMeteorContact.meteor.width >= 90, `Watcher meteor is still too small: ${watcherMeteorContact.meteor.width}px`)
   assertEqual(watcherAttack.auraDash, false)
   assertEqual(silentAttack.animation, 'attack-silent')
-  assertEqual(silentAttack.duration, '0.86s')
+  assertEqual(silentAttack.duration, '1.9s')
   assertEqual(silentAttack.pose, 'silent-throw-pose')
   assert(silentAttack.poseImage.endsWith('/silent-throw.webp'), silentAttack.poseImage)
   assertEqual(silentAttack.daggers, 1)

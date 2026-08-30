@@ -337,7 +337,7 @@ try {
     { character: 'ironclad', sourceId: 'strike_ironclad', duration: '1.8s', contact: 630, samples: [270, 900, 1500] },
     { character: 'defect', sourceId: 'strike_defect', duration: '1.65s', contact: 1110, samples: [270, 825, 1375] },
     { character: 'watcher', sourceId: 'strike_watcher', duration: '1.65s', contact: 1050, samples: [270, 825, 1375] },
-    { character: 'silent', sourceId: 'predator', duration: '0.86s', contact: 1025, samples: [170, 430, 800] },
+    { character: 'silent', sourceId: 'predator', duration: '2.04s', contact: 1025, samples: [170, 1025, 2039] },
   ]
   for (const [heroIndex, hero] of heroCases.entries()) {
     const ids = await page.evaluate(({ base, enemy, character, sourceId, heroIndex }) => {
@@ -345,16 +345,24 @@ try {
       const run = structuredClone(debug.getRun())
       run.combat = structuredClone(base)
       run.combat.phase = 'player'
-      run.combat.enemies = [{ ...enemy, uid: 'animation-target', defId: 'cultist', isBoss: false, hp: 999, maxHp: 999, dead: false }]
+      const enemyIds = character === 'silent'
+        ? ['animation-target-1', 'animation-target-2', 'animation-target-3']
+        : ['animation-target']
+      run.combat.enemies = enemyIds.map((uid, row) => ({
+        ...enemy, uid, row, defId: 'cultist', isBoss: false, hp: 999, maxHp: 999, dead: false,
+      }))
       const actor = run.combat.players[0]
       Object.assign(actor, { character, name: character, hp: 999, maxHp: 999, dead: false })
       const seq = 1_000_001 + heroIndex
-      run.combat.presentationEvents = [{
-        seq, kind: 'card', actorId: actor.id, sourceId, enemyIds: ['animation-target'], playerIds: [],
+      const attack = {
+        seq, kind: 'card', actorId: actor.id, sourceId, enemyIds, playerIds: [],
         upgraded: false, copied: false, energy: 1,
-      }]
+      }
+      run.combat.presentationEvents = character === 'silent'
+        ? [attack, { ...attack, seq: seq + 1, enemyIds: [enemyIds[0]], copied: true }]
+        : [attack]
       debug.setRun(run)
-      return { actorId: actor.id, seq }
+      return { actorId: actor.id, seq: character === 'silent' ? seq + 1 : seq }
     }, { base: template.combat, enemy: template.enemy, heroIndex, ...hero })
     const seat = page.locator(`.seat[data-player-id="${ids.actorId}"]`)
     const currentAttack = seat.locator(`.character-attack--${hero.character}[data-attack-seq="${ids.seq}"]`)
@@ -363,17 +371,51 @@ try {
     check(await body.evaluate((image, duration) => getComputedStyle(image).animationDuration === duration, hero.duration),
       `${hero.character}: wrong body duration`)
     if (hero.character === 'silent') {
-      const dagger = await currentAttack.locator('.character-attack__dagger').first().evaluate((element) => {
-        const style = getComputedStyle(element)
-        const frames = element.getAnimations()[0]?.effect?.getKeyframes() ?? []
-        return {
-          animation: style.animationName,
-          duration: style.animationDuration,
-          roundTrip: frames.length > 1 && frames[0].transform === frames.at(-1).transform,
-        }
-      })
-      check(dagger.animation === 'attack-dagger-round-trip' && dagger.duration === '1.75s' && dagger.roundTrip,
-        `silent: dagger is not a 1.75s round trip ${JSON.stringify(dagger)}`)
+      const daggers = await seat.locator('.character-attack__dagger').evaluateAll((elements) =>
+        elements.map((element) => {
+          const style = getComputedStyle(element)
+          const frames = element.getAnimations()[0]?.effect?.getKeyframes() ?? []
+          return {
+            animation: style.animationName,
+            duration: Number.parseFloat(style.animationDuration) * 1000,
+            delay: Number.parseFloat(style.animationDelay) * 1000,
+            roundTrip: frames.length > 1 && frames[0].transform === frames.at(-1).transform,
+          }
+        }))
+      check(daggers.length === 4 && daggers.every((dagger) =>
+        dagger.animation === 'attack-dagger-round-trip' && dagger.duration === 1750 && dagger.roundTrip),
+      `silent: daggers are not 1.75s round trips ${JSON.stringify(daggers)}`)
+      const returnMs = Math.max(...daggers.map(({ delay, duration }) => delay + duration))
+      const sampleSilentBody = async (time) => {
+        await seat.evaluate((element, currentTime) => {
+          for (const layer of [
+            element.querySelector('.seat__portrait > img'),
+            element.querySelector('.character-attack__pose--silent-throw'),
+          ]) {
+            const animation = layer.getAnimations()[0]
+            if (animation) {
+              animation.pause()
+              animation.currentTime = currentTime
+            }
+          }
+        }, time)
+        await page.evaluate(() => new Promise(requestAnimationFrame))
+        return seat.evaluate((element) => {
+          const idle = element.querySelector('.seat__portrait > img')
+          return {
+            idle: Number(getComputedStyle(idle).opacity),
+            pose: Number(getComputedStyle(element.querySelector('.character-attack__pose--silent-throw')).opacity),
+          }
+        })
+      }
+      const handoff = {
+        beforeReturn: await sampleSilentBody(returnMs - 1),
+        afterReturn: await sampleSilentBody(returnMs),
+      }
+      check(handoff.beforeReturn.pose > 0.99 && handoff.beforeReturn.idle === 0 &&
+        handoff.afterReturn.pose === 0 && handoff.afterReturn.idle > 0.99,
+      `silent: body did not hand off from throw pose after dagger return ${JSON.stringify(handoff)}`)
+      await screenshot(`hero-silent-3-${returnMs}ms`)
     }
     if (hero.character === 'watcher') {
       const impact = currentAttack.locator('.character-attack__meteor-impact').first()
@@ -398,24 +440,28 @@ try {
       check(await impactOpacityAt(1050) >= 0.9, 'watcher: meteor impact is missing at ground contact')
     }
     for (const [index, time] of hero.samples.entries()) {
-      const visibleBodies = await seat.evaluate((element, currentTime) => {
+      await seat.evaluate((element, currentTime) => {
         for (const animation of element.getAnimations({ subtree: true })) {
           const name = animation.animationName ?? ''
           if (name.startsWith('attack-') || name.startsWith('watcher-') || name.endsWith('-pose') ||
             name === 'defect-core-charge') {
-            animation.currentTime = currentTime
             animation.pause()
+            animation.currentTime = currentTime
           }
         }
+      }, time)
+      await page.evaluate(() => new Promise(requestAnimationFrame))
+      const visibleBodies = await seat.evaluate((element) => {
         const idle = Number(getComputedStyle(element.querySelector('.seat__portrait > img')).opacity) > 0.01 ? 1 : 0
         const poses = [...element.querySelectorAll('.character-attack__pose')]
           .filter((pose) => Number(getComputedStyle(pose).opacity) > 0.01).length
         return idle + poses
-      }, time)
+      })
       check(visibleBodies === 1, `${hero.character}: ${visibleBodies} bodies visible at ${time}ms`)
       await screenshot(`hero-${hero.character}-${index}-${time}ms`)
     }
     await currentAttack.waitFor({ state: 'detached' })
+    if (hero.character === 'silent') await seat.locator('.character-attack--silent').waitFor({ state: 'detached' })
     const cue = `card:${hero.character}:${hero.sourceId}:base`
     const sounds = await page.evaluate((expected) =>
       window.__ANIMATION_SFX__.filter((sound) => sound.cue === expected), cue)
