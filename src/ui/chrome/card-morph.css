@@ -112,8 +112,7 @@
    only thing left to disarm is the veil's fade and the residual transitions —
    the outcome still shows, it just does not move. */
 @media (prefers-reduced-motion: reduce) {
-  .card-morph { animation: none; }
-  .card-morph__slot,
-  .card-morph__caption { transition: none; }
-  .card-morph__burst { animation: none; opacity: 0; }
+  html:not([data-mobile-performance='true']) .card-morph { animation: none; }
+  html:not([data-mobile-performance='true']) :is(.card-morph__slot, .card-morph__caption) { transition: none; }
+  html:not([data-mobile-performance='true']) .card-morph__burst { animation: none; opacity: 0; }
 }

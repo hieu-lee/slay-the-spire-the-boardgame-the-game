@@ -1,248 +1,116 @@
-/* Phones use a scaled desktop combat board in landscape. Persistent filtered
-   layers are disproportionately expensive there, so keep the readable art and
-   short action overlay while dropping ambient and multi-layer effects. */
-html[data-mobile-performance='true'] .power::after,
-html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
-html[data-mobile-performance='true'] .stance-aura,
-html[data-mobile-performance='true'] .hand .card--drawn,
-html[data-mobile-performance='true'] .motion-pulse-0,
-html[data-mobile-performance='true'] .motion-pulse-1,
-html[data-mobile-performance='true'] .token--orb::before,
-html[data-mobile-performance='true'] .pip--energy::after,
-html[data-mobile-performance='true'] .seat--targetable {
-  animation: none;
-}
-
-/* `.seat__portrait > img` gets its OWN rule, and only the `animation-name`
-   longhand — not the `animation` shorthand every selector above uses. The
-   shorthand resets every sub-property, including `animation-duration` and
-   `animation-fill-mode`, and this element's duration comes from a SEPARATE
-   rule keyed on the active `.seat--*` class (attack-timing.css). Zeroing it
-   here left nothing for the restores below to size a lunge into: they only
-   override the name, so a name pointed at a 0s, fill-mode-less animation is
-   still invisible. This way the disable is exactly what it says: no name,
-   still nothing playing, but the duration/timing/fill-mode are there for a
-   more specific selector below to actually restore. */
-html[data-mobile-performance='true'] .seat__portrait > img {
-  animation-name: none;
-}
-
-html[data-mobile-performance='true'] .seat__portrait > img,
-html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
-html[data-mobile-performance='true'] .seat__portrait::before,
-html[data-mobile-performance='true'] .enemy__portrait:has(> .enemy__art--cutout)::before,
-html[data-mobile-performance='true'] .stance-aura {
+/* Phone and desktop combat share the same animation/VFX rules. Save layer
+   memory only while an actor is idle; active attack classes keep their short,
+   compositor-promoted layers from attack-timing.css. */
+html[data-mobile-performance='true']
+  .seat:not([class*='seat--attack-']):not([class*='seat--vfx-']) .seat__portrait > img,
+html[data-mobile-performance='true']
+  .enemy:not(.enemy--acting):not(.enemy--falling) .enemy__portrait > .enemy__art--cutout {
   will-change: auto;
-}
-
-/* The rule above cuts `actor-idle`, the 3.4s ambient breathing loop this file
-   means to — but on the SAME selector every attack lunge and action beat
-   (attack-timing.css) is layered on top of via that same `animation-name`
-   override, so it silently took the character's whole body out of every
-   attack too. On a real phone that reads as "the animation is missing", which
-   is worse than the choppiness cutting it was meant to fix.
-   The attack bases and most action beats are already exactly what
-   this file's own header asks for: plain `transform`/`opacity`, no filter, no
-   extra layer — as cheap as a CSS animation gets. Restoring them needs MORE
-   specificity than the rule above, which is why each one repeats its own
-   `.seat--*` class rather than only strengthening `.seat__portrait`. */
-html[data-mobile-performance='true'] .seat--vfx-lunge.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-lunge; }
-html[data-mobile-performance='true'] .seat--vfx-lunge.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-lunge-again; }
-html[data-mobile-performance='true'] .seat--vfx-recoil.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-recoil; }
-html[data-mobile-performance='true'] .seat--vfx-recoil.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-recoil-again; }
-html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-drink; }
-html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
-html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
-html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
-html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
-html[data-mobile-performance='true'] .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
-html[data-mobile-performance='true'] .seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
-
-/* Casting still has a brightness sweep, so phones use its filter-free twin. */
-html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast-mobile; }
-html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-mobile-again; }
-html[data-mobile-performance='true'] .seat--attack-defect .seat__portrait > img { animation-name: attack-defect; }
-
-html[data-mobile-performance='true'] .seat__portrait::before,
-html[data-mobile-performance='true'] .enemy__portrait:has(> .enemy__art--cutout)::before,
-html[data-mobile-performance='true'] .combat-vfx::before,
-html[data-mobile-performance='true'] .combat-vfx::after,
-/* The card-flight clone's own particle trail: a smoke wisp and a four-dot mote
-   trail, each a separate filtered/shadowed layer riding along on every single
-   card played, drawn, discarded or exhausted — by far the most frequent
-   animation in the game, and the one filtered effect this file forgot. Nothing
-   about the ACTION reads from these; only the card's flight path does. */
-html[data-mobile-performance='true'] .card-flight::before,
-html[data-mobile-performance='true'] .card-flight::after {
-  display: none;
-}
-
-html[data-mobile-performance='true'] .seat,
-html[data-mobile-performance='true'] .enemy,
-html[data-mobile-performance='true'] .seat__portrait > img,
-html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
-html[data-mobile-performance='true'] .stance-aura,
-html[data-mobile-performance='true'] .combat-vfx,
-html[data-mobile-performance='true'] .character-attack__swing,
-html[data-mobile-performance='true'] .character-attack__dagger,
-html[data-mobile-performance='true'] .character-attack__bolt,
-html[data-mobile-performance='true'] .character-attack__meteor,
-html[data-mobile-performance='true'] .hit-vfx,
-html[data-mobile-performance='true'] .card-drag,
-html[data-mobile-performance='true'] .card-target-arrow__line,
-html[data-mobile-performance='true'] .hand .card,
-html[data-mobile-performance='true'] .card-flight .card {
-  filter: none;
-}
-
-html[data-mobile-performance='true'] .combat-vfx {
-  mix-blend-mode: normal;
-}
-
-html[data-mobile-performance='true'] .character-attack--ironclad::before {
-  filter: none;
-}
-
-html[data-mobile-performance='true'] .board:has(.enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_1'])
-  .seat:not(.seat--dead) .seat__portrait::before {
-  display: block;
-}
-
-/* `combat-vfx--frost`/`--dark` (Defect's orb evokes) set `filter` directly in
-   their OWN keyframes, and an animated property always wins over a static
-   override on the same element — so `.combat-vfx { filter: none }` above never
-   actually stopped these two from sweeping a `brightness()` + `drop-shadow()`
-   across most of their 820ms. Routing them to the plain reveal keyframe, which
-   never touches `filter` at all, is what the override above intended. */
-html[data-mobile-performance='true'] .combat-vfx--frost,
-html[data-mobile-performance='true'] .combat-vfx--dark {
-  animation-name: combat-vfx-reveal;
-}
-
-html[data-mobile-performance='true'] .card-target-arrow__line {
-  animation: none;
-}
-
-html[data-mobile-performance='true'] .hand .card {
-  transition: none;
-  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
-}
-
-html[data-mobile-performance='true'] .hand .card--unplayable {
-  opacity: 0.55;
-}
-
-html[data-mobile-performance='true'] .hand .card--selected {
-  outline: 2px solid #62e6ff;
-  outline-offset: 1px;
-  box-shadow: 0 0.25rem 0.35rem rgb(0 0 0 / 0.65);
-}
-
-html[data-mobile-performance='true'] .seat--targeted,
-html[data-mobile-performance='true'] .enemy--targeted {
-  outline: 3px solid #65e8ff;
-  outline-offset: 3px;
 }
 
 html[data-mobile-performance='true'] .choice-modal::backdrop {
   backdrop-filter: none;
 }
 
-/* A phone still clears the slot on the shared 1.8s beat, but skips the mask,
-   filtered collapse and both decorative death layers. */
-html[data-mobile-performance='true'] .enemy--dead.enemy--falling .enemy__portrait {
-  animation: none;
-  opacity: 1;
-  transform: none;
-  filter: none;
-}
-
-html[data-mobile-performance='true'] .enemy--dead.enemy--falling .enemy__portrait > .enemy__art--cutout {
-  -webkit-mask-image: none;
-  mask-image: none;
-  animation: enemy-fade 1800ms ease-out both;
-}
-
+/* The in-game Reduce motion toggle is authoritative on phones. iOS's hidden
+   OS preference must not silently delete combat; desktop still honours it. */
 @media (prefers-reduced-motion: reduce) {
-  .hand .card { transition: none; }
-  .card-drag { transition: none; }
-  .card-target-arrow__line { animation: none; }
+  html:not([data-mobile-performance='true']) .hand .card { transition: none; }
+  html:not([data-mobile-performance='true']) .card-drag { transition: none; }
+  html:not([data-mobile-performance='true']) .card-target-arrow__line { animation: none; }
 
-  .hand .card--drawn,
-  .card-flight,
-  .motion-pulse-0,
-  .motion-pulse-1,
-  .token--orb::before,
-  .combat__phase,
-  .combat__result,
-  .reward-screen__choice {
+  html:not([data-mobile-performance='true']) :is(
+    .hand .card--drawn,
+    .card-flight,
+    .motion-pulse-0,
+    .motion-pulse-1,
+    .combat__phase,
+    .combat__result,
+    .reward-screen__choice
+  ) {
     animation: none;
   }
+  html:not([data-mobile-performance='true']) .token--orb::before { animation: none; }
 
-  .card-flight { display: none; }
+  html:not([data-mobile-performance='true']) .card-flight { display: none; }
 
-  .seat__portrait > img,
-  .enemy__portrait > .enemy__art--cutout,
-  .seat__portrait::before,
-  .enemy__portrait:has(> .enemy__art--cutout)::before,
-  .hit-vfx,
-  .hit-vfx strong {
+  html:not([data-mobile-performance='true']) :is(
+    .seat__portrait > img,
+    .enemy__portrait > .enemy__art--cutout,
+    .hit-vfx,
+    .hit-vfx strong
+  ) {
     animation: none;
   }
+  html:not([data-mobile-performance='true']) .seat__portrait::before,
+  html:not([data-mobile-performance='true'])
+    .enemy__portrait:has(> .enemy__art--cutout)::before { animation: none; }
 
-  .seat__portrait > img,
-  .enemy__portrait > .enemy__art--cutout,
-  .seat__portrait::before,
-  .enemy__portrait:has(> .enemy__art--cutout)::before,
-  .stance-aura,
-  .combat-vfx,
-  .combat-vfx::before,
-  .combat-vfx::after,
-  .hit-vfx {
+  html:not([data-mobile-performance='true']) :is(
+    .seat__portrait > img,
+    .enemy__portrait > .enemy__art--cutout,
+    .stance-aura,
+    .combat-vfx,
+    .hit-vfx
+  ) {
     will-change: auto;
   }
+  html:not([data-mobile-performance='true']) .seat__portrait::before,
+  html:not([data-mobile-performance='true'])
+    .enemy__portrait:has(> .enemy__art--cutout)::before,
+  html:not([data-mobile-performance='true']) .combat-vfx::before,
+  html:not([data-mobile-performance='true']) .combat-vfx::after { will-change: auto; }
 
-  .stance-aura,
-  .combat-vfx,
-  .combat-vfx::before,
-  .combat-vfx::after,
-  .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img,
-  .seat[class*='seat--attack-'] .seat__portrait > img,
-  .seat--attack-ironclad .character-attack--ironclad,
-  .seat--attack-watcher .character-attack--watcher {
+  html:not([data-mobile-performance='true']) :is(
+    .stance-aura,
+    .combat-vfx,
+    .seat[class*='seat--vfx-'][class*='seat--vfx-beat-'] .seat__portrait > img,
+    .seat[class*='seat--attack-'] .seat__portrait > img,
+    .seat--attack-ironclad .character-attack--ironclad,
+    .seat--attack-watcher .character-attack--watcher
+  ) {
+    animation: none;
+    transform: none;
+  }
+  html:not([data-mobile-performance='true']) .combat-vfx::before,
+  html:not([data-mobile-performance='true']) .combat-vfx::after {
     animation: none;
     transform: none;
   }
 
-  .character-attack { display: none; }
+  html:not([data-mobile-performance='true']) .character-attack { display: none; }
 
-  .seat--attack-watcher .stance-aura--calm,
-  .seat--attack-watcher .stance-aura--wrath { animation: none; }
+  html:not([data-mobile-performance='true']) :is(
+    .seat--attack-watcher .stance-aura--calm,
+    .seat--attack-watcher .stance-aura--wrath
+  ) { animation: none; }
 
-  .stance-aura--calm { opacity: 0.66; }
-  .stance-aura--wrath { opacity: 0.78; }
-  .combat-vfx { opacity: 0.55; }
-  .combat-vfx::before,
-  .combat-vfx::after { opacity: 0.45; }
+  html:not([data-mobile-performance='true']) .stance-aura--calm { opacity: 0.66; }
+  html:not([data-mobile-performance='true']) .stance-aura--wrath { opacity: 0.78; }
+  html:not([data-mobile-performance='true']) .combat-vfx { opacity: 0.55; }
+  html:not([data-mobile-performance='true']) .combat-vfx::before,
+  html:not([data-mobile-performance='true']) .combat-vfx::after { opacity: 0.45; }
 
-  .seat--dead .seat__portrait,
-  .enemy--dead .enemy__portrait,
-  .seat--dead.seat--falling .seat__portrait,
-  .enemy--dead.enemy--falling .enemy__portrait {
+  html:not([data-mobile-performance='true']) :is(
+    .seat--dead .seat__portrait,
+    .enemy--dead .enemy__portrait,
+    .seat--dead.seat--falling .seat__portrait,
+    .enemy--dead.enemy--falling .enemy__portrait
+  ) {
     animation: none;
     opacity: 0.28;
     transform: translateY(10%) scale(0.76, 0.64) rotate(3deg);
     filter: grayscale(1) brightness(0.5);
   }
 
-  .seat--dead .seat__portrait::before,
-  .enemy--dead .enemy__portrait::before,
-  .seat--dead .seat__portrait::after,
-  .enemy--dead .enemy__portrait::after,
-  .seat--dead.seat--falling .seat__portrait::before,
-  .enemy--dead.enemy--falling .enemy__portrait::before,
-  .seat--dead.seat--falling .seat__portrait::after,
-  .enemy--dead.enemy--falling .enemy__portrait::after {
+  html:not([data-mobile-performance='true']) .seat--dead .seat__portrait::before,
+  html:not([data-mobile-performance='true']) .enemy--dead .enemy__portrait::before,
+  html:not([data-mobile-performance='true']) .seat--dead .seat__portrait::after,
+  html:not([data-mobile-performance='true']) .enemy--dead .enemy__portrait::after,
+  html:not([data-mobile-performance='true']) .seat--dead.seat--falling .seat__portrait::before,
+  html:not([data-mobile-performance='true']) .enemy--dead.enemy--falling .enemy__portrait::before,
+  html:not([data-mobile-performance='true']) .seat--dead.seat--falling .seat__portrait::after,
+  html:not([data-mobile-performance='true']) .enemy--dead.enemy--falling .enemy__portrait::after {
     animation: none;
     display: none;
   }

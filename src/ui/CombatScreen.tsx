@@ -24,7 +24,6 @@ import {
   usePersonalCombatSoundEffects,
   usePresentationEvents,
   useReducedEffects,
-  usePrefersReducedMotion,
   useStruck,
 } from './combat-screen/hooks.ts'
 import type {
@@ -216,11 +215,7 @@ function CombatScreenView({
   const [resolvingStartTurnDiscard, setResolvingStartTurnDiscard] = useState(false)
   const [stageScale, setStageScale] = useState(1)
   const reducedMotion = useReducedEffects()
-  // Narrower than `reducedMotion`: true only for an actual motion-sensitivity
-  // preference, never for a weak phone. See usePrefersReducedMotion's doc for
-  // why the signature attack sequence needs that distinction and nothing else
-  // on this screen does.
-  const prefersReducedMotion = usePrefersReducedMotion()
+  const prefersReducedMotion = reducedMotion
   const boardRef = useRef<HTMLDivElement | null>(null)
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)

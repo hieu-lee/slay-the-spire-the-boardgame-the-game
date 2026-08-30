@@ -134,7 +134,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .power::after {
+  html:not([data-mobile-performance='true']) .power::after {
     animation: none;
   }
 }

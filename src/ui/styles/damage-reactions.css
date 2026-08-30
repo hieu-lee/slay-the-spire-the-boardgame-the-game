@@ -295,7 +295,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pip--energy::after { animation: none; }
+  html:not([data-mobile-performance='true']) .pip--energy::after { animation: none; }
 }
 
 .pile {

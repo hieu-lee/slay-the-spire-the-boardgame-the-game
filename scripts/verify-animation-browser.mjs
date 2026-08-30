@@ -307,13 +307,13 @@ try {
         document.documentElement.dataset.mobilePerformance = 'true'
         const portrait = document.querySelector('.enemy__portrait')
         const style = getComputedStyle(portrait, '::before')
-        const result = { display: style.display, willChange: style.willChange }
+        const result = { display: style.display, animation: style.animationName, willChange: style.willChange }
         document.documentElement.dataset.mobilePerformance = 'false'
         return result
       })
       check(reduced.animation === 'none' && reduced.willChange === 'auto' &&
-        mobile.display === 'none' && mobile.willChange === 'auto',
-      `low-motion enemy motes stayed active ${JSON.stringify({ reduced, mobile })}`)
+        mobile.display !== 'none' && mobile.animation !== 'none',
+      `phone lost PC enemy motes or desktop reduced motion stayed active ${JSON.stringify({ reduced, mobile })}`)
     }
   }
 
@@ -734,8 +734,9 @@ try {
     document.querySelector('.stance-aura'),
   ].filter(Boolean).map((element) => getComputedStyle(element).willChange))
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  check([...performanceModeHints.mobile, ...performanceModeHints.reduced].every((hint) => hint === 'auto'),
-    `low-motion modes retained compositor layers ${JSON.stringify(performanceModeHints)}`)
+  check(performanceModeHints.mobile[0] === 'auto' &&
+    performanceModeHints.reduced.every((hint) => hint === 'auto'),
+  `idle phone or desktop reduced-motion layers stayed promoted ${JSON.stringify(performanceModeHints)}`)
   check(await omegaOrder.locator('select').count() === 0, 'targetless Omega rendered a broken target picker')
   await page.getByRole('button', { name: /^End turn/ }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'enemy')
@@ -796,10 +797,27 @@ try {
     window.__ANIMATION_SFX__.some((sound) => sound.path === '/assets/sfx/victory.ogg')),
   'victory SFX did not land with the post-animation outcome')
 
-  phoneContext = await browser.newContext({ ...devices['iPhone 13 landscape'] })
+  phoneContext = await browser.newContext({
+    ...devices['iPhone 13 landscape'],
+    reducedMotion: 'reduce',
+  })
+  await phoneContext.addInitScript(() => {
+    window.__ANIMATION_SFX__ = []
+    HTMLMediaElement.prototype.play = function play() {
+      window.__ANIMATION_SFX__.push({
+        path: new URL(this.src).pathname,
+        cue: this.dataset.combatSfx ?? null,
+        delayMs: Number(this.dataset.combatSfxDelay ?? 0),
+      })
+      return Promise.resolve()
+    }
+  })
   const phone = await phoneContext.newPage()
   phone.setDefaultTimeout(30_000)
   await phone.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
+  check(await phone.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches &&
+    document.documentElement.dataset.mobilePerformance === 'true'),
+  'iPhone regression fixture did not reproduce OS Reduce Motion in mobile performance mode')
   check(await phone.locator('link[rel="preload"][as="image"][href*="/combat/characters/"]').count() === 7,
     'iPhone 13 did not preload all attack pose assets')
   await phone.getByRole('button', { name: 'Single Player', exact: true }).click()
@@ -820,10 +838,10 @@ try {
   await phone.locator('.combat').waitFor()
   const phoneFixture = template.combat
   const phoneHeroes = [
-    { character: 'ironclad', sourceId: 'strike_ironclad', poses: ['ironclad-ready', 'ironclad-impact'] },
-    { character: 'defect', sourceId: 'strike_defect', poses: ['defect-charge', 'defect-release'] },
-    { character: 'silent', sourceId: 'predator', poses: ['silent-throw'] },
-    { character: 'watcher', sourceId: 'strike_watcher', poses: ['watcher-charge', 'watcher-cast'] },
+    { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630, poses: ['ironclad-ready', 'ironclad-impact'] },
+    { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['defect-charge', 'defect-release'] },
+    { character: 'silent', sourceId: 'predator', contact: 1025, poses: ['silent-throw'] },
+    { character: 'watcher', sourceId: 'strike_watcher', contact: 1050, poses: ['watcher-charge', 'watcher-cast'] },
   ]
   for (const [index, hero] of phoneHeroes.entries()) {
     await phone.evaluate(({ base, hero, index }) => {
@@ -851,6 +869,7 @@ try {
         seq: 2_000_001 + index, kind: 'card', actorId: actor.id, sourceId: hero.sourceId,
         enemyIds: [target.uid], playerIds: [], upgraded: false, copied: false, energy: 1,
       }]
+      window.__ANIMATION_SFX__ = []
       debug.setRun(run)
     }, { hero, index })
     const attack = phone.locator(`.character-attack--${hero.character}`)
@@ -862,16 +881,19 @@ try {
       const attack = seat?.querySelector(`.character-attack--${hero.character}`)
       const target = document.querySelector('.enemy__portrait')
       const hit = target?.querySelector('.hit-vfx')
+      const targetVfx = target?.querySelector('.combat-vfx--attack-impact')
       const poses = hero.poses.map((pose) => attack?.querySelector(`.character-attack__pose--${pose}`))
-      const animatedProperties = attack ? [...attack.getAnimations({ subtree: true })]
-        .flatMap((animation) => animation.effect?.getKeyframes().flatMap((frame) => Object.keys(frame)) ?? []) : []
+      const targetVfxStyle = targetVfx ? getComputedStyle(targetVfx) : null
       return {
         viewport: `${innerWidth}x${innerHeight}@${devicePixelRatio}`,
         mobilePerformance: document.documentElement.dataset.mobilePerformance,
+        osReducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        gameReducedMotion: document.documentElement.dataset.reducedMotion,
         bodyAnimation: body ? getComputedStyle(body).animationName : '',
         attackVisible: Boolean(attack && getComputedStyle(attack).display !== 'none'),
         poseAssets: poses.map((pose) => ({
           display: pose ? getComputedStyle(pose).display : 'none',
+          animation: pose ? getComputedStyle(pose).animationName : 'none',
           loaded: pose?.querySelector('img')?.complete && (pose.querySelector('img')?.naturalWidth ?? 0) > 0,
         })),
         speedTrail: attack && hero.character === 'ironclad'
@@ -879,31 +901,85 @@ try {
               filter: getComputedStyle(attack, '::before').filter }
           : null,
         meteorCount: attack?.querySelectorAll('.character-attack__meteor').length ?? 0,
+        projectileCount: attack?.querySelectorAll('.character-attack__dagger, .character-attack__bolt').length ?? 0,
         hitDelay: Number.parseFloat(hit ? getComputedStyle(hit).getPropertyValue('--hit-delay') : '0'),
+        hitAnimation: hit ? getComputedStyle(hit).animationName : 'none',
         portraitAnimations: target?.getAnimations().length ?? 0,
-        filteredLayers: [...(attack?.querySelectorAll('*') ?? [])]
-          .filter((element) => getComputedStyle(element).filter !== 'none').length,
-        animatedFilter: animatedProperties.includes('filter'),
+        targetVfx: {
+          display: targetVfxStyle?.display ?? 'none',
+          image: targetVfxStyle?.backgroundImage ?? 'none',
+          blend: targetVfxStyle?.mixBlendMode ?? 'normal',
+          animation: targetVfxStyle?.animationName ?? 'none',
+          beforeDisplay: targetVfx ? getComputedStyle(targetVfx, '::before').display : 'none',
+          beforeAnimation: targetVfx ? getComputedStyle(targetVfx, '::before').animationName : 'none',
+          afterDisplay: targetVfx ? getComputedStyle(targetVfx, '::after').display : 'none',
+          afterAnimation: targetVfx ? getComputedStyle(targetVfx, '::after').animationName : 'none',
+        },
       }
     }, { hero })
     check(iphoneAttack.mobilePerformance === 'true',
       `iPhone 13 did not enable its performance profile ${JSON.stringify(iphoneAttack)}`)
-    check(iphoneAttack.bodyAnimation === `attack-${hero.character}` && iphoneAttack.attackVisible &&
-      iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.loaded) &&
+    check(iphoneAttack.osReducedMotion && iphoneAttack.gameReducedMotion === 'false' &&
+      iphoneAttack.bodyAnimation === `attack-${hero.character}` && iphoneAttack.attackVisible &&
+      iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.animation !== 'none' && pose.loaded) &&
       (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
-    `iPhone 13 skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
+    `iPhone 13 OS Reduce Motion skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
     check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
-      iphoneAttack.speedTrail.filter === 'none',
-    `iPhone 13 skipped or filtered Ironclad's speed trail ${JSON.stringify(iphoneAttack)}`)
+      iphoneAttack.speedTrail.filter !== 'none',
+    `iPhone 13 lost Ironclad's PC speed trail ${JSON.stringify(iphoneAttack)}`)
+    check((hero.character === 'silent' || hero.character === 'defect') === (iphoneAttack.projectileCount > 0),
+      `iPhone 13 changed ${hero.character}'s projectile content ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.hitDelay > 0, `iPhone 13 damage landed before ${hero.character} contact ${JSON.stringify(iphoneAttack)}`)
+    check(iphoneAttack.hitAnimation === 'impact-bloom' && iphoneAttack.targetVfx.display !== 'none' &&
+      iphoneAttack.targetVfx.image !== 'none' && iphoneAttack.targetVfx.blend === 'screen' &&
+      iphoneAttack.targetVfx.animation === 'combat-vfx-reveal' &&
+      iphoneAttack.targetVfx.beforeDisplay !== 'none' && iphoneAttack.targetVfx.beforeAnimation === 'combat-vfx-ring' &&
+      iphoneAttack.targetVfx.afterDisplay !== 'none' && iphoneAttack.targetVfx.afterAnimation === 'combat-vfx-streak',
+    `iPhone 13 lost PC impact VFX layers for ${hero.character} ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.portraitAnimations === 0, `damage shook the iPhone target ${JSON.stringify(iphoneAttack)}`)
-    check(iphoneAttack.filteredLayers === 0 && !iphoneAttack.animatedFilter,
-      `iPhone 13 ${hero.character} retained filtered animation work ${JSON.stringify(iphoneAttack)}`)
+    await phone.waitForTimeout(hero.contact + 120)
+    const phoneSounds = await phone.evaluate((cue) => window.__ANIMATION_SFX__.filter((sound) => sound.cue === cue),
+      `card:${hero.character}:${hero.sourceId}:base`)
+    const phoneImpactPaths = new Set(['/assets/sfx/attack.ogg', '/assets/sfx/enemy-hit.ogg',
+      '/assets/sfx/block.ogg', '/assets/sfx/weak.ogg'])
+    check(phoneSounds.some((sound) => phoneImpactPaths.has(sound.path) && sound.delayMs === hero.contact) &&
+      phoneSounds.some((sound) => sound.delayMs < hero.contact),
+    `iPhone 13 changed ${hero.character} SFX content/timing ${JSON.stringify(phoneSounds)}`)
     if (hero.character === 'watcher') {
-      await phone.waitForTimeout(1_100)
       await phone.locator('.board').screenshot({ path: join(output, `iphone-13-${browserName}-watcher-impact.png`) })
     }
   }
+
+  await phone.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
+  await phone.waitForTimeout(50)
+  await phone.evaluate(({ base }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-iphone-game-reduced`
+    run.combat.phase = 'player'
+    run.combat.players = [run.combat.players[0]]
+    Object.assign(run.combat.players[0], { character: 'watcher', hp: 999, maxHp: 999, dead: false })
+    run.combat.enemies = [{ ...run.combat.enemies[0], uid: 'iphone-reduced-target', defId: 'cultist',
+      isBoss: false, hp: 998, maxHp: 999, dead: false }]
+    run.combat.presentationEvents = [{
+      seq: 2_100_001, kind: 'card', actorId: run.combat.players[0].id, sourceId: 'strike_watcher',
+      enemyIds: ['iphone-reduced-target'], playerIds: [], upgraded: false, copied: false, energy: 1,
+    }]
+    debug.setRun(run)
+  }, { base: phoneFixture })
+  await phone.waitForTimeout(100)
+  check(await phone.locator('.character-attack').count() === 0,
+    'the visible in-game Reduce motion toggle no longer suppresses phone attacks')
+  await phone.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
+  await phone.waitForTimeout(50)
+  await phone.evaluate(() => { document.documentElement.dataset.mobilePerformance = 'false' })
+  await phone.waitForTimeout(50)
+  check(await phone.locator('.seat__portrait > img').evaluate((body) =>
+    getComputedStyle(body).animationName === 'none'),
+  'coarse-pointer non-phone ignored OS Reduce Motion CSS')
+  await phone.evaluate(() => { document.documentElement.dataset.mobilePerformance = 'true' })
+  await phone.waitForTimeout(50)
 
   await phone.evaluate(({ base, enemy, actionIndex }) => {
     const debug = window.__STS_DEBUG__
@@ -928,10 +1004,10 @@ try {
       animation: getComputedStyle(portrait, '::before').animationName,
     })),
   }))
-  check(iphoneBossAnimation.name !== 'none' && iphoneBossAnimation.filter === 'none' &&
+  check(iphoneBossAnimation.name !== 'none' &&
     iphoneBossAnimation.claw.length > 0 && iphoneBossAnimation.claw.every((claw) =>
       claw.display !== 'none' && claw.animation === 'awakened-claw-scratch'),
-    `iPhone 13 skipped or filtered the boss attack ${JSON.stringify(iphoneBossAnimation)}`)
+    `iPhone 13 skipped the boss attack ${JSON.stringify(iphoneBossAnimation)}`)
 
   check(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`)
 } finally {
