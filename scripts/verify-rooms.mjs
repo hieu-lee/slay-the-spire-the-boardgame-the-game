@@ -1598,6 +1598,31 @@ check('a stale end-turn order with nothing left to choose just resolves', () => 
   assertEqual(room.run.combat.phase, 'enemy', 'the forced Orb did not end the turn')
 })
 
+check('online end-turn ordering accepts an ability with no target', () => {
+  const { room, a, b } = twoSeatRoom()
+  const watcher = room.run.combat.players.find((player) => player.id === a.playerId)
+  const other = room.run.combat.players.find((player) => player.id === b.playerId)
+  Object.assign(watcher, {
+    character: 'watcher', stance: 'wrath', hand: [],
+    powers: [{ uid: 'online-targetless-omega', defId: 'omega', upgraded: false }],
+  })
+  other.hand = []
+  for (const enemy of room.run.combat.enemies) Object.assign(enemy, { hp: 0, dead: true })
+  room.run.combat.pendingSummons = [{
+    sourceUid: room.run.combat.enemies[0].uid, row: 0, defIds: ['acid_slime'],
+    turn: room.run.combat.turn, direct: true, timing: 'endOfTurn',
+  }]
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const published = snapshotFor(room, a.token)
+  const omega = published.endTurnAbilities.find((ability) => ability.label.includes('Omega'))
+  assertDeepEqual(omega?.targets, [], 'the room hid the valid no-target state')
+  assert(published.endTurnOrder.includes(omega.id), 'the default order forged a target for targetless Omega')
+  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: published.endTurnOrder })
+  assertEqual(room.run.combat.phase, 'enemy')
+  assert(room.run.combat.enemies.some((enemy) => !enemy.dead), 'the authoritative turn lost its queued summon')
+})
+
 check('Loop Orb choices are public, authoritative, and reject forged targets online', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)

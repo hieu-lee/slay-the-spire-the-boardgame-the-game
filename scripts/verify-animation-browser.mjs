@@ -16,6 +16,17 @@ const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('Vite did not report a port')
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+await page.addInitScript(() => {
+  window.__ANIMATION_SFX__ = []
+  HTMLMediaElement.prototype.play = function play() {
+    window.__ANIMATION_SFX__.push({
+      path: new URL(this.src).pathname,
+      cue: this.dataset.combatSfx ?? null,
+      delayMs: Number(this.dataset.combatSfxDelay ?? 0),
+    })
+    return Promise.resolve()
+  }
+})
 let releaseTimeEater
 const timeEaterAssetGate = new Promise((resolve) => { releaseTimeEater = resolve })
 await page.route('**/time_eater-attack.webp', async (route) => {
@@ -323,10 +334,10 @@ try {
   `guardian: transform cut off the defensive attack latch ${JSON.stringify(guardianTransform)}`)
 
   const heroCases = [
-    { character: 'ironclad', sourceId: 'strike_ironclad', duration: '1.8s', samples: [270, 900, 1500] },
-    { character: 'defect', sourceId: 'strike_defect', duration: '1.65s', samples: [270, 825, 1375] },
-    { character: 'watcher', sourceId: 'strike_watcher', duration: '1.65s', samples: [270, 825, 1375] },
-    { character: 'silent', sourceId: 'predator', duration: '0.86s', samples: [170, 430, 800] },
+    { character: 'ironclad', sourceId: 'strike_ironclad', duration: '1.8s', contact: 630, samples: [270, 900, 1500] },
+    { character: 'defect', sourceId: 'strike_defect', duration: '1.65s', contact: 1110, samples: [270, 825, 1375] },
+    { character: 'watcher', sourceId: 'strike_watcher', duration: '1.65s', contact: 1050, samples: [270, 825, 1375] },
+    { character: 'silent', sourceId: 'predator', duration: '0.86s', contact: 1025, samples: [170, 430, 800] },
   ]
   for (const [heroIndex, hero] of heroCases.entries()) {
     const ids = await page.evaluate(({ base, enemy, character, sourceId, heroIndex }) => {
@@ -361,8 +372,8 @@ try {
           roundTrip: frames.length > 1 && frames[0].transform === frames.at(-1).transform,
         }
       })
-      check(dagger.animation === 'attack-dagger-round-trip' && dagger.duration === '0.5s' && dagger.roundTrip,
-        `silent: dagger is not a 500ms round trip ${JSON.stringify(dagger)}`)
+      check(dagger.animation === 'attack-dagger-round-trip' && dagger.duration === '1.75s' && dagger.roundTrip,
+        `silent: dagger is not a 1.75s round trip ${JSON.stringify(dagger)}`)
     }
     if (hero.character === 'watcher') {
       const impact = currentAttack.locator('.character-attack__meteor-impact').first()
@@ -405,7 +416,143 @@ try {
       await screenshot(`hero-${hero.character}-${index}-${time}ms`)
     }
     await currentAttack.waitFor({ state: 'detached' })
+    const cue = `card:${hero.character}:${hero.sourceId}:base`
+    const sounds = await page.evaluate((expected) =>
+      window.__ANIMATION_SFX__.filter((sound) => sound.cue === expected), cue)
+    const impactPaths = new Set(['/assets/sfx/attack.ogg', '/assets/sfx/enemy-hit.ogg',
+      '/assets/sfx/block.ogg', '/assets/sfx/weak.ogg'])
+    check(sounds.some((sound) => impactPaths.has(sound.path) && sound.delayMs === hero.contact),
+      `${hero.character}: impact SFX missed ${hero.contact}ms contact ${JSON.stringify(sounds)}`)
+    check(sounds.some((sound) => sound.delayMs < hero.contact),
+      `${hero.character}: attack has no launch/accent SFX before contact ${JSON.stringify(sounds)}`)
   }
+
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const actor = run.combat.players[0]
+    const target = run.combat.enemies[0]
+    const history = run.combat.presentationEvents ?? []
+    const seq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_030_000) + 1
+    Object.assign(actor, { character: 'silent', hp: 999, maxHp: 999, dead: false })
+    Object.assign(target, { hp: 999, maxHp: 999, dead: false })
+    run.combat.presentationEvents = [...history, {
+      seq, kind: 'card', actorId: actor.id, sourceId: 'predator', enemyIds: [target.uid],
+      playerIds: [], upgraded: false, copied: false, energy: 1,
+    }].slice(-12)
+    window.__ANIMATION_SFX__ = []
+    debug.setRun(run)
+  })
+  await page.waitForTimeout(1_100)
+  const impactsBeforeLateToggle = await page.evaluate(() => window.__ANIMATION_SFX__.filter((sound) =>
+    sound.path === '/assets/sfx/attack.ogg').length)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.waitForFunction(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.waitForTimeout(50)
+  check(await page.evaluate(() => window.__ANIMATION_SFX__.filter((sound) =>
+    sound.path === '/assets/sfx/attack.ogg').length) === impactsBeforeLateToggle,
+  'enabling reduced motion after contact replayed the impact SFX')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForFunction(() => !matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.waitForTimeout(50)
+
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const actor = run.combat.players[0]
+    const target = run.combat.enemies[0]
+    const history = run.combat.presentationEvents ?? []
+    const seq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_040_000) + 1
+    Object.assign(actor, { character: 'silent', hp: 999, maxHp: 999, dead: false })
+    Object.assign(target, { hp: 999, maxHp: 999, dead: false })
+    run.combat.presentationEvents = [...history, {
+      seq, kind: 'card', actorId: actor.id, sourceId: 'predator', enemyIds: [target.uid],
+      playerIds: [], upgraded: false, copied: false, energy: 1,
+    }].slice(-12)
+    window.__ANIMATION_SFX__ = []
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => window.__ANIMATION_SFX__.some((sound) =>
+    sound.cue === 'card:silent:predator:base'))
+  check(!await page.evaluate(() => window.__ANIMATION_SFX__.some((sound) =>
+    sound.path === '/assets/sfx/attack.ogg' && sound.delayMs === 1_025)),
+  'Silent impact SFX played before its normal-motion contact')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.waitForFunction(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+  await page.waitForTimeout(50)
+  check(await page.evaluate(() => window.__ANIMATION_SFX__.some((sound) =>
+    sound.path === '/assets/sfx/attack.ogg' && sound.delayMs === 0)),
+  'enabling reduced motion did not move the pending impact SFX to immediate contact')
+  await page.waitForTimeout(1_050)
+  check(!await page.evaluate(() => window.__ANIMATION_SFX__.some((sound) =>
+    sound.path === '/assets/sfx/attack.ogg' && sound.delayMs === 1_025)),
+  'enabling reduced motion left the old delayed impact SFX queued')
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const actor = run.combat.players[0]
+    const target = run.combat.enemies[0]
+    const history = run.combat.presentationEvents ?? []
+    const seq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_050_000) + 1
+    Object.assign(actor, { character: 'silent', hp: 999, maxHp: 999, dead: false })
+    Object.assign(target, { hp: 999, maxHp: 999, dead: false })
+    run.combat.presentationEvents = [...history, {
+      seq, kind: 'card', actorId: actor.id, sourceId: 'predator', enemyIds: [target.uid],
+      playerIds: [], upgraded: false, copied: false, energy: 1,
+    }].slice(-12)
+    window.__ANIMATION_SFX__ = []
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => window.__ANIMATION_SFX__.some((sound) =>
+    sound.cue === 'card:silent:predator:base'))
+  await page.waitForTimeout(50)
+  const reducedMotionSounds = await page.evaluate(() => window.__ANIMATION_SFX__.filter((sound) =>
+    sound.cue === 'card:silent:predator:base'))
+  check(reducedMotionSounds.some((sound) => sound.path === '/assets/sfx/attack.ogg' && sound.delayMs === 0),
+    `reduced motion delayed Silent impact SFX ${JSON.stringify(reducedMotionSounds)}`)
+  check(await page.locator('.character-attack').count() === 0, 'reduced motion still rendered a character attack')
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'won'
+    window.__REDUCED_WIN_START__ = performance.now()
+    window.__ANIMATION_SFX__ = []
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'combat')
+  const reducedOutcome = await page.evaluate(() => ({
+    elapsed: performance.now() - window.__REDUCED_WIN_START__,
+    victorySounds: window.__ANIMATION_SFX__.filter((sound) => sound.path === '/assets/sfx/victory.ogg').length,
+  }))
+  check(reducedOutcome.elapsed < 500 && reducedOutcome.victorySounds === 1,
+    `OS reduced motion delayed the victory outcome ${JSON.stringify(reducedOutcome)}`)
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForFunction(() => !matchMedia('(prefers-reduced-motion: reduce)').matches)
+
+  await page.evaluate(({ base, enemy }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.phase = 'combat'
+    run.combat = structuredClone(base)
+    run.combat.phase = 'player'
+    run.combat.enemies = [{ ...enemy, uid: 'targetless-enemy', hp: 0, dead: true }]
+    run.combat.pendingSummons = [{
+      sourceUid: 'targetless-enemy', row: 0, defIds: ['acid_slime'], turn: run.combat.turn,
+      direct: true, timing: 'endOfTurn',
+    }]
+    Object.assign(run.combat.players[0], {
+      character: 'watcher', stance: 'wrath', hp: 999, maxHp: 999,
+      powers: [{ uid: 'targetless-omega', defId: 'omega', upgraded: false }],
+    })
+    debug.setRun(run)
+  }, { base: template.combat, enemy: template.enemy })
+  await page.locator('.end-turn-order > summary').click()
+  const omegaOrder = page.locator('.end-turn-order li').filter({ hasText: 'Omega' })
+  await omegaOrder.waitFor()
+  check(await omegaOrder.locator('select').count() === 0, 'targetless Omega rendered a broken target picker')
+  await page.getByRole('button', { name: /^End turn/ }).click()
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'enemy')
+  check(await page.locator('.combat-error').count() === 0, 'targetless Omega was rejected by the local end-turn UI')
 
   await page.evaluate(({ base, enemy, actionIndex }) => {
     const debug = window.__STS_DEBUG__
@@ -428,6 +575,39 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'idle',
   undefined, { timeout: 250 })
+
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    const actor = run.combat.players[0]
+    const target = run.combat.enemies[0]
+    const history = run.combat.presentationEvents ?? []
+    const seq = history.reduce((latest, event) => Math.max(latest, event.seq), 1_100_000) + 1
+    run.phase = 'combat'
+    run.combat.phase = 'won'
+    Object.assign(target, { hp: 0, dead: true })
+    Object.assign(actor, { character: 'watcher', hp: 999, maxHp: 999, dead: false })
+    run.combat.presentationEvents = [...history, {
+      seq, kind: 'card', actorId: actor.id, sourceId: 'strike_watcher',
+      enemyIds: [target.uid], playerIds: [], upgraded: false, copied: false, energy: 1,
+    }].slice(-12)
+    window.__ANIMATION_SFX__ = []
+    debug.setRun(run)
+  })
+  await page.locator('.character-attack--watcher').waitFor()
+  await page.waitForTimeout(1_200)
+  const preImpactOutcome = await page.evaluate(() => ({
+    runPhase: window.__STS_DEBUG__.getRun().phase,
+    impactOpacity: Number(getComputedStyle(document.querySelector('.character-attack__meteor-impact')).opacity),
+    victorySounds: window.__ANIMATION_SFX__.filter((sound) => sound.path === '/assets/sfx/victory.ogg').length,
+  }))
+  check(preImpactOutcome.runPhase === 'combat' && preImpactOutcome.impactOpacity > 0,
+    `victory replaced the final meteor before impact ${JSON.stringify(preImpactOutcome)}`)
+  check(preImpactOutcome.victorySounds === 0, 'victory SFX played over the falling meteor')
+  await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase !== 'combat', undefined, { timeout: 4_000 })
+  check(await page.evaluate(() =>
+    window.__ANIMATION_SFX__.some((sound) => sound.path === '/assets/sfx/victory.ogg')),
+  'victory SFX did not land with the post-animation outcome')
 
   check(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`)
 } finally {

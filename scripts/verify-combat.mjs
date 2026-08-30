@@ -4854,6 +4854,24 @@ check('a queued summon does not make targetless Lightning brick end turn', () =>
     'the queued summon did not resolve')
 })
 
+check('an end-turn ability with no living target is a valid no-op', () => {
+  const omega = instance('omega')
+  const state = combat([makePlayer({ character: 'watcher', stance: 'wrath', powers: [omega] })], [
+    makeEnemy({ uid: 'gone', hp: 0, maxHp: 8, dead: true }),
+  ])
+  state.pendingSummons = [{
+    sourceUid: 'gone', row: 0, defIds: ['acid_slime'], turn: state.turn,
+    direct: true, timing: 'endOfTurn',
+  }]
+  const omegaAbility = endTurnAbilities(state).find((ability) => ability.label.includes('Omega'))
+  assertDeepEqual(omegaAbility?.targets, [], 'targetless Omega did not publish its valid no-target state')
+  const ended = beginEndPlayerTurn(state)
+  assert(ended !== state, 'the no-target ability rejected the whole end-turn order')
+  assertEqual(ended.players[0].hp, 9, 'the later Wrath ability did not resolve')
+  assertEqual(ended.phase, 'enemy')
+  assert(ended.enemies.some((enemy) => !enemy.dead), 'the queued summon did not enter after the no-op')
+})
+
 check('later end-turn Lightning retargets after overkill and skips when no target remains', () => {
   const overkill = combat([makePlayer({
     name: 'Defect', character: 'defect', orbs: ['lightning', 'lightning'],

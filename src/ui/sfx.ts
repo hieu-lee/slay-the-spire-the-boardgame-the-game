@@ -66,6 +66,7 @@ export function useRunOutcomeSound(
   run?: { phase: string; combat?: { phase: string } | null } | null,
   restoration?: number,
   connected = true,
+  combatWinDelayMs = 0,
 ) {
   const outcome = run?.phase === 'defeat' || run?.combat?.phase === 'lost'
     ? 'lose'
@@ -77,11 +78,21 @@ export function useRunOutcomeSound(
   useEffect(() => {
     const restored = restoration !== undefined && restoration !== previousRestoration.current ||
       !connected || !previousConnected.current
-    if (!restored && outcome && outcome !== previous.current) playSoundEffect(outcome)
-    previous.current = outcome
+    const delayedWin = outcome === 'win' && run?.combat?.phase === 'won' && combatWinDelayMs > 0
+    const timer = !restored && outcome && outcome !== previous.current && delayedWin
+      ? window.setTimeout(() => {
+          playSoundEffect(outcome)
+          previous.current = outcome
+        }, combatWinDelayMs)
+      : undefined
+    if (!restored && outcome && outcome !== previous.current && !delayedWin) {
+      playSoundEffect(outcome)
+      previous.current = outcome
+    } else if (restored || !outcome) previous.current = outcome
     previousRestoration.current = restoration
     previousConnected.current = connected
-  }, [connected, outcome, restoration])
+    return () => { if (timer !== undefined) window.clearTimeout(timer) }
+  }, [combatWinDelayMs, connected, outcome, restoration, run?.combat?.phase])
 }
 
 export function installSoundEffects() {
@@ -109,16 +120,20 @@ export function playSoundEffect(sound: Sound) {
   playSound(sound)
 }
 
-export function playCombatSound(recipe: CombatSfxRecipe): () => void {
+const IMPACT_SOUNDS = new Set(['attack', 'enemy', 'block', 'weak'])
+
+export function playCombatSound(recipe: CombatSfxRecipe, impactDelayMs = 0, impactsOnly = false): () => void {
   if (currentSfxVolume() === 0) return () => {}
   const timers: number[] = []
   recipe.layers.forEach((layer) => {
+    if (impactsOnly && (layer.delayMs > 0 || !IMPACT_SOUNDS.has(layer.sound))) return
+    const delayMs = layer.delayMs || !IMPACT_SOUNDS.has(layer.sound) ? layer.delayMs : impactDelayMs
     const play = () => {
       if (currentSfxVolume() > 0) {
-        playSound(layer.sound, layer.volume, layer.rate, recipe.cue, layer.delayMs)
+        playSound(layer.sound, layer.volume, layer.rate, recipe.cue, delayMs)
       }
     }
-    if (layer.delayMs > 0) timers.push(window.setTimeout(play, layer.delayMs))
+    if (delayMs > 0) timers.push(window.setTimeout(play, delayMs))
     else play()
   })
   return () => timers.forEach((timer) => window.clearTimeout(timer))

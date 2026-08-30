@@ -75,6 +75,8 @@ import { QuickSetupScreen } from './QuickSetupScreen.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { RunSummary, summarySeat } from './RunSummary.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
+import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
+import { COMBAT_OUTCOME_DELAY_MS, COMBAT_OUTCOME_SOUND_DELAY_MS } from './combat-screen/vfx.tsx'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
@@ -172,10 +174,12 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
   const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
   const [choosingNextCharacter, setChoosingNextCharacter] = useState(false)
+  const prefersReducedMotion = usePrefersReducedMotion()
   const updateCombat = useCallback((next: CombatState) => {
     setRun((current) => ({ ...current, combat: next }))
   }, [])
-  useRunOutcomeSound(run)
+  useRunOutcomeSound(run, undefined, true,
+    settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
   useBossFightMusic(run.combat, active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
@@ -276,11 +280,14 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   // have to click through a screen that only says "you won".
   useEffect(() => {
     if (open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
-      const timer = setTimeout(() => setRun((current) => resolveCombat(current)), 900)
+      const timer = setTimeout(() => setRun((current) => resolveCombat(current)),
+        run.combat.phase === 'won'
+          ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
+          : 900)
       return () => clearTimeout(timer)
     }
     return undefined
-  }, [compendium, open, pauseOpen, run.combat, settingsOpen])
+  }, [compendium, open, pauseOpen, prefersReducedMotion, run.combat, settings.reducedMotion, settingsOpen])
 
   const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
   // Fires wherever a card changed — campfire, event, reward, Neow, a relic —

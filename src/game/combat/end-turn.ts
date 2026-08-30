@@ -115,7 +115,7 @@ export function validEndTurnOrder(abilities: readonly EndTurnAbility[], order: r
   return order.length === expected.size && new Set(ids).size === expected.size && order.every((choice) => {
     const ability = abilities.find((candidate) => candidate.id === endTurnChoiceId(choice))
     const target = endTurnChoiceTarget(choice)
-    return ability !== undefined && (ability.targets
+    return ability !== undefined && (ability.targets?.length
       ? target !== undefined && choice === chooseEndTurnTarget(ability.id, target) &&
         ability.targets.some((candidate) => candidate.uid === target)
       : target === undefined && choice === ability.id)

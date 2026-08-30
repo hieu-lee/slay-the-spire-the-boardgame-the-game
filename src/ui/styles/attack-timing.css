@@ -63,7 +63,7 @@
 /* Character attacks use only authoritative targets already rendered on the
    board. Defect and Watcher spend 550ms each on windup, release and recovery.
    Ironclad adds two 90ms travel beats between three 540ms body phases. Silent
-   keeps her original 860ms throw while each dagger makes a 500ms round trip.
+   keeps her original 860ms throw while each dagger makes a 1.75s round trip.
    Visual layers move; the button and its hit box stay in its lane. */
 .seat[class*='seat--attack-'] .seat__portrait > img {
   animation-duration: 1650ms;
@@ -318,7 +318,7 @@
   clip-path: none;
   filter: drop-shadow(0 0 0.22rem #92ffc1);
   animation-name: attack-dagger-round-trip;
-  animation-duration: 500ms;
+  animation-duration: 1750ms;
   animation-delay: calc(150ms + var(--attack-delay));
 }
 

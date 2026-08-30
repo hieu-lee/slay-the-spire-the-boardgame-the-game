@@ -366,6 +366,7 @@ function CombatScreenView({
     livePresentationEvents,
     authoritativeRestoration,
     authoritativeConnected,
+    prefersReducedMotion,
   )
   const activeVfx = useMemo<ActiveCombatVfx[]>(() => {
     const resolved: ActiveCombatVfx[] = []
@@ -2795,7 +2796,7 @@ function CombatScreenView({
                       return (
                         <li key={ability.id}>
                           <span>{ability.label}</span>
-                          {ability.targets ? (
+                          {ability.targets && ability.targets.length > 0 ? (
                             <select aria-label={`Target for ${ability.label}`}
                               disabled={!canOrderEndTurn}
                               value={endTurnChoiceTarget(choice) ?? ability.targets[0]?.uid}

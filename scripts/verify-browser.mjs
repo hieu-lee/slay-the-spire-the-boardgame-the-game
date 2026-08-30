@@ -8202,7 +8202,7 @@ check('Storm+ skips its second channel after the first Evoke wins combat', () =>
   assert(finalStormState.enemies.find((enemy) => enemy.defId === 'jaw_worm').dead)
 })
 await shot('07zh-defect-storm-final-target-fallback')
-// The app automatically folds a victory into the run after 900ms. A full-page
+// The app folds a victory into the run after the final presentation. A full-page
 // screenshot with decoded card art can cross that boundary, so restore the
 // finished combat snapshot instead of racing the timer before the next probe.
 await page.evaluate((combat) => {
@@ -9322,7 +9322,7 @@ const silentAttack = await watcherSeat.evaluate((seat) => ({
 const [silentEntryFrame, silentThrowFrame, silentReturnFrame] =
   await sampleCharacterFrames([170, 430, 800])
 await captureCombatAnimation('combat-attack-silent-windup.png', 170)
-await captureCombatAnimation('combat-attack-silent-impact.png', 400)
+await captureCombatAnimation('combat-attack-silent-impact.png', 1_025)
 await captureCombatAnimation('combat-attack-silent-recovery.png', 800)
 check('mixed hostile/support cards never paint attack art on the ally target', () => {
   assertEqual(mixedTargetPresentation.enemyImpacts, 1)
@@ -9403,9 +9403,9 @@ await page.waitForFunction((enemyId) => {
 }, rowDashFixture.ids.at(-1))
 check('multi-target Silent daggers reach every enemy inside the contact window', () => {
   assertEqual(silentVolleyTimings.length, rowDashFixture.ids.length)
-  assert(silentVolleyTimings[0].contact >= 390 && silentVolleyTimings[0].contact <= 410,
+  assert(silentVolleyTimings[0].contact >= 1_015 && silentVolleyTimings[0].contact <= 1_035,
     `first dagger contact is ${silentVolleyTimings[0].contact}ms`)
-  assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 600,
+  assert(Math.max(...silentVolleyTimings.map(({ contact }) => contact)) < 1_250,
     `a staggered dagger outlives contact: ${JSON.stringify(silentVolleyTimings)}`)
   assertDeepEqual(earlySilentHits, rowDashFixture.ids.map(() => 0))
   assert(staggeredSilentHits[0] > 0.5)

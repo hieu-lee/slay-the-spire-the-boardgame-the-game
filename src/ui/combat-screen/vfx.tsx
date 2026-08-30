@@ -24,6 +24,8 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
  * beats — zap, pause, zap — rather than one.
  */
 export const ORB_END_TURN_STAGGER_MS = 380
+export const COMBAT_OUTCOME_DELAY_MS = 2_500
+export const COMBAT_OUTCOME_SOUND_DELAY_MS = 2_400
 
 export const isCharacterAttack = ({ event, recipe }: ActiveCombatVfx): boolean =>
   event.kind !== 'potion' && event.kind !== 'orb' && event.enemyIds.length > 0 &&
@@ -45,7 +47,7 @@ export function characterAttackContactMs(
   }
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
-  if (actor.character === 'silent') return 400 + targetIndex * 70
+  if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
   return 630
