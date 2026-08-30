@@ -53,7 +53,9 @@ export function CardMorph({ request, onDone }: { request: CardMorphRequest; onDo
     setBeat('old')
     // Honour reduced motion by collapsing to the outcome: the player still gets
     // told what happened, without a flash and a scale-up they asked not to see.
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const still = document.documentElement.dataset.reducedMotion === 'true' ||
+      document.documentElement.dataset.mobilePerformance !== 'true' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (still) {
       setBeat('new')
       const done = setTimeout(onDone, HOLD_NEW)

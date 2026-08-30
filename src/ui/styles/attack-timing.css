@@ -48,14 +48,6 @@
 @keyframes vfx-recoil-again { 0%, 100% { transform: translateX(0); } 28% { transform: translateX(-7%) scale(0.96); } 48% { transform: translateX(3%); } }
 @keyframes vfx-cast { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
 @keyframes vfx-cast-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); filter: brightness(1.35); } }
-/* Filter-free twins for `data-mobile-performance` (chrome/landscape-phones.css):
-   the brightness flash is the expensive part, the lift is a plain transform.
-   Two names, not one, for the
-   same reason the desktop pair is two names — casting twice in a row toggles
-   between them so the animation restarts even though the class never changes,
-   rather than replaying from a frozen mid-point. */
-@keyframes vfx-cast-mobile { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); } }
-@keyframes vfx-cast-mobile-again { 0%, 100% { transform: translateY(0); } 38% { transform: translateY(-7%) scale(1.035); } }
 @keyframes vfx-drink { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
 @keyframes vfx-drink-again { 0%, 100% { transform: rotate(0); } 34% { transform: translateY(-3%) rotate(-5deg); } }
 @keyframes vfx-throw { 0%, 100% { transform: translateX(0) rotate(0); } 30% { transform: translateX(9%) rotate(6deg); } }

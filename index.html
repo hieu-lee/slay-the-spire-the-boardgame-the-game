@@ -16,7 +16,7 @@
         preload.rel = 'preload'
         preload.as = 'image'
         preload.type = 'image/webp'
-        preload.href = `/assets/combat/characters/${asset}`
+        preload.href = new URL(`./assets/combat/characters/${asset}`, document.baseURI).href
         document.head.append(preload)
       }
       let viewport

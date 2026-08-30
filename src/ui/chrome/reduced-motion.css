@@ -1,58 +1,57 @@
 @media (prefers-reduced-motion: reduce) {
-  /* Every key chrome.css introduced — the key list itself is in chrome/keys.css,
-     the chip hovers in chrome/relic-bar.css and the map's hover lift in
-     chrome/map.css. Listed out rather than using a blanket `.sts-scope button`,
-     which would also reach the hand — its per-card fan rotation lives in
-     `transform` and is layout, not decoration. Both lists track the key list in
-     chrome/keys.css; keep them in step with it. */
-  .relic-chip:hover > .item-icon-image,
-  .relic-chip:focus-within > .item-icon-image,
-  .potion-chip:hover .item-icon-image,
-  .potion-chip:focus-within .item-icon-image,
-  .map .room--reachable:hover,
-  :is(
-    .sts-scope button:not([class]),
-    .sts-scope button[class=''],
-    .sts-scope .is-chosen,
-    .sts-scope .reward-screen__skip,
-    .sts-scope .reward-screen__collect,
-    .sts-scope .neow-offer__skip,
-    .sts-scope .campfire__leave,
-    .sts-scope .prompt__cancel,
-    .sts-scope .online-entry__back,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start
-  ):hover:not(:disabled),
-  :is(
-    .sts-scope button:not([class]),
-    .sts-scope button[class=''],
-    .sts-scope .is-chosen,
-    .sts-scope .reward-screen__skip,
-    .sts-scope .reward-screen__collect,
-    .sts-scope .neow-offer__skip,
-    .sts-scope .campfire__leave,
-    .sts-scope .prompt__cancel,
-    .sts-scope .online-entry__back,
-  .sts-scope .online-lobby__copy,
-  .sts-scope .online-lobby__start
-  ):active:not(:disabled) { transform: none; }
+  /* Phones expose their own visible setting. Everywhere else, honour the OS
+     preference without touching the hand's layout-defining fan transform. */
+  html:not([data-mobile-performance='true']) :is(
+    .relic-chip:hover > .item-icon-image,
+    .relic-chip:focus-within > .item-icon-image,
+    .potion-chip:hover .item-icon-image,
+    .potion-chip:focus-within .item-icon-image,
+    .map .room--reachable:hover,
+    :is(
+      .sts-scope button:not([class]),
+      .sts-scope button[class=''],
+      .sts-scope .is-chosen,
+      .sts-scope .reward-screen__skip,
+      .sts-scope .reward-screen__collect,
+      .sts-scope .neow-offer__skip,
+      .sts-scope .campfire__leave,
+      .sts-scope .prompt__cancel,
+      .sts-scope .online-entry__back,
+      .sts-scope .online-lobby__copy,
+      .sts-scope .online-lobby__start
+    ):hover:not(:disabled),
+    :is(
+      .sts-scope button:not([class]),
+      .sts-scope button[class=''],
+      .sts-scope .is-chosen,
+      .sts-scope .reward-screen__skip,
+      .sts-scope .reward-screen__collect,
+      .sts-scope .neow-offer__skip,
+      .sts-scope .campfire__leave,
+      .sts-scope .prompt__cancel,
+      .sts-scope .online-entry__back,
+      .sts-scope .online-lobby__copy,
+      .sts-scope .online-lobby__start
+    ):active:not(:disabled)
+  ) { transform: none; }
 
-  /* styles.css zeroes every animation DURATION under this query
-     (`animation-duration: .01ms !important`). For a finite animation that is
-     effectively "skip to the end", but every animation chrome.css adds is
-     `infinite` — and an infinite loop at 0.01ms advances ~1600 iterations per
-     frame, so it samples an arbitrary phase each frame and STROBES. That is
-     the precise thing this media query exists to prevent, so they are stopped
-     outright rather than sped up. */
-  .map .room--here::after,
-  .map .room--reachable,
-  .map .room--reachable::before,
-  .sts-scope .campfire h2 .icon { animation: none; }
+  /* Infinite animations cannot be shortened safely: they strobe through many
+     iterations. Stop them and pin the live map trail to a drawn phase. */
+  html:not([data-mobile-performance='true']) :is(
+    .map .room--reachable,
+    .sts-scope .campfire h2 .icon
+  ) { animation: none; }
+  html:not([data-mobile-performance='true']) .map .room--here::after,
+  html:not([data-mobile-performance='true']) .map .room--reachable::before { animation: none; }
 
-  .sts-scope .merchant-arrival__merchant:is(:hover, :focus-visible) img { transform: none; transition: none; }
+  html:not([data-mobile-performance='true'])
+    .sts-scope .merchant-arrival__merchant:is(:hover, :focus-visible) img {
+    transform: none;
+    transition: none;
+  }
 
-  /* The crawling trail is the same trap seen from the other side: frozen at an
-     arbitrary dashoffset it can land mid-gap and leave the live path invisible.
-     Pin it to a phase that actually draws. */
-  .map__path--live { animation: none; stroke-dashoffset: 0; }
+  html:not([data-mobile-performance='true']) .map__path--live {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
