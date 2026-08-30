@@ -492,11 +492,11 @@
 }
 
 .enemy--boss.enemy--acting[data-attack-motion='melee'] .enemy__portrait > .enemy__art--cutout {
-  animation: boss-melee-dash 1830ms cubic-bezier(0.3, 0, 0.2, 1) both;
+  animation: boss-melee-dash var(--boss-attack-duration, 1830ms) cubic-bezier(0.3, 0, 0.2, 1) both;
 }
 
 .enemy--boss.enemy--acting[data-attack-motion='ranged'] .enemy__portrait > .enemy__art--cutout {
-  animation: boss-ranged-cast 1830ms ease-in-out both;
+  animation: boss-ranged-cast var(--boss-attack-duration, 1830ms) ease-in-out both;
 }
 
 .enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {

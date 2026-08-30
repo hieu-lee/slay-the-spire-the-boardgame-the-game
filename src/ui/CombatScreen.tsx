@@ -136,7 +136,7 @@ import type {
 } from '../game/combat.ts'
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
-import type { CardInstance, Enemy, Player } from '../game/types.ts'
+import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome } from '../multiplayer/useRoomSession.ts'
 import { Card } from './Card.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
@@ -165,6 +165,15 @@ const WATCHER_METEOR_FALL_SLOPE = 0.7113856 / 0.7028019
 
 const dieRelicChoiceLabel = (owner: string, relic: string, faces: readonly number[]): string =>
   `${owner}: ${relic} · die ${faces.join('/')}`
+
+function downfallEnergyOrbLayers(character: DownfallCharacterId, empty: boolean) {
+  const layers = character === 'guardian' ? ['6', '1', '2', '3', '4', '5', '7'] : ['1', '2', '3', '4', '5', '6']
+  const base = character === 'guardian' ? '7' : '6'
+  return layers.map((layer) => ({
+    layer,
+    src: assetPath(`combat/energy-orbs/${character}/layer${layer}${empty && layer !== base ? 'd' : ''}.png`),
+  }))
+}
 
 function stageHermitChamberViewer(player: Player, card: CardInstance, free = false) {
   const stagedCard = { ...card, hermitDeadOn: true, ...(free ? { freeThisTurn: true } : {}) }
@@ -1297,6 +1306,7 @@ function CombatScreenView({
   }, [])
 
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
+  const downfallCharacter = DOWNFALL_CHARACTER_IDS.find((character) => character === viewer.character)
 
   const over = state.phase === 'won' || state.phase === 'lost'
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
@@ -4719,6 +4729,7 @@ function CombatScreenView({
       <div
         className="board"
         data-rows={rows.length}
+        data-crowded={livingEnemies(state).length >= 3 || undefined}
         ref={boardRef}
         tabIndex={0}
         aria-label="Combat board"
@@ -5006,7 +5017,8 @@ function CombatScreenView({
                           {occupant.guardianMode === 'attack' ? 'Attack' : 'Defense'} · Vigor {occupant.vigor}
                         </span>
                       ) : null}
-                      {occupant.character === 'hermit' && occupant.id === viewerId && occupant.chamberSlots > 0 ? (
+                      {occupant.character === 'hermit' && occupant.id === viewerId && occupant.chamberSlots > 0 &&
+                      occupant.chamber.length === 0 ? (
                         <span className="seat__mechanic">Chamber {occupant.chamber.length}/{occupant.chamberSlots}</span>
                       ) : null}
                       {occupant.character === 'hexaghost' ? (
@@ -5204,28 +5216,27 @@ function CombatScreenView({
         </section>
       })() : null}
 
-      {viewer && hermitSetupPending ? (
-        <section className="hermit-prompt hermit-prompt--compact" aria-label="Hermit start-of-combat Load">
-          <strong>Choose a card to Load</strong>
-          {viewer.hand.map((card) => hermitTargetedCurses.has(card.defId)
-            ? <span key={card.uid} className="hermit-prompt__choice">
-                <span>{cardDef(card.defId).name}</span>
-                {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => (
-                  <button key={enemy.uid} type="button" onClick={() => submitHermitSetup(card, enemy.uid)}>
-                    Load targeting {enemyLabel(state.enemies, enemy)}
-                  </button>
-                ))}
-              </span>
-            : <button key={card.uid} type="button" onClick={() => submitHermitSetup(card)}>
-                Load {cardDef(card.defId).name}
-              </button>)}
+      {hermitSetupPending ? <p className="visually-hidden" role="status"
+        aria-label="Hermit start-of-combat Load">Choose a card in hand to Load</p> : null}
+      {hermitSetupPending && viewer.hand.some((card) => hermitTargetedCurses.has(card.defId)) &&
+      livingEnemies(state).length > 1 ? (
+        <section className="prompt" aria-label="Hermit start-of-combat Load target">
+          <span>Choose a target for the Curse to Load</span>
+          {viewer.hand.filter((card) => hermitTargetedCurses.has(card.defId)).map((card) =>
+            livingEnemies(state).map((enemy) => (
+              <button key={`${card.uid}-${enemy.uid}`} type="button" className="prompt__mode"
+                onClick={() => submitHermitSetup(card, enemy.uid)}>
+                {cardDef(card.defId).name} → {enemyLabel(state.enemies, enemy)}
+              </button>
+            )))}
         </section>
       ) : null}
       {viewer && hermitStrengthPending ? (
-        <section className="hermit-prompt hermit-prompt--compact" aria-label="Dead or Alive reward">
+        <section className="prompt" aria-label="Dead or Alive reward">
           <strong>Dead or Alive: choose a player to gain 1 Strength</strong>
           {state.players.filter((player) => !player.dead).map((player) => (
-            <button key={player.id} type="button" onClick={() => submitHermitStrength(player.id)}>{player.name}</button>
+            <button key={player.id} type="button" className="prompt__mode"
+              onClick={() => submitHermitStrength(player.id)}>{player.name}</button>
           ))}
         </section>
       ) : null}
@@ -5235,7 +5246,13 @@ function CombatScreenView({
             'pip',
             'pip--energy',
             motionActive.has('energy') ? `motion-pulse-${motionBeats.energy % 2}` : '',
-          ].filter(Boolean).join(' ')} data-character={viewer.character} title="Energy">
+          ].filter(Boolean).join(' ')} data-character={viewer.character}
+          data-guardian-mode={viewer.guardianMode ?? undefined} data-empty={viewer.energy === 0 || undefined}
+          title="Energy">
+            {downfallCharacter ? <span className="energy-orb__layers" aria-hidden="true">
+              {downfallEnergyOrbLayers(downfallCharacter, viewer.energy === 0).map(({ layer, src }) =>
+                <img key={layer} data-layer={layer} src={src} alt="" />)}
+            </span> : null}
             <IconValue name="energy" value={viewer.energy} size={26} />
           </span>
           <span className={['pile', motionActive.has('draw')
@@ -5278,11 +5295,11 @@ function CombatScreenView({
                   <Card card={card} cost={playCost(def, staged.player, staged.card)}
                     playable={playable && (!needsEnemy || livingEnemies(state).length === 1)}
                     onClick={() => submitHermitChamber(card, needsEnemy ? livingEnemies(state)[0]?.uid ?? null : null)} />
-                  {required && !affordable ? <button type="button"
+                  {required && !affordable ? <button type="button" className="prompt__mode"
                     onClick={() => skipUnplayableHermitChamber(card)}>Skip unplayable {def.name}</button> : null}
                   {needsEnemy && livingEnemies(state).length > 1 ? (
                     <span className="hermit-chamber__targets">
-                      {livingEnemies(state).map((enemy) => <button key={enemy.uid} type="button"
+                      {livingEnemies(state).map((enemy) => <button key={enemy.uid} type="button" className="prompt__mode"
                         disabled={!playable}
                         onClick={() => submitHermitChamber(card, enemy.uid)}>{enemyLabel(state.enemies, enemy)}</button>)}
                     </span>
@@ -5302,15 +5319,20 @@ function CombatScreenView({
             const attachedGemId = guardianGemForCard(viewer, card)
             const shownCard = attachedGemId === card.attachedGemId ? card : { ...card, attachedGemId }
             const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), viewer.guardianMode)
+            const setupTarget = hermitSetupPending && hermitTargetedCurses.has(card.defId)
+              ? livingEnemies(state).length === 1 ? livingEnemies(state)[0] : undefined
+              : null
+            const setupPlayable = hermitSetupPending && (!hermitTargetedCurses.has(card.defId) || Boolean(setupTarget))
             return <Card
               key={card.uid}
               className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
-                cardDrag?.card.uid === card.uid ? 'card--dragging' : ''].filter(Boolean).join(' ') || undefined}
+                cardDrag?.card.uid === card.uid ? 'card--dragging' : '',
+                setupPlayable ? 'card--load-choice' : ''].filter(Boolean).join(' ') || undefined}
               style={{ '--deal-index': index } as React.CSSProperties}
               fan={fanOf(index, viewer.hand.length)}
               card={shownCard}
               cost={card.uid === forcedCardUid ? 0 : playCost(def, viewer, card)}
-              playable={
+              playable={hermitSetupPending ? setupPlayable :
                 !usingCard &&
                 !pendingTrigger &&
                 !endTurnResolving &&
@@ -5332,12 +5354,14 @@ function CombatScreenView({
               }
               selected={pending?.card.uid === card.uid}
               picked={pending?.picked.includes(card.uid) === true}
-              onClick={activateCard}
-              onPointerDown={(event) => onCardPointerDown(card, event)}
-              onPointerMove={onCardPointerMove}
-              onPointerUp={finishCardDrag}
-              onPointerCancel={cancelCardDrag}
-              onLostPointerCapture={cancelCardDrag}
+              onClick={hermitSetupPending
+                ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)
+                : activateCard}
+              onPointerDown={hermitSetupPending ? undefined : (event) => onCardPointerDown(card, event)}
+              onPointerMove={hermitSetupPending ? undefined : onCardPointerMove}
+              onPointerUp={hermitSetupPending ? undefined : finishCardDrag}
+              onPointerCancel={hermitSetupPending ? undefined : cancelCardDrag}
+              onLostPointerCapture={hermitSetupPending ? undefined : cancelCardDrag}
             />
           })}
         </div></div>

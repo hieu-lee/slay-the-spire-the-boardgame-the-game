@@ -25,15 +25,6 @@
   background: rgb(34 24 20 / 0.92);
 }
 
-.combat > .hermit-prompt--compact {
-  position: absolute;
-  z-index: 69;
-  bottom: clamp(10rem, 22vh, 14rem);
-  left: clamp(5.5rem, 9vw, 9rem);
-  max-width: min(30rem, calc(100% - 12rem));
-  box-shadow: 0 0.65rem 1.4rem rgb(0 0 0 / 0.52);
-}
-
 .combat > .hermit-prompt--cards {
   position: absolute;
   z-index: 69;
@@ -54,14 +45,108 @@
   position: absolute;
   z-index: 9;
   bottom: 0.35rem;
-  left: 5.2rem;
+  left: 6.8rem;
   display: grid;
   gap: 0.25rem;
   padding: 0.3rem 0.45rem;
   border: 1px solid rgb(203 158 83 / 0.55);
   border-radius: 8px;
   background: rgb(34 24 20 / 0.9);
+  width: 25rem;
+  max-width: calc(100% - 7.5rem);
+  overflow-x: auto;
   pointer-events: auto;
+}
+
+.hand-area[data-character='hermit']:has(.hermit-chamber) .hand {
+  padding-left: 21rem;
+}
+
+@media (orientation: portrait) {
+  .hermit-chamber {
+    top: auto;
+    bottom: calc(var(--card-width) * var(--card-ratio) + clamp(12rem, 36vh, 19rem));
+    left: 0.5rem;
+    max-width: calc(100% - 1rem);
+  }
+
+  .hermit-chamber .hermit-chamber__cards .card {
+    width: calc(var(--card-width) * 0.38);
+  }
+
+  .hand-area[data-character='hermit']:has(.hermit-chamber) .hand {
+    justify-content: flex-start;
+    padding-inline: 8.5rem 1rem;
+  }
+
+}
+
+@media (orientation: portrait) and (max-width: 480px) {
+  .combat[data-character='hermit']:has(.hermit-chamber):not(:has(.board[data-crowded='true'])) .hermit-chamber {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+  }
+
+  .combat[data-character='hermit']:has(.hermit-chamber) .board[data-crowded='true'] .enemy {
+    right: calc(0.5rem + var(--stage-index) * 4.75rem);
+    width: 4.5rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .hermit-chamber {
+    --card-width: 46px;
+
+    top: auto;
+    bottom: calc(100dvh - 8.75rem);
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    max-width: calc(100% - 1rem);
+  }
+
+  .hermit-chamber .hermit-chamber__cards .card {
+    width: calc(var(--card-width) * 0.38);
+  }
+
+  .hermit-chamber > strong {
+    display: block;
+    flex: 0 0 auto;
+    font-size: 0.65rem;
+    white-space: nowrap;
+  }
+
+  .hermit-chamber__targets button {
+    box-sizing: border-box;
+    min-height: 0;
+    height: 2rem;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+
+  .hand-area[data-character='hermit']:has(.hermit-chamber) .hand {
+    --card-width: 42px;
+    justify-content: flex-start;
+    padding-inline: 5.4rem 1rem;
+  }
+
+  .combat[data-character='hermit']:has(.hermit-chamber) .combat__end-turn {
+    top: 3.25rem;
+    right: 1rem;
+    bottom: auto;
+    left: auto;
+  }
+
+  .combat[data-character='hermit']:has(.hermit-chamber) .row--viewer .row__seat {
+    bottom: 3rem;
+    transform: translateX(-1.1rem);
+  }
+
+  .combat[data-character='hermit']:has(.hermit-chamber) .board .enemy {
+    bottom: 1.75rem;
+  }
 }
 
 .hermit-chamber > strong {
@@ -159,6 +244,11 @@
 .card--selected {
   border-color: var(--gold);
   transform: translateY(-10px);
+}
+
+.hand .card.card--load-choice {
+  outline: 2px solid var(--gold);
+  filter: drop-shadow(0 0 0.55rem rgb(255 210 91 / 0.9));
 }
 
 .card--unplayable {

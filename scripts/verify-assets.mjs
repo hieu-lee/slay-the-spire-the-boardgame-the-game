@@ -26,7 +26,7 @@ import {
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
-import { bossAttackContactLeftFor, bossAttackScaleFor } from '../src/ui/combat-vfx.ts'
+import { bossAttackContactLeftFor, bossAttackDurationFor, bossAttackScaleFor } from '../src/ui/combat-vfx.ts'
 import { DOWNFALL_COLORLESS_CARD_DEFS } from '../src/game/downfall/items.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
@@ -559,6 +559,7 @@ from collections import deque
 from PIL import Image, ImageChops
 faults = []
 metadata = json.loads(sys.argv[1])
+runtime_durations = json.loads(sys.argv[2])
 def components(alpha):
     pixels = alpha.load()
     seen = set()
@@ -580,7 +581,7 @@ def components(alpha):
                         queue.append(point)
             sizes.append(size)
     return sorted(sizes, reverse=True)
-for name in sys.argv[2:]:
+for name in sys.argv[3:]:
     im = Image.open(name)
     is_evil = any(f"downfall_pc_{hero}" in name for hero in ("ironclad", "silent", "defect", "watcher"))
     is_evil_static = is_evil and "/animations/" not in name.replace("\\\\", "/")
@@ -603,7 +604,7 @@ for name in sys.argv[2:]:
         if max(corners) > 16:
             faults.append(f"{name} frame {frame}: opaque corners {corners}")
             break
-        if name.endswith("-attack.webp") and visible_box and min(
+        if name.endswith("-attack.webp") and os.path.basename(name).removesuffix("-attack.webp") in metadata and visible_box and min(
             visible_box[0], visible_box[1], w - visible_box[2], h - visible_box[3]
         ) < 20:
             faults.append(f"{name} frame {frame}: attack art has no transparent safety margin {visible_box}")
@@ -632,8 +633,10 @@ for name in sys.argv[2:]:
         centers = [(box[0] + box[2]) / 2 for box in boxes[:2]]
         if abs(centers[0] - centers[1]) > w * .03:
             faults.append(f"{name}: idle frames jump sideways {centers}")
-    if name.endswith("-attack.webp"):
-        art_id = os.path.basename(name).removesuffix("-attack.webp")
+    art_id = os.path.basename(name).removesuffix("-attack.webp")
+    if name.endswith("-attack.webp") and sum(durations) != runtime_durations[art_id]:
+        faults.append(f'{name}: animation is {sum(durations)}ms, runtime shows it for {runtime_durations[art_id]}ms')
+    if name.endswith("-attack.webp") and art_id in metadata:
         art = metadata[art_id]
         phase_sizes = (2, 1, 2, 2) if "awakened_one_phase_" in name else (3, 1, 3, 3)
         expected = (550, 180, 550, 550)
@@ -681,11 +684,19 @@ print(json.dumps(faults))
     ...expected.map((file) => join(bossAnimationRoot, file)),
     ...['ironclad', 'silent', 'defect', 'watcher'].map((hero) => join(combatEnemyRoot, `downfall_pc_${hero}.webp`)),
   ]
-  const metadata = Object.fromEntries(artIds.map((id) => [id, {
+  const timedBossArtIds = [
+    'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
+    'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
+    'the_champ', 'the_collector', 'time_eater',
+  ]
+  const metadata = Object.fromEntries(timedBossArtIds.map((id) => [id, {
     scale: bossAttackScaleFor(id),
     contactLeft: bossAttackContactLeftFor(id),
   }]))
-  const result = spawnSync('python3', ['-c', probe, JSON.stringify(metadata), ...paths], { encoding: 'utf8' })
+  const runtimeDurations = Object.fromEntries(artIds.map((id) => [id, bossAttackDurationFor(id)]))
+  const result = spawnSync('python3', [
+    '-c', probe, JSON.stringify(metadata), JSON.stringify(runtimeDurations), ...paths,
+  ], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'boss animation audit requires python3 + Pillow')
   const faults = JSON.parse(result.stdout.trim().split('\n').pop())
   assert(faults.length === 0, `invalid boss animation assets:\n    ${faults.join('\n    ')}`)

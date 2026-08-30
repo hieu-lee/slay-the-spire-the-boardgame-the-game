@@ -11,7 +11,7 @@ import type { IconName } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand } from './board-signals.ts'
 import { revealDecodedImage } from './Card.tsx'
-import { bossAttackContactLeftFor, bossAttackMotionFor, bossAttackScaleFor } from './combat-vfx.ts'
+import { bossAttackContactLeftFor, bossAttackDurationFor, bossAttackMotionFor, bossAttackScaleFor } from './combat-vfx.ts'
 
 type EnemyCardProps = {
   enemy: Enemy
@@ -362,7 +362,7 @@ export function EnemyCard({
   const currentBossAttackArt = bossAnimationImagePath(def, 'attack')
   const bossAttackTriggered = Boolean(animatedBoss && acting &&
     actions.some((action) => action.kind === 'attack' || action.kind === 'attackSequence'))
-  const bossAttacking = bossAttackTriggered || Boolean(animatedBoss && presentedBossAttack)
+  const bossAttacking = Boolean(animatedBoss && presentedBossAttack)
   useEffect(() => {
     if (!bossAttackTriggered) return
     setPresentedBossAttack({ art: currentBossAttackArt, artId: currentBossArtId })
@@ -370,7 +370,7 @@ export function EnemyCard({
     bossAttackTimer.current = setTimeout(() => {
       setPresentedBossAttack(null)
       bossAttackTimer.current = null
-    }, 1830)
+    }, bossAttackDurationFor(currentBossArtId))
   }, [bossAttackTriggered, currentBossArtId, currentBossAttackArt])
   useEffect(() => () => {
     if (bossAttackTimer.current) clearTimeout(bossAttackTimer.current)
@@ -470,6 +470,7 @@ export function EnemyCard({
         '--stage-index': stageIndex,
         '--boss-attack-scale': bossAttackScale,
         '--boss-contact-left': bossAttackContactLeft,
+        '--boss-attack-duration': `${bossAttackDurationFor(bossArtId)}ms`,
       } as CSSProperties}
       disabled={enemy.dead || disabled}
       onClick={() => { if (!enemy.dead) onClick?.(enemy) }}

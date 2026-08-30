@@ -44,6 +44,16 @@ const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: nu
   ['time_eater', [0.836, 42]],
 ])
 
+const SHORT_BOSS_ATTACK_ART = new Set([
+  'downfall_corrupted', 'downfall_dark_core', 'downfall_demon', 'downfall_pc_defect',
+  'downfall_pc_ironclad', 'downfall_pc_neow', 'downfall_pc_silent', 'downfall_pc_watcher',
+  'spire_shield',
+])
+
+export function bossAttackDurationFor(artId: string): number {
+  return SHORT_BOSS_ATTACK_ART.has(artId) ? 580 : 1830
+}
+
 export function bossAttackScaleFor(artId: string): number {
   return BOSS_ATTACK_ART.get(artId)?.[0] ?? 1
 }
