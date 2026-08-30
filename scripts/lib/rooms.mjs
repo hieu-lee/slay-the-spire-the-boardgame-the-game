@@ -35,17 +35,12 @@ import {
   cardShivChoiceCount,
   canSkipEvent,
   unavailableEventOptionIds,
-  beginEndPlayerTurn,
-  REBUILT_END_TURN_ORDER,
-  STALE_END_TURN_ORDER,
+  beginEndTurnResolution,
   beginCatchUp,
   chooseEndTurnTarget,
   chooseDistilledCard,
-  defaultEndTurnOrder,
   discardOrderIsValid,
-  endTurnAbilities,
-  endTurnChoiceId,
-  endTurnChoiceTarget,
+  endTurnResolutionAbility,
   createRun,
   courierCost,
   currentRoom,
@@ -94,6 +89,7 @@ import {
   resolveCombat,
   resolveEnemyTargets,
   resolvePendingTrigger,
+  resolveEndTurnAbility,
   resolvePendingRelic,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
@@ -110,7 +106,6 @@ import {
   startTurnDiscardPreview,
   startTurnScryAbilities,
   startTurnScryPreview,
-  validEndTurnOrder,
   visibleMap,
   createCampaignProgress,
   parseCampaignProgress,
@@ -837,7 +832,9 @@ export function apply(room, seatToken, action) {
     if (next === combat) fail('That triggered ability target is no longer legal')
     room.run = { ...room.run, combat: next }
     settleForcedCards(room)
+    clearEndTurnOrdering(room)
     room.version += 1
+    publishEndTurnEffect(room)
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
   }
   if (forcedCard && !(
@@ -967,7 +964,7 @@ export function apply(room, seatToken, action) {
   if (action?.kind === 'cardReward') return cardReward(room, seat, action, seatToken)
   if (action?.kind === 'transformReward') return transformReward(room, seat, action, seatToken)
   if (action?.kind === 'endTurn') return endTurn(room, seat, action, seatToken)
-  if (action?.kind === 'resolveEndTurn') return resolveEndTurn(room, seat, action, seatToken)
+  if (action?.kind === 'resolveEndTurnEffect') return resolveEndTurnEffect(room, seat, action, seatToken)
   if (action?.kind === 'orderStartTurnScries') return orderBeforeDrawScries(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurnScry') return resolveBeforeDrawScry(room, seat, action, seatToken)
   if (action?.kind === 'resolveStartTurnDiscard') return resolvePrivateStartTurnDiscard(room, seat, action, seatToken)
@@ -1473,24 +1470,21 @@ function settleEndTurn(room) {
     .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnReady[player.id])
     .map((player) => player.id)
   if (waiting.length > 0) return waiting
-  const abilities = endTurnAbilities(combat)
-  const order = defaultEndTurnOrder(abilities)
-  const needsChoice = abilities.length > 1 || abilities.some((ability) => (ability.targets?.length ?? 0) > 1)
-  if (!needsChoice) {
-    room.run = { ...room.run, combat: beginEndPlayerTurn(combat, order) }
-    settleForcedCards(room)
-    room.endTurnReady = undefined
-  } else {
-    room.endTurnAbilities = abilities
-    room.endTurnOrder = order
-    // Stamped with the version that published them: a republished stage renames
-    // every ability, so an order composed against the old list cannot validate
-    // against the new one and resolve abilities nobody chose.
-    room.endTurnPublicIds = Object.fromEntries(abilities.map((ability, index) =>
-      [`v${room.version}a${index + 1}`, ability.id]))
-  }
+  room.run = { ...room.run, combat: beginEndTurnResolution(combat) }
+  settleForcedCards(room)
+  room.endTurnReady = undefined
+  publishEndTurnEffect(room)
   room.endTurnOrders = undefined
   return null
+}
+
+/** Publishes only the next live target effect, so each owner resolves its own source immediately. */
+function publishEndTurnEffect(room) {
+  const ability = endTurnResolutionAbility(room.run?.combat)
+  if (!ability) return false
+  room.endTurnAbilities = [ability]
+  room.endTurnPublicIds = { [`v${room.version}a1`]: ability.id }
+  return true
 }
 
 function resolveAbandonedPreviews(room) {
@@ -1529,85 +1523,33 @@ function resolveAbandonedPreviews(room) {
   return true
 }
 
-/** Drops a published ability-ordering stage, along with the per-seat discard
- *  orders kept in `endTurnOrders`. Seat readiness is left for the caller: the
- *  rebuild path re-derives the stage from it, the others clear it. */
+/** Drops a published end-turn effect and any per-seat discard orders. */
 function clearEndTurnOrdering(room) {
   room.endTurnAbilities = undefined
-  room.endTurnOrder = undefined
   room.endTurnPublicIds = undefined
   room.endTurnOrders = undefined
 }
 
-function endTurnCoordinator(room) {
-  const alive = new Set(room.run?.combat?.players.filter((player) => !player.dead).map((player) => player.id) ?? [])
-  return room.seats.find((seat) => seat.connected && alive.has(seat.playerId))?.playerId ?? null
-}
-
-function resolveEndTurn(room, seat, action, seatToken) {
+function resolveEndTurnEffect(room, seat, action, seatToken) {
   const combat = room.run?.combat
   if (!combat || !room.endTurnAbilities || !room.endTurnPublicIds) {
-    fail('The party is not ordering end-of-turn abilities')
+    fail('There is no end-turn effect waiting for a target')
   }
-  if (seat.playerId !== endTurnCoordinator(room)) fail('Only the end-turn coordinator can resolve the order')
-  const publicOrder = action.abilityOrder
-  if (!Array.isArray(publicOrder) || publicOrder.some((id) => typeof id !== 'string')) {
-    fail('End-turn order must contain each ability exactly once with valid targets')
+  const ability = room.endTurnAbilities[0]
+  if (!ability || ability.playerId !== seat.playerId) fail('Only the effect owner can choose its target')
+  if (typeof action.abilityId !== 'string' || typeof action.targetUid !== 'string' ||
+    room.endTurnPublicIds[action.abilityId] !== ability.id ||
+    !ability.targets?.some((target) => target.uid === action.targetUid)) {
+    fail('That end-turn effect target is no longer legal')
   }
-  const order = publicOrder.map((choice) => {
-    const publicId = endTurnChoiceId(choice)
-    const id = Object.hasOwn(room.endTurnPublicIds, publicId) ? room.endTurnPublicIds[publicId] : undefined
-    const target = endTurnChoiceTarget(choice)
-    if (choice !== (target ? chooseEndTurnTarget(publicId, target) : publicId)) return undefined
-    return id && target ? chooseEndTurnTarget(id, target) : id
-  })
-  if (order.some((choice) => typeof choice !== 'string') || !validEndTurnOrder(room.endTurnAbilities, order)) {
-    fail('End-turn order must contain each ability exactly once with valid targets')
-  }
-  const next = beginEndPlayerTurn(combat, order)
-  if (next === combat) {
-    // The published abilities are still the live ones, so this is a defensive
-    // engine refusal rather than a stale room snapshot. Keep the stage so the
-    // party's arrangement survives.
-    const live = endTurnAbilities(combat)
-    const targetUids = (ability) => (ability.targets ?? []).map((target) => target.uid).join()
-    // The engine's normal refusals cannot reach here: apply rejects a pending
-    // trigger and a forced card above this dispatch, and a phase that moved on
-    // empties the live list, which the comparison below then fails. So a match
-    // means the submitted plan itself was refused.
-    if (live.length === room.endTurnAbilities.length && live.every((ability, index) =>
-      ability.id === room.endTurnAbilities[index].id &&
-      targetUids(ability) === targetUids(room.endTurnAbilities[index]))) {
-      fail(STALE_END_TURN_ORDER)
-    }
-    // Otherwise the frozen list stopped matching the battle. Combat is meant to
-    // be frozen while a stage is published, but the handlers dispatched before
-    // that guard — Courier, rewards, campfire — return early and can hand out an
-    // end-of-turn relic, so this is reachable. A plain rejection would brick the
-    // room — nothing else ever releases the stage, so every later action would
-    // fail too — hence the republish, which also re-targets the list. The
-    // mutation survives the throw (it is the room) and the server broadcasts the
-    // bumped version to the rest of the party.
-    clearEndTurnOrdering(room)
-    // Bumped first so the republished abilities are stamped with a version the
-    // superseded list never carried.
-    room.version += 1
-    settleEndTurn(room)
-    // Nothing left to order: either a single forced ability that settleEndTurn
-    // has already ended the turn with, or a combat that had moved on anyway.
-    if (room.run?.combat?.phase !== 'player') return { changed: true, snapshot: snapshotFor(room, seatToken) }
-    // settleEndTurn can decline to republish — a seat that reconnected mid-order
-    // has not confirmed yet — and then there is no list to send anyone back to.
-    if (!room.endTurnAbilities) fail('The battle moved on before the order resolved. The party ends the turn again.')
-    // Not the solo copy: the party's arrangement is gone with the old list, so
-    // there is nothing to re-aim — the order has to be set again.
-    fail(REBUILT_END_TURN_ORDER)
-  }
+  const next = resolveEndTurnAbility(combat, chooseEndTurnTarget(ability.id, action.targetUid))
+  if (next === combat) fail('That end-turn effect target is no longer legal')
   room.run = { ...room.run, combat: next }
   settleForcedCards(room)
   room.endTurnReady = undefined
   clearEndTurnOrdering(room)
   room.version += 1
+  publishEndTurnEffect(room)
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
@@ -2592,8 +2534,6 @@ export function snapshotFor(room, seatToken) {
     rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
     endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
-    endTurnOrder: room.endTurnOrder?.map((choice) => publicEndTurnChoice(room, choice)),
-    endTurnCoordinatorId: room.endTurnAbilities ? endTurnCoordinator(room) : undefined,
     startTurnAbilities: run?.combat?.phase === 'start'
       ? plannedStartTurnAbilities(room)
       : undefined,
@@ -2676,7 +2616,7 @@ function visibleEndTurnAbilities(room, viewerId) {
   return room.endTurnAbilities.map((ability) => {
     const visible = {
       ...ability,
-      id: publicEndTurnChoice(room, ability.id),
+      id: publicEndTurnId(room, ability.id),
       targets: ability.targets?.map((target) => ({ ...target })),
     }
     if (ability.playerId === viewerId || !ability.id.includes('/card:')) return visible
@@ -2687,13 +2627,11 @@ function visibleEndTurnAbilities(room, viewerId) {
   })
 }
 
-function publicEndTurnChoice(room, choice) {
-  const id = endTurnChoiceId(choice)
+function publicEndTurnId(room, id) {
   const publicId = Object.entries(room.endTurnPublicIds ?? {})
     .find(([, realId]) => realId === id)?.[0]
   if (!publicId) fail('End-turn ability mapping is stale')
-  const target = endTurnChoiceTarget(choice)
-  return target ? chooseEndTurnTarget(publicId, target) : publicId
+  return publicId
 }
 
 function redactRun(run, viewerId) {

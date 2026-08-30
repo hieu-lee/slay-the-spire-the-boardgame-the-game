@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
-import { REBUILT_END_TURN_ORDER, createCombat } from '../src/game/combat.ts'
+import { createCombat } from '../src/game/combat.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
@@ -2921,9 +2921,9 @@ try {
   await a.reload({ waitUntil: 'networkidle' })
   await a.locator('.combat[data-phase="start"]').waitFor()
   await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('overflow Shiv 1/2'))
-  await a.locator('.end-turn-order > summary').click()
-  await a.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
-  await a.locator('.end-turn-order > summary').click()
+  await a.locator('.start-turn-order > summary').click()
+  await a.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
+  await a.locator('.start-turn-order > summary').click()
   await a.locator('.enemy:not([disabled])').first().click()
   await a.getByRole('button', { name: 'Skip this Shiv' }).click()
   await a.getByRole('button', { name: 'Resolve start of turn' }).click()
@@ -3405,161 +3405,81 @@ try {
     assertEqual(afterRemoteScroll, manualScroll)
   })
 
-  await a.getByRole('button', { name: /^Blade Dance,/ }).click()
-  await a.locator('.enemy:not([disabled])').first().click()
-  await a.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('2/2'))
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
-    .push({ uid: 'online-order-shame', defId: 'shame', upgraded: false })
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').hand
-    .push({ uid: 'online-equilibrium-retain', defId: 'reinforced_body', upgraded: false })
-  Object.assign(liveRoom.run.combat.players.find((player) => player.name === 'Ann'), {
-    block: 1,
-    retainCardsThisTurn: 1,
+  const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  const bo = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(liveRoom.run.combat, {
+    phase: 'player', pendingTriggers: [], pendingCardCopy: undefined, pendingDistilled: undefined,
+    startTurnProgress: undefined, endTurnProgress: undefined,
   })
-  liveRoom.run.combat.players.find((player) => player.name === 'Bo').hand
-    .push({ uid: 'online-order-decay', defId: 'decay', upgraded: false })
-  const aCredentials = await credentials(a)
-  const endTurnStatuses = []
-  let publishedEndTurnOrder
-  let teammateOrderButtonDisabled
-  let teammateReorderControlsDisabled
-  let coordinatorAbilityLabels
-  let decayAbilityId
-  const stalePlayerTurn = await snapshot(a)
-  let endTurnConflictStatus = 0
-  let finishEndTurnConflict
-  const endTurnConflictFinished = new Promise((resolveConflict) => { finishEndTurnConflict = resolveConflict })
-  await a.route(`**/api/rooms/${code}/action`, async (route) => {
-    liveRoom.run.combat.players.find((player) => player.name === 'Bo').shivs = 0
-    const response = await route.fetch()
-    endTurnConflictStatus = response.status()
-    await route.fulfill({ response })
-    finishEndTurnConflict()
-  }, { times: 1 })
-  await a.locator('.enemy:not([disabled])').nth(1).click()
-  await endTurnConflictFinished
-  await a.getByRole('alert').waitFor()
-  liveRoom.run.combat.players.find((player) => player.name === 'Ann').orbs = ['lightning', null, null]
-  for (const token of [aCredentials.token, bCredentials.token]) {
-    const response = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-room-token': token },
-      body: JSON.stringify({ action: { kind: 'endTurn' } }),
-    })
-    endTurnStatuses.push(response.status)
-  }
-  await a.getByRole('button', { name: 'Resolve end turn' }).waitFor()
-  const [coordinatorStage, boStage] = await Promise.all([snapshot(a), snapshot(b)])
-  publishedEndTurnOrder = coordinatorStage.endTurnOrder
-  decayAbilityId = boStage.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
-  teammateOrderButtonDisabled = await b.getByRole('button', { name: 'Waiting for end-turn order' }).isDisabled()
-  const teammateOrderOpen = await b.locator('.end-turn-order[open]').count()
-  const teammateArrows = b.locator('.end-turn-order li button')
-  teammateReorderControlsDisabled = await teammateArrows.evaluateAll((buttons) =>
-    buttons.length > 0 && buttons.every((button) => button.disabled))
-  // The ordering stage opens the disclosure itself: the coordinator must not
-  // have to find a collapsed panel to fix a rejected order.
-  await a.locator('.end-turn-order[open]').waitFor({ timeout: 5000 }).catch(() => {})
-  const coordinatorOrderOpen = await a.locator('.end-turn-order[open]').count()
-  coordinatorAbilityLabels = await a.locator('.end-turn-order li span').allTextContents()
-  for (let index = publishedEndTurnOrder.indexOf(decayAbilityId); index > 0; index -= 1) {
-    await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
-  }
-  await a.screenshot({ path: join(outDir, '03-party-end-turn-order.png'), fullPage: true })
-  // The orb's chosen target dies while the party is still ordering: the
-  // coordinator must be told what to fix, with the order list already open.
-  const orbChoice = publishedEndTurnOrder.find((choice) => choice.includes('@'))
-  assert(orbChoice, `no targeted end-turn ability was published: ${JSON.stringify(publishedEndTurnOrder)}`)
-  const orbTarget = liveRoom.run.combat.enemies.find((enemy) => enemy.uid === orbChoice.split('@')[1])
-  assert(orbTarget, `the published target is not an enemy: ${orbChoice}`)
-  Object.assign(orbTarget, { hp: 0, dead: true })
-  // A coordinator who collapsed the tray must still be pointed back into it.
-  await a.locator('.end-turn-order > summary').click()
-  const collapsedBeforeStale = await a.locator('.end-turn-order[open]').count()
-  const failuresBeforeStale = failures.length
-  await a.getByRole('button', { name: 'Resolve end turn' }).click()
-  // The earlier conflict left its own banner, so wait for this refusal's copy
-  // rather than for any banner; the check below still pins the exact text.
-  const staleError = a.locator('.online-error', { hasText: REBUILT_END_TURN_ORDER })
-  await staleError.waitFor()
-  await a.locator('.end-turn-order[open]').waitFor({ timeout: 5000 }).catch(() => {})
-  const staleEndTurnError = await staleError.innerText()
-  const staleOrderOpen = await a.locator('.end-turn-order[open]').count()
-  const staleTargets = await a.getByRole('combobox', { name: /Lightning Orb/ })
-    .locator('option').evaluateAll((options) => options.map((option) => option.value))
-  // The refusal is broadcast, so the teammate's own list must lose the dead
-  // target too — read it from page B, which never refetches on A's rejection.
-  await b.waitForFunction((uid) => {
-    const options = [...document.querySelectorAll('.end-turn-order option')]
-    return options.length > 0 && !options.some((option) => option.value === uid)
-  }, orbTarget.uid, { timeout: 5000 }).catch(() => {})
-  const teammateTargets = await b.locator('.end-turn-order option')
-    .evaluateAll((options) => options.map((option) => option.value))
-  await a.screenshot({ path: join(outDir, '03b-stale-end-turn-order.png'), fullPage: true })
-  check('a stale online end-turn order reopens the list and offers living targets', () => {
-    assertEqual(collapsedBeforeStale, 0, 'the coordinator could not collapse the order list')
-    assertEqual(staleEndTurnError, REBUILT_END_TURN_ORDER)
-    assertEqual(staleOrderOpen, 1, 'the rejected order left the coordinator with a collapsed list')
-    assert(staleTargets.length > 0 && !staleTargets.includes(orbTarget.uid),
-      `the dead target survived the republished list: ${JSON.stringify(staleTargets)}`)
-    assert(teammateTargets.length > 0 && !teammateTargets.includes(orbTarget.uid),
-      `the teammate kept the dead target: ${JSON.stringify(teammateTargets)}`)
+  Object.assign(ann, {
+    character: 'defect', hand: [
+      { uid: 'online-equilibrium-retain', defId: 'reinforced_body', upgraded: false },
+      { uid: 'online-discard-strike', defId: 'strike_ironclad', upgraded: false },
+      { uid: 'online-discard-defend', defId: 'defend_ironclad', upgraded: false },
+    ],
+    powers: [], orbs: ['lightning', 'lightning', null], block: 0, retainCardsThisTurn: 1,
   })
-  const staleConflict = failures.slice(failuresBeforeStale)
-    .findIndex((failure) => failure.includes('409 (Conflict)'))
-  assert(staleConflict >= 0, 'the stale end-turn order was not rejected')
-  failures.splice(failuresBeforeStale + staleConflict, 1)
-  // The republished order is fresh, and its public ids carry the version that
-  // published them, so Decay has to be found by label again before moving up.
-  // Decay is Bo's own card, so only Bo's snapshot spells the label out.
-  const republishedDecayId = (await snapshot(b)).endTurnAbilities
-    .find((ability) => ability.label.includes('Decay'))?.id
-  assert(republishedDecayId, 'Decay left the republished abilities')
-  const republishedEndTurnOrder = (await snapshot(a)).endTurnOrder
-  for (let index = republishedEndTurnOrder.indexOf(republishedDecayId); index > 0; index -= 1) {
-    await a.locator('.end-turn-order li').nth(index).getByRole('button', { name: /earlier/ }).click()
+  Object.assign(bo, {
+    character: 'watcher', hand: [{ uid: 'online-discard-defend', defId: 'defend_watcher', upgraded: false }],
+    powers: [{ uid: 'online-omega', defId: 'omega', upgraded: false }], orbs: [null, null, null],
+  })
+  liveRoom.run.combat.enemies.forEach((enemy, index) => Object.assign(enemy, {
+    row: index, hp: 20, maxHp: 20, block: 0, poison: 0, dead: false,
+  }))
+  liveRoom.run.combat.enemies.push({
+    ...liveRoom.run.combat.enemies[0], uid: 'online-row-boss', isBoss: true, row: 0, hp: 20, maxHp: 20,
+  })
+  liveRoom.endTurnReady = undefined
+  liveRoom.endTurnAbilities = undefined
+  liveRoom.endTurnPublicIds = undefined
+  liveRoom.version += 1
+  rooms.publishRoom(code)
+  await a.getByRole('button', { name: /^End turn/ }).click()
+  await b.getByRole('button', { name: /^End turn/ }).click()
+  const firstOrb = a.locator('button.end-turn-effect--orb')
+  await firstOrb.waitFor()
+  const foreignOrbDisabled = await b.locator('button.end-turn-effect--orb').isDisabled()
+  const firstStage = await snapshot(a)
+  const firstTarget = firstStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
+  const dragEffect = async (page, source, target) => {
+    const from = await source.boundingBox()
+    const to = await target.boundingBox()
+    assert(from && to, 'end-turn drag endpoints must be visible')
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+    await page.mouse.up()
   }
-  await a.getByRole('button', { name: 'Resolve end turn' }).click()
+  await dragEffect(a, firstOrb, a.locator(`[data-enemy-id="${firstTarget}"]`))
+  await a.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('Lightning Orb 2'))
+  const secondStage = await snapshot(a)
+  const secondTarget = secondStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
+  await dragEffect(a, a.locator('button.end-turn-effect--orb'), a.locator(`[data-enemy-id="${secondTarget}"]`))
+  const omega = b.locator('.end-turn-effect--card')
+  await omega.waitFor()
+  const foreignOmegaDisabled = await a.locator('.end-turn-effect--card').getAttribute('aria-disabled')
+  const omegaArt = await omega.locator('.card__art').getAttribute('src')
+  const omegaStage = await snapshot(b)
+  const omegaTarget = omegaStage.endTurnAbilities[0].targets.find((target) => target.uid === 'online-row-boss').uid
+  await a.screenshot({ path: join(outDir, '03-owner-end-turn-effects.png'), fullPage: true })
+  await dragEffect(b, omega, b.locator(`[data-enemy-id="${omegaTarget}"]`))
+  await b.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('choose its row'))
+  const rowStage = await snapshot(b)
+  const rowTarget = rowStage.endTurnAbilities[0].targets.find((target) => target.uid !== 'online-row-boss').uid
+  await dragEffect(b, b.locator('.end-turn-effect--card'), b.locator(`[data-enemy-id="${rowTarget}"]`))
   await Promise.all([
     a.locator('.combat[data-phase="discard"]').waitFor(),
     b.locator('.combat[data-phase="discard"]').waitFor(),
   ])
-  await a.evaluate((snapshot) => {
-    window.__ROOM_SOCKETS__.at(-1)?.dispatchEvent(new MessageEvent('message', {
-      data: JSON.stringify({ type: 'snapshot', snapshot }),
-    }))
-  }, stalePlayerTurn)
-  await a.waitForTimeout(0)
-  await a.waitForFunction(() => document.querySelector('.prompt') === null)
-  const expectedEndTurnConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
-  assert(expectedEndTurnConflict >= 0, 'the post-end-turn card action did not conflict')
-  failures.splice(expectedEndTurnConflict, 1)
-  const afterEndTurnRace = await snapshot(a)
-  const stalePhasePrompt = await a.locator('.prompt').count()
-  check('a stale snapshot after final end-turn cannot restore Player Turn targeting', () => {
-    assertDeepEqual(endTurnStatuses, [200, 200])
-    assertEqual(endTurnConflictStatus, 409)
-    assertEqual(afterEndTurnRace.run.combat.phase, 'discard')
-    assert(afterEndTurnRace.run.combat.players
-      .find((player) => player.id === afterEndTurnRace.you.playerId).hand
-      .some((card) => card.uid === 'online-overflow-dance'))
-    assertEqual(stalePhasePrompt, 0)
-  })
-  check('the coordinator can publish, reorder, and resolve party-wide end-turn abilities', () => {
-    assert(publishedEndTurnOrder.includes(decayAbilityId), JSON.stringify(publishedEndTurnOrder))
-    assert(publishedEndTurnOrder.every((id) => !id.includes('card:') && !id.includes('online-order')),
-      `private card UIDs leaked through ${JSON.stringify(publishedEndTurnOrder)}`)
-    assertEqual(coordinatorOrderOpen, 1, 'the ordering stage left the end-turn order collapsed')
-    assertEqual(teammateOrderOpen, 0, 'the order list opened itself for a seat that cannot use it')
-    assert(teammateOrderButtonDisabled, 'the non-coordinator end-turn button remained enabled')
-    assert(teammateReorderControlsDisabled, 'the non-coordinator could change an order they cannot submit')
-    assert(coordinatorAbilityLabels.filter((label) => label.startsWith('Bo — '))
-      .every((label) => label.includes('Private hand ability')),
-      `the coordinator saw private cards: ${JSON.stringify(coordinatorAbilityLabels)}`)
-    const decay = afterEndTurnRace.run.combat.log.findIndex((line) => line.startsWith('Decay damages Bo'))
-    const shame = afterEndTurnRace.run.combat.log.findIndex((line) => line.startsWith('Shame: Ann'))
-    assert(decay >= 0 && shame >= 0 && decay < shame,
-      `Decay log ${decay}, Shame log ${shame}: ${JSON.stringify(afterEndTurnRace.run.combat.log)}`)
+  const obsoleteEndTurnPanel = await a.locator('.end-turn-order').count()
+  check('owners drag their own end-turn sources while teammates wait', () => {
+    assert(foreignOrbDisabled, 'the Watcher could drag the Defect Orb')
+    assertEqual(foreignOmegaDisabled, 'true', 'the Defect could drag the Watcher Omega')
+    assert(String(omegaArt).includes('omega'), `Omega did not render its card asset: ${omegaArt}`)
+    assertEqual(rowStage.endTurnAbilities[0].rowTiebreak, true, 'the boss did not request a row tiebreak')
+    assert(!rowStage.endTurnAbilities[0].targets.some((target) => target.uid === 'online-row-boss'),
+      'the boss was still a legal tiebreak target')
+    assertEqual(obsoleteEndTurnPanel, 0, 'the obsolete end-turn order panel remained mounted')
   })
   const aDiscardTop = a.getByLabel('Top discard for Ann')
   const retainReinforcedBody = a.getByRole('button', { name: /Retain Reinforced Body$/ })

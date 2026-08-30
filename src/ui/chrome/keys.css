@@ -309,11 +309,11 @@ input:is(:not([type]), [type='text']) {
 
    This change deleted most of those. What is left: `.online-entry select` /
    `.online-lobby select` (styles.css, one block) merely TIE this rule and lose
-   on load order, and `.end-turn-order li select` is (0,1,2) and genuinely
+   on load order, and `.start-turn-order li select` is (0,1,2) and genuinely
    out-specifies it — which is the only reason the extra arm below is needed. */
 select:not([multiple]),
-.end-turn-order li select {
-  /* The gutter belongs with the chevron: `.end-turn-order li select` sets its
+.start-turn-order li select {
+  /* The gutter belongs with the chevron: `.start-turn-order li select` sets its
      own padding at a specificity that beats the base rule above, so without
      this its option text runs underneath the arrow. */
   padding-right: 2rem;
@@ -337,12 +337,12 @@ input:is(:not([type]), [type='text']) { padding-right: 0.6rem; }
    neighbour the panel's 1rem, leaving them 3.2px apart and the smaller one
    under the 16px threshold that makes iOS zoom on focus.
 
-   Combat's `.end-turn-order li select` deliberately keeps its own FONT SIZE: it
+   Combat's `.start-turn-order li select` deliberately keeps its own FONT SIZE: it
    is `(0,1,2)` and wins on `font`, which holds the dense turn-order list at
    0.72rem. Its height is not bespoke — the base `select` rule still gives it
    the 46px floor. That row is desktop-only, so the zoom threshold does not
    apply to it. */
-.end-turn-order li select { font-family: 'Kreon', Georgia, serif; }
+.start-turn-order li select { font-family: 'Kreon', Georgia, serif; }
 
 .sts-scope select,
 .sts-scope input[type='search'],

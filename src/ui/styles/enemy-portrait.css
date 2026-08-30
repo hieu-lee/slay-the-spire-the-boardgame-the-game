@@ -296,4 +296,98 @@ button.pile:hover { filter: brightness(1.15); }
   animation: card-target-flow 360ms linear infinite;
 }
 
+.end-turn-effects {
+  position: fixed;
+  z-index: 120;
+  top: max(4.4rem, calc(env(safe-area-inset-top) + 4rem));
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 0.22rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.end-turn-effects__prompt {
+  max-width: min(28rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid rgb(255 226 154 / 0.45);
+  border-radius: 999px;
+  color: #fff4d3;
+  background: rgb(20 14 16 / 0.82);
+  box-shadow: 0 0.35rem 0.9rem rgb(0 0 0 / 0.45);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.end-turn-effect {
+  pointer-events: auto;
+  animation: end-turn-effect-arrive 280ms var(--ease-out, ease-out) both;
+}
+
+button.end-turn-effect--orb {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  padding: 0;
+  border: 1px solid rgb(255 239 165 / 0.58);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(86 183 255 / 0.28), rgb(14 15 31 / 0.72) 66%, rgb(8 7 12 / 0.88));
+  box-shadow: 0 0.35rem 1.1rem rgb(0 0 0 / 0.62), inset 0 0 1.2rem rgb(225 250 255 / 0.2);
+}
+
+button.end-turn-effect--orb:hover:not(:disabled),
+button.end-turn-effect--orb[aria-pressed='true'] {
+  border-color: #fff7ad;
+  filter: brightness(1.22);
+}
+
+.end-turn-effect--orb .token--orb,
+.end-turn-effect-drag > .token--orb {
+  width: 3.6rem;
+  height: 3.6rem;
+  pointer-events: none;
+}
+
+.end-turn-effect--card {
+  width: calc(var(--card-width) * 0.68);
+  transform: none;
+  filter: drop-shadow(0 0.5rem 0.8rem rgb(0 0 0 / 0.65));
+}
+
+.end-turn-effect--card.card--selected { transform: translateY(0) scale(1.06); }
+
+.end-turn-effect-drag {
+  position: fixed;
+  z-index: 122;
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  pointer-events: none;
+  transform: translate3d(calc(-50% + var(--effect-drag-x, 0px)), calc(-50% + var(--effect-drag-y, 0px)), 0) scale(1.12);
+  filter: drop-shadow(0 1rem 0.85rem rgb(0 0 0 / 0.76));
+  will-change: transform;
+}
+
+.end-turn-effect-drag--card {
+  width: calc(var(--card-width) * 0.78);
+  height: auto;
+}
+
+.end-turn-effect-drag--card .card { width: 100%; transform: none; }
+
+.end-turn-target-arrow__line { marker-end: url('#end-turn-target-arrowhead'); }
+
+@keyframes end-turn-effect-arrive {
+  from { opacity: 0; transform: translateY(-2.5rem) scale(0.72); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .end-turn-effect { animation: none; }
+}
+
 @keyframes card-target-flow { to { stroke-dashoffset: -16; } }

@@ -136,12 +136,12 @@
 
 .relic-actions > section > details[open] > summary::before { transform: rotate(90deg); }
 
-/* The end-turn-order disclosures get the same glyph. Their native marker is
+/* The start-turn-order disclosures get the same glyph. Their native marker is
    removed alongside the others, and a summary with no marker and no replacement
    is a control with nothing saying it opens — two of the three render closed.
    `inline-block` because this summary is not a flex container, and a transform
    does not apply to an inline box. */
-.end-turn-order > summary::before {
+.start-turn-order > summary::before {
   content: '▸' / '';
   display: inline-block;
   margin-right: 0.35rem;
@@ -150,7 +150,7 @@
   transition: transform var(--motion-lerp) var(--ease-lerp);
 }
 
-.end-turn-order[open] > summary::before { transform: rotate(90deg); }
+.start-turn-order[open] > summary::before { transform: rotate(90deg); }
 
 /* The printed text under each relic's name, so a player choosing a target can
    read what the relic does without leaving the panel to hover the HUD chip. */

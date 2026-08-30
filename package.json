@@ -17,6 +17,7 @@
     "verify": "node scripts/verify-all.mjs",
     "verify:changed": "node scripts/verify-all.mjs --changed",
     "verify:browser": "node scripts/verify-browser.mjs",
+    "verify:end-turn-drag": "node scripts/verify-end-turn-drag-browser.mjs",
     "verify:online": "node scripts/verify-online-browser.mjs",
     "verify:single-player-build": "node scripts/check-single-player-build.mjs",
     "sync:assets": "node scripts/sync-card-assets.mjs && node scripts/sync-icons.mjs && node scripts/sync-enemy-art.mjs",

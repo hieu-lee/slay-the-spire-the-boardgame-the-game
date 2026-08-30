@@ -1,7 +1,7 @@
 /* Native <details> paints its own triangle in the platform's colour and font.
    Removing the marker is what lets the summary become a key. */
 .relic-actions details > summary,
-.end-turn-order > summary,
+.start-turn-order > summary,
 .run-modifiers > summary,
 .online-lobby__settings > summary,
 .start-menu__meta > summary {
@@ -9,7 +9,7 @@
 }
 
 .relic-actions details > summary::-webkit-details-marker,
-.end-turn-order > summary::-webkit-details-marker,
+.start-turn-order > summary::-webkit-details-marker,
 .run-modifiers > summary::-webkit-details-marker,
 .online-lobby__settings > summary::-webkit-details-marker,
 .start-menu__meta > summary::-webkit-details-marker {

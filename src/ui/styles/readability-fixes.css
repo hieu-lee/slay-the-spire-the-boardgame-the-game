@@ -33,18 +33,18 @@
   justify-content: flex-end;
 }
 
-.end-turn-order {
+.start-turn-order {
   position: relative;
   color: var(--ink-dim);
   font-size: 0.72rem;
 }
 
-.end-turn-order > summary {
+.start-turn-order > summary {
   cursor: pointer;
   padding: 0.25rem 0;
 }
 
-.end-turn-order[open] > ol {
+.start-turn-order[open] > ol {
   position: absolute;
   z-index: 20;
   right: 0;
@@ -65,7 +65,7 @@
   border-radius: 4px;
 }
 
-.end-turn-order li {
+.start-turn-order li {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
   align-items: center;
@@ -73,7 +73,7 @@
   padding: 0.15rem 0;
 }
 
-.end-turn-order li > span {
+.start-turn-order li > span {
   white-space: nowrap;
 }
 
@@ -82,13 +82,13 @@
    than the 1rem chrome.css pins everywhere else. Only that is bespoke — border,
    radius, plate and the 46px height floor are all left to chrome.css so it
    still looks like every other dropdown in the game. */
-.end-turn-order li select {
+.start-turn-order li select {
   width: min(14rem, 42vw);
   padding: 0.1rem 0.35rem;
   font: inherit;
 }
 
-.end-turn-order li button {
+.start-turn-order li button {
   min-width: 1.8rem;
   padding: 0.1rem 0.35rem;
 }
