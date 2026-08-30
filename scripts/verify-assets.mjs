@@ -23,6 +23,7 @@ import {
 } from '../src/game/assets.ts'
 import { ENEMIES } from '../src/game/enemies.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
+import { bossAttackContactLeftFor, bossAttackScaleFor } from '../src/ui/combat-vfx.ts'
 // From the data module, NOT from sync-enemy-art.mjs: importing that script runs
 // the extraction pipeline, which regenerated the very portraits this file
 // checks for — so the check asserted its own side effect and could never fail.
@@ -452,25 +453,35 @@ check('every boss has transparent idle and left-facing attack animation assets',
   assert(missing.length === 0, `missing boss animations:\n    ${missing.join('\n    ')}`)
 
   const probe = `
-import sys, json
+import sys, json, os, subprocess
 from PIL import Image
 faults = []
-for name in sys.argv[1:]:
+metadata = json.loads(sys.argv[1])
+for name in sys.argv[2:]:
     im = Image.open(name)
     if getattr(im, "n_frames", 1) < 2:
         faults.append(f"{name}: not animated")
         continue
     boxes = []
+    mux = subprocess.run(["webpmux", "-info", name], check=True, capture_output=True, text=True).stdout
+    durations = [int(line.split()[6]) for line in mux.splitlines()
+                 if line.lstrip()[:1].isdigit() and line.split()[0].endswith(":" )]
     for frame in range(im.n_frames):
         im.seek(frame)
         rgba = im.convert("RGBA")
         alpha = rgba.getchannel("A")
         w, h = rgba.size
-        boxes.append(alpha.getbbox())
+        visible_box = alpha.point(lambda value: 255 if value > 16 else 0).getbbox()
+        boxes.append(visible_box)
         corners = [alpha.getpixel((0, 0)), alpha.getpixel((w - 1, 0)),
                    alpha.getpixel((0, h - 1)), alpha.getpixel((w - 1, h - 1))]
         if max(corners) > 16:
             faults.append(f"{name} frame {frame}: opaque corners {corners}")
+            break
+        if name.endswith("-attack.webp") and visible_box and min(
+            visible_box[0], visible_box[1], w - visible_box[2], h - visible_box[3]
+        ) < 20:
+            faults.append(f"{name} frame {frame}: attack art has no transparent safety margin {visible_box}")
             break
         if name.endswith("bronze_automaton-attack.webp") and frame == 0 and alpha.crop((int(w * .72), 0, w, h)).getbbox():
             faults.append(f"{name}: impact leaked into the wind-up frame")
@@ -482,10 +493,43 @@ for name in sys.argv[1:]:
         centers = [(box[0] + box[2]) / 2 for box in boxes[:2]]
         if abs(centers[0] - centers[1]) > w * .03:
             faults.append(f"{name}: idle frames jump sideways {centers}")
+    if name.endswith("-attack.webp"):
+        art_id = os.path.basename(name).removesuffix("-attack.webp")
+        art = metadata[art_id]
+        phase_sizes = (2, 1, 2, 2) if "awakened_one_phase_" in name else (3, 1, 3, 3)
+        expected = (550, 180, 550, 550)
+        if len(durations) != sum(phase_sizes):
+            faults.append(f"{name}: expected {sum(phase_sizes)} timed frames, got {len(durations)}")
+        else:
+            offset = 0
+            for label, size, total in zip(("windup", "dash", "impact", "recovery"), phase_sizes, expected):
+                phase = durations[offset:offset + size]
+                offset += size
+                if sum(phase) != total:
+                    faults.append(f"{name}: {label} is {sum(phase)}ms, expected {total}ms")
+                if size > 1 and max(phase) - min(phase) > 1:
+                    faults.append(f"{name}: {label} cadence is uneven {phase}")
+        contact_frame = 4 if "awakened_one_phase_" in name else 5
+        if boxes[contact_frame][0] != art["contactLeft"]:
+            faults.append(f'{name}: contact edge is {boxes[contact_frame][0]}px, metadata says {art["contactLeft"]}px')
+        idle = Image.open(name.replace("-attack.webp", "-idle.webp"))
+        idle_heights = []
+        for frame in range(idle.n_frames):
+            idle.seek(frame)
+            box = idle.convert("RGBA").getchannel("A").point(lambda value: 255 if value > 16 else 0).getbbox()
+            idle_heights.append(box[3] - box[1])
+        idle_css_height = sum(idle_heights) / len(idle_heights) * min(144 / idle.width, 137 / idle.height)
+        attack_css_height = (boxes[0][3] - boxes[0][1]) * 137 / im.height * art["scale"]
+        if abs(attack_css_height / idle_css_height - 1) > .03:
+            faults.append(f"{name}: scaled wind-up height {attack_css_height:.1f}px differs from idle {idle_css_height:.1f}px")
 print(json.dumps(faults))
 `
   const paths = expected.map((file) => join(bossAnimationRoot, file))
-  const result = spawnSync('python3', ['-c', probe, ...paths], { encoding: 'utf8' })
+  const metadata = Object.fromEntries(artIds.map((id) => [id, {
+    scale: bossAttackScaleFor(id),
+    contactLeft: bossAttackContactLeftFor(id),
+  }]))
+  const result = spawnSync('python3', ['-c', probe, JSON.stringify(metadata), ...paths], { encoding: 'utf8' })
   assert(result.status === 0, result.stderr || 'boss animation audit requires python3 + Pillow')
   const faults = JSON.parse(result.stdout.trim().split('\n').pop())
   assert(faults.length === 0, `invalid boss animation assets:\n    ${faults.join('\n    ')}`)
@@ -576,7 +620,8 @@ check('combat animation effects are complete, transparent, and compact', () => {
     'death-ash.webp', 'death-ring.webp', 'enemy-motes.webp', 'hero-motes.webp', 'hit-burst.webp',
   ]
   const expectedActions = [
-    'dark-channel.webp', 'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp',
+    'awakened-blue-fire.webp', 'awakened-claw-scratch.webp', 'dark-channel.webp',
+    'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
     'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
     'watcher-calm-aura.webp', 'watcher-meteor-impact.webp', 'watcher-meteor.webp',

@@ -45,10 +45,10 @@ export function characterAttackContactMs(
   }
   if (!isCharacterAttack(active)) return 0
   const targetIndex = Math.max(0, event.enemyIds.indexOf(targetId))
-  if (actor.character === 'silent') return 480 + targetIndex * 70
-  if (actor.character === 'defect') return 560 + targetIndex * 70
-  if (actor.character === 'watcher') return 520 + targetIndex * 70
-  return 500
+  if (actor.character === 'silent') return 400 + targetIndex * 70
+  if (actor.character === 'defect') return 1_110 + targetIndex * 70
+  if (actor.character === 'watcher') return 1_050 + targetIndex * 70
+  return 630
 }
 
 export function latestTargetPresentationEvent(
@@ -93,7 +93,7 @@ export function CombatVfx({
       style={{
         '--vfx-image': `url("${vfxAssetPath(recipe)}")`,
         '--vfx-tone-color': vfxToneColor(recipe.tone),
-        ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs - 60}ms` } : {}),
+        ...(attackContactMs > 0 ? { '--attack-impact-delay': `${attackContactMs}ms` } : {}),
         ...(revealDelayMs > 0 ? { '--vfx-reveal-delay': `${revealDelayMs}ms` } : {}),
       } as React.CSSProperties}
       aria-hidden="true"

@@ -418,7 +418,7 @@
   --boss-scale: 1.55;
 }
 
-.enemy--boss:not(:disabled):hover .enemy__portrait > .enemy__art--cutout {
+.enemy--boss:not([data-animation='attack']):not(:disabled):hover .enemy__portrait > .enemy__art--cutout {
   transform: scale(var(--boss-scale));
 }
 
@@ -426,8 +426,49 @@
   z-index: 9;
 }
 
+.enemy--boss[data-animation='attack'] .enemy__portrait > .enemy__art--cutout {
+  inset: auto 4rem 0 auto;
+  width: auto;
+  max-width: none;
+  height: 100%;
+  transform: scale(var(--boss-scale)) scale(var(--boss-attack-scale, 1));
+}
+
 .enemy--boss.enemy--acting[data-attack-motion='melee'] .enemy__portrait > .enemy__art--cutout {
-  animation: boss-melee-dash 430ms cubic-bezier(0.3, 0, 0.2, 1) both;
+  animation: boss-melee-dash 1830ms cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+
+.enemy--boss.enemy--acting[data-attack-motion='ranged'] .enemy__portrait > .enemy__art--cutout {
+  animation: boss-ranged-cast 1830ms ease-in-out both;
+}
+
+.enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {
+  position: absolute;
+  z-index: 10;
+  content: '';
+  pointer-events: none;
+  opacity: 0;
+  background: center / contain no-repeat;
+  translate: var(--boss-dash-x, 0) 0;
+}
+
+.board:has(.enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_1'])
+  .seat:not(.seat--dead) .seat__portrait::before {
+  z-index: 4;
+  inset: -28%;
+  background-image: url('/assets/combat/vfx/actions/awakened-claw-scratch.webp');
+  opacity: 0;
+  animation: awakened-claw-scratch 550ms 730ms ease-out both;
+}
+
+.enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_2']::after {
+  right: 145%;
+  bottom: 8%;
+  width: 210%;
+  aspect-ratio: 16 / 9;
+  background-image: url('/assets/combat/vfx/actions/awakened-blue-fire.webp');
+  transform-origin: right center;
+  animation: awakened-blue-fire 550ms 730ms ease-out both;
 }
 
 .enemy--boss .enemy__portrait:has(> .enemy__art--cutout)::before {
@@ -448,8 +489,25 @@
 }
 
 @keyframes boss-melee-dash {
-  0%, 14%, 100% { translate: 0 0; }
-  38%, 58% { translate: calc(-100vw + 12rem) -3%; }
+  0%, 30%, 100% { translate: 0 0; }
+  40%, 70% { translate: var(--boss-dash-x, 0) -3%; }
+}
+
+@keyframes boss-ranged-cast {
+  0%, 30%, 100% { translate: 0 0; }
+  40%, 70% { translate: -1rem -2%; }
+}
+
+@keyframes awakened-claw-scratch {
+  from { opacity: 0; transform: translate(14%, -12%) rotate(18deg) scale(0.35); }
+  18%, 72% { opacity: 1; }
+  to { opacity: 0; transform: translate(-8%, 8%) rotate(-10deg) scale(1); }
+}
+
+@keyframes awakened-blue-fire {
+  from { opacity: 0; transform: scaleX(0.08) scaleY(0.45); }
+  18%, 72% { opacity: 1; }
+  to { opacity: 0; transform: scaleX(1) scaleY(1); }
 }
 
 @keyframes actor-motes {
