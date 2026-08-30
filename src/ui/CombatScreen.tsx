@@ -2412,6 +2412,84 @@ function CombatScreenView({
     return false
   }
 
+  // A row can be a legal target (the engine always folds in the boss
+  // regardless of which row is chosen — see `resolveEnemyTargets`'s `'row'`
+  // scope) even once every enemy actually placed in it has died, so there is
+  // nothing left in that lane for `onEnemyClick`/`isEnemyRowClickTargetable`
+  // to anchor on. This pair covers exactly that gap: same row-matching logic,
+  // triggered by clicking the empty lane itself instead of an enemy in it.
+  function onRowLaneClick(row: number) {
+    if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+      pendingTrigger.rows?.some((target) => target.row === row)) {
+      resolveTrigger(row)
+      return
+    }
+    if (pendingStartEvokeTarget) {
+      const rowTarget = pendingStartEvokeRows.find((target) => target.row === row)
+      if (rowTarget) chooseStartTurnEvokeEnemy(rowTarget.uid)
+      return
+    }
+    if (pendingPotion && pendingPotionDef?.target === 'row') {
+      consumePotion(pendingPotion, { enemyRow: row })
+      return
+    }
+    if (pendingPowerUid && pendingPowerDef?.target === 'row') {
+      usePower(pendingPowerUid, { enemyRow: row })
+      return
+    }
+    if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
+      pendingEvokeTargetUids.has(lightningRowTarget(row))) {
+      const targets = [...pending.evokeEnemyUids]
+      targets[pendingEvokeTarget] = lightningRowTarget(row)
+      stageOrCommit({ ...pending, evokeEnemyUids: targets })
+    }
+  }
+
+  function isRowLaneClickTargetable(row: number): boolean {
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+      pendingTrigger.rows?.some((target) => target.row === row)) {
+      return true
+    }
+    if (pendingStartEvokeTarget && pendingStartEvokeRows.some((target) => target.row === row)) return true
+    if (pendingPotion && pendingPotionDef?.target === 'row') return true
+    if (pendingPowerUid && pendingPowerDef?.target === 'row') return true
+    if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
+      pendingEvokeTargetUids.has(lightningRowTarget(row))) return true
+    return false
+  }
+
+  // Mirrors `isRowLaneClickTargetable`'s own priority order, branch for
+  // branch, so the label always names whichever ability actually resolves
+  // the click — the same distinction the removed per-ability buttons used to
+  // make ("Resolve X in Row Y", "Evoke Lightning in Row Y", "Target Row Y").
+  // The final `return` below is unreachable given the render gate at the call
+  // site (`isRowLaneClickTargetable(row)` already true), kept only to satisfy
+  // TypeScript's exhaustiveness check — a new 6th targeting mode must add its
+  // own explicit branch here, not rely on that fallback.
+  function rowLaneClickLabel(row: number): string {
+    const rowLabel = combatRowLabel(state, row)
+    const noLivingAnchor = `no living enemy there${
+      state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', but the boss is hit' : ''}`
+    if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
+      pendingTrigger.rows?.some((target) => target.row === row)) {
+      return `Resolve ${pendingTrigger.label} in ${rowLabel} (${noLivingAnchor})`
+    }
+    if (pendingStartEvokeTarget && pendingStartEvokeRows.some((target) => target.row === row)) {
+      return `Evoke Lightning in ${rowLabel} (${noLivingAnchor})`
+    }
+    if (pendingPotion && pendingPotionDef?.target === 'row') {
+      return `Target ${rowLabel} with ${pendingPotionDef.name} (${noLivingAnchor})`
+    }
+    if (pendingPowerUid && pendingPowerDef?.target === 'row') {
+      return `Target ${rowLabel} with ${pendingPowerDef.name} (${noLivingAnchor})`
+    }
+    if (pending && pendingEvokeTarget >= 0 && pendingEvokeUsesRows && choiceSatisfied &&
+      pendingEvokeTargetUids.has(lightningRowTarget(row))) {
+      return `Evoke Lightning in ${rowLabel} (${noLivingAnchor})`
+    }
+    return `Target ${rowLabel} (${noLivingAnchor})`
+  }
+
   function onEvokeClick(slot: number) {
     if (!pending || !pendingEvokeChoice || pendingEvokeTarget >= 0 || !choiceSatisfied) return
     const option = pendingEvokeChoice.options.find((candidate) => candidate.slot === slot)
@@ -2507,10 +2585,12 @@ function CombatScreenView({
   const originalTarget = pending?.cardInHand === false
     ? ` for ${copyResolutionLabel ?? pendingDef?.name ?? 'card'}`
     : ''
+  // Shared across every row-target prompt below so "the boss is always
+  // folded in regardless of row" reads the same way everywhere, not just for
+  // card-based row targets.
+  const rowHitSuffix = state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', and the boss' : ''
   const normalEnemyPrompt = pending?.hitsRow
-    ? state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
-      ? `Choose an enemy${originalTarget || copyTarget} — its whole row is hit, and the boss`
-      : `Choose an enemy${originalTarget || copyTarget} — its whole row is hit`
+    ? `Choose an enemy${originalTarget || copyTarget} — its whole row is hit${rowHitSuffix}`
     : `Choose an enemy${originalTarget || copyTarget}`
   const enemyPrompt = normalEnemyPending
     ? normalEnemyPrompt
@@ -2528,7 +2608,8 @@ function CombatScreenView({
     : pendingStartPlayer
       ? `${pendingStartPlayer.label} — choose a player`
     : pendingStartEvokeTarget
-      ? `${pendingStartEvokeTarget.ability.label} — choose a ${pendingStartEvokeRows.length > 0 ? 'row' : 'target'} for the Evoked Orb`
+      ? `${pendingStartEvokeTarget.ability.label} — choose ${pendingStartEvokeRows.length > 0
+        ? `an enemy for the Evoked Orb — its whole row is hit${rowHitSuffix}` : 'a target for the Evoked Orb'}`
     : pendingStartEvoke?.evokeChoice
       ? `${pendingStartEvoke.label} — choose an Orb to Evoke`
     : null
@@ -2542,14 +2623,17 @@ function CombatScreenView({
     : null
   const triggerPrompt = pendingTrigger
     ? pendingTrigger.playerId === viewer.id
-      ? `${pendingTrigger.label} — choose ${pendingTrigger.targets ? 'an enemy' : pendingTrigger.players ? 'a player' : 'a row'}`
+      ? `${pendingTrigger.label} — choose ${pendingTrigger.targets ? 'an enemy' : pendingTrigger.players ? 'a player'
+        : `an enemy — its whole row is hit${rowHitSuffix}`}`
       : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
     : null
   const beforeDrawPrompt = activeStartTurnScry && activeStartTurnScry.playerId !== viewer.id
     ? `Waiting for ${state.players.find((player) => player.id === activeStartTurnScry.playerId)?.name ?? 'another player'} to Scry before drawing`
     : null
   const prompt = triggerPrompt ?? forcedPrompt ?? beforeDrawPrompt ?? startTurnPrompt ?? (pendingPowerDef
-    ? `Choose ${pendingPowerDef.target === 'row' ? 'a row' : 'an enemy'} for ${pendingPowerDef.name}`
+    ? pendingPowerDef.target === 'row'
+      ? `Choose an enemy for ${pendingPowerDef.name} — its whole row is hit${rowHitSuffix}`
+      : `Choose an enemy for ${pendingPowerDef.name}`
     : pendingPotion === 'gamblers_brew'
       ? "Gambler's Brew — choose the shared die face"
     : pendingPotion === 'liquid_memories'
@@ -2560,7 +2644,7 @@ function CombatScreenView({
       ? 'Entropic Brew — choose a held Potion to replace'
     : pendingPotionDef
     ? pendingPotionDef.target === 'row'
-      ? `Choose a row for ${pendingPotionDef.name}`
+      ? `Choose an enemy for ${pendingPotionDef.name} — its whole row is hit${rowHitSuffix}`
       : pendingPotionOverflow > 0
         ? `Choose overflow Shiv target ${potionShivEnemyUids.length + 1}/${pendingPotionOverflow}, or skip the rest`
         : `Choose ${pendingPotionDef.target ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
@@ -2591,7 +2675,9 @@ function CombatScreenView({
           choiceNeeded === 1 ? '' : 's'
         } — ${pending.picked.length}/${choiceNeeded} chosen`
       : pendingEvokeTarget >= 0
-        ? `Choose ${pendingEvokeUsesRows ? 'a row' : 'an enemy'} for this evoke`
+        ? pendingEvokeUsesRows
+          ? `Choose an enemy for this evoke — its whole row is hit${rowHitSuffix}`
+          : 'Choose an enemy for this evoke'
         : pendingEvokeChoice
           ? `Choose Orb to evoke ${pendingEvokeChoice.index + 1}`
         : pending?.needsEnemy && !enemyChoicesDone
@@ -3387,7 +3473,6 @@ function CombatScreenView({
           const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
           const characterAttack = characterAttackMotions.at(-1)
           const latestCharacterAttackSeq = characterAttack?.active.event.seq
-          const rowLabel = combatRowLabel(state, row)
           return (
             <div
               className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
@@ -3395,53 +3480,6 @@ function CombatScreenView({
               ref={occupant?.id === viewerId ? viewerRowRef : undefined}
               style={{ '--stage-row': rows.indexOf(row) } as React.CSSProperties}
             >
-              {pendingPotionDef?.target === 'row' ? (
-                <button
-                  type="button"
-                  className="row__potion-target"
-                  onClick={() => consumePotion(pendingPotion!, { enemyRow: row })}
-                >
-                  Target {rowLabel}
-                </button>
-              ) : null}
-              {pendingPowerDef?.target === 'row' ? (
-                <button
-                  type="button"
-                  className="row__potion-target"
-                  onClick={() => usePower(pendingPowerUid!, { enemyRow: row })}
-                >
-                  Target {rowLabel}
-                </button>
-              ) : null}
-              {pendingTrigger?.playerId === viewer.id && pendingTrigger.rows?.some((target) => target.row === row) ? (
-                <button
-                  type="button"
-                  className="row__potion-target"
-                  disabled={usingTrigger}
-                  onClick={() => resolveTrigger(row)}
-                >
-                  Resolve {pendingTrigger.label} in {rowLabel}
-                </button>
-              ) : null}
-              {(pendingEvokeUsesRows && pendingEvokeTargetUids.has(lightningRowTarget(row))) ||
-              pendingStartEvokeRows.some((target) => target.row === row) ? (
-                <button
-                  type="button"
-                  className="row__potion-target"
-                  onClick={() => {
-                    const startTarget = pendingStartEvokeRows.find((target) => target.row === row)
-                    if (startTarget) {
-                      chooseStartTurnEvokeEnemy(startTarget.uid)
-                      return
-                    }
-                    const targets = [...pending!.evokeEnemyUids]
-                    targets[pendingEvokeTarget] = lightningRowTarget(row)
-                    stageOrCommit({ ...pending!, evokeEnemyUids: targets })
-                  }}
-                >
-                  Evoke Lightning in {rowLabel}
-                </button>
-              ) : null}
               <div className="row__seat">
                 {occupant ? (
                   <>
@@ -3745,6 +3783,23 @@ function CombatScreenView({
                       onClick={onEnemyClick}
                     />
                   ))
+                ) : null}
+                {foes.length === 0 && isRowLaneClickTargetable(row) ? (
+                  // Every enemy that was ever placed here has died (or none
+                  // were), so there is nothing left to click as an anchor —
+                  // this is the one case `onEnemyClick` can't cover. The
+                  // engine still folds the boss into whichever row is chosen
+                  // regardless (`resolveEnemyTargets`'s `'row'` scope), so
+                  // this row remains a legal, sometimes-useful choice (e.g.
+                  // hitting only the boss without also hitting a still-living
+                  // enemy elsewhere).
+                  <button
+                    type="button"
+                    className="row__lane-target"
+                    onClick={() => onRowLaneClick(row)}
+                  >
+                    {rowLaneClickLabel(row)}
+                  </button>
                 ) : null}
               </div>
             </div>

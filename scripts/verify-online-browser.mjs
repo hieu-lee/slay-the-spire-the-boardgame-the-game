@@ -1195,7 +1195,7 @@ try {
   await a.getByRole('button', { name: 'Use Combust+' }).waitFor()
   const foreignCombustControls = await b.getByRole('button', { name: 'Use Combust+' }).count()
   await a.getByRole('button', { name: 'Use Combust+' }).click()
-  await a.getByText('Choose a row for Combust+').waitFor()
+  await a.getByText('Choose an enemy for Combust+').waitFor()
   let failedCombustRefreshes = 0
   const combustFailureStart = failures.length
   const combustRoomPattern = `**/api/rooms/${code}`
@@ -1207,12 +1207,14 @@ try {
     return route.continue()
   })
   await a.route(`**/api/rooms/${code}/action`, (route) => route.abort('connectionreset'), { times: 1 })
-  await a.getByRole('button', { name: 'Target Row Ironclad' }).click()
-  await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
+  // Any enemy in Ironclad's row (row 0) anchors Combust there, the same as a
+  // `target: 'row'` card, replacing the removed "Target Row Ironclad" button.
+  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').click()
+  await a.getByText('Choose an enemy for Combust+').waitFor({ state: 'hidden' })
   await a.waitForFunction(() => [...document.querySelectorAll('.combat__actions button')]
     .some((button) => button.getAttribute('aria-label') === 'Use Combust+' && button.disabled))
   const lockedUnknownCombust = await a.getByRole('button', { name: 'Use Combust+' }).isDisabled()
-  await a.getByText('Choose a row for Combust+').waitFor()
+  await a.getByText('Choose an enemy for Combust+').waitFor()
   await a.unroute(combustRoomPattern)
   const expectedCombustFailures = failures.splice(combustFailureStart)
   check('an unknown uncommitted Combust stays locked, then restages after an authoritative refresh', () => {
@@ -1228,7 +1230,7 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: 'Target Row Ironclad' }).click()
+  await a.locator('.enemy[data-enemy-id="online-whirlwind-anchor"]').click()
   for (let attempt = 0; attempt < 50 &&
     !liveRoom.run.combat.powerTriggersUsedThisTurn.includes(`${annLive.id}/power:online-combust`); attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
@@ -1255,7 +1257,7 @@ try {
   })
   assert(publishCombustRestage.ok, 'could not publish the Combust same-seat fixture')
   await a.getByRole('button', { name: 'Use Combust+' }).click()
-  await a.getByText('Choose a row for Combust+').waitFor()
+  await a.getByText('Choose an enemy for Combust+').waitFor()
   const annCombustCredentials = await credentials(a)
   const sameSeatCombust = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
     method: 'POST',
@@ -1265,8 +1267,8 @@ try {
     } }),
   })
   assert(sameSeatCombust.ok, 'could not activate Combust through the same seat')
-  await a.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
-  const staleCombustRows = await a.getByRole('button', { name: /^Target Row/ }).count()
+  await a.getByText('Choose an enemy for Combust+').waitFor({ state: 'hidden' })
+  const staleCombustRows = await a.locator('.enemy--targeted').count()
   check('a same-seat authoritative activation clears stale Combust targeting', () => {
     assertEqual(staleCombustRows, 0)
   })
@@ -1307,7 +1309,7 @@ try {
   assert(publishFireFixture.ok, 'could not publish the online Fire Breathing fixture')
   await a.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
   await a.getByRole('button', { name: 'Use Combust+' }).click()
-  await a.getByText('Choose a row for Combust+').waitFor()
+  await a.getByText('Choose an enemy for Combust+').waitFor()
   const fireOwnerCredentials = await credentials(a)
   const competingFireDraw = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
     method: 'POST',
@@ -1317,13 +1319,18 @@ try {
     } }),
   })
   assert(competingFireDraw.ok, 'could not publish the same-seat Fire Breathing draw')
-  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor()
-  const staleFireTargets = await a.getByRole('button', { name: /^Target Row/ }).count()
-  check('a mandatory online trigger clears stale staged targeting', () => {
-    assertEqual(staleFireTargets, 0)
+  await a.getByText("Ann's Fire Breathing+ — choose an enemy").waitFor()
+  // The whole action bar, including Combust's own button, steps aside while
+  // the mandatory trigger has the floor — Combust's OWN staging is verified
+  // to have actually been dropped (not just hidden) further below, once the
+  // action bar returns after Fire Breathing resolves.
+  const combustButtonHiddenDuringTrigger = await a.getByRole('button', { name: 'Use Combust+' }).count()
+  check('a mandatory online trigger takes over the action bar', () => {
+    assertEqual(combustButtonHiddenDuringTrigger, 0)
   })
   await b.getByText('Waiting for Ann to resolve a triggered ability…').waitFor()
-  const foreignFireRows = await b.getByRole('button', { name: /^Resolve .*Fire Breathing/ }).count()
+  // Privacy: Bo must not see Ann's row anchors highlighted on his own screen.
+  const foreignFireRows = await b.locator('.enemy--targeted').count()
   const boCredentials = await credentials(b)
   const firstOnlineFireTriggerId = liveRoom.run.combat.pendingTriggers[0].id
   const forgedFire = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
@@ -1340,7 +1347,11 @@ try {
     const response = await route.fetch()
     await route.fulfill({ response })
   }, { times: 1 })
-  await a.getByRole('button', { name: /Fire Breathing\+ in Row Silent$/ }).click()
+  // `online-fire-right` is row 1 ("Row Silent", Bo's seat), `online-fire-left`
+  // is row 0 ("Row Ironclad", Ann's own seat); clicking either enemy anchors
+  // the trigger to that row, the same as a `target: 'row'` card, replacing
+  // the removed "Fire Breathing+ in Row X" buttons.
+  await a.locator('.enemy[data-enemy-id="online-fire-right"]').click()
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 1; attempt += 1) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
   }
@@ -1352,14 +1363,79 @@ try {
     assertEqual(submittedFire.enemyRow, 1)
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [10, 7])
   })
-  await a.getByRole('button', { name: /Fire Breathing\+ in Row Ironclad$/ }).click()
-  await a.getByText("Ann's Fire Breathing+ — choose a row").waitFor({ state: 'hidden' })
+  await a.locator('.enemy[data-enemy-id="online-fire-left"]').click()
+  await a.getByText("Ann's Fire Breathing+ — choose an enemy").waitFor({ state: 'hidden' })
+  // Combust's own staging (`pendingPowerUid`) was dropped the moment the
+  // mandatory trigger interrupted it, so once the action bar is back it must
+  // come back fresh, not pre-staged mid-row-choice from before the trigger.
+  await a.getByRole('button', { name: 'Use Combust+' }).waitFor()
+  const combustStagedAfterFireBreathing = await a.getByRole('button', { name: 'Use Combust+' })
+    .getAttribute('aria-pressed')
   check('online Fire Breathing resolves every qualifying draw before play resumes', () => {
     assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
     assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [7, 7])
     assert(liveRoom.run.combat.players.find((player) => player.name === 'Ann').drawLocked)
+    assertEqual(combustStagedAfterFireBreathing, 'false')
   })
   await a.screenshot({ path: join(outDir, '02b-fire-breathing-resolved.png'), fullPage: true })
+
+  // The fallback lane control (for a row-scoped mandatory trigger whose only
+  // offered row has no living enemy left to click) must stay just as private
+  // as the enemy-click highlighting it stands in for — Bo must not see or be
+  // able to click Ann's fallback for her own pending trigger.
+  annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
+  boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
+  Object.assign(annLive, {
+    hand: [{ uid: 'online-lane-trance', defId: 'battle_trance', upgraded: false }],
+    draw: [{ uid: 'online-lane-daze', defId: 'daze', upgraded: false }],
+    discard: [], exhaust: [],
+    powers: [{ uid: 'online-lane-fire', defId: 'fire_breathing', upgraded: false }],
+    energy: 3, drawLocked: false,
+  })
+  boLive.miracles = 1
+  boLive.energy = 2
+  liveRoom.run.combat.phase = 'player'
+  liveRoom.run.combat.pendingCardCopy = undefined
+  liveRoom.run.combat.pendingTriggers = []
+  liveRoom.run.combat.powerTriggersUsedThisTurn = []
+  const laneFireTemplate = liveRoom.run.combat.enemies[0]
+  liveRoom.run.combat.enemies = [
+    // Row 0 (Ann's row) has no living enemy left — only the fallback lane
+    // control can anchor a row-scoped trigger there; row 1 (Bo's row) still
+    // has a living enemy that can be clicked directly.
+    { ...laneFireTemplate, uid: 'online-lane-dead-row0', row: 0, hp: 0, maxHp: 10, dead: true, isBoss: false },
+    { ...laneFireTemplate, uid: 'online-lane-living-row1', row: 1, hp: 10, maxHp: 10, dead: false, isBoss: false },
+  ]
+  const publishLaneFireFixture = await fetch(`${roomOrigin}/api/rooms/${code}/action`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-room-token': previewCredentials.token },
+    body: JSON.stringify({ action: { kind: 'spendMiracle' } }),
+  })
+  assert(publishLaneFireFixture.ok, 'could not publish the online empty-row trigger fixture')
+  // Drawing the status card is what actually queues the real, server-side
+  // trigger (mirrors the earlier online Fire Breathing setup) — the row
+  // choice this produces reflects the engine's own `combatRows`, not a
+  // hand-authored one.
+  await a.getByRole('button', { name: /^Battle Trance,/ }).click()
+  await a.getByText("Ann's Fire Breathing — choose an enemy").waitFor()
+  await a.locator('.row__lane-target').waitFor()
+  const laneFireLabel = await a.locator('.row__lane-target').textContent()
+  await b.getByText('Waiting for Ann to resolve a triggered ability…').waitFor()
+  const foreignLaneButtons = await b.locator('.row__lane-target').count()
+  await a.locator('.row__lane-target').click()
+  for (let attempt = 0; attempt < 50 && liveRoom.run.combat.pendingTriggers.length !== 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const laneButtonGoneAfterResolve = await a.locator('.row__lane-target').count()
+  check('the empty-row fallback lane control stays private to its owner and resolves correctly', () => {
+    assert(laneFireLabel.includes('Fire Breathing') && laneFireLabel.includes('no living enemy') &&
+      !laneFireLabel.includes('boss'), `expected no boss mention (this fixture has none): ${laneFireLabel}`)
+    assertEqual(foreignLaneButtons, 0)
+    assertEqual(laneButtonGoneAfterResolve, 0)
+    assertEqual(liveRoom.run.combat.pendingTriggers.length, 0)
+    assertDeepEqual(liveRoom.run.combat.enemies.map((enemy) => enemy.hp), [0, 10],
+      'the empty row has nothing to hit and no boss exists here, so nothing should take damage')
+  })
 
   annLive = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')

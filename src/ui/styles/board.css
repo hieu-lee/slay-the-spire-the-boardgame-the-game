@@ -46,19 +46,6 @@
   border-bottom: none;
 }
 
-.row__potion-target {
-  grid-column: 1 / -1;
-  justify-self: center;
-  color: var(--gold);
-  background: rgb(215 169 75 / 0.08);
-  border: 1px solid var(--gold);
-  border-radius: 4px;
-  padding: 0.35rem 0.8rem;
-  min-height: 44px;
-  font: inherit;
-  cursor: pointer;
-}
-
 /* The row you control is lit, not boxed. */
 .row--viewer {
   background: radial-gradient(ellipse at 50% 50%, rgb(214 176 96 / 0.07), transparent 70%);
@@ -75,4 +62,22 @@
   justify-content: start;
   gap: 0.6rem;
   align-items: start;
+}
+
+/* The exception, not the rule: a row-target effect can still legally choose
+   a row with nothing living in it (the boss is folded in regardless of which
+   row is picked), so this only ever renders in that one case — clicking an
+   enemy is the norm everywhere else. */
+.row__lane-target {
+  justify-self: start;
+  align-self: center;
+  color: var(--gold);
+  background: rgb(215 169 75 / 0.08);
+  border: 1px dashed var(--gold);
+  border-radius: 4px;
+  padding: 0.35rem 0.8rem;
+  min-height: 44px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
 }

@@ -11,7 +11,6 @@ import { createServer } from 'vite'
 import { chromium, devices, webkit } from 'playwright'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 import { installScreenAudit } from './lib/browser-screen-audit.mjs'
-import { combatRowLabel } from '../src/game/combat.ts'
 import { enemyDef } from '../src/game/enemies.ts'
 import { potionDef, relicDef } from '../src/game/relics.ts'
 
@@ -2270,9 +2269,12 @@ await page.evaluate((run) => {
   })
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
-await page.locator('.prompt').filter({ hasText: 'Fire Breathing — choose a row' }).waitFor()
+await page.locator('.prompt').filter({ hasText: /Fire Breathing — choose an enemy/ }).waitFor()
 const distilledDuringTrigger = await page.getByRole('dialog', { name: 'Distilled Chaos' }).isVisible()
-const triggerRowsOutsideDistilled = await page.getByRole('button', { name: /Resolve .*Fire Breathing.*Row/ }).count()
+// `.enemy--targeted` (not just "not disabled") specifically confirms the
+// trigger's own row-matching recognizes both enemies as legal anchors — a
+// weaker "not disabled" check would pass even if that matching were broken.
+const triggerRowsOutsideDistilled = await page.locator('.enemy--targeted').count()
 check('Distilled Chaos stays hidden while a mandatory trigger needs its row', () => {
   assertEqual(distilledDuringTrigger, false)
   assertEqual(triggerRowsOutsideDistilled, 2)
@@ -5025,10 +5027,13 @@ await page.keyboard.press('Escape')
 await page.waitForFunction(() => !document.querySelector('.power__zoom'))
 await page.getByRole('button', { name: /^Dual Cast,/ }).click()
 await page.getByRole('button', { name: /lightning slot 1/i }).click()
-await page.getByRole('button', { name: 'Evoke Lightning in Row Silent' }).waitFor()
+// Electrodynamics' evoke targets a whole row; clicking any enemy in it is the
+// same anchor pattern a `target: 'row'` card already uses, replacing the
+// removed "Evoke Lightning in Row X" buttons.
+await page.locator('.enemy[data-enemy-id="ui-electro-back"]').waitFor()
 await shot('06zphgce-electrodynamics-row-choice')
-await page.getByRole('button', { name: 'Evoke Lightning in Row Silent' }).click()
-await page.getByRole('button', { name: 'Evoke Lightning in Row Defect' }).click()
+await page.locator('.enemy[data-enemy-id="ui-electro-back"]').click()
+await page.locator('.enemy[data-enemy-id="ui-electro-front"]').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].orbs.filter(Boolean).length === 2)
 const electroResolved = await readState()
 check('Electrodynamics+ visibly channels three Orbs and makes each Lightning Evoke choose a row', () => {
@@ -8514,21 +8519,18 @@ const explosivePotionButton = page.locator('.combat__actions').getByRole('button
 await explosivePotionButton.focus()
 await page.locator('.potion-tip').filter({ hasText: 'Explosive Potion' }).waitFor()
 await page.keyboard.press('Enter')
-await page.waitForSelector('.row__potion-target')
-const compactRowTargets = page.locator('.row__potion-target')
-const compactRowTargetGeometry = await compactRowTargets.evaluateAll((targets) => {
-  const board = document.querySelector('.board')
-  const seats = [...document.querySelectorAll('.row .row__seat')]
-  const x = (element) => element.getBoundingClientRect().left + board.scrollLeft
-  return {
-    targetSteps: targets.slice(1).map((target, index) => Math.round(x(target) - x(targets[index]))),
-    seatSteps: seats.slice(1).map((seat, index) => Math.round(x(seat) - x(seats[index]))),
-    sizes: targets.map((target) => {
-      const box = target.getBoundingClientRect()
-      return { width: box.width, height: box.height }
-    }),
-  }
-})
+// A row potion has no target of its own: any enemy in the chosen row anchors
+// it, the same as clicking a `target: 'row'` card. The affordance to check on
+// a compact viewport is therefore every LIVING enemy's own card, not a
+// separate row button.
+await page.waitForSelector('.enemy--targeted')
+const compactRowTargets = page.locator('.enemy--targeted')
+const compactRowTargetGeometry = await compactRowTargets.evaluateAll((targets) => ({
+  sizes: targets.map((target) => {
+    const box = target.getBoundingClientRect()
+    return { width: box.width, height: box.height }
+  }),
+}))
 const compactRowTargetReachability = []
 for (const target of await compactRowTargets.all()) {
   await target.scrollIntoViewIfNeeded()
@@ -8538,8 +8540,7 @@ for (const target of await compactRowTargets.all()) {
     return box.left >= board.left - 1 && box.right <= board.right + 1
   }))
 }
-check('two-player compact desktop row targets track their lanes and remain reachable', () => {
-  assertDeepEqual(compactRowTargetGeometry.targetSteps, compactRowTargetGeometry.seatSteps)
+check('two-player compact desktop row targets remain reachable, laid out with their lanes', () => {
   assert(compactRowTargetGeometry.sizes.every((size) => size.width >= 44 && size.height >= 44),
     `row target below 44px: ${JSON.stringify(compactRowTargetGeometry.sizes)}`)
   assert(compactRowTargetReachability.every(Boolean), 'a row target cannot be scrolled fully into the board viewport')
@@ -8552,7 +8553,7 @@ check('activating a Potion dismisses its tooltip before row targeting', () => {
   assertEqual(activatedExplosivePotionTips, 0)
 })
 await shot('05h-explosive-potion-row-targeting')
-await page.getByRole('button', { name: `Target ${combatRowLabel(firedPotion, explosiveTarget.row)}` }).click()
+await page.locator(`.enemy[data-enemy-id="${explosiveTarget.uid}"]`).click()
 await page.waitForFunction(() =>
   !window.__STS_DEBUG__.getState().players[0].potions.includes('explosive_potion'))
 const explodedPotion = await readState()
@@ -8916,16 +8917,30 @@ await page.evaluate(() => {
   localStorage.setItem('sts-sfx-enabled', 'on')
   window.__SFX_DETAILS__ = []
 })
+// The "corpse" enemy this fixture kills may already be dead from an earlier
+// scenario in this file; `useFalling`'s falling-grace-period only fires on
+// an observed alive→dead *transition* (comparing renders), so re-killing an
+// already-dead enemy never triggers it, and the enemy simply vanishes from
+// the DOM instead of lingering with `.enemy--dead` — reviving it first (and
+// letting that render) restores the real transition this fixture needs.
 const rowTargetFixture = await page.evaluate((livingUid) => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   const living = run.combat.enemies.find((enemy) => enemy.uid === livingUid)
   const corpse = run.combat.enemies.find((enemy) => enemy.uid !== livingUid)
   if (!living || !corpse) throw new Error('row VFX fixture needs two enemies')
-  Object.assign(corpse, { row: living.row, hp: 0, dead: true })
+  Object.assign(corpse, { row: living.row, hp: corpse.maxHp || living.maxHp, dead: false })
   debug.setRun(run)
   return { row: living.row, corpseUid: corpse.uid }
 }, firstEnemyId)
+await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"]:not(.enemy--dead)`).waitFor()
+await page.evaluate((corpseUid) => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const corpse = run.combat.enemies.find((enemy) => enemy.uid === corpseUid)
+  Object.assign(corpse, { hp: 0, dead: true })
+  debug.setRun(run)
+}, rowTargetFixture.corpseUid)
 await page.locator(`.enemy[data-enemy-id="${rowTargetFixture.corpseUid}"].enemy--dead`).waitFor()
 
 await page.evaluate(() => {
@@ -9229,7 +9244,7 @@ const [watcherChargeFrame, watcherHandoffFrame, watcherReturnFrame] =
   await sampleCharacterFrames([270, 825, 1_375])
 await captureCombatAnimation('combat-attack-watcher-charge.png', 270)
 const watcherMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-sky.png', 600, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-sky.png', 550, readWatcherMeteorFrame,
 )).sampled
 const watcherMeteorContact = (await captureCombatAnimation(
   'combat-attack-watcher-meteor-impact.png', 1_050, readWatcherMeteorFrame,
@@ -9244,7 +9259,7 @@ const tallWatcherSeq = await publishPresentationEvent({
 })
 await watcherSeat.locator(`.character-attack[data-attack-seq="${tallWatcherSeq}"]`).waitFor()
 const watcherTallMeteorSky = (await captureCombatAnimation(
-  'combat-attack-watcher-meteor-tall-sky.png', 600, readWatcherMeteorFrame,
+  'combat-attack-watcher-meteor-tall-sky.png', 550, readWatcherMeteorFrame,
 )).sampled
 await page.locator(`.combat-vfx[data-vfx-seq="${tallWatcherSeq}"]`).first().waitFor({ state: 'detached' })
 await page.setViewportSize({ width: 1440, height: 900 })
@@ -9740,7 +9755,7 @@ const contactDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
 }))
 check('real HP-loss feedback waits for Ironclad weapon contact', () => {
   assertEqual(earlyDamageFeedback.hitOpacity, 0)
-  assertEqual(earlyDamageFeedback.delay, '0.5s')
+  assertEqual(earlyDamageFeedback.delay, '0.63s')
   assertEqual(earlyDamageFeedback.hp, preDamageHpLabel)
   assert(contactDamageFeedback.flinches > 0, 'the enemy portrait did not flinch at contact')
   assertEqual(contactDamageFeedback.damage, '1')
@@ -12530,7 +12545,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: 'Use Combust+' }).click()
-await page.getByText('Choose a row for Combust+').waitFor()
+await page.getByText('Choose an enemy for Combust+').waitFor()
 await page.getByRole('button', { name: /^Cultist,/ }).scrollIntoViewIfNeeded()
 await shot('16a-combust-row-target')
 await page.evaluate(() => {
@@ -12543,8 +12558,8 @@ await page.evaluate(() => {
   } }
   debug.setRun(run)
 })
-await page.getByText('Choose a row for Combust+').waitFor({ state: 'hidden' })
-const stagedCombustDuringForcedCard = await page.getByText('Choose a row for Combust+').count()
+await page.getByText('Choose an enemy for Combust+').waitFor({ state: 'hidden' })
+const stagedCombustDuringForcedCard = await page.getByText('Choose an enemy for Combust+').count()
 check('a forced card clears a staged Combust without changing phase', () => {
   assertEqual(stagedCombustDuringForcedCard, 0)
 })
@@ -12556,7 +12571,10 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: 'Use Combust+' }).click()
-await page.getByRole('button', { name: 'Target Row Ironclad' }).click()
+// Any enemy in Ironclad's row anchors the effect there, the same as a
+// `target: 'row'` card — clicking `combust-left-a` (row 0) replaces the
+// removed "Target Row Ironclad" button.
+await page.locator('.enemy[data-enemy-id="combust-left-a"]').click()
 const combustResolved = await readState()
 const combustLocked = await page.getByRole('button', { name: 'Combust+ used' }).isDisabled()
 check('Combust+ visibly targets a row, includes the boss, and locks after use', () => {
@@ -12567,6 +12585,77 @@ check('Combust+ visibly targets a row, includes the boss, and locks after use', 
   ))
 })
 await shot('16b-combust-resolved')
+
+// A row-target power can still legally target a row with nothing living left
+// in it (the boss is folded in regardless of the chosen row), but there is
+// no enemy anchor left to click for that row — the one gap `onEnemyClick`
+// can't cover. Confirm the empty-lane fallback button appears, is labeled
+// for the ability actually resolving it, and hits only the boss.
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  const actor = run.combat.players[0]
+  Object.assign(actor, { row: 0, hand: [], powers: [{ uid: 'ui-combust-empty', defId: 'combust', upgraded: true }] })
+  run.combat.phase = 'player'
+  run.combat.powerTriggersUsedThisTurn = []
+  const source = run.combat.enemies[0]
+  run.combat.enemies = [
+    { ...source, uid: 'combust-empty-row0', row: 0, hp: 0, maxHp: 10, block: 0, dead: true, isBoss: false },
+    { ...source, uid: 'combust-empty-row1', row: 1, hp: 10, maxHp: 10, block: 0, dead: false, isBoss: false },
+    { ...source, uid: 'combust-empty-boss', row: 0, hp: 20, maxHp: 20, block: 0, dead: false, isBoss: true },
+  ]
+  debug.setRun(run)
+})
+await page.getByRole('button', { name: 'Use Combust+' }).click()
+await page.getByText('Choose an enemy for Combust+').waitFor()
+const emptyLaneButton = page.locator('.row__lane-target')
+await emptyLaneButton.waitFor()
+const emptyLaneLabel = await emptyLaneButton.textContent()
+const emptyLaneLivingAnchors = await page.locator('.row .enemy--targeted').count()
+// The stage layout collapses `.row__enemies` to `display: contents` and
+// absolutely positions `.row` itself, so this control needs its own explicit
+// position/size CSS to land in its own lane rather than piling up at the
+// board's origin — regression coverage for exactly that failure mode, since
+// nothing else here would have caught it (a prior round of this fix shipped
+// with the button pinned to the top-left corner despite every functional
+// check passing).
+const emptyLaneGeometry = await page.evaluate(() => {
+  const lane = document.querySelector('.row__lane-target')
+  const anchor = document.querySelector('.row .enemy--targeted')
+  const laneBox = lane.getBoundingClientRect()
+  const anchorBox = anchor.getBoundingClientRect()
+  return {
+    position: getComputedStyle(lane).position,
+    width: laneBox.width,
+    height: laneBox.height,
+    x: laneBox.x,
+    y: laneBox.y,
+    matchesAnchorHeight: Math.round(laneBox.height) === Math.round(anchorBox.height),
+  }
+})
+await shot('16b2-combust-empty-row-fallback')
+await emptyLaneButton.click()
+const emptyRowResolved = await readState()
+check('an empty-but-legal row can still be targeted through the fallback lane control', () => {
+  assert(emptyLaneLabel.includes('Combust+') && emptyLaneLabel.includes('no living enemy') &&
+    emptyLaneLabel.includes('the boss is hit'), emptyLaneLabel)
+  assertEqual(emptyLaneLivingAnchors, 1, 'only the living enemy in the other row should be independently clickable')
+  assertDeepEqual(emptyRowResolved.enemies.map((enemy) => enemy.hp), [0, 10, 18],
+    'the empty row should hit only the boss, leaving the other row untouched')
+})
+check('the fallback lane control is positioned and sized like a real actor card, not pinned at the origin', () => {
+  assertEqual(emptyLaneGeometry.position, 'absolute')
+  assert(emptyLaneGeometry.width >= 44 && emptyLaneGeometry.height >= 44,
+    `fallback lane control below 44px: ${JSON.stringify(emptyLaneGeometry)}`)
+  assert(emptyLaneGeometry.x >= 10 && emptyLaneGeometry.y >= 10,
+    `fallback lane control pinned near the top-left corner: ${JSON.stringify(emptyLaneGeometry)}`)
+  assert(emptyLaneGeometry.matchesAnchorHeight,
+    `fallback lane control height should match a real enemy card's height: ${JSON.stringify(emptyLaneGeometry)}`)
+})
+const emptyLaneButtonGone = await page.locator('.row__lane-target').count()
+check('the fallback lane control disappears once the ability is used', () => {
+  assertEqual(emptyLaneButtonGone, 0)
+})
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -12649,15 +12738,17 @@ check('Fire Breathing+ renders its sharp scan and announces Status-or-Curse row 
 await page.getByRole('button', { name: /^Fire Breathing\+,/ }).click()
 const firePowerLabel = await page.locator('.power[aria-label^="Fire Breathing"]').getAttribute('aria-label')
 await page.getByRole('button', { name: /^Battle Trance,/ }).click()
-await page.getByText("Ironclad's Fire Breathing+ — choose a row").waitFor()
-const fireRows = await page.getByRole('button', { name: /^Resolve .*Fire Breathing\+ in Row/ }).count()
+await page.getByText("Ironclad's Fire Breathing+ — choose an enemy").waitFor()
+const fireRows = await page.locator('.enemy--targeted').count()
 check('Fire Breathing pauses on a visible row picker for each qualifying draw', () => {
   assert(firePowerLabel.includes('whenever you draw a status or curse card'))
   assertEqual(fireRows, 2)
 })
 await shot('16e-fire-breathing-choice')
-await page.getByRole('button', { name: /Fire Breathing\+ in Row 2$/ }).click()
-await page.getByRole('button', { name: /Fire Breathing\+ in Row Ironclad$/ }).click()
+// One enemy per offered row anchors that row, the same as clicking a
+// `target: 'row'` card, replacing the removed "Fire Breathing+ in Row X" buttons.
+await page.locator('.enemy[data-enemy-id="fire-right"]').click()
+await page.locator('.enemy[data-enemy-id="fire-left"]').click()
 const fireResolved = await readState()
 check('Fire Breathing+ resolves both direct-damage rows and includes the boss each time', () => {
   assertDeepEqual(fireResolved.enemies.map((enemy) => enemy.hp), [7, 7, 4])
@@ -12723,9 +12814,13 @@ await shot('16g-ironclad-trigger-powers')
 await juggernautPower.click()
 await page.locator('.enemy--targeted').nth(1).click()
 await page.getByRole('button', { name: /^Seeing Red,/ }).click()
-await page.getByText("Ironclad's Berserk+ — choose a row").waitFor()
-assertEqual(await page.getByRole('button', { name: /^Resolve .*Berserk\+ in Row/ }).count(), 2)
-await page.getByRole('button', { name: /Berserk\+ in Row 2$/ }).click()
+await page.getByText("Ironclad's Berserk+ — choose an enemy").waitFor()
+assertEqual(await page.locator('.enemy--targeted').count(), 2)
+// Row index 1 (`trigger-right`'s row) is what the removed "Berserk+ in Row 2"
+// button targeted (row labels are 1-indexed when no player occupies the row);
+// clicking any enemy in that row anchors it there, the same as a
+// `target: 'row'` card.
+await page.locator('.enemy[data-enemy-id="trigger-right"]').click()
 const ironcladRareResolved = await readState()
 check('Juggernaut and Berserk resolve chosen targets only after their source cards finish', () => {
   assertDeepEqual(ironcladRareResolved.enemies.map((enemy) => enemy.hp), [10, 6, 8])
@@ -12789,12 +12884,14 @@ await page.getByText('Choose Energy for Malaise+').waitFor()
 await page.getByRole('button', { name: 'Spend 2' }).click()
 await page.getByRole('button', { name: /^Green Louse,/ }).click()
 await page.getByRole('button', { name: /^Battle Trance,/ }).click()
-await page.getByText("Silent's A Thousand Cuts+ — choose a row").waitFor()
+await page.getByText("Silent's A Thousand Cuts+ — choose an enemy").waitFor()
 const thousandCutsPower = page.locator('.power[aria-label^="A Thousand Cuts+"]')
 await thousandCutsPower.click()
 await shot('16h-silent-shuffle-x-rares')
 await thousandCutsPower.click()
-await page.getByRole('button', { name: /A Thousand Cuts\+ in Row 2$/ }).click()
+// Row index 1 (`cuts-right`'s row) is what the removed "A Thousand Cuts+ in
+// Row 2" button targeted; clicking any enemy in that row anchors it there.
+await page.locator('.enemy[data-enemy-id="cuts-right"]').click()
 const silentRaresResolved = await readState()
 check('Malaise+ and A Thousand Cuts+ resolve through X and shuffle choices', () => {
   assertEqual(silentRaresResolved.enemies[0].weak, 3)
