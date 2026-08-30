@@ -3,19 +3,24 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium, devices, webkit } from 'playwright'
 import { actionsForEnemy } from '../src/game/enemies.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = resolve(root, (process.argv.find((arg) => arg.startsWith('--out=')) ?? '--out=artifacts/animation-browser').slice(6))
+const browserName = (process.argv.find((arg) => arg.startsWith('--browser=')) ?? '--browser=chromium').slice(10)
+const browserType = browserName === 'webkit' ? webkit : chromium
 mkdirSync(output, { recursive: true })
 
 const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
 await server.listen()
 const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('Vite did not report a port')
-const browser = await chromium.launch({ headless: true })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+const browser = await browserType.launch({ headless: true })
+const page = await browser.newPage({
+  viewport: { width: 1440, height: 900 },
+  deviceScaleFactor: browserName === 'webkit' ? 2 : 1,
+})
 await page.addInitScript(() => {
   window.__ANIMATION_SFX__ = []
   HTMLMediaElement.prototype.play = function play() {
@@ -28,6 +33,7 @@ await page.addInitScript(() => {
   }
 })
 let releaseTimeEater
+let phoneContext
 const timeEaterAssetGate = new Promise((resolve) => { releaseTimeEater = resolve })
 await page.route('**/time_eater-attack.webp', async (route) => {
   await timeEaterAssetGate
@@ -57,6 +63,16 @@ async function setPhase(phase) {
 
 try {
   await page.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  check(await settings.getByText('Screen shake', { exact: true }).count() === 0,
+    'the removed screen-shake setting is still visible')
+  check(await settings.getByRole('button', { name: 'general' }).count() === 0 &&
+    await settings.locator('nav').evaluate((nav) => getComputedStyle(nav).gridTemplateColumns.split(' ').length === 2),
+  'settings left an empty General tab or grid column after removing screen shake')
+  check(await page.evaluate(() => document.documentElement.dataset.screenShake === undefined),
+    'the removed screen-shake runtime flag is still installed')
+  await settings.getByRole('button', { name: /Back/ }).click()
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()
   await page.getByRole('button', { name: 'Embark' }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
@@ -161,6 +177,7 @@ try {
     `${defId}: wind-up art leaves viewport ${JSON.stringify(windupRect)}`)
     await screenshot(`boss-${defId}-windup`)
     await waitUntilAttackTime(1005)
+    await screenshot(`boss-${defId}-impact`)
     await page.evaluate(() => {
       for (const animation of document.getAnimations()) {
         const name = animation.animationName ?? ''
@@ -249,7 +266,6 @@ try {
         audit.effect.image.includes('awakened-blue-fire.webp') && Number(audit.effect.opacity) > 0.5,
       `Awakened One phase 2 breath is missing: ${JSON.stringify(audit.effect)}`)
     }
-    await screenshot(`boss-${defId}-impact`)
     await waitUntilAttackTime(1500)
     await page.evaluate(() => {
       for (const animation of document.getAnimations()) {
@@ -279,6 +295,26 @@ try {
         `deca: ranged actor landmark moves between phases ${landmarks.join(', ')}`)
     }
     await screenshot(`boss-${defId}-recovery`)
+    if (defId === bossIds[0]) {
+      const moteHints = async () => card.locator('.enemy__portrait').evaluate((portrait) => {
+        const style = getComputedStyle(portrait, '::before')
+        return { animation: style.animationName, willChange: style.willChange }
+      })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      const reduced = await moteHints()
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      const mobile = await page.evaluate(() => {
+        document.documentElement.dataset.mobilePerformance = 'true'
+        const portrait = document.querySelector('.enemy__portrait')
+        const style = getComputedStyle(portrait, '::before')
+        const result = { display: style.display, willChange: style.willChange }
+        document.documentElement.dataset.mobilePerformance = 'false'
+        return result
+      })
+      check(reduced.animation === 'none' && reduced.willChange === 'auto' &&
+        mobile.display === 'none' && mobile.willChange === 'auto',
+      `low-motion enemy motes stayed active ${JSON.stringify({ reduced, mobile })}`)
+    }
   }
 
   const timingBoss = { ...template.enemy, uid: 'timing-boss', defId: 'awakened_one_phase_1', isBoss: true,
@@ -345,14 +381,19 @@ try {
       const run = structuredClone(debug.getRun())
       run.combat = structuredClone(base)
       run.combat.phase = 'player'
-      const enemyIds = character === 'silent'
+      const enemyIds = character === 'watcher'
+        ? ['animation-target-1', 'animation-target-2', 'animation-target-3', 'animation-target-4']
+        : character === 'silent'
         ? ['animation-target-1', 'animation-target-2', 'animation-target-3']
         : ['animation-target']
       run.combat.enemies = enemyIds.map((uid, row) => ({
         ...enemy, uid, row, defId: 'cultist', isBoss: false, hp: 999, maxHp: 999, dead: false,
       }))
       const actor = run.combat.players[0]
-      Object.assign(actor, { character, name: character, hp: 999, maxHp: 999, dead: false })
+      Object.assign(actor, {
+        character, name: character, hp: 999, maxHp: 999, dead: false,
+        stance: character === 'watcher' ? 'wrath' : actor.stance,
+      })
       const seq = 1_000_001 + heroIndex
       const attack = {
         seq, kind: 'card', actorId: actor.id, sourceId, enemyIds, playerIds: [],
@@ -362,7 +403,7 @@ try {
         ? [attack, { ...attack, seq: seq + 1, enemyIds: [enemyIds[0]], copied: true }]
         : [attack]
       debug.setRun(run)
-      return { actorId: actor.id, seq: character === 'silent' ? seq + 1 : seq }
+      return { actorId: actor.id, seq: character === 'silent' ? seq + 1 : seq, targetId: enemyIds[0] }
     }, { base: template.combat, enemy: template.enemy, heroIndex, ...hero })
     const seat = page.locator(`.seat[data-player-id="${ids.actorId}"]`)
     const currentAttack = seat.locator(`.character-attack--${hero.character}[data-attack-seq="${ids.seq}"]`)
@@ -419,7 +460,9 @@ try {
     }
     if (hero.character === 'watcher') {
       const impact = currentAttack.locator('.character-attack__meteor-impact').first()
-      const genericImpact = page.locator(`.combat-vfx--attack-impact[data-vfx-seq="${ids.seq}"]`).first()
+      const genericImpact = page.locator(
+        `.enemy[data-enemy-id="${ids.targetId}"] .combat-vfx--attack-impact[data-vfx-seq="${ids.seq}"]`,
+      )
       await genericImpact.waitFor()
       const genericTiming = await genericImpact.evaluate((element) => {
         const style = getComputedStyle(element)
@@ -443,7 +486,8 @@ try {
       await seat.evaluate((element, currentTime) => {
         for (const animation of element.getAnimations({ subtree: true })) {
           const name = animation.animationName ?? ''
-          if (name.startsWith('attack-') || name.startsWith('watcher-') || name.endsWith('-pose') ||
+          if (animation.effect?.getTiming().iterations === 1 || name.startsWith('attack-') ||
+            name.startsWith('watcher-') || name.endsWith('-pose') ||
             name === 'defect-core-charge') {
             animation.pause()
             animation.currentTime = currentTime
@@ -471,6 +515,83 @@ try {
       `${hero.character}: impact SFX missed ${hero.contact}ms contact ${JSON.stringify(sounds)}`)
     check(sounds.some((sound) => sound.delayMs < hero.contact),
       `${hero.character}: attack has no launch/accent SFX before contact ${JSON.stringify(sounds)}`)
+    if (hero.character === 'watcher' && browserName === 'chromium') {
+      const cdp = await page.context().newCDPSession(page)
+      let compositorLayers = []
+      cdp.on('LayerTree.layerTreeDidChange', ({ layers }) => { compositorLayers = layers })
+      await cdp.send('LayerTree.enable')
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 1440, height: 900, deviceScaleFactor: 2, mobile: false,
+      })
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+      const stressSeq = await page.evaluate((seq) => {
+        const debug = window.__STS_DEBUG__
+        const run = structuredClone(debug.getRun())
+        const actor = run.combat.players[0]
+        const enemyIds = run.combat.enemies.map((enemy) => enemy.uid)
+        run.combat.presentationEvents = [{
+          seq, kind: 'card', actorId: actor.id, sourceId: 'strike_watcher', enemyIds,
+          playerIds: [], upgraded: false, copied: false, energy: 1,
+        }]
+        debug.setRun(run)
+        return seq
+      }, ids.seq + 0.5)
+      await seat.locator(`.character-attack--watcher[data-attack-seq="${stressSeq}"]`).waitFor()
+      await page.evaluate(() => new Promise(requestAnimationFrame))
+      const documentNode = await cdp.send('DOM.getDocument')
+      const compositorProbe = {}
+      for (const [name, selector] of Object.entries({
+        body: `.seat[data-player-id="${ids.actorId}"] .seat__portrait > img`,
+        aura: `.seat[data-player-id="${ids.actorId}"] .stance-aura`,
+        pose: `.seat[data-player-id="${ids.actorId}"] .character-attack__pose--watcher-cast`,
+        meteor: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor`,
+        impact: `.seat[data-player-id="${ids.actorId}"] .character-attack__meteor-impact`,
+      })) {
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector })
+        const { node } = await cdp.send('DOM.describeNode', { nodeId })
+        const layer = compositorLayers.find((candidate) => candidate.backendNodeId === node.backendNodeId)
+        compositorProbe[name] = layer
+          ? (await cdp.send('LayerTree.compositingReasons', { layerId: layer.layerId })).compositingReasons
+          : []
+      }
+      check(Object.values(compositorProbe).every((reasons) => reasons.some((reason) => reason.includes('will-change'))),
+        `watcher: animated layers were not promoted by Chrome ${JSON.stringify(compositorProbe)}`)
+      await page.evaluate(() => {
+        window.__WATCHER_FRAME_PROFILE__ = new Promise((resolve) => {
+          const frameGaps = []
+          const longTasks = []
+          let startedAt
+          let previous
+          const observer = new PerformanceObserver((entries) => {
+            for (const entry of entries.getEntries()) longTasks.push(entry.duration)
+          })
+          observer.observe({ type: 'longtask' })
+          const sample = (now) => {
+            startedAt ??= now
+            if (previous !== undefined) frameGaps.push(now - previous)
+            previous = now
+            if (now - startedAt < 1_650) requestAnimationFrame(sample)
+            else {
+              observer.disconnect()
+              frameGaps.sort((a, b) => a - b)
+              resolve({
+                frames: frameGaps.length,
+                maxGap: frameGaps.at(-1) ?? 0,
+                p95Gap: frameGaps[Math.floor(frameGaps.length * 0.95)] ?? 0,
+                longTasks,
+              })
+            }
+          }
+          requestAnimationFrame(sample)
+        })
+      })
+      const frameProfile = await page.evaluate(() => window.__WATCHER_FRAME_PROFILE__)
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+      await cdp.send('Emulation.clearDeviceMetricsOverride')
+      await cdp.send('LayerTree.disable')
+      console.log(`Watcher frame profile: ${JSON.stringify(frameProfile)}`)
+      await seat.locator(`.character-attack--watcher[data-attack-seq="${stressSeq}"]`).waitFor({ state: 'detached' })
+    }
   }
 
   await page.evaluate(() => {
@@ -595,6 +716,26 @@ try {
   await page.locator('.end-turn-order > summary').click()
   const omegaOrder = page.locator('.end-turn-order li').filter({ hasText: 'Omega' })
   await omegaOrder.waitFor()
+  const performanceModeHints = await page.evaluate(() => {
+    const read = () => [
+      document.querySelector('.seat__portrait > img'),
+      document.querySelector('.enemy__portrait > .enemy__art--cutout'),
+      document.querySelector('.stance-aura'),
+    ].filter(Boolean).map((element) => getComputedStyle(element).willChange)
+    document.documentElement.dataset.mobilePerformance = 'true'
+    const mobile = read()
+    document.documentElement.dataset.mobilePerformance = 'false'
+    return { mobile }
+  })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  performanceModeHints.reduced = await page.evaluate(() => [
+    document.querySelector('.seat__portrait > img'),
+    document.querySelector('.enemy__portrait > .enemy__art--cutout'),
+    document.querySelector('.stance-aura'),
+  ].filter(Boolean).map((element) => getComputedStyle(element).willChange))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  check([...performanceModeHints.mobile, ...performanceModeHints.reduced].every((hint) => hint === 'auto'),
+    `low-motion modes retained compositor layers ${JSON.stringify(performanceModeHints)}`)
   check(await omegaOrder.locator('select').count() === 0, 'targetless Omega rendered a broken target picker')
   await page.getByRole('button', { name: /^End turn/ }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'enemy')
@@ -655,8 +796,146 @@ try {
     window.__ANIMATION_SFX__.some((sound) => sound.path === '/assets/sfx/victory.ogg')),
   'victory SFX did not land with the post-animation outcome')
 
+  phoneContext = await browser.newContext({ ...devices['iPhone 13 landscape'] })
+  const phone = await phoneContext.newPage()
+  phone.setDefaultTimeout(30_000)
+  await phone.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
+  check(await phone.locator('link[rel="preload"][as="image"][href*="/combat/characters/"]').count() === 7,
+    'iPhone 13 did not preload all attack pose assets')
+  await phone.getByRole('button', { name: 'Single Player', exact: true }).click()
+  await phone.getByRole('button', { name: 'Embark' }).click()
+  await phone.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+  await phone.evaluate(() => window.__STS_DEBUG__.reset(1, 'boss-gallery'))
+  await phone.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'neow')
+  await phone.evaluate((combat) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    debug.setRun({
+      ...run,
+      phase: 'combat',
+      neow: null,
+      combat: structuredClone(combat),
+    })
+  }, template.combat)
+  await phone.locator('.combat').waitFor()
+  const phoneFixture = template.combat
+  const phoneHeroes = [
+    { character: 'ironclad', sourceId: 'strike_ironclad', poses: ['ironclad-ready', 'ironclad-impact'] },
+    { character: 'defect', sourceId: 'strike_defect', poses: ['defect-charge', 'defect-release'] },
+    { character: 'silent', sourceId: 'predator', poses: ['silent-throw'] },
+    { character: 'watcher', sourceId: 'strike_watcher', poses: ['watcher-charge', 'watcher-cast'] },
+  ]
+  for (const [index, hero] of phoneHeroes.entries()) {
+    await phone.evaluate(({ base, hero, index }) => {
+      const debug = window.__STS_DEBUG__
+      const run = structuredClone(debug.getRun())
+      run.combat = structuredClone(base)
+      run.combat.combatId = `${run.combat.combatId}-iphone-${hero.character}-${index}`
+      run.combat.phase = 'player'
+      run.combat.presentationEvents = []
+      run.combat.players = [run.combat.players[0]]
+      Object.assign(run.combat.players[0], { character: hero.character, hp: 999, maxHp: 999, dead: false,
+        stance: hero.character === 'watcher' ? 'wrath' : run.combat.players[0].stance })
+      run.combat.enemies = [{ ...run.combat.enemies[0], uid: 'iphone-target', defId: 'cultist', isBoss: false,
+        hp: 999, maxHp: 999, dead: false }]
+      debug.setRun(run)
+    }, { base: phoneFixture, hero, index })
+    await phone.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await phone.evaluate(({ hero, index }) => {
+      const debug = window.__STS_DEBUG__
+      const run = structuredClone(debug.getRun())
+      const actor = run.combat.players[0]
+      const target = run.combat.enemies[0]
+      target.hp -= 1
+      run.combat.presentationEvents = [{
+        seq: 2_000_001 + index, kind: 'card', actorId: actor.id, sourceId: hero.sourceId,
+        enemyIds: [target.uid], playerIds: [], upgraded: false, copied: false, energy: 1,
+      }]
+      debug.setRun(run)
+    }, { hero, index })
+    const attack = phone.locator(`.character-attack--${hero.character}`)
+    await attack.waitFor()
+    await phone.locator('.enemy .hit-vfx').waitFor()
+    const iphoneAttack = await phone.evaluate(({ hero }) => {
+      const seat = document.querySelector(`.seat--attack-${hero.character}`)
+      const body = seat?.querySelector('.seat__portrait > img')
+      const attack = seat?.querySelector(`.character-attack--${hero.character}`)
+      const target = document.querySelector('.enemy__portrait')
+      const hit = target?.querySelector('.hit-vfx')
+      const poses = hero.poses.map((pose) => attack?.querySelector(`.character-attack__pose--${pose}`))
+      const animatedProperties = attack ? [...attack.getAnimations({ subtree: true })]
+        .flatMap((animation) => animation.effect?.getKeyframes().flatMap((frame) => Object.keys(frame)) ?? []) : []
+      return {
+        viewport: `${innerWidth}x${innerHeight}@${devicePixelRatio}`,
+        mobilePerformance: document.documentElement.dataset.mobilePerformance,
+        bodyAnimation: body ? getComputedStyle(body).animationName : '',
+        attackVisible: Boolean(attack && getComputedStyle(attack).display !== 'none'),
+        poseAssets: poses.map((pose) => ({
+          display: pose ? getComputedStyle(pose).display : 'none',
+          loaded: pose?.querySelector('img')?.complete && (pose.querySelector('img')?.naturalWidth ?? 0) > 0,
+        })),
+        speedTrail: attack && hero.character === 'ironclad'
+          ? { animation: getComputedStyle(attack, '::before').animationName,
+              filter: getComputedStyle(attack, '::before').filter }
+          : null,
+        meteorCount: attack?.querySelectorAll('.character-attack__meteor').length ?? 0,
+        hitDelay: Number.parseFloat(hit ? getComputedStyle(hit).getPropertyValue('--hit-delay') : '0'),
+        portraitAnimations: target?.getAnimations().length ?? 0,
+        filteredLayers: [...(attack?.querySelectorAll('*') ?? [])]
+          .filter((element) => getComputedStyle(element).filter !== 'none').length,
+        animatedFilter: animatedProperties.includes('filter'),
+      }
+    }, { hero })
+    check(iphoneAttack.mobilePerformance === 'true',
+      `iPhone 13 did not enable its performance profile ${JSON.stringify(iphoneAttack)}`)
+    check(iphoneAttack.bodyAnimation === `attack-${hero.character}` && iphoneAttack.attackVisible &&
+      iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.loaded) &&
+      (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
+    `iPhone 13 skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
+    check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
+      iphoneAttack.speedTrail.filter === 'none',
+    `iPhone 13 skipped or filtered Ironclad's speed trail ${JSON.stringify(iphoneAttack)}`)
+    check(iphoneAttack.hitDelay > 0, `iPhone 13 damage landed before ${hero.character} contact ${JSON.stringify(iphoneAttack)}`)
+    check(iphoneAttack.portraitAnimations === 0, `damage shook the iPhone target ${JSON.stringify(iphoneAttack)}`)
+    check(iphoneAttack.filteredLayers === 0 && !iphoneAttack.animatedFilter,
+      `iPhone 13 ${hero.character} retained filtered animation work ${JSON.stringify(iphoneAttack)}`)
+    if (hero.character === 'watcher') {
+      await phone.waitForTimeout(1_100)
+      await phone.locator('.board').screenshot({ path: join(output, `iphone-13-${browserName}-watcher-impact.png`) })
+    }
+  }
+
+  await phone.evaluate(({ base, enemy, actionIndex }) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(base)
+    run.combat.combatId = `${run.combat.combatId}-iphone-boss`
+    run.combat.players = [run.combat.players[0]]
+    Object.assign(run.combat.players[0], { hp: 999, maxHp: 999, dead: false })
+    run.combat.enemies = [{ ...enemy, uid: 'iphone-boss', actionIndex, hp: 999, maxHp: 999, dead: false }]
+    run.combat.phase = 'enemy'
+    debug.setRun(run)
+  }, { base: phoneFixture, enemy: timingBoss, actionIndex: timingActionIndex })
+  const phoneBoss = phone.locator('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')
+  await phoneBoss.locator('.enemy__art--cutout').waitFor()
+  await phone.waitForFunction(() =>
+    document.querySelector('.enemy--boss[data-enemy-def="awakened_one_phase_1"]')?.getAttribute('data-animation') === 'attack')
+  const iphoneBossAnimation = await phoneBoss.evaluate((boss) => ({
+    name: getComputedStyle(boss.querySelector('.enemy__art--cutout')).animationName,
+    filter: getComputedStyle(boss.querySelector('.enemy__art--cutout')).filter,
+    claw: [...document.querySelectorAll('.seat:not(.seat--dead) .seat__portrait')].map((portrait) => ({
+      display: getComputedStyle(portrait, '::before').display,
+      animation: getComputedStyle(portrait, '::before').animationName,
+    })),
+  }))
+  check(iphoneBossAnimation.name !== 'none' && iphoneBossAnimation.filter === 'none' &&
+    iphoneBossAnimation.claw.length > 0 && iphoneBossAnimation.claw.every((claw) =>
+      claw.display !== 'none' && claw.animation === 'awakened-claw-scratch'),
+    `iPhone 13 skipped or filtered the boss attack ${JSON.stringify(iphoneBossAnimation)}`)
+
   check(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`)
 } finally {
+  await phoneContext?.close()
   await browser.close()
   await server.close()
 }

@@ -317,6 +317,7 @@ const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
 const settingsIsModal = await settingsDialog.evaluate((dialog) => dialog.matches(':modal'))
 await page.getByRole('button', { name: 'Single Player' }).evaluate((button) => button.focus())
 const settingsKeepsFocus = await settingsDialog.evaluate((dialog) => dialog.contains(document.activeElement))
+const screenShakeControls = await settingsDialog.getByText('Screen shake', { exact: true }).count()
 await settingsDialog.getByRole('button', { name: 'video' }).click()
 const selectedSettingsTab = await settingsDialog.getByRole('button', { pressed: true }).textContent()
 const videoSettingsPanel = await settingsDialog.getByRole('tabpanel', { name: 'video' }).count()
@@ -468,6 +469,7 @@ check('the title menu fills the viewport without clipping its controls', () => {
   assertEqual(setupHasDevControls, 0, 'developer setup controls leaked into settings')
   assert(settingsIsModal, 'settings did not open in the browser top layer')
   assert(settingsKeepsFocus, 'settings allowed focus to escape to the title menu')
+  assertEqual(screenShakeControls, 0, 'the removed screen-shake preference is still visible')
   assertEqual(selectedSettingsTab?.trim(), 'video', 'the selected settings tab is not exposed')
   assertEqual(videoSettingsPanel, 1, 'the video tab does not control an accessible panel')
   assert(settingsDismissedWithEscape, 'Escape did not close settings')
@@ -1013,11 +1015,13 @@ const activeRunId = activeRun.campaign.runId
 await page.getByRole('button', { name: 'Settings' }).click()
 const runSettings = page.getByRole('dialog', { name: 'Settings' })
 const settingsRunActions = await runSettings.getByRole('button').allTextContents()
+const runGeneralSettings = await runSettings.getByRole('button', { name: 'general' }).count()
 await runSettings.getByRole('button', { name: /Back/ }).click()
 const iconOnlySettingsText = await page.locator('.game-settings').textContent()
 check('the HUD settings button is icon-only and contains no run-abandon actions', () => {
   assertEqual(iconOnlySettingsText?.trim(), '')
   assert(!settingsRunActions.some((label) => /Give up|Return to main menu|New run|Play online/.test(label)))
+  assertEqual(runGeneralSettings, activeRun.meta.modifierIds.length > 0 || activeRun.players.length > 1 ? 1 : 0)
 })
 
 const runBeforeFightCompendium = await readRun()
@@ -2894,10 +2898,8 @@ check('the current map position and reachable route stay visibly alive', () => {
 })
 await shot('05f-back-on-map')
 
-// Hit feedback has to survive the rest of the combat. The flinch class used to
-// stick forever the first time a state change landed inside its 380ms window
-// without hurting anyone — and being unchanged, it then never re-animated.
-await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'flinch'))
+// Hit feedback has to survive the rest of the combat without moving the board.
+await page.evaluate(() => window.__STS_DEBUG__.reset(2, 'hit-feedback'))
 await bypassNeow()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
 await enterFirstRoom()
@@ -9749,7 +9751,7 @@ await page.waitForFunction((enemyId) => {
   return hit && Number(getComputedStyle(hit).opacity) > 0.5
 }, firstEnemyId)
 const contactDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
-  flinches: enemy.querySelector('.enemy__portrait')?.getAnimations().length ?? 0,
+  portraitAnimations: enemy.querySelector('.enemy__portrait')?.getAnimations().length ?? 0,
   damage: enemy.querySelector('.hit-vfx strong')?.textContent ?? '',
   hp: enemy.querySelector('.bar__label')?.textContent ?? '',
 }))
@@ -9757,7 +9759,7 @@ check('real HP-loss feedback waits for Ironclad weapon contact', () => {
   assertEqual(earlyDamageFeedback.hitOpacity, 0)
   assertEqual(earlyDamageFeedback.delay, '0.63s')
   assertEqual(earlyDamageFeedback.hp, preDamageHpLabel)
-  assert(contactDamageFeedback.flinches > 0, 'the enemy portrait did not flinch at contact')
+  assertEqual(contactDamageFeedback.portraitAnimations, 0, 'weapon contact shook the enemy portrait')
   assertEqual(contactDamageFeedback.damage, '1')
   assert(contactDamageFeedback.hp !== preDamageHpLabel, 'the HP label did not update at weapon contact')
 })
@@ -9909,19 +9911,17 @@ const rapidDamageSeq2 = await publishDamagingPresentationEvent({
   kind: 'card', actorId: firstPlayerId, sourceId: 'strike_ironclad', enemyIds: [firstEnemyId],
   playerIds: [], upgraded: false, copied: false, energy: 1,
 }, firstEnemyId)
-await page.waitForFunction((enemyId) => {
-  const portrait = document.querySelector(`.enemy[data-enemy-id="${enemyId}"] .enemy__portrait`)
-  return portrait && portrait.getAnimations().filter((animation) => animation.playState === 'running').length >= 2
-}, firstEnemyId)
+await page.waitForFunction((enemyId) =>
+  document.querySelectorAll(`.enemy[data-enemy-id="${enemyId}"] .hit-vfx`).length >= 2, firstEnemyId)
 const rapidDamageFeedback = await firstEnemyCard.evaluate((enemy) => ({
   bursts: enemy.querySelectorAll('.hit-vfx').length,
-  flinches: enemy.querySelector('.enemy__portrait')?.getAnimations()
+  portraitAnimations: enemy.querySelector('.enemy__portrait')?.getAnimations()
     .filter((animation) => animation.playState === 'running').length ?? 0,
 }))
-check('rapid same-target hits keep both impact bursts and portrait flinches', () => {
+check('rapid same-target hits keep both impact bursts without shaking the portrait', () => {
   assertEqual(rapidDamageSeq2, rapidDamageSeq + 1)
   assertEqual(rapidDamageFeedback.bursts, 2)
-  assert(rapidDamageFeedback.flinches >= 2)
+  assertEqual(rapidDamageFeedback.portraitAnimations, 0)
 })
 await page.locator(`.combat-vfx[data-vfx-seq="${rapidDamageSeq2}"]`).waitFor({ state: 'detached' })
 
@@ -10178,35 +10178,19 @@ async function hurtViewer() {
   })
 }
 
-// Each hit gets its own additive Web Animation, so overlapping hits do not
-// replace one another's portrait flinch.
-async function flinchCount(expected) {
-  await page
-    .waitForFunction(
-      (want) => [...document.querySelectorAll('.seat')].filter((seat) =>
-        seat.querySelector('.seat__portrait')?.getAnimations().some((animation) =>
-          animation.animationName === undefined && animation.playState === 'running')).length === want,
-      expected,
-      { timeout: 2000 },
-    )
-    .catch(() => {})
-  return page.evaluate(() => [...document.querySelectorAll('.seat')].filter((seat) =>
-    seat.querySelector('.seat__portrait')?.getAnimations().some((animation) =>
-      animation.animationName === undefined && animation.playState === 'running')).length)
-}
-
 await hurtViewer()
-const flinchedAtOnce = await flinchCount(1)
+await page.locator('.seat .hit-vfx').waitFor()
 const hitMotion = await page.evaluate(() => {
   const impact = document.querySelector('.seat .hit-vfx')
   return impact ? {
     animation: getComputedStyle(impact).animationName,
     art: getComputedStyle(impact).backgroundImage,
+    portraitAnimations: document.querySelector('.seat .seat__portrait')?.getAnimations().length ?? 0,
   } : null
 })
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if (animation.animationName === undefined || ['impact-bloom', 'damage-float'].includes(animation.animationName)) {
+    if (['impact-bloom', 'damage-float'].includes(animation.animationName)) {
       animation.currentTime = 150
       animation.pause()
     }
@@ -10215,75 +10199,30 @@ await page.evaluate(() => {
 await page.screenshot({ path: join(outDir, '09b-combat-hit-animation.png'), timeout: 15_000 })
 await page.evaluate(() => {
   for (const animation of document.getAnimations()) {
-    if ((animation.animationName === undefined || ['impact-bloom', 'damage-float'].includes(animation.animationName)) &&
+    if (['impact-bloom', 'damage-float'].includes(animation.animationName) &&
       animation.playState === 'paused') animation.play()
   }
 })
-// A state change that hurts nobody, landing inside the flinch window.
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  run.combat.players[0].gold += 1
-  debug.setRun(run)
-})
-const flinchCleared = await flinchCount(0)
-await hurtViewer()
-const flinchedAgain = await flinchCount(1)
-
-check('a hit is felt, and keeps being felt for the rest of the combat', () => {
-  assertEqual(flinchedAtOnce, 1, 'the damaged seat should flinch')
+check('a hit keeps its impact art without shaking the actor', () => {
   assertEqual(hitMotion?.animation, 'impact-bloom', 'the generated impact effect should animate')
   assert(hitMotion?.art.includes('/assets/combat/vfx/hit-burst.webp'), hitMotion?.art ?? 'missing hit VFX')
-  assertEqual(flinchCleared, 0, 'and stop flinching even if another change interrupts')
-  assertEqual(flinchedAgain, 1, 'and flinch again on the next hit')
+  assertEqual(hitMotion?.portraitAnimations, 0, 'damage still animated the actor portrait')
 })
 
-// Two blows inside one flinch window must retain two independent additive animations.
-await flinchCount(0)
 await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
-for (let i = 0; i < 2; i++) {
-  const before = await page.evaluate(() => document.querySelector('.seat .seat__portrait')?.getAnimations()
-    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0)
-  await hurtViewer()
-  await page.waitForFunction((count) => (document.querySelector('.seat .seat__portrait')?.getAnimations()
-    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0) > count, before)
-}
+await hurtViewer()
+await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 1)
+await hurtViewer()
+await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 2)
 const beats = await page.evaluate(() => ({
-  count: document.querySelector('.seat .seat__portrait')?.getAnimations()
-    .filter((animation) => animation.animationName === undefined && animation.playState === 'running').length ?? 0,
+  portraits: [...document.querySelectorAll('.seat .seat__portrait')]
+    .reduce((count, portrait) => count + portrait.getAnimations().length, 0),
   impacts: document.querySelectorAll('.seat .hit-vfx').length,
 }))
-check('two hits in quick succession are both felt', () => {
-  assert(beats.count >= 2, `expected at least two flinches, got ${beats.count}`)
+check('two quick hits retain both impact bursts without portrait movement', () => {
+  assertEqual(beats.portraits, 0, `damage started ${beats.portraits} portrait animations`)
   assert(beats.impacts >= 2, `expected at least two generated hit bursts, got ${beats.impacts}`)
 })
-
-await flinchCount(0)
-await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
-await hurtViewer()
-await flinchCount(1)
-await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  run.combat.players[1].hp -= 1
-  debug.setRun(run)
-})
-const concurrentFlinches = await flinchCount(2)
-const concurrentBursts = await page.locator('.seat .hit-vfx').count()
-check('rapid hits on different actors keep both signals alive', () => {
-  assertEqual(concurrentFlinches, 2)
-  assertEqual(concurrentBursts, 2)
-})
-await flinchCount(0)
-await page.waitForFunction(() => document.querySelectorAll('.seat .hit-vfx').length === 0)
-await hurtViewer()
-await flinchCount(1)
-await page.emulateMedia({ reducedMotion: 'reduce' })
-const reducedMotionCancelledFlinch = await flinchCount(0)
-check('enabling reduced motion cancels an already-running hit flinch', () => {
-  assertEqual(reducedMotionCancelledFlinch, 0)
-})
-await page.emulateMedia({ reducedMotion: 'no-preference' })
 
 // The enemy's remaining hit points are the number the whole turn is planned
 // around. Twice it fell below the fold at small sizes because the board was
@@ -14067,7 +14006,7 @@ check('the local Neow scene keeps its full-bleed at every width', () => {
   }
 })
 
-await page.evaluate(() => window.__STS_DEBUG__.reset(3, 'flinch'))
+await page.evaluate(() => window.__STS_DEBUG__.reset(3, 'hit-feedback'))
 await bypassNeow()
 await enterFirstRoom()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'combat')

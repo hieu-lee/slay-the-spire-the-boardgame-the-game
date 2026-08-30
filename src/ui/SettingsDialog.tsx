@@ -22,16 +22,19 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
    * which would shut the menu the moment fullscreen was entered and left again.
    */
   const suppressedCloses = useRef(0)
-  const [tab, setTab] = useState<Tab>('general')
+  const [tab, setTab] = useState<Tab>(generalChildren ? 'general' : 'video')
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [fullscreenError, setFullscreenError] = useState('')
 
   useEffect(() => {
     const node = dialog.current
     if (!node) return
-    if (open && !node.open) node.showModal()
+    if (open && !node.open) {
+      setTab(generalChildren ? 'general' : 'video')
+      node.showModal()
+    }
     else if (!open && node.open) node.close()
-  }, [open])
+  }, [generalChildren, open])
 
   useEffect(() => {
     const update = () => {
@@ -73,16 +76,13 @@ export function SettingsDialog({ open, onClose, settings, onChange, generalChild
           <h2 id={`${id}-title`}>Settings</h2>
         </header>
         <nav aria-label="Settings sections">
-          {(['general', 'video', 'audio'] as const).map((section) => <button type="button" key={section}
+          {(generalChildren ? ['general', 'video', 'audio'] as const : ['video', 'audio'] as const)
+            .map((section) => <button type="button" key={section}
             id={`${id}-${section}-tab`} aria-pressed={tab === section}
             aria-controls={`${id}-${section}-panel`} onClick={() => setTab(section)}>{section}</button>)}
         </nav>
         <div className="settings-dialog__body">
           {tab === 'general' ? <section id={`${id}-general-panel`} role="tabpanel" aria-labelledby={`${id}-general-tab`}>
-            <label className="settings-toggle">
-              <span><strong>Screen shake</strong><small>Allow impact effects to move the battlefield.</small></span>
-              <input type="checkbox" checked={settings.screenShake} onChange={(event) => set('screenShake', event.target.checked)} />
-            </label>
             {generalChildren}
           </section> : null}
           {tab === 'video' ? <section id={`${id}-video-panel`} role="tabpanel" aria-labelledby={`${id}-video-tab`}>

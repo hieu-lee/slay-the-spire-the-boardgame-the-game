@@ -27,6 +27,14 @@ html[data-mobile-performance='true'] .seat__portrait > img {
   animation-name: none;
 }
 
+html[data-mobile-performance='true'] .seat__portrait > img,
+html[data-mobile-performance='true'] .enemy__portrait > .enemy__art--cutout,
+html[data-mobile-performance='true'] .seat__portrait::before,
+html[data-mobile-performance='true'] .enemy__portrait:has(> .enemy__art--cutout)::before,
+html[data-mobile-performance='true'] .stance-aura {
+  will-change: auto;
+}
+
 /* The rule above cuts `actor-idle`, the 3.4s ambient breathing loop this file
    means to — but on the SAME selector every attack lunge and action beat
    (attack-timing.css) is layered on top of via that same `animation-name`
@@ -46,24 +54,17 @@ html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-0 .seat__po
 html[data-mobile-performance='true'] .seat--vfx-drink.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-drink-again; }
 html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-throw; }
 html[data-mobile-performance='true'] .seat--vfx-throw.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-throw-again; }
-html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad-mobile; }
+html[data-mobile-performance='true'] .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 html[data-mobile-performance='true'] .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
 html[data-mobile-performance='true'] .seat--attack-silent .seat__portrait > img { animation-name: attack-silent; }
 
-/* Casting still has a brightness sweep, so phones use its filter-free twin.
-   Defect's twin keeps the base art visible because its extra pose layers are
-   omitted below. */
+/* Casting still has a brightness sweep, so phones use its filter-free twin. */
 html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-0 .seat__portrait > img { animation-name: vfx-cast-mobile; }
 html[data-mobile-performance='true'] .seat--vfx-cast.seat--vfx-beat-1 .seat__portrait > img { animation-name: vfx-cast-mobile-again; }
-html[data-mobile-performance='true'] .seat--attack-defect .seat__portrait > img { animation-name: attack-defect-mobile; }
+html[data-mobile-performance='true'] .seat--attack-defect .seat__portrait > img { animation-name: attack-defect; }
 
 html[data-mobile-performance='true'] .seat__portrait::before,
-html[data-mobile-performance='true'] .enemy__portrait::before,
-html[data-mobile-performance='true'] .character-attack--ironclad::before,
-html[data-mobile-performance='true'] .character-attack__pose--ironclad-ready,
-html[data-mobile-performance='true'] .character-attack__pose--ironclad-impact,
-html[data-mobile-performance='true'] .character-attack__pose--defect-charge,
-html[data-mobile-performance='true'] .character-attack__pose--defect-release,
+html[data-mobile-performance='true'] .enemy__portrait:has(> .enemy__art--cutout)::before,
 html[data-mobile-performance='true'] .combat-vfx::before,
 html[data-mobile-performance='true'] .combat-vfx::after,
 /* The card-flight clone's own particle trail: a smoke wisp and a four-dot mote
@@ -96,6 +97,15 @@ html[data-mobile-performance='true'] .card-flight .card {
 
 html[data-mobile-performance='true'] .combat-vfx {
   mix-blend-mode: normal;
+}
+
+html[data-mobile-performance='true'] .character-attack--ironclad::before {
+  filter: none;
+}
+
+html[data-mobile-performance='true'] .board:has(.enemy--boss.enemy--acting[data-enemy-def='awakened_one_phase_1'])
+  .seat:not(.seat--dead) .seat__portrait::before {
+  display: block;
 }
 
 /* `combat-vfx--frost`/`--dark` (Defect's orb evokes) set `filter` directly in
@@ -174,10 +184,22 @@ html[data-mobile-performance='true'] .enemy--dead.enemy--falling .enemy__portrai
   .seat__portrait > img,
   .enemy__portrait > .enemy__art--cutout,
   .seat__portrait::before,
-  .enemy__portrait::before,
+  .enemy__portrait:has(> .enemy__art--cutout)::before,
   .hit-vfx,
   .hit-vfx strong {
     animation: none;
+  }
+
+  .seat__portrait > img,
+  .enemy__portrait > .enemy__art--cutout,
+  .seat__portrait::before,
+  .enemy__portrait:has(> .enemy__art--cutout)::before,
+  .stance-aura,
+  .combat-vfx,
+  .combat-vfx::before,
+  .combat-vfx::after,
+  .hit-vfx {
+    will-change: auto;
   }
 
   .stance-aura,

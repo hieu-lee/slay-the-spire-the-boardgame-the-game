@@ -7,19 +7,17 @@
       const shortScreenEdge = Math.min(screen.width, screen.height)
       const phone = coarsePointer && shortScreenEdge <= 500
       document.documentElement.dataset.mobilePerformance = String(coarsePointer && shortScreenEdge <= 600)
-      if (document.documentElement.dataset.mobilePerformance !== 'true') {
-        for (const asset of [
-          'defect-charge.webp', 'defect-release.webp',
-          'ironclad-ready.webp', 'ironclad-impact.webp', 'silent-throw.webp',
-          'watcher-ready.webp', 'watcher-thrust.webp',
-        ]) {
-          const preload = document.createElement('link')
-          preload.rel = 'preload'
-          preload.as = 'image'
-          preload.type = 'image/webp'
-          preload.href = `/assets/combat/characters/${asset}`
-          document.head.append(preload)
-        }
+      for (const asset of [
+        'defect-charge.webp', 'defect-release.webp',
+        'ironclad-ready.webp', 'ironclad-impact.webp', 'silent-throw.webp',
+        'watcher-ready.webp', 'watcher-thrust.webp',
+      ]) {
+        const preload = document.createElement('link')
+        preload.rel = 'preload'
+        preload.as = 'image'
+        preload.type = 'image/webp'
+        preload.href = `/assets/combat/characters/${asset}`
+        document.head.append(preload)
       }
       let viewport
       let landscape

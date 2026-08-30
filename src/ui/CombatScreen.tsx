@@ -337,7 +337,7 @@ function CombatScreenView({
     state,
     authoritativeRestoration,
     authoritativeConnected,
-    reducedMotion,
+    prefersReducedMotion,
   )
   const falling = useFalling(
     state,
@@ -3423,8 +3423,8 @@ function CombatScreenView({
                 enemy={enemy}
                 label={enemyLabel(state.enemies, enemy)}
                 die={state.die}
-                acting={state.phase === 'enemy' && !reducedMotion}
-                animateBoss={!reducedMotion}
+                acting={state.phase === 'enemy' && !prefersReducedMotion}
+                animateBoss={!prefersReducedMotion}
                 falling={falling.has(enemy.uid)}
                 visualContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid,
                   latestTargetPresentationEvent(state.presentationEvents, enemy.uid))}

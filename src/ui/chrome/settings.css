@@ -63,7 +63,8 @@
 
 .settings-dialog nav {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   margin: 0.75rem 0;
   border-block: 1px solid var(--trim-dim);
 }
@@ -127,9 +128,6 @@ html[data-reduced-motion='true'] *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
 }
-
-html[data-screen-shake='false'] :is(.seat--struck, .seat--struck-alt) .seat__portrait,
-html[data-screen-shake='false'] :is(.enemy--struck, .enemy--struck-alt) .enemy__portrait { animation: none; }
 
 html[data-high-contrast='true'] { --cream: #fff9e8; --ink-dim: #d8cdb7; --trim-dim: #d2aa55; }
 html[data-high-contrast='true'] .start-menu::before { background: rgb(0 0 0 / 0.72); }
