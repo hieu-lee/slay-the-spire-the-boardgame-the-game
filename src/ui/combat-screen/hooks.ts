@@ -405,14 +405,19 @@ export function usePersonalCombatSoundEffects(
   events: readonly CombatPresentationEvent[],
   authoritativeRestoration?: number,
   authoritativeConnected?: boolean,
+  reducedMotion = false,
 ) {
   const combatId = useRef(state.combatId)
   const played = useRef(new Set<number>())
   const pending = useRef(new Map<number, () => void>())
+  const impactDue = useRef(new Map<number, number>())
+  const previousReducedMotion = useRef(reducedMotion)
   const previousRestoration = useRef(authoritativeRestoration)
   const previousConnected = useRef(authoritativeConnected)
 
   useEffect(() => {
+    const motionCollapsed = !previousReducedMotion.current && reducedMotion
+    previousReducedMotion.current = reducedMotion
     const reset = combatId.current !== state.combatId ||
       authoritativeRestoration !== undefined && authoritativeRestoration !== previousRestoration.current ||
       authoritativeConnected === false || previousConnected.current === false
@@ -422,6 +427,7 @@ export function usePersonalCombatSoundEffects(
     if (reset) {
       for (const cancel of pending.current.values()) cancel()
       pending.current.clear()
+      impactDue.current.clear()
       played.current.clear()
       return
     }
@@ -430,6 +436,20 @@ export function usePersonalCombatSoundEffects(
       if (active.has(seq)) continue
       cancel()
       pending.current.delete(seq)
+      impactDue.current.delete(seq)
+    }
+    if (motionCollapsed) for (const event of events) {
+      if (!played.current.has(event.seq) || event.kind === 'potion' || event.kind === 'orb') continue
+      if ((impactDue.current.get(event.seq) ?? 0) <= performance.now()) continue
+      const target = event.enemyIds[0]
+      if (!target || characterAttackContactMs(state, target, event) <= 0) continue
+      const actor = state.players.find((player) => player.id === event.actorId)
+      if (event.kind !== 'shiv' && !actor) continue
+      const recipe = event.kind === 'shiv' ? shivSfxRecipe() :
+        cardSfxRecipe(actor!.character, event.sourceId, event.mode, event.upgraded)
+      pending.current.get(event.seq)?.()
+      pending.current.set(event.seq, playCombatSound(recipe, 0, true))
+      impactDue.current.delete(event.seq)
     }
     for (const event of events) {
       if (played.current.has(event.seq)) continue
@@ -440,7 +460,11 @@ export function usePersonalCombatSoundEffects(
       }
       if (event.kind === 'shiv') {
         played.current.add(event.seq)
-        pending.current.set(event.seq, playCombatSound(shivSfxRecipe()))
+        const target = event.enemyIds[0]
+        const contact = !reducedMotion && target ? characterAttackContactMs(state, target, event) : 0
+        pending.current.set(event.seq, playCombatSound(shivSfxRecipe(),
+          contact))
+        if (contact > 0) impactDue.current.set(event.seq, performance.now() + contact)
         continue
       }
       if (event.kind === 'orb') {
@@ -450,13 +474,18 @@ export function usePersonalCombatSoundEffects(
       const actor = state.players.find((player) => player.id === event.actorId)
       if (!actor) continue
       played.current.add(event.seq)
+      const target = event.enemyIds[0]
+      const contact = !reducedMotion && target ? characterAttackContactMs(state, target, event) : 0
       pending.current.set(event.seq,
-        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded)))
+        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+          contact))
+      if (contact > 0) impactDue.current.set(event.seq, performance.now() + contact)
     }
-  }, [authoritativeConnected, authoritativeRestoration, events, state.combatId, state.players])
+  }, [authoritativeConnected, authoritativeRestoration, events, reducedMotion, state.combatId, state.players])
 
   useEffect(() => () => {
     for (const cancel of pending.current.values()) cancel()
     pending.current.clear()
+    impactDue.current.clear()
   }, [])
 }
