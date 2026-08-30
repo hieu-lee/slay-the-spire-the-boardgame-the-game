@@ -83,14 +83,15 @@ export {
   startTurnScryPreview,
 } from './combat/start-turn.ts'
 export {
-  REBUILT_END_TURN_ORDER,
-  STALE_END_TURN_ORDER,
+  beginEndTurnResolution,
   beginEndPlayerTurn,
   discardNeedsChoice,
   discardOrderIsValid,
   endPlayerTurn,
+  endTurnResolutionAbility,
   endTurnAbilities,
   pendingTriggerAbility,
+  resolveEndTurnAbility,
   resolvePendingTrigger,
   validEndTurnOrder,
 } from './combat/end-turn.ts'

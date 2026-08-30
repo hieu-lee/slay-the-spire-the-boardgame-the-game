@@ -156,8 +156,6 @@ export type RoomSnapshot = {
   rewardConfirmed: string[]
   endTurnDecided: string[]
   endTurnAbilities?: EndTurnAbility[]
-  endTurnOrder?: string[]
-  endTurnCoordinatorId?: string | null
   startTurnAbilities?: StartTurnAbility[]
   startTurnCoordinatorId?: string | null
   startTurnChoiceId?: string

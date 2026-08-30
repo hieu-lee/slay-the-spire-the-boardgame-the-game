@@ -2,12 +2,15 @@
 // enemies apply. These were no-ops until now, so Zap and Dual Cast sat in the
 // Defect's starter deck doing nothing.
 import {
+  beginEndTurnResolution,
   beginEndPlayerTurn,
   createCombat,
   endPlayerTurn,
+  endTurnResolutionAbility,
   endTurnAbilities,
   enemyTurn,
   playCard,
+  resolveEndTurnAbility,
   startPlayerTurn,
 } from '../src/game/combat.ts'
 import { gainVulnerable, gainWeak } from '../src/game/damage.ts'
@@ -305,6 +308,128 @@ check('a later Lightning retargets after its chosen enemy dies', () => {
   assert(resolved !== state, 'a valid overkill plan rolled the whole turn back')
   assertDeepEqual(resolved.enemies.map((target) => target.hp), [0, 1],
     'the later Orb did not hit the first remaining living enemy')
+})
+
+check('end-turn target effects resolve one drag at a time against live enemies', () => {
+  const state = combat([
+    player({ orbs: ['lightning', 'lightning', null] }),
+  ], [enemy({ uid: 'e1', hp: 1 }), enemy({ uid: 'e2', row: 1, hp: 1 })])
+  const first = beginEndTurnResolution(state)
+  const firstAbility = endTurnResolutionAbility(first)
+  assertEqual(firstAbility?.visual?.kind, 'orb', 'the first pending effect is shown as an Orb')
+  assertEqual(firstAbility?.visual?.kind === 'orb' ? firstAbility.visual.slot : -1, 0,
+    'the first Orb slot resolves first')
+  assertDeepEqual(first.enemies.map((target) => target.hp), [1, 1], 'opening the resolver does not deal damage')
+
+  const middle = resolveEndTurnAbility(first, `${firstAbility.id}@e1`)
+  assertDeepEqual(middle.enemies.map((target) => target.hp), [0, 1], 'the first drag takes effect immediately')
+  const secondAbility = endTurnResolutionAbility(middle)
+  assertEqual(secondAbility?.visual?.kind === 'orb' ? secondAbility.visual.slot : -1, 1,
+    'the remaining Orb waits for its own drag')
+
+  const finished = resolveEndTurnAbility(middle, `${secondAbility.id}@e2`)
+  assertDeepEqual(finished.enemies.map((target) => target.hp), [0, 0], 'the second drag hits the remaining enemy')
+  assertEqual(endTurnResolutionAbility(finished), undefined, 'no target resolver survives combat end')
+})
+
+check('end-turn targeting stops when a resolved Orb leaves no living enemy', () => {
+  const state = combat([player({ orbs: ['lightning', 'lightning', null] })], [enemy({ hp: 1 })])
+  const first = beginEndTurnResolution(state)
+  const ability = endTurnResolutionAbility(first)
+  const finished = resolveEndTurnAbility(first, `${ability.id}@e1`)
+  assertEqual(finished.enemies[0].dead, true, 'the first Orb resolves immediately')
+  assertEqual(endTurnResolutionAbility(finished), undefined, 'the remaining Orb is skipped without a target')
+})
+
+check('a targeted Power exposes its owner and card source for end-turn dragging', () => {
+  const omega = instance('omega')
+  const watcher = player({ id: 'p2', name: 'Watcher', character: 'watcher', powers: [omega] })
+  const pending = endTurnResolutionAbility(beginEndTurnResolution(combat([player(), watcher], [enemy()])))
+  assertEqual(pending?.playerId, 'p2', 'Omega belongs to its Watcher owner')
+  assertDeepEqual(pending?.visual, { kind: 'card', cardUid: omega.uid }, 'the resolver renders Omega itself')
+})
+
+check('a played Panache targets and damages its chosen row at end of turn', () => {
+  const panache = instance('panache', true)
+  const played = playCard(combat([player({ hand: [panache] })], [
+    enemy({ uid: 'e1', hp: 20 }), enemy({ uid: 'e2', row: 1, hp: 20 }),
+  ]), 'p1', panache.uid, { enemyUid: null, playerId: 'p1' })
+  const staged = beginEndTurnResolution(played)
+  const ability = endTurnResolutionAbility(staged)
+  const resolved = resolveEndTurnAbility(staged, `${ability.id}@e2`)
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 15],
+    'the Power card leaves the hand before its end-turn condition is checked')
+})
+
+check('Loop keeps its selected Lightning Orb target in the drag resolver', () => {
+  const loop = instance('loop', true)
+  const staged = beginEndTurnResolution(combat([
+    player({ powers: [loop], orbs: ['lightning', 'frost', 'dark'] }),
+  ], [enemy({ uid: 'e1', hp: 20 }), enemy({ uid: 'e2', row: 1, hp: 20 })]))
+  const ability = endTurnResolutionAbility(staged)
+  assertDeepEqual(ability?.visual, { kind: 'card', cardUid: loop.uid }, 'Loop is dragged from its Power card')
+  const resolved = resolveEndTurnAbility(staged, `${ability.id}@0:e2`)
+  assertEqual(resolved.enemies.find((enemy) => enemy.uid === 'e2')?.hp, 18,
+    'the dragged Loop source repeats the selected Lightning Orb immediately')
+})
+
+check('a boss target needs a row tiebreak only while distinct minion rows live', () => {
+  const omega = instance('omega')
+  const watcher = player({ id: 'p2', name: 'Watcher', character: 'watcher', powers: [omega] })
+  const staged = beginEndTurnResolution(combat([player(), watcher], [
+    enemy({ uid: 'row-one', hp: 20 }),
+    enemy({ uid: 'row-two', row: 1, hp: 20 }),
+    enemy({ uid: 'boss', isBoss: true, hp: 20 }),
+  ]))
+  const omegaAbility = endTurnResolutionAbility(staged)
+  const narrowed = resolveEndTurnAbility(staged, `${omegaAbility.id}@boss`)
+  const tiebreak = endTurnResolutionAbility(narrowed)
+  assertEqual(tiebreak?.rowTiebreak, true, 'the boss alone cannot choose between two living rows')
+  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['row-one', 'row-two'],
+    'the second drag must name a minion row anchor')
+  assertDeepEqual(narrowed.enemies.map((enemy) => enemy.hp), [20, 20, 20], 'choosing the boss deals no damage yet')
+
+  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@row-two`)
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 15, 15],
+    'the chosen row and shared boss take the effect together')
+
+  const oneRemainingRow = beginEndTurnResolution(combat([player(), watcher], [
+    enemy({ uid: 'only-row', row: 1, hp: 20 }),
+    enemy({ uid: 'boss-one-row', row: 0, isBoss: true, hp: 20 }),
+  ]))
+  const oneRowAbility = endTurnResolutionAbility(oneRemainingRow)
+  const oneRowResolved = resolveEndTurnAbility(oneRemainingRow, `${oneRowAbility.id}@boss-one-row`)
+  assertDeepEqual(oneRowResolved.enemies.map((enemy) => enemy.hp), [15, 15],
+    'a direct boss drop uses the only living minion row, not the boss display row')
+
+  const onlyBoss = beginEndTurnResolution(combat([player(), watcher], [enemy({ uid: 'boss-alone', isBoss: true, hp: 20 })]))
+  const bossAbility = endTurnResolutionAbility(onlyBoss)
+  const direct = resolveEndTurnAbility(onlyBoss, `${bossAbility.id}@boss-alone`)
+  assertEqual(endTurnResolutionAbility(direct), undefined, 'the boss resolves directly when no minion row remains')
+  assertEqual(direct.enemies[0].hp, 15, 'the direct boss target took Omega damage')
+})
+
+check('Electrodynamics Lightning and Loop require a minion row after a boss drop', () => {
+  const loop = instance('loop', true)
+  const state = combat([player({
+    powers: [instance('electrodynamics', true), loop],
+    orbs: ['lightning', 'frost', null],
+  })], [
+    enemy({ uid: 'row-one', hp: 20 }),
+    enemy({ uid: 'row-two', row: 1, hp: 20 }),
+    enemy({ uid: 'boss', isBoss: true, hp: 20 }),
+  ])
+  const staged = beginEndTurnResolution(state)
+  const loopAbility = endTurnResolutionAbility(staged)
+  assert(loopAbility?.targets?.some((target) => target.uid === '0:boss'), 'Loop exposes the shared boss as a drop target')
+  const narrowed = resolveEndTurnAbility(staged, `${loopAbility.id}@0:boss`)
+  const tiebreak = endTurnResolutionAbility(narrowed)
+  assertEqual(tiebreak?.rowTiebreak, true, 'Loop cannot use the boss to choose between Lightning rows')
+  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['0:row:0', '0:row:1'],
+    'Loop requires an actual minion-row anchor after the boss drop')
+  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@0:row:1`)
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 18, 18],
+    'the Loop target hits its selected row and the shared boss twice')
 })
 
 check('a Dark orb does nothing at end of turn', () => {

@@ -645,8 +645,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           drawCount={combatViewer?.drawCount}
           decidedPlayerIds={snapshot.endTurnDecided}
           partyEndTurnAbilities={snapshot.endTurnAbilities}
-          savedEndTurnOrder={snapshot.endTurnOrder}
-          endTurnCoordinatorId={snapshot.endTurnCoordinatorId}
           partyStartTurnAbilities={snapshot.startTurnAbilities}
           partyStartTurnScryAbilities={snapshot.startTurnScryAbilities}
           startTurnCoordinatorId={snapshot.startTurnCoordinatorId}

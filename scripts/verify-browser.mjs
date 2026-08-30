@@ -229,14 +229,30 @@ async function plantDiscardOrderCards() {
 }
 
 async function endTurn() {
+  const initialViewer = await page.locator('.seat--viewer').getAttribute('data-player-id')
   if ((await readState()).phase === 'start') {
     await page.getByRole('button', { name: 'Resolve start of turn' }).click()
   }
   await page.getByRole('button', { name: 'End turn' }).click()
+  for (let attempts = 0; attempts < 12 && (await readState()).phase === 'player'; attempts++) {
+    const effectOwner = await page.evaluate(() => {
+      const choice = window.__STS_DEBUG__.getRun().combat.endTurnProgress?.order[0]
+      return choice?.includes('/') ? choice.split('/', 1)[0] : undefined
+    })
+    if (effectOwner) await page.evaluate((playerId) => window.__STS_DEBUG__.setViewer(playerId), effectOwner)
+    await page.waitForTimeout(25)
+    const effect = page.locator('button.end-turn-effect:not([disabled]):not([aria-disabled="true"])').first()
+    if (await effect.count() === 0) break
+    await effect.click()
+    const target = page.locator('.enemy--targeted').first()
+    try { await target.waitFor({ timeout: 1_000 }) } catch { break }
+    await target.click()
+  }
   await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase !== 'player')
   if ((await readState()).phase === 'discard') {
     await confirmAllDiscards()
   }
+  if (initialViewer) await page.evaluate((playerId) => window.__STS_DEBUG__.setViewer(playerId), initialViewer)
 }
 
 /** Clicks the first reachable room, which starts whatever that room is. */
@@ -1411,10 +1427,10 @@ await page.evaluate((run) => {
 }, combatAppearanceRun)
 await page.waitForTimeout(650)
 const orderedAutoEndPhase = await page.evaluate(() => window.__STS_DEBUG__.getState().phase)
-const orderedAutoEndChoices = await page.locator('.end-turn-order').getByText('End-turn order (2)').count()
-check('local solo keeps meaningful end-turn ordering manual', () => {
-  assertEqual(orderedAutoEndPhase, 'player')
-  assertEqual(orderedAutoEndChoices, 1)
+const orderedAutoEndChoices = await page.locator('.end-turn-order').count()
+check('targetless end-turn effects resolve without the obsolete order panel', () => {
+  assert(orderedAutoEndPhase !== 'player', `targetless effects left combat in ${orderedAutoEndPhase}`)
+  assertEqual(orderedAutoEndChoices, 0)
 })
 await page.evaluate((baseline) => {
   const debug = window.__STS_DEBUG__
@@ -3744,16 +3760,25 @@ check('Panache+ exposes its empty-hand row effect accessibly', () => {
 await panachePower.scrollIntoViewIfNeeded()
 await panachePower.click()
 await shot('06zg-panache-power')
-await page.locator('.end-turn-order summary').click()
-const panacheTarget = page.getByRole('combobox', { name: /Target for .*Panache/ })
-const panacheTargetUid = await panacheTarget.locator('option').nth(1).getAttribute('value')
-await panacheTarget.selectOption(panacheTargetUid)
+await panachePower.click()
 await page.getByRole('button', { name: 'End turn' }).click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().enemies[1].hp === 15)
+const panacheEffect = page.locator('.end-turn-effect--card')
+await panacheEffect.waitFor()
+await panacheEffect.click()
+await page.locator('.enemy--targeted').first().waitFor()
+const panacheTargetId = await page.evaluate(() => window.__STS_DEBUG__.getState().enemies[1]?.uid)
+await page.locator(`[data-enemy-id="${panacheTargetId}"]`).click()
+await page.waitForTimeout(150)
 const panache = await readState()
+const panachePrompt = await page.locator('.end-turn-effects__prompt').count()
+  ? await page.locator('.end-turn-effects__prompt').innerText() : ''
 check('Panache+ resolves the selected row at end of turn', () => {
+  assertEqual(panache.enemies[1].hp, 15, JSON.stringify({
+    phase: panache.phase,
+    hand: panache.players[0].hand.map((card) => card.defId),
+    prompt: panachePrompt,
+  }))
   assertEqual(panache.enemies[0].hp, 20)
-  assertEqual(panache.enemies[1].hp, 15)
 })
 await shot('06zh-panache-row-hit')
 
@@ -4936,6 +4961,11 @@ await defragmentPower.waitFor()
 await shot('06zphe-defragment-power')
 await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
+const defragmentLightning = page.locator('button.end-turn-effect--orb')
+await defragmentLightning.waitFor()
+await defragmentLightning.click()
+await page.locator('.enemy--targeted').first().waitFor()
+await page.locator('[data-enemy-id]').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const defragmented = await readState()
 check('Defragment+ clearly enters play and boosts both Orb end-turn effects', () => {
@@ -4977,6 +5007,11 @@ await page.getByRole('button', {
 await shot('06zphgb-static-discharge-power')
 await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
+const staticDischargeLightning = page.locator('button.end-turn-effect--orb')
+await staticDischargeLightning.waitFor()
+await staticDischargeLightning.click()
+await page.locator('.enemy--targeted').first().waitFor()
+await page.locator('[data-enemy-id]').first().click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const discharged = await readState()
 check('Static Discharge+ visibly boosts Lightning end-of-turn damage but not Frost Block', () => {
@@ -5377,27 +5412,19 @@ const loopCard = page.getByRole('button', { name: /^Loop\+, cost 1,/ })
 const loopLabel = await loopCard.getAttribute('aria-label')
 await loopCard.click()
 await page.getByRole('button', { name: /^Loop\+: trigger 1 Orb's end-of-turn ability 2 times/ }).waitFor()
-await page.locator('.end-turn-order > summary').click()
-const loopTarget = page.getByRole('combobox', { name: /Target for Defect — Loop/ })
-const loopTargetUid = await loopTarget.locator('option', { hasText: 'Lightning Orb 1 → Red Louse' }).getAttribute('value')
-await loopTarget.selectOption(loopTargetUid)
-await shot('06zphgic1-loop-order')
-await page.setViewportSize({ width: 1280, height: 800 })
-const compactLoopOrder = await page.locator('.end-turn-order[open] > ol').evaluate((panel) => {
-  const rect = panel.getBoundingClientRect()
-  return {
-    insideViewport: rect.left >= 0 && rect.right <= innerWidth,
-    rowsFit: [...panel.querySelectorAll('li')].every((row) => row.scrollWidth <= row.clientWidth),
-  }
-})
-check('Loop target choices stay inside a narrow end-turn tray', () => {
-  assert(compactLoopOrder.insideViewport, 'the end-turn tray left the viewport')
-  assert(compactLoopOrder.rowsFit, 'an end-turn ability row overflowed its tray')
-})
-await shot('06zphgic1a-loop-compact-desktop-order')
-await page.setViewportSize({ width: 1440, height: 900 })
 await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
+const loopEffect = page.locator('.end-turn-effect--card')
+await loopEffect.waitFor()
+await loopEffect.click()
+await page.locator('.enemy--targeted').first().waitFor()
+const [loopFirstTarget, loopSecondTarget] = await page.evaluate(() => window.__STS_DEBUG__.getState().enemies.map((enemy) => enemy.uid))
+await page.locator(`[data-enemy-id="${loopSecondTarget}"]`).click()
+const ordinaryLightning = page.locator('button.end-turn-effect--orb')
+await ordinaryLightning.waitFor()
+await ordinaryLightning.click()
+await page.locator('.enemy--targeted').first().waitFor()
+await page.locator(`[data-enemy-id="${loopFirstTarget}"]`).click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const looped = await readState()
 check('Loop+ visibly chooses one Orb and repeats its end-of-turn ability twice', () => {
@@ -7924,9 +7951,9 @@ await shot('07w-silent-infinite-blades-ready')
 await infinitePower.click()
 await waitForAutomaticTurn(2)
 await page.locator('.combat[data-phase="start"]').waitFor()
-await page.locator('.end-turn-order > summary').click()
-await page.locator('.end-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
-await page.locator('.end-turn-order > summary').click()
+await page.locator('.start-turn-order > summary').click()
+await page.locator('.start-turn-order button[aria-label*="Infinite Blades"][aria-label$="earlier"]').click()
+await page.locator('.start-turn-order > summary').click()
 await page.waitForFunction(() => document.querySelector('.prompt')?.textContent?.includes('choose overflow Shiv 1/2'))
 await shot('07x-silent-infinite-blades-choice')
 await page.locator('.enemy:not([disabled])').first().click()
@@ -11814,27 +11841,23 @@ check('Curse scans and spoken keyword rules render in hand', () => {
     'Pain should announce its hand-size condition')
 })
 await shot('15b-curse-hand')
-await page.locator('.end-turn-order > summary').click()
-for (let step = 0; step < 6; step++) {
-  await page.getByRole('button', { name: /Move Ironclad — Shame earlier/ }).click()
-}
-const visibleEndTurnOrder = await page.locator('.end-turn-order li span').allTextContents()
-check('the player can order end-of-turn abilities before committing', () => {
-  assert(visibleEndTurnOrder.findIndex((label) => label.endsWith('Shame')) <
-    visibleEndTurnOrder.findIndex((label) => label.endsWith('Decay')),
-    `expected Shame before Decay: ${visibleEndTurnOrder.join(' → ')}`)
-  assert(visibleEndTurnOrder.some((label) => label.endsWith('Lightning Orb 1')),
-    'each Orb should appear as its own ability')
-})
-await shot('15bb-end-turn-order')
 await plantDiscardOrderCards()
 await page.getByRole('button', { name: 'End turn' }).click()
+const firstCurseOrb = page.locator('button.end-turn-effect--orb')
+await firstCurseOrb.waitFor()
+await firstCurseOrb.click()
+await page.locator('.enemy--targeted').first().waitFor()
+await page.locator('[data-enemy-id="curse-fragile"]').click()
+await page.waitForFunction(() => document.querySelector('.end-turn-effects__prompt')?.textContent?.includes('Lightning Orb 2'))
+await page.locator('button.end-turn-effect--orb').click()
+await page.locator('.enemy--targeted').first().waitFor()
+await page.locator('[data-enemy-id="curse-safe"]').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getState().phase === 'discard')
 const cursePrepared = await readState()
-check('the Curse end-turn step resolves before discard ordering', () => {
+check('the fixed end-turn sequence resolves before discard ordering', () => {
   const player = cursePrepared.players[0]
-  assertEqual(player.hp, 7, 'the chosen Shame-before-Decay order exposes one damage')
-  assertEqual(player.block, 0, 'Shame removes the only Block before Decay')
+  assertEqual(player.hp, 8, 'Decay spends the available Block before Shame')
+  assertEqual(player.block, 0, 'Decay spends the only Block')
   assertEqual(player.weak, 1, 'Doubt grants Weak')
   assertDeepEqual(cursePrepared.enemies.map((enemy) => enemy.hp), [0, 3],
     'the later Lightning Orb retargets after the first overkills its chosen enemy')

@@ -713,9 +713,6 @@ try {
     })
     debug.setRun(run)
   }, { base: template.combat, enemy: template.enemy })
-  await page.locator('.end-turn-order > summary').click()
-  const omegaOrder = page.locator('.end-turn-order li').filter({ hasText: 'Omega' })
-  await omegaOrder.waitFor()
   const performanceModeHints = await page.evaluate(() => {
     const read = () => [
       document.querySelector('.seat__portrait > img'),
@@ -737,9 +734,9 @@ try {
   check(performanceModeHints.mobile[0] === 'auto' &&
     performanceModeHints.reduced.every((hint) => hint === 'auto'),
   `idle phone or desktop reduced-motion layers stayed promoted ${JSON.stringify(performanceModeHints)}`)
-  check(await omegaOrder.locator('select').count() === 0, 'targetless Omega rendered a broken target picker')
   await page.getByRole('button', { name: /^End turn/ }).click()
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.phase === 'enemy')
+  check(await page.locator('.end-turn-effect').count() === 0, 'targetless Omega rendered an unresolved target source')
   check(await page.locator('.combat-error').count() === 0, 'targetless Omega was rejected by the local end-turn UI')
 
   await page.evaluate(({ base, enemy, actionIndex }) => {
@@ -860,17 +857,7 @@ try {
       window.__TARGET_TAP_DELAY__ = performance.now() - touchEndedAt
     }, { once: true })
   })
-  const targetBox = await phone.locator('.enemy').first().boundingBox()
-  if (!targetBox) throw new Error('iPhone target has no touch box')
-  const touchViewport = await phone.evaluate(() => ({
-    left: visualViewport.offsetLeft,
-    top: visualViewport.offsetTop,
-    scale: visualViewport.scale,
-  }))
-  await phone.touchscreen.tap(
-    (targetBox.x + targetBox.width / 2 - touchViewport.left) * touchViewport.scale,
-    (targetBox.y + targetBox.height / 2 - touchViewport.top) * touchViewport.scale,
-  )
+  await phone.locator('.enemy').first().tap()
   await phone.waitForFunction(() => window.__TARGET_TAP_DELAY__ !== null)
   const targetTapDelay = await phone.evaluate(() => window.__TARGET_TAP_DELAY__)
   check(targetTapDelay < 150, `iPhone delayed target click by ${targetTapDelay}ms after touchend`)

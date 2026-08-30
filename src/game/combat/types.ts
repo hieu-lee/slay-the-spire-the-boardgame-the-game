@@ -60,7 +60,7 @@ export type CombatState = {
   pendingTriggers: PendingTrigger[]
   nextTriggerId: number
   /** End-of-turn abilities waiting for a mandatory nested trigger. */
-  endTurnProgress?: { order: EndTurnOrder }
+  endTurnProgress?: { order: EndTurnOrder; interactive?: boolean; rowTiebreakFor?: string }
   /** Unresolved Start-of-Turn work, including Mayhem's private forced play. */
   startTurnProgress?: {
     choices: StartTurnChoice[]
@@ -173,6 +173,12 @@ export type EndTurnAbility = {
   playerId: string | null
   label: string
   targets?: { uid: string; label: string }[]
+  /** The public source shown while this targeted effect is being resolved. */
+  visual?:
+    | { kind: 'orb'; orb: Extract<OrbType, 'lightning' | 'frost'>; slot: number }
+    | { kind: 'card'; cardUid: string }
+  /** A boss was selected for a row effect while multiple rows remain; choose its row anchor next. */
+  rowTiebreak?: boolean
 }
 
 export type StartTurnAbility = {

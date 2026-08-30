@@ -931,7 +931,7 @@ export function hasPostRollStartTurnChoice(state: CombatState): boolean {
  * Two abilities used to be enough on their own, which put a "Resolve start of
  * turn" click in front of a turn where nothing about the sequence could change
  * the outcome. An ORDER only matters between two abilities that are AIMED at an
- * enemy: `STALE_END_TURN_ORDER` says as much on the other side of the turn —
+ * enemy: the target is revalidated on the other side of the turn —
  * "the cause is always an ability aimed at something an earlier ability kills".
  * A pair that only gains Block, draws, or channels an Orb commutes, so the
  * engine resolves them in its own canonical order and gets on with the game.

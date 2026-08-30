@@ -78,11 +78,11 @@ export function lightningTargetOptions(
   if (!lightningTargetsRows(actor, sourceCardId)) {
     return livingEnemies(state).map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }))
   }
-  const boss = livingEnemies(state).some((enemy) => enemy.isBoss)
-  return combatRows(state).map((row) => ({
+  const boss = livingEnemies(state).find((enemy) => enemy.isBoss)
+  return [...combatRows(state).map((row) => ({
     uid: lightningRowTarget(row),
     label: `${combatRowLabel(state, row)}${boss ? ' + boss' : ''}`,
-  }))
+  })), ...(boss ? [{ uid: boss.uid, label: enemyLabel(state.enemies, boss) }] : [])]
 }
 
 export function lightningDamageTargets(
@@ -93,7 +93,11 @@ export function lightningDamageTargets(
 ): Enemy[] | null {
   if (lightningTargetsRows(actor, sourceCardId)) {
     const row = lightningRowFromTarget(target)
-    return row !== null && rowExists(state, row) ? resolveEnemyTargets(state, 'row', null, row) : null
+    if (row !== null && rowExists(state, row)) return resolveEnemyTargets(state, 'row', null, row)
+    const boss = livingEnemies(state).find((enemy) => enemy.uid === target && enemy.isBoss)
+    if (!boss) return null
+    const rows = [...new Set(livingEnemies(state).filter((enemy) => !enemy.isBoss).map((enemy) => enemy.row))]
+    return rows.length === 1 ? resolveEnemyTargets(state, 'row', null, rows[0]) : [boss]
   }
   const enemy = livingEnemies(state).find((candidate) => candidate.uid === target)
   return enemy ? [enemy] : null

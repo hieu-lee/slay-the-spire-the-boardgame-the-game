@@ -37,8 +37,6 @@ export type CombatScreenProps = {
     enemyUid: string | null
   }
   partyEndTurnAbilities?: EndTurnAbility[]
-  savedEndTurnOrder?: string[]
-  endTurnCoordinatorId?: string | null
   partyStartTurnAbilities?: StartTurnAbility[]
   partyStartTurnScryAbilities?: StartTurnScryAbility[]
   startTurnCoordinatorId?: string | null
@@ -90,6 +88,17 @@ export type CardDrag = {
 }
 
 export type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & { element: HTMLButtonElement }
+
+export type EndTurnEffectDrag = {
+  ability: EndTurnAbility
+  pointerId: number
+  startX: number
+  startY: number
+  x: number
+  y: number
+  targetUid: string | null
+  element: HTMLButtonElement
+}
 
 export type MotionSnapshot = {
   hand: readonly CardInstance[]

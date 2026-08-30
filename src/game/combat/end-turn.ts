@@ -13,7 +13,9 @@ import {
   combatRows,
   enemyLabel,
   findPlayer,
+  lightningRowFromTarget,
   lightningTargetOptions,
+  lightningTargetsRows,
   livingEnemies,
   loopOrbTargets,
   parseLoopOrbTarget,
@@ -60,6 +62,9 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
       targets: source.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
         ? loopOrbTargets(state, player)
         : triggerTargets(state, player, source),
+      visual: source.id.startsWith('power:')
+        ? { kind: 'card' as const, cardUid: source.id.slice(6) }
+        : undefined,
     }))
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
@@ -72,6 +77,7 @@ function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTur
         id: `orb:${slot}`,
         label: `Lightning Orb ${slot + 1}`,
         targets,
+        visual: { kind: 'orb', orb, slot },
       })
     } else if (orb === 'frost') abilities.push({ id: `orb:${slot}`, label: `Frost Orb ${slot + 1}` })
   })
@@ -200,6 +206,8 @@ function resolveHandEndTurn(state: CombatState, player: Player, uid: string): vo
 function continueEndPlayerTurn(
   state: CombatState,
   order: EndTurnOrder,
+  interactive = false,
+  resolveFirst = false,
 ): CombatState {
   const next = state
   for (let index = 0; index < order.length; index++) {
@@ -207,6 +215,16 @@ function continueEndPlayerTurn(
     // against the current board, not the board on which the order was submitted.
     const choice = refreshEndTurnTargets(next, [order[index]!])[0]!
     const id = endTurnChoiceId(choice)
+    const ability = endTurnAbilities(next).find((candidate) => candidate.id === id)
+    const needsEnemyDrag = ability?.targets?.some((target) => {
+      const loop = parseLoopOrbTarget(target.uid)
+      return !loop || loop.enemyUid !== null
+    })
+    if (interactive && !resolveFirst && needsEnemyDrag) {
+      next.endTurnProgress = { order: order.slice(index), interactive: true }
+      return settle(next)
+    }
+    resolveFirst = false
     if (id.startsWith('poison:')) {
       const enemy = next.enemies.find((candidate) => candidate.uid === id.slice(7))
       if (enemy && !enemy.dead && enemy.poison > 0) {
@@ -259,9 +277,15 @@ function continueEndPlayerTurn(
         // A row is chosen when the order is submitted. Preserve that row if
         // an earlier ability kills its enemy anchor, without teaching ordinary
         // card plays that a dead enemy is a valid target.
-        const selectedRow = source?.scope === 'row'
-          ? next.enemies.find((enemy) => enemy.uid === target)?.row
+        const selected = source?.scope === 'row'
+          ? next.enemies.find((enemy) => enemy.uid === target)
           : undefined
+        const livingMinionRows = selected?.isBoss
+          ? [...new Set(livingEnemies(next).filter((enemy) => !enemy.isBoss).map((enemy) => enemy.row))]
+          : []
+        const selectedRow = selected?.isBoss && livingMinionRows.length === 1
+          ? livingMinionRows[0]
+          : selected?.row
         if (source && (loop
           ? !resolveTriggerSource(next, player, source, false, undefined, undefined, undefined,
             loopChoice ? [loopChoice.slot] : undefined, loopChoice ? [loopChoice.enemyUid] : undefined)
@@ -295,7 +319,10 @@ function continueEndPlayerTurn(
     }
     if (combatIsOver(next)) break
     if ((next.pendingTriggers?.length ?? 0) > 0) {
-      next.endTurnProgress = { order: order.slice(index + 1) }
+      next.endTurnProgress = {
+        order: order.slice(index + 1),
+        ...(interactive ? { interactive: true } : {}),
+      }
       return settle(next)
     }
   }
@@ -353,17 +380,73 @@ export function discardNeedsChoice(player: Player): boolean {
     .some((pile) => pile.some(readsDiscardTop))
 }
 
-/**
- * Defensive fallback when an end-of-turn order cannot resolve despite still
- * matching the battle. Normal ordered overkill retargets or skips in-engine.
- */
-export const STALE_END_TURN_ORDER =
-  'An end-of-turn ability is aimed at an enemy an earlier one kills. Re-aim or reorder it under "End-turn order", then try again.'
+/** The next live target effect in the drag-to-resolve end-turn sequence. */
+export function endTurnResolutionAbility(state: CombatState): EndTurnAbility | undefined {
+  const progress = state.endTurnProgress
+  if (state.phase !== 'player' || !progress?.interactive || progress.order.length === 0 ||
+    (state.pendingTriggers?.length ?? 0) > 0) return undefined
+  const choice = refreshEndTurnTargets(state, [progress.order[0]!])[0]!
+  const ability = endTurnAbilities(state).find((candidate) => candidate.id === endTurnChoiceId(choice))
+  if (!ability?.targets?.length) return undefined
+  if (progress.rowTiebreakFor !== ability.id) return ability
+  const targets = ability.targets.filter((target) => {
+    const loop = parseLoopOrbTarget(target.uid)
+    const choice = loop?.enemyUid ?? target.uid
+    const row = lightningRowFromTarget(choice)
+    return row !== null
+      ? livingEnemies(state).some((enemy) => !enemy.isBoss && enemy.row === row)
+      : state.enemies.some((enemy) => enemy.uid === choice && !enemy.dead && !enemy.isBoss)
+  })
+  return targets.length > 0 ? { ...ability, targets, rowTiebreak: true } : undefined
+}
 
-/** Shown online when the battle moved under a published order, which the room
- *  then rebuilds: the arrangement is gone, so the advice is different. */
-export const REBUILT_END_TURN_ORDER =
-  'The battle changed while the party was ordering. The end-of-turn order was rebuilt — set it again under "End-turn order".'
+function needsBossRowTiebreak(state: CombatState, ability: EndTurnAbility, targetUid: string): boolean {
+  const loop = parseLoopOrbTarget(targetUid)
+  const chosenUid = loop?.enemyUid ?? targetUid
+  if (state.enemies.find((enemy) => enemy.uid === chosenUid)?.isBoss !== true) return false
+  const slash = ability.id.indexOf('/')
+  const player = findPlayer(state, ability.id.slice(0, slash))
+  const source = player && triggerSources(player, { kind: 'endOfTurn' })
+    .find((candidate) => candidate.id === ability.id.slice(slash + 1))
+  const targetsRows = source?.scope === 'row' || player !== undefined && (
+    ability.id.slice(slash + 1).startsWith('orb:') ||
+    source?.effects.some((effect) => effect.kind === 'triggerOrbEndTurn') === true
+  ) && lightningTargetsRows(player)
+  return targetsRows && new Set(livingEnemies(state)
+    .filter((enemy) => !enemy.isBoss)
+    .map((enemy) => enemy.row)).size > 1
+}
+
+/** Begins end-of-turn resolution and stops only when a live effect needs a target. */
+export function beginEndTurnResolution(state: CombatState): CombatState {
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+    (state.pendingTriggers?.length ?? 0) > 0) return state
+  const next = clone(state)
+  for (const player of next.players) {
+    if (player.block === 0 && player.relics.some((relic) => relic.defId === 'orichalcum')) {
+      player.block = gainBlock(player.block, 1)
+      next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
+    }
+  }
+  return continueEndPlayerTurn(next, defaultEndTurnOrder(endTurnAbilities(next)), true)
+}
+
+/** Resolves the displayed target effect, then advances until another live target is needed. */
+export function resolveEndTurnAbility(state: CombatState, choice: string): CombatState {
+  const ability = endTurnResolutionAbility(state)
+  const target = endTurnChoiceTarget(choice)
+  if (!ability || target === undefined || endTurnChoiceId(choice) !== ability.id ||
+    choice !== chooseEndTurnTarget(ability.id, target) || !ability.targets?.some((candidate) => candidate.uid === target)) {
+    return state
+  }
+  const next = clone(state)
+  if (needsBossRowTiebreak(next, ability, target)) {
+    next.endTurnProgress = { ...next.endTurnProgress!, rowTiebreakFor: ability.id }
+    return next
+  }
+  const order = next.endTurnProgress!.order
+  return continueEndPlayerTurn(next, [choice, ...order.slice(1)], true, true)
+}
 
 /** Resolves end-of-turn effects in each player's chosen order, then asks for discards. */
 export function beginEndPlayerTurn(
@@ -398,6 +481,7 @@ export function discardOrderIsValid(player: Player, order: readonly string[]): b
 /** End of Turn: resolve effects, then discard every hand in chosen order. */
 export function endPlayerTurn(state: CombatState, discardOrders: DiscardOrders = {}): CombatState {
   if ((state.pendingTriggers?.length ?? 0) > 0) return state
+  if (state.endTurnProgress?.interactive) return state
   if (state.phase !== 'player' && state.phase !== 'discard') return state
   for (const order of Object.values(discardOrders)) {
     if (!Array.isArray(order) || order.some((uid) => typeof uid !== 'string')) return state
@@ -529,9 +613,10 @@ export function resolvePendingTrigger(
     return continueStartTurn(settled, settled.startTurnProgress.choices)
   }
   if ((settled.pendingTriggers?.length ?? 0) === 0 && settled.endTurnProgress) {
-    const order = refreshEndTurnTargets(settled, settled.endTurnProgress.order)
+    const { order: pendingOrder, interactive } = settled.endTurnProgress
+    const order = refreshEndTurnTargets(settled, pendingOrder)
     delete settled.endTurnProgress
-    return continueEndPlayerTurn(settled, order)
+    return continueEndPlayerTurn(settled, order, interactive === true)
   }
   return settled
 }

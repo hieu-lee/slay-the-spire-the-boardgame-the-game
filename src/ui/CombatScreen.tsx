@@ -33,6 +33,7 @@ import type {
   CardFlight,
   CharacterAttackMotion,
   CombatScreenProps,
+  EndTurnEffectDrag,
   MotionKey,
   MotionSnapshot,
   Pending,
@@ -51,11 +52,10 @@ import {
 import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
 import { cardCost, cardDef, faceOf } from '../game/cards.ts'
 import {
-  STALE_END_TURN_ORDER,
   activatePotion,
   activatePower,
   activateRelic,
-  beginEndPlayerTurn,
+  beginEndTurnResolution,
   canActivatePotion,
   canActivateRelic,
   cardEnemyChoiceCount,
@@ -66,15 +66,12 @@ import {
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   chooseDistilledCard,
-  chooseEndTurnTarget,
   chosenEvokeOrbs,
+  chooseEndTurnTarget,
   combatRowLabel,
-  defaultEndTurnOrder,
   defaultStartTurnChoices,
   endPlayerTurn,
-  endTurnAbilities,
-  endTurnChoiceId,
-  endTurnChoiceTarget,
+  endTurnResolutionAbility,
   enemyLabel,
   enemyTurn,
   evokeTargetProgress,
@@ -97,6 +94,7 @@ import {
   reachedTimeWarpLimit,
   remainingRoundHpLoss,
   resolvePendingTrigger,
+  resolveEndTurnAbility,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
@@ -108,11 +106,9 @@ import {
   startTurnNeedsChoice,
   startTurnScryAbilities,
   startTurnScryPreview,
-  validEndTurnOrder,
 } from '../game/combat.ts'
 import type {
   DiscardOrders,
-  EndTurnOrder,
   PotionContext,
   PowerContext,
   RelicContext,
@@ -160,8 +156,6 @@ function CombatScreenView({
   decidedPlayerIds,
   savedDiscardOrder,
   partyEndTurnAbilities,
-  savedEndTurnOrder,
-  endTurnCoordinatorId,
   partyStartTurnAbilities,
   partyStartTurnScryAbilities,
   startTurnCoordinatorId,
@@ -198,9 +192,8 @@ function CombatScreenView({
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [retainedCards, setRetainedCards] = useState<Record<string, string[]>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
-  const [endTurnOrder, setEndTurnOrder] = useState<string[]>([])
-  const [endTurnError, setEndTurnError] = useState('')
-  const [endTurnOrderOpen, setEndTurnOrderOpen] = useState(false)
+  const [endTurnEffectDrag, setEndTurnEffectDrag] = useState<EndTurnEffectDrag | null>(null)
+  const [armedEndTurnAbilityId, setArmedEndTurnAbilityId] = useState<string | null>(null)
   const [startTurnOrder, setStartTurnOrder] = useState<string[]>([])
   const [startTurnScryOrder, setStartTurnScryOrder] = useState<string[]>([])
   const [startTurnEnemyTargets, setStartTurnEnemyTargets] = useState<Record<string, string | undefined>>({})
@@ -240,6 +233,14 @@ function CombatScreenView({
   const cardDragArrow = useRef<SVGPathElement | null>(null)
   const cardDragArrowShadow = useRef<SVGPathElement | null>(null)
   const suppressCardClick = useRef<string | null>(null)
+  const endTurnEffectDragStart = useRef<EndTurnEffectDrag | null>(null)
+  const endTurnEffectDragLive = useRef<EndTurnEffectDrag | null>(null)
+  const endTurnEffectDragFrame = useRef<number | null>(null)
+  const endTurnEffectDragMove = useRef<{ x: number; y: number } | null>(null)
+  const endTurnEffectDragOverlay = useRef<HTMLDivElement | null>(null)
+  const endTurnEffectDragArrow = useRef<SVGPathElement | null>(null)
+  const endTurnEffectDragArrowShadow = useRef<SVGPathElement | null>(null)
+  const suppressEndTurnEffectClick = useRef<string | null>(null)
   const motionBaseline = useRef<MotionSnapshot | null>(null)
   const motionRestoration = useRef(authoritativeRestoration)
   const motionConnected = useRef(authoritativeConnected)
@@ -310,11 +311,11 @@ function CombatScreenView({
   refreshRef.current = authoritativeRefresh
   const rows = useMemo(() => rowsOf(state), [state])
   const savedDiscardKey = savedDiscardOrder?.join('\0')
-  const savedEndTurnKey = savedEndTurnOrder?.join('\0')
   const cardPreviewKey = cardPreview
     ? `${cardPreview.cardUid}\0${cardPreview.copy === true}\0${cardPreview.kind}\0${cardPreview.spendMiracle}\0${cardPreview.enemyUid ?? ''}\0${cardPreview.cards.map((card) => card.uid).join('\0')}`
     : ''
-  const orderingStage = partyEndTurnAbilities !== undefined
+  const endTurnEffect = onAction ? partyEndTurnAbilities?.[0] : endTurnResolutionAbility(state)
+  const endTurnResolving = endTurnEffect !== undefined
   const baseStartAbilities = useMemo(() => state.phase === 'start' && !pendingTrigger
     ? (partyStartTurnAbilities ?? startTurnAbilities(state))
     : [], [partyStartTurnAbilities, pendingTrigger?.id, state])
@@ -567,7 +568,7 @@ function CombatScreenView({
     if (before.exhaust !== next.exhaust && landing !== 'exhaust') changed.push('exhaust')
     pulseMotion(changed)
   }, [animateOpeningHand, authoritativeConnected, authoritativeRestoration, drawCount, miracleOnCard,
-    orderingStage, pending, pendingTrigger, reducedMotion, state, usingCard, viewer])
+    endTurnResolving, pending, pendingTrigger, reducedMotion, state, usingCard, viewer])
 
   // Keep this timer in its own effect so React development Strict Mode can
   // clean up and restart it without leaving the animation class stuck on.
@@ -650,7 +651,7 @@ function CombatScreenView({
   }, [state.phase, state.pendingCardCopy?.playerId, viewerId, pendingTrigger?.id])
 
   useEffect(() => {
-    if (!orderingStage) return
+    if (!endTurnResolving) return
     setPending(null)
     setMiracleOnCard(false)
     setSpendingShiv(false)
@@ -658,19 +659,11 @@ function CombatScreenView({
     setPendingPowerUid(null)
     setPotionShivEnemyUids([])
     setPotionOverflowRequired(0)
-  }, [orderingStage])
+  }, [endTurnResolving])
 
-  // Only the coordinator can act on the order, and everyone else keeps a panel
-  // they opened themselves, so this only ever opens.
   useEffect(() => {
-    if (orderingStage && viewerId === endTurnCoordinatorId) setEndTurnOrderOpen(true)
-  }, [orderingStage, viewerId, endTurnCoordinatorId])
-
-  // The panel is a per-turn tray: leaving the player phase closes it again so
-  // the next turn starts from the collapsed default.
-  useEffect(() => {
-    if (state.phase !== 'player') setEndTurnOrderOpen(false)
-  }, [state.phase])
+    setArmedEndTurnAbilityId(null)
+  }, [endTurnEffect?.id])
 
   // A private reveal is room state, not transient component state: restore it
   // after a reconnect so the player must finish the card they already saw.
@@ -940,7 +933,7 @@ function CombatScreenView({
       setRetainedCards({})
       setDiscardOrders({})
     }
-    if (state.phase !== 'player') setEndTurnOrder([])
+    if (state.phase !== 'player') setArmedEndTurnAbilityId(null)
     if (state.phase !== 'start') {
       setStartTurnOrder([])
       setStartTurnEnemyTargets({})
@@ -989,11 +982,6 @@ function CombatScreenView({
     const top = savedDiscardOrder.at(-1)
     if (top) setDiscardTops({ [viewerId]: top })
   }, [savedDiscardKey, state.phase, viewerId])
-
-  useEffect(() => {
-    if (state.phase !== 'player' || !savedEndTurnOrder) return
-    setEndTurnOrder(savedEndTurnOrder)
-  }, [savedEndTurnKey, state.phase, viewerId])
 
   const endTurnRef = useRef<HTMLButtonElement | null>(null)
   // Focus is dropped to <body> when the enemy's turn replaces the board, so a
@@ -1145,13 +1133,20 @@ function CombatScreenView({
   const viewerDiscardTop = discardTops[viewer.id] && discardCandidates.some((card) => card.uid === discardTops[viewer.id])
     ? discardTops[viewer.id]
     : discardCandidates.at(-1)?.uid ?? ''
-  const abilities = onAction ? (partyEndTurnAbilities ?? []) : endTurnAbilities(state)
-  const endTurnNeedsChoice = abilities.length > 1 || abilities.some((ability) => (ability.targets?.length ?? 0) > 1)
-  const defaultOrder = defaultEndTurnOrder(abilities)
-  const viewerEndTurnOrder = validEndTurnOrder(abilities, endTurnOrder)
-    ? endTurnOrder
-    : defaultOrder
-  const canOrderEndTurn = !orderingStage || viewer.id === endTurnCoordinatorId
+  const canResolveEndTurn = endTurnEffect?.playerId === viewer.id
+  const endTurnEffectPrompt = endTurnEffect?.rowTiebreak
+    ? `Drag ${endTurnEffect.label} to a minion to choose its row`
+    : `Drag ${endTurnEffect?.label} to a highlighted enemy`
+  const endTurnEffectVisual = endTurnEffect?.visual
+  const endTurnEffectCard = endTurnEffectVisual?.kind === 'card' && endTurnEffect
+    ? state.players.find((player) => player.id === endTurnEffect.playerId)
+      ?.powers.find((power) => power.uid === endTurnEffectVisual.cardUid)
+    : undefined
+  const endTurnEffectDragVisual = endTurnEffectDrag?.ability.visual
+  const endTurnEffectDragCard = endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
+    ? state.players.find((player) => player.id === endTurnEffectDrag.ability.playerId)
+      ?.powers.find((power) => power.uid === endTurnEffectDragVisual.cardUid)
+    : undefined
   const startIds = useMemo(() => startTurnOrder.length === baseStartAbilities.length
     ? startTurnOrder
     : baseStartAbilities.map((ability) => ability.id), [baseStartAbilities, startTurnOrder])
@@ -1430,53 +1425,15 @@ function CombatScreenView({
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [autoAdvance, autoAdvanceRetry, authoritativeRefresh, state.phase, state.turn])
 
-  function moveEndTurnAbility(id: string, delta: -1 | 1) {
-    const from = viewerEndTurnOrder.indexOf(id)
-    const to = from + delta
-    if (from < 0 || to < 0 || to >= viewerEndTurnOrder.length) return
-    const order = [...viewerEndTurnOrder]
-    ;[order[from], order[to]] = [order[to]!, order[from]!]
-    setEndTurnOrder(order)
-    setEndTurnError('')
-  }
-
-  function targetEndTurnAbility(choice: string, targetUid: string) {
-    setEndTurnOrder(viewerEndTurnOrder.map((candidate) => candidate === choice
-      ? chooseEndTurnTarget(candidate, targetUid)
-      : candidate))
-    setEndTurnError('')
-  }
-
   function finishTurn() {
     if (!viewer) return
     if (pending?.choiceCards) return
     if (state.phase === 'player') {
-      const order: EndTurnOrder = viewerEndTurnOrder
-      if (orderingStage) {
-        if (viewer.id === endTurnCoordinatorId) {
-          // A refusal is normally fixed inside the order list, so reopen it even
-          // if the coordinator collapsed it while the party was ordering. One
-          // that lands after the turn moved on must not pry a later turn's tray
-          // open, so this has to still be the same turn.
-          const turn = state.turn
-          const reopen = (outcome: ActionOutcome | void) => {
-            if (outcome?.status === 'refused' &&
-              stateRef.current.phase === 'player' && stateRef.current.turn === turn) setEndTurnOrderOpen(true)
-          }
-          void Promise.resolve(onAction?.({ kind: 'resolveEndTurn', abilityOrder: order }))
-            .then(reopen, () => {})
-        }
-      } else if (onAction) onAction({ kind: 'endTurn' })
+      if (endTurnResolving) return
+      if (onAction) onAction({ kind: 'endTurn' })
       else {
-        const next = beginEndPlayerTurn(state, order)
-        if (next === state) {
-          setEndTurnError(STALE_END_TURN_ORDER)
-          setEndTurnOrderOpen(true)
-        }
-        else {
-          setEndTurnError('')
-          onChange?.(next)
-        }
+        const next = beginEndTurnResolution(state)
+        if (next !== state) onChange?.(next)
       }
       return
     }
@@ -1516,12 +1473,11 @@ function CombatScreenView({
     viewer.relics.some((_, relicIndex) => canActivateRelic(state, viewer, relicIndex)) || courierAvailable
   useEffect(() => {
     if (onAction || !autoAdvance || state.players.length !== 1 || state.phase !== 'player' ||
-      viewer.dead || viewerHasLegalAction || forcedCard || distilled || pending || pendingTrigger || orderingStage ||
-      endTurnNeedsChoice) return undefined
+      viewer.dead || viewerHasLegalAction || forcedCard || distilled || pending || pendingTrigger || endTurnResolving) return undefined
     const timer = window.setTimeout(finishTurn, 450)
     return () => window.clearTimeout(timer)
   }, [autoAdvance, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
-    forcedCard, distilled, pending, pendingTrigger, orderingStage, endTurnNeedsChoice])
+    forcedCard, distilled, pending, pendingTrigger, endTurnResolving])
 
   function reconciliation(outcome: ActionOutcome | void) {
     const snapshot = outcome?.snapshot
@@ -2043,7 +1999,7 @@ function CombatScreenView({
     draggedEnemyUid: string | null = null,
     draggedPlayerId: string | null = null,
   ) {
-    if (cardActionPending.current || orderingStage || pendingTrigger) return
+    if (cardActionPending.current || endTurnResolving || pendingTrigger) return
     setPendingPowerUid(null)
     setSpendingShiv(false)
     setPendingPotion(null)
@@ -2127,6 +2083,124 @@ function CombatScreenView({
     return id && state.players.some((candidate) => candidate.id === id && !candidate.dead) ? id : null
   }
 
+  function endTurnTargetForEnemy(enemy: Enemy, ability = endTurnEffect): string | null {
+    if (state.endTurnProgress?.rowTiebreakFor && enemy.isBoss) return null
+    return ability?.targets?.find((target) => target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid ??
+      ability?.targets?.find((target) =>
+        target.uid === lightningRowTarget(enemy.row) || target.uid.endsWith(`:${lightningRowTarget(enemy.row)}`))?.uid ?? null
+  }
+
+  function endTurnTargetForRow(row: number): string | null {
+    return endTurnEffect?.targets?.find((target) =>
+      target.uid === lightningRowTarget(row) || target.uid.endsWith(`:${lightningRowTarget(row)}`))?.uid ?? null
+  }
+
+  function isEndTurnEnemyTarget(enemy: Enemy): boolean {
+    const targetUid = endTurnTargetForEnemy(enemy)
+    return targetUid !== null && (endTurnEffectDrag?.targetUid === targetUid ||
+      armedEndTurnAbilityId === endTurnEffect?.id)
+  }
+
+  function resolveEndTurnTarget(abilityId: string, targetUid: string) {
+    if (!endTurnEffect || !canResolveEndTurn || endTurnEffect.id !== abilityId ||
+      !endTurnEffect.targets?.some((target) => target.uid === targetUid)) return
+    setArmedEndTurnAbilityId(null)
+    if (onAction) {
+      onAction({ kind: 'resolveEndTurnEffect', abilityId, targetUid })
+      return
+    }
+    const next = resolveEndTurnAbility(state, chooseEndTurnTarget(abilityId, targetUid))
+    if (next !== state) onChange?.(next)
+  }
+
+  function endTurnEffectCanStartDrag(abilityId: string) {
+    return canResolveEndTurn && endTurnEffect?.id === abilityId && !pendingTrigger && !endTurnEffectDrag
+  }
+
+  function onEndTurnEffectPointerDown(ability: NonNullable<typeof endTurnEffect>, event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || !endTurnEffectCanStartDrag(ability.id)) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    endTurnEffectDragStart.current = {
+      ability,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      targetUid: null,
+      element: event.currentTarget,
+    }
+  }
+
+  function onEndTurnEffectPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    const start = endTurnEffectDragStart.current
+    if (!start || start.pointerId !== event.pointerId) return
+    if (!endTurnEffectDragLive.current && Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
+    endTurnEffectDragMove.current = { x: event.clientX, y: event.clientY }
+    if (endTurnEffectDragFrame.current !== null) return
+    endTurnEffectDragFrame.current = requestAnimationFrame(() => {
+      endTurnEffectDragFrame.current = null
+      const active = endTurnEffectDragStart.current
+      const move = endTurnEffectDragMove.current
+      if (!active || !move) return
+      const enemyUid = dragTargetAt(move.x, move.y, false)
+      const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
+      const next: EndTurnEffectDrag = {
+        ...active,
+        x: move.x,
+        y: move.y,
+        targetUid: enemy ? endTurnTargetForEnemy(enemy, active.ability) : null,
+      }
+      const previous = endTurnEffectDragLive.current
+      endTurnEffectDragLive.current = next
+      const path = `M ${next.startX} ${next.startY + 28} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
+      endTurnEffectDragArrow.current?.setAttribute('d', path)
+      endTurnEffectDragArrowShadow.current?.setAttribute('d', path)
+      endTurnEffectDragOverlay.current?.style.setProperty('--effect-drag-x', `${next.x - next.startX}px`)
+      endTurnEffectDragOverlay.current?.style.setProperty('--effect-drag-y', `${next.y - next.startY}px`)
+      if (!previous || previous.targetUid !== next.targetUid) setEndTurnEffectDrag(next)
+    })
+  }
+
+  function clearEndTurnEffectDrag() {
+    endTurnEffectDragStart.current = null
+    endTurnEffectDragLive.current = null
+    endTurnEffectDragMove.current = null
+    if (endTurnEffectDragFrame.current !== null) cancelAnimationFrame(endTurnEffectDragFrame.current)
+    endTurnEffectDragFrame.current = null
+    setEndTurnEffectDrag(null)
+  }
+
+  function finishEndTurnEffectDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const start = endTurnEffectDragStart.current
+    if (!start || start.pointerId !== event.pointerId) return
+    const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
+    const enemyUid = dragTargetAt(event.clientX, event.clientY, false)
+    const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
+    const targetUid = enemy ? endTurnTargetForEnemy(enemy, start.ability) : null
+    clearEndTurnEffectDrag()
+    if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
+    if (!moved) return
+    suppressEndTurnEffectClick.current = start.ability.id
+    setTimeout(() => {
+      if (suppressEndTurnEffectClick.current === start.ability.id) suppressEndTurnEffectClick.current = null
+    }, 0)
+    if (targetUid) resolveEndTurnTarget(start.ability.id, targetUid)
+  }
+
+  function cancelEndTurnEffectDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (endTurnEffectDragStart.current?.pointerId === event.pointerId) clearEndTurnEffectDrag()
+  }
+
+  function activateEndTurnEffect(ability: NonNullable<typeof endTurnEffect>) {
+    if (suppressEndTurnEffectClick.current === ability.id) {
+      suppressEndTurnEffectClick.current = null
+      return
+    }
+    if (!endTurnEffectCanStartDrag(ability.id)) return
+    setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
+  }
+
   function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || !cardCanStartDrag(card)) return
     const def = faceOf(cardDef(card.defId), card.upgraded)
@@ -2188,7 +2262,7 @@ function CombatScreenView({
   }
 
   function cardCanStartDrag(card: CardInstance) {
-    return !usingCard && !pending && !pendingTrigger && !orderingStage && state.phase === 'player' &&
+    return !usingCard && !pending && !pendingTrigger && !endTurnResolving && state.phase === 'player' &&
       !forcedCard && !distilled && !relicScry && canAfford(state, viewer!, card, miracleOnCard, drawCount)
   }
 
@@ -2280,6 +2354,11 @@ function CombatScreenView({
   // buttons stay for a row with nothing living in it to click — a boss-only
   // lane, or one already cleared — where an anchor is not available.
   function onEnemyClick(enemy: Enemy) {
+    const endTurnTarget = endTurnTargetForEnemy(enemy)
+    if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
+      resolveEndTurnTarget(endTurnEffect.id, endTurnTarget)
+      return
+    }
     if (pendingTrigger && pendingTrigger.playerId === viewer?.id) {
       if (pendingTrigger.targets?.some((target) => target.uid === enemy.uid)) {
         resolveTrigger(undefined, enemy.uid)
@@ -2395,6 +2474,9 @@ function CombatScreenView({
   // each other for that reason — a highlight that promised a row click and then
   // fell through to nothing behind it would be worse than no highlight at all.
   function isEnemyRowClickTargetable(enemy: Enemy): boolean {
+    if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForEnemy(enemy) === lightningRowTarget(enemy.row)) {
+      return true
+    }
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
       pendingTrigger.rows?.some((target) => target.row === enemy.row)) {
       return true
@@ -2414,6 +2496,11 @@ function CombatScreenView({
   // to anchor on. This pair covers exactly that gap: same row-matching logic,
   // triggered by clicking the empty lane itself instead of an enemy in it.
   function onRowLaneClick(row: number) {
+    const endTurnTarget = endTurnTargetForRow(row)
+    if (endTurnTarget && armedEndTurnAbilityId === endTurnEffect?.id) {
+      resolveEndTurnTarget(endTurnEffect.id, endTurnTarget)
+      return
+    }
     if (pendingTrigger && pendingTrigger.playerId === viewer?.id &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       resolveTrigger(row)
@@ -2441,6 +2528,7 @@ function CombatScreenView({
   }
 
   function isRowLaneClickTargetable(row: number): boolean {
+    if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) return true
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       return true
@@ -2465,6 +2553,9 @@ function CombatScreenView({
     const rowLabel = combatRowLabel(state, row)
     const noLivingAnchor = `no living enemy there${
       state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', but the boss is hit' : ''}`
+    if (armedEndTurnAbilityId === endTurnEffect?.id && endTurnTargetForRow(row)) {
+      return `Resolve ${endTurnEffect.label} in ${combatRowLabel(state, row)} (${noLivingAnchor})`
+    }
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id &&
       pendingTrigger.rows?.some((target) => target.row === row)) {
       return `Resolve ${pendingTrigger.label} in ${rowLabel} (${noLivingAnchor})`
@@ -2717,7 +2808,7 @@ function CombatScreenView({
           {!viewer.dead && !relicScry && (state.phase === 'player' || state.phase === 'discard' ||
             state.phase === 'start' && viewer.potions.includes('gamblers_brew')) ? (
             <>
-              {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger ? viewer.powers.flatMap((power) => {
+              {state.phase === 'player' && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger ? viewer.powers.flatMap((power) => {
                 const def = faceOf(cardDef(power.defId), power.upgraded)
                 if (!def.activeAbility) return []
                 const staged = pendingPowerUid === power.uid
@@ -2739,7 +2830,7 @@ function CombatScreenView({
                   }}
                 ><PowerGlyph def={def} /></button>]
               }) : null}
-              {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !orderingStage && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
+              {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
                 if (!canActivatePotion(state, viewer, potionId)) return []
                 const potion = potionDef(potionId)
                 const staged = pendingPotion === potionId
@@ -2781,7 +2872,7 @@ function CombatScreenView({
                   </button>
                 </PotionTooltipAnchor>
               }) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !orderingStage &&
+              {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
               !pendingTrigger && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) && viewer.shivs > 0 ? (
                 <button
                   type="button"
@@ -2802,7 +2893,7 @@ function CombatScreenView({
                   <StatusIcon name="shiv" size={22} />
                 </button>
               ) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !orderingStage && !pendingTrigger && viewer.miracles > 0 ? (
+              {state.phase === 'player' && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger && viewer.miracles > 0 ? (
                 <button
                   type="button"
                   disabled={Boolean(pending?.choiceCards)}
@@ -2864,60 +2955,21 @@ function CombatScreenView({
                   </select>
                 </label>
               ) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && endTurnNeedsChoice ? (
-                <details className="end-turn-order" open={endTurnOrderOpen}
-                  onToggle={(event) => setEndTurnOrderOpen(event.currentTarget.open)}>
-                  <summary>End-turn order ({abilities.length})</summary>
-                  {/* Every order list scrolls once a party fills it, and their
-                      controls are disabled for seats that may not reorder: keep
-                      them reachable by keyboard the way the combat log is. */}
-                  <ol aria-label="End-turn order" tabIndex={0}>
-                    {viewerEndTurnOrder.map((choice, index) => {
-                      const ability = abilities.find((candidate) => candidate.id === endTurnChoiceId(choice))!
-                      return (
-                        <li key={ability.id}>
-                          <span>{ability.label}</span>
-                          {ability.targets && ability.targets.length > 0 ? (
-                            <select aria-label={`Target for ${ability.label}`}
-                              disabled={!canOrderEndTurn}
-                              value={endTurnChoiceTarget(choice) ?? ability.targets[0]?.uid}
-                              onChange={(event) => targetEndTurnAbility(choice, event.target.value)}>
-                              {ability.targets.map((target) => (
-                                <option key={target.uid} value={target.uid}>{target.label}</option>
-                              ))}
-                            </select>
-                          ) : null}
-                          <button type="button" disabled={!canOrderEndTurn || index === 0}
-                            aria-label={`Move ${ability.label} earlier`}
-                            onClick={() => moveEndTurnAbility(choice, -1)}>↑</button>
-                          <button type="button" disabled={!canOrderEndTurn || index === viewerEndTurnOrder.length - 1}
-                            aria-label={`Move ${ability.label} later`}
-                            onClick={() => moveEndTurnAbility(choice, 1)}>↓</button>
-                        </li>
-                      )
-                    })}
-                  </ol>
-                </details>
-              ) : null}
-              {endTurnError ? <span className="combat-error" role="alert">{endTurnError}</span> : null}
               {/* The count lives on the End turn button itself. A co-op turn
                   ends when everyone says so, and being told who the table is
                   waiting on is the whole reason a second screen existed. */}
               {!forcedCard && !distilled ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
-                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) ||
-                  (orderingStage && viewer.id !== endTurnCoordinatorId)}>
+                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving}>
                 {state.phase === 'discard'
                   ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} ${viewer.name} (${confirmedDiscards}/${livingPlayers.length})`
-                  : orderingStage
-                    ? viewer.id === endTurnCoordinatorId ? 'Resolve end turn' : 'Waiting for end-turn order'
-                    : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
+                  : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
               </button> : null}
             </>
           ) : null}
           {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
           orderedStartTurnScries.length > 0 ? (
             <>
-              <details className="end-turn-order" open>
+              <details className="start-turn-order" open>
                 <summary>Before-draw Scry order ({orderedStartTurnScries.length})</summary>
                 <ol aria-label="Before-draw Scry order" tabIndex={0}>
                   {orderedStartTurnScries.map((ability, index) => (
@@ -2941,7 +2993,7 @@ function CombatScreenView({
           {state.phase === 'start' && !forcedCard && !pendingTrigger && !activeStartTurnScry &&
           orderedStartTurnScries.length === 0 ? (
             <>
-              <details className="end-turn-order">
+              <details className="start-turn-order">
                 <summary>Start-of-turn order ({orderedStartAbilities.length})</summary>
                 <ol aria-label="Start-of-turn order" tabIndex={0}>
                   {orderedStartAbilities.map((ability, index) => {
@@ -3403,6 +3455,48 @@ function CombatScreenView({
         </dialog>
       ) : null}
 
+      {endTurnEffect ? (
+        <section className="end-turn-effects" aria-live="polite" aria-label="End-turn effect">
+          <p className="end-turn-effects__prompt">
+            {canResolveEndTurn
+              ? endTurnEffectPrompt
+              : `Waiting for ${state.players.find((player) => player.id === endTurnEffect.playerId)?.name ?? 'its owner'} to target ${endTurnEffect.label}`}
+          </p>
+          {endTurnEffectCard ? (
+            <Card
+              className="end-turn-effect end-turn-effect--card"
+              card={endTurnEffectCard}
+              playable={canResolveEndTurn}
+              selected={armedEndTurnAbilityId === endTurnEffect.id}
+              onClick={() => activateEndTurnEffect(endTurnEffect)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(endTurnEffect, event)}
+              onPointerMove={onEndTurnEffectPointerMove}
+              onPointerUp={finishEndTurnEffectDrag}
+              onPointerCancel={cancelEndTurnEffectDrag}
+              onLostPointerCapture={cancelEndTurnEffectDrag}
+            />
+          ) : (
+            <button
+              type="button"
+              className="end-turn-effect end-turn-effect--orb"
+              disabled={!canResolveEndTurn}
+              aria-label={`Resolve ${endTurnEffect.label}`}
+              aria-pressed={armedEndTurnAbilityId === endTurnEffect.id}
+              onClick={() => activateEndTurnEffect(endTurnEffect)}
+              onPointerDown={(event) => onEndTurnEffectPointerDown(endTurnEffect, event)}
+              onPointerMove={onEndTurnEffectPointerMove}
+              onPointerUp={finishEndTurnEffectDrag}
+              onPointerCancel={cancelEndTurnEffectDrag}
+              onLostPointerCapture={cancelEndTurnEffectDrag}
+            >
+              <span className={`token--orb token--orb-${endTurnEffect.visual?.kind === 'orb'
+                ? endTurnEffect.visual.orb
+                : 'lightning'}`} aria-hidden="true" />
+            </button>
+          )}
+        </section>
+      ) : null}
+
       <div
         className="board"
         data-rows={rows.length}
@@ -3443,7 +3537,8 @@ function CombatScreenView({
                 // anything to the person looking at the screen is their own.
                 defender={viewer}
                 disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
-                targeted={(cardDrag?.targetUid === enemy.uid ||
+                targeted={(isEndTurnEnemyTarget(enemy) ||
+                  cardDrag?.targetUid === enemy.uid ||
                   cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
                   isStartTurnEnemyTarget(enemy.uid) ||
                   (pendingTrigger?.playerId === viewer.id &&
@@ -3767,7 +3862,8 @@ function CombatScreenView({
                       rowLabel={occupant?.name ?? `Player ${row + 1}`}
                       defender={occupant}
                       disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid))}
-                      targeted={(cardDrag?.targetUid === enemy.uid ||
+                      targeted={(isEndTurnEnemyTarget(enemy) ||
+                        cardDrag?.targetUid === enemy.uid ||
                         cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
                         isStartTurnEnemyTarget(enemy.uid) ||
                         (pendingTrigger?.playerId === viewer.id &&
@@ -3852,7 +3948,7 @@ function CombatScreenView({
               playable={
                 !usingCard &&
                 !pendingTrigger &&
-                !orderingStage &&
+                !endTurnResolving &&
                 (!pending?.choiceCards || pending.card.uid === card.uid) &&
                 ((state.phase === 'player' && !forcedCard && !distilled && !relicScry) || card.uid === forcedCardUid ||
                   (pending?.card.uid === forcedCardUid && pending.choice !== null && !pending.choiceCards) ||
@@ -3901,6 +3997,32 @@ function CombatScreenView({
             '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
           } as React.CSSProperties} aria-hidden="true" inert>
             <Card card={cardDrag.card} playable={false} />
+          </div>
+        </>
+      ) : null}
+      {endTurnEffectDrag ? (
+        <>
+          <svg className="card-target-arrow end-turn-target-arrow" aria-hidden="true">
+            <defs>
+              <marker id="end-turn-target-arrowhead" markerUnits="userSpaceOnUse"
+                markerWidth="22" markerHeight="22" refX="18" refY="11" orient="auto">
+                <path d="M 0 0 L 22 11 L 0 22 Z" />
+              </marker>
+            </defs>
+            <path ref={endTurnEffectDragArrowShadow} className="card-target-arrow__shadow"
+              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + 28} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
+            <path ref={endTurnEffectDragArrow} className="card-target-arrow__line end-turn-target-arrow__line"
+              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + 28} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
+          </svg>
+          <div ref={endTurnEffectDragOverlay}
+            className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
+            style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
+            aria-hidden="true" inert>
+            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} /> : (
+              <span className={`token--orb token--orb-${endTurnEffectDrag.ability.visual?.kind === 'orb'
+                ? endTurnEffectDrag.ability.visual.orb
+                : 'lightning'}`} />
+            )}
           </div>
         </>
       ) : null}

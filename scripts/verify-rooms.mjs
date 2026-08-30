@@ -24,7 +24,7 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, REBUILT_END_TURN_ORDER, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, enteringRoom, lightningRowTarget, previewCardChoice, roomChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
@@ -291,7 +291,6 @@ check('a one-seat online fight gives up immediately without a vote wait', () => 
   room.cardPreviews = { [seat.playerId]: { cardUid: 'stale' } }
   room.endTurnReady = { [seat.playerId]: true }
   room.endTurnAbilities = [{ id: 'stale' }]
-  room.endTurnOrder = ['stale']
   room.startTurnCombatId = room.run.combat.combatId
   room.startTurnOrder = ['stale']
   room.campfireChoices = { [seat.playerId]: { kind: 'rest' } }
@@ -301,7 +300,7 @@ check('a one-seat online fight gives up immediately without a vote wait', () => 
   room.eventPledge = { actorId: seat.playerId }
   apply(room, seat.token, { kind: 'giveUpVote', vote: 'start' })
   assertEqual(room.run.phase, 'defeat')
-  for (const key of ['cardPreviews', 'endTurnReady', 'endTurnAbilities', 'endTurnOrder', 'startTurnCombatId', 'startTurnOrder',
+  for (const key of ['cardPreviews', 'endTurnReady', 'endTurnAbilities', 'startTurnCombatId', 'startTurnOrder',
     'campfireChoices', 'rewardChoices', 'rewardConfirmed', 'merchantPledges', 'eventPledge']) {
     assertEqual(room[key], undefined, `one-seat surrender retained ${key}`)
   }
@@ -1415,257 +1414,129 @@ check('online discard orders are validated after Ethereal leaves the hand', () =
   assertEqual(room.run.combat.phase, 'enemy')
 })
 
-check('online seats globally order abilities only after everyone ends the turn', () => {
+check('online end-turn effects wait for every seat, then only their owner can resolve them', () => {
   const { room, a, b } = twoSeatRoom()
-  const first = room.run.combat.players.find((player) => player.id === a.playerId)
-  const shame = { uid: 'room-shame', defId: 'shame', upgraded: false }
-  const decay = { uid: 'room-decay', defId: 'decay', upgraded: false }
-  first.hand = [shame, decay]
-  first.block = 1
-  first.hp = 5
-  apply(room, a.token, { kind: 'endTurn' })
-  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined,
-    'hand-derived abilities stay hidden while another player can still act')
-  apply(room, b.token, { kind: 'endTurn' })
-  assertEqual(room.run.combat.phase, 'player', 'the room pauses for a party-wide order')
-  const ownerSnapshot = snapshotFor(room, a.token)
-  const otherSnapshot = snapshotFor(room, b.token)
-  const shameId = ownerSnapshot.endTurnAbilities.find((ability) => ability.label.includes('Shame')).id
-  const decayId = ownerSnapshot.endTurnAbilities.find((ability) => ability.label.includes('Decay')).id
-  const order = [decayId, shameId]
-  assertDeepEqual(ownerSnapshot.endTurnOrder, [shameId, decayId])
-  assertDeepEqual(otherSnapshot.endTurnOrder, ownerSnapshot.endTurnOrder,
-    'every seat and reconnect sees the same stage-local ordering IDs')
-  assertEqual(ownerSnapshot.endTurnCoordinatorId, a.playerId)
-  assert(ownerSnapshot.endTurnAbilities.some((ability) => ability.label.includes('Shame')),
-    'the owner can identify their own hand ability')
-  assert(otherSnapshot.endTurnAbilities.every((ability) =>
-    !ability.label.includes('Shame') && !ability.label.includes('Decay')),
-    'another seat cannot identify private cards from the ordering stage')
-  assert(!JSON.stringify(otherSnapshot).includes(shame.uid) && !JSON.stringify(otherSnapshot).includes(decay.uid),
-    'opaque stage IDs never serialize another player\'s hidden card UID')
-  let malformed = null
-  try {
-    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [order[0]] })
-  } catch (error) {
-    malformed = error
-  }
-  assertEqual(malformed?.name, 'RoomError', 'an incomplete network order is rejected')
-  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: order })
-  const prepared = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(prepared.hp, 5, 'the authoritative room resolves Decay before Shame')
-  assertEqual(prepared.block, 0)
-})
-
-check('the online coordinator can interleave a later seat\'s winning ability first', () => {
-  const { room, a, b } = twoSeatRoom()
-  const first = room.run.combat.players.find((player) => player.id === a.playerId)
-  const second = room.run.combat.players.find((player) => player.id === b.playerId)
-  first.hp = 1
-  first.stance = 'wrath'
-  second.orbs = ['lightning', null, null]
-  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  for (const enemy of room.run.combat.enemies) enemy.dead = enemy.uid !== target.uid
-  target.hp = 1
-  target.maxHp = 1
-  apply(room, a.token, { kind: 'endTurn' })
-  apply(room, b.token, { kind: 'endTurn' })
-  const abilities = snapshotFor(room, a.token).endTurnAbilities
-  const orbId = abilities.find((ability) => ability.label.includes('Lightning Orb')).id
-  const wrathId = abilities.find((ability) => ability.label.includes('Wrath')).id
-  let badTarget = null
-  try {
-    apply(room, a.token, {
-      kind: 'resolveEndTurn',
-      abilityOrder: [`${orbId}@not-an-enemy`, wrathId],
-    })
-  } catch (error) {
-    badTarget = error
-  }
-  assertEqual(badTarget?.name, 'RoomError', 'a crafted Lightning target is rejected')
-  let inheritedId = null
-  try {
-    apply(room, a.token, {
-      kind: 'resolveEndTurn',
-      abilityOrder: [`toString@${target.uid}`, wrathId],
-    })
-  } catch (error) {
-    inheritedId = error
-  }
-  assertEqual(inheritedId?.name, 'RoomError', 'an inherited object key is not an opaque ability ID')
-  apply(room, a.token, {
-    kind: 'resolveEndTurn',
-    abilityOrder: [`${orbId}@${target.uid}`, wrathId],
-  })
-  assertEqual(room.run.combat.phase, 'won')
-  assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).hp, 2,
-    'Wrath is skipped, then Burning Blood heals 1 at end of combat')
-})
-
-check('one Lightning Orb still pauses online when its enemy target is a choice', () => {
-  const { room, a, b } = twoSeatRoom()
-  const second = room.run.combat.players.find((player) => player.id === b.playerId)
   for (const player of room.run.combat.players) player.hand = []
-  second.orbs = ['lightning', null, null]
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  defect.character = 'defect'
+  defect.orbs = ['lightning', 'lightning', null]
   const [firstEnemy, secondEnemy] = room.run.combat.enemies
-  const secondHp = secondEnemy.hp
+  Object.assign(firstEnemy, { hp: 1, maxHp: 1 })
+  Object.assign(secondEnemy, { hp: 1, maxHp: 1 })
   apply(room, a.token, { kind: 'endTurn' })
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined, 'the table still waits for the second seat')
   apply(room, b.token, { kind: 'endTurn' })
-  assertEqual(room.run.combat.phase, 'player', 'the target picker must not auto-hit the first enemy')
-  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
-  apply(room, a.token, {
-    kind: 'resolveEndTurn',
-    abilityOrder: [`${orbId}@${secondEnemy.uid}`],
-  })
-  assertEqual(firstEnemy.hp, room.run.combat.enemies[0].hp)
-  assertEqual(room.run.combat.enemies[1].hp, secondHp - 1)
-})
-
-check('a stale end-turn order tells the coordinator how to recover', () => {
-  const { room, a, b } = twoSeatRoom()
-  const second = room.run.combat.players.find((player) => player.id === b.playerId)
-  for (const player of room.run.combat.players) player.hand = []
-  second.orbs = ['lightning', null, null]
-  const [, secondEnemy] = room.run.combat.enemies
-  apply(room, a.token, { kind: 'endTurn' })
-  apply(room, b.token, { kind: 'endTurn' })
-  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
-  // The chosen target dies after the party locked the order in.
-  Object.assign(secondEnemy, { hp: 0, dead: true })
-  let stale = null
+  const first = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(first.playerId, a.playerId, 'the Defect owns the first Orb')
+  let foreign = null
   try {
-    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${secondEnemy.uid}`] })
+    apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: first.id, targetUid: firstEnemy.uid })
   } catch (error) {
-    stale = error
+    foreign = error
   }
-  assertEqual(stale?.message, REBUILT_END_TURN_ORDER,
-    'the online rejection names the fix and where to make it')
-  const republished = snapshotFor(room, a.token).endTurnAbilities
-  assert(republished?.length > 0, 'the rejection dropped the ordering stage')
-  assert(republished.every((ability) => !ability.targets?.some((target) => target.uid === secondEnemy.uid)),
-    'the dead target survived the republished abilities')
-  const freshOrb = republished[0]
-  assert(freshOrb.id !== orbId, 'the republished list reused the superseded ability id')
-  let superseded = null
-  try {
-    apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${freshOrb.targets[0].uid}`] })
-  } catch (error) {
-    superseded = error
-  }
-  assertEqual(superseded?.message, 'End-turn order must contain each ability exactly once with valid targets',
-    'an order held from before the republish still resolved')
-  apply(room, a.token, {
-    kind: 'resolveEndTurn',
-    abilityOrder: [`${freshOrb.id}@${freshOrb.targets[0].uid}`],
-  })
-  assertEqual(room.run.combat.phase, 'enemy', 'the party could not recover from the stale order')
+  assertEqual(foreign?.name, 'RoomError', 'a teammate cannot target the Defect Orb')
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: first.id, targetUid: firstEnemy.uid })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === firstEnemy.uid).dead, true,
+    'the first drag resolves immediately')
+  const second = snapshotFor(room, a.token).endTurnAbilities[0]
+  assert(second.id !== first.id, 'the next effect receives a fresh public id')
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: second.id, targetUid: secondEnemy.uid })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === secondEnemy.uid).dead, true,
+    'the second drag sees the live board and resolves itself')
 })
 
-check('an online overkill plan retargets later Lightning abilities', () => {
+check('Omega is a Watcher-owned card source and skips without a living target', () => {
   const { room, a, b } = twoSeatRoom()
+  const watcher = room.run.combat.players.find((player) => player.id === b.playerId)
   for (const player of room.run.combat.players) player.hand = []
-  room.run.combat.players.find((player) => player.id === b.playerId).orbs = ['lightning', 'lightning', null]
-  const [firstEnemy] = room.run.combat.enemies
-  const secondHp = room.run.combat.enemies[1].hp
-  firstEnemy.hp = 1
-  apply(room, a.token, { kind: 'endTurn' })
-  apply(room, b.token, { kind: 'endTurn' })
-  const published = snapshotFor(room, a.token)
-  apply(room, a.token, {
-    kind: 'resolveEndTurn',
-    abilityOrder: published.endTurnAbilities.map((ability) => `${ability.id}@${firstEnemy.uid}`),
-  })
-  assertEqual(room.run.combat.phase, 'enemy')
-  assertEqual(room.run.combat.enemies[0].dead, true)
-  assertEqual(room.run.combat.enemies[1].hp, secondHp - 1,
-    'the second Orb did not retarget on the authoritative room path')
-})
-
-check('a stale end-turn order with nothing left to choose just resolves', () => {
-  const { room, a, b } = twoSeatRoom()
-  const second = room.run.combat.players.find((player) => player.id === b.playerId)
-  for (const player of room.run.combat.players) player.hand = []
-  second.orbs = ['lightning', null, null]
-  const [firstEnemy, secondEnemy] = room.run.combat.enemies
-  apply(room, a.token, { kind: 'endTurn' })
-  apply(room, b.token, { kind: 'endTurn' })
-  const orbId = snapshotFor(room, a.token).endTurnAbilities[0].id
-  // Every target but one dies, so the republished Orb has no choice to offer.
-  for (const enemy of room.run.combat.enemies) {
-    if (enemy.uid !== firstEnemy.uid) Object.assign(enemy, { hp: 0, dead: true })
-  }
-  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: [`${orbId}@${secondEnemy.uid}`] })
-  assertEqual(room.run.combat.phase, 'enemy', 'the forced Orb did not end the turn')
-})
-
-check('online end-turn ordering accepts an ability with no target', () => {
-  const { room, a, b } = twoSeatRoom()
-  const watcher = room.run.combat.players.find((player) => player.id === a.playerId)
-  const other = room.run.combat.players.find((player) => player.id === b.playerId)
   Object.assign(watcher, {
-    character: 'watcher', stance: 'wrath', hand: [],
-    powers: [{ uid: 'online-targetless-omega', defId: 'omega', upgraded: false }],
+    character: 'watcher',
+    powers: [{ uid: 'room-omega', defId: 'omega', upgraded: false }],
   })
-  other.hand = []
-  for (const enemy of room.run.combat.enemies) Object.assign(enemy, { hp: 0, dead: true })
-  room.run.combat.pendingSummons = [{
-    sourceUid: room.run.combat.enemies[0].uid, row: 0, defIds: ['acid_slime'],
-    turn: room.run.combat.turn, direct: true, timing: 'endOfTurn',
-  }]
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const published = snapshotFor(room, a.token)
-  const omega = published.endTurnAbilities.find((ability) => ability.label.includes('Omega'))
-  assertDeepEqual(omega?.targets, [], 'the room hid the valid no-target state')
-  assert(published.endTurnOrder.includes(omega.id), 'the default order forged a target for targetless Omega')
-  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: published.endTurnOrder })
-  assertEqual(room.run.combat.phase, 'enemy')
-  assert(room.run.combat.enemies.some((enemy) => !enemy.dead), 'the authoritative turn lost its queued summon')
+  const omega = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(omega.playerId, b.playerId, 'Omega belongs to the Watcher, not the first seat')
+  assertDeepEqual(omega.visual, { kind: 'card', cardUid: 'room-omega' }, 'Omega carries its card asset source')
+  let foreign = null
+  try {
+    apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: omega.targets[0].uid })
+  } catch (error) {
+    foreign = error
+  }
+  assertEqual(foreign?.name, 'RoomError', 'another player cannot choose Omega\'s row')
+  const target = omega.targets[1] ?? omega.targets[0]
+  const before = room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: target.uid })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, before - 5,
+    'the Watcher drag deals damage immediately')
 })
 
-check('Loop Orb choices are public, authoritative, and reject forged targets online', () => {
+check('an online boss target asks its owner to break a live row tie', () => {
   const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const other = room.run.combat.players.find((player) => player.id === b.playerId)
-  const loop = { uid: 'room-loop', defId: 'loop', upgraded: true }
-  Object.assign(actor, { hand: [loop], energy: 1, orbs: ['lightning', 'frost', 'dark'] })
-  other.hand = []
-  const [firstEnemy, secondEnemy] = room.run.combat.enemies
-  Object.assign(firstEnemy, { defId: 'cultist', block: 0 })
-  Object.assign(secondEnemy, { defId: 'cultist', block: 0 })
-  const firstHp = firstEnemy.hp
-  const secondHp = secondEnemy.hp
-
-  apply(room, a.token, { kind: 'playCard', cardUid: loop.uid, preflight: true })
+  const watcher = room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  Object.assign(watcher, {
+    character: 'watcher',
+    powers: [{ uid: 'room-row-omega', defId: 'omega', upgraded: false }],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { uid: 'row-anchor-one', row: 0, hp: 20, maxHp: 20 })
+  Object.assign(second, { uid: 'row-anchor-two', row: 1, hp: 20, maxHp: 20 })
+  room.run.combat.enemies.push({ ...first, uid: 'row-boss', isBoss: true, hp: 20, maxHp: 20 })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const mine = snapshotFor(room, a.token)
-  const theirs = snapshotFor(room, b.token)
-  const ability = mine.endTurnAbilities.find((entry) => entry.label.includes('Loop'))
-  assertDeepEqual(theirs.endTurnAbilities.find((entry) => entry.id === ability.id), ability,
-    'face-up Loop choices should be identical for every seat')
-  const target = ability.targets.find((choice) => choice.uid.endsWith(secondEnemy.uid))
-  const order = mine.endTurnOrder.map((choice) => choice.startsWith(`${ability.id}@`)
-    ? `${ability.id}@${target.uid}`
-    : choice)
+  const omega = snapshotFor(room, b.token).endTurnAbilities[0]
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'row-boss' })
+  const tiebreak = snapshotFor(room, b.token).endTurnAbilities[0]
+  assertEqual(tiebreak.rowTiebreak, true, 'choosing the boss asks for a row anchor')
+  assert(tiebreak.targets.every((target) => target.uid !== 'row-boss'),
+    'the boss cannot be selected again while rows differ')
+  assert(tiebreak.targets.some((target) => target.uid === 'row-anchor-one') &&
+    tiebreak.targets.some((target) => target.uid === 'row-anchor-two'),
+  'each live minion row remains available as a tiebreak anchor')
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: tiebreak.id, targetUid: 'row-anchor-two' })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-anchor-one').hp, 20)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-anchor-two').hp, 15)
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'row-boss').hp, 15,
+    'the owner-selected row and boss resolve immediately')
+})
 
-  let forged = null
-  try {
-    apply(room, a.token, {
-      kind: 'resolveEndTurn',
-      abilityOrder: order.map((choice) => choice.startsWith(`${ability.id}@`)
-        ? `${ability.id}@99:not-an-enemy`
-        : choice),
-    })
-  } catch (error) {
-    forged = error
-  }
-  assertEqual(forged?.name, 'RoomError', 'a forged Loop Orb choice was accepted')
+check('an online boss drop uses the sole living minion row', () => {
+  const { room, a, b } = twoSeatRoom()
+  const watcher = room.run.combat.players.find((player) => player.id === b.playerId)
+  for (const player of room.run.combat.players) player.hand = []
+  Object.assign(watcher, {
+    character: 'watcher',
+    powers: [{ uid: 'room-one-row-omega', defId: 'omega', upgraded: false }],
+  })
+  const [first, second] = room.run.combat.enemies
+  Object.assign(first, { uid: 'only-row-minion', row: 1, hp: 20, maxHp: 20 })
+  Object.assign(second, { hp: 0, dead: true })
+  room.run.combat.enemies.push({ ...first, uid: 'one-row-boss', row: 0, isBoss: true, hp: 20, maxHp: 20 })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const omega = snapshotFor(room, b.token).endTurnAbilities[0]
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: omega.id, targetUid: 'one-row-boss' })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'only-row-minion').hp, 15,
+    'the sole minion row is damaged even when the boss is displayed elsewhere')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === 'one-row-boss').hp, 15,
+    'the shared boss is damaged with the sole minion row')
+})
 
-  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: order })
-  assertEqual(room.run.combat.enemies[0].hp, firstHp - 1)
-  assertEqual(room.run.combat.enemies[1].hp, secondHp - 2)
-  assertEqual(room.run.combat.players.find((player) => player.id === actor.id).block, 1)
+check('a remaining targeted effect is skipped when its earlier drag ends combat', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  defect.orbs = ['lightning', 'lightning', null]
+  const target = room.run.combat.enemies[0]
+  Object.assign(target, { hp: 1, maxHp: 1 })
+  for (const enemy of room.run.combat.enemies.slice(1)) Object.assign(enemy, { hp: 0, dead: true })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const orb = snapshotFor(room, a.token).endTurnAbilities[0]
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: orb.id, targetUid: target.uid })
+  assertEqual(snapshotFor(room, a.token).endTurnAbilities, undefined, 'no target prompt survives after the last enemy dies')
 })
 
 check('a malformed online discard order is refused as a room error', () => {
@@ -2330,7 +2201,7 @@ check('Apotheosis bonuses survive reconnect while the remaining hand stays priva
   assertEqual(room.run.combat.players.find((player) => player.id === a.playerId).block, 2)
 })
 
-check('Panache row choice is coordinator-owned and reconnect-safe', () => {
+check('Panache row choice is owner-owned and reconnect-safe', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
   const other = room.run.combat.players.find((player) => player.id === b.playerId)
@@ -2350,13 +2221,13 @@ check('Panache row choice is coordinator-owned and reconnect-safe', () => {
   const target = room.run.combat.enemies[1]
   const firstHp = room.run.combat.enemies[0].hp
   apply(room, rejoined.token, {
-    kind: 'resolveEndTurn', abilityOrder: [`${ability.id}@${target.uid}`],
+    kind: 'resolveEndTurnEffect', abilityId: ability.id, targetUid: target.uid,
   })
   assertEqual(room.run.combat.enemies[0].hp, firstHp)
   assertEqual(room.run.combat.enemies[1].hp, 15)
 })
 
-check('an authoritative Panache plan keeps its row after Poison kills the chosen anchor', () => {
+check('Panache receives only live targets after Poison resolves first', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
   const other = room.run.combat.players.find((player) => player.id === b.playerId)
@@ -2368,15 +2239,15 @@ check('an authoritative Panache plan keeps its row after Poison kills the chosen
   Object.assign(survivor, { row: 1, hp: 20, maxHp: 20, poison: 0, dead: false })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const abilities = snapshotFor(room, a.token).endTurnAbilities
-  const poison = abilities.find((entry) => entry.label.includes('Poison'))
-  const panache = abilities.find((entry) => entry.label.includes('Panache'))
+  const panache = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(panache.label.includes('Panache'), true, 'Poison resolves before the targeted source is published')
+  assertEqual(panache.targets.some((target) => target.uid === anchor.uid), false, 'the dead anchor is not offered')
   apply(room, a.token, {
-    kind: 'resolveEndTurn', abilityOrder: [poison.id, `${panache.id}@${anchor.uid}`],
+    kind: 'resolveEndTurnEffect', abilityId: panache.id, targetUid: survivor.uid,
   })
   assertEqual(room.run.combat.enemies[0].dead, true)
-  assertEqual(room.run.combat.enemies[1].hp, 20,
-    'Panache should fizzle after its valid chosen row becomes empty')
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === survivor.uid).hp, 17,
+    'the newly selected living row resolves after the earlier death')
 })
 
 check('a crafted row-card action cannot use a dead enemy as its anchor', () => {
