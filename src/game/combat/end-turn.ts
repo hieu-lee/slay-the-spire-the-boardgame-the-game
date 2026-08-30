@@ -56,16 +56,19 @@ import type { CardInstance, Player } from '../types.ts'
 
 function playerEndTurnAbilities(state: CombatState, player: Player): Omit<EndTurnAbility, 'playerId'>[] {
   const abilities: Omit<EndTurnAbility, 'playerId'>[] = triggerSources(player, { kind: 'endOfTurn' })
-    .map((source) => ({
-      id: source.id,
-      label: source.name.replace(`${player.name}'s `, ''),
-      targets: source.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
-        ? loopOrbTargets(state, player)
-        : triggerTargets(state, player, source),
-      visual: source.id.startsWith('power:')
-        ? { kind: 'card' as const, cardUid: source.id.slice(6) }
-        : undefined,
-    }))
+    .map((source) => {
+      const loop = source.effects.some((effect) => effect.kind === 'triggerOrbEndTurn')
+      const targets = loop ? loopOrbTargets(player) : triggerTargets(state, player, source)
+      return {
+        id: source.id,
+        label: source.name.replace(`${player.name}'s `, ''),
+        targets,
+        visual: source.id.startsWith('power:')
+          ? { kind: 'card' as const, cardUid: source.id.slice(6) }
+          : undefined,
+        ...(loop && targets?.length ? { orbChoice: true } : {}),
+      }
+    })
   if ((player.strengthLossAtEndOfTurn ?? 0) > 0) {
     abilities.push({ id: 'strength', label: 'Lose temporary Strength' })
   }
@@ -103,15 +106,17 @@ export function endTurnAbilities(state: CombatState): EndTurnAbility[] {
     enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'beatOfDeath')
       ? [{ id: `beat:${enemy.uid}`, playerId: null, label: `${enemyLabel(state.enemies, enemy)} — Beat of Death` }]
       : [])
+  const playerAbilities = state.players.flatMap((player) => player.dead ? [] : playerEndTurnAbilities(state, player).map((ability) => ({
+    ...ability,
+    id: `${player.id}/${ability.id}`,
+    playerId: player.id,
+    label: `${player.name} — ${ability.label}`,
+  })))
   return [
+    ...playerAbilities.filter((ability) => ability.orbChoice),
     ...poison,
     ...beat,
-    ...state.players.flatMap((player) => player.dead ? [] : playerEndTurnAbilities(state, player).map((ability) => ({
-      ...ability,
-      id: `${player.id}/${ability.id}`,
-      playerId: player.id,
-      label: `${player.name} — ${ability.label}`,
-    }))),
+    ...playerAbilities.filter((ability) => !ability.orbChoice),
   ]
 }
 
@@ -216,12 +221,17 @@ function continueEndPlayerTurn(
     const choice = refreshEndTurnTargets(next, [order[index]!])[0]!
     const id = endTurnChoiceId(choice)
     const ability = endTurnAbilities(next).find((candidate) => candidate.id === id)
-    const needsEnemyDrag = ability?.targets?.some((target) => {
+    const needsEnemyDrag = ability?.orbChoice || ability?.targets?.some((target) => {
       const loop = parseLoopOrbTarget(target.uid)
       return !loop || loop.enemyUid !== null
     })
     if (interactive && !resolveFirst && needsEnemyDrag) {
-      next.endTurnProgress = { order: order.slice(index), interactive: true }
+      next.endTurnProgress = {
+        order: order.slice(index),
+        interactive: true,
+        ...(next.endTurnProgress?.loopSelections ? { loopSelections: next.endTurnProgress.loopSelections } : {}),
+        ...(next.endTurnProgress?.loopRepeats ? { loopRepeats: next.endTurnProgress.loopRepeats } : {}),
+      }
       return settle(next)
     }
     resolveFirst = false
@@ -322,6 +332,8 @@ function continueEndPlayerTurn(
       next.endTurnProgress = {
         order: order.slice(index + 1),
         ...(interactive ? { interactive: true } : {}),
+        ...(next.endTurnProgress?.loopSelections ? { loopSelections: next.endTurnProgress.loopSelections } : {}),
+        ...(next.endTurnProgress?.loopRepeats ? { loopRepeats: next.endTurnProgress.loopRepeats } : {}),
       }
       return settle(next)
     }
@@ -440,6 +452,33 @@ export function resolveEndTurnAbility(state: CombatState, choice: string): Comba
     return state
   }
   const next = clone(state)
+  const slash = ability.id.indexOf('/')
+  const player = findPlayer(next, ability.id.slice(0, slash))
+  const source = player && triggerSources(player, { kind: 'endOfTurn' })
+    .find((candidate) => candidate.id === ability.id.slice(slash + 1))
+  const loop = source?.effects.find((effect) => effect.kind === 'triggerOrbEndTurn')
+  const loopChoice = ability.orbChoice ? parseLoopOrbTarget(target) : undefined
+  if (player && loop?.kind === 'triggerOrbEndTurn' && loopChoice) {
+    const progress = next.endTurnProgress!
+    const remaining = progress.loopSelections?.[ability.id] ?? loop.amount
+    const repeats = [...(progress.loopRepeats ?? []), `${player.id}/orb:${loopChoice.slot}`]
+    const rest = progress.order.slice(1)
+    const selections = { ...progress.loopSelections }
+    if (remaining > 1) selections[ability.id] = remaining - 1
+    else delete selections[ability.id]
+    const moreLoops = rest.some((pending) => endTurnAbilities(next)
+      .find((candidate) => candidate.id === endTurnChoiceId(pending))?.orbChoice)
+    const order = remaining > 1
+      ? [ability.id, ...rest]
+      : moreLoops ? rest : [...repeats, ...rest]
+    next.endTurnProgress = {
+      order,
+      interactive: true,
+      ...(Object.keys(selections).length > 0 ? { loopSelections: selections } : {}),
+      ...((remaining > 1 || moreLoops) ? { loopRepeats: repeats } : {}),
+    }
+    return continueEndPlayerTurn(next, order, true)
+  }
   if (needsBossRowTiebreak(next, ability, target)) {
     next.endTurnProgress = { ...next.endTurnProgress!, rowTiebreakFor: ability.id }
     return next
@@ -457,6 +496,7 @@ export function beginEndPlayerTurn(
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const abilities = endTurnAbilities(state)
   if (!validEndTurnOrder(abilities, order)) return state
+  if (abilities.some((ability) => ability.orbChoice)) return beginEndTurnResolution(state)
   const next = clone(state)
   for (const player of next.players) {
     if (player.block === 0 && player.relics.some((relic) => relic.defId === 'orichalcum')) {

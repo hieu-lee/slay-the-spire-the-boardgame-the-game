@@ -3,6 +3,7 @@ import {
   activatePotion,
   activateRelic,
   beginEndPlayerTurn,
+  beginEndTurnResolution,
   chooseEndTurnTarget,
   chooseDistilledCard,
   chosenEvokeOrbs,
@@ -14,6 +15,7 @@ import {
   defaultStartTurnChoices,
   endPlayerTurn,
   endTurnAbilities,
+  endTurnResolutionAbility,
   facingChoicesAreValid,
   enemyTurn,
   evokeTargetProgress,
@@ -29,6 +31,7 @@ import {
   previewCardChoice,
   previewCardCopyChoice,
   resolveEnemyTargets,
+  resolveEndTurnAbility,
   resolvePendingTrigger,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
@@ -4897,7 +4900,7 @@ check('later end-turn Lightning retargets after overkill and skips when no targe
   assert(skipped.pendingSummons.length > 0, 'Slime Boss lost its queued Split')
 })
 
-check('Loop retargets only the selected Lightning slot after overkill', () => {
+check('Loop repeats only the selected Lightning slot after overkill', () => {
   const loop = instance('loop')
   const state = combat([makePlayer({
     name: 'Defect', character: 'defect', powers: [loop], orbs: ['frost', 'lightning'],
@@ -4905,17 +4908,13 @@ check('Loop retargets only the selected Lightning slot after overkill', () => {
     makeEnemy({ uid: 'first', hp: 1, maxHp: 1 }),
     makeEnemy({ uid: 'second', row: 1, hp: 5, maxHp: 5 }),
   ])
-  const abilities = endTurnAbilities(state)
-  const lightning = abilities.find((ability) => ability.id.endsWith('/orb:1'))
-  const frost = abilities.find((ability) => ability.id.endsWith('/orb:0'))
-  const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
-  const loopTarget = loopAbility.targets.find((target) => target.label.includes('Lightning Orb 2') &&
-    target.label.includes('row 1'))
-  const resolved = beginEndPlayerTurn(state, [
-    chooseEndTurnTarget(lightning.id, 'first'),
-    frost.id,
-    chooseEndTurnTarget(loopAbility.id, loopTarget.uid),
-  ])
+  let staged = beginEndTurnResolution(state)
+  let ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@orb:1`)
+  ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@first`)
+  ability = endTurnResolutionAbility(staged)
+  const resolved = resolveEndTurnAbility(staged, `${ability.id}@second`)
   assertEqual(resolved.enemies[1].hp, 4, 'Loop did not retarget its selected Lightning Orb')
   assertEqual(resolved.players[0].block, 1, 'Loop silently switched from Lightning to the first Frost slot')
 
@@ -4926,14 +4925,17 @@ check('Loop retargets only the selected Lightning slot after overkill', () => {
     makeEnemy({ uid: 'repeat-first', hp: 1, maxHp: 1 }),
     makeEnemy({ uid: 'repeat-second', row: 1, hp: 5, maxHp: 5 }),
   ])
-  const repeatedAbilities = endTurnAbilities(repeated)
-  const repeatedLoop = repeatedAbilities.find((ability) => ability.label.includes('Loop'))
-  const repeatedTarget = repeatedLoop.targets.find((target) => target.uid.endsWith(':repeat-first'))
-  const repeatedOrb = repeatedAbilities.find((ability) => ability.id.endsWith('/orb:0'))
-  const repeatedResult = beginEndPlayerTurn(repeated, [
-    chooseEndTurnTarget(repeatedLoop.id, repeatedTarget.uid),
-    chooseEndTurnTarget(repeatedOrb.id, 'repeat-first'),
-  ])
+  staged = beginEndTurnResolution(repeated)
+  ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@orb:0`)
+  ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@orb:0`)
+  ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@repeat-first`)
+  ability = endTurnResolutionAbility(staged)
+  staged = resolveEndTurnAbility(staged, `${ability.id}@repeat-second`)
+  ability = endTurnResolutionAbility(staged)
+  const repeatedResult = resolveEndTurnAbility(staged, `${ability.id}@repeat-second`)
   assertEqual(repeatedResult.enemies[0].dead, true)
   assertEqual(repeatedResult.enemies[1].hp, 3,
     'Loop+ and the later normal trigger did not retarget while keeping the selected Lightning slot')
@@ -5706,7 +5708,9 @@ check('Electrodynamics channels its printed Orbs and sends every Lightning effec
     makePlayer({ id: 'p2', name: 'Ally', row: 1 }),
   ], enemies())
   const lightning = endTurnAbilities(endState).find((ability) => ability.id === 'p1/orb:0')
-  assertDeepEqual(lightning.targets.map((target) => target.label), ['Row Defect + boss', 'Row Ironclad + boss'])
+  assertDeepEqual(lightning.targets.map((target) => target.label), [
+    'Row Defect + boss', 'Row Ironclad + boss', 'Cultist (row 1, #3)',
+  ])
   const ended = beginEndPlayerTurn(endState, endTurnAbilities(endState).map((ability) =>
     ability.id === lightning.id
       ? chooseEndTurnTarget(ability.id, lightningRowTarget(1))
@@ -5782,7 +5786,9 @@ check('Electrodynamics publishes row choices for Start-of-Turn forced Lightning 
   const ability = startTurnAbilities(state)[0]
   const chooseOrb = [{ id: ability.id, shivEnemyUids: [], evokeSlots: [0], evokeEnemyUids: [] }]
   const targeted = startTurnAbilities(state, undefined, chooseOrb)[0]
-  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), ['Row Defect + boss', 'Row 2 + boss'])
+  assertDeepEqual(targeted.evokeTargets.map((target) => target.label), [
+    'Row Defect + boss', 'Row 2 + boss', 'Cultist (row 1, #2)',
+  ])
   const resolved = resolveStartPlayerTurn(state, [{
     ...chooseOrb[0], evokeEnemyUids: [lightningRowTarget(1)],
   }])
@@ -6078,7 +6084,7 @@ check('Seek privately searches its draw pile, takes 1/2 cards, shuffles, and Exh
   assert(emptyPlayed.players[0].exhaust.some((card) => card.uid === empty.uid))
 })
 
-check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', () => {
+check('the batch end-turn resolver defers Loop choices before ordinary effects', () => {
   for (const upgraded of [false, true]) {
     const loop = instance('loop', upgraded)
     const played = playCard(combat([makePlayer({
@@ -6092,20 +6098,20 @@ check('Loop chooses one Orb end-of-turn ability and Loop+ triggers it twice', ()
     const loopAbility = abilities.find((ability) => ability.label.includes('Loop'))
     assert(loopAbility, 'Loop must publish its ordered end-turn ability')
     assertDeepEqual(loopAbility.targets.map((target) => target.label), [
-      'Lightning Orb 1 → Cultist (row 1)',
-      'Lightning Orb 1 → Cultist (row 2)',
+      'Lightning Orb 1',
       'Frost Orb 2',
+      'Dark Orb 3',
     ])
-    const loopTarget = upgraded ? loopAbility.targets[1] : loopAbility.targets[2]
+    const loopTarget = upgraded ? loopAbility.targets[0] : loopAbility.targets[1]
     const order = abilities.map((ability) => ability.id === loopAbility.id
       ? chooseEndTurnTarget(ability.id, loopTarget.uid)
       : ability.targets?.[0] ? chooseEndTurnTarget(ability.id, ability.targets[0].uid) : ability.id)
-    const ended = beginEndPlayerTurn(played, order)
-    assertEqual(ended.enemies[0].hp, 5, 'the normal Lightning Orb still triggers once')
-    assertEqual(ended.enemies[1].hp, upgraded ? 4 : 6,
-      'Loop+ repeats the selected Lightning Orb against its selected target')
-    assertEqual(ended.players[0].block, upgraded ? 1 : 2,
-      'base Loop can select Frost while every normal Orb still resolves')
+    const deferred = beginEndPlayerTurn(played, [...order.slice(1), order[0]])
+    assertEqual(endTurnResolutionAbility(deferred)?.orbChoice, true,
+      'a supplied batch order skipped Loop\'s required Orb selection')
+    assertDeepEqual(deferred.enemies.map((enemy) => enemy.hp), [6, 6],
+      'ordinary effects resolved before the Loop selection')
+    assertEqual(deferred.players[0].block, 0)
 
     const forged = abilities.map((ability) => ability.id === loopAbility.id
       ? chooseEndTurnTarget(ability.id, '99:not-an-enemy')

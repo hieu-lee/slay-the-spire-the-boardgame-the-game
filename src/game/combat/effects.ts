@@ -2030,11 +2030,11 @@ export function resolveTriggerSource(
   const loop = source.effects.find((effect) => effect.kind === 'triggerOrbEndTurn')
   if (loop) {
     const slot = evokeSlots?.[0]
-    if (slot === undefined) return loopOrbTargets(state, player) === undefined
+    if (slot === undefined) return loopOrbTargets(player) === undefined
     const orb = player.orbs[slot]
     let target = evokeEnemyUids?.[0] ?? undefined
-    if ((orb !== 'lightning' && orb !== 'frost') || (orb === 'lightning' && !target) ||
-      (orb === 'frost' && target !== undefined)) return false
+    if (orb === 'lightning' && !target) target = lightningTargetOptions(state, player)[0]?.uid
+    if (!orb || (orb === 'lightning' && !target) || (orb === 'frost' && target !== undefined)) return false
     for (let index = 0; index < loop.amount; index++) {
       // Loop+ repeats one chosen Orb. If its first Lightning trigger kills the
       // chosen enemy, keep the Orb slot and aim the repeat at the next legal
