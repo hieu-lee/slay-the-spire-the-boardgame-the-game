@@ -129,7 +129,7 @@
 .event-options button { min-height: 70px; text-align: left; }
 .event-options button strong, .event-options button span { display: block; }
 .event-options button strong { color: #f4cf71; font: 700 1.1rem Georgia, serif; }
-.event-cards { display: flex; gap: .45rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0; border: 0; }
+.event-cards { display: flex; align-items: flex-start; align-content: flex-start; gap: .45rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0; border: 0; }
 .event-cards > legend { margin-bottom: .4rem; padding: 0; }
 .event-cards button:not(.card) { min-height: 88px; padding: .7rem; color: #f7eddb; background: linear-gradient(#313e40, #172328); border: 2px solid #708489; border-radius: 7px; box-shadow: 0 5px 0 #0b1012; cursor: pointer; }
 .event-cards button[aria-pressed='true']:not(.card) { color: #17120b; background: #f4cf71; }
