@@ -1136,6 +1136,8 @@ function CombatScreenView({
   const canResolveEndTurn = endTurnEffect?.playerId === viewer.id
   const endTurnEffectPrompt = endTurnEffect?.rowTiebreak
     ? `Drag ${endTurnEffect.label} to a minion to choose its row`
+    : endTurnEffect?.orbChoice
+      ? `Drag ${endTurnEffect.label} to a highlighted Orb`
     : `Drag ${endTurnEffect?.label} to a highlighted enemy`
   const endTurnEffectVisual = endTurnEffect?.visual
   const endTurnEffectCard = endTurnEffectVisual?.kind === 'card' && endTurnEffect
@@ -2084,6 +2086,7 @@ function CombatScreenView({
   }
 
   function endTurnTargetForEnemy(enemy: Enemy, ability = endTurnEffect): string | null {
+    if (ability?.orbChoice) return null
     if (state.endTurnProgress?.rowTiebreakFor && enemy.isBoss) return null
     return ability?.targets?.find((target) => target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid ??
       ability?.targets?.find((target) =>
@@ -2093,6 +2096,19 @@ function CombatScreenView({
   function endTurnTargetForRow(row: number): string | null {
     return endTurnEffect?.targets?.find((target) =>
       target.uid === lightningRowTarget(row) || target.uid.endsWith(`:${lightningRowTarget(row)}`))?.uid ?? null
+  }
+
+  function endTurnTargetForOrb(playerId: string, slot: number, ability = endTurnEffect): string | null {
+    return ability?.orbChoice && ability.playerId === playerId
+      ? ability.targets?.find((target) => target.uid === `orb:${slot}`)?.uid ?? null
+      : null
+  }
+
+  function endTurnOrbTargetAt(x: number, y: number, ability: NonNullable<typeof endTurnEffect>): string | null {
+    const orb = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-orb-slot]')
+    const slot = Number(orb?.dataset.orbSlot)
+    const playerId = orb?.closest<HTMLElement>('[data-player-id]')?.dataset.playerId
+    return playerId && Number.isInteger(slot) ? endTurnTargetForOrb(playerId, slot, ability) : null
   }
 
   function isEndTurnEnemyTarget(enemy: Enemy): boolean {
@@ -2143,13 +2159,17 @@ function CombatScreenView({
       const active = endTurnEffectDragStart.current
       const move = endTurnEffectDragMove.current
       if (!active || !move) return
-      const enemyUid = dragTargetAt(move.x, move.y, false)
-      const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
       const next: EndTurnEffectDrag = {
         ...active,
         x: move.x,
         y: move.y,
-        targetUid: enemy ? endTurnTargetForEnemy(enemy, active.ability) : null,
+        targetUid: active.ability.orbChoice
+          ? endTurnOrbTargetAt(move.x, move.y, active.ability)
+          : (() => {
+            const enemyUid = dragTargetAt(move.x, move.y, false)
+            const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
+            return enemy ? endTurnTargetForEnemy(enemy, active.ability) : null
+          })(),
       }
       const previous = endTurnEffectDragLive.current
       endTurnEffectDragLive.current = next
@@ -2175,9 +2195,13 @@ function CombatScreenView({
     const start = endTurnEffectDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
     const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
-    const enemyUid = dragTargetAt(event.clientX, event.clientY, false)
-    const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
-    const targetUid = enemy ? endTurnTargetForEnemy(enemy, start.ability) : null
+    const targetUid = start.ability.orbChoice
+      ? endTurnOrbTargetAt(event.clientX, event.clientY, start.ability)
+      : (() => {
+        const enemyUid = dragTargetAt(event.clientX, event.clientY, false)
+        const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
+        return enemy ? endTurnTargetForEnemy(enemy, start.ability) : null
+      })()
     clearEndTurnEffectDrag()
     if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
     if (!moved) return
@@ -3573,7 +3597,8 @@ function CombatScreenView({
               <div className="row__seat">
                 {occupant ? (
                   <>
-                    <button
+                    <div className="seat__interactive" data-player-id={occupant.id}>
+                      <button
                       type="button"
                       className={[
                         'seat',
@@ -3620,7 +3645,6 @@ function CombatScreenView({
                           alt=""
                           onError={(event) => { event.currentTarget.style.display = 'none' }}
                         />
-                        <OrbRow player={occupant} />
                         {characterAttackMotions.map((characterAttack) => (
                           <span
                             className={`character-attack character-attack--${occupant.character}`}
@@ -3814,6 +3838,22 @@ function CombatScreenView({
                       ) : null}
                       </span>
                     </button>
+                    <OrbRow
+                      player={occupant}
+                      targetableSlots={endTurnEffect?.orbChoice && canResolveEndTurn && occupant.id === endTurnEffect.playerId
+                        ? endTurnEffect.targets?.flatMap((target) => {
+                          const slot = Number(target.uid.slice(4))
+                          return target.uid.startsWith('orb:') && Number.isInteger(slot) ? [slot] : []
+                        })
+                        : []}
+                      onTarget={(slot) => {
+                        const targetUid = endTurnTargetForOrb(occupant.id, slot)
+                        if (targetUid && armedEndTurnAbilityId === endTurnEffect?.id) {
+                          resolveEndTurnTarget(endTurnEffect.id, targetUid)
+                        }
+                      }}
+                    />
+                    </div>
                     <div className="seat__status-strip" tabIndex={0}
                       aria-label={`${occupant.name} permanent effects`}>
                       <TokenRow

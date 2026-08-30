@@ -179,6 +179,18 @@ export function createStore({ file } = {}) {
               room.endTurnOrders = undefined
               room.endTurnOrder = undefined
               room.endTurnReady = undefined
+            } else if (room.run.combat.endTurnProgress?.interactive) {
+              // Target ids are derived from the live board. Re-publish them
+              // after loading so older saved Loop prompts cannot retain their
+              // former Orb-and-enemy target encoding.
+              if (/@\d+:/.test(room.run.combat.endTurnProgress.order[0] ?? '')) {
+                delete room.run.combat.endTurnProgress.rowTiebreakFor
+              }
+              room.endTurnAbilities = undefined
+              room.endTurnPublicIds = undefined
+              room.endTurnOrders = undefined
+              room.endTurnOrder = undefined
+              publishEndTurnEffect(room)
             }
           }
           const migratedBossRewards = migrateLegacyBossRareRewards(room.run)

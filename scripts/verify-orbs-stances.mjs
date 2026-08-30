@@ -361,16 +361,88 @@ check('a played Panache targets and damages its chosen row at end of turn', () =
     'the Power card leaves the hand before its end-turn condition is checked')
 })
 
-check('Loop keeps its selected Lightning Orb target in the drag resolver', () => {
+check('Loop+ selects its Orb twice before queuing both copied end-turn effects', () => {
   const loop = instance('loop', true)
   const staged = beginEndTurnResolution(combat([
     player({ powers: [loop], orbs: ['lightning', 'frost', 'dark'] }),
   ], [enemy({ uid: 'e1', hp: 20 }), enemy({ uid: 'e2', row: 1, hp: 20 })]))
   const ability = endTurnResolutionAbility(staged)
   assertDeepEqual(ability?.visual, { kind: 'card', cardUid: loop.uid }, 'Loop is dragged from its Power card')
-  const resolved = resolveEndTurnAbility(staged, `${ability.id}@0:e2`)
-  assertEqual(resolved.enemies.find((enemy) => enemy.uid === 'e2')?.hp, 18,
-    'the dragged Loop source repeats the selected Lightning Orb immediately')
+  assertEqual(ability?.orbChoice, true, 'Loop begins by selecting an Orb, not an enemy')
+  assertDeepEqual(ability?.targets?.map((target) => target.uid), ['orb:0', 'orb:1', 'orb:2'])
+  const once = resolveEndTurnAbility(staged, `${ability.id}@orb:0`)
+  assertDeepEqual(once.enemies.map((enemy) => enemy.hp), [20, 20], 'selecting an Orb does not deal damage')
+  const secondChoice = endTurnResolutionAbility(once)
+  assertDeepEqual(secondChoice?.visual, { kind: 'card', cardUid: loop.uid }, 'Loop+ asks for its second Orb selection first')
+  const queued = resolveEndTurnAbility(once, `${secondChoice.id}@orb:0`)
+  const firstCopy = endTurnResolutionAbility(queued)
+  assertEqual(firstCopy?.visual?.kind === 'orb' ? firstCopy.visual.slot : -1, 0,
+    'the first copied Orb resolves after both Loop+ selections')
+  const firstResolved = resolveEndTurnAbility(queued, `${firstCopy.id}@e2`)
+  const secondCopy = endTurnResolutionAbility(firstResolved)
+  const copied = resolveEndTurnAbility(firstResolved, `${secondCopy.id}@e2`)
+  assertEqual(copied.enemies.find((enemy) => enemy.uid === 'e2')?.hp, 18,
+    'both copied Lightning effects resolve one drag at a time')
+  const normal = endTurnResolutionAbility(copied)
+  const finished = resolveEndTurnAbility(copied, `${normal.id}@e1`)
+  assertEqual(finished.enemies.find((enemy) => enemy.uid === 'e1')?.hp, 19,
+    'the normal Lightning end-turn effect still resolves after the copies')
+  assertEqual(finished.players[0].block, 1, 'the normal Frost effect continues after the copied effects')
+})
+
+check('Loop skips its selection prompt when its owner has no Orbs', () => {
+  const staged = beginEndTurnResolution(combat([
+    player({ powers: [instance('loop', true)], orbs: [null, null, null] }),
+  ], [enemy({ hp: 20 })]))
+  assertEqual(endTurnResolutionAbility(staged), undefined, 'an empty Orb row cannot open a Loop target prompt')
+})
+
+check('a Loop-selected Frost Orb resolves automatically without another drag', () => {
+  const staged = beginEndTurnResolution(combat([
+    player({ powers: [instance('loop')], orbs: ['frost', null, null] }),
+  ], [enemy({ hp: 20 })]))
+  const loop = endTurnResolutionAbility(staged)
+  const resolved = resolveEndTurnAbility(staged, `${loop.id}@orb:0`)
+  assertEqual(resolved.players[0].block, 2, 'the copied and normal Frost passives both resolve automatically')
+  assertEqual(endTurnResolutionAbility(resolved), undefined, 'Frost creates no additional target drag')
+})
+
+check('a Loop-selected Lightning Orb queues its own target drag before the normal passive', () => {
+  const staged = beginEndTurnResolution(combat([
+    player({ powers: [instance('loop')], orbs: ['lightning', null, null] }),
+  ], [enemy({ uid: 'first', hp: 20 }), enemy({ uid: 'second', row: 1, hp: 20 })]))
+  const loop = endTurnResolutionAbility(staged)
+  const queued = resolveEndTurnAbility(staged, `${loop.id}@orb:0`)
+  const copied = endTurnResolutionAbility(queued)
+  assertEqual(copied?.visual?.kind === 'orb' ? copied.visual.slot : -1, 0,
+    'the copied Lightning passive did not appear for its own target drag')
+  const copyResolved = resolveEndTurnAbility(queued, `${copied.id}@second`)
+  assertEqual(copyResolved.enemies.find((enemy) => enemy.uid === 'second')?.hp, 19,
+    'the copied Lightning effect did not damage its chosen target')
+  const normal = endTurnResolutionAbility(copyResolved)
+  const finished = resolveEndTurnAbility(copyResolved, `${normal.id}@first`)
+  assertEqual(finished.enemies.find((enemy) => enemy.uid === 'first')?.hp, 19,
+    'the normal Lightning passive did not follow the copied effect')
+})
+
+check('Loop+ preserves two distinct Orb selections before resolving either copy', () => {
+  const staged = beginEndTurnResolution(combat([
+    player({ powers: [instance('loop', true)], orbs: ['lightning', 'frost', null] }),
+  ], [enemy({ uid: 'first', hp: 20 }), enemy({ uid: 'second', row: 1, hp: 20 })]))
+  const firstChoice = endTurnResolutionAbility(staged)
+  const secondSelection = resolveEndTurnAbility(staged, `${firstChoice.id}@orb:0`)
+  const secondChoice = endTurnResolutionAbility(secondSelection)
+  const copies = resolveEndTurnAbility(secondSelection, `${secondChoice.id}@orb:1`)
+  const lightningCopy = endTurnResolutionAbility(copies)
+  assertEqual(lightningCopy?.visual?.kind === 'orb' ? lightningCopy.visual.slot : -1, 0,
+    'the first selection must resolve before the second selected Frost copy')
+  const afterLightning = resolveEndTurnAbility(copies, `${lightningCopy.id}@second`)
+  assertEqual(afterLightning.enemies.find((enemy) => enemy.uid === 'second')?.hp, 19)
+  const normalLightning = endTurnResolutionAbility(afterLightning)
+  const finished = resolveEndTurnAbility(afterLightning, `${normalLightning.id}@first`)
+  assertEqual(finished.players[0].block, 2,
+    'the copied and normal Frost passives should resolve automatically after the copied Lightning')
+  assertEqual(finished.enemies.find((enemy) => enemy.uid === 'first')?.hp, 19)
 })
 
 check('a boss target needs a row tiebreak only while distinct minion rows live', () => {
@@ -409,7 +481,7 @@ check('a boss target needs a row tiebreak only while distinct minion rows live',
   assertEqual(direct.enemies[0].hp, 15, 'the direct boss target took Omega damage')
 })
 
-check('Electrodynamics Lightning and Loop require a minion row after a boss drop', () => {
+check('a copied Electrodynamics Lightning requires a minion row after a boss drop', () => {
   const loop = instance('loop', true)
   const state = combat([player({
     powers: [instance('electrodynamics', true), loop],
@@ -421,15 +493,21 @@ check('Electrodynamics Lightning and Loop require a minion row after a boss drop
   ])
   const staged = beginEndTurnResolution(state)
   const loopAbility = endTurnResolutionAbility(staged)
-  assert(loopAbility?.targets?.some((target) => target.uid === '0:boss'), 'Loop exposes the shared boss as a drop target')
-  const narrowed = resolveEndTurnAbility(staged, `${loopAbility.id}@0:boss`)
+  assertDeepEqual(loopAbility?.targets?.map((target) => target.uid), ['orb:0', 'orb:1'],
+    'Loop first asks the player to choose the Orb it will copy')
+  const again = resolveEndTurnAbility(staged, `${loopAbility.id}@orb:0`)
+  const secondLoop = endTurnResolutionAbility(again)
+  const queued = resolveEndTurnAbility(again, `${secondLoop.id}@orb:0`)
+  const copied = endTurnResolutionAbility(queued)
+  assert(copied?.targets?.some((target) => target.uid === 'boss'), 'the copied Lightning exposes the shared boss')
+  const narrowed = resolveEndTurnAbility(queued, `${copied.id}@boss`)
   const tiebreak = endTurnResolutionAbility(narrowed)
-  assertEqual(tiebreak?.rowTiebreak, true, 'Loop cannot use the boss to choose between Lightning rows')
-  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['0:row:0', '0:row:1'],
-    'Loop requires an actual minion-row anchor after the boss drop')
-  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@0:row:1`)
-  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 18, 18],
-    'the Loop target hits its selected row and the shared boss twice')
+  assertEqual(tiebreak?.rowTiebreak, true, 'the copied Lightning cannot use the boss to choose between rows')
+  assertDeepEqual(tiebreak?.targets?.map((target) => target.uid), ['row:0', 'row:1'],
+    'the second drag must use an actual minion-row anchor')
+  const resolved = resolveEndTurnAbility(narrowed, `${tiebreak.id}@row:1`)
+  assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [20, 19, 19],
+    'the copied Lightning hits the selected row and shared boss once')
 })
 
 check('a Dark orb does nothing at end of turn', () => {

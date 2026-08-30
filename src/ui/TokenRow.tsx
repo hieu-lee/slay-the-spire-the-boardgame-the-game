@@ -63,24 +63,51 @@ export function orbDisplayText(player: Player, orb: OrbType): string {
 }
 
 /** The original game floats Orb sprites and their current value around the Defect. */
-export function OrbRow({ player }: { player: Player }) {
-  const orbs = player.character === 'defect' ? player.orbs : player.orbs.filter((orb) => orb !== null)
+export function OrbRow({
+  player,
+  targetableSlots = [],
+  onTarget,
+}: {
+  player: Player
+  targetableSlots?: readonly number[]
+  onTarget?: (slot: number) => void
+}) {
+  const orbs = player.character === 'defect'
+    ? player.orbs.map((orb, slot) => ({ orb, slot }))
+    : player.orbs.flatMap((orb, slot) => orb ? [{ orb, slot }] : [])
   if (orbs.length === 0) return null
+  const targetable = new Set(targetableSlots)
   return (
-    <span className="orbs" aria-hidden="true"
+    <span className={`orbs${targetable.size > 0 ? ' orbs--targetable' : ''}`} aria-hidden={targetable.size === 0}
       style={{ '--orb-count': orbs.length } as CSSProperties}>
-      {orbs.map((orb, index) => {
+      {orbs.map(({ orb, slot }, index) => {
         const value = orb ? orbDisplayValue(player, orb) : null
-        return (
+        const token = (
           <span
             className={`token token--orb token--orb-${orb ?? 'empty'}`}
-            key={index}
             title={orb ? `${orb} Orb · ${orbDisplayText(player, orb)}` : 'Empty Orb slot'}
             style={{ '--orb-depth': Math.abs(index - (orbs.length - 1) / 2) } as CSSProperties}
           >
             {value !== null ? <span className="orb__value">{value}</span> : null}
           </span>
         )
+        return targetable.has(slot) ? (
+          <span role="button" tabIndex={0} className="orbs__target" data-orb-slot={slot} key={slot}
+            onClick={(event) => {
+              event.stopPropagation()
+              onTarget?.(slot)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                event.stopPropagation()
+                onTarget?.(slot)
+              }
+            }}
+            aria-label={`Choose ${orb} Orb ${slot + 1}`}>
+            {token}
+          </span>
+        ) : <span key={slot}>{token}</span>
       })}
     </span>
   )
