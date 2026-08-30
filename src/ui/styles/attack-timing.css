@@ -63,17 +63,21 @@
 /* Character attacks use only authoritative targets already rendered on the
    board. Defect and Watcher spend 550ms each on windup, release and recovery.
    Ironclad adds two 90ms travel beats between three 540ms body phases. Silent
-   keeps her original 860ms throw while each dagger makes a 1.75s round trip.
+   holds her throw pose through the last dagger's return.
    Visual layers move; the button and its hit box stay in its lane. */
 .seat[class*='seat--attack-'] .seat__portrait > img {
   animation-duration: 1650ms;
+  animation-delay: 0s;
   animation-fill-mode: both;
   animation-iteration-count: 1;
   animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
 .seat.seat--attack-ironclad .seat__portrait > img { animation-duration: 1800ms; }
-.seat.seat--attack-silent .seat__portrait > img { animation-duration: 860ms; }
+.seat.seat--attack-silent .seat__portrait > img {
+  animation-duration: var(--silent-attack-duration, 1900ms);
+  animation-timing-function: linear;
+}
 
 .seat--attack-ironclad .seat__portrait > img { animation-name: attack-ironclad; }
 .seat--attack-watcher .seat__portrait > img { animation-name: attack-watcher; }
@@ -127,10 +131,10 @@
 }
 
 @keyframes attack-silent {
-  0%, 10%, 90%, 100% { opacity: 1; transform: translate(0) rotate(0); }
-  10.01%, 89.99% { opacity: 0; }
-  20%, 80% { transform: translate(-2%, 1%) rotate(-3deg); }
-  50% { transform: translate(2%, -1%) rotate(4deg); }
+  0%, 7.89%, 100% { opacity: 1; transform: translate(0) rotate(0); }
+  7.9%, 99.99% { opacity: 0; }
+  20%, 80% { opacity: 0; transform: translate(-2%, 1%) rotate(-3deg); }
+  50% { opacity: 0; transform: translate(2%, -1%) rotate(4deg); }
 }
 
 @keyframes attack-defect {
@@ -222,7 +226,9 @@
 
 .character-attack__pose--ironclad-ready { animation: ironclad-ready-pose 1800ms both; }
 .character-attack__pose--ironclad-impact { animation: ironclad-impact-pose 1800ms both; }
-.character-attack__pose--silent-throw { animation: silent-throw-pose 860ms both; }
+.character-attack__pose--silent-throw {
+  animation: silent-throw-pose var(--silent-attack-duration, 1900ms) linear both;
+}
 .character-attack__pose--defect-charge { animation: defect-charge-pose 1650ms both; }
 .character-attack__pose--defect-release { animation: defect-release-pose 1650ms both; }
 .character-attack__pose--watcher-charge { animation: watcher-charge-pose 1650ms both; }
@@ -248,12 +254,12 @@
 }
 
 @keyframes silent-throw-pose {
-  0%, 10%, 90%, 100% { opacity: 0; }
-  10.01%, 89.99% { opacity: 1; }
+  0%, 7.89%, 100% { opacity: 0; }
+  7.9%, 99.99% { opacity: 1; }
   0%, 100% { transform: translate(-3%, 1%) rotate(-3deg) scale(0.97); }
-  22%, 78% { transform: translate(-1%, 0) rotate(-1deg) scale(1); }
-  38%, 62% { transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
-  50% { transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
+  22%, 78% { opacity: 1; transform: translate(-1%, 0) rotate(-1deg) scale(1); }
+  38%, 62% { opacity: 1; transform: translate(3%, -1%) rotate(3deg) scale(1.04); }
+  50% { opacity: 1; transform: translate(4%, -1%) rotate(4deg) scale(1.05); }
 }
 
 @keyframes defect-charge-pose {

@@ -3514,6 +3514,8 @@ function CombatScreenView({
                       style={characterAttack ? {
                         '--attack-x': `${characterAttack.x}px`,
                         '--attack-y': `${characterAttack.y}px`,
+                        '--silent-attack-duration': `${1900 + Math.max(0,
+                          ...characterAttackMotions.map((attack) => attack.targets.length - 1)) * 70}ms`,
                       } as React.CSSProperties : undefined}
                       aria-label={describeSeat(occupant)}
                     >
