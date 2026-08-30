@@ -4,6 +4,9 @@
 // than asserting on the fields we happen to redact today. A leak added later
 // through some new field is exactly the bug that would otherwise ship, and it
 // is invisible to a test that only looks where it already knows to look.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   CHARACTERS,
   MAX_SEATS,
@@ -108,6 +111,43 @@ function twoSeatRoom() {
   enterFirstCombat(room, a.token)
   return { store, room, a, b }
 }
+
+check('a persisted legacy end-turn order resets safely into the drag flow', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  room.run.combat.players.find((player) => player.id === a.playerId).orbs = ['lightning', null, null]
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const current = structuredClone(room)
+  const legacy = structuredClone(room)
+  delete legacy.run.combat.endTurnProgress
+  legacy.endTurnOrder = legacy.endTurnAbilities.map((ability) => ability.id)
+  legacy.endTurnReady = { [a.playerId]: true, [b.playerId]: true }
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-legacy-eot-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [current] }))
+    const currentRestored = createStore({ file }).rooms.get(room.code)
+    assertEqual(currentRestored.endTurnAbilities[0].id, current.endTurnAbilities[0].id,
+      'a current owner-only drag effect must survive load')
+    assertEqual(currentRestored.run.combat.endTurnProgress?.interactive, true,
+      'a current owner-only drag effect must keep its interactive progress')
+
+    writeFileSync(file, JSON.stringify({ rooms: [legacy] }))
+    const restored = createStore({ file }).rooms.get(legacy.code)
+    assertEqual(restored.endTurnAbilities, undefined, 'the obsolete end-turn order must not survive load')
+    assertEqual(restored.endTurnReady, undefined, 'legacy ready votes must not resolve the next end turn')
+    const reconnectA = joinRoom(restored, { token: a.token })
+    const reconnectB = joinRoom(restored, { token: b.token })
+    apply(restored, reconnectA.token, { kind: 'endTurn' })
+    const resumed = apply(restored, reconnectB.token, { kind: 'endTurn' }).snapshot
+    assertEqual(resumed.endTurnAbilities[0].playerId, a.playerId,
+      'the restored table resumes at the owning player\'s targeted effect')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 /**
  * Makes the end-of-turn discard prompt appear for these seats.

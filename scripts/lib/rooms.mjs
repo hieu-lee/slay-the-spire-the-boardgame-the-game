@@ -172,6 +172,14 @@ export function createStore({ file } = {}) {
             if (room.run.combat.potionLimit !== 2 && room.run.combat.potionLimit !== 3) {
               room.run.combat.potionLimit = room.run.ascension >= 4 ? 2 : 3
             }
+            if (room.run.combat.phase === 'player' && room.endTurnAbilities &&
+              !room.run.combat.endTurnProgress?.interactive) {
+              room.endTurnAbilities = undefined
+              room.endTurnPublicIds = undefined
+              room.endTurnOrders = undefined
+              room.endTurnOrder = undefined
+              room.endTurnReady = undefined
+            }
           }
           const migratedBossRewards = migrateLegacyBossRareRewards(room.run)
           if (migratedBossRewards !== room.run) {
