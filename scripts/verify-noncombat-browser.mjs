@@ -2284,12 +2284,15 @@ await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
   run.phase = 'room'
-  run.players[0] = { ...run.players[0], gold: 0, potions: ['swift_potion'] }
+  run.players[0] = { ...run.players[0], gold: 0,
+    relics: ['pure_water', 'loaded_die', 'anchor'].map((defId) => ({ defId, spent: false })),
+    potions: ['swift_potion', 'blood_potion'] }
   run.roomState = { kind: 'event', card: { id: 'the_joust', instanceId: 'browser-joust-payment', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'The Joust', scope: 'player', options: [
     { id: 'bet', label: 'Bet', description: 'Pay 2 Gold, a Relic, or a Potion. Roll the die; on 4–6 gain 6 Gold.', effects: [{ tag: 'pay-gold', amount: 2, filter: 'or lose one Relic or Potion' }, { tag: 'roll-d6', results: { 4: [{ tag: 'gain-gold', amount: 6 }], 5: [{ tag: 'gain-gold', amount: 6 }], 6: [{ tag: 'gain-gold', amount: 6 }] } }] },
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
+await page.setViewportSize({ width: 1040, height: 723 })
 await page.getByRole('button', { name: /\[Bet\]/ }).click()
 const joustRelic = page.locator('fieldset').filter({ hasText: 'Your relic' }).getByRole('button').first()
 await page.waitForFunction(() => {
@@ -2298,7 +2301,21 @@ await page.waitForFunction(() => {
 })
 const joustItemImages = await page.locator('fieldset').filter({ hasText: /Your relic|Your potions/ })
   .locator('.item-card-image, .item-icon-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
-const joustPotionCardFaces = await page.getByRole('group', { name: 'Your potions' }).locator('.item-card-image').count()
+const joustLayout = await page.evaluate(() => {
+  const stage = document.querySelector('.event-stage')
+  const panel = document.querySelector('.event-panel--resolver')
+  const actions = document.querySelector('.event-resolve-actions')
+  const buttons = [...document.querySelectorAll('.event-selectors .event-cards button')]
+  return {
+    cardFaces: document.querySelectorAll('.event-selectors .item-card-image').length,
+    tallestItem: Math.max(...buttons.map((button) => button.getBoundingClientRect().height)),
+    horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+    stageOverflow: stage ? stage.scrollHeight > stage.clientHeight + 2 : true,
+    panelContained: Boolean(panel && panel.getBoundingClientRect().left >= 0 && panel.getBoundingClientRect().right <= innerWidth),
+    actionsVisible: Boolean(actions && actions.getBoundingClientRect().bottom <= innerHeight),
+  }
+})
+await page.screenshot({ path: join(outDir, 'joust-payment-1040x723.png') })
 await joustRelic.click()
 const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await joustRelic.click()
@@ -2306,10 +2323,16 @@ const clearedJoustRelic = await joustRelic.getAttribute('aria-pressed')
 const zeroGoldBetAfterClearing = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
 const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
+await page.screenshot({ path: join(outDir, 'joust-payment-selected-1040x723.png') })
 check('The Joust enables its printed Relic and Potion alternatives at zero Gold', () => {
   assert(zeroGoldRelicBetEnabled)
-  assertDeepEqual(joustItemImages, [true, true])
-  assertEqual(joustPotionCardFaces, 0)
+  assertDeepEqual(joustItemImages, [true, true, true, true, true])
+  assertEqual(joustLayout.cardFaces, 0)
+  assert(joustLayout.tallestItem <= 96, `Joust item key is ${joustLayout.tallestItem}px tall`)
+  assert(!joustLayout.horizontalOverflow)
+  assert(!joustLayout.stageOverflow)
+  assert(joustLayout.panelContained)
+  assert(joustLayout.actionsVisible)
   assertEqual(clearedJoustRelic, 'false')
   assert(zeroGoldBetAfterClearing)
   assert(zeroGoldPotionBetEnabled)
@@ -2317,6 +2340,7 @@ check('The Joust enables its printed Relic and Potion alternatives at zero Gold'
 await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls))
 const lockedPotionPaymentSelectors = await page.getByRole('group', { name: /Your relic|Your potions/ }).count()
+await page.setViewportSize({ width: 1440, height: 900 })
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
