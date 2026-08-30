@@ -837,6 +837,75 @@ try {
   }, template.combat)
   await phone.locator('.combat').waitFor()
   const phoneFixture = template.combat
+  await phone.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const phoneCombatLayout = await phone.locator('.combat').evaluate((combat) => {
+    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    return {
+      board: box('.board'),
+      hand: box('.hand-area'),
+      scrollHeight: document.documentElement.scrollHeight,
+      targetTouchAction: getComputedStyle(combat.querySelector('.enemy')).touchAction,
+      cardTouchAction: getComputedStyle(combat.querySelector('.hand .card')).touchAction,
+    }
+  })
+  check(phoneCombatLayout.targetTouchAction === 'manipulation' &&
+    phoneCombatLayout.cardTouchAction.includes('pan-x'),
+  `iPhone target taps are delayed or card dragging lost its touch policy ${JSON.stringify(phoneCombatLayout)}`)
+  await phone.evaluate(() => {
+    window.__TARGET_TAP_DELAY__ = null
+    const target = document.querySelector('.enemy')
+    let touchEndedAt = 0
+    target.addEventListener('touchend', () => { touchEndedAt = performance.now() }, { once: true })
+    target.addEventListener('click', () => {
+      window.__TARGET_TAP_DELAY__ = performance.now() - touchEndedAt
+    }, { once: true })
+  })
+  const targetBox = await phone.locator('.enemy').first().boundingBox()
+  if (!targetBox) throw new Error('iPhone target has no touch box')
+  const touchViewport = await phone.evaluate(() => ({
+    left: visualViewport.offsetLeft,
+    top: visualViewport.offsetTop,
+    scale: visualViewport.scale,
+  }))
+  await phone.touchscreen.tap(
+    (targetBox.x + targetBox.width / 2 - touchViewport.left) * touchViewport.scale,
+    (targetBox.y + targetBox.height / 2 - touchViewport.top) * touchViewport.scale,
+  )
+  await phone.waitForFunction(() => window.__TARGET_TAP_DELAY__ !== null)
+  const targetTapDelay = await phone.evaluate(() => window.__TARGET_TAP_DELAY__)
+  check(targetTapDelay < 150, `iPhone delayed target click by ${targetTapDelay}ms after touchend`)
+  await phone.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.phase = 'won'
+    debug.setRun(run)
+  })
+  await phone.locator('.combat__result--won').waitFor()
+  await phone.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const phoneVictoryLayout = await phone.locator('.combat').evaluate((combat) => {
+    const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    const result = combat.querySelector('.combat__result')
+    return {
+      board: box('.board'),
+      hand: box('.hand-area'),
+      scrollHeight: document.documentElement.scrollHeight,
+      resultPosition: getComputedStyle(result).position,
+      resultPointerEvents: getComputedStyle(result).pointerEvents,
+    }
+  })
+  check(phoneVictoryLayout.resultPosition === 'absolute' && phoneVictoryLayout.resultPointerEvents === 'none' &&
+    ['top', 'bottom', 'height'].every((key) =>
+      Math.abs(phoneVictoryLayout.board[key] - phoneCombatLayout.board[key]) <= 1 &&
+      Math.abs(phoneVictoryLayout.hand[key] - phoneCombatLayout.hand[key]) <= 1) &&
+    Math.abs(phoneVictoryLayout.scrollHeight - phoneCombatLayout.scrollHeight) <= 1,
+  `Victory banner shifted the iPhone combat layout ${JSON.stringify({ phoneCombatLayout, phoneVictoryLayout })}`)
+  await phone.locator('.combat').screenshot({ path: join(output, `iphone-13-${browserName}-victory-overlay.png`) })
+  await phone.evaluate((combat) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(combat)
+    debug.setRun(run)
+  }, phoneFixture)
   const phoneHeroes = [
     { character: 'ironclad', sourceId: 'strike_ironclad', contact: 630, poses: ['ironclad-ready', 'ironclad-impact'] },
     { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['defect-charge', 'defect-release'] },
