@@ -95,11 +95,73 @@ try {
     })
   })
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map' && !document.querySelector('.neow-screen'))
+  const map = page.locator('.map:not([inert])')
+  const legend = map.locator('.map__legend')
+  check(await legend.locator(':scope > strong').count() === 0,
+    'the map legend still prints its redundant title')
+  const legendBeforeScroll = await legend.boundingBox()
+  const mapScroll = await map.evaluate(async (element) => {
+    element.scrollTop = element.scrollHeight
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    return { top: element.scrollTop, max: element.scrollHeight - element.clientHeight }
+  })
+  const legendAfterScroll = await legend.boundingBox()
+  check(mapScroll.max > 0 && mapScroll.top > 0, 'the map legend fixture did not scroll the map')
+  check(Boolean(legendBeforeScroll && legendAfterScroll &&
+    Math.abs(legendBeforeScroll.x - legendAfterScroll.x) <= 1 &&
+    Math.abs(legendBeforeScroll.y - legendAfterScroll.y) <= 1 &&
+    legendAfterScroll.x >= 0 && legendAfterScroll.y >= 0 &&
+    legendAfterScroll.x + legendAfterScroll.width <= 1441 &&
+    legendAfterScroll.y + legendAfterScroll.height <= 901),
+  'the map legend moved or clipped when the map scrolled')
+  await page.screenshot({ path: join(output, `desktop-${browserName}-scrolled-map-legend.png`) })
   await page.locator('.room--reachable').first().click()
   await page.locator('.combat').waitFor()
   if (await page.getByRole('button', { name: 'Resolve start of turn' }).count()) {
     await page.getByRole('button', { name: 'Resolve start of turn' }).click()
   }
+  await page.getByRole('button', { name: 'Map', exact: true }).click()
+  const mapDialog = page.getByRole('dialog', { name: /Act 1 map/ })
+  const mapPanel = mapDialog.locator('.map-peek__panel')
+  const overlayMap = mapDialog.locator('.map')
+  const overlayLegend = overlayMap.locator('.map__legend')
+  await overlayLegend.waitFor()
+  const overlayLegendBefore = await overlayLegend.boundingBox()
+  await overlayMap.evaluate(async (element) => {
+    element.scrollTop = element.scrollHeight
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+  })
+  const [overlayLegendAfter, mapPanelBox] = await Promise.all([
+    overlayLegend.boundingBox(), mapPanel.boundingBox(),
+  ])
+  check(Boolean(overlayLegendBefore && overlayLegendAfter && mapPanelBox &&
+    Math.abs(overlayLegendBefore.x - overlayLegendAfter.x) <= 1 &&
+    Math.abs(overlayLegendBefore.y - overlayLegendAfter.y) <= 1 &&
+    overlayLegendAfter.x >= mapPanelBox.x &&
+    overlayLegendAfter.x + overlayLegendAfter.width <= mapPanelBox.x + mapPanelBox.width),
+  'the desktop map-dialog legend moved or clipped when the map scrolled')
+  for (const viewport of [
+    { width: 700, height: 700, name: 'narrow' },
+    { width: 844, height: 390, name: 'short-wide' },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    const [responsiveLegendBox, mapHeaderBox, closeBox] = await Promise.all([
+      overlayLegend.boundingBox(), mapPanel.locator(':scope > header').boundingBox(),
+      mapDialog.getByRole('button', { name: 'Close' }).boundingBox(),
+    ])
+    const closeOwnsCentre = await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y)
+      return Boolean(hit?.closest('button')?.textContent?.includes('Close'))
+    }, { x: (closeBox?.x ?? 0) + (closeBox?.width ?? 0) / 2,
+      y: (closeBox?.y ?? 0) + (closeBox?.height ?? 0) / 2 })
+    check(Boolean(responsiveLegendBox && mapHeaderBox && closeBox && closeOwnsCentre &&
+      responsiveLegendBox.y >= mapHeaderBox.y + mapHeaderBox.height &&
+      responsiveLegendBox.x >= 0 && responsiveLegendBox.x + responsiveLegendBox.width <= viewport.width + 1),
+    `the ${viewport.name} map-dialog legend clips the dialog header or Close button`)
+    await page.screenshot({ path: join(output, `${viewport.name}-${browserName}-scrolled-map-legend.png`) })
+  }
+  await mapDialog.getByRole('button', { name: 'Close' }).click()
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   const template = await page.evaluate(() => {
     const combat = window.__STS_DEBUG__.getRun().combat
@@ -122,6 +184,14 @@ try {
     const startX = (Math.max(0, from.x) + Math.min(viewport.width, from.x + from.width)) / 2
     await page.mouse.move(startX, from.y + from.height / 2)
     await page.mouse.down()
+    await page.mouse.move(startX + 30, from.y + from.height / 2)
+    check(await page.locator('.card-drag').count() === 0,
+      'a horizontal hand movement immediately opened card targeting feedback')
+    await page.mouse.move(startX + 240, from.y + from.height / 2 - 80)
+    await page.locator('.card-drag').waitFor({ timeout: 500 })
+    check(await page.locator('.card-target-arrow').isVisible(),
+      'a shallow drag toward the enemy delayed its card and targeting feedback')
+    await page.screenshot({ path: join(output, `desktop-${browserName}-shallow-card-drag.png`) })
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
     await page.mouse.up()
     await page.waitForFunction((size) => window.__STS_DEBUG__.getState().players[0].hand.length < size,
@@ -156,7 +226,9 @@ try {
     run.combat = structuredClone(combat)
     run.combat.players[0].energy = 0
     run.combat.players[0].hand = Array.from({ length: 20 }, (_, index) => ({
-      uid: `fast-scroll-${index}`, defId: 'defend_ironclad', upgraded: false,
+      uid: `fast-scroll-${index}`,
+      defId: index % 2 === 0 ? 'defend_ironclad' : 'strike_ironclad',
+      upgraded: false,
     }))
     debug.setRun(run)
   }, template.combat)
@@ -200,7 +272,24 @@ try {
   check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
     jitterScrollBefore), 'upward finger jitter cancelled a horizontal hand scroll')
   check(await page.locator('.hand .card').count() === 20,
-    'upward finger jitter played a targetless card during horizontal scrolling')
+    'upward finger jitter played a player-targeting card during horizontal scrolling')
+  check(await page.locator('.card-drag').count() === 0,
+    'leftward finger jitter opened player-targeting feedback during horizontal scrolling')
+  const enemyCard = page.locator('.hand .card').nth(11)
+  await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = scroller.scrollWidth })
+  await enemyCard.scrollIntoViewIfNeeded()
+  const enemyScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
+  const enemyCardBox = await enemyCard.boundingBox()
+  if (!enemyCardBox) throw new Error('enemy-targeting jitter fixture is not visible')
+  await page.mouse.move(enemyCardBox.x + enemyCardBox.width / 2, enemyCardBox.y + enemyCardBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(enemyCardBox.x + enemyCardBox.width / 2 + 200,
+    enemyCardBox.y + enemyCardBox.height / 2 - 11)
+  await page.mouse.up()
+  check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft < before,
+    enemyScrollBefore), 'rightward finger jitter cancelled an enemy-targeting hand scroll')
+  check(await page.locator('.card-drag').count() === 0,
+    'rightward finger jitter opened enemy-targeting feedback during horizontal scrolling')
   await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
   await middleCard.hover()
   const armedScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)

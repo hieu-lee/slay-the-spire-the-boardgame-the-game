@@ -450,7 +450,6 @@ export function MapScreen({
         ))}
       </div>
       <aside className="map__legend" aria-label="Map legend">
-        <strong>Legend</strong>
         <ul>
           {LEGEND_KINDS.map((kind) => <li key={kind}><Icon name={ROOM_ICON[kind]} size={19} /> {ROOM_LABEL[kind]}</li>)}
         </ul>

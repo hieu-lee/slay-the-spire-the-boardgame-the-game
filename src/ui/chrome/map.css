@@ -63,7 +63,7 @@
 }
 
 .map__legend {
-  position: absolute;
+  position: fixed;
   z-index: 4;
   top: 15%;
   right: clamp(1rem, 4vw, 4.5rem);
@@ -92,15 +92,23 @@
 
 .map__legend::before { top: -0.35rem; }
 .map__legend::after { bottom: -0.35rem; }
-.map__legend > strong { display: block; margin-bottom: 0.45rem; text-align: center; font-size: 1.1rem; }
 .map__legend ul { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
 .map__legend li { display: flex; align-items: center; gap: 0.55rem; }
+
+.map-peek__panel .map__legend {
+  right: max(2rem, calc((100vw - 1100px) / 2 + 2rem));
+}
+
+@media (max-height: 600px) {
+  .map__legend { top: 6rem; }
+}
 
 @media (max-width: 760px) {
   .map { justify-content: flex-start; }
   .map__frame { width: calc(100% - 1rem); min-width: 0; }
   .map__row { gap: 1.1rem; }
-  .map__legend { position: relative; top: auto; right: auto; width: min(28rem, calc(100% - 2rem)); }
+  .map__legend { top: 6rem; right: 1rem; width: min(28rem, calc(100% - 2rem)); }
+  .map-peek__panel .map__legend { right: 1rem; }
   .map__legend ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
