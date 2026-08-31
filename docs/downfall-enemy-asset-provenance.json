@@ -73,7 +73,7 @@
       "sourceKind": "pc-downfall-extraction",
       "source": "docs/downfall-enemy-sources/pc/watcher.webp",
       "upstreamCode": "src/main/java/charbosses/bosses/Watcher/CharBossWatcher.java",
-      "pipeline": "PC Downfall extraction -> ImageGen clean left-attacking key frame -> transparent animated WebP",
+      "pipeline": "PC Downfall extraction -> style-matched ImageGen two-hand staff thrust -> transparent ten-frame animated WebP",
       "runtime": [
         "public/assets/combat/enemies/downfall_pc_watcher.webp",
         "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp",
@@ -84,10 +84,10 @@
       "runtimeSha256": {
       "public/assets/combat/enemies/downfall_pc_watcher.webp": "141d897be797bcc3fec16cb49582de4fac2b161e60b1e77d238ce1976590a7e4",
       "public/assets/combat/enemies/animations/downfall_pc_watcher-idle.webp": "7c99a5e5f74f434eff06da0a0b76030a0f86c7044de9221fb296d455050269d1",
-      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "ab03f6b4e6ea7dd751bd5f8a0a6e4409bfbe4d40433893cf8df25794b5118588"
+      "public/assets/combat/enemies/animations/downfall_pc_watcher-attack.webp": "ba2ff94f6b836b550e88ce69176e36be94acea067772b213c26c15eae29e00f8"
       },
-      "pipelineArtifact": "docs/downfall-enemy-sources/pc/evil-hero-attack-imagegen-sheet.webp",
-    "pipelineArtifactSha256": "7a3f926010f1c2d12a35ef2edf32138eaa4cb6529bbfb6a5b837ecf5fd212005"
+      "pipelineArtifact": "docs/downfall-enemy-sources/pc/watcher-staff-thrust-keyframe.webp",
+    "pipelineArtifactSha256": "1876ba19d6274344522e0ebefc6b9a0df00281fc8c16fb4620080da73f852e4e"
     },
     {
       "artId": "downfall_pc_neow",

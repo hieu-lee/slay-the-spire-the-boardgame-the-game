@@ -46,7 +46,7 @@ const BOSS_ATTACK_ART = new Map<string, readonly [scale: number, contactLeft: nu
 
 const SHORT_BOSS_ATTACK_ART = new Set([
   'downfall_corrupted', 'downfall_dark_core', 'downfall_demon', 'downfall_pc_defect',
-  'downfall_pc_ironclad', 'downfall_pc_neow', 'downfall_pc_silent', 'downfall_pc_watcher',
+  'downfall_pc_ironclad', 'downfall_pc_neow', 'downfall_pc_silent',
   'spire_shield',
 ])
 
@@ -242,13 +242,13 @@ const actorAttack: Record<CharacterId, VfxRecipe> = {
   watcher: recipe('blunt', 'lunge', 'magic-burst', 'astral-violet'),
   slime_boss: recipe('blunt', 'lunge', 'magic-burst', 'chaos-green'),
   guardian: recipe('blunt', 'lunge', 'guard-bloom', 'guard-blue'),
-  hexaghost: recipe('projectile', 'cast', 'magic-burst', 'flame-orange'),
+  hexaghost: recipe('projectile', 'cast', 'hexaghost-flame-impact', 'chaos-green'),
   hermit: recipe('projectile', 'lunge', 'magic-burst', 'impact-ochre'),
 }
 
 const actorTone: Record<CharacterId, string> = {
   ironclad: 'ember-orange', silent: 'venom-green', defect: 'voltaic-blue', watcher: 'astral-violet',
-  slime_boss: 'chaos-green', guardian: 'guard-blue', hexaghost: 'flame-orange', hermit: 'impact-ochre',
+  slime_boss: 'chaos-green', guardian: 'guard-blue', hexaghost: 'chaos-green', hermit: 'impact-ochre',
 }
 
 function allEffects(def: CardDef, mode?: number): Effect[] {
@@ -274,6 +274,7 @@ function fallbackRecipe(character: CharacterId, def: CardDef, mode?: number, res
   if (has('gainShiv', 'gainShivPerDiscard', 'useAllShivs', 'gainShivDamageBonus')) return shiv
   if (has('enterStance')) return recipe('stance', 'cast', 'magic-burst', actorTone[character])
   if (has('gainMiracle')) return recipe('mantra', 'cast', 'watcher-pray', 'mantra-cyan')
+  if (character === 'hexaghost' && resolvedType === 'attack') return actorAttack.hexaghost
   if (has('hit', 'rowHit', 'hitChoices', 'hitPerExhaust', 'copyLastAttack')) return actorAttack[character]
   if (has('damage', 'damagePerAttackIntent', 'execute')) {
     return recipe('projectile', 'cast', 'magic-burst', actorTone[character])

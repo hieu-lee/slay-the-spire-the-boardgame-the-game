@@ -667,7 +667,7 @@ for name in sys.argv[3:]:
     if any(f"downfall_pc_{hero}-attack.webp" in name for hero in ("ironclad", "silent", "defect", "watcher")) and im.n_frames >= 2:
         im.seek(0)
         idle_frame = im.convert("RGBA")
-        im.seek(1)
+        im.seek(5 if im.n_frames >= 10 else 1)
         strike_frame = im.convert("RGBA")
         alpha = strike_frame.getchannel("A")
         left_reach = sum(value > 128 for value in alpha.crop((0, 0, int(w * .2), h)).getdata())
@@ -863,7 +863,8 @@ check('combat animation effects are complete, transparent, and compact', () => {
   ]
   const expectedActions = [
     'awakened-blue-fire.webp', 'awakened-claw-scratch.webp', 'dark-channel.webp',
-    'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp',
+    'defect-face-orb.webp', 'frost-channel.webp', 'guard-bloom.webp', 'hexaghost-flame-impact.webp',
+    'hexaghost-flame.webp',
     'ironclad-bash.webp', 'ironclad-strike.webp', 'lightning-channel.webp', 'magic-burst.webp',
     'potion-burst.webp', 'silent-knife.webp', 'silent-poison.webp', 'silent-shiv.webp',
     'watcher-calm-aura.webp', 'watcher-meteor-impact.webp', 'watcher-meteor.webp',
@@ -917,8 +918,8 @@ print(json.dumps(faults))
     .reduce((bytes, file) => bytes + statSync(file).size, 0) < 320 * 1024,
     'base combat VFX exceed 320 KiB')
   assert(expectedActions.map((file) => join(combatActionVfxRoot, file))
-    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 1.25 * 1024 * 1024,
-    'personal combat VFX exceed 1.25 MiB')
+    .reduce((bytes, file) => bytes + statSync(file).size, 0) < 1.5 * 1024 * 1024,
+    'personal combat VFX exceed 1.5 MiB')
 })
 
 check('bundled stage and generated icon inventories are complete and decodable', () => {

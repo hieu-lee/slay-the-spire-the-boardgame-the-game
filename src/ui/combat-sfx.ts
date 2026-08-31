@@ -54,7 +54,11 @@ const ASSET_LAYERS: Readonly<Record<string, readonly LayerTemplate[]>> = {
   'watcher-pray': FAMILY_LAYERS.mantra,
   'silent-poison': FAMILY_LAYERS.poison,
   'silent-shiv': FAMILY_LAYERS.shiv,
-  'guard-bloom': FAMILY_LAYERS.block,
+  'guard-bloom': [
+    { sound: 'magic', rate: 0.9, volume: 0.1 },
+    { sound: 'block', volume: 0.28 },
+  ],
+  'hexaghost-flame-impact': FAMILY_LAYERS.projectile,
 }
 
 const CHARACTER_RATE: Readonly<Record<CharacterId, number>> = {

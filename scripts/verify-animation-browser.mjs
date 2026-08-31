@@ -321,7 +321,7 @@ try {
   const bossIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
     'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
-    'the_champ', 'the_collector', 'time_eater',
+    'the_champ', 'the_collector', 'time_eater', 'downfall_wrathful',
   ]
   const meleeBossIds = new Set([
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'donu',
@@ -587,6 +587,10 @@ try {
     { character: 'defect', sourceId: 'strike_defect', duration: '1.65s', contact: 1110, samples: [270, 825, 1375] },
     { character: 'watcher', sourceId: 'strike_watcher', duration: '1.65s', contact: 1050, samples: [270, 825, 1375] },
     { character: 'silent', sourceId: 'predator', duration: '2.04s', contact: 1025, samples: [170, 1025, 2039] },
+    { character: 'guardian', sourceId: 'guardian_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
+    { character: 'hermit', sourceId: 'hermit_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
+    { character: 'slime_boss', sourceId: 'slime_boss_strike', duration: '1.65s', contact: 630, samples: [270, 825, 1375] },
+    { character: 'hexaghost', sourceId: 'strike_hexaghost', duration: '2s', contact: 1450, samples: [270, 1000, 1725] },
   ]
   for (const [heroIndex, hero] of heroCases.entries()) {
     const ids = await page.evaluate(({ base, enemy, character, sourceId, heroIndex }) => {
@@ -607,7 +611,7 @@ try {
         character, name: character, hp: 999, maxHp: 999, dead: false,
         stance: character === 'watcher' ? 'wrath' : actor.stance,
       })
-      const seq = 1_000_001 + heroIndex
+      const seq = 1_000_001 + heroIndex * 10
       const attack = {
         seq, kind: 'card', actorId: actor.id, sourceId, enemyIds, playerIds: [],
         upgraded: false, copied: false, energy: 1,
@@ -694,6 +698,30 @@ try {
       }, time)
       check(await impactOpacityAt(1_049) === 0, 'watcher: meteor impact is visible before ground contact')
       check(await impactOpacityAt(1050) >= 0.9, 'watcher: meteor impact is missing at ground contact')
+    }
+    if (hero.character === 'hexaghost') {
+      const flame = currentAttack.locator('.character-attack__hexaghost-flame').first()
+      const flight = await flame.evaluate((element) => {
+        const style = getComputedStyle(element)
+        const frames = element.getAnimations()[0]?.effect?.getKeyframes() ?? []
+        return {
+          duration: style.animationDuration,
+          delay: style.animationDelay,
+          oneWay: frames.length > 1 && frames[0].transform !== frames.at(-1).transform,
+          loaded: element.querySelector('img')?.complete && element.querySelector('img')?.naturalWidth > 0,
+        }
+      })
+      const impact = page.locator(
+        `.enemy[data-enemy-id="${ids.targetId}"] .combat-vfx--attack-impact[data-vfx-seq="${ids.seq}"]`,
+      )
+      const impactTiming = await impact.evaluate((element) => ({
+        delay: getComputedStyle(element).animationDelay,
+        asset: element.dataset.vfxAsset,
+      }))
+      check(flight.duration === '0.9s' && flight.delay === '0.55s' && flight.oneWay && flight.loaded,
+        `hexaghost: green flame is not a loaded 0.9s one-way flight ${JSON.stringify(flight)}`)
+      check(impactTiming.delay === '1.45s' && impactTiming.asset === 'hexaghost-flame-impact',
+        `hexaghost: impact VFX missed flame contact ${JSON.stringify(impactTiming)}`)
     }
     for (const [index, time] of hero.samples.entries()) {
       await seat.evaluate((element, currentTime) => {
@@ -1135,6 +1163,14 @@ try {
     { character: 'defect', sourceId: 'strike_defect', contact: 1110, poses: ['defect-charge', 'defect-release'] },
     { character: 'silent', sourceId: 'predator', contact: 1025, poses: ['silent-throw'] },
     { character: 'watcher', sourceId: 'strike_watcher', contact: 1050, poses: ['watcher-charge', 'watcher-cast'] },
+    { character: 'guardian', sourceId: 'guardian_strike', contact: 630,
+      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+    { character: 'hermit', sourceId: 'hermit_strike', contact: 630,
+      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+    { character: 'slime_boss', sourceId: 'slime_boss_strike', contact: 630,
+      bodyAnimation: 'attack-downfall', poses: ['downfall-ready', 'downfall-impact'] },
+    { character: 'hexaghost', sourceId: 'strike_hexaghost', contact: 1450,
+      bodyAnimation: 'attack-downfall-hexaghost', poses: ['downfall-ready', 'downfall-impact'] },
   ]
   for (const [index, hero] of phoneHeroes.entries()) {
     await phone.evaluate(({ base, hero, index }) => {
@@ -1194,7 +1230,9 @@ try {
               filter: getComputedStyle(attack, '::before').filter }
           : null,
         meteorCount: attack?.querySelectorAll('.character-attack__meteor').length ?? 0,
-        projectileCount: attack?.querySelectorAll('.character-attack__dagger, .character-attack__bolt').length ?? 0,
+        projectileCount: attack?.querySelectorAll(
+          '.character-attack__dagger, .character-attack__bolt, .character-attack__hexaghost-flame',
+        ).length ?? 0,
         hitDelay: Number.parseFloat(hit ? getComputedStyle(hit).getPropertyValue('--hit-delay') : '0'),
         hitAnimation: hit ? getComputedStyle(hit).animationName : 'none',
         portraitAnimations: target?.getAnimations().length ?? 0,
@@ -1213,14 +1251,14 @@ try {
     check(iphoneAttack.mobilePerformance === 'true',
       `iPhone 13 did not enable its performance profile ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.osReducedMotion && iphoneAttack.gameReducedMotion === 'false' &&
-      iphoneAttack.bodyAnimation === `attack-${hero.character}` && iphoneAttack.attackVisible &&
+      iphoneAttack.bodyAnimation === (hero.bodyAnimation ?? `attack-${hero.character}`) && iphoneAttack.attackVisible &&
       iphoneAttack.poseAssets.every((pose) => pose.display !== 'none' && pose.animation !== 'none' && pose.loaded) &&
       (hero.character !== 'watcher' || iphoneAttack.meteorCount === 1),
     `iPhone 13 OS Reduce Motion skipped ${hero.character} attack frames ${JSON.stringify(iphoneAttack)}`)
     check(!iphoneAttack.speedTrail || iphoneAttack.speedTrail.animation === 'attack-speed-trail' &&
       iphoneAttack.speedTrail.filter !== 'none',
     `iPhone 13 lost Ironclad's PC speed trail ${JSON.stringify(iphoneAttack)}`)
-    check((hero.character === 'silent' || hero.character === 'defect') === (iphoneAttack.projectileCount > 0),
+    check(['silent', 'defect', 'hexaghost'].includes(hero.character) === (iphoneAttack.projectileCount > 0),
       `iPhone 13 changed ${hero.character}'s projectile content ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.hitDelay > 0, `iPhone 13 damage landed before ${hero.character} contact ${JSON.stringify(iphoneAttack)}`)
     check(iphoneAttack.hitAnimation === 'impact-bloom' && iphoneAttack.targetVfx.display !== 'none' &&
@@ -1238,8 +1276,9 @@ try {
     check(phoneSounds.some((sound) => phoneImpactPaths.has(sound.path) && sound.delayMs === hero.contact) &&
       phoneSounds.some((sound) => sound.delayMs < hero.contact),
     `iPhone 13 changed ${hero.character} SFX content/timing ${JSON.stringify(phoneSounds)}`)
-    if (hero.character === 'watcher') {
-      await phone.locator('.board').screenshot({ path: join(output, `iphone-13-${browserName}-watcher-impact.png`) })
+    if (hero.character === 'watcher' || hero.character === 'hexaghost') {
+      await phone.locator('.board').screenshot({ path: join(output,
+        `iphone-13-${browserName}-${hero.character}-impact.png`) })
     }
   }
 
@@ -1313,4 +1352,4 @@ if (failures.length) {
   console.error(failures.map((failure) => `- ${failure}`).join('\n'))
   process.exit(1)
 }
-console.log(`Animation browser QA passed: 13 bosses × 4 states, 4 heroes × 3 phases; screenshots: ${output}`)
+console.log(`Animation browser QA passed: 14 bosses × 4 states, 8 heroes × 3 phases; screenshots: ${output}`)

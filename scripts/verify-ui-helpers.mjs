@@ -107,7 +107,7 @@ check('melee bosses dash while Deca and Corrupt Heart cast from their lane', () 
 check('every reachable card resolves a stable combat VFX recipe for every character', () => {
   const characters = CHARACTER_IDS
   const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'frost-channel', 'dark-channel', 'watcher-pray',
-    'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
+    'silent-poison', 'silent-shiv', 'guard-bloom', 'hexaghost-flame-impact', 'potion-burst', 'magic-burst'])
   const cards = Object.values(CARDS)
   assert(cards.filter((card) => characters.includes(card.owner)).length >= 315,
     'the integrated base and Hexaghost card pools are covered')
@@ -204,6 +204,11 @@ check('iconic cards and modes keep audible identities', () => {
     'Calm and Wrath have different sound shapes')
   assert(signature(cardSfxRecipe('silent', 'deadly_poison')) !== signature(cardSfxRecipe('silent', 'blade_dance')),
     'poison and Shivs stay distinct')
+  const hexaghostStrike = cardVfxRecipe('hexaghost', 'strike_hexaghost')
+  assertDeepEqual([hexaghostStrike.asset, hexaghostStrike.tone], ['hexaghost-flame-impact', 'chaos-green'],
+    'Hexaghost attacks use their green flame impact')
+  assert(cardSfxRecipe('hexaghost', 'strike_hexaghost').layers.some((layer) => layer.sound === 'enemy'),
+    'Hexaghost green flame keeps an impact cue')
   assert(signature(cardSfxRecipe('ironclad', 'bash')) !== signature(cardSfxRecipe('watcher', 'bash')),
     'the acting character colors a cross-character card')
   assertEqual(new Set([0, 1, 2].map((mode) => signature(cardSfxRecipe('watcher', 'wish', mode)))).size, 3,

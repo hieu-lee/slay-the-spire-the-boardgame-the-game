@@ -4999,6 +4999,22 @@ function CombatScreenView({
                                 </span>
                               ))
                               : null}
+                            {occupant.character === 'hexaghost'
+                              ? characterAttack.targets.map((target, index) => (
+                                <span
+                                  className="character-attack__hexaghost-flame"
+                                  data-attack-target-id={target.id}
+                                  key={target.id}
+                                  style={{
+                                    '--attack-target-x': `${target.x}px`,
+                                    '--attack-target-y': `${target.y}px`,
+                                    '--attack-delay': `${index * 70}ms`,
+                                  } as React.CSSProperties}
+                                >
+                                  <img src={assetPath('combat/vfx/actions/hexaghost-flame.webp')} alt="" />
+                                </span>
+                              ))
+                              : null}
                           </span>
                         ))}
                         {actorVfx.map((active) => (

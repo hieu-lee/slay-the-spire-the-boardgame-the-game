@@ -139,11 +139,11 @@ def optimize(path: Path) -> None:
 
 def rework(path: Path, replacement: Path | None = None) -> None:
     animation = Image.open(path)
-    if animation.n_frames == 10:
+    if animation.n_frames == 10 and replacement is None:
         audit(path)
         return
-    if animation.n_frames != 2:
-        raise ValueError(f"{path}: expected 2 or 10 frames, got {animation.n_frames}")
+    if animation.n_frames not in (2, 3, 10):
+        raise ValueError(f"{path}: expected 2, 3, or 10 frames, got {animation.n_frames}")
     animation.seek(0)
     windup = animation.convert("RGBA")
     animation.seek(1)
@@ -154,7 +154,9 @@ def rework(path: Path, replacement: Path | None = None) -> None:
     recovery_frames = [variant(windup, scale, shift) for scale, shift in ((1.0, 0), (0.99, 1), (0.98, 2))]
     frames = windup_frames
     durations = list(PHASE_MS)
-    shift = -4 if path.stem.removesuffix("-attack") in MELEE else 0
+    # Keep the transition as a distinct frame even for ranged casts; img2webp
+    # otherwise merges two identical frames and destroys the phase cadence.
+    shift = -4 if path.stem.removesuffix("-attack") in MELEE else 2
     frames.append(variant(windup, 1.0, shift))
     durations.append(180)
     frames.extend(impact_frames)
@@ -218,6 +220,7 @@ def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("files", nargs="*", type=Path)
     parser.add_argument("--replace-time-eater-impact", type=Path)
+    parser.add_argument("--replace-impact", type=Path)
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--optimize", action="store_true")
     parser.add_argument("--align-lower-body", action="store_true")
@@ -244,7 +247,9 @@ def main() -> None:
         if args.optimize:
             optimize(path)
             continue
-        replacement = args.replace_time_eater_impact if path.name == "time_eater-attack.webp" else None
+        replacement = args.replace_impact or (
+            args.replace_time_eater_impact if path.name == "time_eater-attack.webp" else None
+        )
         rework(path, replacement)
 
 

@@ -52,6 +52,7 @@ export function characterAttackContactMs(
   if (actor.character === 'silent') return 1_025 + targetIndex * 70
   if (actor.character === 'defect') return 1_110 + targetIndex * 70
   if (actor.character === 'watcher') return 1_050 + targetIndex * 70
+  if (actor.character === 'hexaghost') return 1_450 + targetIndex * 70
   return 630
 }
 
