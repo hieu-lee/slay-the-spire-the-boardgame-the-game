@@ -1,6 +1,6 @@
 import { CARDS } from '../src/game/cards.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
-import { NEOW_CARDS } from '../src/game/neow.ts'
+import { HEARTS_BOON_CARDS, NEOW_CARDS, formatHeartBoonLabel } from '../src/game/neow.ts'
 import {
   chooseNeow,
   createRun,
@@ -57,6 +57,15 @@ const resolveImmediate = (run, gain = true) => {
 }
 
 const inventory = NEOW_CARDS.map((card) => card.options.map((option) => option.label))
+
+check("Heart's Boon labels name Rare rewards and pluralize Potions", () => {
+  assertEqual(formatHeartBoonLabel('Gain [yellow-card-reward].'), 'Gain a Rare Card Reward.')
+  assertEqual(formatHeartBoonLabel('Gain [potion].'), 'Gain Potion.')
+  assertEqual(formatHeartBoonLabel('Gain 1 [potion].'), 'Gain 1 Potion.')
+  assertEqual(formatHeartBoonLabel('Gain 3 [potion].'), 'Gain 3 Potions.')
+  assert(HEARTS_BOON_CARDS.every((card) => card.options.every((option) =>
+    !option.label.includes('[yellow-card-reward]') && !option.label.includes('[potion]'))))
+})
 
 check('the exact 14 base and six Colorless-unlocked faces are transcribed', () => {
   assertEqual(NEOW_CARDS.length, 20)

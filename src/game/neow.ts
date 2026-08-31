@@ -109,12 +109,21 @@ const boonEffects: readonly (readonly [NeowEffect[], NeowEffect[], NeowEffect[]]
   [[{ kind: 'potions', count: 3 }], [{ kind: 'remove', count: 2, starter: 'defend' }], [{ kind: 'reward', reward: 'card', count: 1, look: 5 }, { kind: 'loseGold', amount: 1 }, { kind: 'loseHp', amount: 1 }]],
 ]
 
+export function formatHeartBoonLabel(label: string): string {
+  return label
+    .replaceAll('[yellow-card-reward]', 'a Rare Card Reward')
+    .replace(/(?:(\d+) )?\[potion\]/g, (_token, count?: string) =>
+      `${count ? `${count} ` : ''}${count === undefined || count === '1' ? 'Potion' : 'Potions'}`)
+}
+
 export const HEARTS_BOON_CARDS: readonly NeowCard[] = HEARTS_BOONS.map((boon, index) => ({
   id: `heart_boon_${String(index).padStart(2, '0')}`,
   text: boon.speech,
   source: 'heart' as const,
   unlocked: index >= 14,
-  options: boon.options.map((label, optionIndex) => ({ label, effects: boonEffects[index]![optionIndex]! })) as unknown as NeowCard['options'],
+  options: boon.options.map((label, optionIndex) => ({
+    label: formatHeartBoonLabel(label), effects: boonEffects[index]![optionIndex]!,
+  })) as unknown as NeowCard['options'],
 }))
 
 /** Exact 14-card base deck plus the six cards in the Colorless unlock box. */

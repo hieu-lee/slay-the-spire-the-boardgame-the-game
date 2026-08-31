@@ -203,6 +203,10 @@ await page.evaluate((run) => {
   const progress = Object.values(next.neow.players)[0]
   progress.card = undefined
   progress.cardId = 'heart_boon_00'
+  Object.assign(progress, {
+    redGoldPending: false, redRewardPending: false, redReward: null, reward: null,
+    blueOption: null, pendingEffect: null, done: false,
+  })
   window.__STS_DEBUG__.setRun(next)
 }, soloNeowRun)
 await page.getByRole('heading', { name: 'The Heart’s Boon' }).waitFor()
@@ -217,6 +221,16 @@ const heartsBoonNeowLayout = await page.evaluate(() => {
     rightOfHero: !!neowBox && !!heroBox && neowBox.left > heroBox.right,
   }
 })
+const heartsBoonPotionLabel = await page.getByRole('button', { name: 'Gain 2 Potions.' }).isVisible()
+await page.evaluate(() => {
+  const debug = window.__STS_DEBUG__
+  const run = structuredClone(debug.getRun())
+  Object.values(run.neow.players)[0].cardId = 'heart_boon_08'
+  debug.setRun(run)
+})
+const heartsBoonRareLabel = await page.getByRole('button', {
+  name: 'Gain a Rare Card Reward. Lose 2 max HP.',
+}).isVisible()
 await page.screenshot({ path: join(outDir, 'hearts-boon-neow-present.png'), fullPage: true })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), soloNeowRun)
 await page.getByRole('heading', { name: 'Neow’s Blessing' }).waitFor()
@@ -307,6 +321,8 @@ check('The Heart’s Boon keeps Neow on the right side of the scene', () => {
   assert(heartsBoonNeowLayout.decoded, 'Neow art did not decode on the Heart boon screen')
   assert(heartsBoonNeowLayout.visible, 'Neow escaped or disappeared from the Heart boon screen')
   assert(heartsBoonNeowLayout.rightOfHero, 'Neow did not stay opposite the Downfall hero')
+  assert(heartsBoonPotionLabel, 'the Potion option kept its raw icon token or wrong plurality')
+  assert(heartsBoonRareLabel, 'the Rare Card Reward option kept its raw icon token')
 })
 
 check('solo Catch Up dialogue remains clickable beside Neow', () => assertEqual(localSoloCatchUpSwitched, 'Silent'))

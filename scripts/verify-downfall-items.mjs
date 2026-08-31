@@ -22,7 +22,7 @@ import {
   whaleAleDrawCount,
 } from '../src/game/downfall/items.ts'
 import { POTIONS, RELICS } from '../src/game/relics.ts'
-import { HEARTS_BOON_CARDS, dealBlessings } from '../src/game/neow.ts'
+import { HEARTS_BOON_CARDS, dealBlessings, formatHeartBoonLabel } from '../src/game/neow.ts'
 import { addCard, bottomCardChoices, drawCardChoices } from '../src/game/acquisition.ts'
 import { createRng } from '../src/game/rng.ts'
 import {
@@ -283,7 +283,7 @@ assert.equal(HEARTS_BOON_CARDS.filter((card) => card.unlocked).length, 6)
 for (const [index, card] of HEARTS_BOON_CARDS.entries()) {
   assert.equal(card.id, `heart_boon_${String(index).padStart(2, '0')}`)
   assert.equal(card.source, 'heart')
-  assert.deepEqual(card.options.map(({ label }) => label), HEARTS_BOONS[index].options)
+  assert.deepEqual(card.options.map(({ label }) => label), HEARTS_BOONS[index].options.map(formatHeartBoonLabel))
   assert.ok(card.options.every(({ effects }) => effects.length > 0), `${card.id} has an unresolved option`)
 }
 const mixedDeal = dealBlessings(createRng(47), [
