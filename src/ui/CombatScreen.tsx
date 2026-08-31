@@ -2226,25 +2226,55 @@ function CombatScreenView({
   }
 
   function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || !cardCanStartDrag(card)) return
+    if (event.button !== 0) return
+    const canDrag = cardCanStartDrag(card)
     const def = faceOf(cardDef(card.defId), card.upgraded)
-    const pending = pendingFor(card, null, state, viewer!)
+    const pending = canDrag ? pendingFor(card, null, state, viewer!) : null
+    const scrollElement = event.currentTarget.closest('.hand-scroll') as HTMLDivElement | null
     event.currentTarget.setPointerCapture(event.pointerId)
     cardDragStart.current = {
       card, pointerId: event.pointerId,
       startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
-      needsEnemy: pending.needsEnemy,
-      needsPlayer: !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0),
+      needsEnemy: pending?.needsEnemy ?? false,
+      needsPlayer: pending ? !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0) : false,
       hitsRow: def.target === 'row',
       element: event.currentTarget,
+      scrollElement,
+      scrollLeft: scrollElement?.scrollLeft ?? 0,
+      scrolling: false,
+      canDrag,
+      moved: false,
     }
   }
 
   function onCardPointerMove(event: React.PointerEvent<HTMLElement>) {
     const start = cardDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
+    const dx = event.clientX - start.startX
+    const dy = event.clientY - start.startY
+    if (Math.hypot(dx, dy) >= 10) start.moved = true
+    const verticallyDominant = dy < -10 && -dy >= Math.abs(dx)
+    const overRequiredTarget = dy < -10 && !verticallyDominant && (start.needsEnemy
+      ? Boolean(dragTargetAt(event.clientX, event.clientY, start.hitsRow))
+      : start.needsPlayer ? Boolean(dragPlayerAt(event.clientX, event.clientY)) : false)
+    const upwardIntent = verticallyDominant || overRequiredTarget
+    if (!cardDragLive.current && start.scrolling) {
+      if (upwardIntent) {
+        if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft
+        start.scrolling = false
+      } else {
+        if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft - dx
+        return
+      }
+    }
+    if (!cardDragLive.current && Math.abs(dx) >= 10 && !upwardIntent && Math.abs(dx) > Math.abs(dy)) {
+      start.scrolling = true
+      if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft - dx
+      return
+    }
+    if (!start.canDrag) return
     if (!cardDragLive.current &&
-      Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
+      Math.hypot(dx, dy) < 10) return
     cardDragMove.current = { x: event.clientX, y: event.clientY }
     if (cardDragFrame.current !== null) return
     cardDragFrame.current = requestAnimationFrame(() => {
@@ -2302,12 +2332,23 @@ function CombatScreenView({
   function finishCardDrag(event: React.PointerEvent<HTMLElement>) {
     const start = cardDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
-    const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
-    const lifted = event.clientY < start.startY - 10
+    const dx = event.clientX - start.startX
+    const dy = event.clientY - start.startY
     const needsEnemy = cardDragLive.current?.needsEnemy ?? start.needsEnemy
     const needsPlayer = cardDragLive.current?.needsPlayer ?? start.needsPlayer
     const targetUid = needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null
     const targetPlayerId = needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null
+    const releaseUpwardIntent = dy < -10 && (-dy >= Math.abs(dx) || Boolean(targetUid || targetPlayerId))
+    const releaseHorizontalIntent = Math.abs(dx) >= 10 && !releaseUpwardIntent && Math.abs(dx) > Math.abs(dy)
+    const wasScrolling = releaseHorizontalIntent ||
+      (!cardDragLive.current && start.scrolling && !releaseUpwardIntent)
+    if (start.scrolling && releaseUpwardIntent && start.scrollElement) {
+      start.scrollElement.scrollLeft = start.scrollLeft
+    } else if (releaseHorizontalIntent && start.scrollElement) {
+      start.scrollElement.scrollLeft = start.scrollLeft - dx
+    }
+    const moved = start.moved || Math.hypot(dx, dy) >= 10
+    const lifted = dy < -10
     clearCardDrag()
     if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
     if (!moved) return
@@ -2315,6 +2356,7 @@ function CombatScreenView({
     setTimeout(() => {
       if (suppressCardClick.current === start.card.uid) suppressCardClick.current = null
     }, 0)
+    if (!start.canDrag || wasScrolling) return
     if (lifted && (!needsEnemy || targetUid) && (!needsPlayer || targetPlayerId)) {
       onCardClick(start.card, targetUid, targetPlayerId)
     }

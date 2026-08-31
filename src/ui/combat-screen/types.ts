@@ -87,7 +87,14 @@ export type CardDrag = {
   hitsRow: boolean
 }
 
-export type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & { element: HTMLButtonElement }
+export type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & {
+  element: HTMLButtonElement
+  scrollElement: HTMLDivElement | null
+  scrollLeft: number
+  scrolling: boolean
+  canDrag: boolean
+  moved: boolean
+}
 
 export type EndTurnEffectDrag = {
   ability: EndTurnAbility

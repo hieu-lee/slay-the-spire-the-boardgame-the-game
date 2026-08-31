@@ -269,7 +269,7 @@ button.pile:hover { filter: brightness(1.15); }
   transform: rotate(var(--fan-angle, 0deg)) translateY(var(--fan-lift, 0px));
   transform-origin: 50% 130%;
   margin-inline: -0.9rem;
-  touch-action: pan-x pinch-zoom;
+  touch-action: none;
   transition:
     transform var(--motion-fast) var(--ease),
     filter var(--motion-fast) var(--ease);
