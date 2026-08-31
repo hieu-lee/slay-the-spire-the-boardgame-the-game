@@ -125,6 +125,33 @@
   transform: translateY(calc(var(--orb-depth) * 1.05rem));
 }
 
+.orbs--targetable { pointer-events: auto; }
+
+.orbs__target {
+  display: block;
+  flex: none;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  margin-inline: -0.08rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.orbs__target .token--orb {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  filter: brightness(1.24) drop-shadow(0 0 0.35rem #f7eb5c);
+}
+
+.orbs__target:focus-visible .token--orb {
+  outline: 2px solid #fff3a6;
+  outline-offset: 0.2rem;
+  border-radius: 50%;
+}
+
 .orbs .token--orb-empty {
   width: clamp(1.45rem, calc(9rem / var(--orb-count)), 2.45rem);
   height: clamp(1.45rem, calc(9rem / var(--orb-count)), 2.45rem);

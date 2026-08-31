@@ -38,6 +38,7 @@ async function fixture({ character, powers = [], orbs = [null, null, null], enem
     run.combat.phase = 'player'
     run.combat.pendingTriggers = []
     run.combat.startTurnProgress = undefined
+    run.combat.endTurnProgress = undefined
     run.combat.pendingDistilled = undefined
     run.combat.players = [{
       ...player,
@@ -154,6 +155,22 @@ try {
 
   await fixture({
     character: 'defect',
+    powers: [{ uid: 'click-loop', defId: 'loop', upgraded: true }],
+    orbs: ['lightning', null, null],
+    enemies: [{ uid: 'click-loop-enemy', hp: 20 }],
+  })
+  await page.getByRole('button', { name: 'End turn', exact: true }).click()
+  const clickLoop = page.locator('.end-turn-effect--card')
+  const keyboardOrb = page.getByRole('button', { name: 'Choose lightning Orb 1' })
+  await clickLoop.click()
+  await keyboardOrb.click()
+  await clickLoop.click()
+  await keyboardOrb.press('Enter')
+  await page.locator('button.end-turn-effect--orb').waitFor()
+  check('Loop Orb selection accepts click and keyboard confirmation', () => assert(true))
+
+  await fixture({
+    character: 'defect',
     powers: [
       { uid: 'drag-electrodynamics', defId: 'electrodynamics', upgraded: true },
       { uid: 'drag-loop', defId: 'loop', upgraded: true },
@@ -168,15 +185,32 @@ try {
   await page.getByRole('button', { name: 'End turn', exact: true }).click()
   const loop = page.locator('.end-turn-effect--card')
   await loop.waitFor()
-  await drag(loop, page.locator('[data-enemy-id="loop-row-boss"]'))
+  const loopOrb = page.getByRole('button', { name: 'Choose lightning Orb 1' })
+  await loopOrb.waitFor()
+  await page.screenshot({ path: join(output, 'defect-loop-select-orb.png'), fullPage: true })
+  const loopOrbBox = await loopOrb.boundingBox()
+  const defectPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
+  assert(loopOrbBox && defectPortraitBox, 'the Loop target Orb and Defect portrait must be visible')
+  assert(defectPortraitBox.width > 80 && defectPortraitBox.height > 80,
+    'the Defect portrait collapsed after adding the independent Orb target')
+  assert(loopOrbBox.x >= defectPortraitBox.x - defectPortraitBox.width * 0.3 &&
+    loopOrbBox.x + loopOrbBox.width <= defectPortraitBox.x + defectPortraitBox.width * 1.3,
+  'the selected Orb detached from the Defect portrait')
+  const orbGap = defectPortraitBox.y - (loopOrbBox.y + loopOrbBox.height)
+  assert(orbGap >= -1 && orbGap <= 160, `the selected Orb detached vertically from the Defect: ${orbGap}px`)
+  await drag(loop, loopOrb)
+  await drag(loop, loopOrb)
+  const copiedLightning = page.locator('button.end-turn-effect--orb')
+  await copiedLightning.waitFor()
+  await drag(copiedLightning, page.locator('[data-enemy-id="loop-row-boss"]'))
   await page.getByText('choose its row', { exact: false }).waitFor()
-  await drag(page.locator('.end-turn-effect--card'), page.locator('[data-enemy-id="loop-row-two"]'))
+  await drag(copiedLightning, page.locator('[data-enemy-id="loop-row-two"]'))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies
-    .find((enemy) => enemy.uid === 'loop-row-two')?.hp === 18)
+    .find((enemy) => enemy.uid === 'loop-row-two')?.hp === 19)
   const loopBossHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'loop-row-boss')?.hp)
-  check('Loop drags an Electrodynamics boss target through the required row tiebreak', () => {
-    assert(loopBossHp === 18, `the selected Loop row did not include the boss: ${loopBossHp}`)
+  check('Loop selects an Orb, then its copied Electrodynamics Lightning uses the required row tiebreak', () => {
+    assert(loopBossHp === 19, `the selected copied Lightning row did not include the boss: ${loopBossHp}`)
   })
 
   assert(pageErrors.length === 0, `browser errors: ${pageErrors.join('\n')}`)

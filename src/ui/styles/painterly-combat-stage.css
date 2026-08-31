@@ -185,6 +185,17 @@
   filter: drop-shadow(0 0 0.35rem #65e8ff) drop-shadow(0 0 0.8rem rgb(55 203 234 / 0.7));
 }
 
+.seat__interactive {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  --portrait-height: calc(clamp(7.5rem, 18vh, 12rem) * var(--stage-scale));
+  --orb-clearance: 3rem;
+}
+
+.board[data-rows='3'] .seat__interactive { --portrait-height: calc(7.4rem * var(--stage-scale)); }
+.board[data-rows='4'] .seat__interactive { --portrait-height: calc(5.7rem * var(--stage-scale)); }
+
 .seat__portrait {
   position: relative;
   display: grid;

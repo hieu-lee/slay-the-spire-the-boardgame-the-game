@@ -197,25 +197,24 @@ export function powerAbilityUsed(state: CombatState, playerId: string, powerUid:
   return state.powerTriggersUsedThisTurn.includes(powerAbilityKey(playerId, powerUid))
 }
 
-const loopOrbTarget = (slot: number, enemyUid?: string): string => `${slot}:${enemyUid ?? ''}`
+const loopOrbTarget = (slot: number): string => `orb:${slot}`
 
 export function parseLoopOrbTarget(value: string | undefined): { slot: number; enemyUid: string | null } | undefined {
   if (value === undefined) return undefined
+  if (value.startsWith('orb:')) {
+    const slot = Number(value.slice(4))
+    return Number.isInteger(slot) && slot >= 0 && loopOrbTarget(slot) === value ? { slot, enemyUid: null } : undefined
+  }
   const colon = value.indexOf(':')
   const slot = Number(value.slice(0, colon))
   if (colon < 1 || !Number.isInteger(slot) || slot < 0) return undefined
   return { slot, enemyUid: value.slice(colon + 1) || null }
 }
 
-export function loopOrbTargets(state: CombatState, player: Player): EndTurnAbility['targets'] {
-  const targets = player.orbs.flatMap((orb, slot) => orb === 'frost'
-    ? [{ uid: loopOrbTarget(slot), label: `Frost Orb ${slot + 1}` }]
-    : orb === 'lightning'
-      ? lightningTargetOptions(state, player).map((target) => ({
-        uid: loopOrbTarget(slot, target.uid),
-        label: `Lightning Orb ${slot + 1} → ${target.label}`,
-      }))
-      : [])
+export function loopOrbTargets(player: Player): EndTurnAbility['targets'] {
+  const targets = player.orbs.flatMap((orb, slot) => orb
+    ? [{ uid: loopOrbTarget(slot), label: `${orb[0]!.toUpperCase()}${orb.slice(1)} Orb ${slot + 1}` }]
+    : [])
   return targets.length > 0 ? targets : undefined
 }
 

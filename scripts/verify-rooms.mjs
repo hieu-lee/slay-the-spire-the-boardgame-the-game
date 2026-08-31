@@ -149,6 +149,50 @@ check('a persisted legacy end-turn order resets safely into the drag flow', () =
   }
 })
 
+check('a persisted legacy Loop target is rebuilt into an Orb selection', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(defect, {
+    character: 'defect',
+    powers: [{ uid: 'legacy-loop', defId: 'loop', upgraded: false }],
+    orbs: ['lightning', null, null],
+  })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const saved = structuredClone(room)
+  const oldTarget = saved.run.combat.enemies[0].uid
+  const oldChoice = `${a.playerId}/power:legacy-loop@0:${oldTarget}`
+  saved.run.combat.endTurnProgress.order[0] = oldChoice
+  saved.run.combat.endTurnProgress.rowTiebreakFor = `${a.playerId}/power:legacy-loop`
+  saved.endTurnAbilities[0] = {
+    ...saved.endTurnAbilities[0],
+    targets: [{ uid: `0:${oldTarget}`, label: 'Lightning Orb 1 → Cultist' }],
+    orbChoice: undefined,
+  }
+
+  const directory = mkdtempSync(join(tmpdir(), 'sts-legacy-loop-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [saved] }))
+    const restored = createStore({ file }).rooms.get(room.code)
+    const reconnectA = joinRoom(restored, { token: a.token })
+    joinRoom(restored, { token: b.token })
+    const choice = snapshotFor(restored, reconnectA.token).endTurnAbilities[0]
+    assertEqual(restored.run.combat.endTurnProgress.rowTiebreakFor, undefined,
+      'a legacy Loop row tiebreak was not cleared before rebuilding its Orb selection')
+    assertEqual(choice.orbChoice, true, 'the stale Loop prompt was not rebuilt as an Orb selection')
+    assertDeepEqual(choice.targets.map((target) => target.uid), ['orb:0'])
+    apply(restored, reconnectA.token, {
+      kind: 'resolveEndTurnEffect', abilityId: choice.id, targetUid: 'orb:0',
+    })
+    assertEqual(snapshotFor(restored, reconnectA.token).endTurnAbilities[0].visual?.kind, 'orb',
+      'the rebuilt Loop selection could not advance to its copied Orb effect')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 /**
  * Makes the end-of-turn discard prompt appear for these seats.
  *
@@ -1483,6 +1527,42 @@ check('online end-turn effects wait for every seat, then only their owner can re
   apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: second.id, targetUid: secondEnemy.uid })
   assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === secondEnemy.uid).dead, true,
     'the second drag sees the live board and resolves itself')
+})
+
+check('online Loop selection and copied Orb effects stay with the Defect owner', () => {
+  const { room, a, b } = twoSeatRoom()
+  for (const player of room.run.combat.players) player.hand = []
+  const defect = room.run.combat.players.find((player) => player.id === a.playerId)
+  Object.assign(defect, {
+    character: 'defect',
+    powers: [{ uid: 'room-loop', defId: 'loop', upgraded: true }],
+    orbs: ['lightning', 'frost', null],
+  })
+  const [firstEnemy] = room.run.combat.enemies
+  Object.assign(firstEnemy, { hp: 20, maxHp: 20 })
+  apply(room, a.token, { kind: 'endTurn' })
+  apply(room, b.token, { kind: 'endTurn' })
+  const firstChoice = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(firstChoice.playerId, a.playerId, 'the Defect owns the Loop card')
+  assertEqual(firstChoice.orbChoice, true, 'Loop first asks its owner for an Orb')
+  assertDeepEqual(firstChoice.targets.map((target) => target.uid), ['orb:0', 'orb:1'])
+  let foreign = null
+  try {
+    apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: firstChoice.id, targetUid: 'orb:0' })
+  } catch (error) {
+    foreign = error
+  }
+  assertEqual(foreign?.name, 'RoomError', 'a teammate cannot select the Defect\'s Loop Orb')
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: firstChoice.id, targetUid: 'orb:0' })
+  const secondChoice = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(secondChoice.orbChoice, true, 'Loop+ asks the same owner to choose its second copy')
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: secondChoice.id, targetUid: 'orb:0' })
+  const copiedOrb = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(copiedOrb.playerId, a.playerId, 'the copied Orb remains owned by the Defect')
+  assertEqual(copiedOrb.visual?.kind, 'orb', 'the copied effect renders as the selected Orb')
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: copiedOrb.id, targetUid: firstEnemy.uid })
+  assertEqual(room.run.combat.enemies.find((enemy) => enemy.uid === firstEnemy.uid).hp, 19,
+    'the selected copied Lightning effect resolves immediately')
 })
 
 check('Omega is a Watcher-owned card source and skips without a living target', () => {
