@@ -196,6 +196,12 @@
 .board[data-rows='3'] .seat__interactive { --portrait-height: calc(7.4rem * var(--stage-scale)); }
 .board[data-rows='4'] .seat__interactive { --portrait-height: calc(5.7rem * var(--stage-scale)); }
 
+/* Orb target controls sit beside the seat button, so anchor them to the same
+   floor-relative portrait box they occupied before becoming interactive. */
+.seat__interactive > .orbs {
+  top: calc(100% - (3rem * var(--stage-scale)) - var(--portrait-height) - var(--orb-size) - var(--orb-margin));
+}
+
 .seat__portrait {
   position: relative;
   display: grid;

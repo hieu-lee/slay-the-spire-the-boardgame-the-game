@@ -163,11 +163,15 @@ try {
   const clickLoop = page.locator('.end-turn-effect--card')
   const keyboardOrb = page.getByRole('button', { name: 'Choose lightning Orb 1' })
   await clickLoop.click()
+  await drag(keyboardOrb, page.getByRole('button', { name: 'End turn', exact: true }))
+  await page.waitForTimeout(50)
+  const loopSelectionsAfterMiss = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.endTurnProgress?.loopSelections)
+  assert(loopSelectionsAfterMiss === undefined, 'a missed Loop Orb drop selected the Orb')
   await keyboardOrb.click()
   await clickLoop.click()
   await keyboardOrb.press('Enter')
   await page.locator('button.end-turn-effect--orb').waitFor()
-  check('Loop Orb selection accepts click and keyboard confirmation', () => assert(true))
+  check('Loop Orb selection accepts click and keyboard confirmation without resolving a missed drag', () => assert(true))
 
   await fixture({
     character: 'defect',
@@ -189,8 +193,10 @@ try {
   await loopOrb.waitFor()
   await page.screenshot({ path: join(output, 'defect-loop-select-orb.png'), fullPage: true })
   const loopOrbBox = await loopOrb.boundingBox()
+  const loopCardBox = await loop.boundingBox()
+  const orbRowBox = await page.locator('.seat--viewer + .orbs').boundingBox()
   const defectPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
-  assert(loopOrbBox && defectPortraitBox, 'the Loop target Orb and Defect portrait must be visible')
+  assert(loopOrbBox && loopCardBox && orbRowBox && defectPortraitBox, 'the Loop card, target Orb, and Defect portrait must be visible')
   assert(defectPortraitBox.width > 80 && defectPortraitBox.height > 80,
     'the Defect portrait collapsed after adding the independent Orb target')
   assert(loopOrbBox.x >= defectPortraitBox.x - defectPortraitBox.width * 0.3 &&
@@ -198,8 +204,18 @@ try {
   'the selected Orb detached from the Defect portrait')
   const orbGap = defectPortraitBox.y - (loopOrbBox.y + loopOrbBox.height)
   assert(orbGap >= -1 && orbGap <= 160, `the selected Orb detached vertically from the Defect: ${orbGap}px`)
-  await drag(loop, loopOrb)
-  await drag(loop, loopOrb)
+  assert(Math.abs(orbRowBox.y + orbRowBox.height - defectPortraitBox.y) <= 1,
+    'the Orb row no longer rests directly above the Defect portrait')
+  await page.setViewportSize({ width: 1440, height: 700 })
+  const compactOrbRowBox = await page.locator('.seat--viewer + .orbs').boundingBox()
+  const compactPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
+  assert(compactOrbRowBox && compactPortraitBox &&
+    Math.abs(compactOrbRowBox.y + compactOrbRowBox.height - compactPortraitBox.y) <= 1,
+  'the Orb row no longer rests directly above the compact Defect portrait')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  assert(loopCardBox.y < loopOrbBox.y, 'the Loop card was not above the Orb drag source')
+  await drag(loopOrb, loop)
+  await drag(loopOrb, loop)
   const copiedLightning = page.locator('button.end-turn-effect--orb')
   await copiedLightning.waitFor()
   await drag(copiedLightning, page.locator('[data-enemy-id="loop-row-boss"]'))
@@ -209,7 +225,7 @@ try {
     .find((enemy) => enemy.uid === 'loop-row-two')?.hp === 19)
   const loopBossHp = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies
     .find((enemy) => enemy.uid === 'loop-row-boss')?.hp)
-  check('Loop selects an Orb, then its copied Electrodynamics Lightning uses the required row tiebreak', () => {
+  check('Loop selects Orbs by dragging them up to its card, then copied Electrodynamics Lightning uses the required row tiebreak', () => {
     assert(loopBossHp === 19, `the selected copied Lightning row did not include the boss: ${loopBossHp}`)
   })
 

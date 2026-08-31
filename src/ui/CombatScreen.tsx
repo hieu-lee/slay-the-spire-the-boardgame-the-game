@@ -241,6 +241,7 @@ function CombatScreenView({
   const endTurnEffectDragArrow = useRef<SVGPathElement | null>(null)
   const endTurnEffectDragArrowShadow = useRef<SVGPathElement | null>(null)
   const suppressEndTurnEffectClick = useRef<string | null>(null)
+  const suppressEndTurnOrbClick = useRef<string | null>(null)
   const motionBaseline = useRef<MotionSnapshot | null>(null)
   const motionRestoration = useRef(authoritativeRestoration)
   const motionConnected = useRef(authoritativeConnected)
@@ -1137,15 +1138,15 @@ function CombatScreenView({
   const endTurnEffectPrompt = endTurnEffect?.rowTiebreak
     ? `Drag ${endTurnEffect.label} to a minion to choose its row`
     : endTurnEffect?.orbChoice
-      ? `Drag ${endTurnEffect.label} to a highlighted Orb`
-    : `Drag ${endTurnEffect?.label} to a highlighted enemy`
+      ? `Drag a highlighted Orb to ${endTurnEffect.label}`
+      : `Drag ${endTurnEffect?.label} to a highlighted enemy`
   const endTurnEffectVisual = endTurnEffect?.visual
   const endTurnEffectCard = endTurnEffectVisual?.kind === 'card' && endTurnEffect
     ? state.players.find((player) => player.id === endTurnEffect.playerId)
       ?.powers.find((power) => power.uid === endTurnEffectVisual.cardUid)
     : undefined
   const endTurnEffectDragVisual = endTurnEffectDrag?.ability.visual
-  const endTurnEffectDragCard = endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
+  const endTurnEffectDragCard = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
     ? state.players.find((player) => player.id === endTurnEffectDrag.ability.playerId)
       ?.powers.find((power) => power.uid === endTurnEffectDragVisual.cardUid)
     : undefined
@@ -2104,11 +2105,41 @@ function CombatScreenView({
       : null
   }
 
-  function endTurnOrbTargetAt(x: number, y: number, ability: NonNullable<typeof endTurnEffect>): string | null {
-    const orb = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-orb-slot]')
+  function endTurnOrbSourceAt(player: Player, event: React.PointerEvent<HTMLDivElement>) {
+    const orb = (event.target as HTMLElement).closest<HTMLElement>('[data-orb-slot]')
     const slot = Number(orb?.dataset.orbSlot)
-    const playerId = orb?.closest<HTMLElement>('[data-player-id]')?.dataset.playerId
-    return playerId && Number.isInteger(slot) ? endTurnTargetForOrb(playerId, slot, ability) : null
+    const sourceOrb = Number.isInteger(slot) ? player.orbs[slot] : undefined
+    const sourceTargetUid = Number.isInteger(slot) ? endTurnTargetForOrb(player.id, slot) : null
+    return sourceOrb && sourceTargetUid && orb ? { sourceOrb, sourceTargetUid, element: orb } : null
+  }
+
+  function endTurnEffectCardTargetAt(x: number, y: number): boolean {
+    return document.elementFromPoint(x, y)?.closest('.end-turn-effect--card') !== null
+  }
+
+  function endTurnEffectDragTargetAt(active: EndTurnEffectDrag, x: number, y: number): string | null {
+    if (active.sourceTargetUid) return endTurnEffectCardTargetAt(x, y) ? active.sourceTargetUid : null
+    const enemyUid = dragTargetAt(x, y, false)
+    const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
+    return enemy ? endTurnTargetForEnemy(enemy, active.ability) : null
+  }
+
+  function onEndTurnOrbPointerDown(player: Player, event: React.PointerEvent<HTMLDivElement>) {
+    const ability = endTurnEffect
+    const source = endTurnOrbSourceAt(player, event)
+    if (event.button !== 0 || !ability?.orbChoice || !source || !endTurnEffectCanStartDrag(ability.id)) return
+    source.element.setPointerCapture(event.pointerId)
+    endTurnEffectDragStart.current = {
+      ability,
+      ...source,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      targetUid: null,
+      element: source.element,
+    }
   }
 
   function isEndTurnEnemyTarget(enemy: Enemy): boolean {
@@ -2148,7 +2179,7 @@ function CombatScreenView({
     }
   }
 
-  function onEndTurnEffectPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+  function onEndTurnEffectPointerMove(event: React.PointerEvent<HTMLElement>) {
     const start = endTurnEffectDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
     if (!endTurnEffectDragLive.current && Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
@@ -2163,17 +2194,11 @@ function CombatScreenView({
         ...active,
         x: move.x,
         y: move.y,
-        targetUid: active.ability.orbChoice
-          ? endTurnOrbTargetAt(move.x, move.y, active.ability)
-          : (() => {
-            const enemyUid = dragTargetAt(move.x, move.y, false)
-            const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
-            return enemy ? endTurnTargetForEnemy(enemy, active.ability) : null
-          })(),
+        targetUid: endTurnEffectDragTargetAt(active, move.x, move.y),
       }
       const previous = endTurnEffectDragLive.current
       endTurnEffectDragLive.current = next
-      const path = `M ${next.startX} ${next.startY + 28} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
+      const path = `M ${next.startX} ${next.startY + (next.y < next.startY ? -28 : 28)} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
       endTurnEffectDragArrow.current?.setAttribute('d', path)
       endTurnEffectDragArrowShadow.current?.setAttribute('d', path)
       endTurnEffectDragOverlay.current?.style.setProperty('--effect-drag-x', `${next.x - next.startX}px`)
@@ -2191,28 +2216,29 @@ function CombatScreenView({
     setEndTurnEffectDrag(null)
   }
 
-  function finishEndTurnEffectDrag(event: React.PointerEvent<HTMLButtonElement>) {
+  function finishEndTurnEffectDrag(event: React.PointerEvent<HTMLElement>) {
     const start = endTurnEffectDragStart.current
     if (!start || start.pointerId !== event.pointerId) return
     const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
-    const targetUid = start.ability.orbChoice
-      ? endTurnOrbTargetAt(event.clientX, event.clientY, start.ability)
-      : (() => {
-        const enemyUid = dragTargetAt(event.clientX, event.clientY, false)
-        const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
-        return enemy ? endTurnTargetForEnemy(enemy, start.ability) : null
-      })()
+    const targetUid = endTurnEffectDragTargetAt(start, event.clientX, event.clientY)
     clearEndTurnEffectDrag()
     if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
     if (!moved) return
-    suppressEndTurnEffectClick.current = start.ability.id
-    setTimeout(() => {
-      if (suppressEndTurnEffectClick.current === start.ability.id) suppressEndTurnEffectClick.current = null
-    }, 0)
+    if (start.sourceTargetUid) {
+      suppressEndTurnOrbClick.current = start.sourceTargetUid
+      setTimeout(() => {
+        if (suppressEndTurnOrbClick.current === start.sourceTargetUid) suppressEndTurnOrbClick.current = null
+      }, 0)
+    } else {
+      suppressEndTurnEffectClick.current = start.ability.id
+      setTimeout(() => {
+        if (suppressEndTurnEffectClick.current === start.ability.id) suppressEndTurnEffectClick.current = null
+      }, 0)
+    }
     if (targetUid) resolveEndTurnTarget(start.ability.id, targetUid)
   }
 
-  function cancelEndTurnEffectDrag(event: React.PointerEvent<HTMLButtonElement>) {
+  function cancelEndTurnEffectDrag(event: React.PointerEvent<HTMLElement>) {
     if (endTurnEffectDragStart.current?.pointerId === event.pointerId) clearEndTurnEffectDrag()
   }
 
@@ -3535,13 +3561,14 @@ function CombatScreenView({
               className="end-turn-effect end-turn-effect--card"
               card={endTurnEffectCard}
               playable={canResolveEndTurn}
-              selected={armedEndTurnAbilityId === endTurnEffect.id}
+              selected={armedEndTurnAbilityId === endTurnEffect.id ||
+                (endTurnEffect.orbChoice && endTurnEffectDrag?.targetUid != null)}
               onClick={() => activateEndTurnEffect(endTurnEffect)}
-              onPointerDown={(event) => onEndTurnEffectPointerDown(endTurnEffect, event)}
-              onPointerMove={onEndTurnEffectPointerMove}
-              onPointerUp={finishEndTurnEffectDrag}
-              onPointerCancel={cancelEndTurnEffectDrag}
-              onLostPointerCapture={cancelEndTurnEffectDrag}
+              onPointerDown={endTurnEffect.orbChoice ? undefined : (event) => onEndTurnEffectPointerDown(endTurnEffect, event)}
+              onPointerMove={endTurnEffect.orbChoice ? undefined : onEndTurnEffectPointerMove}
+              onPointerUp={endTurnEffect.orbChoice ? undefined : finishEndTurnEffectDrag}
+              onPointerCancel={endTurnEffect.orbChoice ? undefined : cancelEndTurnEffectDrag}
+              onLostPointerCapture={endTurnEffect.orbChoice ? undefined : cancelEndTurnEffectDrag}
             />
           ) : (
             <button
@@ -3641,7 +3668,12 @@ function CombatScreenView({
               <div className="row__seat">
                 {occupant ? (
                   <>
-                    <div className="seat__interactive" data-player-id={occupant.id}>
+                    <div className="seat__interactive" data-player-id={occupant.id}
+                      onPointerDown={(event) => onEndTurnOrbPointerDown(occupant, event)}
+                      onPointerMove={onEndTurnEffectPointerMove}
+                      onPointerUp={finishEndTurnEffectDrag}
+                      onPointerCancel={cancelEndTurnEffectDrag}
+                      onLostPointerCapture={cancelEndTurnEffectDrag}>
                       <button
                       type="button"
                       className={[
@@ -3892,6 +3924,10 @@ function CombatScreenView({
                         : []}
                       onTarget={(slot) => {
                         const targetUid = endTurnTargetForOrb(occupant.id, slot)
+                        if (targetUid && suppressEndTurnOrbClick.current === targetUid) {
+                          suppressEndTurnOrbClick.current = null
+                          return
+                        }
                         if (targetUid && armedEndTurnAbilityId === endTurnEffect?.id) {
                           resolveEndTurnTarget(endTurnEffect.id, targetUid)
                         }
@@ -4094,18 +4130,18 @@ function CombatScreenView({
               </marker>
             </defs>
             <path ref={endTurnEffectDragArrowShadow} className="card-target-arrow__shadow"
-              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + 28} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
+              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + (endTurnEffectDrag.y < endTurnEffectDrag.startY ? -28 : 28)} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
             <path ref={endTurnEffectDragArrow} className="card-target-arrow__line end-turn-target-arrow__line"
-              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + 28} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
+              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + (endTurnEffectDrag.y < endTurnEffectDrag.startY ? -28 : 28)} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
           </svg>
           <div ref={endTurnEffectDragOverlay}
             className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
             style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
             aria-hidden="true" inert>
             {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} /> : (
-              <span className={`token--orb token--orb-${endTurnEffectDrag.ability.visual?.kind === 'orb'
+              <span className={`token--orb token--orb-${endTurnEffectDrag.sourceOrb ?? (endTurnEffectDrag.ability.visual?.kind === 'orb'
                 ? endTurnEffectDrag.ability.visual.orb
-                : 'lightning'}`} />
+                : 'lightning')}`} />
             )}
           </div>
         </>

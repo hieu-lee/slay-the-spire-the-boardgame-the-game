@@ -378,7 +378,8 @@
     min-height: 18rem;
   }
 
-  .seat {
+  .seat,
+  .seat__interactive {
     --portrait-height: 6.5rem;
   }
 
