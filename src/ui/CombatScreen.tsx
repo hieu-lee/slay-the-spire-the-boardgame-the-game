@@ -1346,7 +1346,13 @@ function CombatScreenView({
     ? discardTops[viewer.id]
     : discardCandidates.at(-1)?.uid ?? ''
   const canResolveEndTurn = endTurnEffect?.playerId === viewer.id
-  const endTurnEffectPrompt = endTurnEffect?.rowTiebreak
+  const endTurnChoiceTargets = canResolveEndTurn
+    ? endTurnEffect?.targets?.filter((target) => target.uid === 'use' || target.uid === 'skip' ||
+      viewer.hand.some((card) => card.uid === target.uid)) ?? []
+    : []
+  const endTurnEffectPrompt = endTurnChoiceTargets.length > 0
+    ? `Choose how to resolve ${endTurnEffect?.label}`
+    : endTurnEffect?.rowTiebreak
     ? `Drag ${endTurnEffect.label} to a minion to choose its row`
     : endTurnEffect?.orbChoice
       ? `Drag a highlighted Orb to ${endTurnEffect.label}`
@@ -4694,15 +4700,20 @@ function CombatScreenView({
             <Card
               className="end-turn-effect end-turn-effect--card"
               card={endTurnEffectCard}
-              playable={canResolveEndTurn}
+              playable={canResolveEndTurn && endTurnChoiceTargets.length === 0}
               selected={armedEndTurnAbilityId === endTurnEffect.id ||
                 (endTurnEffect.orbChoice && endTurnEffectDrag?.targetUid != null)}
-              onClick={() => activateEndTurnEffect(endTurnEffect)}
-              onPointerDown={endTurnEffect.orbChoice ? undefined : (event) => onEndTurnEffectPointerDown(endTurnEffect, event)}
-              onPointerMove={endTurnEffect.orbChoice ? undefined : onEndTurnEffectPointerMove}
-              onPointerUp={endTurnEffect.orbChoice ? undefined : finishEndTurnEffectDrag}
-              onPointerCancel={endTurnEffect.orbChoice ? undefined : cancelEndTurnEffectDrag}
-              onLostPointerCapture={endTurnEffect.orbChoice ? undefined : cancelEndTurnEffectDrag}
+              onClick={endTurnChoiceTargets.length === 0 ? () => activateEndTurnEffect(endTurnEffect) : undefined}
+              onPointerDown={endTurnChoiceTargets.length === 0 && !endTurnEffect.orbChoice
+                ? (event) => onEndTurnEffectPointerDown(endTurnEffect, event) : undefined}
+              onPointerMove={endTurnChoiceTargets.length === 0 && !endTurnEffect.orbChoice
+                ? onEndTurnEffectPointerMove : undefined}
+              onPointerUp={endTurnChoiceTargets.length === 0 && !endTurnEffect.orbChoice
+                ? finishEndTurnEffectDrag : undefined}
+              onPointerCancel={endTurnChoiceTargets.length === 0 && !endTurnEffect.orbChoice
+                ? cancelEndTurnEffectDrag : undefined}
+              onLostPointerCapture={endTurnChoiceTargets.length === 0 && !endTurnEffect.orbChoice
+                ? cancelEndTurnEffectDrag : undefined}
             />
           ) : (
             <button
@@ -4723,6 +4734,15 @@ function CombatScreenView({
                 : 'lightning'}`} aria-hidden="true" />
             </button>
           )}
+          {endTurnChoiceTargets.length > 0 ? (
+            <div className="end-turn-effects__choices" role="group" aria-label={`Resolve ${endTurnEffect.label}`}>
+              {endTurnChoiceTargets.map((target) => (
+                <button key={target.uid} type="button" onClick={() => resolveEndTurnTarget(endTurnEffect.id, target.uid)}>
+                  {target.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
 

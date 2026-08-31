@@ -1810,6 +1810,62 @@ check('Downfall characters use the original PC-mod Energy orb layers', () => {
 await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
+await page.setViewportSize({ width: 390, height: 844 })
+await page.evaluate(async (run) => {
+  const { beginEndTurnResolution } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [] })
+  Object.assign(player, {
+    character: 'guardian', stance: 'neutral', orbs: [null, null, null],
+    hand: Array.from({ length: 6 }, (_, index) => ({
+      uid: `ui-stasis-choice-${index}`, defId: 'guardian_defend', upgraded: false,
+    })),
+    powers: [{ uid: 'ui-stasis-engine', defId: 'guardian_stasis_engine', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat = beginEndTurnResolution(next.combat)
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const stasisChoices = page.getByRole('group', { name: /Resolve .*Stasis Engine/ })
+const stasisChoiceLayout = await stasisChoices.evaluate((group) => {
+  const boxes = [...group.querySelectorAll('button')].map((button) => button.getBoundingClientRect())
+  return {
+    insideViewport: boxes.every((box) => box.left >= 0 && box.right <= innerWidth),
+    rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+  }
+})
+await stasisChoices.getByRole('button', { name: 'Defend' }).first().click()
+await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand[0]?.stasisRetained === true)
+check('Stasis Engine can resolve its private hand target from the sequential end-turn UI', async () => {
+  assert((await readRun()).combat.players[0].hand[0]?.stasisRetained)
+  assert(stasisChoiceLayout.insideViewport && stasisChoiceLayout.rows > 1,
+    `phone Stasis choices did not wrap inside the viewport: ${JSON.stringify(stasisChoiceLayout)}`)
+})
+
+await page.evaluate(async (run) => {
+  const { beginEndTurnResolution } = await import('/src/game/combat.ts')
+  const next = structuredClone(run)
+  const player = next.combat.players[0]
+  Object.assign(next.combat, { phase: 'player', ruleset: 'downfall', pendingTriggers: [] })
+  Object.assign(player, {
+    character: 'hexaghost', stance: 'neutral', orbs: [null, null, null], hand: [],
+    powers: [{ uid: 'ui-invincible', defId: 'invincible', upgraded: false }],
+  })
+  next.combat.players = [player]
+  next.combat = beginEndTurnResolution(next.combat)
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+const invincibleChoices = page.getByRole('group', { name: /Resolve .*Invincible/ })
+await invincibleChoices.getByRole('button', { name: 'Keep Invincible' }).click()
+await page.waitForFunction(() => !document.querySelector('.end-turn-effects'))
+check('Invincible can keep its Power from the sequential end-turn UI', async () => {
+  assert((await readRun()).combat.players[0].powers.some((power) => power.uid === 'ui-invincible'))
+})
+
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
+
 await page.evaluate((run) => {
   const next = structuredClone(run)
   const template = next.combat.enemies[0]

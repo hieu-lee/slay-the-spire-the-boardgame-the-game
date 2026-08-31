@@ -5199,7 +5199,7 @@ check('resolving a Guardian Socket settles the next disconnected owner', () => {
     .find((card) => card.uid === second.uid).attachedGemId, 'guardian_onyx')
 })
 
-check('Stasis Engine keeps its hand target private and makes its owner the online coordinator', () => {
+check('Stasis Engine keeps its hand target private and only its owner can resolve it', () => {
   const { room, a, b } = twoSeatRoom()
   const owner = room.run.combat.players.find((player) => player.id === b.playerId)
   const cards = [
@@ -5212,21 +5212,20 @@ check('Stasis Engine keeps its hand target private and makes its owner the onlin
   apply(room, b.token, { kind: 'endTurn' })
   const mine = snapshotFor(room, b.token)
   const peer = snapshotFor(room, a.token)
-  assertEqual(mine.endTurnCoordinatorId, b.playerId)
   const stasis = mine.endTurnAbilities.find((ability) => ability.label.includes('Stasis Engine'))
   assert(stasis.targets.some((target) => target.uid === cards[1].uid))
   assert(!allStrings(peer).includes(cards[0].uid) && !allStrings(peer).includes(cards[1].uid),
     'Stasis Engine leaked a private hand UID')
   assert(!allStrings(peer).includes('Defend') && !allStrings(peer).includes('Strike'),
     'Stasis Engine leaked a private card name')
-  const order = mine.endTurnOrder.map((choice) => choice.startsWith(`${stasis.id}@`)
-    ? `${stasis.id}@${cards[1].uid}` : choice)
-  apply(room, b.token, { kind: 'resolveEndTurn', abilityOrder: order })
+  assert(peer.endTurnAbilities[0].targets[0].uid.startsWith('private-card-'),
+    'a teammate can identify the private Stasis target')
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: stasis.id, targetUid: cards[1].uid })
   assert(room.run.combat.players.find((player) => player.id === b.playerId).hand
     .some((card) => card.uid === cards[1].uid && card.stasisRetained))
 })
 
-check('one coordinator can resolve two owners\' private Stasis targets', () => {
+check('each owner resolves their private Stasis target in sequence', () => {
   const { room, a, b } = twoSeatRoom()
   const owners = [a, b].map((seat, index) => {
     const player = room.run.combat.players.find((candidate) => candidate.id === seat.playerId)
@@ -5236,21 +5235,17 @@ check('one coordinator can resolve two owners\' private Stasis targets', () => {
   })
   apply(room, a.token, { kind: 'endTurn' })
   apply(room, b.token, { kind: 'endTurn' })
-  const view = snapshotFor(room, a.token)
-  assertEqual(view.endTurnCoordinatorId, a.playerId)
   const ownerIds = new Set(owners.map((owner) => owner.id))
-  const stasis = view.endTurnAbilities.filter((ability) => ownerIds.has(ability.playerId) &&
-    ability.targets?.some((target) => target.uid === 'skip'))
-  assertEqual(stasis.length, 2)
-  const own = stasis.find((ability) => ability.playerId === a.playerId)
-  const other = stasis.find((ability) => ability.playerId === b.playerId)
-  assert(own.targets[0].uid === owners[0].hand[0].uid)
-  assert(other.targets[0].uid.startsWith('private-card-'))
-  const order = view.endTurnOrder.map((choice) => {
-    const ability = stasis.find((candidate) => choice.startsWith(`${candidate.id}@`))
-    return ability ? `${ability.id}@${ability.targets[0].uid}` : choice
-  })
-  apply(room, a.token, { kind: 'resolveEndTurn', abilityOrder: order })
+  const first = snapshotFor(room, a.token).endTurnAbilities[0]
+  assertEqual(first.playerId, a.playerId)
+  assertEqual(first.targets[0].uid, owners[0].hand[0].uid)
+  assert(snapshotFor(room, b.token).endTurnAbilities[0].targets[0].uid.startsWith('private-card-'))
+  apply(room, a.token, { kind: 'resolveEndTurnEffect', abilityId: first.id, targetUid: owners[0].hand[0].uid })
+  const second = snapshotFor(room, b.token).endTurnAbilities[0]
+  assertEqual(second.playerId, b.playerId)
+  assertEqual(second.targets[0].uid, owners[1].hand[0].uid)
+  assert(snapshotFor(room, a.token).endTurnAbilities[0].targets[0].uid.startsWith('private-card-'))
+  apply(room, b.token, { kind: 'resolveEndTurnEffect', abilityId: second.id, targetUid: owners[1].hand[0].uid })
   for (const [index, owner] of room.run.combat.players.filter((player) => ownerIds.has(player.id)).entries()) {
     assert(owner.hand.some((card) => card.uid === `private-stasis-${index}` && card.stasisRetained))
   }

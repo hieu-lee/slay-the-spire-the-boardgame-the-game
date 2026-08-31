@@ -5036,6 +5036,17 @@ check('later end-turn Lightning retargets after overkill and skips when no targe
   assert(skipped.pendingSummons.length > 0, 'Slime Boss lost its queued Split')
 })
 
+check('interactive end-turn preparation clears Stasis and respects prevent-Block', () => {
+  const retained = { ...instance('guardian_defend'), stasisRetained: true }
+  const state = combat([makePlayer({
+    character: 'guardian', hand: [retained], orbs: ['lightning'],
+    powers: [instance('panic_button')], relics: [{ defId: 'orichalcum', spent: false }],
+  })], [makeEnemy()])
+  const staged = beginEndTurnResolution(state)
+  assertEqual(staged.players[0].hand[0].stasisRetained, undefined)
+  assertEqual(staged.players[0].block, 0, 'Orichalcum bypassed Panic Button during interactive resolution')
+})
+
 check('Loop repeats only the selected Lightning slot after overkill', () => {
   const loop = instance('loop')
   const state = combat([makePlayer({

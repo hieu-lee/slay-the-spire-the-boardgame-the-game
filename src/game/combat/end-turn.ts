@@ -538,17 +538,23 @@ function needsBossRowTiebreak(state: CombatState, ability: EndTurnAbility, targe
     .map((enemy) => enemy.row)).size > 1
 }
 
-/** Begins end-of-turn resolution and stops only when a live effect needs a target. */
-export function beginEndTurnResolution(state: CombatState): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
+function prepareEndTurn(state: CombatState): CombatState {
   const next = clone(state)
   for (const player of next.players) {
-    if (player.block === 0 && player.relics.some((relic) => relic.defId === 'orichalcum')) {
+    player.hand = player.hand.map(({ stasisRetained: _stasis, ...card }) => card)
+    if (player.block === 0 && playerCanGainBlock(player) && player.relics.some((relic) => relic.defId === 'orichalcum')) {
       player.block = gainBlock(player.block, 1)
       next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
     }
   }
+  return next
+}
+
+/** Begins end-of-turn resolution and stops only when a live effect needs a target. */
+export function beginEndTurnResolution(state: CombatState): CombatState {
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+    (state.pendingTriggers?.length ?? 0) > 0) return state
+  const next = prepareEndTurn(state)
   return continueEndPlayerTurn(next, defaultEndTurnOrder(endTurnAbilities(next)), true)
 }
 
@@ -606,14 +612,7 @@ export function beginEndPlayerTurn(
   const abilities = endTurnAbilities(state)
   if (!validEndTurnOrder(abilities, order)) return state
   if (abilities.some((ability) => ability.orbChoice)) return beginEndTurnResolution(state)
-  const next = clone(state)
-  for (const player of next.players) {
-    player.hand = player.hand.map(({ stasisRetained: _stasis, ...card }) => card)
-    if (player.block === 0 && playerCanGainBlock(player) && player.relics.some((relic) => relic.defId === 'orichalcum')) {
-      player.block = gainBlock(player.block, 1)
-      next.log = [...next.log, `${player.name}'s Orichalcum grants 1 Block`]
-    }
-  }
+  const next = prepareEndTurn(state)
   return continueEndPlayerTurn(next, order)
 }
 
