@@ -425,11 +425,11 @@ export function Card({
         '--fan-lift': `${Math.abs(fan) * 14}px`,
       } as React.CSSProperties}
       aria-disabled={!playable}
-      onPointerDown={playable ? onPointerDown : undefined}
-      onPointerMove={playable ? onPointerMove : undefined}
-      onPointerUp={playable ? onPointerUp : undefined}
-      onPointerCancel={playable ? onPointerCancel : undefined}
-      onLostPointerCapture={playable ? onLostPointerCapture : undefined}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
       onClick={(event) => {
         if (!playable) {
           event.preventDefault()

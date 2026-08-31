@@ -105,6 +105,130 @@ try {
     const combat = window.__STS_DEBUG__.getRun().combat
     return { combat: structuredClone(combat), enemy: structuredClone(combat.enemies[0]) }
   })
+  const fastDragFixture = await page.evaluate(() => ({
+    handSize: window.__STS_DEBUG__.getState().players[0].hand.length,
+    attackIndex: window.__STS_DEBUG__.getState().players[0].hand
+      .findIndex((card) => card.defId.startsWith('strike')),
+  }))
+  check(fastDragFixture.attackIndex >= 0, 'desktop fast-drag fixture has no attack card')
+  if (fastDragFixture.attackIndex >= 0) {
+    const card = page.locator('.hand .card').nth(fastDragFixture.attackIndex)
+    const enemy = page.locator('.enemy').first()
+    await card.hover()
+    const [from, to] = await Promise.all([card.boundingBox(), enemy.boundingBox()])
+    if (!from || !to) throw new Error('desktop fast-drag fixture is not visible')
+    const viewport = page.viewportSize()
+    if (!viewport) throw new Error('desktop fast-drag fixture has no viewport')
+    const startX = (Math.max(0, from.x) + Math.min(viewport.width, from.x + from.width)) / 2
+    await page.mouse.move(startX, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2)
+    await page.mouse.up()
+    await page.waitForFunction((size) => window.__STS_DEBUG__.getState().players[0].hand.length < size,
+      fastDragFixture.handSize)
+  }
+  await page.evaluate((combat) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(combat)
+    debug.setRun(run)
+  }, template.combat)
+  if (fastDragFixture.attackIndex >= 0) {
+    const card = page.locator('.hand .card').nth(fastDragFixture.attackIndex)
+    const enemy = page.locator('.enemy').first()
+    await card.hover()
+    const [from, to] = await Promise.all([card.boundingBox(), enemy.boundingBox()])
+    if (!from || !to) throw new Error('release-only fast-drag fixture is not visible')
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(from.x + from.width / 2 - 30, from.y + from.height / 2)
+    await card.dispatchEvent('pointerup', {
+      pointerId: 1, pointerType: 'mouse', button: 0, bubbles: true,
+      clientX: to.x + to.width / 2, clientY: to.y + to.height / 2,
+    })
+    await page.mouse.up()
+    await page.waitForFunction((size) => window.__STS_DEBUG__.getState().players[0].hand.length < size,
+      fastDragFixture.handSize)
+  }
+  await page.evaluate((combat) => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat = structuredClone(combat)
+    run.combat.players[0].energy = 0
+    run.combat.players[0].hand = Array.from({ length: 20 }, (_, index) => ({
+      uid: `fast-scroll-${index}`, defId: 'defend_ironclad', upgraded: false,
+    }))
+    debug.setRun(run)
+  }, template.combat)
+  const largeHandScroller = page.locator('.hand-scroll')
+  const middleCard = page.locator('.hand .card').nth(10)
+  await middleCard.hover()
+  const largeHandScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
+  const middleCardBox = await middleCard.boundingBox()
+  if (!middleCardBox) throw new Error('large-hand scroll fixture is not visible')
+  await page.mouse.move(middleCardBox.x + middleCardBox.width / 2, middleCardBox.y + middleCardBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(middleCardBox.x + middleCardBox.width / 2 - 200, middleCardBox.y + middleCardBox.height / 2)
+  await page.mouse.up()
+  check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
+    largeHandScrollBefore),
+    'a horizontal card drag did not scroll an overflowing hand')
+  check(await page.locator('.hand .card').count() === 20,
+    'a horizontal hand scroll accidentally played a card')
+  check(await page.locator('.hand .card--unplayable').count() === 20,
+    'large-hand scroll fixture did not cover unplayable cards')
+  await page.evaluate(() => {
+    const debug = window.__STS_DEBUG__
+    const run = structuredClone(debug.getRun())
+    run.combat.players[0].energy = 20
+    debug.setRun(run)
+  })
+  await page.waitForFunction(() => !document.querySelector('.hand .card--unplayable'))
+  await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
+  await middleCard.hover()
+  const jitterScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
+  const jitterCardBox = await middleCard.boundingBox()
+  if (!jitterCardBox) throw new Error('large-hand jitter fixture is not visible')
+  await page.mouse.move(jitterCardBox.x + jitterCardBox.width / 2, jitterCardBox.y + jitterCardBox.height / 2)
+  await page.mouse.down()
+  await middleCard.dispatchEvent('pointerup', {
+    pointerId: 1, pointerType: 'mouse', button: 0, bubbles: true,
+    clientX: jitterCardBox.x + jitterCardBox.width / 2 - 200,
+    clientY: jitterCardBox.y + jitterCardBox.height / 2 - 11,
+  })
+  await page.mouse.up()
+  check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
+    jitterScrollBefore), 'upward finger jitter cancelled a horizontal hand scroll')
+  check(await page.locator('.hand .card').count() === 20,
+    'upward finger jitter played a targetless card during horizontal scrolling')
+  await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
+  await middleCard.hover()
+  const armedScrollBefore = await largeHandScroller.evaluate((scroller) => scroller.scrollLeft)
+  const armedCardBox = await middleCard.boundingBox()
+  if (!armedCardBox) throw new Error('armed horizontal-release fixture is not visible')
+  await page.mouse.move(armedCardBox.x + armedCardBox.width / 2, armedCardBox.y + armedCardBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(armedCardBox.x + armedCardBox.width / 2, armedCardBox.y + armedCardBox.height / 2 - 20)
+  await page.locator('.card-drag').waitFor()
+  await page.mouse.move(armedCardBox.x + armedCardBox.width / 2 - 200,
+    armedCardBox.y + armedCardBox.height / 2 - 11)
+  await page.mouse.up()
+  check(await largeHandScroller.evaluate((scroller, before) => scroller.scrollLeft > before,
+    armedScrollBefore), 'a final horizontal release did not override an earlier card-drag frame')
+  check(await page.locator('.hand .card').count() === 20,
+    'a final horizontal release played a targetless card armed by an earlier pointer move')
+  await largeHandScroller.evaluate((scroller) => { scroller.scrollLeft = 0 })
+  await middleCard.hover()
+  const returnCardBox = await middleCard.boundingBox()
+  if (!returnCardBox) throw new Error('out-and-back scroll fixture is not visible')
+  await page.mouse.move(returnCardBox.x + returnCardBox.width / 2, returnCardBox.y + returnCardBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(returnCardBox.x + returnCardBox.width / 2 - 200, returnCardBox.y + returnCardBox.height / 2)
+  await page.mouse.move(returnCardBox.x + returnCardBox.width / 2, returnCardBox.y + returnCardBox.height / 2)
+  await page.mouse.up()
+  await page.waitForTimeout(0)
+  check(await page.locator('.hand .card').count() === 20,
+    'an out-and-back hand scroll emitted a card-playing click')
   const bossIds = [
     'awakened_one_phase_1', 'awakened_one_phase_2', 'bronze_automaton', 'corrupt_heart',
     'deca', 'donu', 'guardian_attack', 'guardian_defensive', 'hexaghost', 'slime_boss',
@@ -713,6 +837,7 @@ try {
     })
     debug.setRun(run)
   }, { base: template.combat, enemy: template.enemy })
+  await page.locator('.seat__portrait > img').waitFor()
   const performanceModeHints = await page.evaluate(() => {
     const read = () => [
       document.querySelector('.seat__portrait > img'),
@@ -811,6 +936,19 @@ try {
   })
   const phone = await phoneContext.newPage()
   phone.setDefaultTimeout(30_000)
+  const tapPhone = async (locator) => {
+    if (browserName !== 'webkit') return locator.tap()
+    await locator.scrollIntoViewIfNeeded()
+    const box = await locator.boundingBox()
+    if (!box) throw new Error('WebKit could not locate the phone touch target')
+    const viewport = await phone.evaluate(() => ({
+      left: visualViewport.offsetLeft, top: visualViewport.offsetTop, scale: visualViewport.scale,
+    }))
+    await phone.touchscreen.tap(
+      (box.x + box.width / 2 - viewport.left) * viewport.scale,
+      (box.y + box.height / 2 - viewport.top) * viewport.scale,
+    )
+  }
   await phone.goto(`http://localhost:${address.port}`, { waitUntil: 'networkidle' })
   check(await phone.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches &&
     document.documentElement.dataset.mobilePerformance === 'true'),
@@ -846,7 +984,7 @@ try {
     }
   })
   check(phoneCombatLayout.targetTouchAction === 'manipulation' &&
-    phoneCombatLayout.cardTouchAction.includes('pan-x'),
+    phoneCombatLayout.cardTouchAction === 'none',
   `iPhone target taps are delayed or card dragging lost its touch policy ${JSON.stringify(phoneCombatLayout)}`)
   await phone.evaluate(() => {
     window.__TARGET_TAP_DELAY__ = null
@@ -857,7 +995,7 @@ try {
       window.__TARGET_TAP_DELAY__ = performance.now() - touchEndedAt
     }, { once: true })
   })
-  await phone.locator('.enemy').first().tap()
+  await tapPhone(phone.locator('.enemy').first())
   await phone.waitForFunction(() => window.__TARGET_TAP_DELAY__ !== null)
   const targetTapDelay = await phone.evaluate(() => window.__TARGET_TAP_DELAY__)
   check(targetTapDelay < 150, `iPhone delayed target click by ${targetTapDelay}ms after touchend`)

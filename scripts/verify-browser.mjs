@@ -1825,7 +1825,7 @@ check('a row attack drags to an enemy row with the game cursor and targeting arc
   assert(cardDragVisual.cursor.includes('/assets/ui/cursor.png'), cardDragVisual.cursor)
   assert(cardDragVisual.targetCursor.includes('/assets/ui/cursor.png'), cardDragVisual.targetCursor)
   assert(cardDragVisual.arrow !== 'none', cardDragVisual.arrow)
-  assert(cardDragVisual.touchAction.includes('pan-x'), cardDragVisual.touchAction)
+  assertEqual(cardDragVisual.touchAction, 'none')
   assertEqual(draggedAttack.players[0].energy, 0)
   assertDeepEqual(draggedAttack.enemies.map((enemy) => enemy.hp), [3, 3])
 })
