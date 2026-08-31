@@ -9,7 +9,7 @@ import type {
   StartTurnScryAbility,
   StartTurnScryPreview,
 } from '../../game/combat.ts'
-import type { CardInstance } from '../../game/types.ts'
+import type { CardInstance, OrbType } from '../../game/types.ts'
 import type { ActionOutcome } from '../../multiplayer/useRoomSession.ts'
 import type { cardMotionDestination } from '../board-signals.ts'
 import type { VfxRecipe } from '../combat-vfx.ts'
@@ -98,13 +98,15 @@ export type CardDragStart = Omit<CardDrag, 'targetUid' | 'targetPlayerId'> & {
 
 export type EndTurnEffectDrag = {
   ability: EndTurnAbility
+  sourceOrb?: OrbType
+  sourceTargetUid?: string
   pointerId: number
   startX: number
   startY: number
   x: number
   y: number
   targetUid: string | null
-  element: HTMLButtonElement
+  element: HTMLElement
 }
 
 export type MotionSnapshot = {
