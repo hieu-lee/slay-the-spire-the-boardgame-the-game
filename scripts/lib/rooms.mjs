@@ -155,6 +155,8 @@ export function createStore({ file } = {}) {
     if (!Array.isArray(saved?.rooms)) throw new Error('rooms must be an array')
     for (const room of saved.rooms) {
       if (typeof room?.code === 'string' && Array.isArray(room.seats) && room.campaignProgress) {
+        const connectedAtSave = new Set(room.seats
+          .filter((seat) => seat.connected !== false).map((seat) => seat.playerId))
         room.seats = room.seats.map((seat) => ({ ...seat, connected: false }))
         room.campaignProgress = parseCampaignProgress(room.campaignProgress)
         room.metaOptions = room.metaOptions && ['standard', 'daily', 'custom'].includes(room.metaOptions.mode)
@@ -171,6 +173,14 @@ export function createStore({ file } = {}) {
             room.run.combat.lastStand = room.run.combat.lastStand === true
             if (room.run.combat.potionLimit !== 2 && room.run.combat.potionLimit !== 3) {
               room.run.combat.potionLimit = room.run.ascension >= 4 ? 2 : 3
+            }
+            // Older saves recorded only yes votes, so restore the quorum that
+            // was connected when saved rather than letting reconnect shrink it.
+            if (room.run.combat.phase === 'player' && room.endTurnReady &&
+              Object.values(room.endTurnReady).every((ready) => ready === true)) {
+              room.endTurnReady = Object.fromEntries(room.run.combat.players
+                .filter((player) => !player.dead && connectedAtSave.has(player.id))
+                .map((player) => [player.id, room.endTurnReady[player.id] === true]))
             }
             if (room.run.combat.phase === 'player' && room.endTurnAbilities &&
               !room.run.combat.endTurnProgress?.interactive) {
@@ -1466,6 +1476,10 @@ function endTurn(room, seat, _action, seatToken) {
   if (combat.phase !== 'player') fail('The party is not taking its turn')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
   if (!player || player.dead) fail('This seat cannot end the turn')
+  room.endTurnReady ??= Object.fromEntries(combat.players
+    .filter((candidate) => !candidate.dead && room.seats
+      .find((other) => other.playerId === candidate.id)?.connected)
+    .map((candidate) => [candidate.id, false]))
   room.endTurnReady = { ...room.endTurnReady, [seat.playerId]: true }
   room.version += 1
   const waiting = settleEndTurn(room)
@@ -1487,7 +1501,8 @@ function settleEndTurn(room) {
   if (room.endTurnAbilities) return null
   if (!room.seats.some((seat) => seat.connected)) return null
   const waiting = combat.players
-    .filter((player) => !player.dead && connected.has(player.id) && !room.endTurnReady[player.id])
+    .filter((player) => !player.dead && (room.endTurnReady[player.id] === false ||
+      connected.has(player.id) && !room.endTurnReady[player.id]))
     .map((player) => player.id)
   if (waiting.length > 0) return waiting
   room.run = { ...room.run, combat: beginEndTurnResolution(combat) }
@@ -2552,7 +2567,8 @@ export function snapshotFor(room, seatToken) {
       : undefined,
     rewardDecided: Object.keys(room.rewardChoices ?? {}),
     rewardConfirmed: Object.keys(room.rewardConfirmed ?? {}),
-    endTurnDecided: Object.keys(room.endTurnReady ?? room.endTurnOrders ?? {}),
+    endTurnDecided: Object.entries(room.endTurnReady ?? room.endTurnOrders ?? {})
+      .filter(([, decision]) => decision !== false).map(([playerId]) => playerId),
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     startTurnAbilities: run?.combat?.phase === 'start'
       ? plannedStartTurnAbilities(room)

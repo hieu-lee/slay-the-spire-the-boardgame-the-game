@@ -1703,14 +1703,35 @@ check('disconnecting every seat never advances a partially-readied turn', () => 
   assertEqual(room.run.combat.phase, 'player', 'nobody is connected to approve the transition')
 })
 
-check('reconnecting a ready seat resumes a turn paused with nobody connected', () => {
-  const { room, a, b } = twoSeatRoom()
+check('disconnect, restart, and reconnect preserve an unready seat\'s turn', () => {
+  const disconnected = twoSeatRoom()
+  wantsDiscardOrder(disconnected.room, disconnected.a.playerId, disconnected.b.playerId)
+  apply(disconnected.room, disconnected.a.token, { kind: 'endTurn' })
+  markDisconnected(disconnected.room, disconnected.b.token)
+  assertEqual(disconnected.room.run.combat.phase, 'player', 'disconnect counted as ending the turn')
+  joinRoom(disconnected.room, { token: disconnected.b.token })
+  apply(disconnected.room, disconnected.b.token, { kind: 'endTurn' })
+  assertEqual(disconnected.room.run.combat.phase, 'discard', 'the returning teammate could not finish the turn')
+
+  const { room, a, b, c } = threeSeatRoom()
   wantsDiscardOrder(room, a.playerId, b.playerId)
+  markDisconnected(room, c.token)
   apply(room, a.token, { kind: 'endTurn' })
-  markDisconnected(room, a.token)
-  markDisconnected(room, b.token)
-  joinRoom(room, { token: a.token })
-  assertEqual(room.run.combat.phase, 'discard', 'the only connected seat had already readied')
+  delete room.endTurnReady[b.playerId]
+  const directory = mkdtempSync(join(tmpdir(), 'sts-reconnect-eot-'))
+  const file = join(directory, 'rooms.json')
+  try {
+    writeFileSync(file, JSON.stringify({ rooms: [room] }))
+    const restored = createStore({ file }).rooms.get(room.code)
+    joinRoom(restored, { token: a.token })
+    assertEqual(restored.run.combat.phase, 'player', 'the ready seat advanced without its teammate')
+    joinRoom(restored, { token: b.token })
+    apply(restored, b.token, { kind: 'endTurn' })
+    assert(restored.run.combat.phase !== 'player' || restored.run.combat.endTurnProgress,
+      'the previously disconnected seat blocked the saved quorum')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 check('reconnecting a decided seat resumes discard settlement', () => {
