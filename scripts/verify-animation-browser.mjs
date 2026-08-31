@@ -975,10 +975,17 @@ try {
   await phone.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const phoneCombatLayout = await phone.locator('.combat').evaluate((combat) => {
     const box = (selector) => combat.querySelector(selector).getBoundingClientRect().toJSON()
+    const visualBottom = visualViewport.offsetTop + visualViewport.height
     return {
       board: box('.board'),
       hand: box('.hand-area'),
       scrollHeight: document.documentElement.scrollHeight,
+      visualBottom,
+      rootBottom: document.querySelector('#root').getBoundingClientRect().bottom,
+      clippedCards: [...combat.querySelectorAll('.hand .card')]
+        .filter((card) => card.getBoundingClientRect().bottom > visualBottom + 1).length,
+      dynamicViewportRule: [...document.styleSheets].some((sheet) => [...sheet.cssRules].some((rule) =>
+        rule instanceof CSSStyleRule && rule.selectorText?.includes('#root') && rule.style.height === '100dvh')),
       targetTouchAction: getComputedStyle(combat.querySelector('.enemy')).touchAction,
       cardTouchAction: getComputedStyle(combat.querySelector('.hand .card')).touchAction,
     }
@@ -986,6 +993,10 @@ try {
   check(phoneCombatLayout.targetTouchAction === 'manipulation' &&
     phoneCombatLayout.cardTouchAction === 'none',
   `iPhone target taps are delayed or card dragging lost its touch policy ${JSON.stringify(phoneCombatLayout)}`)
+  check(phoneCombatLayout.dynamicViewportRule &&
+    phoneCombatLayout.rootBottom <= phoneCombatLayout.visualBottom + 1 &&
+    phoneCombatLayout.clippedCards === 0,
+  `iPhone Safari chrome clips the hand below its visual viewport ${JSON.stringify(phoneCombatLayout)}`)
   await phone.evaluate(() => {
     window.__TARGET_TAP_DELAY__ = null
     const target = document.querySelector('.enemy')
