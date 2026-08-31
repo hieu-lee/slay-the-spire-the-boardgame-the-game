@@ -2254,10 +2254,12 @@ function CombatScreenView({
     const dy = event.clientY - start.startY
     if (Math.hypot(dx, dy) >= 10) start.moved = true
     const verticallyDominant = dy < -10 && -dy >= Math.abs(dx)
-    const overRequiredTarget = dy < -10 && !verticallyDominant && (start.needsEnemy
+    const towardRequiredTarget = dy < -10 && -dy >= Math.abs(dx) * 0.25 &&
+      ((start.needsEnemy && dx > 0) || (start.needsPlayer && dx < 0))
+    const overRequiredTarget = dy < -10 && !verticallyDominant && !towardRequiredTarget && (start.needsEnemy
       ? Boolean(dragTargetAt(event.clientX, event.clientY, start.hitsRow))
       : start.needsPlayer ? Boolean(dragPlayerAt(event.clientX, event.clientY)) : false)
-    const upwardIntent = verticallyDominant || overRequiredTarget
+    const upwardIntent = verticallyDominant || towardRequiredTarget || overRequiredTarget
     if (!cardDragLive.current && start.scrolling) {
       if (upwardIntent) {
         if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft
