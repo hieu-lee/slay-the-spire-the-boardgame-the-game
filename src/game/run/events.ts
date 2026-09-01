@@ -23,14 +23,16 @@ import {
 } from '../acquisition.ts'
 import type { ItemDecks } from '../acquisition.ts'
 import { CARDS } from '../cards.ts'
-import { createCombat, startPlayerTurnWithChoices } from '../combat.ts'
-import { resolveEventBeforeRoll, resolveEventDecision } from '../event-room.ts'
+import { createCombat, resumePlayerTurnAfterDraw, startPlayerTurnWithChoices } from '../combat.ts'
+import { applyEventCombatStartEffects, resolveEventBeforeRoll, resolveEventDecision } from '../event-room.ts'
 import type { EventDecision } from '../event-room.ts'
 import type { EventCard } from '../events.ts'
 import { currentRoom } from '../map.ts'
 import { createMerchant } from '../noncombat.ts'
+import { bottomGuardianGems, cardHasGuardianSocket, queueNewGuardianSockets, resolveGuardianSocket, revealGuardianDraftGems } from './guardian-gems.ts'
 import { nextInt } from '../rng.ts'
 import type { CharacterId, Player } from '../types.ts'
+import { DOWNFALL_BOSSES } from '../downfall/enemies.ts'
 
 function stageEventDecision(decision: EventDecision): EventDecision {
   const staged = { ...decision }
@@ -38,6 +40,7 @@ function stageEventDecision(decision: EventDecision): EventDecision {
   delete staged.rewardItemChoices
   delete staged.rewardItemIds
   delete staged.rewardItemKinds
+  delete staged.guardianGemIds
   delete staged.potionRecipientId
   delete staged.potionRecipientIds
   delete staged.potionReplacementIds
@@ -50,6 +53,7 @@ function nextEventCardOffer(
   targetPlayerId: string | undefined,
   effects: readonly CardRewardEffect[],
   indexes: readonly number[],
+  replaceDuplicates: boolean,
 ): { offer?: string[]; valid: boolean } {
   const players = state.players.map((player) => ({ ...player, cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards] }))
   const characterCards = structuredClone(state.itemDecks.characterCards)
@@ -69,7 +73,7 @@ function nextEventCardOffer(
         const holder = inactiveCards
           ? { ...players.find((candidate) => candidate.id === playerId)!, cardRewards: inactiveCards, rareRewards: inactiveRares ?? [] }
           : source!
-        const draw = drawCardChoices(holder, reveal)
+        const draw = drawCardChoices(holder, reveal, replaceDuplicates)
         if (draw.choices.length === 0) continue
         const choice = indexes[used]
         if (choice === undefined) return { offer: draw.choices, valid: true }
@@ -114,6 +118,8 @@ export function chooseEvent(state: RunState, playerId: string, decision: EventDe
 
 function chooseEventInternal(state: RunState, playerId: string, decision: EventDecision, acceptedTrade: boolean): RunState {
   if (state.phase !== 'room' || state.roomState?.kind !== 'event') return state
+  if (state.roomState.preparedCombat &&
+    !state.roomState.preparedCombat.startTurnProgress?.pauseAfterDraw) return state
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player || !decision || !Array.isArray(decision.optionIds)) return state
   if (!acceptedTrade && (decision.rewardItemIds !== undefined || decision.rewardItemKinds !== undefined)) return state
@@ -124,10 +130,11 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     ? optionCount < 1 || optionCount > 2 || new Set(decision.optionIds).size !== optionCount
     : optionCount !== 1) return state
   const potionRecipients = decision.potionRecipientIds ?? (decision.potionRecipientId ? [decision.potionRecipientId] : [])
-  if (potionRecipients.some((id) => id !== '' && !state.players.some((candidate) => candidate.id === id && !candidate.dead && candidate.id !== playerId && !hasRelic(candidate, 'sozu') && candidate.potions.length < potionLimit(state.ascension)))) return state
+  if (potionRecipients.some((id) => id !== '' && !state.players.some((candidate) => candidate.id === id && !candidate.dead && candidate.id !== playerId && !hasRelic(candidate, 'sozu') && candidate.potions.length < potionLimit(state.ascension, candidate)))) return state
   if (Object.entries(Object.fromEntries([...new Set(potionRecipients.filter(Boolean))].map((id) => [id, potionRecipients.filter((candidate) => candidate === id).length]))).some(([id, count]) => {
     const recipient = state.players.find((candidate) => candidate.id === id)
-    return (count as number) > potionLimit(state.ascension) - (recipient?.potions.length ?? potionLimit(state.ascension))
+    const limit = potionLimit(state.ascension, recipient)
+    return (count as number) > limit - (recipient?.potions.length ?? limit)
   })) return state
   if (state.roomState.card.id === 'lab' && !state.roomState.pendingRolls?.[playerId]) {
     if (decision.optionIds[0] !== 'resolve' || state.roomState.labChoices?.[playerId]) return state
@@ -170,14 +177,14 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     if (decision.rewardItemChoices[0] === 'skip') itemDecks.potions.push(potionId)
     else {
       const recipientId = decision.potionRecipientIds?.[0] ?? decision.potionRecipientId
-      const recipientIndex = state.players.findIndex((candidate) => candidate.id === recipientId && candidate.id !== playerId && !candidate.dead && !hasRelic(candidate, 'sozu') && candidate.potions.length < potionLimit(state.ascension))
+      const recipientIndex = state.players.findIndex((candidate) => candidate.id === recipientId && candidate.id !== playerId && !candidate.dead && !hasRelic(candidate, 'sozu') && candidate.potions.length < potionLimit(state.ascension, candidate))
       if (recipientIndex >= 0) {
         const recipient = gainPotion(state.players[recipientIndex]!, potionId, state.ascension)
         if (recipient === state.players[recipientIndex]) itemDecks.potions.push(potionId)
         else players = state.players.map((candidate, index) => index === recipientIndex ? recipient : candidate)
       } else if (hasRelic(changed, 'sozu')) {
         itemDecks.potions.push(potionId)
-      } else if (changed.potions.length >= potionLimit(state.ascension)) {
+      } else if (changed.potions.length >= potionLimit(state.ascension, changed)) {
         const discardId = decision.potionReplacementIds?.[0]
         const at = discardId ? changed.potions.indexOf(discardId) : -1
         if (at >= 0) {
@@ -185,7 +192,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
           itemDecks.potions.push(discardId!)
         } else return state
       }
-      if (recipientIndex < 0 && !hasRelic(changed, 'sozu') && changed.potions.length < potionLimit(state.ascension)) {
+      if (recipientIndex < 0 && !hasRelic(changed, 'sozu') && changed.potions.length < potionLimit(state.ascension, changed)) {
         const gained = gainPotion(changed, potionId, state.ascension)
         if (gained === changed) itemDecks.potions.push(potionId)
         else changed = gained
@@ -242,9 +249,11 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   const optionEffects = options.flatMap((option) => option!.effects)
   if (optionEffects.some((effect) => effect.source === 'other-character')) {
     const target = decision.targetPlayerId
-    const active = state.players.some((candidate) => candidate.id === target && candidate.id !== playerId && !candidate.dead)
+    const active = state.players.find((candidate) => candidate.id === target && candidate.id !== playerId && !candidate.dead)
     const inactive = typeof target === 'string' && Object.hasOwn(state.itemDecks.characterCards, target) && Array.isArray(state.itemDecks.characterCards[target as CharacterId])
     if (!active && !inactive) return state
+    const source = active?.character ?? target as CharacterId
+    if (!availableRewardSources(state, false).includes(source)) return state
   }
   const paymentDue = optionEffects.reduce((sum, effect) => sum + (effect.tag === 'pay-gold' && typeof effect.amount === 'number' ? effect.amount : 0), 0)
   const paysWithItem = optionEffects.some((effect) => effect.tag === 'pay-gold' && effect.filter?.includes('or lose one Relic or Potion')) && ((decision.relicIds?.length ?? 0) > 0 || (decision.potionIds?.length ?? 0) > 0)
@@ -323,12 +332,14 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   )
   const pending = state.roomState.pendingDecisions?.[playerId]
   let resolvedPrismaticReward = false
+  let eventGuardianGemGroups = [...(state.roomState.pendingGuardianGemGroups?.[playerId] ?? [])]
+  let eventGuardianGemIds = [...(state.roomState.pendingGuardianGemIds?.[playerId] ?? [])]
   if (rewardEffects.length > 0 && !pending && Object.keys(state.roomState.rewardOffers ?? {}).some((id) => id !== playerId)) return state
   if (state.roomState.card.id === 'face_trader' && decision.optionIds[0] === 'take_and_give' && !pending) {
     const rng = { ...state.rng }
     const itemDecks = structuredClone(state.itemDecks)
     const option = state.roomState.card.options.find((candidate) => candidate.id === 'take_and_give')!
-    const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision)
+    const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision, [], false, state.meta.ruleset)
     if (!staged) return state
     const pending = stageEventDecision(decision)
     delete pending.relicIds
@@ -338,13 +349,30 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     const rng = { ...state.rng }
     const itemDecks = structuredClone(state.itemDecks)
     const option = state.roomState.card.options.find((candidate) => candidate.id === 'offer_relic')!
-    const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision)
+    const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision, [], false, state.meta.ruleset)
     if (!staged) return state
     const locked = { ...state, rng, itemDecks, players: staged.players, roomState: { ...state.roomState, pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: stageEventDecision(decision) } } }
     return chooseEventInternal(locked, playerId, decision, false)
   }
   if (rewardEffects.length > 0) {
     const currentOffers = state.roomState.rewardOffers?.[playerId]
+    const currentGemGroup = state.roomState.guardianGemOffers?.[playerId]?.[0] ?? []
+    if (currentOffers) {
+      const choice = decision.rewardIndexes?.[0] ?? -2
+      const selected = choice >= 0 ? currentOffers[0]?.[choice] : undefined
+      const needsGem = Boolean(selected && cardHasGuardianSocket(selected))
+      const submittedGems = decision.guardianGemIds ?? []
+      if (needsGem) {
+        if (submittedGems.length !== 1 || !currentGemGroup.includes(submittedGems[0]!)) return state
+        eventGuardianGemGroups.push(currentGemGroup)
+        eventGuardianGemIds.push(submittedGems[0]!)
+      } else {
+        if (submittedGems.length !== 0) return state
+        state = bottomGuardianGems(state, currentGemGroup)
+      }
+    }
+    if (state.roomState?.kind !== 'event') return state
+    const rewardRoom = state.roomState
     const prismaticEffect = rewardEffects.length === 1 && rewardEffects[0]!.source !== 'colorless' && hasRelic(player, 'prismatic_shard')
       ? rewardEffects[0] : undefined
     if (prismaticEffect) {
@@ -354,42 +382,58 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
         const available = availableRewardSources(state, rare)
         if (sources.length !== 3 || new Set(sources).size !== 3 || sources.some((source) => !available.includes(source)) || rare && sources.includes('colorless')) return state
         const reserved = reservePrismaticDraws(state, sources, rare)
+        const gemReveal = revealGuardianDraftGems(reserved.state, reserved.choices)
         return {
-          ...reserved.state,
+          ...gemReveal.state,
           roomState: {
-            ...state.roomState,
-            rewardOffers: { ...state.roomState.rewardOffers, [playerId]: [reserved.choices] },
-            rewardDraws: { ...state.roomState.rewardDraws, [playerId]: reserved.draws },
-            pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: stageEventDecision(decision) },
+            ...rewardRoom,
+            rewardOffers: { ...rewardRoom.rewardOffers, [playerId]: [reserved.choices] },
+            rewardDraws: { ...rewardRoom.rewardDraws, [playerId]: reserved.draws },
+            guardianGemOffers: { ...rewardRoom.guardianGemOffers, [playerId]: [gemReveal.gemIds] },
+            pendingGuardianGemGroups: { ...rewardRoom.pendingGuardianGemGroups, [playerId]: eventGuardianGemGroups },
+            pendingGuardianGemIds: { ...rewardRoom.pendingGuardianGemIds, [playerId]: eventGuardianGemIds },
+            pendingDecisions: { ...rewardRoom.pendingDecisions, [playerId]: stageEventDecision(decision) },
           },
         }
       }
       if (currentOffers.length !== 1 || decision.rewardIndexes?.length !== 1) return state
       const choice = decision.rewardIndexes[0]!
       if (choice < -1 || choice >= currentOffers[0]!.length) return state
-      const draws = state.roomState.rewardDraws?.[playerId]
+      const draws = rewardRoom.rewardDraws?.[playerId]
       if (!draws) return state
+      const beforePrismatic = state
       const settled = settlePrismaticDraws(state, rare, draws, currentOffers[0]!, choice === -1 ? null : choice)
       state = settled.selectedId ? {
         ...settled.state,
         players: settled.state.players.map((candidate) => candidate.id === playerId
           ? addCard(candidate, settled.selectedId!, `c${nextRunUid(settled.state.players)}`) : candidate),
       } : settled.state
+      state = queueNewGuardianSockets(beforePrismatic, state, 1, eventGuardianGemGroups)
+      for (const gemId of eventGuardianGemIds) state = resolveGuardianSocket(state, playerId, gemId)
+      eventGuardianGemGroups = []
+      eventGuardianGemIds = []
       decision = { ...decision, rewardIndexes: [] }
       resolvedPrismaticReward = true
     } else {
     const submitted = currentOffers ? decision.rewardIndexes : []
     if (currentOffers && (!submitted || submitted.length !== 1)) return state
     const indexes = [...(pending?.rewardIndexes ?? []), ...(submitted ?? [])]
-    const preview = nextEventCardOffer(state, playerId, pending?.targetPlayerId ?? decision.targetPlayerId, rewardEffects, indexes)
+    const preview = nextEventCardOffer(state, playerId, pending?.targetPlayerId ?? decision.targetPlayerId,
+      rewardEffects, indexes, state.meta.ruleset === 'downfall')
     if (!preview.valid) return state
-    if (preview.offer) return {
-      ...state,
-      roomState: {
-        ...state.roomState,
-        rewardOffers: { ...state.roomState.rewardOffers, [playerId]: [preview.offer] },
-        pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: { ...stageEventDecision(pending ?? decision), ...(indexes.length > 0 ? { rewardIndexes: indexes } : {}) } },
+    if (preview.offer) {
+      const gemReveal = revealGuardianDraftGems(state, preview.offer)
+      return {
+        ...gemReveal.state,
+        roomState: {
+        ...rewardRoom,
+        rewardOffers: { ...rewardRoom.rewardOffers, [playerId]: [preview.offer] },
+        guardianGemOffers: { ...rewardRoom.guardianGemOffers, [playerId]: [gemReveal.gemIds] },
+        pendingGuardianGemGroups: { ...rewardRoom.pendingGuardianGemGroups, [playerId]: eventGuardianGemGroups },
+        pendingGuardianGemIds: { ...rewardRoom.pendingGuardianGemIds, [playerId]: eventGuardianGemIds },
+        pendingDecisions: { ...rewardRoom.pendingDecisions, [playerId]: { ...stageEventDecision(pending ?? decision), ...(indexes.length > 0 ? { rewardIndexes: indexes } : {}) } },
       },
+      }
     }
     if (pending) decision = { ...decision, rewardIndexes: indexes }
     }
@@ -424,7 +468,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     }
     const rng = { ...state.rng }
     const itemDecks = structuredClone(state.itemDecks)
-    const staged = resolveEventBeforeRoll(state.roomState, rng, itemDecks, state.players, state.ascension, playerId, rollDecision)
+    const staged = resolveEventBeforeRoll(state.roomState, rng, itemDecks, state.players, state.ascension, playerId, rollDecision, state.meta.ruleset)
     if (!staged) return state
     if (staged.players.some((candidate) => candidate.dead)) return { ...state, rng, itemDecks, players: staged.players, phase: 'defeat', roomState: null, log: [...state.log, `${state.roomState.card.name} defeats the party.`] }
     const rolls = Array.from({ length: rollCount }, () => 1 + nextInt(rng, 6))
@@ -553,6 +597,9 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     ...state.roomState,
     rewardOffers: Object.fromEntries(Object.entries(state.roomState.rewardOffers ?? {}).filter(([id]) => id !== playerId)),
     rewardDraws: Object.fromEntries(Object.entries(state.roomState.rewardDraws ?? {}).filter(([id]) => id !== playerId)),
+    guardianGemOffers: Object.fromEntries(Object.entries(state.roomState.guardianGemOffers ?? {}).filter(([id]) => id !== playerId)),
+    pendingGuardianGemGroups: Object.fromEntries(Object.entries(state.roomState.pendingGuardianGemGroups ?? {}).filter(([id]) => id !== playerId)),
+    pendingGuardianGemIds: Object.fromEntries(Object.entries(state.roomState.pendingGuardianGemIds ?? {}).filter(([id]) => id !== playerId)),
     itemOffers: Object.fromEntries(Object.entries(state.roomState.itemOffers ?? {}).filter(([id]) => id !== playerId)),
     pendingDecisions: Object.fromEntries(Object.entries(state.roomState.pendingDecisions ?? {}).filter(([id]) => id !== playerId)),
     pendingRolls: Object.fromEntries(Object.entries(state.roomState.pendingRolls ?? {}).filter(([id]) => id !== playerId)),
@@ -577,12 +624,19 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       effects: option.effects.filter((effect) => !((effect.tag === 'card-reward' || effect.tag === 'rare-reward') && !effect.random && effect.source !== 'colorless')),
     } : option) },
   } : resumedRoom
-  const result = resolveEventDecision(resolutionRoom, rng, itemDecks, state.players, state.ascension, playerId, finalDecision, forcedRolls, forcedRolls.length > 0)
+  const result = resolveEventDecision(resolutionRoom, rng, itemDecks, state.players, state.ascension, playerId, finalDecision, forcedRolls, forcedRolls.length > 0, state.meta.ruleset)
   if (!result) return state
   if (faceTraderResume) result.event.card = state.roomState.card
   if (result.players.some((candidate) => candidate.dead)) return { ...state, rng, itemDecks, players: result.players, phase: 'defeat', roomState: null, log: [...state.log, `${result.event.card.name} defeats the party.`] }
   let next: RunState = { ...state, rng, itemDecks, players: result.players, roomState: result.event }
-  if (result.merchant) return { ...next, roomState: createMerchant(merchantItemDecks(state, itemDecks), result.players) }
+  next = queueNewGuardianSockets(state, next, 1, eventGuardianGemGroups)
+  for (const gemId of eventGuardianGemIds) next = resolveGuardianSocket(next, playerId, gemId)
+  if (result.merchant) {
+    const guardianGemDeck = [...(next.guardianGemDeck ?? [])]
+    return { ...next, guardianGemDeck,
+      roomState: createMerchant(merchantItemDecks(state, itemDecks), result.players, guardianGemDeck,
+        state.meta.ruleset) }
+  }
   if (result.moveTo) {
     const target = state.map.rooms[result.moveTo]
     const current = currentRoom(state.map)
@@ -598,38 +652,36 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   if (result.combat) {
     const room = currentRoom(state.map)
     if (!room) return state
-    const players = result.players.map((player) => readyForCombat(rng, player))
+    const preparedCombat = result.event.preparedCombat
+    const players = preparedCombat ? result.players : result.players.map((player) => readyForCombat(rng, player))
     const mindBloom = result.event.card.id === 'mind_bloom' && finalDecision.optionIds.includes('war')
     // The boss-content integration consumes this seeded physical Boss id. The
     // legacy combat shell falls back only while those enemy faces are absent.
-    const actOneBosses = BOSSES[1]!
+    const actOneBosses = state.meta.ruleset === 'downfall' ? DOWNFALL_BOSSES[1]! : BOSSES[1]!
     const bossDefId = mindBloom ? actOneBosses[nextInt(rng, actOneBosses.length)] : undefined
-    const enemyDecks = state.enemyDecks.act === (mindBloom ? 1 : state.act)
-      ? structuredClone(state.enemyDecks)
-      : createEnemyDecks(rng, mindBloom ? 1 : state.act, state.ascension)
-    const encounter = buildEncounter(
-      rng,
-      enemyDecks,
-      mindBloom ? 1 : state.act,
-      players,
-      mindBloom ? 'boss' : result.combat,
-      false,
-      state.ascension,
-      bossDefId,
-    )
-    // Mind Bloom prints its own Relic + Card Reward, not the boss card's Gold.
-    if (mindBloom) encounter.enemies.find((enemy) => enemy.uid === 'boss-0')!.goldReward = 0
-    const combat = startPlayerTurnWithChoices(createCombat(
-      rng,
-      players,
-      encounter.enemies,
-      room.id,
-      state.potionDeck,
-      state.ascension >= 4 ? 2 : 3,
-      encounter.summonSupply,
-      state.lastStand,
-    ))
-    return { ...next, enemyDecks, phase: 'combat', players, combat, roomState: null, eventCombat: { kind: mindBloom ? 'boss' : result.combat, mindBloom, bossDefId }, courier: { usedBy: [], offer: null } }
+    let enemyDecks = state.enemyDecks
+    let combat = preparedCombat
+    if (!combat) {
+      enemyDecks = state.enemyDecks.act === (mindBloom ? 1 : state.act)
+        ? structuredClone(state.enemyDecks)
+        : createEnemyDecks(rng, mindBloom ? 1 : state.act, state.ascension)
+      const encounter = buildEncounter(
+        rng, enemyDecks, mindBloom ? 1 : state.act, players,
+        mindBloom ? 'boss' : result.combat, false, state.ascension,
+        bossDefId, undefined, state.meta.ruleset,
+      )
+      // Mind Bloom prints its own Relic + Card Reward, not the boss card's Gold.
+      if (mindBloom) encounter.enemies.find((enemy) => enemy.uid === 'boss-0')!.goldReward = 0
+      combat = startPlayerTurnWithChoices(createCombat(
+        rng, players, encounter.enemies, room.id, state.potionDeck,
+        state.ascension >= 4 ? 2 : 3, encounter.summonSupply, state.lastStand, state.meta.ruleset,
+      ))
+    }
+    combat = resumePlayerTurnAfterDraw({
+      ...combat,
+      players: applyEventCombatStartEffects(combat.players, result.combatStartEffects ?? []),
+    })
+    return { ...next, enemyDecks, phase: 'combat', players, combat, roomState: null, eventCombat: { kind: mindBloom ? 'boss' : result.combat, mindBloom, bossDefId, relicReward: result.combatReward === 'relic-each-player' }, courier: { usedBy: [], offer: null } }
   }
   return result.complete
     ? { ...next, phase: 'map', roomState: null, log: [...state.log, `${result.event.card.name} is resolved.`] }
@@ -639,6 +691,8 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
 function eventOptionAvailable(state: RunState, player: Player, option: EventCard['options'][number]): boolean {
   const partyGold = state.players.filter((candidate) => !candidate.dead).reduce((sum, candidate) => sum + candidate.gold, 0)
   return option.effects.every((effect, index) => {
+    if (effect.source === 'other-character') return availableRewardSources(state, false)
+      .some((source) => source !== 'colorless' && source !== player.character)
     if (hasRelic(player, 'prismatic_shard') && !effect.random &&
       (effect.tag === 'rare-reward' || effect.tag === 'card-reward' && effect.source !== 'colorless')) {
       return availableRewardSources(state, effect.tag === 'rare-reward' || effect.source === 'rare').length >= 3

@@ -95,6 +95,13 @@ check('enemy Strength adds to its attacks', () => {
   assertEqual(next.players[0].hp, 7, 'a 1-damage attack with 2 Strength deals 3')
 })
 
+check('Hexaghost starts with one Buffer per player', () => {
+  const state = createCombat(createRng(42), [player(), player({ id: 'p2', row: 1 })], [
+    enemy({ defId: 'hexaghost', isBoss: true, hp: 75, maxHp: 75 }),
+  ])
+  assertEqual(state.enemies[0].abilityCubes, 2)
+})
+
 // p.13: highest row first, left to right, and bosses always act last.
 check('enemies act from the highest row down, bosses last', () => {
   const state = inEnemyPhase(

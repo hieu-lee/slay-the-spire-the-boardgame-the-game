@@ -3,22 +3,38 @@
 //
 // Each is its own atomic action with its own legality check, so the UI can offer
 // exactly the ones the board currently allows.
-import { clone, findPlayer, livingEnemies, resolveEnemyTargets, rowExists } from './board.ts'
-import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, settle } from './effects.ts'
+import { clone, combatIsOver, findPlayer, livingEnemies, powerAbilityKey, powerAbilityUsed, resolveEnemyTargets, rowExists } from './board.ts'
+import { applyEffect, damageEnemyLogged, discardByCardEffect, drawInto, exhaustCards, fireTriggers, recordAttackPlayed, settle, triggerChosenDieRelic } from './effects.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
-import { cardIsPlayable, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
+import { activePowerWindow, cardIsPlayable, mandatoryChoicePending, overflowShivCount, reachedTimeWarpLimit, reachesEnemy } from './queries.ts'
 import type { CombatState, PlayContext, PotionContext, RelicContext } from './types.ts'
-import { cardDef, faceOf } from '../cards.ts'
+import { cardDef, cardIsCurse, faceOf } from '../cards.ts'
+import { healingCapFor, transformCard } from '../acquisition.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { scry } from '../piles.ts'
-import { potionDef, relicAbilities, relicDef } from '../relics.ts'
+import { chosenDieRelicAbilities, potionDef, relicDef } from '../relics.ts'
 import { nextInt } from '../rng.ts'
 import { CAPS } from '../types.ts'
 import type { Player } from '../types.ts'
+import { MAX_HP } from '../run/rules.ts'
+import { playerCanGainBlock } from './pieces.ts'
+import { downfallRelicBaseId } from '../downfall/items.ts'
+
+/** Potions whose official face cannot be expressed by the generic Effect list. */
+export const SPECIAL_POTION_RUNTIME_IDS = new Set([
+  'transforming_brew',
+  'mystery_potion',
+  'pizzaz_potion',
+  'greed_potion',
+  'liquid_void',
+  'fruit_juice',
+  'destiny_draught',
+  'cactus_juice',
+] as const)
 
 /** Spend one Miracle for one Energy during the shared Player Turn (p.17). */
 export function spendMiracle(state: CombatState, playerId: string): CombatState {
-  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard ||
+  if (state.phase !== 'player' || state.startTurnProgress?.forcedCard || mandatoryChoicePending(state) ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
   if (!player || player.dead || player.miracles < 1 || player.energy >= CAPS.energy) return state
@@ -38,31 +54,41 @@ function publicHandCount(player: Player): number {
 export function canActivateRelic(state: CombatState, player: Player, relicIndex: number): boolean {
   const held = player.relics[relicIndex]
   if (!held || player.dead || state.pendingDistilled || state.startTurnProgress?.forcedCard ||
-    (state.pendingTriggers?.length ?? 0) > 0 || (state.phase !== 'player' && state.phase !== 'start')) return false
+    mandatoryChoicePending(state) ||
+    (state.pendingTriggers?.length ?? 0) > 0 || !activePowerWindow(state)) return false
   const def = relicDef(held.defId)
-  const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
-  const oncePerRoll = reroute || held.defId === 'charons_ashes'
-  const manual = Boolean(def.activation) || oncePerRoll || held.defId === 'holy_water'
-  const postRoll = oncePerRoll || ['gambling_chip', 'the_abacus', 'toolbox'].includes(held.defId)
-  if (!manual || held.spent || held.defId === 'the_courier' ||
-    state.phase === 'start' && !postRoll || postRoll && (state.phase !== 'start' || state.startTurnProgress)) return false
-  if (state.pendingRelicScry) return held.defId === 'golden_eye' &&
+  const heldId = downfallRelicBaseId(held.defId)
+  const reroute = ['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)
+  const oncePerRoll = reroute || heldId === 'charons_ashes'
+  const manual = Boolean(def.activation) || oncePerRoll || heldId === 'holy_water'
+  const postRoll = oncePerRoll || ['gambling_chip', 'the_abacus', 'toolbox', 'fuel_canister'].includes(heldId)
+  if (!manual || held.spent || heldId === 'the_courier' ||
+    postRoll && (state.phase !== 'start' || state.startTurnProgress)) return false
+  if (state.pendingRelicScry) return heldId === 'golden_eye' &&
     state.pendingRelicScry.playerId === player.id && state.pendingRelicScry.relicIndex === relicIndex
-  if (held.defId === 'centennial_puzzle' && !player.lostHpThisCombat ||
-    held.defId === 'mummified_hand' && !player.powerPlayedThisTurn ||
-    held.defId === 'red_skull' && !player.shuffledThisCombat ||
-    held.defId === 'self_forming_clay' && !player.lostHpThisCombat ||
-    held.defId === 'holy_water' && (held.cubes ?? 0) < 1 ||
-    held.defId === 'charons_ashes' && (state.die > 2 || publicHandCount(player) === 0) ||
-    held.defId === 'dollys_mirror' && state.die !== 1 ||
-    held.defId === 'nilrys_codex' && state.die !== 4 ||
-    held.defId === 'loaded_die' && state.die !== 6) return false
+  if (heldId === 'centennial_puzzle' && !player.lostHpThisCombat ||
+    heldId === 'mummified_hand' && !player.powerPlayedThisTurn ||
+    heldId === 'red_skull' && !player.shuffledThisCombat ||
+    heldId === 'self_forming_clay' && !player.lostHpThisCombat ||
+    heldId === 'holy_water' && (held.cubes ?? 0) < 1 ||
+    heldId === 'charons_ashes' && (state.die > 2 || publicHandCount(player) === 0) ||
+    heldId === 'dollys_mirror' && state.die !== 1 ||
+    heldId === 'nilrys_codex' && state.die !== (held.defId === 'downfall_nilrys_codex' ? 2 : 4) ||
+    heldId === 'loaded_die' && state.die !== 6) return false
+  if (heldId === 'fuel_canister' && (!state.die || state.die > 2 || publicHandCount(player) === 0) ||
+    heldId === 'makeshift_battery' && !player.hand.some((card) =>
+      cardDef(card.defId).type === 'status' || cardIsCurse(card.defId)) ||
+    heldId === 'unceasing_top' && publicHandCount(player) > 1 ||
+    heldId === 'the_broken_seal' && player.exhaust.length < 2 ||
+    heldId === 'shuriken' && (player.attacksPlayedThisTurn ?? 0) < 3 ||
+    heldId === 'shot_glass' && player.potions.length === 0 ||
+    heldId === 'thimble_helm' && player.energy < 1) return false
   if (reroute) {
-    const face = held.defId === 'dollys_mirror' ? 1 : held.defId === 'nilrys_codex' ? 2 : null
+    const face = heldId === 'dollys_mirror' ? 1 : heldId === 'nilrys_codex' ? 2 : null
     return state.players.some((owner) => !owner.dead && owner.relics.some((target, targetRelicIndex) =>
-      relicAbilities(relicDef(target.defId)).some((ability) => ability.trigger.kind === 'dieRelic' &&
+      chosenDieRelicAbilities(relicDef(target.defId)).some((ability) => ability.trigger.kind === 'dieRelic' &&
         (face === null || ability.trigger.faces.includes(face)) &&
-        (!['nilrys_codex', 'loaded_die'].includes(held.defId) || owner.id !== player.id || targetRelicIndex !== relicIndex))))
+        (!['nilrys_codex', 'loaded_die'].includes(heldId) || owner.id !== player.id || targetRelicIndex !== relicIndex))))
   }
   return true
 }
@@ -78,9 +104,10 @@ export function activateRelic(
   const held = player?.relics[relicIndex]
   if (!player || !held || !canActivateRelic(state, player, relicIndex)) return state
   const def = relicDef(held.defId)
-  const oncePerRoll = ['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)
+  const heldId = downfallRelicBaseId(held.defId)
+  const oncePerRoll = ['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)
 
-  if (held.defId === 'golden_eye') {
+  if (heldId === 'golden_eye') {
     const pending = state.pendingRelicScry
     if (!pending) {
       if (context.scryDiscardUids !== undefined) return state
@@ -107,32 +134,35 @@ export function activateRelic(
 
   const cards = context.cardUids ?? []
   if (new Set(cards).size !== cards.length || cards.some((uid) => !player.hand.some((card) => card.uid === uid))) return state
-  if (held.defId === 'blue_candle' && cards.length > 2) return state
-  if (held.defId === 'centennial_puzzle' && !player.lostHpThisCombat) return state
-  if (held.defId === 'mummified_hand' && !player.powerPlayedThisTurn) return state
-  if (held.defId === 'red_skull' && !player.shuffledThisCombat) return state
-  if (held.defId === 'self_forming_clay' && !player.lostHpThisCombat) return state
-  if (held.defId === 'holy_water' && (held.cubes ?? 0) < 1) return state
-  if (held.defId === 'gambling_chip' && context.die !== undefined) return state
-  if (held.defId === 'charons_ashes' && (!state.die || state.die > 2 || cards.length !== 1)) return state
-  if (held.defId === 'ninja_scroll') {
-    const overflow = overflowShivCount(state, 2)
-    if ((context.shivEnemyUids?.length ?? 0) !== overflow ||
+  if (heldId === 'blue_candle' && cards.length > 2) return state
+  if (heldId === 'centennial_puzzle' && !player.lostHpThisCombat) return state
+  if (heldId === 'mummified_hand' && !player.powerPlayedThisTurn) return state
+  if (heldId === 'red_skull' && !player.shuffledThisCombat) return state
+  if (heldId === 'self_forming_clay' && !player.lostHpThisCombat) return state
+  if (heldId === 'holy_water' && (held.cubes ?? 0) < 1) return state
+  if (heldId === 'gambling_chip' && context.die !== undefined) return state
+  if (heldId === 'charons_ashes' && (!state.die || state.die > 2 || cards.length !== 1)) return state
+  if (heldId === 'ninja_scroll') {
+    const targets = held.defId === 'downfall_ninja_scroll' ? 3 : overflowShivCount(state, 2)
+    if ((context.shivEnemyUids?.length ?? 0) !== targets ||
       context.shivEnemyUids?.some((uid) => !livingEnemies(state).some((enemy) => enemy.uid === uid))) return state
   }
-  if (['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)) {
-    const required = held.defId === 'dollys_mirror' ? 1 : held.defId === 'nilrys_codex' ? 4 : 6
+  if (heldId === 'fuel_canister' && (state.die > 2 || cards.length !== 1)) return state
+  if (heldId === 'shot_glass' && !player.potions.includes(context.discardPotionId ?? '')) return state
+  if (['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)) {
+    const required = heldId === 'dollys_mirror' ? 1
+      : heldId === 'nilrys_codex' ? (held.defId === 'downfall_nilrys_codex' ? 2 : 4) : 6
     if (state.die !== required) return state
     const owner = state.players.find((candidate) => candidate.id === context.targetRelicPlayerId)
     const targetHeld = owner?.relics[context.targetRelicIndex ?? -1]
-    const ability = targetHeld && relicAbilities(relicDef(targetHeld.defId))[context.targetAbilityIndex ?? 0]
+    const ability = targetHeld && chosenDieRelicAbilities(relicDef(targetHeld.defId))[context.targetAbilityIndex ?? 0]
     const face = ability?.trigger.kind === 'dieRelic' ? ability.trigger.faces : []
-    const targetFace = held.defId === 'nilrys_codex' ? 2 : held.defId === 'dollys_mirror' ? 1 : undefined
+    const targetFace = heldId === 'nilrys_codex' ? 2 : heldId === 'dollys_mirror' ? 1 : undefined
     const needsEnemy = ability && (ability.target ?? 'enemy') !== 'allEnemies' &&
       ability.effects.some((effect) => reachesEnemy(effect, owner))
     if (!owner || owner.dead || !ability || (targetFace !== undefined && !face.includes(targetFace)) ||
       needsEnemy && !livingEnemies(state).some((enemy) => enemy.uid === context.enemyUid) ||
-      ['nilrys_codex', 'loaded_die'].includes(held.defId) && owner.id === playerId &&
+      ['nilrys_codex', 'loaded_die'].includes(heldId) && owner.id === playerId &&
       context.targetRelicIndex === relicIndex) return state
   }
 
@@ -142,41 +172,65 @@ export function activateRelic(
   const spend = () => { item.spent = true }
   const source = `${actor.name}'s ${def.name}`
   if (def.activation || oncePerRoll) spend()
-  if (held.defId === 'holy_water') { item.cubes!--; actor.energy = Math.min(CAPS.energy, actor.energy + 1) }
-  else if (held.defId === 'akabeko') actor.akabekoAttacks = (actor.akabekoAttacks ?? 0) + 1
-  else if (held.defId === 'blue_candle') {
+  if (heldId === 'holy_water') { item.cubes!--; actor.energy = Math.min(CAPS.energy, actor.energy + 1) }
+  else if (heldId === 'akabeko') actor.akabekoAttacks = (actor.akabekoAttacks ?? 0) + 1
+  else if (heldId === 'blue_candle') {
     const chosen = cards.map((uid) => actor.hand.find((card) => card.uid === uid)!)
     actor.hand = actor.hand.filter((card) => !cards.includes(card.uid))
     exhaustCards(next, actor, chosen)
-  } else if (held.defId === 'calipers') actor.calipersArmed = true
-  else if (held.defId === 'centennial_puzzle') drawInto(next, actor, 3)
-  else if (held.defId === 'dead_branch') drawInto(next, actor, actor.exhaust.length)
-  else if (held.defId === 'gambling_chip') next.die = nextInt(next.rng, 6) + 1
-  else if (held.defId === 'the_abacus') next.die = next.die === 6 ? 1 : next.die + 1
-  else if (held.defId === 'toolbox') next.die = next.die === 1 ? 6 : next.die - 1
-  else if (held.defId === 'mummified_hand') actor.energy = Math.min(CAPS.energy, actor.energy + 2)
-  else if (held.defId === 'ninja_scroll') applyEffect(next, actor, { kind: 'gainShiv', amount: 2 }, 'self', 'self', {
+  } else if (heldId === 'calipers') actor.calipersArmed = true
+  else if (heldId === 'centennial_puzzle') drawInto(next, actor, 3)
+  else if (heldId === 'dead_branch') drawInto(next, actor, actor.exhaust.length)
+  else if (heldId === 'gambling_chip') next.die = nextInt(next.rng, 6) + 1
+  else if (heldId === 'the_abacus') next.die = next.die === 6 ? 1 : next.die + 1
+  else if (heldId === 'toolbox') next.die = next.die === 1 ? 6 : next.die - 1
+  else if (heldId === 'mummified_hand') actor.energy = Math.min(CAPS.energy, actor.energy + 2)
+  else if (held.defId === 'downfall_ninja_scroll') {
+    const wristBlade = actor.relics.some((relic) => downfallRelicBaseId(relic.defId) === 'wrist_blade') ? 1 : 0
+    for (const enemyUid of context.shivEnemyUids!) {
+      applyEffect(next, actor, { kind: 'hit', amount: 1 + wristBlade }, 'enemy', 'self',
+        { enemyUid, playerId: actor.id }, source)
+      recordAttackPlayed(next, actor)
+      if (combatIsOver(next)) break
+    }
+  } else if (heldId === 'ninja_scroll') applyEffect(next, actor, { kind: 'gainShiv', amount: 2 }, 'self', 'self', {
     enemyUid: null,
     playerId: actor.id,
     shivEnemyUids: context.shivEnemyUids,
     shivTargetIndex: 0,
     invalidShivTarget: false,
   }, source)
-  else if (held.defId === 'red_skull') actor.strength = gainStrength(actor.strength, 1)
-  else if (held.defId === 'runic_pyramid') actor.retainCardsThisTurn = cards.length
-  else if (held.defId === 'self_forming_clay') actor.block = gainBlock(actor.block, 3)
-  else if (held.defId === 'charons_ashes') {
+  else if (heldId === 'red_skull') actor.strength = gainStrength(actor.strength, 1)
+  else if (heldId === 'runic_pyramid') actor.retainCardsThisTurn = cards.length
+  else if (heldId === 'self_forming_clay' && playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, 3)
+  else if (heldId === 'charons_ashes') {
     const card = actor.hand.find((candidate) => candidate.uid === cards[0])!
     actor.hand = actor.hand.filter((candidate) => candidate.uid !== card.uid)
     exhaustCards(next, actor, [card])
     const target = livingEnemies(next).find((enemy) => enemy.uid === context.enemyUid)
     if (!target) return state
     damageEnemyLogged(next, target, actor.damageDealtZeroThisTurn ? 0 : 2, source, actor)
-  } else if (['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(held.defId)) {
+  } else if (['dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(heldId)) {
     const owner = findPlayer(next, context.targetRelicPlayerId!)!
-    const ability = relicAbilities(relicDef(owner.relics[context.targetRelicIndex!]!.defId))[context.targetAbilityIndex ?? 0]!
-    for (const effect of ability.effects) applyEffect(next, owner, effect, ability.target ?? 'enemy', ability.supportTarget ?? 'self',
-      { enemyUid: context.enemyUid ?? null, playerId: owner.id }, source)
+    const targetHeld = owner.relics[context.targetRelicIndex!]!
+    if (!triggerChosenDieRelic(next, owner, targetHeld.defId, context.targetAbilityIndex ?? 0, {
+      enemyUid: context.enemyUid ?? null,
+      playerId: context.targetPlayerId ?? owner.id,
+    }, source)) return state
+  } else if (heldId === 'fuel_canister') {
+    const card = actor.hand.find((candidate) => candidate.uid === cards[0])!
+    actor.hand = actor.hand.filter((candidate) => candidate.uid !== card.uid)
+    exhaustCards(next, actor, [card])
+    actor.energy = Math.min(CAPS.energy, actor.energy + 1)
+  } else if (heldId === 'shot_glass') {
+    const potionId = context.discardPotionId!
+    actor.potions.splice(actor.potions.indexOf(potionId), 1)
+    next.potionDeck.push(potionId)
+    actor.strength = gainStrength(actor.strength, 1)
+  } else if (def.activation) {
+    const effectContext: PlayContext = { enemyUid: context.enemyUid ?? null, playerId: actor.id, shortfall: false }
+    for (const effect of def.effects) applyEffect(next, actor, effect, def.target ?? 'self', def.supportTarget ?? 'self', effectContext, source)
+    if (effectContext.shortfall) return state
   } else return state
   next.log = [...next.log, `${source} activates`]
   return settle(next)
@@ -184,7 +238,7 @@ export function activateRelic(
 
 /** Spend one Shiv as its own one-damage attack (p.17). */
 export function spendShiv(state: CombatState, playerId: string, enemyUid: string): CombatState {
-  if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry ||
+  if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry || mandatoryChoicePending(state) ||
     state.startTurnProgress?.forcedCard ||
     (state.pendingTriggers?.length ?? 0) > 0) return state
   const player = state.players.find((candidate) => candidate.id === playerId)
@@ -212,18 +266,68 @@ export function spendShiv(state: CombatState, playerId: string, enemyUid: string
     { enemyUid, playerId },
     'Shiv',
   )
-  actor.attacksPlayedThisTurn = (actor.attacksPlayedThisTurn ?? 0) + 1
+  if (combatIsOver(next)) return settle(next)
+  recordAttackPlayed(next, actor)
+  return settle(next)
+}
+
+/** Spend one Hexaghost Soulburn for plain damage equal to current Heat. */
+export function spendSoulburn(
+  state: CombatState,
+  playerId: string,
+  enemyUid: string,
+  extraCrispyPowerUid?: string,
+): CombatState {
+  if (state.phase !== 'player' || state.pendingDistilled || state.pendingRelicScry || mandatoryChoicePending(state) ||
+    state.startTurnProgress?.forcedCard || (state.pendingTriggers?.length ?? 0) > 0) return state
+  const player = findPlayer(state, playerId)
+  if (!player || player.dead || player.soulburn < 1 ||
+    player.character !== 'hexaghost' && !player.relics.some((relic) => relic.defId === 'corrupted_shard') ||
+    player.cardPlayLocked || reachedTimeWarpLimit(state, player) ||
+    resolveEnemyTargets(state, 'enemy', enemyUid).length === 0) return state
+  const crispy = extraCrispyPowerUid === undefined ? undefined
+    : player.powers.find((power) => power.uid === extraCrispyPowerUid && power.defId === 'extra_crispy')
+  if (extraCrispyPowerUid !== undefined && (!crispy || powerAbilityUsed(state, playerId, crispy.uid))) return state
+
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  actor.soulburn -= 1
+  actor.soulburnUsedThisTurn = true
+  addPresentationEvent(next, {
+    kind: 'card',
+    actorId: actor.id,
+    sourceId: 'strike_hexaghost',
+    upgraded: false,
+    copied: false,
+    energy: 0,
+    resolvedType: 'attack',
+    enemyIds: [enemyUid],
+    playerIds: [],
+  })
+  const bonus = actor.nextSoulburnDamageBonus ?? 0
+  actor.nextSoulburnDamageBonus = 0
+  const multiplier = crispy ? 2 : 1
+  if (crispy) next.powerTriggersUsedThisTurn.push(powerAbilityKey(playerId, crispy.uid))
+  next.log = [...next.log, `${actor.name} spends a Soulburn${crispy ? ' with Extra Crispy' : ''}`]
+  applyEffect(next, actor, { kind: 'damage', amount: (actor.heat + bonus) * multiplier }, 'enemy', 'self',
+    { enemyUid, playerId }, 'Soulburn')
+  if (!combatIsOver(next)) fireTriggers(next, { kind: 'onUseSoulburn' }, actor)
   return settle(next)
 }
 
 /** Whether a held Potion has a legal activation window or required source card. */
 export function canActivatePotion(state: CombatState, player: Player, potionId: string): boolean {
   if (player.dead || !player.potions.includes(potionId) || state.startTurnProgress?.forcedCard ||
+    mandatoryChoicePending(state) ||
     (state.pendingTriggers?.length ?? 0) > 0 || potionId === 'fairy_in_a_bottle') return false
   if (potionId === 'gamblers_brew') return state.phase === 'start' &&
     !state.startTurnProgress?.beforeDraw && !state.startTurnProgress?.rollPending &&
-    !state.startTurnProgress?.discard
-  return state.phase === 'player' && (potionId !== 'liquid_memories' || player.discard.length > 0)
+    !state.startTurnProgress?.pauseAfterDraw && !state.startTurnProgress?.discard
+  return state.phase === 'player' &&
+    (potionId !== 'liquid_memories' || player.discard.length > 0) &&
+    (potionId !== 'liquid_void' || player.exhaust.length > 0) &&
+    (potionId !== 'transforming_brew' || player.hand.some((card) => !cardIsCurse(card.defId)) &&
+      player.cardRewards.length > 0)
 }
 
 /** Use and discard one held potion during the shared Player Turn (p.8, p.12). */
@@ -241,21 +345,29 @@ export function activatePotion(
   if (potionId === 'liquid_memories' && (
     !context.recoverDiscardUid || !player.discard.some((card) => card.uid === context.recoverDiscardUid)
   )) return state
+  if (potionId === 'liquid_void' && (
+    !context.recoverExhaustUid || !player.exhaust.some((card) => card.uid === context.recoverExhaustUid)
+  )) return state
+  if (potionId === 'transforming_brew' && (
+    !context.transformHandUid || !player.hand.some((card) => card.uid === context.transformHandUid && !cardIsCurse(card.defId))
+  )) return state
   if (potionId === 'purity_potion' && (
     (context.exhaustUids?.length ?? 0) > 3 || new Set(context.exhaustUids ?? []).size !== (context.exhaustUids?.length ?? 0) ||
     (context.exhaustUids ?? []).some((uid) => !player.hand.some((card) => card.uid === uid))
   )) return state
   if (potionId === 'entropic_brew') {
     if (!player.relics.some((relic) => relic.defId === 'sozu')) {
-      const overflow = Math.max(0, player.potions.length - 1 + 2 - state.potionLimit)
+      const capacity = state.potionLimit + (player.relics.some((relic) => relic.defId === 'potion_belt') ? 2 : 0)
+      const overflow = Math.max(0, player.potions.length - 1 + 2 - capacity)
       const replaceable = context.replacePotionId !== potionId && player.potions.includes(context.replacePotionId ?? '')
       if (overflow > 1 || (overflow === 1) !== replaceable) return state
     }
   } else if (context.replacePotionId !== undefined) return state
-  const target = def.target ?? 'enemy'
+  const mysteryNeedsEnemy = potionId === 'mystery_potion' && state.die <= 2
+  const target = def.target ?? (mysteryNeedsEnemy ? 'enemy' : 'self')
   if (def.target === 'row') {
     if (!rowExists(state, context.enemyRow)) return state
-  } else if (def.target && resolveEnemyTargets(state, target, context.enemyUid ?? null).length === 0) {
+  } else if ((def.target || mysteryNeedsEnemy) && resolveEnemyTargets(state, target, context.enemyUid ?? null).length === 0) {
     return state
   }
   if (def.supportTarget === 'anyPlayer' && context.targetPlayerId !== null && context.targetPlayerId !== undefined) {
@@ -303,6 +415,70 @@ export function activatePotion(
     const cards = drawn.filter((card) => actor.hand.some((held) => held.uid === card.uid))
     next.pendingDistilled = cards.length ? { playerId: actor.id, cards } : undefined
     next.log = [...next.log, `${actor.name} draws ${drawn.length} cards; ${cards.length} remain to play for 0 Energy in any order`]
+    return settle(next)
+  }
+  if (potionId === 'transforming_brew') {
+    const old = actor.hand.find((card) => card.uid === context.transformHandUid)!
+    const newUid = old.uid
+    const transformed = transformCard(next.rng, actor, old.uid, newUid)
+    const replacement = transformed.deck.find((card) => card.uid === newUid)
+    if (!replacement) return state
+    Object.assign(actor, transformed)
+    actor.hand = [...actor.hand.filter((card) => card.uid !== old.uid), { ...replacement }]
+    next.log = [...next.log, `${actor.name} transforms ${faceOf(cardDef(old.defId), old.upgraded).name} into ${cardDef(replacement.defId).name}`]
+    return settle(next)
+  }
+  if (potionId === 'mystery_potion') {
+    const effects = next.die <= 2 ? [{ kind: 'damage' as const, amount: 4 }]
+      : next.die <= 4 ? [{ kind: 'draw' as const, amount: 3 }]
+        : [{ kind: 'gainEnergy' as const, amount: 2 }]
+    const ctx: PlayContext = { enemyUid: context.enemyUid ?? null, playerId: actor.id }
+    for (const effect of effects) applyEffect(next, actor, effect, target, 'self', ctx, def.name)
+    return settle(next)
+  }
+  if (potionId === 'pizzaz_potion') {
+    const before = actor.strength
+    actor.strength = gainStrength(actor.strength, 2)
+    actor.nextAttackStrength = (actor.nextAttackStrength ?? 0) + actor.strength - before
+    return settle(next)
+  }
+  if (potionId === 'greed_potion') {
+    applyEffect(next, actor, { kind: 'damage', amount: actor.gold }, 'enemy', 'self', {
+      enemyUid: context.enemyUid ?? null, playerId: actor.id,
+    }, def.name)
+    return settle(next)
+  }
+  if (potionId === 'liquid_void') {
+    const recovered = actor.exhaust.find((card) => card.uid === context.recoverExhaustUid)!
+    actor.exhaust = actor.exhaust.filter((card) => card.uid !== recovered.uid)
+    actor.hand = [...actor.hand, { ...recovered, freeThisTurn: true }]
+    return settle(next)
+  }
+  if (potionId === 'fruit_juice') {
+    actor.maxHp = Math.min(MAX_HP[actor.character], actor.maxHp + 1)
+    actor.hp = Math.min(healingCapFor(actor, next.ruleset), actor.hp + 1)
+    return settle(next)
+  }
+  if (potionId === 'destiny_draught') {
+    const owner = findPlayer(next, context.targetRelicPlayerId ?? '')
+    const held = owner?.relics[context.targetRelicIndex ?? -1]
+    const ability = held && chosenDieRelicAbilities(relicDef(held.defId))[context.targetAbilityIndex ?? -1]
+    if (!owner || owner.dead || !ability || ability.trigger.kind !== 'dieRelic') return state
+    const needsEnemy = (ability.target ?? 'enemy') !== 'allEnemies' &&
+      ability.effects.some((effect) => reachesEnemy(effect, owner))
+    if (needsEnemy && !livingEnemies(next).some((enemy) => enemy.uid === context.enemyUid)) return state
+    if (!triggerChosenDieRelic(next, owner, held.defId, context.targetAbilityIndex ?? -1, {
+      enemyUid: context.enemyUid ?? null,
+      playerId: context.targetPlayerId ?? owner.id,
+    }, def.name)) return state
+    return settle(next)
+  }
+  if (potionId === 'cactus_juice') {
+    const statuses = new Set(['daze', 'slimed', 'burn'])
+    const moved = actor.hand.filter((card) => statuses.has(card.defId))
+    actor.hand = actor.hand.filter((card) => !statuses.has(card.defId))
+    exhaustCards(next, actor, moved)
+    drawInto(next, actor, moved.length)
     return settle(next)
   }
   const ctx: PlayContext = {
@@ -365,4 +541,29 @@ export function chooseDistilledCard(state: CombatState, playerId: string, cardUi
   }
   next.log = [...next.log, `${actor.name} chooses ${def.name} from Distilled Chaos`]
   return next
+}
+
+/** Resolve or decline the optional row switch granted by Downfall Plunder. */
+export function resolvePlunderRowSwitch(
+  state: CombatState,
+  playerId: string,
+  row: number | null,
+): CombatState {
+  const pending = state.pendingPlunderSwitches?.[0]
+  const player = findPlayer(state, playerId)
+  if (!pending || pending.playerId !== playerId || !player || player.dead ||
+    (row !== null && (!Number.isInteger(row) || row < 0 || row >= state.players.length))) return state
+  const next = clone(state)
+  const actor = findPlayer(next, playerId)!
+  if (row !== null && row !== actor.row) {
+    const other = next.players.find((candidate) => !candidate.dead && candidate.row === row)
+    const oldRow = actor.row
+    actor.row = row
+    if (other) other.row = oldRow
+    next.log = [...next.log, `${actor.name} switches rows after Plunder`]
+  } else {
+    next.log = [...next.log, `${actor.name} stays in their row after Plunder`]
+  }
+  next.pendingPlunderSwitches = next.pendingPlunderSwitches!.slice(1)
+  return settle(next)
 }

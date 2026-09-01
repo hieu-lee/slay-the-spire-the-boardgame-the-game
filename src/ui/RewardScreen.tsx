@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from 'react'
-import { cardDef } from '../game/cards.ts'
+import { cardDef, cardIsCurse } from '../game/cards.ts'
 import type { CardRewardOffer, RewardSource } from '../game/run.ts'
+import { rewardSourceLabel } from './reward-source.ts'
 import type { PotionRewardDecision } from '../game/run.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
+import { potionLimit } from '../game/acquisition.ts'
 import type { Player } from '../game/types.ts'
 import { Card } from './Card.tsx'
 import { ItemImage } from './ItemImage.tsx'
@@ -51,11 +53,11 @@ type RewardScreenProps = {
   onBossRelic: (playerId: string, relicId: string | null) => void
   onTransform: (playerId: string, cardUid: string | null) => void
   onResolve: (decisions: Record<string, number | null>) => void
-  potionLimit: number
+  ascension: number
 }
 
 /** Every living player takes one revealed card or skips (rulebook p.8). */
-export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPotion, onRelic, onBossRelic, onTransform, onResolve, potionLimit }: RewardScreenProps) {
+export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPotion, onRelic, onBossRelic, onTransform, onResolve, ascension }: RewardScreenProps) {
   const [decisions, setDecisions] = useState<Record<string, number | null>>({})
   const [upgradePreviews, setUpgradePreviews] = useState<Record<string, boolean>>({})
   const [sources, setSources] = useState<Record<string, RewardSource[]>>({})
@@ -104,20 +106,20 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
                 </RewardItem>
               ) : typeof offer.potion === 'string' ? (
                 <RewardItem kind="potion" id={offer.potion} title={potionDef(offer.potion).name}>
-                  <button type="button" disabled={player.potions.length >= potionLimit || player.relics.some((relic) => relic.defId === 'sozu')}
+                  <button type="button" disabled={player.potions.length >= potionLimit(ascension, player) || player.relics.some((relic) => relic.defId === 'sozu')}
                     onClick={() => onPotion(player.id, { kind: 'gain' })}>Gain</button>
                   <button className="reward-screen__skip" type="button" onClick={() => onPotion(player.id, { kind: 'skip' })}>Skip</button>
                   {player.potions.map((held, index) => <button type="button" key={`${held}-${index}`}
                     disabled={player.relics.some((relic) => relic.defId === 'sozu')}
                     onClick={() => onPotion(player.id, { kind: 'replace', potionId: held })}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
-                  {players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit &&
+                  {players.filter((target) => target.id !== player.id && !target.dead && target.potions.length < potionLimit(ascension, target) &&
                     !target.relics.some((relic) => relic.defId === 'sozu')).map((target) =>
                     <button type="button" key={target.id} onClick={() => onPotion(player.id, { kind: 'pass', playerId: target.id })}>Pass to {target.name}</button>)}
                 </RewardItem>
               ) : null}
               {offer.transformReward ? <div className="reward-screen__transform">
                 <strong>Transform a card</strong>
-                <div className="reward-screen__cards">{player.deck.filter((card) => cardDef(card.defId).owner !== 'curse').map((card) =>
+                <div className="reward-screen__cards">{player.deck.filter((card) => !cardIsCurse(card.defId)).map((card) =>
                   <Card key={card.uid} card={card} playable onClick={() => onTransform(player.id, card.uid)} />)}</div>
                 <button className="reward-screen__skip" type="button" onClick={() => onTransform(player.id, null)}>Skip Transform</button>
               </div> : null}
@@ -133,7 +135,7 @@ export function RewardScreen({ players, rewards, onReveal, onRevealPotion, onPot
                           return { ...current, [player.id]: event.target.checked
                             ? selected.length < 3 ? [...selected, source] : selected
                             : selected.filter((candidate) => candidate !== source) }
-                        })} /> {source === 'colorless' ? 'Colorless' : source[0]!.toUpperCase() + source.slice(1)}
+                        })} /> {rewardSourceLabel(source)}
                     </label>)}
                     <button type="button" disabled={selectedSources.length !== 3}
                       onClick={() => onReveal(player.id, selectedSources)}>Reveal chosen decks</button>

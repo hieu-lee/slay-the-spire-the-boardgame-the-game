@@ -59,6 +59,16 @@ function importsOf(file) {
   return specifiers
 }
 
+/** Runtime import specifiers; type-only declarations are erased and cannot form a module cycle. */
+function runtimeImportsOf(file) {
+  const source = stripSafeComments(readFileSync(file, 'utf8'))
+  const specifiers = []
+  const pattern = /(?:^|[\s;}])(?:import|export)\s+(type\s+)?(?:[^'\"]*?\sfrom\s+)?['\"]([^'\"]+)['\"]/g
+  for (const match of source.matchAll(pattern)) if (!match[1]) specifiers.push(match[2])
+  for (const match of source.matchAll(/\bimport\s*\(\s*['\"]([^'\"]+)['\"]\s*\)/g)) specifiers.push(match[1])
+  return specifiers
+}
+
 // Vite lets you suffix an import with ?inline, ?url, ?raw — strip it before
 // deciding what kind of file a specifier names.
 const withoutQuery = (specifier) => specifier.split('?')[0]
@@ -72,12 +82,12 @@ function resolveLocal(fromFile, specifier) {
   return base
 }
 
-function buildGraph(root) {
+function buildGraph(root, readImports = importsOf) {
   const graph = new Map()
   for (const file of walk(root)) {
     graph.set(
       file,
-      importsOf(file)
+      readImports(file)
         .map((specifier) => resolveLocal(file, specifier))
         .filter((target) => target !== null),
     )
@@ -115,7 +125,7 @@ const show = (file) => relative(repoRoot, file)
 suite('architecture')
 
 check('src/game has no import cycles', () => {
-  const cycle = findCycle(buildGraph(join(srcRoot, 'game')))
+  const cycle = findCycle(buildGraph(join(srcRoot, 'game'), runtimeImportsOf))
   assert(cycle === null, `import cycle: ${cycle?.map(show).join(' -> ')}`)
 })
 
@@ -124,7 +134,29 @@ check('the cycle detector actually detects cycles', () => {
   try {
     writeFileSync(join(dir, 'a.ts'), "import { b } from './b.ts'\nexport const a = b\n")
     writeFileSync(join(dir, 'b.ts'), "import { a } from './a.ts'\nexport const b = a\n")
-    assert(findCycle(buildGraph(dir)) !== null, 'detector missed an obvious two-file cycle')
+    assert(findCycle(buildGraph(dir, runtimeImportsOf)) !== null, 'detector missed an obvious two-file cycle')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+check('type-only imports do not create runtime cycles', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arch-'))
+  try {
+    writeFileSync(join(dir, 'a.ts'), "import type { B } from './b.ts'\nexport type A = B\n")
+    writeFileSync(join(dir, 'b.ts'), "export type { A } from './a.ts'\nexport type B = string\n")
+    assert(findCycle(buildGraph(dir, runtimeImportsOf)) === null, 'type-only imports or exports were treated as runtime edges')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+check('dynamic imports remain runtime cycle edges', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arch-'))
+  try {
+    writeFileSync(join(dir, 'a.ts'), "export const load = () => import('./b.ts')\n")
+    writeFileSync(join(dir, 'b.ts'), "import { load } from './a.ts'\nexport { load }\n")
+    assert(findCycle(buildGraph(dir, runtimeImportsOf)) !== null, 'dynamic import cycle was missed')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -294,6 +326,8 @@ check('the not-implemented list states the real card count', () => {
   const notes = readFileSync(join(srcRoot, 'game/state.ts'), 'utf8')
   const claimed = notes.match(/(\d+) of (\d+) unique character cards are live/)
   assert(claimed !== null, 'the list should state how many unique character cards are live')
+  const totalClaimed = notes.match(/(\d+) character card definitions are live/)
+  assert(totalClaimed !== null, 'the list should state the aggregate live character-card count')
 
   // Counted from the real table, not scraped: a regex over the source only
   // sees cards written the way it expects, so the one card declared without
@@ -304,6 +338,8 @@ check('the not-implemented list states the real card count', () => {
   // while CARDS holds one rule definition per unique face.
   const POOLED = new Set(['status', 'curse', 'colorless'])
   const live = Object.values(CARDS).filter((def) => !POOLED.has(def.owner)).length
+  const baseLive = Object.values(CARDS).filter((def) =>
+    ['ironclad', 'silent', 'defect', 'watcher'].includes(def.owner)).length
   const printed = new Set()
   const colorlessPrinted = new Set()
   const rows = readFileSync(join(repoRoot, 'data/raw/player-cards.csv'), 'utf8')
@@ -315,15 +351,18 @@ check('the not-implemented list states the real card count', () => {
   }
 
   assertEqual(
-    Number(claimed[1]),
+    Number(totalClaimed[1]),
     live,
-    `state.ts claims ${claimed[1]} cards are live but cards.ts defines ${live}`,
+    `state.ts claims ${totalClaimed[1]} cards are live but cards.ts defines ${live}`,
   )
+  assertEqual(Number(claimed[1]), baseLive, 'the base-game live count should exclude Downfall characters')
   assertEqual(Number(claimed[2]), printed.size, 'the full set count should use unique printed definitions')
 
   const colorlessClaimed = notes.match(/(\d+) of (\d+) colorless cards are live/)
   assert(colorlessClaimed !== null, 'the list should state how many unique colorless cards are live')
-  assertEqual(Number(colorlessClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless').length)
+  const colorlessTotalClaimed = notes.match(/(\d+) colorless card definitions are live/)
+  assert(colorlessTotalClaimed !== null, 'the list should state the aggregate colorless-card count')
+  assertEqual(Number(colorlessTotalClaimed[1]), Object.values(CARDS).filter((def) => def.owner === 'colorless').length)
   assertEqual(Number(colorlessClaimed[2]), colorlessPrinted.size)
 
   const goldenClaimed = notes.match(/other (\d+) are implemented Golden Ticket rewards/)
@@ -334,7 +373,7 @@ check('the not-implemented list states the real card count', () => {
     goldenTickets,
     'the Golden Ticket count should match the physical inventory',
   )
-  assertEqual(live + goldenTickets, printed.size, 'ordinary definitions plus Golden Tickets should cover every face')
+  assertEqual(baseLive + goldenTickets, printed.size, 'ordinary base definitions plus Golden Tickets should cover every face')
 })
 
 check('the live character roster matches every non-Golden physical face', () => {
@@ -443,7 +482,9 @@ check('no condition reads a target that its reader was never handed', () => {
     'firstTurnOfCombat', 'firstCardPlayedThisTurn', 'hasNoAttacksInHand', 'allCardsInHandAreAttacks',
     'onlyAttackInHand',
     'goldAtLeast', 'orbsAtLeast', 'drawPileEmpty',
-    'handEmpty', 'drewSkill', 'retainedLastTurn',
+    'handEmpty', 'drewSkill', 'retainedLastTurn', 'heatAtLeast', 'heatBelow',
+    'cardsInExhaustAtLeast', 'soulburnUsedThisTurn', 'hpAtMost', 'hasCurseInChamber',
+    'hasDeadOnAttackInChamber',
   ])
   // A hardcoded list quietly stops covering the condition somebody adds next,
   // and this one is the whole check: an unclassified kind would be treated as

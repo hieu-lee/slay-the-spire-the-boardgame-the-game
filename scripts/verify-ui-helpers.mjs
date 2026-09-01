@@ -6,6 +6,7 @@ import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } fr
 import { CARDS, faceOf } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
 import { bossAttackMotionFor, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, vfxAssetPath, vfxToneColor } from '../src/ui/combat-vfx.ts'
+import { CHARACTER_IDS } from '../src/game/types.ts'
 import { cardSfxRecipe, potionSfxRecipe } from '../src/ui/combat-sfx.ts'
 import {
   MIN_STAGE_SCALE,
@@ -104,12 +105,12 @@ check('melee bosses dash while Deca and Corrupt Heart cast from their lane', () 
 })
 
 check('every reachable card resolves a stable combat VFX recipe for every character', () => {
-  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  const characters = CHARACTER_IDS
   const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'frost-channel', 'dark-channel', 'watcher-pray',
-    'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
+    'silent-poison', 'silent-shiv', 'guard-bloom', 'hexaghost-flame-impact', 'potion-burst', 'magic-burst'])
   const cards = Object.values(CARDS)
-  assertEqual(cards.filter((card) => characters.includes(card.owner)).length, 251,
-    'the complete character card pool is covered')
+  assert(cards.filter((card) => characters.includes(card.owner)).length >= 315,
+    'the integrated base and Hexaghost card pools are covered')
   for (const card of cards) {
     for (const character of characters) {
       const base = cardVfxRecipe(character, card.id)
@@ -148,10 +149,13 @@ check('notable card identities stay distinct and portable between characters', (
   assertEqual(wishStrength.family, 'buff')
   assertEqual(wishBlock.family, 'block')
   assertEqual(wishMiracles.family, 'mantra')
+  const defenseWhirl = cardVfxRecipe('slime_boss', 'guardian_guardian_whirl', undefined, false, 'skill')
+  assertDeepEqual([defenseWhirl.family, defenseWhirl.actorMotion], ['block', 'recoil'],
+    'a foreign Guardian variable card uses its resolved Defense-mode presentation')
 })
 
 check('all physical potion IDs have explicit VFX recipes', () => {
-  assertEqual(Object.keys(POTIONS).length, 21)
+  assertEqual(Object.keys(POTIONS).length, 34)
   const assets = new Set(['ironclad-strike', 'ironclad-bash', 'lightning-channel', 'watcher-pray',
     'silent-poison', 'silent-shiv', 'guard-bloom', 'potion-burst', 'magic-burst'])
   const toneColors = new Set()
@@ -167,7 +171,7 @@ check('all physical potion IDs have explicit VFX recipes', () => {
 })
 
 check('every card and acting character resolves a bounded personal SFX recipe', () => {
-  const characters = ['ironclad', 'silent', 'defect', 'watcher']
+  const characters = CHARACTER_IDS
   const sounds = new Set(['ui', 'card', 'draw', 'attack', 'magic', 'enemy', 'block', 'heal', 'weak'])
   for (const card of Object.values(CARDS)) {
     for (const character of characters) {
@@ -200,6 +204,16 @@ check('iconic cards and modes keep audible identities', () => {
     'Calm and Wrath have different sound shapes')
   assert(signature(cardSfxRecipe('silent', 'deadly_poison')) !== signature(cardSfxRecipe('silent', 'blade_dance')),
     'poison and Shivs stay distinct')
+  const hexaghostStrike = cardVfxRecipe('hexaghost', 'strike_hexaghost')
+  assertDeepEqual([hexaghostStrike.asset, hexaghostStrike.tone], ['hexaghost-flame-impact', 'chaos-green'],
+    'Hexaghost attacks use their green flame impact')
+  assert(cardSfxRecipe('hexaghost', 'strike_hexaghost').layers.some((layer) => layer.sound === 'enemy'),
+    'Hexaghost green flame keeps an impact cue')
+  const shardSoulburn = cardVfxRecipe('ironclad', 'strike_hexaghost')
+  assertDeepEqual([shardSoulburn.asset, shardSoulburn.tone], ['hexaghost-flame-impact', 'chaos-green'],
+    'Corrupted Shard Soulburn uses the same green flame for non-Hexaghost actors')
+  assert(cardSfxRecipe('ironclad', 'strike_hexaghost').layers.some((layer) => layer.sound === 'enemy'),
+    'Corrupted Shard Soulburn keeps the green flame impact cue')
   assert(signature(cardSfxRecipe('ironclad', 'bash')) !== signature(cardSfxRecipe('watcher', 'bash')),
     'the acting character colors a cross-character card')
   assertEqual(new Set([0, 1, 2].map((mode) => signature(cardSfxRecipe('watcher', 'wish', mode)))).size, 3,
@@ -208,7 +222,7 @@ check('iconic cards and modes keep audible identities', () => {
 
 check('all physical potions have distinct audible cues', () => {
   const recipes = Object.keys(POTIONS).map(potionSfxRecipe)
-  assertEqual(recipes.length, 21)
+  assertEqual(recipes.length, 34)
   assertEqual(new Set(recipes.map((recipe) => recipe.cue)).size, recipes.length, 'potion cue IDs are unique')
   assertEqual(new Set(recipes.map((recipe) => JSON.stringify(recipe.layers))).size, recipes.length,
     'the potion deck does not collapse to generic drink audio')

@@ -22,6 +22,7 @@
     "verify:single-player-build": "node scripts/check-single-player-build.mjs && pnpm exec playwright install chromium && node scripts/verify-single-player-unlocks-browser.mjs",
     "sync:assets": "node scripts/sync-card-assets.mjs && node scripts/sync-icons.mjs && node scripts/sync-enemy-art.mjs",
     "sync:cards": "node scripts/sync-card-assets.mjs",
+    "sync:downfall-cards": "node scripts/sync-downfall-card-assets.mjs",
     "sync:icons": "node scripts/sync-icons.mjs",
     "sync:enemy-art": "node scripts/sync-enemy-art.mjs",
     "typecheck": "tsc -b"

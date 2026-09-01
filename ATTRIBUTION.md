@@ -30,17 +30,21 @@ pnpm sync:assets     # refresh card faces and icons; add optional Act I enemy cr
 | What | Where it comes from |
 | --- | --- |
 | Card, relic and potion scans | a third-party card browser at `https://rustywolf.github.io/sts/` |
+| Downfall card scans (`guardian__*`, `slime_boss__*`, `hexaghost__*`, `hermit__*`) | Direct optimized cell crops from the official public-v1.47 Downfall board-game extension sheets in the Contention Games Tabletop Simulator prototype (Workshop item `3687082014`) |
 | Keyword and token icons | images embedded in the official rulebook PDF |
 | Enemy reference crops | eleven enemy card scans embedded in the same PDF, cropped to the art window |
 | Four act-specific boss backdrops (`public/assets/backgrounds/`) | original OpenAI Imagegen fan illustrations created for this implementation |
 | Boss idle and attack animations (`public/assets/combat/enemies/animations/`) | OpenAI Imagegen fan key frames grounded in the existing transparent enemy cutouts and authentic *Slay the Spire* boss-fight screenshots; packaged as transparent animated WebPs by `scripts/sync-boss-animation-art.mjs` |
+| Downfall evil-hero and PC-mod enemy cutouts/animations (`downfall_pc_*`, `downfall_corrupted*`, `downfall_dark_core*`, `downfall_demon*`, `spire_shield*`) | Runtime derivatives of textures extracted from the PC *Downfall* distribution ([Steam app 1865780](https://store.steampowered.com/app/1865780/Downfall__A_Slay_the_Spire_Fan_Expansion/); legacy Workshop item `1610056683`), with transparent cleanup and left-facing key-frame composition for this fan implementation. The underlying art remains owned by its original artists and rights holders; no separate license is asserted. |
 | Combat stage, actor cutouts, non-Orb animation VFX, card illustrations, status, relic, potion and selected Power icons | original OpenAI Imagegen fan illustrations created for this implementation |
 | Defect Orb HUD sprites and channel VFX (`public/assets/combat/vfx/actions/*-channel.webp`) | OpenAI Imagegen fan assets extracted and reconstructed from authentic *Slay the Spire* gameplay screenshots captured for this implementation |
+| Downfall character Energy orbs (`public/assets/combat/energy-orbs/`) | Original layered orb textures from [mikemayhemdev/DownfallSTS](https://github.com/mikemayhemdev/DownfallSTS), copyright 2019 The Evil Gang, used under the repository's MIT license; full notice bundled as `LICENSE-DownfallSTS.txt` |
 | Compendium pool icons (`public/assets/menu/compendium-icons/`) | original OpenAI Imagegen fan icons visually grounded in a user-supplied *Slay the Spire 2* compendium screenshot |
 | Die-face icons (`public/assets/icons/die*.png`) | original OpenAI Imagegen fan assets, regenerated and standardized from this implementation's prior die icons |
 | Combat pile and current-deck HUD icons (`public/assets/combat/piles/`, `public/assets/menu/current-deck.webp`) | OpenAI Imagegen fan assets extracted or visually grounded from user-supplied gameplay screenshots; the Exhaust pile was generated from the extracted draw and discard references |
 | Merchant scene and character assets (`public/assets/noncombat/merchant/`) | OpenAI Imagegen fan illustrations visually grounded in user-provided gameplay references and this implementation's generated combat character cutouts |
 | Campfire party scenes (`public/assets/noncombat/campfire/*_firecamp.png`) | OpenAI Imagegen fan illustrations visually grounded in a user-provided authentic gameplay screenshot and the full-resolution character-select artwork |
+| Campfire rear-view cutouts (`public/assets/noncombat/campfire/*-back.webp`) | OpenAI Imagegen fan illustrations visually grounded in each character's full-resolution cutout; the four Downfall poses were additionally checked against the public PC Downfall character art and normalized to transparent WebPs with `scripts/prepare-transparent-asset.py` |
 | Event backgrounds (`public/assets/noncombat/events/`) | OpenAI Imagegen fan illustrations, individually outpainted from this implementation's prior generated event scenes for panoramic full-screen presentation |
 | Neow cutout (`public/assets/neow/neow.webp`) | user-supplied transparent Slay the Spire character artwork; optimized to WebP for this UI |
 | Title-menu and compendium backgrounds | original OpenAI Imagegen fan illustrations created for this implementation |
@@ -67,13 +71,18 @@ Each character has two exports of one illustration: `<id>-hero.webp` at full res
 the character-select and Neow scenes, and `<id>.webp` at 512 px for the combat seat and the
 roster and lobby thumbnails. These are original
 AI-generated fan illustrations made with OpenAI Imagegen for this implementation. The
-new enemy batch was visually grounded in complete enemy cards from the official Slay the
-Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops.
+base-game enemy batch was visually grounded in complete enemy cards from the official Slay the
+Spire board-game Tabletop Simulator workshop rather than the former low-resolution crops. New
+Downfall enemies and evil-hero bosses instead use PC Downfall extractions or the exact base-game
+art that Downfall itself reuses. The Defect-orb summons are Imagegen isolations grounded in
+committed PC gameplay screenshots. `docs/downfall-enemy-sources/` keeps the reviewed source
+captures and pipeline sheet, while `docs/downfall-enemy-asset-provenance.json` pins their hashes,
+the inspected PC-mod revision and every packaged cutout or animation derivative.
 No generated asset contains a card scan, logo, or readable text.
 
 The thirteen boss designs also have transparent idle and attack animations. Their attacks
-are staged from the bosses on the right toward the players on the left; the generated
-source sheets remain untracked working files, while the packaged runtime WebPs are committed.
+are staged from the bosses on the right toward the players on the left; the audit captures and
+packaged runtime WebPs are committed.
 
 `public/assets/combat/vfx/` contains five original transparent OpenAI Imagegen effects
 used by the shared idle, hit and defeat animations for every combat actor.

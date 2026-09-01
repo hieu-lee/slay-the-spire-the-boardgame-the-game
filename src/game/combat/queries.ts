@@ -9,11 +9,35 @@
 // risking a half-resolved play.
 import { findPlayer, resolveEnemyTargets } from './board.ts'
 import type { CombatState, CopySource, CountablePlayer, EvokeChoice, PlayContext } from './types.ts'
-import { cardCost, cardDef, faceOf } from '../cards.ts'
+import { cardCost, cardDef, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { Amount, CardDef, Condition, CountOf, Effect } from '../cards.ts'
 import { actionsFor, enemyAbilities, enemyDef } from '../enemies.ts'
 import { CAPS } from '../types.ts'
-import type { CardInstance, Enemy, OrbType, Player } from '../types.ts'
+import type { CardInstance, Enemy, GuardianMode, OrbType, Player } from '../types.ts'
+import { slimeDef } from '../downfall/slime-boss.ts'
+import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
+
+const GUARDIAN_ROW_CARDS = new Set(['guardian_prismatic_spray', 'guardian_sentry_beam'])
+const GUARDIAN_UPGRADED_ROW_CARDS = new Set(['guardian_roll_attack', 'guardian_vent_steam'])
+const GUARDIAN_ATTACK_MODE_ROW_CARDS = new Set([
+  'guardian_guardian_whirl', 'guardian_giga_beam', 'guardian_refracted_beam',
+])
+
+export function effectiveCombatCardDef(def: CardDef, guardianMode?: GuardianMode | null): CardDef {
+  const effective: CardDef = def.guardianVariableType && guardianMode === 'defense'
+    ? { ...def, type: 'skill' }
+    : def
+  const targetsRow = GUARDIAN_ROW_CARDS.has(def.id) ||
+    GUARDIAN_UPGRADED_ROW_CARDS.has(def.id) && def.guardian?.sourceText.includes('[aoe]') === true ||
+    GUARDIAN_ATTACK_MODE_ROW_CARDS.has(def.id) && guardianMode === 'attack'
+  return targetsRow ? { ...effective, target: 'row' } : effective
+}
+
+export function cardReferencesGuardianMode(def: CardDef, attachedGemId?: string): boolean {
+  return def.guardianVariableType === true ||
+    /\b(?:Attack|Defense) Mode\b|\bMode Shift\b|\[mode-shift\]/i.test(def.guardian?.sourceText ?? '') ||
+    attachedGemId !== undefined && cardReferencesGuardianMode(cardDef(attachedGemId))
+}
 
 function timeWarpLimit(state: CombatState): number {
   const eater = state.enemies.find((enemy) => !enemy.dead &&
@@ -29,24 +53,91 @@ export function reachedTimeWarpLimit(state: CombatState, player: Player): boolea
   return (player.cardsPlayedThisTurn ?? 0) >= timeWarpLimit(state)
 }
 
+/** Mandatory Downfall choices freeze every voluntary combat action until resolved. */
+export function mandatoryChoicePending(state: CombatState | null | undefined, allowHermitChamberPlay = false): boolean {
+  if (!state) return false
+  return (state.pendingPlunderSwitches?.length ?? 0) > 0 ||
+    (state.pendingDieRelicChoices?.length ?? 0) > 0 ||
+    (state.pendingHermitSetupLoads?.length ?? 0) > 0 ||
+    (!allowHermitChamberPlay && (state.pendingHermitChamberPlays?.length ?? 0) > 0) ||
+    (state.pendingHermitStrengthRewards?.length ?? 0) > 0
+}
+
+/** A printed active Power may be used anywhere in the Player Turn, but not mid-step. */
+export function activePowerWindow(state: Pick<CombatState, 'phase' | 'startTurnProgress'>): boolean {
+  if (state.phase === 'player' || state.phase === 'discard') return true
+  return state.phase === 'start' && !state.startTurnProgress?.beforeDraw &&
+    !state.startTurnProgress?.rollPending && !state.startTurnProgress?.pauseAfterDraw &&
+    !state.startTurnProgress?.discard
+}
+
+/** Every rule that makes this physical card count as having Retain. */
+export function cardHasRetain(player: { powers?: readonly CardInstance[] }, card: CardInstance): boolean {
+  const def = faceOf(cardDef(card.defId), card.upgraded)
+  return def.retain === true || guardianGemForCard(player, card) === 'guardian_onyx' ||
+    player.powers?.some((power) => power.defId === 'guardian_future_plans') === true &&
+      def.guardian?.sourceText.includes('Attack Mode') === true
+}
+
+/** Power Beam may pull one Power from either private pile, but never its source card. */
+export function guardianPowerBeamCards(player: Player, sourceCardUid?: string): CardInstance[] {
+  return [...player.hand.filter((card) => card.uid !== sourceCardUid), ...player.discard]
+    .filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'power')
+}
+
+/** Crystallize's socketed Gem is printed onto every starter Strike while the Power is active. */
+export function guardianGemForCard(
+  player: { powers?: readonly CardInstance[] },
+  card: CardInstance,
+): string | undefined {
+  if (card.attachedGemId) return card.attachedGemId
+  if (!isStarterStrikeOrDefend(card.defId, 'Strike')) return undefined
+  return player.powers?.find((power) => power.defId === 'guardian_crystallize')?.attachedGemId
+}
+
 /** The Energy actually charged for a card on this player's current board. */
 export function playCost(
   def: CardDef,
-  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'freeAttacksThisTurn'>,
-  card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn'>,
+  player: Pick<Player, 'powers' | 'relics' | 'lostHpThisCombat' | 'freeCardsThisTurn' | 'nextCardCost' | 'enemyNextCardCost' | 'freeAttacksThisTurn' | 'freeGemCardsThisTurn' | 'freePowersThisTurn' | 'nextPowerOrSlimeDiscount' | 'energySpentThisTurn' | 'exhaust' | 'heat' | 'chamber' | 'attacksPlayedThisTurn' | 'guardianMode'> & { hand: readonly CardInstance[] | null },
+  card?: Pick<CardInstance, 'freeThisTurn' | 'costReductionThisTurn' | 'stasisRetained' | 'hermitDeadOn'>,
 ): number | 'X' {
-  if (player.nextCardCost !== null && player.nextCardCost !== undefined) return player.nextCardCost
+  if (player.enemyNextCardCost !== null && player.enemyNextCardCost !== undefined) return player.enemyNextCardCost
   if (card?.freeThisTurn === true || (player.freeCardsThisTurn ?? 0) > 0 ||
-    (def.type === 'attack' && (player.freeAttacksThisTurn ?? 0) > 0)
+    card?.stasisRetained === true ||
+    (def.type === 'attack' && (player.freeAttacksThisTurn ?? 0) > 0) ||
+    (def.guardian?.printedType.startsWith('Gem') && (player.freeGemCardsThisTurn ?? 0) > 0) ||
+    (def.type === 'power' && ((player.freePowersThisTurn ?? 0) > 0 ||
+      player.powers.some((power) => power.defId === 'guardian_construction_form')))
   ) return 0
-  const cost = cardCost(def, player.powers, player.lostHpThisCombat)
-  return cost === 'X' ? cost : Math.max(0, cost - (card?.costReductionThisTurn ?? 0))
+  if (def.costAfterSpentTwoEnergy !== undefined && (player.energySpentThisTurn ?? 0) >= 2) return def.costAfterSpentTwoEnergy
+  const cost = player.nextCardCost ?? cardCost(def, player.powers, player.lostHpThisCombat)
+  if (cost === 'X') return cost
+  const retainDiscount = def.retainCostReduction
+    ? (player.hand ?? []).filter((held) => cardHasRetain(player, held)).length : 0
+  const tackleDiscount = def.tackleCostReduction
+    ? Math.max(0, (player.hand ?? []).filter((held) => cardDef(held.defId).name.includes('Tackle')).length - 1) : 0
+  const nextDiscount = def.type === 'power' || def.cardKind === 'slime' ? player.nextPowerOrSlimeDiscount : undefined
+  if (nextDiscount === 'free') return 0
+  if (def.hermit?.costZeroWhenDeadOn && card?.hermitDeadOn) return 0
+  const hermitDiscount = def.hermit?.costReductionBy === 'attacksInChamber'
+    ? player.chamber.filter((held) => effectiveCombatCardDef(
+      faceOf(cardDef(held.defId), held.upgraded), player.guardianMode,
+    ).type === 'attack').length
+    : def.hermit?.costReductionBy === 'starterCards'
+      ? [...(player.hand ?? []), ...player.chamber].filter((held) => ['Strike', 'Defend'].includes(cardDef(held.defId).name) && cardDef(held.defId).rarity === 'starter').length
+      : def.hermit?.costReductionBy === 'attacksPlayed' ? player.attacksPlayedThisTurn
+        : def.hermit?.costReductionBy === 'curses'
+          ? [...(player.hand ?? []), ...player.chamber].filter((held) => faceOf(cardDef(held.defId), held.upgraded).type === 'curse').length : 0
+  if (def.id === 'hermit_strike' && player.powers.some((power) => power.defId === 'hermit_maintenance')) return 0
+  return Math.max(0, cost - (card?.costReductionThisTurn ?? 0) - retainDiscount - tackleDiscount - hermitDiscount - (nextDiscount ?? 0) -
+    (def.exhaustCostReduction ?? 0) * (player.exhaust?.length ?? 0) - (def.heatCostReduction ?? 0) * (player.heat ?? 0))
 }
 
 export function invalidPlayChoice(context: PlayContext): boolean {
   return Boolean(context.shortfall || context.invalidShivTarget || context.invalidEvokeTarget ||
     context.invalidScryChoice || context.invalidDiscardChoice || context.invalidExhaustChoice ||
-    context.invalidTopdeckChoice || context.invalidRecoverChoice || context.invalidSearchChoice)
+    context.invalidTopdeckChoice || context.invalidRecoverChoice || context.invalidSearchChoice || context.invalidSlimeChoice ||
+    context.invalidHermitChoice)
 }
 
 export function resolutionContext(
@@ -59,16 +150,31 @@ export function resolutionContext(
   return {
     ...context,
     enemyUids: context.enemyUids ? [...context.enemyUids] : undefined,
+    loadUids: context.loadUids ? [...context.loadUids] : undefined,
+    chamberUids: context.chamberUids ? [...context.chamberUids] : undefined,
+    hermitEnemyUids: context.hermitEnemyUids ? [...context.hermitEnemyUids] : undefined,
+    hermitDieRelics: context.hermitDieRelics?.map((choice) => ({
+      ...choice,
+      ...(choice.discardUids ? { discardUids: [...choice.discardUids] } : {}),
+    })),
+    soulburnEnemyUids: context.soulburnEnemyUids ? [...context.soulburnEnemyUids] : undefined,
     playerIds: context.playerIds ? [...context.playerIds] : undefined,
     topdeckUids: context.topdeckUids ? [...context.topdeckUids] : undefined,
     recoverDiscardUids: context.recoverDiscardUids ? [...context.recoverDiscardUids] : undefined,
+    recoverExhaustUids: context.recoverExhaustUids ? [...context.recoverExhaustUids] : undefined,
     searchDrawUids: context.searchDrawUids ? [...context.searchDrawUids] : undefined,
+    scryDiscardUids: context.scryDiscardUids ? [...context.scryDiscardUids] : undefined,
+    scryToHandUid: context.scryToHandUid,
+    slimeUids: context.slimeUids ? [...context.slimeUids] : undefined,
+    slimeEnemyUids: context.slimeEnemyUids ? [...context.slimeEnemyUids] : undefined,
     shivEnemyUids: context.shivEnemyUids ? [...context.shivEnemyUids] : undefined,
     evokeSlots: context.evokeSlots ? [...context.evokeSlots] : undefined,
     evokeEnemyUids: context.evokeEnemyUids ? [...context.evokeEnemyUids] : undefined,
     spentUids: new Set<string>(),
     shortfall: false,
     shivTargetIndex: 0,
+    enemyChoiceIndex: 0,
+    soulburnTargetIndex: 0,
     invalidShivTarget: false,
     evokeIndex: 0,
     evokeTargetIndex: 0,
@@ -79,6 +185,15 @@ export function resolutionContext(
     invalidTopdeckChoice: false,
     invalidRecoverChoice: false,
     invalidSearchChoice: false,
+    slimeChoiceIndex: 0,
+    slimeEnemyChoiceIndex: 0,
+    pendingSlimeCommandUids: [],
+    invalidSlimeChoice: false,
+    invalidHermitChoice: false,
+    loadChoiceIndex: 0,
+    chamberChoiceIndex: 0,
+    hermitEnemyChoiceIndex: 0,
+    hermitDieRelicChoiceIndex: 0,
     discardedByCard: 0,
     exhaustedByCard: 0,
     exhaustedCardCost: undefined,
@@ -97,12 +212,16 @@ export function resolutionContext(
     sourceCardId: def.id,
     sourceCardUid: held.uid,
     sourceCardUpgraded: held.upgraded,
+    sourceAttachedGemId: held.attachedGemId,
     sourceScryDamageBonus: held.scryDamageBonus,
+    sourceHermitDeadOn: held.hermitDeadOn === true,
+    sourcePlayedFromChamber: held.hermitDeadOn === true,
     sourceIsCopy,
     doppelgangerCopy: undefined,
     queuedCopySource: undefined,
     queuedCopyVirtualOnly: undefined,
     queuedCopyTwice: undefined,
+    queuedCopyTwiceIfAttack: undefined,
     queuedCopyForcedExhaust: undefined,
     queuedCopySourceNames: undefined,
     sourceCounter: undefined,
@@ -174,11 +293,17 @@ function holds(
     case 'firstCardPlayedThisTurn':
       return (actor.cardsPlayedThisTurn ?? 0) === 1
     case 'hasNoAttacksInHand':
-      return actor.hand.every((card) => cardDef(card.defId).type !== 'attack')
+      return actor.hand.every((card) => effectiveCombatCardDef(
+        faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+      ).type !== 'attack')
     case 'allCardsInHandAreAttacks':
-      return actor.hand.every((card) => cardDef(card.defId).type === 'attack')
+      return actor.hand.every((card) => effectiveCombatCardDef(
+        faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+      ).type === 'attack')
     case 'onlyAttackInHand':
-      return actor.hand.filter((card) => cardDef(card.defId).type === 'attack').length === 1
+      return actor.hand.filter((card) => effectiveCombatCardDef(
+        faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+      ).type === 'attack').length === 1
     case 'goldAtLeast':
       return actor.gold >= condition.amount
     case 'orbsAtLeast':
@@ -190,6 +315,23 @@ function holds(
     case 'drewSkill':
     case 'retainedLastTurn':
       return false
+    case 'heatAtLeast':
+      return actor.heat >= condition.amount
+    case 'heatBelow':
+      return actor.heat < condition.amount
+    case 'cardsInExhaustAtLeast':
+      return actor.exhaust.length >= condition.amount
+    case 'soulburnUsedThisTurn':
+      return actor.soulburnUsedThisTurn === true
+    case 'hasCurseInChamber':
+      return actor.chamber.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse')
+    case 'hasDeadOnAttackInChamber':
+      return actor.chamber.some((card) => {
+        const def = faceOf(cardDef(card.defId), card.upgraded)
+        return def.type === 'attack' && def.hermit?.deadOn === true
+      })
+    case 'hpAtMost':
+      return actor.hp <= condition.amount
   }
 }
 
@@ -226,7 +368,9 @@ export function cardPlayConditionMet(
   // Online snapshots hide draw identities but publish their count.
   if (def.playCondition?.kind === 'drawPileEmpty') return drawCount === 0
   if (def.playCondition?.kind === 'onlyAttackInHand') {
-    const attacks = actor.hand.filter((card) => cardDef(card.defId).type === 'attack').length
+    const attacks = actor.hand.filter((card) => effectiveCombatCardDef(
+      faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+    ).type === 'attack').length
     return attacks === (sourceInHand ? 1 : 0)
   }
   return !def.playCondition || holds(def.playCondition, state, actor)
@@ -245,7 +389,10 @@ export function cardIsPlayable(
 }
 
 /** What a card counts off the board. */
-function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, energySpent = 0): number {
+function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, energySpent = 0, sourceCardUid?: string): number {
+  const typeOf = (card: CardInstance) => effectiveCombatCardDef(
+    faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode,
+  ).type
   switch (count) {
     case 'orbs':
       return actor.orbs.filter((orb) => orb !== null).length
@@ -264,17 +411,23 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
     case 'cardsInHand':
       return actor.hand?.length ?? 0
     case 'retainCardsInHand':
-      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).retain).length ?? 0
+      return actor.hand?.filter((held) => cardHasRetain(actor, held)).length ?? 0
     case 'cardsInExhaust':
       return actor.exhaust.length
+    case 'attacksInExhaust':
+      return actor.exhaust.filter((card) => typeOf(card) === 'attack').length
+    case 'heat':
+      return actor.heat
     case 'energySpent':
       return energySpent
     case 'strikesInHand':
       return actor.hand?.filter((card) => cardDef(card.defId).name.includes('Strike')).length ?? 0
     case 'skillsInHand':
-      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'skill').length ?? 0
+      return actor.hand?.filter((card) => typeOf(card) === 'skill').length ?? 0
     case 'attacksInHand':
-      return actor.hand?.filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'attack').length ?? 0
+      return actor.hand?.filter((card) => typeOf(card) === 'attack').length ?? 0
+    case 'otherAttacksInHand':
+      return actor.hand?.filter((card) => card.uid !== sourceCardUid && typeOf(card) === 'attack').length ?? 0
     case 'attacksPlayedThisTurn':
       return actor.attacksPlayedThisTurn ?? 0
     case 'attackingEnemies':
@@ -284,6 +437,14 @@ function countOf(count: CountOf, actor: CountablePlayer, state?: CombatState, en
       ).some((action) => action.kind === 'attack' && (action.aoe || enemy.isBoss || enemy.row === actor.row))).length
     case 'clawCubesGainedThisCombat':
       return actor.clawCubesGainedThisCombat ?? 0
+    case 'attacksInChamber':
+      return actor.chamber.filter((card) => typeOf(card) === 'attack').length
+    case 'cursesInHandAndChamber':
+      return [...(actor.hand ?? []), ...actor.chamber].filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse').length
+    case 'starterCardsInHandAndChamber':
+      return [...(actor.hand ?? []), ...actor.chamber].filter((card) => ['Strike', 'Defend'].includes(cardDef(card.defId).name) && cardDef(card.defId).rarity === 'starter').length
+    case 'otherCardsInHand':
+      return Math.max(0, (actor.hand?.length ?? 0) - 1)
   }
 }
 
@@ -300,7 +461,9 @@ export function amountOf(
   if (amount.bonus && conditionIsActive(amount.bonus.when, state, actor, context, target)) {
     total += amount.bonus.plus
   }
-  if (amount.per) total += countOf(amount.per, actor, state, context?.energySpent) * (amount.scale ?? 1)
+  if (amount.per) total += countOf(amount.per, actor, state, context?.energySpent, context?.sourceCardUid) * (amount.scale ?? 1)
+  if (amount.perSlime) total += (actor.slimes?.length ?? 0) * amount.perSlime
+  if (amount.plusHighestSlimeLevel) total += Math.max(0, ...(actor.slimes ?? []).map((slime) => slime.level))
   if (target && amount.targetTokens) {
     for (const token of amount.targetTokens) total += target[token]
   }
@@ -310,7 +473,10 @@ export function amountOf(
 function latestAllyAttack(state: CombatState, playerId: string) {
   return [...(state.playedCardsThisTurn ?? [])].reverse().find((played) =>
     played.playerId !== playerId && !played.copied &&
-    faceOf(cardDef(played.card.defId), played.card.upgraded).type === 'attack')
+    (played.type ?? effectiveCombatCardDef(
+      faceOf(cardDef(played.card.defId), played.card.upgraded),
+      state.players.find((player) => player.id === played.playerId)?.guardianMode,
+    ).type) === 'attack')
 }
 
 export function latestPlayableAllyAttack(
@@ -334,7 +500,7 @@ export function latestPlayableAllyAttack(
 
 export function omniscienceEligibleCards(state: CombatState, actor: Player): CardInstance[] {
   return actor.draw.filter((card) => {
-    const def = faceOf(cardDef(card.defId), card.upgraded)
+    const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode)
     return (def.type === 'attack' || def.type === 'skill') &&
       (def.minimumX ?? 0) === 0 && cardIsPlayable(def, state, actor, actor.draw.length - 1, false)
   })
@@ -359,9 +525,10 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
   let drew = false
   for (const effect of def.effects) {
     if (state && actor && !effectIsActive(effect, state, actor)) continue
-    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') return true
+    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice' || effect.kind === 'scryToHand' ||
+      ['overexert', 'replicateSlime'].includes((effect as { kind: string }).kind)) return true
     if (effect.kind === 'draw') drew = true
-    if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck'))) return true
+    if (effect.kind === 'scry' || (drew && (effect.kind === 'discard' || effect.kind === 'topdeck' || effect.kind === 'load'))) return true
   }
   return false
 }
@@ -374,7 +541,7 @@ export function cardNeedsChoicePreview(def: CardDef, state?: CombatState, actor?
  * not direct their biggest starter card.
  */
 const ENEMY_EFFECTS = [
-  'hit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
+  'hit', 'rowHit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
   'evoke', 'recurseOrb', 'clearTargetBlock', 'hitPerExhaust', 'execute',
 ]
 
@@ -417,6 +584,128 @@ export function reachesEnemy(
     : 0) > 0
 }
 
+/** Ordered labels for independently targeted Commands produced by the selected Slimes. */
+export function slimeCommandEnemyChoiceLabels(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  slimeUids: readonly string[],
+  energySpent = 0,
+  energyCharged = energySpent,
+  playedCard?: CardInstance,
+): string[] {
+  let cursor = 0
+  const labels: string[] = []
+  const slimes = actor.slimes.map((slime) => ({ ...slime, card: { ...slime.card } }))
+  const grownSlime = playedCard?.growOnPlay ? playedCard : undefined
+  if (grownSlime) slimes.push({
+    card: { ...grownSlime, growOnPlay: undefined }, level: 1, vigor: 0,
+    commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false,
+  })
+  const selectedUids = grownSlime ? [...slimeUids, grownSlime.uid] : slimeUids
+  const select = (uids: readonly string[]) => uids.flatMap((uid) => {
+    const slime = slimes.find((candidate) => candidate.card.uid === uid)
+    return slime ? [slime] : []
+  })
+  const used = new Map(slimes.map((slime) => [slime.card.uid, slime.commandsThisTurn]))
+  const deferred: string[] = []
+  const command = (slime: Player['slimes'][number], times = 1) => {
+    const slimeCard = slimeDef(slime)
+    const available = slimeCard.slimeCommandLimit === undefined
+      ? times : Math.max(0, Math.min(times, slimeCard.slimeCommandLimit - (used.get(slime.card.uid) ?? 0)))
+    used.set(slime.card.uid, (used.get(slime.card.uid) ?? 0) + available)
+    if ((slimeCard.id === 'slime_boss_evolution_slime' && slime.level >= 3
+      ? 'allEnemies' : slimeCard.slimeTarget ?? 'enemy') !== 'allEnemies' &&
+      slimeCard.slimeLevels?.[slime.level]?.some((effect) => reachesEnemy(effect, actor))) {
+      const label = `${slimeCard.name} · level ${slime.level}${slime.vigor > 0 ? ` · ${slime.vigor} Strength` : ''}`
+      labels.push(...Array(available).fill(label))
+    }
+  }
+  const effects = grownSlime
+    ? [...def.effects, { kind: 'growSlime' as const, amount: 1 } as unknown as Effect]
+    : def.effects
+  for (const raw of effects) {
+    if (!effectIsActive(raw, state, actor)) continue
+    const effect = raw as unknown as SlimeBossEffect
+    if (effect.kind === 'commandSlime') {
+      const repeat = amountOf(effect.amount, state, actor, undefined, { enemyUid: null, playerId: actor.id, energySpent })
+      let picked: typeof slimes
+      if (effect.all) picked = slimes
+      else if (effect.same) {
+        picked = select(selectedUids.slice(cursor, cursor + 1))
+        cursor += 1
+      } else {
+        picked = select(selectedUids.slice(cursor, cursor +
+          (effect.upToDifferent === 99 ? repeat : effect.upToDifferent ?? 1)))
+        cursor += picked.length
+      }
+      for (const slime of picked) command(slime, effect.same ? repeat : 1)
+    } else if (effect.kind === 'growSlime') {
+      const amount = effect.upToDifferent ?? 1
+      const picked = select(selectedUids.slice(cursor, cursor + amount))
+      cursor += picked.length
+      for (const slime of picked) {
+        const max = Math.max(1, ...Object.keys(slimeDef(slime).slimeLevels ?? {}).map(Number))
+        const grown = Math.min(max - slime.level, effect.upToDifferent === undefined ? effect.amount : 1)
+        if (grown <= 0) continue
+        slime.level += grown
+        if (effect.commandAfter) command(slime)
+        for (let step = 0; step < grown; step++) deferred.push(...slimes
+          .filter((candidate) => slimeDef(candidate).slimeTrigger === 'onGrow')
+          .map((candidate) => candidate.card.uid))
+      }
+    } else if (effect.kind === 'gainSlimeVigor') {
+      const slime = slimes.find((candidate) => candidate.card.uid === selectedUids[cursor++])
+      if (!slime) continue
+      const gained = Math.max(0, Math.min(effect.amount, 8 - slime.vigor))
+      slime.vigor += gained
+      const triggered = gained > 0 && slimeDef(slime).slimeTrigger === 'onGainVigor' &&
+        !slime.vigorTriggerUsedThisTurn
+      if (triggered) slime.vigorTriggerUsedThisTurn = true
+      if (effect.commandAfter) command(slime)
+      if (triggered) command(slime)
+    } else if (effect.kind === 'rainOfGoop') {
+      const slime = slimes.find((candidate) => candidate.card.uid === selectedUids[cursor++])
+      if (!slime) continue
+      const gained = Math.min(1, 8 - slime.vigor)
+      slime.vigor += gained
+      if (gained > 0 && slimeDef(slime).slimeTrigger === 'onGainVigor' &&
+        !slime.vigorTriggerUsedThisTurn) {
+        slime.vigorTriggerUsedThisTurn = true
+        command(slime)
+      }
+    }
+  }
+  for (const uid of deferred) {
+    const slime = slimes.find((candidate) => candidate.card.uid === uid)
+    if (slime) command(slime)
+  }
+  if (energyCharged >= 2) {
+    for (const slime of slimes.filter((candidate) => slimeDef(candidate).slimeTrigger === 'onSpendTwoEnergy')) command(slime)
+  }
+  if ((playedCard ? cardHasRetain(actor, playedCard) : def.retain) &&
+    actor.powers.some((power) => power.defId === 'slime_boss_darkling_duo')) {
+    const bruiser = slimes.find((slime) => slime.card.defId === 'slime_boss_bruiser_slime')
+    if (bruiser) command(bruiser)
+  }
+  return labels
+}
+
+/** Number of independently targeted enemy Commands produced by the selected Slimes. */
+export function slimeCommandEnemyChoiceCount(
+  def: CardDef,
+  state: CombatState,
+  actor: Player,
+  slimeUids: readonly string[],
+  energySpent = 0,
+  energyCharged = energySpent,
+  playedCard?: CardInstance,
+): number {
+  return slimeCommandEnemyChoiceLabels(
+    def, state, actor, slimeUids, energySpent, energyCharged, playedCard,
+  ).length
+}
+
 /**
  * Whether this card asks the player to point at an enemy.
  *
@@ -435,9 +724,26 @@ export function cardNeedsEnemy(
   includeEvokes = true,
   energySpent?: number,
   forActivation = false,
+  attachedGemId?: string,
+  sourceCardUid?: string,
+  _energyCharged = energySpent,
 ): boolean {
   if (def.type === 'power' && (def.trigger || (def.activeAbility && !forActivation))) return false
   if ((def.target ?? 'enemy') === 'allEnemies') return false
+  if (def.target === 'row') return true
+  if ((attachedGemId && ['guardian_emerald', 'guardian_garnet', 'guardian_ruby'].includes(attachedGemId)) ||
+    attachedGemId === 'guardian_peridot' && (!actor || actor.hand?.some((card) => card.uid !== sourceCardUid &&
+      cardDef(card.defId).guardian?.printedType.startsWith('Gem')))) return true
+  if (def.guardian) {
+    return new Set([
+      'guardian_strike', 'guardian_twin_slam', 'guardian_orb_support', 'guardian_strike_for_strike',
+      'guardian_disrupt', 'guardian_crystal_edge', 'guardian_fierce_bash', 'guardian_orb_slam',
+      'guardian_poly_beam', 'guardian_priming_shot', 'guardian_walker_claw', 'guardian_roll_attack',
+      'guardian_vent_steam', 'guardian_speed_boost', 'guardian_incinerate', 'guardian_focus_beam',
+      'guardian_gem_cannon', 'guardian_multi_beam', 'guardian_stasis_beam', 'guardian_power_beam',
+      'guardian_scale_slash', 'guardian_bauble_burst', 'guardian_body_crash', 'guardian_destroy',
+    ]).has(def.id)
+  }
   const effects = def.modes?.flatMap((mode) => mode.effects) ?? def.effects
   return effects.some((effect) =>
     (includeEvokes || (effect.kind !== 'evoke' && effect.kind !== 'recurseOrb')) &&
@@ -445,16 +751,40 @@ export function cardNeedsEnemy(
 }
 
 /** Independent printed targets collected before an atomic card play. */
-export function cardEnemyChoiceCount(def: CardDef, mode?: number): number {
+export function cardEnemyChoiceCount(
+  def: CardDef,
+  mode?: number,
+  state?: CombatState,
+  actor?: Player,
+): number {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
   return effects.reduce((sum, effect) => sum + (
-    effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' ? effect.targets : 0
+    state && actor && !effectIsActive(effect, state, actor) ? 0 :
+    effect.kind === 'poisonChoices' || effect.kind === 'hitChoices' || effect.kind === 'weakChoices' ||
+      effect.kind === 'vulnerableChoices' ? effect.targets : 0
   ), 0)
 }
 
 export function cardPlayerChoiceCount(def: CardDef, mode?: number): number {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects ?? [] : def.effects
-  return effects.reduce((sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
+  const explicit = effects.reduce((sum, effect) => sum + (effect.kind === 'blockChoices' ? effect.targets : 0), 0)
+  if (explicit > 0 || def.id !== 'guardian_stasis_field') return explicit
+  return def.guardian?.sourceText.match(/\b1 \[block\]/g)?.length ?? 0
+}
+
+export function guardianCardNeedsAlly(
+  def: CardDef,
+  actor: Pick<Player, 'guardianMode'>,
+  attachedGemId?: string,
+): boolean {
+  if (attachedGemId === 'guardian_onyx') {
+    return def.id !== 'guardian_prismatic_barrier' && def.id !== 'guardian_prismatic_spray'
+  }
+  if (def.id === 'guardian_harden') return true
+  if ((def.id === 'guardian_curl_up' || def.id === 'guardian_defend') &&
+    def.guardian?.sourceText.includes('to any player')) return true
+  if (def.id === 'guardian_spheric_shield') return actor.guardianMode === 'defense'
+  return def.id === 'guardian_guardian_whirl' && def.type === 'skill'
 }
 
 export function cardModeIsAvailable(
@@ -592,9 +922,13 @@ function cardRequiresChosenEnemy(
   includeEvokes = true,
   energySpent?: number,
   mode?: number,
+  attachedGemId?: string,
+  sourceCardUid?: string,
+  energyCharged = energySpent,
 ): boolean {
   const effects = def.modes ? def.modes[mode ?? -1]?.effects : undefined
-  return cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def, actor, includeEvokes, energySpent)
+  return cardNeedsEnemy(effects ? { ...def, modes: undefined, effects } : def,
+    actor, includeEvokes, energySpent, false, attachedGemId, sourceCardUid, energyCharged)
 }
 
 export function needsChosenEnemy(
@@ -605,8 +939,12 @@ export function needsChosenEnemy(
   includeEvokes = true,
   energySpent?: number,
   mode?: number,
+  attachedGemId?: string,
+  sourceCardUid?: string,
+  energyCharged = energySpent,
 ): boolean {
-  if (!cardRequiresChosenEnemy(def, actor, includeEvokes, energySpent, mode)) return false
+  if (!cardRequiresChosenEnemy(def, actor, includeEvokes, energySpent, mode, attachedGemId, sourceCardUid,
+    energyCharged)) return false
   return resolveEnemyTargets(state, def.target ?? 'enemy', chosenUid).length === 0
 }
 

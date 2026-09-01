@@ -356,7 +356,8 @@ try {
     assertEqual(bossMigrated.rewardConfirmed, undefined)
     assertEqual(bossMigrated.run.rewards.every((offer) => offer.cardSource === 'rare' && offer.choices === null), true)
     assertEqual(bossMigrated.run.rewards[0].prismatic, true)
-    assertDeepEqual(bossMigrated.run.rewards[0].availableSources, ['ironclad', 'silent', 'defect', 'watcher'])
+    assertDeepEqual(bossMigrated.run.rewards[0].availableSources,
+      ['ironclad', 'silent', 'defect', 'watcher'])
     for (const [index, player] of bossMigrated.run.players.entries()) {
       const cards = index === 1 || index === 2
         ? [...originalBossCards[index].slice(3), ...originalBossCards[index].slice(0, 3)]
@@ -385,7 +386,8 @@ try {
     const offer = prismaticMigrated.run.rewards[0]
     assertEqual(offer.cardSource, 'rare')
     assertEqual(offer.choices, null)
-    assertDeepEqual(offer.availableSources, ['ironclad', 'silent', 'defect', 'watcher'])
+    assertDeepEqual(offer.availableSources,
+      ['ironclad', 'silent', 'defect', 'watcher'])
     for (const source of prismaticSources) {
       assertDeepEqual(sourceDeck(prismaticMigrated.run, source, false), expectedPrismaticDecks[source].cards)
       assertDeepEqual(sourceDeck(prismaticMigrated.run, source, true), expectedPrismaticDecks[source].rares)

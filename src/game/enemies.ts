@@ -7,119 +7,32 @@
 // and are skipped on the loop.
 import { shuffle } from './rng.ts'
 import type { RngState } from './rng.ts'
-import type { Enemy } from './types.ts'
+import type { Enemy, Player } from './types.ts'
+import { DOWNFALL_ENEMIES, DOWNFALL_SUMMON_CARDS } from './downfall/enemies.ts'
+import type { EnemyAbility, EnemyAction, EnemyDef, SummonSupply } from './enemy-types.ts'
+export type { CubeSlot, EnemyAbility, EnemyAction, EnemyAscension, EnemyDef, EnemyPattern, SummonSupply } from './enemy-types.ts'
 
-export type EnemyAction =
-  /** Damage to the player in this enemy's row, or to all players if `aoe`. */
-  | { kind: 'attack'; amount: number; times?: number; aoe?: boolean; facing?: boolean }
-  /** Different printed hits that still spend modifiers once as one action. */
-  | { kind: 'attackSequence'; hits: { amount: number; aoe?: boolean }[] }
-  /** Block and Strength always go on the enemy itself, never on a player (p.14). */
-  | { kind: 'block'; amount: number; perPlayer?: boolean }
-  | { kind: 'gainStrength'; amount: number }
-  | { kind: 'blockAllEnemies'; amount: number }
-  | { kind: 'strengthenAllEnemies'; amount: number }
-  | { kind: 'healAllEnemies'; amount: number }
-  | { kind: 'healSelf'; amount: number }
-  | { kind: 'blockNamed'; defId: string; amount: number }
-  | { kind: 'clearSelfDebuffs' }
-  | { kind: 'reviveAll'; group: 'gremlin' | 'darkling' }
-  | { kind: 'applyWeak'; amount: number; aoe?: boolean }
-  | { kind: 'applyVulnerable'; amount: number; aoe?: boolean }
-  /** Puts a Daze card on top of the target's draw pile (p.24). */
-  | { kind: 'daze'; amount: number; aoe?: boolean }
-  /** Status cards go on top of discard, unlike Daze (p.24). */
-  | { kind: 'status'; card: 'burn' | 'slimed'; amount: number; aoe?: boolean }
-  | { kind: 'loseGold'; amount: number }
-  | { kind: 'leave' }
-  | { kind: 'die' }
-  | { kind: 'addAbilityCube'; amount: number }
-  | { kind: 'transform'; defId: string }
-  | { kind: 'guardianModeShift'; amount: number }
-  | { kind: 'removeInvincible' }
-  | { kind: 'shuffleStatus'; card: 'burn' | 'slimed'; amount: number }
-  /** This printed action is sorted after ordinary enemies for this round. */
-  | { kind: 'actsLast' }
-  /** Summons resolve at the start of the next round. */
-  | { kind: 'summon'; defIds: string[] }
-  | { kind: 'summonUntil'; defId: string; perPlayer: number }
-  /** Does nothing — Lagavulin asleep, the Gremlin Nob's first turn. */
-  | { kind: 'idle' }
-
-export type CubeSlot = {
-  actions: EnemyAction[]
-  /** Grey slots fire once and are skipped when the cube loops (p.13). */
-  once?: boolean
+/** Dynamic attack text shared by resolution and the intent preview. */
+export function enemyAttackBonus(
+  enemies: readonly Enemy[],
+  enemy: Enemy,
+  action: EnemyAction,
+  target: Pick<Player, 'row' | 'powers'>,
+): number {
+  const abilities = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+  const curiosity = abilities.some((ability) => ability.kind === 'curiosity') ? target.powers.length : 0
+  const focus = abilities.find((ability) => ability.kind === 'focusFromAllyStrength')
+  const focusStrength = focus?.kind === 'focusFromAllyStrength'
+    ? enemies.find((candidate) => !candidate.dead && candidate.defId === focus.defId)?.strength ?? 0
+    : 0
+  const noAlly = action.kind === 'attack' && action.bonusIfNoLivingAlly &&
+    !enemies.some((candidate) => !candidate.dead && candidate.row === target.row &&
+      action.bonusIfNoLivingAlly!.defIds.includes(candidate.defId))
+    ? action.bonusIfNoLivingAlly.amount : 0
+  return curiosity + focusStrength + noAlly
 }
 
-export type EnemyPattern =
-  | { kind: 'single'; actions: EnemyAction[] }
-  /** Indexed 1-6 by the shared die result for the round. */
-  | { kind: 'die'; byRoll: Record<number, EnemyAction[]> }
-  | { kind: 'cube'; slots: CubeSlot[] }
-  /** A one-time first turn followed by a permanent die table. */
-  | { kind: 'firstThenDie'; first: EnemyAction[]; byRoll: Record<number, EnemyAction[]> }
 
-export type EnemyAbility =
-  | { kind: 'curlUp'; block: number }
-  | { kind: 'sporeCloud'; vulnerable: number }
-  | { kind: 'enraged'; damage: number; fromTurn: number }
-  | { kind: 'angry'; strength: number }
-  | { kind: 'flying'; maxDamagePerHit: number }
-  | { kind: 'painfulStabs'; daze: number }
-  | { kind: 'furyOnAllyDeath'; allyDefId: string; strength: number; actions: EnemyAction[] }
-  | { kind: 'confusion'; byRoll: Record<number, number> }
-  | { kind: 'barricade'; startingBlock: number }
-  | { kind: 'shift' }
-  | { kind: 'reactiveReroll' }
-  | { kind: 'regrow' }
-  | { kind: 'thorns'; damagePerCube: number; startingCubes: number; maxCubes: number }
-  | { kind: 'immuneOnSlots'; slots: number[] }
-  | { kind: 'slow'; damagePerHit: number }
-  | { kind: 'rally'; summonDefId: string }
-  | { kind: 'splitOnDeath'; defIds: string[]; largeSlimeStrength?: number }
-  | { kind: 'rebirth'; hpPerPlayer: number; defId?: string; clearWeakVulnerable?: boolean; strength?: number; strengthPerPower?: boolean; timing?: 'startOfTurn' | 'endOfTurn' }
-  | { kind: 'sharpHide'; damage: number }
-  | { kind: 'curiosity' }
-  | { kind: 'timeWarp'; limits: number[] }
-  | { kind: 'invincible'; hpPerPlayer: number }
-  | { kind: 'beatOfDeath'; damagePerCube: number; startingCubes: number; maxCubes: number }
-  | { kind: 'void' }
-  | { kind: 'facing'; effect: 'shield' | 'spear' }
-
-export type EnemyDef = {
-  id: string
-  name: string
-  /** Starting HP for 1, 2, 3 and 4 players respectively. */
-  hpByPlayers: [number, number, number, number]
-  pattern: EnemyPattern
-  isBoss?: boolean
-  elite?: boolean
-  /** Bosses act last, as do enemies whose card says "acts last" (p.13). */
-  actsLast?: boolean
-  startingBlock?: number
-  retainsBlock?: boolean
-  /** The yellow special ability printed on the card (p.13). */
-  ability?: EnemyAbility
-  abilities?: EnemyAbility[]
-  /** Reuse a generated portrait across printed forms. */
-  artId?: string
-  /** Generated act-specific boss backdrop. */
-  bossAct?: 1 | 2 | 3 | 4
-  /** Highest matching threshold replaces only the listed printed values. */
-  ascension?: EnemyAscension[]
-}
-
-export type EnemyAscension = {
-  min: number
-  hpByPlayers?: [number, number, number, number]
-  pattern?: EnemyPattern
-  actsLast?: boolean
-  startingBlock?: number
-  retainsBlock?: boolean
-  ability?: EnemyAbility
-  abilities?: EnemyAbility[]
-}
 
 /** Die patterns pair the faces, so this keeps the tables readable. */
 const byPairs = (
@@ -1282,6 +1195,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
       { actions: [{ kind: 'attack', amount: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
       { actions: [{ kind: 'attack', amount: 3, times: 2 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
     ] },
+    ability: { kind: 'buffer', initialPerPlayer: 1, max: 4 },
     ascension: [{ min: 10, hpByPlayers: [38, 80, 120, 160], pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 1 }, { kind: 'status', card: 'burn', amount: 2, aoe: true }] },
       { actions: [{ kind: 'attack', amount: 2, times: 2 }, { kind: 'status', card: 'burn', amount: 1, aoe: true }] },
@@ -1524,7 +1438,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
   },
 }
 
-export type SummonSupply = Record<string, string[]>
+// Downfall definitions use this same registry so every combat/query path sees
+// one authoritative enemy vocabulary after the ruleset chooses an encounter.
+Object.assign(ENEMIES, DOWNFALL_ENEMIES)
 
 /** The physical Summons deck, grouped by the name a card asks us to search for. */
 const SUMMON_CARDS: SummonSupply = {
@@ -1558,8 +1474,37 @@ const SUMMON_CARDS: SummonSupply = {
   spheric_guardian: ['spheric_guardian'],
 }
 
-export function createSummonSupply(rng: RngState): SummonSupply {
-  return Object.fromEntries(Object.entries(SUMMON_CARDS).map(([name, cards]) => [name, shuffle(rng, [...cards])]))
+export function createSummonSupply(
+  rng: RngState,
+  ruleset: 'base' | 'downfall' = 'base',
+  act = 1,
+): SummonSupply {
+  const cards = ruleset === 'downfall' ? { ...SUMMON_CARDS, ...DOWNFALL_SUMMON_CARDS } : SUMMON_CARDS
+  const supply = Object.fromEntries(Object.entries(cards).map(([name, entries]) => [name, shuffle(rng, [...entries])]))
+  if (ruleset === 'downfall') {
+    const louseCards = DOWNFALL_SUMMON_CARDS.downfall_louse ?? []
+    const sentryCards = DOWNFALL_SUMMON_CARDS.downfall_sentry ?? []
+    const aliases: Record<string, string> = act === 1 ? {
+      acid_slime: 'downfall_acid_slime', spike_slime: 'downfall_spike_slime',
+      large_slime: 'downfall_large_slime', fungi_beast: 'downfall_fungi_beast', gremlin: 'downfall_gremlin',
+    } : act === 2 ? {
+      byrd: 'downfall_byrd', cultist: 'downfall_cultist_act2', bronze_orb: 'downfall_bronze_orb',
+      mugger: 'downfall_mugger', mystic: 'downfall_mystic', blue_slaver: 'downfall_blue_slaver',
+      red_slaver: 'downfall_red_slaver', fungi_beast_a7: 'downfall_fungi_beast_a7',
+    } : {
+      cultist: 'downfall_cultist_act3', jaw_worm_act3: 'downfall_jaw_worm',
+      repulsor: 'downfall_repulsor', exploder: 'downfall_exploder', spiker: 'downfall_spiker',
+      spheric_guardian: 'downfall_spheric_guardian_a7', darkling: 'downfall_darkling', dagger: 'downfall_dagger',
+    }
+    for (const [name, source] of Object.entries(aliases)) supply[name] = shuffle(rng, [...(DOWNFALL_SUMMON_CARDS[source] ?? [])])
+    supply.green_louse = shuffle(rng, louseCards
+      .filter((id) => DOWNFALL_ENEMIES[id]?.name === 'Green Louse'))
+    supply.red_louse = shuffle(rng, louseCards
+      .filter((id) => DOWNFALL_ENEMIES[id]?.name === 'Red Louse'))
+    supply.sentry_a = shuffle(rng, sentryCards.filter((id) => id === 'downfall_sentry_a'))
+    supply.sentry_b = shuffle(rng, sentryCards.filter((id) => id === 'downfall_sentry_b'))
+  }
+  return supply
 }
 
 /** Removes one random matching physical card; absent cards cannot be summoned. */
@@ -1630,6 +1575,28 @@ export function abilityText(ability: EnemyAbility, compact = false): string {
     case 'facing': return compact
       ? `Facing · choose ${ability.effect}`
       : `Facing: after start-of-turn effects, players in this enemy's two rows resolve its facing effect`
+    case 'startCombatStatus': return `Start of combat: shuffle ${ability.amount} ${ability.card} into each deck`
+    case 'slimedHandHpLoss': return `End of turn: lose ${ability.amount} HP per Slimed in hand`
+    case 'buffSummons': return `Summoned ${ability.defIdPrefix} gain ${ability.block} Block and ${ability.strength} Strength`
+    case 'blockFromUnblockedDamage': return 'Gains Block equal to unblocked damage dealt'
+    case 'startRoundSelfVulnerable': return `Start of round: gain ${ability.amount} Vulnerable`
+    case 'buffer': return `Buffer ${ability.initialPerPlayer} per player, max ${ability.max}`
+    case 'fireBreathing': return `Burns deal ${ability.burnDamage}, draw another card, then Exhaust`
+    case 'burnOnAttackWhileSlot': return `Attack reaction on action ${ability.slot + 1}: gain ${ability.amount} Burn`
+    case 'protectedBy': return `Cannot lose HP while ${ability.defIdPrefix} lives`
+    case 'retainPlayerVulnerable': return 'Players retain Vulnerable after enemy attacks'
+    case 'immuneToWeak': return 'Cannot gain Weak'
+    case 'retainPlayerWeak': return 'Players retain Weak after Attacks'
+    case 'deathTokenCleanup': return `Death: all players lose ${ability.amount} ${ability.token}`
+    case 'secondWind': return `Death: summon ${ability.defId} next round`
+    case 'reviveOnePerRow': return `Start of round: revive one ${ability.defIdPrefix} per row`
+    case 'blasphemy': return `At 0 HP: return as ${ability.defId}`
+    case 'protectedUntilAllDead': return `Cannot lose HP while ${ability.defIds.join('/')} lives`
+    case 'focusFromAllyStrength': return `Attacks gain damage from ${ability.defId}'s Strength`
+    case 'grantAllyBuffer': return `${ability.defId} gains ${ability.amount} Buffer`
+    case 'corruptSkills': return 'All player Skills Exhaust'
+    case 'berserkHpLossPerPlayer': return `End of turn: lose ${ability.amount} HP per player`
+    case 'plunder': return `Death: row gains ${ability.burns} Burns and ${ability.chests} chest`
   }
 }
 

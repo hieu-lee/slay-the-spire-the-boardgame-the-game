@@ -5,9 +5,10 @@
 // asserts every engine module is reachable from here, which is what catches a
 // module that was written but never wired up.
 //
-// Combat and 107 enemy definitions covering roughly 60 physical cards are live.
-// 251 of 259 unique character cards are live as ordinary definitions; the
-// other 8 are implemented Golden Ticket rewards. 22 of 22 colorless cards are live. Relics, potions, and their
+// Combat and 184 enemy definitions are live. 465 character card definitions are live in all rulesets.
+// Of the base game, 251 of 259 unique character cards are live as ordinary definitions; the
+// other 8 are implemented Golden Ticket rewards. 38 colorless card definitions are live in all rulesets;
+// all 22 of 22 colorless cards are live in the base game. Relics, potions, and their
 // Ascension rules are live. Event, Merchant/Courier, Treasure, and campaign
 // presentation are composed from the separate noncombat implementation.
 // No scan-read cards are held back in `DEFERRED_CARDS`. Official optional run
@@ -16,7 +17,7 @@
 export { createRng, nextFloat, nextInt, shuffle, pick, pickMany, seedFromString } from './rng.ts'
 export type { RngState } from './rng.ts'
 
-export { CAPS } from './types.ts'
+export { CAPS, BASE_CHARACTER_IDS, CHARACTER_IDS, DOWNFALL_CHARACTER_IDS } from './types.ts'
 export type {
   CardInstance,
   CardType,
@@ -27,6 +28,26 @@ export type {
   Rarity,
   Stance,
 } from './types.ts'
+
+export {
+  SLIME_BOSS_CARDS,
+  SLIME_BOSS_CARD_COUNT,
+  SLIME_BOSS_GOLDEN_TICKET,
+  SLIME_BOSS_MAX_HP,
+  SLIME_BOSS_PHYSICAL_DECK_COUNT,
+  SLIME_BOSS_PUBLIC_VERSION,
+  SLIME_BOSS_RARE_DECK,
+  SLIME_BOSS_REWARD_DECK,
+  SLIME_BOSS_STARTER_DECK,
+  bruiserSlime,
+  commandSlime,
+  gainSlimeVigor,
+  growSlime,
+  makeSlimeBossStarterDeck,
+  removeTemporarySlimeVigor,
+  setupSlimeBossPlayer,
+  slimeDef,
+} from './downfall/slime-boss.ts'
 
 export {
   addCapped,
@@ -59,6 +80,9 @@ export { CARDS, STARTER_DECKS, cardCost, cardDef, faceOf } from './cards.ts'
 export type { Amount, CardDef, CardMode, Condition, CountOf, Effect, HandEndOfTurnEffect, TargetScope } from './cards.ts'
 
 export {
+  abandonHermitChamberPlay,
+  abandonHermitSetupLoad,
+  defaultPendingDieRelicChoice,
   abandonCardCopy,
   abandonForcedCard,
   activatePower,
@@ -98,18 +122,30 @@ export {
   powerAbilityUsed,
   playCard,
   playCardCopy,
+  playHermitChamberCard,
+  resolveHermitSetupLoad,
+  resolveHermitStrengthReward,
   playCost,
   preparePlayerTurn,
+  preparePlayerTurnThroughDraw,
   remainingRoundHpLoss,
   previewCardChoice,
   previewCardCopyChoice,
+  previewHermitChamberCardChoice,
+  previewPowerChoice,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
+  pendingTriggerSlimeEnemyChoiceCount,
+  slimeCommandEnemyChoiceCount,
   resolveEnemyTargets,
   resolveEndTurnAbility,
   resolvePendingTrigger,
+  resolvePendingDieRelicChoice,
+  resolvePlunderRowSwitch,
+  resumePlayerTurnAfterDraw,
   spendMiracle,
+  spendSoulburn,
   spendShiv,
   startPlayerTurn,
   startPlayerTurnWithChoices,
@@ -118,6 +154,7 @@ export {
   startTurnScryAbilities,
   startTurnScryPreview,
   defaultStartTurnChoices,
+  mandatoryChoicePending,
   validEndTurnOrder,
 } from './combat.ts'
 export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, RelicContext, StartTurnAbility, StartTurnChoice, StartTurnDiscardPreview, StartTurnScryAbility, StartTurnScryPreview } from './combat.ts'
@@ -143,6 +180,7 @@ export {
   ROOM_LABEL,
   advanceAct,
   advanceQuickSetup,
+  abandonGuardianSocket,
   beginCatchUp,
   canSkipEvent,
   unavailableEventOptionIds,
@@ -161,6 +199,7 @@ export {
   giveUpFight,
   giveUpRun,
   canGiveUpRun,
+  canRerollDownfallSelfBoss,
   migrateLegacyBossRareRewards,
   victoryIsTerminal,
   purchaseAtMerchant,
@@ -174,6 +213,7 @@ export {
   pendingRelicPreview,
   pendingRelicEligibleCards,
   resolvePendingRelic,
+  resolveGuardianSocket,
   resolveNeowEffect,
   resolveNeowGold,
   resolveNeowReward,
@@ -186,6 +226,7 @@ export {
   visibleMap,
   resolveCardRewards,
   resolveCombat,
+  rerollDownfallSelfBoss,
   roomChoices,
   wingBootChoices,
   startPendingBoss,
@@ -226,8 +267,9 @@ export {
   currentQuickSetupStep,
   normalizeModifierIds,
   rollDailyModifiers,
+  rulesetForCharacters,
 } from './meta.ts'
-export type { DailyModifier, DailyModifierId, QuickSetupState, QuickStartAct, QuickStartStep, RunMetaOptions, RunMetaState, RunMode } from './meta.ts'
+export type { DailyModifier, DailyModifierId, QuickSetupState, QuickStartAct, QuickStartStep, RuleSet, RunMetaOptions, RunMetaState, RunMode } from './meta.ts'
 export { ACHIEVEMENTS } from './achievements.ts'
 
 export { triggerMatches } from './triggers.ts'

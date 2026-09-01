@@ -131,8 +131,15 @@
 .event-options button strong { color: #f4cf71; font: 700 1.1rem Georgia, serif; }
 .event-cards { display: flex; align-items: flex-start; align-content: flex-start; gap: .45rem; flex-wrap: wrap; margin: 0 0 1rem; padding: 0; border: 0; }
 .event-cards > legend { margin-bottom: .4rem; padding: 0; }
+.event-cards .card--preview { filter: none; }
 .event-cards button:not(.card) { min-height: 88px; padding: .7rem; color: #f7eddb; background: linear-gradient(#313e40, #172328); border: 2px solid #708489; border-radius: 7px; box-shadow: 0 5px 0 #0b1012; cursor: pointer; }
 .event-cards button[aria-pressed='true']:not(.card) { color: #17120b; background: #f4cf71; }
+.event-encounter-preview { display: flex; gap: .75rem; flex-wrap: wrap; margin: 0 0 1rem; padding: .65rem; border: 1px solid #708489; border-radius: 7px; background: #0a0c0c85; }
+.event-encounter-preview > legend { padding: 0 .25rem; color: #f4cf71; }
+.event-encounter-preview figure { display: grid; grid-template-columns: 64px auto; align-items: center; gap: .55rem; min-width: 180px; margin: 0; }
+.event-encounter-preview img { width: 64px; height: 64px; object-fit: contain; }
+.event-encounter-preview figcaption, .event-encounter-preview figcaption span { display: grid; }
+.event-encounter-preview figcaption span { color: #d6c8b1; font-size: .78rem; }
 
 /* The original game leaves the Event art behind and spreads the whole deck in
    a broad, readable grid. Keep one scrolling surface (the Event stage) rather

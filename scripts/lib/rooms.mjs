@@ -18,6 +18,10 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   CAPS,
+  CHARACTER_IDS,
+  abandonHermitChamberPlay,
+  abandonHermitSetupLoad,
+  abandonGuardianSocket,
   abandonCardCopy,
   abandonForcedCard,
   activatePower,
@@ -26,6 +30,7 @@ import {
   advanceAct,
   advanceQuickSetup,
   canUpgradeCard,
+  canRerollDownfallSelfBoss,
   chooseEvent,
   chooseNeow,
   chooseRelicReward,
@@ -39,6 +44,7 @@ import {
   beginCatchUp,
   chooseEndTurnTarget,
   chooseDistilledCard,
+  defaultPendingDieRelicChoice,
   discardOrderIsValid,
   endTurnResolutionAbility,
   createRun,
@@ -59,6 +65,7 @@ import {
   revealCourier,
   merchantPurchaseCost,
   merchantRemovalCost,
+  mandatoryChoicePending,
   migrateLegacyBossRareRewards,
   neowPreview,
   removeAtCurrentMerchant,
@@ -67,11 +74,15 @@ import {
   pendingRelicEligibleCards,
   orderStartTurnScries,
   pendingTriggerAbility,
+  pendingTriggerSlimeEnemyChoiceCount,
   playCard,
   playCardCopy,
+  playHermitChamberCard,
   playCost,
   previewCardChoice,
   previewCardCopyChoice,
+  previewHermitChamberCardChoice,
+  previewPowerChoice,
   potionDef,
   revealCardReward,
   revealPotionReward,
@@ -90,12 +101,21 @@ import {
   resolveEnemyTargets,
   resolvePendingTrigger,
   resolveEndTurnAbility,
+  resolvePendingDieRelicChoice,
   resolvePendingRelic,
+  resolvePlunderRowSwitch,
+  resolveHermitSetupLoad,
+  resolveHermitStrengthReward,
+  resolveGuardianSocket,
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
+  slimeCommandEnemyChoiceCount,
+  rerollDownfallSelfBoss,
+  rulesetForCharacters,
   spendMiracle,
   spendShiv,
+  spendSoulburn,
   tradePotion,
   usePotionOutsideCombat,
   switchBetweenCombatRow,
@@ -114,7 +134,7 @@ import {
 } from '../../src/game/state.ts'
 
 /** Characters a seat may pick. Two players may not take the same one (p.4). */
-export const CHARACTERS = ['ironclad', 'silent', 'defect', 'watcher']
+export const CHARACTERS = [...CHARACTER_IDS]
 
 export const MAX_SEATS = 4
 export const GIVE_UP_TIMEOUT_MS = 10_000
@@ -147,6 +167,20 @@ function token(random = randomBytes) {
   return random(24).toString('base64url')
 }
 
+function normalizeLegacyPlayer(player) {
+  player.chamber = Array.isArray(player.chamber) ? player.chamber : []
+  player.chamberSlots = Number.isSafeInteger(player.chamberSlots) ? player.chamberSlots
+    : player.character === 'hermit' ? 2 : 0
+  player.heat = Number.isSafeInteger(player.heat) ? player.heat : player.character === 'hexaghost' ? 1 : 0
+  player.soulburn = Number.isSafeInteger(player.soulburn) ? player.soulburn : 0
+  player.guardianMode = player.guardianMode === 'attack' || player.guardianMode === 'defense'
+    ? player.guardianMode : player.character === 'guardian' ? 'attack' : null
+  player.vigor = Number.isSafeInteger(player.vigor) ? player.vigor : 0
+  player.vigorSpentThisTurn = Number.isSafeInteger(player.vigorSpentThisTurn) ? player.vigorSpentThisTurn : 0
+  player.slimes = Array.isArray(player.slimes) ? player.slimes : []
+  player.lootChests = Number.isSafeInteger(player.lootChests) ? player.lootChests : 0
+}
+
 export function createStore({ file } = {}) {
   const store = { rooms: new Map(), file }
   if (!file) return store
@@ -165,8 +199,26 @@ export function createStore({ file } = {}) {
         room.chooseYourRelic = room.chooseYourRelic === true
         room.lastStand = room.lastStand === true && room.seats.length > 1
         if (room.run) {
+          for (const player of room.run.players ?? []) normalizeLegacyPlayer(player)
+          for (const player of room.run.combat?.players ?? []) normalizeLegacyPlayer(player)
+          for (const player of room.run.roomState?.preparedCombat?.players ?? []) normalizeLegacyPlayer(player)
+          room.run.guardianGemDeck = Array.isArray(room.run.guardianGemDeck) ? room.run.guardianGemDeck : []
+          room.run.pendingGuardianSockets = Array.isArray(room.run.pendingGuardianSockets)
+            ? room.run.pendingGuardianSockets : []
+          if (room.run.roomState?.kind === 'merchant') {
+            room.run.roomState.guardianGems = room.run.roomState.guardianGems ?? {}
+            room.run.roomState.socketCardsBought = room.run.roomState.socketCardsBought ?? {}
+          }
+          const storedRuleset = room.run.meta?.ruleset
           room.run.meta = room.run.meta && Array.isArray(room.run.meta.modifierIds)
             ? room.run.meta : { mode: 'standard', modifierIds: [] }
+          room.run.meta = {
+            ...room.run.meta,
+            ruleset: storedRuleset === 'base' || storedRuleset === 'downfall'
+              ? storedRuleset
+              : rulesetForCharacters(Array.isArray(room.run.players)
+                ? room.run.players.map((player) => player.character) : []),
+          }
           room.run.setup ??= null
           room.run.lastStand = room.run.lastStand == null ? room.lastStand : room.run.lastStand === true
           if (room.run.combat) {
@@ -529,18 +581,145 @@ function settlePendingRelics(room) {
   }
 }
 
-function settleForcedCards(room) {
+function settleForcedCards(room, consumedPreviewPlayerId = null) {
+  while (room.run?.pendingGuardianSockets?.length > 0) {
+    const pending = room.run.pendingGuardianSockets[0]
+    const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+    if (owner?.connected !== false) break
+    const next = abandonGuardianSocket(room.run, pending.playerId)
+    if (next === room.run) break
+    room.run = next
+  }
+  let prepared = room.run?.roomState?.kind === 'event' ? room.run.roomState.preparedCombat : undefined
+  while (prepared?.pendingHermitSetupLoads?.length > 0) {
+    const pending = prepared.pendingHermitSetupLoads[0]
+    const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+    if (owner?.connected !== false) break
+    const player = prepared.players.find((candidate) => candidate.id === pending.playerId)
+    const next = player?.hand[0]
+      ? resolveHermitSetupLoad(prepared, pending.playerId, player.hand[0].uid,
+        prepared.enemies.find((enemy) => !enemy.dead)?.uid ?? null, true)
+      : prepared
+    const resolved = next === prepared ? abandonHermitSetupLoad(prepared, pending.playerId, true) : next
+    if (resolved === prepared) break
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: resolved } }
+    prepared = resolved
+  }
+  for (let preview = prepared ? startTurnScryPreview(prepared) : undefined; preview;) {
+    const owner = room.seats.find((seat) => seat.playerId === preview.playerId)
+    if (owner?.connected !== false) break
+    const next = resolveStartTurnScry(prepared, preview.playerId, preview.id, [])
+    if (next === prepared) break
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
+    prepared = next
+    preview = startTurnScryPreview(prepared)
+  }
   let combat = room.run?.combat
+  settleDisconnectedStartTurnChoices(room)
+  for (const [playerId, preview] of Object.entries(room.powerPreviews ?? {})) {
+    const owner = room.seats.find((seat) => seat.playerId === playerId)
+    if (owner?.connected !== false || !combat) continue
+    const next = activatePower(combat, playerId, preview.powerUid, { scryDiscardUids: [] })
+    if (next !== combat) {
+      combat = next
+      room.run = { ...room.run, combat: next }
+    }
+    room.powerPreviews = { ...room.powerPreviews }
+    delete room.powerPreviews[playerId]
+  }
   for (;;) {
     let settled = false
-    while (combat?.pendingTriggers?.length > 0) {
+    while (combat?.pendingPlunderSwitches?.length > 0) {
+      const pending = combat.pendingPlunderSwitches[0]
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const next = resolvePlunderRowSwitch(combat, pending.playerId, null)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.pendingDieRelicChoices?.length > 0) {
+      const pending = combat.pendingDieRelicChoices[0]
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const next = defaultPendingDieRelicChoice(combat, pending.playerId)
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.pendingTriggers?.length > 0 && !combat.pendingDieRelicChoices?.length) {
       const pending = pendingTriggerAbility(combat)
       const owner = room.seats.find((seat) => seat.playerId === pending?.playerId)
       if (!pending || owner?.connected !== false) break
+      const slimeUids = pending.slimeChoice?.minimum === 0 ? []
+        : pending.slimeChoice?.cards.slice(0, pending.slimeChoice.amount).map((card) => card.uid) ?? []
+      const slimeEnemyAmount = pendingTriggerSlimeEnemyChoiceCount(combat, pending.id, slimeUids)
+      const fallbackEnemyUid = combat.enemies.find((enemy) => !enemy.dead)?.uid
       const next = resolvePendingTrigger(
         combat, pending.playerId, pending.id, pending.rows?.[0]?.row, pending.targets?.[0]?.uid,
         pending.players?.[0]?.id,
+        pending.hermitChoices ? {
+          loadUids: pending.hermitChoices.loadCards.slice(0, 1).map((card) => card.uid),
+          chamberUids: pending.hermitChoices.chamberCards.slice(0, 1).map((card) => card.uid),
+          hermitEnemyUids: pending.targets?.[0] ? [pending.targets[0].uid] : [],
+        } : pending.slimeChoice ? {
+          slimeUids,
+          slimeEnemyUids: fallbackEnemyUid ? Array(slimeEnemyAmount).fill(fallbackEnemyUid) : [],
+        } : slimeEnemyAmount > 0 ? {
+          slimeEnemyUids: fallbackEnemyUid ? Array(slimeEnemyAmount).fill(fallbackEnemyUid) : [],
+        } : undefined,
       )
+      if (next === combat) break
+      room.run = { ...room.run, combat: next }
+      combat = next
+      settled = true
+    }
+    while (combat?.pendingHermitSetupLoads?.length > 0) {
+      const pending = combat.pendingHermitSetupLoads[0]
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const player = combat.players.find((candidate) => candidate.id === pending.playerId)
+      const next = player?.hand[0]
+        ? resolveHermitSetupLoad(combat, pending.playerId, player.hand[0].uid,
+          combat.enemies.find((enemy) => !enemy.dead)?.uid ?? null)
+        : combat
+      const resolved = next === combat ? abandonHermitSetupLoad(combat, pending.playerId) : next
+      if (resolved === combat) break
+      room.run = { ...room.run, combat: resolved }
+      combat = resolved
+      settled = true
+    }
+    while (combat?.pendingHermitChamberPlays?.length > 0) {
+      const pending = combat.pendingHermitChamberPlays[0]
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const preview = room.cardPreviews?.[pending.playerId]
+      if (pending.playerId !== consumedPreviewPlayerId &&
+        preview?.chamber === true && preview.cardUid === pending.cardUids[0]) {
+        if (!resolveAbandonedPreviews(room)) break
+        combat = room.run?.combat
+        settled = true
+        continue
+      }
+      const next = playHermitChamberCard(combat, pending.playerId, pending.cardUids[0], {
+        enemyUid: combat.enemies.find((enemy) => !enemy.dead)?.uid ?? null,
+        playerId: pending.playerId,
+      })
+      const resolved = next === combat ? abandonHermitChamberPlay(combat, pending.playerId) : next
+      if (resolved === combat) break
+      room.run = { ...room.run, combat: resolved }
+      combat = resolved
+      settled = true
+    }
+    while (combat?.pendingHermitStrengthRewards?.length > 0) {
+      const pending = combat.pendingHermitStrengthRewards[0]
+      const owner = room.seats.find((seat) => seat.playerId === pending.playerId)
+      if (owner?.connected !== false) break
+      const target = combat.players.find((player) => !player.dead)
+      if (!target) break
+      const next = resolveHermitStrengthReward(combat, pending.playerId, target.id)
       if (next === combat) break
       room.run = { ...room.run, combat: next }
       combat = next
@@ -570,6 +749,14 @@ function settleForcedCards(room) {
       const ownerId = combat.pendingCardCopy.playerId
       const owner = room.seats.find((seat) => seat.playerId === ownerId)
       if (owner?.connected !== false) break
+      const preview = room.cardPreviews?.[ownerId]
+      if (ownerId !== consumedPreviewPlayerId &&
+        preview?.copy === true && preview.cardUid === combat.pendingCardCopy.card.uid) {
+        if (!resolveAbandonedPreviews(room)) break
+        combat = room.run?.combat
+        settled = true
+        continue
+      }
       const next = abandonCardCopy(combat, ownerId)
       if (next === combat) break
       room.run = { ...room.run, combat: next }
@@ -600,7 +787,8 @@ function settleForcedCards(room) {
       combat = next
       settled = true
     }
-    while ((combat?.phase === 'start' || combat?.phase === 'player') && combat.startTurnProgress?.forcedCard) {
+    while ((combat?.phase === 'start' || combat?.phase === 'player' || combat?.phase === 'discard') &&
+      combat.startTurnProgress?.forcedCard) {
       const ownerId = combat.startTurnProgress.forcedCard.playerId
       const owner = room.seats.find((seat) => seat.playerId === ownerId)
       if (owner?.connected !== false) break
@@ -621,6 +809,34 @@ function settleForcedCards(room) {
       }
     }
     if (!settled) return
+  }
+}
+
+function settleDisconnectedStartTurnChoices(room) {
+  const combat = room.run?.combat
+  if (combat?.phase !== 'start') return
+  const stored = new Map((savedStartTurnChoices(room) ?? []).map((choice) => [choice.id, choice]))
+  const hasMissing = () => plannedStartTurnAbilities(room).some((ability) =>
+    (ability.exhaustCards?.length ?? 0) > 0 && !stored.has(ability.id) &&
+    room.seats.find((seat) => seat.playerId === ability.playerId)?.connected === false)
+  if (!hasMissing()) return
+  room.startTurnCombatId = combat.combatId
+  room.startTurnOrder ??= startTurnAbilities(combat).map((ability) => ability.id)
+  while (true) {
+    const ability = plannedStartTurnAbilities(room).find((candidate) =>
+      (candidate.exhaustCards?.length ?? 0) > 0 && !stored.has(candidate.id) &&
+      room.seats.find((seat) => seat.playerId === candidate.playerId)?.connected === false)
+    if (!ability) break
+    stored.set(ability.id, {
+      id: ability.id,
+      enemyUid: ability.targets?.[0]?.uid,
+      targetPlayerId: ability.players?.[0]?.id,
+      exhaustUids: [ability.exhaustCards[0].uid],
+      shivEnemyUids: Array(ability.overflowShivs).fill(null),
+      evokeSlots: [],
+      evokeEnemyUids: [],
+    })
+    room.startTurnChoices = [...stored.values()]
   }
 }
 
@@ -684,6 +900,7 @@ function finishGiveUp(room) {
   room.giveUpVote = undefined
   room.courierPledge = undefined
   room.cardPreviews = undefined
+  room.powerPreviews = undefined
   room.endTurnReady = undefined
   room.campfireChoices = undefined
   room.rewardChoices = undefined
@@ -776,6 +993,26 @@ function neowAction(room, seat, action, seatToken) {
   return { changed: true, snapshot: snapshotFor(room, seatToken) }
 }
 
+function previewSlimeChoices(combat, action, def, player, effectEnergy, charged, playedCard) {
+  const slimeUids = uidList(action.slimeUids) ?? []
+  const slimeEnemyUids = uidList(action.slimeEnemyUids) ?? []
+  if (action.slimeUids !== undefined && (!Array.isArray(action.slimeUids) ||
+    slimeUids.length !== action.slimeUids.length) ||
+    action.slimeEnemyUids !== undefined && (!Array.isArray(action.slimeEnemyUids) ||
+      slimeEnemyUids.length !== action.slimeEnemyUids.length)) {
+    fail('Slime preview choices must be lists of ids')
+  }
+  const count = def && player
+    ? slimeCommandEnemyChoiceCount(def, combat, player, slimeUids, effectEnergy, charged,
+      playedCard)
+    : 0
+  if (slimeEnemyUids.length !== count || slimeEnemyUids.some((uid) =>
+    !combat.enemies.some((enemy) => enemy.uid === uid && !enemy.dead))) {
+    fail('Choose every Slime Command target before revealing this card')
+  }
+  return { slimeUids, slimeEnemyUids }
+}
+
 /**
  * Applies a game action on behalf of a seat.
  *
@@ -783,7 +1020,7 @@ function neowAction(room, seat, action, seatToken) {
  * which is preserved here: an action that changes nothing does not bump the
  * version, so it never wakes the other clients.
  */
-export function apply(room, seatToken, action) {
+export function apply(room, seatToken, action, consumedPreviewPlayerId = null) {
   const seat = findSeat(room, seatToken) ?? fail('Unknown seat')
   if (room.phase !== 'run' || !room.run) fail('The run has not started')
   if (action?.kind === 'giveUpVote') return applyGiveUpVote(room, seat, action, seatToken)
@@ -795,39 +1032,118 @@ export function apply(room, seatToken, action) {
       fail('Wait for the new player to connect and Catch Up')
     }
   }
+  const preparedCombat = room.run.roomState?.kind === 'event' ? room.run.roomState.preparedCombat : undefined
+  const preparedSetup = preparedCombat?.pendingHermitSetupLoads?.[0]
+  if (preparedSetup) {
+    if (action?.kind !== 'resolveHermitSetupLoad') {
+      fail(preparedSetup.playerId === seat.playerId
+        ? 'Finish the Hermit setup choice' : 'Wait for the Hermit setup owner')
+    }
+    if (preparedSetup.playerId !== seat.playerId || typeof action.cardUid !== 'string') {
+      fail('That Hermit setup choice is not yours')
+    }
+    const next = resolveHermitSetupLoad(preparedCombat, seat.playerId, action.cardUid,
+      typeof action.enemyUid === 'string' ? action.enemyUid : null, true)
+    if (next === preparedCombat) fail('That Hermit setup Load is no longer legal')
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
+    settleForcedCards(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  const preparedScryAbilities = preparedCombat ? startTurnScryAbilities(preparedCombat) : []
+  const preparedScry = preparedCombat ? startTurnScryPreview(preparedCombat) : undefined
+  if (preparedScryAbilities.length > 0) {
+    const coordinator = room.seats.find((candidate) => candidate.connected !== false &&
+      preparedCombat.players.some((player) => player.id === candidate.playerId && !player.dead))?.playerId
+    if (action?.kind !== 'orderStartTurnScries') {
+      fail(seat.playerId === coordinator ? 'Order the prepared pre-draw Scries' : 'Wait for the Scry coordinator')
+    }
+    if (seat.playerId !== coordinator || !Array.isArray(action.order) || action.order.length > UID_LIMIT ||
+      action.order.some((id) => typeof id !== 'string')) fail('That prepared Scry order is not legal')
+    const next = orderStartTurnScries(preparedCombat, action.order)
+    if (next === preparedCombat) fail('The prepared Scry order is stale')
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
+    settleForcedCards(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (preparedScry) {
+    if (action?.kind !== 'resolveStartTurnScry') {
+      fail(preparedScry.playerId === seat.playerId ? 'Finish the prepared pre-draw Scry' : 'Wait for the Scry owner')
+    }
+    if (preparedScry.playerId !== seat.playerId || action.sourceId !== preparedScry.id ||
+      !Array.isArray(action.discardUids) || action.discardUids.length > preparedScry.amount ||
+      action.discardUids.some((uid) => typeof uid !== 'string')) fail('That prepared Scry choice is not legal')
+    const next = resolveStartTurnScry(preparedCombat, seat.playerId, action.sourceId, action.discardUids)
+    if (next === preparedCombat) fail('The prepared Scry choice is stale')
+    room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
+    settleForcedCards(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (preparedCombat?.startTurnProgress && !preparedCombat.startTurnProgress.pauseAfterDraw) {
+    fail('Finish the prepared opening-hand step')
+  }
   if (room.run.phase === 'neow') {
     if (action?.kind === 'neow') return neowAction(room, seat, action, seatToken)
-    if (action?.kind !== 'resolvePendingRelic') fail('Finish Neow before entering the Spire')
+    if (action?.kind !== 'resolvePendingRelic' && action?.kind !== 'resolveGuardianSocket') {
+      fail('Finish Neow before entering the Spire')
+    }
   }
   // War Paint and Whetstone bought from The Courier are kept face up because
   // their text forbids resolving them in combat. Combat must continue until
   // the acquisition becomes legal outside combat.
-  if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) && action?.kind !== 'resolvePendingRelic') {
+  if (room.run.phase !== 'combat' && hasPendingRelicAcquisition(room.run) &&
+    action?.kind !== 'resolvePendingRelic' && action?.kind !== 'resolveGuardianSocket') {
     fail('Finish the pending Relic acquisition first')
   }
+  const pendingGuardianSocket = room.run.pendingGuardianSockets?.[0]
+  if (pendingGuardianSocket) {
+    if (action?.kind !== 'resolveGuardianSocket') {
+      fail(pendingGuardianSocket.playerId === seat.playerId
+        ? 'Finish choosing a Guardian gem' : 'Wait for the Guardian gem choice')
+    }
+    if (pendingGuardianSocket.playerId !== seat.playerId || typeof action.gemId !== 'string') {
+      fail('That Guardian gem choice is not yours')
+    }
+    const next = resolveGuardianSocket(room.run, seat.playerId, action.gemId)
+    if (next === room.run) fail('That Guardian gem choice is no longer legal')
+    room.run = next
+    settleForcedCards(room)
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
   const staged = room.cardPreviews?.[seat.playerId]
+  const stagedPower = room.powerPreviews?.[seat.playerId]
   const player = room.run.combat?.players.find((candidate) => candidate.id === seat.playerId)
   const forcedCard = room.run.combat?.startTurnProgress?.forcedCard
   const pendingCopy = room.run.combat?.pendingCardCopy
   const pendingDistilled = room.run.combat?.pendingDistilled
   const copyForSeat = pendingCopy?.playerId === seat.playerId
-  const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player') &&
+  const forcedForSeat = (room.run.combat?.phase === 'start' || room.run.combat?.phase === 'player' ||
+    room.run.combat?.phase === 'discard') &&
     forcedCard?.playerId === seat.playerId &&
     typeof forcedCard.cardUid === 'string'
   const stagedCopyStillWaiting = staged?.copy === true && copyForSeat && pendingCopy.card.uid === staged.cardUid
+  const stagedChamberStillWaiting = staged?.chamber === true &&
+    player?.chamber.some((card) => card.uid === staged.cardUid) && room.run.combat?.phase === 'player'
   const stagedCardStillWaiting = player?.hand.some((card) => card.uid === staged?.cardUid) &&
     (room.run.combat?.phase === 'player' || (forcedForSeat && forcedCard.cardUid === staged?.cardUid))
-  if (staged && !stagedCopyStillWaiting && !stagedCardStillWaiting) {
+  if (staged && !stagedCopyStillWaiting && !stagedChamberStillWaiting && !stagedCardStillWaiting) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
   }
   const locked = room.cardPreviews?.[seat.playerId]
+  if (stagedPower && !((action?.kind === 'previewPowerChoice' || action?.kind === 'activatePower') &&
+    action.powerUid === stagedPower.powerUid)) fail('Finish the revealed Power before taking another action')
   if (locked && !(
     ((locked.copy === true && (action?.kind === 'previewCardCopy' || action?.kind === 'playCardCopy')) ||
-      (locked.copy !== true && (action?.kind === 'previewCard' || action?.kind === 'playCard'))) &&
+      (locked.chamber === true && (action?.kind === 'previewHermitChamberCard' || action?.kind === 'playHermitChamberCard')) ||
+      (locked.copy !== true && locked.chamber !== true && (action?.kind === 'previewCard' || action?.kind === 'playCard'))) &&
       action.cardUid === locked.cardUid
   )) fail('Finish the revealed card before taking another action')
-  const foreignLocks = Object.keys(room.cardPreviews ?? {}).filter((playerId) => playerId !== seat.playerId)
+  const foreignLocks = [...Object.keys(room.cardPreviews ?? {}), ...Object.keys(room.powerPreviews ?? {})]
+    .filter((playerId) => playerId !== seat.playerId)
   if (foreignLocks.length > 0 && !(
     action?.kind === 'endTurn' && foreignLocks.every((playerId) =>
       room.seats.find((candidate) => candidate.playerId === playerId)?.connected === false)
@@ -836,7 +1152,8 @@ export function apply(room, seatToken, action) {
     // to RNG-mutating actions only if simultaneous-play latency becomes a problem.
     fail('Wait for the revealed card to finish')
   }
-  const pendingTrigger = room.run.combat?.pendingTriggers?.[0]
+  const pendingTrigger = room.run.combat?.pendingDieRelicChoices?.length
+    ? undefined : room.run.combat?.pendingTriggers?.[0]
   if (pendingTrigger) {
     if (action?.kind !== 'resolveTrigger') fail('Finish the triggered ability first')
     if (pendingTrigger.playerId !== seat.playerId) fail('Wait for the triggered ability owner')
@@ -850,6 +1167,12 @@ export function apply(room, seatToken, action) {
     if (action.targetPlayerId !== undefined && typeof action.targetPlayerId !== 'string') {
       fail('Triggered ability player must be a valid id')
     }
+    const slimeUids = uidList(action.slimeUids)
+    const slimeEnemyUids = uidList(action.slimeEnemyUids)
+    if (action.slimeUids !== undefined && (!Array.isArray(action.slimeUids) ||
+      slimeUids.length !== action.slimeUids.length)) fail('Triggered Slime choices must be a list of ids')
+    if (action.slimeEnemyUids !== undefined && (!Array.isArray(action.slimeEnemyUids) ||
+      slimeEnemyUids.length !== action.slimeEnemyUids.length)) fail('Triggered Slime targets must be a list of ids')
     const combat = room.run.combat
     const next = resolvePendingTrigger(
       combat,
@@ -858,6 +1181,16 @@ export function apply(room, seatToken, action) {
       action.enemyRow,
       action.enemyUid,
       action.targetPlayerId,
+      action.hermitChoices === undefined && action.slimeUids === undefined && action.slimeEnemyUids === undefined
+        ? undefined : {
+        ...(action.hermitChoices === undefined ? {} : {
+          loadUids: uidList(action.hermitChoices?.loadUids) ?? [],
+          chamberUids: uidList(action.hermitChoices?.chamberUids) ?? [],
+          hermitEnemyUids: uidList(action.hermitChoices?.hermitEnemyUids) ?? [],
+        }),
+        ...(action.slimeUids === undefined ? {} : { slimeUids }),
+        ...(action.slimeEnemyUids === undefined ? {} : { slimeEnemyUids }),
+      },
     )
     if (next === combat) fail('That triggered ability target is no longer legal')
     room.run = { ...room.run, combat: next }
@@ -866,6 +1199,24 @@ export function apply(room, seatToken, action) {
     room.version += 1
     publishEndTurnEffect(room)
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+  if (mandatoryChoicePending(room.run.combat)) {
+    const combat = room.run.combat
+    const pending = combat.pendingDieRelicChoices?.[0]
+      ? { choice: combat.pendingDieRelicChoices[0], kinds: ['resolveDieRelicChoice'], label: 'die Relic' }
+      : combat.pendingPlunderSwitches?.[0]
+      ? { choice: combat.pendingPlunderSwitches[0], kinds: ['resolvePlunderRowSwitch'], label: 'Plunder row' }
+      : combat.pendingHermitSetupLoads?.[0]
+        ? { choice: combat.pendingHermitSetupLoads[0], kinds: ['resolveHermitSetupLoad'], label: 'Hermit setup' }
+        : combat.pendingHermitChamberPlays?.[0]
+          ? { choice: combat.pendingHermitChamberPlays[0],
+            kinds: ['previewHermitChamberCard', 'playHermitChamberCard'], label: 'Hermit Chamber' }
+          : { choice: combat.pendingHermitStrengthRewards[0],
+            kinds: ['resolveHermitStrengthReward'], label: 'Hermit reward' }
+    if (pending.choice.playerId !== seat.playerId || !pending.kinds.includes(action?.kind)) {
+      fail(pending.choice.playerId === seat.playerId
+        ? `Finish the ${pending.label} choice` : `Wait for the ${pending.label} choice`)
+    }
   }
   if (forcedCard && !(
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
@@ -885,6 +1236,71 @@ export function apply(room, seatToken, action) {
     fail(pendingRelicScry.playerId === seat.playerId ? 'Finish Golden Eye Scry' : 'Wait for Golden Eye')
   }
 
+  if (action?.kind === 'previewPowerChoice') {
+    if (typeof action.powerUid !== 'string') fail('Power preview needs a Power id')
+    const preview = previewPowerChoice(room.run.combat, seat.playerId, action.powerUid)
+    if (!preview || preview.kind !== 'scry') fail('That Power cannot reveal a choice now')
+    room.powerPreviews = { ...room.powerPreviews,
+      [seat.playerId]: { powerUid: action.powerUid, ...preview } }
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+
+  if (action?.kind === 'previewHermitChamberCard') {
+    if (room.endTurnAbilities) fail('The party is ordering end-of-turn abilities')
+    const held = player?.chamber.find((card) => card.uid === action.cardUid)
+    const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
+    const required = room.run.combat?.pendingHermitChamberPlays?.[0]
+    const free = required?.playerId === seat.playerId && required.cardUids[0] === held?.uid && required.free
+    const stagedCard = held ? { ...held, hermitDeadOn: true, ...(free ? { freeThisTurn: true } : {}) } : null
+    const stagedPlayer = player && stagedCard ? {
+      ...player,
+      chamber: player.chamber.filter((card) => card.uid !== stagedCard.uid),
+      hand: [...player.hand, stagedCard],
+    } : player
+    const cost = def && stagedPlayer && stagedCard ? playCost(def, stagedPlayer, stagedCard) : null
+    let effectEnergy = 0
+    let charged = typeof cost === 'number' ? cost : 0
+    if (cost === 'X') {
+      if (!Number.isInteger(action.energySpent) || action.energySpent < (def.minimumX ?? 0) ||
+        action.energySpent > stagedPlayer.energy) fail('Choose a valid Chamber X cost before revealing this card')
+      effectEnergy = action.energySpent
+      charged = action.energySpent
+    } else if (action.energySpent !== undefined && action.energySpent !== 0) {
+      fail('This Chamber card has no X cost')
+    } else if (def?.cost === 'X') effectEnergy = charged
+    const needsEnemy = def && stagedPlayer ? cardNeedsEnemy(def, stagedPlayer, false, undefined, false,
+      stagedCard?.attachedGemId, stagedCard?.uid, typeof cost === 'number' ? cost : undefined) : false
+    const enemyUid = needsEnemy ? action.enemyUid : null
+    if (needsEnemy && (typeof enemyUid !== 'string' ||
+      resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
+      fail('Choose a living enemy before revealing this Chamber card')
+    }
+    const { slimeUids, slimeEnemyUids } = previewSlimeChoices(
+      room.run.combat, action, def, stagedPlayer, effectEnergy, charged, stagedCard,
+    )
+    const lockedEnergy = cost === 'X' ? effectEnergy : undefined
+    if (locked && (locked.chamber !== true || enemyUid !== locked.enemyUid ||
+      lockedEnergy !== locked.energySpent ||
+      slimeUids.join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+      slimeEnemyUids.join('\0') !== (locked.slimeEnemyUids ?? []).join('\0'))) {
+      fail('The revealed Chamber target is already committed')
+    }
+    const preview = room.run.combat
+      ? previewHermitChamberCardChoice(room.run.combat, seat.playerId, action.cardUid)
+      : null
+    if (!preview) fail('That Chamber card cannot reveal a choice now')
+    room.cardPreviews = {
+      ...room.cardPreviews,
+      [seat.playerId]: {
+        cardUid: action.cardUid, chamber: true, spendMiracle: false, enemyUid,
+        energySpent: lockedEnergy, slimeUids, slimeEnemyUids, ...preview,
+      },
+    }
+    room.version += 1
+    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  }
+
   if (action?.kind === 'previewCardCopy') {
     if (!copyForSeat) fail('No original card is waiting for you')
     const def = faceOf(cardDef(pendingCopy.card.defId), pendingCopy.card.upgraded)
@@ -894,7 +1310,12 @@ export function apply(room, seatToken, action) {
       resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
       fail('Choose a living enemy before revealing the original card')
     }
-    if (locked && (locked.copy !== true || enemyUid !== locked.enemyUid)) {
+    const { slimeUids, slimeEnemyUids } = previewSlimeChoices(
+      room.run.combat, action, def, player, pendingCopy.energySpent, 0, pendingCopy.card,
+    )
+    if (locked && (locked.copy !== true || enemyUid !== locked.enemyUid ||
+      slimeUids.join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+      slimeEnemyUids.join('\0') !== (locked.slimeEnemyUids ?? []).join('\0'))) {
       fail('The revealed original target is already committed')
     }
     const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
@@ -902,7 +1323,8 @@ export function apply(room, seatToken, action) {
     room.cardPreviews = {
       ...room.cardPreviews,
       [seat.playerId]: {
-        cardUid: pendingCopy.card.uid, copy: true, spendMiracle: false, enemyUid, ...preview,
+        cardUid: pendingCopy.card.uid, copy: true, spendMiracle: false, enemyUid,
+        slimeUids, slimeEnemyUids, ...preview,
       },
     }
     room.version += 1
@@ -918,13 +1340,23 @@ export function apply(room, seatToken, action) {
     if (spendMiracle && (!def || player.miracles < 1 || player.energy !== CAPS.energy ||
       cost === 'X' || cost === 0)) fail('That Miracle cannot pay for this card')
     if (locked && spendMiracle !== locked.spendMiracle) fail('The revealed card payment is already committed')
-    const needsEnemy = def ? cardNeedsEnemy(def, player, false) : false
+    const needsEnemy = def ? cardNeedsEnemy(def, player, false, undefined, false, held?.attachedGemId, held?.uid,
+      typeof cost === 'number' ? cost : undefined) : false
     const enemyUid = needsEnemy ? action.enemyUid : null
     if (needsEnemy && (typeof enemyUid !== 'string' ||
       resolveEnemyTargets(room.run.combat, def.target ?? 'enemy', enemyUid).length === 0)) {
       fail('Choose a living enemy before revealing this card')
     }
     if (locked && enemyUid !== locked.enemyUid) fail('The revealed card target is already committed')
+    const effectEnergy = def?.cost === 'X' && Number.isInteger(action.energySpent) ? action.energySpent : 0
+    const charged = typeof cost === 'number' ? cost : effectEnergy
+    const { slimeUids, slimeEnemyUids } = previewSlimeChoices(
+      room.run.combat, action, def, player, effectEnergy, charged, held,
+    )
+    if (locked && (slimeUids.join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+      slimeEnemyUids.join('\0') !== (locked.slimeEnemyUids ?? []).join('\0'))) {
+      fail('The revealed Slime choices are already committed')
+    }
     const preview = room.run.combat
       ? previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
       : null
@@ -937,7 +1369,7 @@ export function apply(room, seatToken, action) {
     }
     room.cardPreviews = {
       ...room.cardPreviews,
-      [seat.playerId]: { cardUid: action.cardUid, spendMiracle, enemyUid, ...preview },
+      [seat.playerId]: { cardUid: action.cardUid, spendMiracle, enemyUid, slimeUids, slimeEnemyUids, ...preview },
     }
     room.version += 1
     return { changed: true, snapshot: snapshotFor(room, seatToken) }
@@ -951,6 +1383,10 @@ export function apply(room, seatToken, action) {
         fail('The final card payment does not match its reveal')
       }
       if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final target does not match its reveal')
+      if ((uidList(action.slimeUids) ?? []).join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+        (uidList(action.slimeEnemyUids) ?? []).join('\0') !== (locked.slimeEnemyUids ?? []).join('\0')) {
+        fail('The final Slime choices do not match their reveal')
+      }
       const preview = previewCardChoice(room.run.combat, seat.playerId, action.cardUid)
       if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
         preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
@@ -966,10 +1402,45 @@ export function apply(room, seatToken, action) {
         fail('Reveal this original card before resolving its choice')
       }
       if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final original target does not match its reveal')
+      if ((uidList(action.slimeUids) ?? []).join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+        (uidList(action.slimeEnemyUids) ?? []).join('\0') !== (locked.slimeEnemyUids ?? []).join('\0')) {
+        fail('The final original Slime choices do not match their reveal')
+      }
       const preview = previewCardCopyChoice(room.run.combat, seat.playerId)
       if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
         preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
         fail('The revealed original cards changed; reveal them again')
+      }
+    }
+  }
+  if (action?.kind === 'playHermitChamberCard') {
+    const held = player?.chamber.find((card) => card.uid === action.cardUid)
+    const def = held ? faceOf(cardDef(held.defId), held.upgraded) : null
+    if (def && cardNeedsChoicePreview(def, room.run.combat, player)) {
+      if (!locked || locked.chamber !== true || locked.cardUid !== action.cardUid) {
+        fail('Reveal this Chamber card before resolving its choice')
+      }
+      if ((action.enemyUid ?? null) !== locked.enemyUid) fail('The final Chamber target does not match its reveal')
+      if ((action.energySpent ?? undefined) !== locked.energySpent ||
+        (uidList(action.slimeUids) ?? []).join('\0') !== (locked.slimeUids ?? []).join('\0') ||
+        (uidList(action.slimeEnemyUids) ?? []).join('\0') !== (locked.slimeEnemyUids ?? []).join('\0')) {
+        fail('The final Chamber choices do not match their reveal')
+      }
+      const preview = previewHermitChamberCardChoice(room.run.combat, seat.playerId, action.cardUid)
+      if (!preview || preview.kind !== locked.kind || preview.cards.length !== locked.cards.length ||
+        preview.cards.some((card, index) => card.uid !== locked.cards[index].uid)) {
+        fail('The revealed Chamber cards changed; reveal them again')
+      }
+    }
+  }
+  if (action?.kind === 'activatePower') {
+    const held = player?.powers.find((power) => power.uid === action.powerUid)
+    if (held?.defId === 'guardian_gem_finder') {
+      if (!stagedPower || stagedPower.powerUid !== action.powerUid) fail('Reveal Gem Finder before resolving its Scry')
+      const preview = previewPowerChoice(room.run.combat, seat.playerId, action.powerUid)
+      if (!preview || preview.cards.length !== stagedPower.cards.length ||
+        preview.cards.some((card, index) => card.uid !== stagedPower.cards[index].uid)) {
+        fail('Gem Finder cards changed; reveal them again')
       }
     }
   }
@@ -1004,6 +1475,8 @@ export function apply(room, seatToken, action) {
   if (room.run.combat?.phase === 'start' && !(
     action?.kind === 'activateRelic' ||
     action?.kind === 'usePotion' ||
+    action?.kind === 'activatePower' ||
+    action?.kind === 'previewPowerChoice' ||
     forcedForSeat && (action?.kind === 'playCard' || action?.kind === 'previewCard') &&
     action.cardUid === forcedCard.cardUid
   )) fail('Finish the Start-of-Turn abilities')
@@ -1018,12 +1491,17 @@ export function apply(room, seatToken, action) {
   if (cancelsPendingCatchUp) room.seats = room.seats.filter((candidate) => !candidate.pendingCatchUp)
   room.run = next
   if (before.combat?.phase === 'start') clearStartTurnPlan(room)
-  settleForcedCards(room)
+  settleForcedCards(room, consumedPreviewPlayerId)
   if (before.phase === 'combat' && room.run.phase !== 'combat') settlePendingRelics(room)
   const current = room.run
-  if ((action?.kind === 'playCard' || action?.kind === 'playCardCopy') && locked?.cardUid === action.cardUid) {
+  if ((action?.kind === 'playCard' || action?.kind === 'playCardCopy' || action?.kind === 'playHermitChamberCard') &&
+    locked?.cardUid === action.cardUid) {
     room.cardPreviews = { ...room.cardPreviews }
     delete room.cardPreviews[seat.playerId]
+  }
+  if (action?.kind === 'activatePower' && stagedPower?.powerUid === action.powerUid) {
+    room.powerPreviews = { ...room.powerPreviews }
+    delete room.powerPreviews[seat.playerId]
   }
   if (room.cardPreviews) {
     const combat = current.combat
@@ -1031,7 +1509,10 @@ export function apply(room, seatToken, action) {
       preview.copy === true
         ? combat?.phase === 'copy' && combat.pendingCardCopy?.playerId === playerId &&
           combat.pendingCardCopy.card.uid === preview.cardUid
-        : (combat?.phase === 'player' || (combat?.phase === 'start' &&
+        : preview.chamber === true
+          ? combat?.phase === 'player' && combat.players.find((player) => player.id === playerId)?.chamber
+            .some((card) => card.uid === preview.cardUid)
+        : (combat?.phase === 'player' || ((combat?.phase === 'start' || combat?.phase === 'discard') &&
           combat.startTurnProgress?.forcedCard?.playerId === playerId &&
           combat.startTurnProgress.forcedCard.cardUid === preview.cardUid)) && combat.players
           .find((candidate) => candidate.id === playerId)?.hand.some((card) => card.uid === preview.cardUid)))
@@ -1347,7 +1828,7 @@ function eventChoice(room, seat, action, seatToken) {
   let decision = action.decision
   const stringArray = (value) => value === undefined || (Array.isArray(value) && value.every((entry) => typeof entry === 'string'))
   if (!decision || typeof decision !== 'object' || !Array.isArray(decision.optionIds) || !decision.optionIds.every((id) => typeof id === 'string') ||
-    !stringArray(decision.cardUids) || !stringArray(decision.relicIds) || !stringArray(decision.potionIds) || !stringArray(decision.potionRecipientIds) || !stringArray(decision.rewardSources) ||
+    !stringArray(decision.cardUids) || !stringArray(decision.relicIds) || !stringArray(decision.potionIds) || !stringArray(decision.potionRecipientIds) || !stringArray(decision.rewardSources) || !stringArray(decision.guardianGemIds) ||
     (decision.potionReplacementIds !== undefined && (!Array.isArray(decision.potionReplacementIds) || !decision.potionReplacementIds.every((id) => id === null || typeof id === 'string'))) ||
     (decision.rewardItemChoices !== undefined && (!Array.isArray(decision.rewardItemChoices) || !decision.rewardItemChoices.every((choice) => choice === 'take' || choice === 'skip'))) ||
     decision.rewardItemIds !== undefined || decision.rewardItemKinds !== undefined ||
@@ -1463,7 +1944,9 @@ function returnToLobby(room, seat, seatToken) {
 function endTurn(room, seat, _action, seatToken) {
   let combat = room.run?.combat
   if (!combat) fail('No combat in progress')
-  const previewOwners = Object.keys(room.cardPreviews ?? {})
+  const previewOwners = [...new Set([
+    ...Object.keys(room.cardPreviews ?? {}), ...Object.keys(room.powerPreviews ?? {}),
+  ])]
   if (previewOwners.some((playerId) =>
     room.seats.find((candidate) => candidate.playerId === playerId)?.connected !== false)) {
     fail('Finish every revealed card before ending the turn')
@@ -1489,7 +1972,9 @@ function endTurn(room, seat, _action, seatToken) {
 function settleEndTurn(room) {
   let combat = room.run?.combat
   if (!combat || combat.phase !== 'player' || !room.endTurnReady) return null
-  const previewOwners = Object.keys(room.cardPreviews ?? {})
+  const previewOwners = [...new Set([
+    ...Object.keys(room.cardPreviews ?? {}), ...Object.keys(room.powerPreviews ?? {}),
+  ])]
   const connected = new Set(room.seats.filter((seat) => seat.connected).map((seat) => seat.playerId))
   if (previewOwners.length > 0) {
     if (previewOwners.some((playerId) => connected.has(playerId)) || connected.size === 0 ||
@@ -1523,24 +2008,62 @@ function publishEndTurnEffect(room) {
 }
 
 function resolveAbandonedPreviews(room) {
+  let combat = room.run?.combat
+  for (const [playerId, preview] of Object.entries(room.powerPreviews ?? {})) {
+    const seat = room.seats.find((candidate) => candidate.playerId === playerId)
+    if (!seat || seat.connected || !combat) continue
+    const next = activatePower(combat, playerId, preview.powerUid, { scryDiscardUids: [] })
+    if (next === combat) return false
+    combat = next
+    room.run = { ...room.run, combat }
+    room.powerPreviews = { ...room.powerPreviews }
+    delete room.powerPreviews[playerId]
+  }
   for (const [playerId, preview] of Object.entries(room.cardPreviews ?? {})) {
     const seat = room.seats.find((candidate) => candidate.playerId === playerId)
     if (!seat || seat.connected) continue
     const player = room.run?.combat?.players.find((candidate) => candidate.id === playerId)
-    const held = player?.hand.find((card) => card.uid === preview.cardUid)
+    const held = preview.copy === true ? room.run?.combat?.pendingCardCopy?.card
+      : preview.chamber === true ? player?.chamber.find((card) => card.uid === preview.cardUid)
+      : player?.hand.find((card) => card.uid === preview.cardUid)
     const effects = held ? faceOf(cardDef(held.defId), held.upgraded).effects : []
     const searchEffect = effects.find((effect) =>
-      effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice')
+      effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice' ||
+      effect.kind === 'overexert' || effect.kind === 'replicateSlime')
     const recoverEffect = effects.find((effect) => effect.kind === 'recoverDiscard')
+    const loadEffect = effects.find((effect) => effect.kind === 'load')
     const searchAmount = searchEffect?.kind === 'searchDraw' ? searchEffect.amount
-      : searchEffect?.kind === 'searchDrawAndPlayTwice' ? 1 : 0
+      : searchEffect ? 1 : 0
+    const loadUids = preview.kind === 'load'
+      ? preview.cards.slice(0, Math.min(Number(loadEffect?.amount ?? 0), preview.cards.length)).map((card) => card.uid)
+      : []
+    const chamber = [...(player?.chamber ?? [])]
+    const chamberUids = []
+    for (const uid of loadUids) {
+      if (player && chamber.length >= player.chamberSlots) {
+        const replaced = chamber.shift()
+        if (replaced) chamberUids.push(replaced.uid)
+      }
+      const loaded = preview.cards.find((card) => card.uid === uid)
+      if (loaded) chamber.push(loaded)
+    }
+    const fallbackEnemyUid = room.run?.combat?.enemies.find((enemy) => !enemy.dead)?.uid
+    const targetedCurses = new Set(['hermit_grudge', 'hermit_malice', 'hermit_horror'])
+    const hermitEnemyUids = fallbackEnemyUid ? loadUids
+      .filter((uid) => targetedCurses.has(preview.cards.find((card) => card.uid === uid)?.defId))
+      .map(() => fallbackEnemyUid) : []
     try {
       apply(room, seat.token, {
-        kind: 'playCard',
+        kind: preview.copy === true ? 'playCardCopy'
+          : preview.chamber === true ? 'playHermitChamberCard' : 'playCard',
         cardUid: preview.cardUid,
         enemyUid: preview.enemyUid,
+        energySpent: preview.energySpent,
+        slimeUids: preview.slimeUids,
+        slimeEnemyUids: preview.slimeEnemyUids,
         discardUids: preview.kind === 'discard' ? preview.cards.map((card) => card.uid) : undefined,
-        scryDiscardUids: preview.kind === 'scry' ? [] : undefined,
+        scryDiscardUids: preview.kind === 'scry' || preview.kind === 'scryToHand' ? [] : undefined,
+        scryToHandUid: undefined,
         topdeckUids: preview.kind === 'topdeck' ? preview.cards.slice(0, 1).map((card) => card.uid) : undefined,
         searchDrawUids: preview.kind === 'search'
           ? preview.cards.slice(0, searchAmount).map((card) => card.uid)
@@ -1548,9 +2071,12 @@ function resolveAbandonedPreviews(room) {
         recoverDiscardUids: recoverEffect
           ? player.discard.slice(0, recoverEffect.amount).map((card) => card.uid)
           : undefined,
+        loadUids: preview.kind === 'load' ? loadUids : preview.kind === 'loadAny' ? [] : undefined,
+        chamberUids,
+        hermitEnemyUids,
         spendMiracle: preview.spendMiracle,
         preflight: true,
-      })
+      }, playerId)
     } catch {
       return false
     }
@@ -1646,12 +2172,17 @@ function pendingNoxiousFumes(room) {
 
 function startTurnAbilityNeedsChoice(ability, saved, stored = new Set()) {
   return !saved[ability.id] && !stored.has(ability.id) && (ability.overflowShivs > 0 || ability.evokeChoice ||
-    (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1)
+    ability.guardianModeShift ||
+    (ability.exhaustCards?.length ?? 0) > 0 || (ability.targets?.length ?? 0) > 1 ||
+    (ability.players?.length ?? 0) > 1)
 }
 
 function startTurnChoicePending(ability, choice) {
   return Boolean(ability.targets && (!choice?.enemyUid || ability.enemyTargetStale)) ||
+    Boolean(ability.guardianModeShift && typeof choice?.guardianModeShift !== 'boolean') ||
     Boolean(ability.players && !ability.players.some((player) => player.id === choice?.targetPlayerId)) ||
+    Boolean(ability.exhaustCards && (choice?.exhaustUids?.length !== 1 ||
+      !ability.exhaustCards.some((card) => card.uid === choice.exhaustUids[0]))) ||
     ability.staleShivIndex !== undefined || ability.evokeTargetIndex !== undefined || Boolean(ability.evokeChoice)
 }
 
@@ -1663,6 +2194,9 @@ function validStartTurnChoice(ability, choice) {
     (ability.players
       ? ability.players.some((player) => player.id === choice.targetPlayerId)
       : choice.targetPlayerId === undefined) &&
+    (ability.guardianModeShift
+      ? typeof choice.guardianModeShift === 'boolean'
+      : choice.guardianModeShift === undefined) &&
     choice.shivEnemyUids.length === ability.overflowShivs &&
     (choice.evokeSlots?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
     (choice.evokeEnemyUids?.length ?? 0) === (ability.evokeOrbs?.length ?? 0) &&
@@ -1737,6 +2271,9 @@ function resolveStartTurn(room, seat, action, seatToken) {
     !choice || typeof choice.id !== 'string' || !Array.isArray(choice.shivEnemyUids) ||
     (choice.enemyUid !== undefined && typeof choice.enemyUid !== 'string') ||
     (choice.targetPlayerId !== undefined && typeof choice.targetPlayerId !== 'string') ||
+    (choice.guardianModeShift !== undefined && typeof choice.guardianModeShift !== 'boolean') ||
+    (choice.exhaustUids !== undefined && (!Array.isArray(choice.exhaustUids) ||
+      choice.exhaustUids.length > UID_LIMIT || choice.exhaustUids.some((uid) => typeof uid !== 'string'))) ||
     choice.shivEnemyUids.length > CAPS.shivs ||
     choice.shivEnemyUids.some((uid) => uid !== null && typeof uid !== 'string') ||
     (choice.evokeSlots !== undefined && (!Array.isArray(choice.evokeSlots) ||
@@ -1749,6 +2286,8 @@ function resolveStartTurn(room, seat, action, seatToken) {
     id: choice.id,
     enemyUid: choice.enemyUid,
     targetPlayerId: choice.targetPlayerId,
+    exhaustUids: uidList(choice.exhaustUids),
+    guardianModeShift: choice.guardianModeShift,
     shivEnemyUids: [...choice.shivEnemyUids],
     evokeSlots: slotList(choice.evokeSlots),
     evokeEnemyUids: targetList(choice.evokeEnemyUids),
@@ -1964,6 +2503,12 @@ function campfire(room, seat, action, seatToken) {
     choice.choice !== 'rest' || !player?.relics.some((relic) => relic.defId === 'peace_pipe') ||
     !player.deck.some((card) => card.uid === choice.removeCardUid && card.defId !== 'ascenders_bane')
   )) fail('Peace Pipe can remove one of your cards only while Resting')
+  if (choice.transformCardUid !== undefined && (
+    choice.choice !== 'rest' || !player?.relics.some((relic) => relic.defId === 'straight_razor') ||
+    choice.transformCardUid === choice.removeCardUid ||
+    !player.deck.some((card) => card.uid === choice.transformCardUid && card.defId !== 'ascenders_bane') ||
+    player.cardRewards.length === 0
+  )) fail('Straight Razor can Transform one eligible card only while Resting')
   if (choice.choice === 'smith') {
     const target = player?.deck.find((card) => card.uid === choice.cardUid && canUpgradeCard(card))
     if (!target) fail('Choose one of your own cards that is not already upgraded')
@@ -2148,6 +2693,25 @@ export const uidList = (value) =>
     ? value.filter((item) => typeof item === 'string').slice(0, UID_LIMIT)
     : undefined
 
+const hermitDieRelicList = (value) => Array.isArray(value)
+  ? value.slice(0, UID_LIMIT).flatMap((choice) => {
+    const discardUids = uidList(choice?.discardUids)
+    if (!choice || typeof choice.playerId !== 'string' || !Number.isInteger(choice.relicIndex) ||
+      choice.relicIndex < 0 || !Number.isInteger(choice.abilityIndex) || choice.abilityIndex < 0 ||
+      choice.enemyUid !== undefined && choice.enemyUid !== null && typeof choice.enemyUid !== 'string' ||
+      choice.targetPlayerId !== undefined && choice.targetPlayerId !== null && typeof choice.targetPlayerId !== 'string' ||
+      choice.discardUids !== undefined && discardUids?.length !== choice.discardUids.length) return []
+    return [{
+      playerId: choice.playerId,
+      relicIndex: choice.relicIndex,
+      abilityIndex: choice.abilityIndex,
+      ...(choice.enemyUid === undefined ? {} : { enemyUid: choice.enemyUid }),
+      ...(choice.targetPlayerId === undefined ? {} : { targetPlayerId: choice.targetPlayerId }),
+      ...(discardUids === undefined ? {} : { discardUids }),
+    }]
+  })
+  : undefined
+
 /**
  * A list of orb slot indices from the network.
  *
@@ -2273,8 +2837,50 @@ function dispatch(run, seat, action) {
       if (recoverExhaustUid !== undefined && typeof recoverExhaustUid !== 'string') {
         fail('Exhaust recovery must be a card id')
       }
+      const recoverExhaustUids = uidList(action.recoverExhaustUids)
+      if (action.recoverExhaustUids !== undefined && (
+        !Array.isArray(action.recoverExhaustUids) || recoverExhaustUids.length !== action.recoverExhaustUids.length
+      )) fail('Exhaust recovery must be a list of card ids')
+      if (recoverExhaustUid !== undefined && action.recoverExhaustUids !== undefined) {
+        fail('Exhaust recovery must use one choice format')
+      }
       if (action.energySpent !== undefined && !Number.isInteger(action.energySpent)) {
         fail('X Energy must be a whole number')
+      }
+      if (action.corruptedShardMode !== undefined && action.corruptedShardMode !== 'attack' && action.corruptedShardMode !== 'defense') {
+        fail('Corrupted Shard Mode must be attack or defense')
+      }
+      const loadUids = uidList(action.loadUids)
+      const chamberUids = uidList(action.chamberUids)
+      const hermitEnemyUids = uidList(action.hermitEnemyUids)
+      const slimeUids = uidList(action.slimeUids)
+      const slimeEnemyUids = uidList(action.slimeEnemyUids)
+      const soulburnEnemyUids = uidList(action.soulburnEnemyUids)
+      const hermitDieRelics = hermitDieRelicList(action.hermitDieRelics)
+      if (action.hermitDieRelics !== undefined && hermitDieRelics?.length !== action.hermitDieRelics.length) {
+        fail('Cheat choices must identify valid die-relic abilities')
+      }
+      for (const [label, original, sanitized] of [
+        ['Load', action.loadUids, loadUids],
+        ['Chamber', action.chamberUids, chamberUids],
+        ['Hermit enemy', action.hermitEnemyUids, hermitEnemyUids],
+        ['Slime', action.slimeUids, slimeUids],
+        ['Slime enemy', action.slimeEnemyUids, slimeEnemyUids],
+        ['Soulburn enemy', action.soulburnEnemyUids, soulburnEnemyUids],
+      ]) if (original !== undefined && (!Array.isArray(original) || sanitized.length !== original.length)) {
+        fail(`${label} choices must be a list of ids`)
+      }
+      for (const [label, value] of [
+        ['Vigor spend', action.spendVigor],
+        ['Guardian Block spend', action.guardianBlockSpend],
+      ]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+        fail(`${label} must be a non-negative whole number`)
+      }
+      if (action.guardianModeShift !== undefined && typeof action.guardianModeShift !== 'boolean') {
+        fail('Guardian Mode shift must be true or false')
+      }
+      if (action.guardianPowerCardUid !== undefined && typeof action.guardianPowerCardUid !== 'string') {
+        fail('Power Beam must identify a Power card')
       }
       const context = {
         enemyUid: action.enemyUid ?? null,
@@ -2284,6 +2890,7 @@ function dispatch(run, seat, action) {
         playerIds,
         switchWithPlayerId: action.switchWithPlayerId ?? null,
         mode: action.mode,
+        corruptedShardMode: action.corruptedShardMode,
         // Coerced, not trusted: these arrive as JSON from a socket, and a
         // string where a list belongs threw a raw TypeError out of `apply`
         // instead of being refused like any other bad message.
@@ -2295,11 +2902,26 @@ function dispatch(run, seat, action) {
         // them here made a Scry unable to bin anything and an orb evoke always
         // fall back to the first filled slot.
         scryDiscardUids,
+        scryToHandUid: typeof action.scryToHandUid === 'string' ? action.scryToHandUid : undefined,
         topdeckUids,
         searchDrawUids,
         recoverDiscardUid,
         recoverDiscardUids,
         recoverExhaustUid,
+        recoverExhaustUids,
+        loadUids,
+        chamberUids,
+        hermitEnemyUids,
+        slimeUids,
+        slimeEnemyUids,
+        soulburnEnemyUids,
+        hermitDieRelics,
+        chooseLoadSelf: action.chooseLoadSelf === true,
+        spendVigor: action.spendVigor,
+        guardianModeShift: action.guardianModeShift === true,
+        secondGuardianModeShift: action.secondGuardianModeShift === true,
+        guardianBlockSpend: action.guardianBlockSpend,
+        guardianPowerCardUid: action.guardianPowerCardUid,
         evokeSlots: slotList(action.evokeSlots),
         evokeEnemyUids: targetList(action.evokeEnemyUids),
       }
@@ -2324,11 +2946,166 @@ function dispatch(run, seat, action) {
       return combat === run.combat ? run : { ...run, combat }
     }
 
+    case 'playHermitChamberCard': {
+      if (!run.combat || typeof action.cardUid !== 'string') fail('No matching Chamber card in combat')
+      const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
+      const card = player?.chamber.find((held) => held.uid === action.cardUid)
+      if (!player || !card) fail('That Chamber card is not yours')
+      const def = faceOf(cardDef(card.defId), card.upgraded)
+      const variableDiscard = def.effects.some((effect) => effect.kind === 'discardAny')
+      const variableExhaust = def.effects.find((effect) => effect.kind === 'exhaustAny')
+      const discardUids = variableDiscard ? action.discardUids : uidList(action.discardUids)
+      const exhaustUids = uidList(action.exhaustUids) ?? []
+      if (action.discardUids !== undefined && (!Array.isArray(action.discardUids) ||
+        (variableDiscard ? action.discardUids.length > player.hand.length : discardUids.length !== action.discardUids.length))) {
+        fail('Discard choices must be a valid list of card ids')
+      }
+      if (action.exhaustUids !== undefined && (!Array.isArray(action.exhaustUids) ||
+        exhaustUids.length !== action.exhaustUids.length ||
+        (variableExhaust && action.exhaustUids.length > player.hand.length))) {
+        fail('Exhaust choices must be a valid list of card ids')
+      }
+      if (variableExhaust && exhaustUids.length < Math.min(variableExhaust.minimum ?? 0, player.hand.length)) {
+        fail('Choose the minimum number of cards to Exhaust')
+      }
+      const lists = Object.fromEntries([
+        'enemyUids', 'playerIds', 'scryDiscardUids', 'topdeckUids', 'searchDrawUids',
+        'recoverDiscardUids', 'recoverExhaustUids', 'loadUids', 'chamberUids', 'hermitEnemyUids', 'slimeUids',
+        'slimeEnemyUids',
+        'soulburnEnemyUids',
+      ].map((key) => [key, uidList(action[key])]))
+      for (const key of Object.keys(lists)) if (action[key] !== undefined &&
+        (!Array.isArray(action[key]) || lists[key]?.length !== action[key].length)) {
+        fail(`${key} must be a list of ids`)
+      }
+      if (action.recoverDiscardUid !== undefined && typeof action.recoverDiscardUid !== 'string') {
+        fail('Discard recovery must be a card id')
+      }
+      if (action.recoverExhaustUid !== undefined && typeof action.recoverExhaustUid !== 'string') {
+        fail('Exhaust recovery must be a card id')
+      }
+      if (action.recoverExhaustUid !== undefined && action.recoverExhaustUids !== undefined) {
+        fail('Exhaust recovery must use one choice format')
+      }
+      if (action.recoverDiscardUid !== undefined && action.recoverDiscardUids !== undefined) {
+        fail('Discard recovery must use one choice format')
+      }
+      if (action.energySpent !== undefined && !Number.isInteger(action.energySpent)) fail('X Energy must be a whole number')
+      if (action.corruptedShardMode !== undefined && action.corruptedShardMode !== 'attack' &&
+        action.corruptedShardMode !== 'defense') fail('Corrupted Shard Mode must be attack or defense')
+      if (action.guardianPowerCardUid !== undefined && typeof action.guardianPowerCardUid !== 'string') {
+        fail('Power Beam must identify a Power card')
+      }
+      for (const [label, value] of [
+        ['Vigor spend', action.spendVigor], ['Guardian Block spend', action.guardianBlockSpend],
+      ]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+        fail(`${label} must be a non-negative whole number`)
+      }
+      const hermitDieRelics = hermitDieRelicList(action.hermitDieRelics)
+      if (action.hermitDieRelics !== undefined && hermitDieRelics?.length !== action.hermitDieRelics.length) {
+        fail('Cheat choices must identify valid die-relic abilities')
+      }
+      const mandatoryShivs = cardShivChoiceCount(def, player, action.mode)
+      const { targets: shivEnemyUids } = overflowChoices(run.combat, def.effects, {
+        ...action, discardUids,
+      }, mandatoryShivs)
+      const combat = playHermitChamberCard(run.combat, seat.playerId, action.cardUid, {
+        enemyUid: typeof action.enemyUid === 'string' ? action.enemyUid : null,
+        enemyUids: lists.enemyUids,
+        playerId: typeof action.playerId === 'string' ? action.playerId : seat.playerId,
+        playerIds: lists.playerIds,
+        energySpent: Number.isInteger(action.energySpent) ? action.energySpent : undefined,
+        mode: Number.isInteger(action.mode) ? action.mode : undefined,
+        switchWithPlayerId: typeof action.switchWithPlayerId === 'string' ? action.switchWithPlayerId : null,
+        corruptedShardMode: action.corruptedShardMode,
+        discardUids,
+        exhaustUids,
+        spendMiracle: action.spendMiracle === true,
+        shivEnemyUids,
+        scryDiscardUids: lists.scryDiscardUids,
+        scryToHandUid: typeof action.scryToHandUid === 'string' ? action.scryToHandUid : undefined,
+        topdeckUids: lists.topdeckUids,
+        searchDrawUids: lists.searchDrawUids,
+        recoverDiscardUid: action.recoverDiscardUid,
+        recoverDiscardUids: lists.recoverDiscardUids,
+        recoverExhaustUid: action.recoverExhaustUid,
+        recoverExhaustUids: lists.recoverExhaustUids,
+        loadUids: lists.loadUids,
+        chamberUids: lists.chamberUids,
+        hermitEnemyUids: lists.hermitEnemyUids,
+        slimeUids: lists.slimeUids,
+        slimeEnemyUids: lists.slimeEnemyUids,
+        soulburnEnemyUids: lists.soulburnEnemyUids,
+        hermitDieRelics,
+        chooseLoadSelf: action.chooseLoadSelf === true,
+        spendVigor: action.spendVigor,
+        guardianModeShift: action.guardianModeShift === true,
+        secondGuardianModeShift: action.secondGuardianModeShift === true,
+        guardianBlockSpend: action.guardianBlockSpend,
+        guardianPowerCardUid: action.guardianPowerCardUid,
+        evokeSlots: slotList(action.evokeSlots),
+        evokeEnemyUids: targetList(action.evokeEnemyUids),
+      })
+      if (combat === run.combat && action.preflight === true) fail('That Chamber play is no longer legal')
+      return combat === run.combat ? run : { ...run, combat }
+    }
+
+    case 'resolveHermitSetupLoad': {
+      if (!run.combat || typeof action.cardUid !== 'string') fail('No Hermit setup Load is pending')
+      const combat = resolveHermitSetupLoad(run.combat, seat.playerId, action.cardUid,
+        typeof action.enemyUid === 'string' ? action.enemyUid : null)
+      if (combat === run.combat) fail('That Hermit setup Load is no longer legal')
+      return { ...run, combat }
+    }
+
+    case 'resolveDieRelicChoice': {
+      if (!run.combat) fail('No die Relic choice is pending')
+      const discardUids = uidList(action.discardUids)
+      const exhaustUids = uidList(action.exhaustUids)
+      for (const [label, original, sanitized] of [
+        ['Discard', action.discardUids, discardUids], ['Exhaust', action.exhaustUids, exhaustUids],
+      ]) if (original !== undefined && (!Array.isArray(original) || sanitized.length !== original.length)) {
+        fail(`${label} choices must be a list of card ids`)
+      }
+      const combat = resolvePendingDieRelicChoice(run.combat, seat.playerId, { discardUids, exhaustUids })
+      if (combat === run.combat) fail('That die Relic choice is no longer legal')
+      return { ...run, combat }
+    }
+
+    case 'resolveHermitStrengthReward': {
+      if (!run.combat || typeof action.playerId !== 'string') fail('No Hermit Strength reward is pending')
+      const combat = resolveHermitStrengthReward(run.combat, seat.playerId, action.playerId)
+      if (combat === run.combat) fail('That Hermit Strength reward is no longer legal')
+      return { ...run, combat }
+    }
+
     case 'activatePower': {
       if (!run.combat) fail('No combat in progress')
+      const loadUids = uidList(action.loadUids)
+      const chamberUids = uidList(action.chamberUids)
+      const hermitEnemyUids = uidList(action.hermitEnemyUids)
+      const scryDiscardUids = uidList(action.scryDiscardUids)
+      const exhaustUids = uidList(action.exhaustUids)
+      for (const [label, original, sanitized] of [
+        ['Load', action.loadUids, loadUids],
+        ['Chamber', action.chamberUids, chamberUids],
+        ['Hermit enemy', action.hermitEnemyUids, hermitEnemyUids],
+        ['Scry', action.scryDiscardUids, scryDiscardUids],
+        ['Exhaust', action.exhaustUids, exhaustUids],
+      ]) if (original !== undefined && (!Array.isArray(original) || sanitized.length !== original.length)) {
+        fail(`${label} choices must be a list of ids`)
+      }
       const combat = activatePower(run.combat, seat.playerId, action.powerUid, {
         enemyUid: action.enemyUid ?? null,
         enemyRow: Number.isInteger(action.enemyRow) ? action.enemyRow : null,
+        playerId: typeof action.playerId === 'string' ? action.playerId : null,
+        exhaustUids,
+        guardianModeShift: action.guardianModeShift === true,
+        loadUids,
+        chamberUids,
+        hermitEnemyUids,
+        scryDiscardUids,
+        cardUid: typeof action.cardUid === 'string' ? action.cardUid : undefined,
       })
       if (combat === run.combat && action.preflight === true) {
         fail('That Power ability is no longer legal; choose again')
@@ -2341,6 +3118,7 @@ function dispatch(run, seat, action) {
       if (!player?.relics[action.relicIndex]) fail('That Relic is not yours')
       const combat = activateRelic(run.combat, seat.playerId, action.relicIndex, {
         enemyUid: action.enemyUid ?? null,
+        targetPlayerId: typeof action.targetPlayerId === 'string' ? action.targetPlayerId : null,
         cardUids: Array.isArray(action.cardUids) ? action.cardUids : [],
         targetRelicPlayerId: action.targetRelicPlayerId,
         targetRelicIndex: action.targetRelicIndex,
@@ -2352,6 +3130,7 @@ function dispatch(run, seat, action) {
         shivEnemyUids: Array.isArray(action.shivEnemyUids)
           ? action.shivEnemyUids.filter((uid) => typeof uid === 'string')
           : undefined,
+        discardPotionId: typeof action.discardPotionId === 'string' ? action.discardPotionId : undefined,
       })
       if (combat === run.combat) fail('That Relic activation is not legal')
       return { ...run, combat }
@@ -2395,6 +3174,22 @@ function dispatch(run, seat, action) {
       const combat = spendShiv(run.combat, seat.playerId, action.enemyUid)
       return combat === run.combat ? run : { ...run, combat }
     }
+    case 'spendSoulburn': {
+      if (!run.combat || typeof action.enemyUid !== 'string' ||
+        (action.extraCrispyPowerUid !== undefined && typeof action.extraCrispyPowerUid !== 'string')) {
+        fail('Soulburn needs a valid enemy and optional Extra Crispy Power')
+      }
+      const combat = spendSoulburn(run.combat, seat.playerId, action.enemyUid, action.extraCrispyPowerUid)
+      return combat === run.combat ? run : { ...run, combat }
+    }
+    case 'resolvePlunderRowSwitch': {
+      if (!run.combat || action.row !== null && !Number.isInteger(action.row)) {
+        fail('Plunder row must be a row number or null')
+      }
+      const combat = resolvePlunderRowSwitch(run.combat, seat.playerId, action.row)
+      if (combat === run.combat) fail('That Plunder row choice is no longer legal')
+      return { ...run, combat }
+    }
     case 'usePotion': {
       if (!run.combat) fail('No combat in progress')
       const player = run.combat.players.find((candidate) => candidate.id === seat.playerId)
@@ -2418,6 +3213,11 @@ function dispatch(run, seat, action) {
             : undefined,
           die: Number.isInteger(action.die) ? action.die : undefined,
           replacePotionId: typeof action.replacePotionId === 'string' ? action.replacePotionId : undefined,
+          transformHandUid: typeof action.transformHandUid === 'string' ? action.transformHandUid : undefined,
+          recoverExhaustUid: typeof action.recoverExhaustUid === 'string' ? action.recoverExhaustUid : undefined,
+          targetRelicPlayerId: typeof action.targetRelicPlayerId === 'string' ? action.targetRelicPlayerId : undefined,
+          targetRelicIndex: Number.isInteger(action.targetRelicIndex) ? action.targetRelicIndex : undefined,
+          targetAbilityIndex: Number.isInteger(action.targetAbilityIndex) ? action.targetAbilityIndex : undefined,
         },
       )
       if (
@@ -2514,6 +3314,11 @@ function dispatch(run, seat, action) {
       return switchBetweenCombatRow(run, seat.playerId, action.row)
     case 'startPendingBoss':
       return startPendingBoss(run)
+    case 'rerollDownfallSelfBoss': {
+      const next = rerollDownfallSelfBoss(run)
+      if (next === run) fail('That self-boss cannot be rerolled')
+      return next
+    }
     default:
       return fail(`Unknown action: ${action?.kind}`)
   }
@@ -2545,6 +3350,18 @@ export function snapshotFor(room, seatToken) {
   const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const giveUpVote = activeGiveUpVote(room)
+  const privateStartAbilities = run?.combat?.phase === 'start' ? plannedStartTurnAbilities(room) : undefined
+  const startAbilityOwners = new Map(privateStartAbilities?.map((ability) => [ability.id, ability.playerId]) ?? [])
+  const visibleStartAbilities = privateStartAbilities?.map((ability) => ({
+    ...structuredClone(ability),
+    exhaustCards: ability.playerId === viewerId ? structuredClone(ability.exhaustCards) : undefined,
+  }))
+  const visibleStartChoices = run?.combat?.phase === 'start' && room.startTurnCombatId === run.combat.combatId
+    ? (room.startTurnChoices ?? []).map((choice) => ({
+      ...structuredClone(choice),
+      exhaustUids: startAbilityOwners.get(choice.id) === viewerId ? structuredClone(choice.exhaustUids) : undefined,
+    }))
+    : undefined
 
   return {
     code: room.code,
@@ -2570,14 +3387,10 @@ export function snapshotFor(room, seatToken) {
     endTurnDecided: Object.entries(room.endTurnReady ?? room.endTurnOrders ?? {})
       .filter(([, decision]) => decision !== false).map(([playerId]) => playerId),
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
-    startTurnAbilities: run?.combat?.phase === 'start'
-      ? plannedStartTurnAbilities(room)
-      : undefined,
+    startTurnAbilities: visibleStartAbilities,
     startTurnChoiceId: run?.combat?.phase === 'start' ? pendingNoxiousFumes(room)?.id : undefined,
     startTurnEnemyTargets: run?.combat?.phase === 'start' ? savedStartTurnEnemyTargets(room) : undefined,
-    startTurnChoices: run?.combat?.phase === 'start' && room.startTurnCombatId === run.combat.combatId
-      ? structuredClone(room.startTurnChoices ?? [])
-      : undefined,
+    startTurnChoices: visibleStartChoices,
     startTurnOrderPending: run?.combat?.phase === 'start' ? startTurnOrderPending(room) : undefined,
     startTurnOrderLocked: run?.combat?.phase === 'start' &&
       room.startTurnCombatId === run.combat.combatId && Array.isArray(room.startTurnOrder),
@@ -2605,7 +3418,11 @@ export function snapshotFor(room, seatToken) {
     cardPreview: viewerId !== null && room.cardPreviews?.[viewerId]
       ? structuredClone(room.cardPreviews[viewerId])
       : undefined,
-    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ?? run?.combat?.pendingCardCopy?.playerId,
+    powerPreview: viewerId !== null && room.powerPreviews?.[viewerId]
+      ? structuredClone(room.powerPreviews[viewerId])
+      : undefined,
+    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ??
+      Object.keys(room.powerPreviews ?? {})[0] ?? run?.combat?.pendingCardCopy?.playerId,
     merchantPledges: Object.fromEntries(Object.entries(room.merchantPledges ?? {}).map(([key, pledge]) => [key, {
       ...structuredClone(pledge),
       cardUid: pledge.kind === 'removal' && pledge.buyerId !== viewerId ? undefined : pledge.cardUid,
@@ -2642,7 +3459,7 @@ export function snapshotFor(room, seatToken) {
     pendingRelicStatus: pendingOwner && pendingRelic ? {
       playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
     } : null,
-    run: run ? redactRun(run, viewerId) : null,
+    run: run ? redactRun(run, viewerId, room) : null,
   }
 }
 
@@ -2655,11 +3472,19 @@ function visibleEndTurnAbilities(room, viewerId) {
       id: publicEndTurnId(room, ability.id),
       targets: ability.targets?.map((target) => ({ ...target })),
     }
-    if (ability.playerId === viewerId || !ability.id.includes('/card:')) return visible
+    const privateTargets = ability.label.includes('Stasis Engine') && ability.targets?.length
+    if (ability.playerId === viewerId || !ability.id.includes('/card:') && !privateTargets) return visible
     const number = (privateCounts.get(ability.playerId) ?? 0) + 1
     privateCounts.set(ability.playerId, number)
     const owner = room.seats.find((seat) => seat.playerId === ability.playerId)?.name ?? 'Teammate'
-    return { ...visible, label: `${owner} — Private hand ability ${number}` }
+    return {
+      ...visible,
+      label: `${owner} — Private hand ability ${number}`,
+      targets: privateTargets ? visible.targets?.map((target, index) => ({
+        uid: target.uid === 'skip' ? target.uid : `private-card-${index + 1}`,
+        label: target.uid === 'skip' ? target.label : `Private card ${index + 1}`,
+      })) : visible.targets,
+    }
   })
 }
 
@@ -2670,7 +3495,9 @@ function publicEndTurnId(room, id) {
   return publicId
 }
 
-function redactRun(run, viewerId) {
+function redactRun(run, viewerId, room) {
+  const preparedCombat = run.roomState?.kind === 'event' ? run.roomState.preparedCombat : undefined
+  const preparedScry = preparedCombat ? startTurnScryPreview(preparedCombat) : undefined
   const roomState = run.roomState?.kind === 'event'
     ? {
         kind: 'event',
@@ -2681,6 +3508,7 @@ function redactRun(run, viewerId) {
         ])),
         dieRolls: structuredClone(run.roomState.dieRolls),
         rewardOffers: structuredClone(run.roomState.rewardOffers ?? {}),
+        guardianGemOffers: structuredClone(run.roomState.guardianGemOffers ?? {}),
         itemOffers: structuredClone(run.roomState.itemOffers ?? {}),
         pendingDecisions: viewerId && run.roomState.pendingDecisions?.[viewerId]
           ? { [viewerId]: structuredClone(run.roomState.pendingDecisions[viewerId]) }
@@ -2693,6 +3521,35 @@ function redactRun(run, viewerId) {
         revealedRelics: structuredClone(run.roomState.revealedRelics ?? {}),
         availableRewardSources: structuredClone(run.roomState.availableRewardSources),
         partyOptionIds: structuredClone(run.roomState.partyOptionIds),
+        preparedStartTurnScryAbilities: preparedCombat ? startTurnScryAbilities(preparedCombat) : undefined,
+        preparedStartTurnScry: preparedScry ? {
+          ...preparedScry,
+          cards: preparedScry.playerId === viewerId ? structuredClone(preparedScry.cards) : null,
+        } : undefined,
+        preparedStartTurnCoordinatorId: preparedCombat
+          ? room.seats.find((seat) => seat.connected !== false && preparedCombat.players
+              .some((player) => player.id === seat.playerId && !player.dead))?.playerId ?? null
+          : undefined,
+        preparedCombat: run.roomState.preparedCombat
+          ? { players: run.roomState.preparedCombat.players.map((player) => ({
+              id: player.id,
+              hand: player.id === viewerId ? structuredClone(player.hand) : null,
+            })),
+            enemies: run.roomState.preparedCombat.enemies.map((enemy) => ({
+              uid: enemy.uid,
+              defId: enemy.defId,
+              row: enemy.row,
+              isBoss: enemy.isBoss,
+              ascension: enemy.ascension,
+              hp: enemy.hp,
+              maxHp: enemy.maxHp,
+              dead: enemy.dead,
+            })),
+            ...(run.roomState.preparedCombat.pendingHermitSetupLoads?.length ? {
+              pendingHermitSetupLoads: structuredClone(run.roomState.preparedCombat.pendingHermitSetupLoads),
+            } : {}),
+          }
+          : undefined,
         pendingTrade: run.roomState.pendingTrade
           ? viewerId === run.roomState.pendingTrade.actorId || viewerId === run.roomState.pendingTrade.targetId
             ? {
@@ -2737,11 +3594,14 @@ function redactRun(run, viewerId) {
       ])),
     } : null,
     pendingBossDefId: null,
+    pendingGuardianSockets: (run.pendingGuardianSockets ?? []).slice(0, 1).map((pending) =>
+      pending.playerId === viewerId ? structuredClone(pending) : { playerId: pending.playerId }),
     // Public, unlike `pendingBossDefId`: setup rolls this act's boss in the open
     // before anybody moves, and the map names it so decks can be built for it.
     // The Ascension 13 SECOND Act III boss above stays hidden — that one is not
     // rolled at the table, it is drawn when the first boss falls.
     actBossDefId: run.actBossDefId ?? null,
+    canRerollDownfallSelfBoss: canRerollDownfallSelfBoss(run),
     map: visibleMap(run),
     // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
     log: run.log,
@@ -2767,6 +3627,7 @@ function redactRun(run, viewerId) {
 
 function redactCombat(combat, viewerId) {
   const progress = combat.startTurnProgress
+  const triggerPreview = combat.pendingDieRelicChoices?.length ? undefined : pendingTriggerAbility(combat)
   return {
     combatId: combat.combatId,
     turn: combat.turn,
@@ -2777,12 +3638,14 @@ function redactCombat(combat, viewerId) {
     startTurnStage: combat.startTurnStage,
     powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
     pendingTriggers: structuredClone(combat.pendingTriggers ?? []),
+    pendingTriggerAbility: triggerPreview?.playerId === viewerId ? structuredClone(triggerPreview) : null,
     // Trigger ids are server allocators, not client state. Masking them also
     // prevents private draw reactions from becoming a count side channel.
     nextTriggerId: 0,
     startTurnProgress: progress ? {
       choices: structuredClone(progress.choices),
       beforeDraw: progress.beforeDraw ? structuredClone(progress.beforeDraw) : undefined,
+      rollPending: progress.rollPending ? structuredClone(progress.rollPending) : undefined,
       discard: progress.discard ? {
         playerId: progress.discard.playerId,
         sourceId: progress.discard.sourceId,
@@ -2819,6 +3682,17 @@ function redactCombat(combat, viewerId) {
         ? structuredClone(combat.pendingDistilled.cards)
         : null,
     } : undefined,
+    pendingHermitSetupLoads: structuredClone(combat.pendingHermitSetupLoads ?? []),
+    pendingDieRelicChoices: structuredClone(combat.pendingDieRelicChoices ?? []),
+    pendingHermitChamberPlays: (combat.pendingHermitChamberPlays ?? []).map((pending) => ({
+      playerId: pending.playerId,
+      sourceCardId: pending.sourceCardId,
+      free: pending.free,
+      cardUids: pending.playerId === viewerId ? structuredClone(pending.cardUids) : [],
+      cardCount: pending.cardUids.length,
+    })),
+    pendingHermitStrengthRewards: structuredClone(combat.pendingHermitStrengthRewards ?? []),
+    pendingPlunderSwitches: structuredClone(combat.pendingPlunderSwitches ?? []),
     pendingRelicScry: combat.pendingRelicScry ? {
       playerId: combat.pendingRelicScry.playerId,
       relicIndex: combat.pendingRelicScry.relicIndex,
@@ -2840,6 +3714,7 @@ function redactCombat(combat, viewerId) {
         copied: event.copied,
         energy: event.energy,
         ...(event.mode === undefined ? {} : { mode: event.mode }),
+        ...(event.resolvedType === undefined ? {} : { resolvedType: event.resolvedType }),
       } : {}),
       ...(event.kind === 'orb' ? { orb: event.orb } : {}),
     })),
@@ -2885,6 +3760,7 @@ function redactPlayer(player, viewerId) {
     hpLossLimitThisRound: player.hpLossLimitThisRound,
     freeCardsThisTurn: player.freeCardsThisTurn ?? 0,
     nextCardCost: player.nextCardCost ?? null,
+    enemyNextCardCost: player.enemyNextCardCost ?? null,
     freeAttacksThisTurn: player.freeAttacksThisTurn ?? 0,
     cardPlayLocked: player.cardPlayLocked === true,
     doubledAttacksThisTurn: player.doubledAttacksThisTurn ?? 0,
@@ -2914,13 +3790,31 @@ function redactPlayer(player, viewerId) {
     orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     lightningEndTurnBonus: player.lightningEndTurnBonus ?? 0,
     damageStats: structuredClone(player.damageStats),
+    freeGemCardsThisTurn: player.freeGemCardsThisTurn ?? 0,
+    freePowersThisTurn: player.freePowersThisTurn ?? 0,
+    nextPowerOrSlimeDiscount: player.nextPowerOrSlimeDiscount,
+    nextAttackRapidFire: player.nextAttackRapidFire ?? 0,
+    energySpentThisTurn: player.energySpentThisTurn ?? 0,
+    heat: player.heat ?? 0,
+    soulburn: player.soulburn ?? 0,
+    soulburnUsedThisTurn: player.soulburnUsedThisTurn === true,
+    nextSoulburnDamageBonus: player.nextSoulburnDamageBonus ?? 0,
+    exhaustNextCardAfterUid: player.exhaustNextCardAfterUid,
+    guardianMode: player.guardianMode ?? null,
+    vigor: player.vigor ?? 0,
+    vigorSpentThisTurn: player.vigorSpentThisTurn ?? 0,
+    guardianModeLocked: player.guardianModeLocked === true,
+    slimes: structuredClone(player.slimes ?? []),
+    lootChests: player.lootChests ?? 0,
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,
     exhaust: player.exhaust,
     powers: player.powers,
-    relics: player.relics,
+    relics: mine ? player.relics : player.relics.map(({ guardianGemGroups: _private, ...relic }) => relic),
     potions: player.potions,
+    chamberSlots: player.chamberSlots ?? 0,
+    chamberCount: player.chamber?.length ?? 0,
     // Sizes are public — you can see how big a stack is — but not contents.
     handCount: player.hand.length,
     drawCount: player.draw.length,
@@ -2932,6 +3826,7 @@ function redactPlayer(player, viewerId) {
     // Yours alone. Never the draw pile: it is shuffled and face down, and its
     // owner is no more entitled to read ahead than anyone else.
     hand: mine ? player.hand : null,
+    chamber: mine ? player.chamber ?? [] : null,
     deck: mine ? player.deck : null,
   }
 }

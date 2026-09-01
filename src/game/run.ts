@@ -12,6 +12,7 @@ export type {
   EnemyDecks,
   PartyMember,
   PendingRelicPreview,
+  PendingGuardianSocket,
   PotionRewardDecision,
   RewardSource,
   RunPhase,
@@ -38,12 +39,14 @@ export { advanceQuickSetup } from './run/quick-setup.ts'
 export {
   advanceAct,
   canGiveUpRun,
+  canRerollDownfallSelfBoss,
   enterRoom,
   finishRun,
   giveUpFight,
   giveUpRun,
   leaveRoom,
   resolveCombat,
+  rerollDownfallSelfBoss,
   roomChoices,
   startPendingBoss,
   switchBetweenCombatRow,
@@ -80,4 +83,5 @@ export {
 export { canSkipEvent, chooseEvent, skipEvent, unavailableEventOptionIds } from './run/events.ts'
 export { resolveCampfire } from './run/campfire.ts'
 export { pendingRelicPreview, resolvePendingRelic } from './run/relic-acquisition.ts'
+export { abandonGuardianSocket, resolveGuardianSocket } from './run/guardian-gems.ts'
 export { healingCapFor } from './acquisition.ts'

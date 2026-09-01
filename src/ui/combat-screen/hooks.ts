@@ -386,7 +386,7 @@ export function usePersonalCombatSoundEffects(
       const actor = state.players.find((player) => player.id === event.actorId)
       if (event.kind !== 'shiv' && !actor) continue
       const recipe = event.kind === 'shiv' ? shivSfxRecipe() :
-        cardSfxRecipe(actor!.character, event.sourceId, event.mode, event.upgraded)
+        cardSfxRecipe(actor!.character, event.sourceId, event.mode, event.upgraded, event.resolvedType)
       pending.current.get(event.seq)?.()
       pending.current.set(event.seq, playCombatSound(recipe, 0, true))
       impactDue.current.delete(event.seq)
@@ -417,7 +417,9 @@ export function usePersonalCombatSoundEffects(
       const target = event.enemyIds[0]
       const contact = !reducedMotion && target ? characterAttackContactMs(state, target, event) : 0
       pending.current.set(event.seq,
-        playCombatSound(cardSfxRecipe(actor.character, event.sourceId, event.mode, event.upgraded),
+        playCombatSound(cardSfxRecipe(
+          actor.character, event.sourceId, event.mode, event.upgraded, event.resolvedType,
+        ),
           contact))
       if (contact > 0) impactDue.current.set(event.seq, performance.now() + contact)
     }

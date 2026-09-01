@@ -1,13 +1,16 @@
-import { CARDS } from './cards.ts'
+import { CARDS, cardIsCurse } from './cards.ts'
+import type { CombatState } from './combat.ts'
+import type { StartTurnScryAbility } from './combat.ts'
 import type { EventCard, EventEffect } from './events.ts'
-import { addCard, bottomCardChoices, drawCardChoices, drawItems, gainGold, gainPotion, gainRelic, healingCapFor, nextCardUid, removeCard, transformCard, upgradeCard } from './acquisition.ts'
+import { addCard, bottomCardChoices, drawCardChoices, drawItems, gainGold, gainPotion, gainRelic, healingCapFor, nextCardUid, potionLimit, removeCard, transformCard, upgradeCard } from './acquisition.ts'
 import type { ItemDecks } from './acquisition.ts'
 import { nextInt } from './rng.ts'
 import type { RngState } from './rng.ts'
-import type { CharacterId, Player } from './types.ts'
+import type { CardInstance, CharacterId, Player } from './types.ts'
+import type { RuleSet } from './meta.ts'
 
 type EventRewardSource = CharacterId | 'colorless'
-import { RELIC_DECK, relicDef } from './relics.ts'
+import { ORDINARY_RELIC_IDS, relicDef } from './relics.ts'
 
 export type EventDecision = {
   optionIds: string[]
@@ -20,6 +23,7 @@ export type EventDecision = {
   receiveCardUid?: string
   receiveRelicId?: string
   rewardIndexes?: number[]
+  guardianGemIds?: string[]
   rewardSources?: EventRewardSource[]
   roomId?: string
   payments?: Record<string, number>
@@ -35,6 +39,9 @@ export type EventRoomState = {
   decisions: Record<string, EventDecision>
   dieRolls: Record<string, number[]>
   rewardOffers?: Record<string, string[][]>
+  guardianGemOffers?: Record<string, string[][]>
+  pendingGuardianGemGroups?: Record<string, string[][]>
+  pendingGuardianGemIds?: Record<string, string[]>
   rewardDraws?: Record<string, Array<{ source: EventRewardSource; cardId: string; rareId?: string }>>
   availableRewardSources?: { card: EventRewardSource[]; rare: EventRewardSource[] }
   itemOffers?: Record<string, { kind: 'relic' | 'potion'; id: string }[]>
@@ -44,6 +51,18 @@ export type EventRoomState = {
   revealedCardDefs?: Record<string, string[]>
   revealedRelics?: Record<string, string>
   partyOptionIds?: string[]
+  /** Mysterious Sphere draws opening hands before the party chooses its approach. */
+  preparedCombat?: CombatState
+  /** Public/private snapshot metadata while its prepared pre-draw Scries resolve. */
+  preparedStartTurnScryAbilities?: StartTurnScryAbility[]
+  preparedStartTurnScry?: {
+    id: string
+    playerId: string
+    label: string
+    amount: number
+    cards: Player['hand'] | null
+  }
+  preparedStartTurnCoordinatorId?: string | null
   pendingTrade?: {
     kind: 'card' | 'relic'
     actorId: string
@@ -58,6 +77,8 @@ export type EventOutcome = {
   event: EventRoomState
   players: Player[]
   combat?: 'encounter' | 'elite'
+  combatReward?: 'relic-each-player'
+  combatStartEffects?: readonly EventEffect[]
   merchant?: true
   moveTo?: string
   complete: boolean
@@ -76,9 +97,12 @@ type Context = {
   rewardIndexes: number[]
   rolls: number[]
   combat?: EventOutcome['combat']
+  combatReward?: EventOutcome['combatReward']
+  combatStartEffects: EventEffect[]
   merchant?: true
   moveTo?: string
   ascension: number
+  ruleset: RuleSet
   nextUid: () => string
   removedCardDefId?: string
   lostRelicCost?: number
@@ -126,9 +150,9 @@ function gainOneRelic(context: Context, player: Player): Player {
   }
   if (relicId === 'old_coin') {
     if (!context.itemDecks.relics.includes(relicId)) context.itemDecks.relics.push(relicId)
-    return gainRelic(player, relicId)
+    return gainRelic(player, relicId, context.itemDecks.potions, context.ascension)
   }
-  return gainRelic(player, relicId)
+  return gainRelic(player, relicId, context.itemDecks.potions, context.ascension)
 }
 
 function gainOnePotion(context: Context, player: Player): Player | null {
@@ -161,7 +185,7 @@ function gainOnePotion(context: Context, player: Player): Player | null {
     context.itemDecks.potions.push(potionId)
     return player
   }
-  if (player.potions.length >= (context.ascension >= 4 ? 2 : 3)) {
+  if (player.potions.length >= potionLimit(context.ascension, player)) {
     const discardId = replacementId
     if (discardId && player.id !== context.actorId) return null
     const at = discardId ? player.potions.indexOf(discardId) : -1
@@ -204,13 +228,17 @@ function effectFilterMatches(context: Context, filter?: string): boolean {
   const def = context.removedCardDefId ? CARDS[context.removedCardDefId] : undefined
   if (filter === 'removed card is uncommon') return def?.rarity === 'uncommon'
   if (filter === 'removed card is rare') return def?.rarity === 'rare'
-  if (filter === 'removed card is a Curse') return def?.owner === 'curse'
+  if (filter === 'removed card is a Curse') return def?.type === 'curse'
   if (filter === 'party has Red Mask') return context.players.some((player) => player.relics.some((relic) => relic.defId === 'red_mask'))
   return true
 }
 
 function applyEffect(context: Context, effect: EventEffect): boolean {
   if (!effectFilterMatches(context, effect.filter)) return true
+  if (effect.combatStart) {
+    context.combatStartEffects.push({ ...effect, combatStart: false })
+    return true
+  }
   if (effect.tag === 'nothing') return true
   if (effect.tag === 'roll-d6') {
     const die = context.forcedRolls.shift() ?? (1 + nextInt(context.rng, 6))
@@ -220,6 +248,7 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
   }
   if (effect.tag === 'combat') {
     context.combat = effect.room === 'elite' ? 'elite' : 'encounter'
+    context.combatReward = effect.combatReward
     return true
   }
   if (effect.tag === 'merchant') { context.merchant = true; return true }
@@ -248,9 +277,15 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
       : typeof effect.amount === 'number'
         ? effect.amount + (effect.perPriorChoice ? Object.values(context.eventDecisions ?? {}).filter((choice) => choice.optionIds.includes(context.decision.optionIds[0] ?? '')).length : 0)
         : (effect.count ?? 1)
-    if (effect.tag === 'heal') player = { ...player, hp: Math.min(healingCapFor(player), player.hp + amount) }
-    else if (effect.tag === 'full-heal') player = { ...player, hp: healingCapFor(player) }
+    if (effect.tag === 'heal') player = { ...player, hp: Math.min(healingCapFor(player, context.ruleset), player.hp + amount) }
+    else if (effect.tag === 'full-heal') player = { ...player, hp: healingCapFor(player, context.ruleset) }
     else if (effect.tag === 'lose-hp') player = loseHp(player, amount)
+    else if (effect.tag === 'lose-max-hp') {
+      const maxHp = Math.max(1, player.maxHp - amount)
+      player = { ...player, maxHp, hp: Math.min(player.hp, maxHp) }
+    }
+    else if (effect.tag === 'apply-vulnerable') player = { ...player, vulnerable: Math.min(3, player.vulnerable + amount) }
+    else if (effect.tag === 'mode-shift' && player.guardianMode) player = { ...player, guardianMode: player.guardianMode === 'attack' ? 'defense' : 'attack' }
     else if (effect.tag === 'gain-gold') player = gainGold(player, amount)
     else if (effect.tag === 'lose-gold') player = { ...player, gold: effect.amount === 'all' ? 0 : Math.max(0, player.gold - amount) }
     else if (effect.tag === 'pay-gold') {
@@ -259,7 +294,7 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
         const potionId = context.potions.shift()
         if (relicId && player.relics.some((relic) => relic.defId === relicId)) {
           player = { ...player, relics: player.relics.filter((relic) => relic.defId !== relicId) }
-          if (RELIC_DECK.includes(relicId as never)) context.itemDecks.relics.push(relicId)
+          if (ORDINARY_RELIC_IDS.includes(relicId)) context.itemDecks.relics.push(relicId)
         } else if (potionId && player.potions.includes(potionId)) {
           const at = player.potions.indexOf(potionId)
           player = { ...player, potions: player.potions.filter((_id, index) => index !== at) }
@@ -277,7 +312,8 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
       }
     } else if (effect.tag === 'gain-relic') player = gainOneRelic(context, player)
     else if (effect.tag === 'gain-potion') for (let index = 0; index < (effect.count ?? 1); index++) {
-      if (player.id === context.actorId && context.potionRecipientIds.length === 0 && player.potions.length >= (context.ascension >= 4 ? 2 : 3) && context.potions.length > 0) {
+      if (player.id === context.actorId && context.potionRecipientIds.length === 0 &&
+        player.potions.length >= potionLimit(context.ascension, player) && context.potions.length > 0) {
         const discardId = context.potions.shift()!
         const at = player.potions.indexOf(discardId)
         if (at < 0) return false
@@ -290,7 +326,7 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
     }
     else if (effect.tag === 'gain-curse') player = addCurse(context, player)
     else if (effect.tag === 'remove-curses') {
-      for (const card of player.deck.filter((candidate) => CARDS[candidate.defId]?.owner === 'curse' && candidate.defId !== 'ascenders_bane')) player = removeCard(player, card.uid)
+      for (const card of player.deck.filter((candidate) => cardIsCurse(candidate.defId) && candidate.defId !== 'ascenders_bane')) player = removeCard(player, card.uid)
     }
     else if (effect.tag === 'remove-card') {
       const removable = player.deck.filter((card) => card.defId !== 'ascenders_bane' && cardMatches(card.defId, effect.filter))
@@ -324,10 +360,10 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
         player = next
       }
     } else if (effect.tag === 'transform-card') {
-      const required = player.cardRewards.length === 0 ? 0 : Math.min(effect.count ?? 1, player.deck.filter((card) => CARDS[card.defId]?.owner !== 'curse').length)
+      const required = player.cardRewards.length === 0 ? 0 : Math.min(effect.count ?? 1, player.deck.filter((card) => !cardIsCurse(card.defId)).length)
       if (context.cards.length < required) return false
       for (let index = 0; index < (effect.count ?? 1); index++) {
-        const transformable = player.deck.filter((card) => CARDS[card.defId]?.owner !== 'curse')
+        const transformable = player.deck.filter((card) => !cardIsCurse(card.defId))
         const uid = takeCard(context)
         if ((!uid || player.cardRewards.length === 0) && (transformable.length === 0 || player.cardRewards.length === 0)) continue
         if (!uid) continue
@@ -341,7 +377,7 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
       if (!relicId || !player.relics.some((relic) => relic.defId === relicId)) return false
       player = { ...player, relics: player.relics.filter((relic) => relic.defId !== relicId) }
       context.lostRelicCost = relicDef(relicId).cost ?? 0
-      if (RELIC_DECK.includes(relicId as never)) context.itemDecks.relics.push(relicId)
+      if (ORDINARY_RELIC_IDS.includes(relicId)) context.itemDecks.relics.push(relicId)
     } else if (effect.tag === 'lose-potion') {
       const potionId = context.potions.shift()
       if (!potionId || !player.potions.includes(potionId)) return false
@@ -368,7 +404,7 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
         if (!rare && effect.source !== 'colorless' && (sourcePlayer || inactiveCards)) {
           const draw = drawCardChoices(inactiveCards
             ? { cardRewards: inactiveCards, rareRewards: inactiveRares ?? [] }
-            : liveSource!, reveal)
+            : liveSource!, reveal, context.ruleset === 'downfall')
           if (draw.choices.length === 0) continue
           const choice = effect.random ? nextInt(context.rng, draw.choices.length) : context.rewardIndexes.shift()
           if (choice === -1) {
@@ -426,8 +462,14 @@ function applyEffect(context: Context, effect: EventEffect): boolean {
       const possible = player.deck.some((card) => card.defId !== 'ascenders_bane') && context.players.some((candidate) => candidate.id !== player.id && !candidate.dead && candidate.deck.some((card) => card.defId !== 'ascenders_bane'))
       if (!possible && (!give || !receive)) continue
       if (!other || other.id === player.id || !give || !receive || give.defId === 'ascenders_bane' || receive.defId === 'ascenders_bane') return false
-      player = addCard({ ...player, deck: player.deck.filter((card) => card.uid !== give.uid) }, receive.defId, receive.uid, receive.upgraded)
-      replace(context, addCard({ ...other, deck: other.deck.filter((card) => card.uid !== receive.uid) }, give.defId, give.uid, give.upgraded))
+      const trade = (owner: Player, lost: CardInstance, gained: CardInstance) => {
+        const next = addCard({ ...owner, deck: owner.deck.filter((card) => card.uid !== lost.uid) },
+          gained.defId, gained.uid, gained.upgraded)
+        return { ...next, deck: next.deck.map((card) => card.uid === gained.uid
+          ? { ...gained, upgraded: card.upgraded } : card) }
+      }
+      player = trade(player, give, receive)
+      replace(context, trade(other, receive, give))
     } else if (effect.tag === 'trade-relic') {
       const other = context.players.find((candidate) => candidate.id === context.decision.targetPlayerId)
       const giveId = context.relics.shift()
@@ -459,6 +501,7 @@ export function resolveEventDecision(
   decision: EventDecision,
   forcedRolls: number[] = [],
   resumeAtRoll = false,
+  ruleset: RuleSet = 'base',
 ): EventOutcome | null {
   const player = players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player || event.decisions[playerId] || decision.optionIds.length === 0) return null
@@ -484,6 +527,7 @@ export function resolveEventDecision(
     rewardIndexes: [...(decision.rewardIndexes ?? [])],
     rolls: [],
     ascension,
+    ruleset,
     nextUid: nextCardUid(players),
     eventDecisions: event.decisions,
     forcedRolls: [...forcedRolls],
@@ -494,6 +538,7 @@ export function resolveEventDecision(
     potionReplacementIds: [...(decision.potionReplacementIds ?? [])],
     rewardItems: (decision.rewardItemIds ?? []).map((id, index) => ({ id, kind: decision.rewardItemKinds?.[index] ?? 'relic' })),
     rewardItemChoices: [...(decision.rewardItemChoices ?? [])],
+    combatStartEffects: [],
   }
   if (event.card.id === 'ancient_writing' && decision.optionIds[0] === 'simplicity') {
     const chosen = (decision.cardUids ?? []).map((uid) => player.deck.find((card) => card.uid === uid)).filter(Boolean)
@@ -522,7 +567,18 @@ export function resolveEventDecision(
   }
   const complete = event.card.scope !== 'player'
     || context.players.filter((candidate) => !candidate.dead).every((candidate) => candidate.id in nextEvent.decisions)
-  return { event: nextEvent, players: context.players, combat: context.combat, merchant: context.merchant, moveTo: context.moveTo, complete }
+  return { event: nextEvent, players: context.players, combat: context.combat, combatReward: context.combatReward, combatStartEffects: context.combatStartEffects, merchant: context.merchant, moveTo: context.moveTo, complete }
+}
+
+/** Applies Event statuses at the printed after-opening-hands timing. */
+export function applyEventCombatStartEffects(players: readonly Player[], effects: readonly EventEffect[]): Player[] {
+  return players.map((player) => effects.reduce((current, effect) => {
+    if (effect.target !== 'each-player' && effect.target !== 'party') return current
+    const amount = typeof effect.amount === 'number' ? effect.amount : 1
+    if (effect.tag === 'apply-vulnerable') return { ...current, vulnerable: Math.min(3, current.vulnerable + amount) }
+    if (effect.tag === 'mode-shift' && current.guardianMode) return { ...current, guardianMode: current.guardianMode === 'attack' ? 'defense' : 'attack' }
+    return current
+  }, player))
 }
 
 /** Applies the locked payment/effects printed before a die is revealed. */
@@ -534,6 +590,7 @@ export function resolveEventBeforeRoll(
   ascension: number,
   playerId: string,
   decision: EventDecision,
+  ruleset: RuleSet = 'base',
 ): EventOutcome | null {
   const option = event.card.options.find((candidate) => candidate.id === decision.optionIds[0])
   const rollIndex = option?.effects.findIndex((effect) => effect.tag === 'roll-d6') ?? -1
@@ -541,5 +598,5 @@ export function resolveEventBeforeRoll(
   return resolveEventDecision({
     ...event,
     card: { ...event.card, options: [{ ...option, effects: option.effects.slice(0, rollIndex) }] },
-  }, rng, itemDecks, players, ascension, playerId, decision)
+  }, rng, itemDecks, players, ascension, playerId, decision, [], false, ruleset)
 }

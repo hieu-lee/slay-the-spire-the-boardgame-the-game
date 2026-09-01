@@ -12,11 +12,21 @@ import { enemyAbilities, enemyDef, startingHp } from '../enemies.ts'
 import { addToDiscardTop } from '../piles.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Enemy, Player } from '../types.ts'
+import { cardDef, faceOf } from '../cards.ts'
+
+export function playerHasPersistentEffect(player: Player, kind: 'preventDebuffs' | 'preventBlock'): boolean {
+  return player.powers.some((power) => (faceOf(cardDef(power.defId), power.upgraded).persistentEffects ?? [])
+    .some((effect) => effect.kind === kind))
+}
+
+export const playerCanGainBlock = (player: Player): boolean => !playerHasPersistentEffect(player, 'preventBlock')
+export const playerCanGainDebuffs = (player: Player): boolean => !playerHasPersistentEffect(player, 'preventDebuffs')
 
 export function forgetRetain(card: CardInstance): CardInstance {
   const {
     retainedLastTurn: _retained,
     retainThisTurn: _retain,
+    stasisRetained: _stasis,
     freeThisTurn: _free,
     costReductionThisTurn: _reduction,
     scryDamageBonus: _scryBonus,
@@ -33,6 +43,13 @@ function enemyCannotLoseHp(enemy: Enemy): boolean {
 
 function enemyHpAfterLoss(state: CombatState, enemy: Enemy, hp: number): number {
   if (enemyCannotLoseHp(enemy)) return enemy.hp
+  const abilities = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+  const protectedBy = abilities.find((ability) => ability.kind === 'protectedBy')
+  if (protectedBy?.kind === 'protectedBy' && state.enemies.some((candidate) =>
+    !candidate.dead && candidate.defId.startsWith(protectedBy.defIdPrefix))) return enemy.hp
+  const font = abilities.find((ability) => ability.kind === 'protectedUntilAllDead')
+  if (font?.kind === 'protectedUntilAllDead' && state.enemies.some((candidate) =>
+    !candidate.dead && font.defIds.includes(candidate.defId))) return enemy.hp
   const invincible = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
     .find((ability) => ability.kind === 'invincible')
   if (invincible?.kind !== 'invincible' || enemy.abilityUsed) return hp
@@ -52,6 +69,13 @@ export function damageEnemy(
   damage: number,
   deferAbilities = false,
 ): { blocked: number; curled: boolean; hpLost: number } {
+  const buffer = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+    .find((ability) => ability.kind === 'buffer')
+  if (damage > 0 && buffer?.kind === 'buffer' && (enemy.abilityCubes ?? 0) > 0) {
+    enemy.abilityCubes = (enemy.abilityCubes ?? 0) - 1
+    state.log = [...state.log, `${enemyLabel(state.enemies, enemy)} spends 1 Buffer`]
+    return { blocked: 0, curled: false, hpLost: 0 }
+  }
   const hpBefore = enemy.hp
   const blockBefore = enemy.block
   const outcome = applyDamage(enemy.block, enemy.hp, damage)
@@ -73,6 +97,7 @@ export function damageEnemy(
 export function grantShiftBlock(state: CombatState, enemy: Enemy, amount: number): void {
   if (amount <= 0) return
   for (const player of playersInRowOf(state, enemy)) {
+    if (!playerCanGainBlock(player)) continue
     const before = player.block
     player.block = gainBlock(player.block, amount)
     if (player.block > before) state.log = [...state.log,
@@ -116,7 +141,7 @@ export function recordPoisonDamage(state: CombatState, target: Enemy, amount: nu
 
 function enemyInGroup(enemy: Enemy, group: 'gremlin' | 'darkling'): boolean {
   return group === 'darkling'
-    ? enemy.defId.startsWith('darkling')
+    ? enemy.defId.startsWith('darkling') || enemy.defId.startsWith('downfall_darkling_')
     : ['mad_gremlin', 'sneaky_gremlin', 'gremlin_wizard', 'fat_gremlin'].includes(enemy.defId)
 }
 
@@ -139,8 +164,10 @@ export function reviveAll(state: CombatState, group: 'gremlin' | 'darkling'): nu
 export function enemyHasDeathReaction(state: CombatState, enemy: Enemy): boolean {
   const own = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
   if (own.some((ability) =>
-    ability.kind === 'splitOnDeath' || ability.kind === 'rebirth' || ability.kind === 'sporeCloud')) return true
-  if (enemy.corpseExplosion) return true
+    ability.kind === 'splitOnDeath' || ability.kind === 'rebirth' || ability.kind === 'sporeCloud' ||
+    ability.kind === 'secondWind' || ability.kind === 'blasphemy' || ability.kind === 'deathTokenCleanup' ||
+    ability.kind === 'plunder')) return true
+  if (enemy.corpseExplosion || enemy.hermitBounties?.length) return true
   return state.enemies.some((ally) => !ally.dead && ally.row === enemy.row &&
     enemyAbilities(enemyDef(ally.defId, ally.ascension)).some((ability) =>
       ability.kind === 'furyOnAllyDeath' &&

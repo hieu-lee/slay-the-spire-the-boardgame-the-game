@@ -14,8 +14,10 @@ import type { CardInstance, CharacterId, Player } from '../types.ts'
 
 export const hasPendingRelicAcquisition = (state: {
   players: readonly { relics: readonly { pending?: boolean }[] }[]
+  pendingGuardianSockets?: readonly unknown[]
 }): boolean =>
-  state.players.some((player) => player.relics.some((relic) => relic.pending))
+  state.players.some((player) => player.relics.some((relic) => relic.pending)) ||
+  (state.pendingGuardianSockets?.length ?? 0) > 0
 
 export const hasModifier = (state: Pick<RunState, 'meta'>, id: DailyModifierId): boolean =>
   state.meta?.modifierIds?.includes(id) === true
@@ -49,6 +51,10 @@ export const MAX_HP: Record<CharacterId, number> = {
   silent: 9,
   defect: 9,
   watcher: 9,
+  slime_boss: 9,
+  guardian: 9,
+  hexaghost: 9,
+  hermit: 8,
 }
 
 export function nextRunUid(players: readonly Player[]): number {

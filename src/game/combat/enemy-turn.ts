@@ -7,13 +7,19 @@
 // fight once every enemy has acted.
 import { clone, combatIsOver, enemyLabel, playersInRowOf } from './board.ts'
 import { damagePlayer, settle, triggerEnemyDeath } from './effects.ts'
-import { addDaze, addStatus, reviveAll } from './pieces.ts'
+import { addDaze, addStatus, playerCanGainDebuffs, reviveAll } from './pieces.ts'
 import type { CombatState } from './types.ts'
 import { attackerModsOfEnemy, gainBlock, gainStrength, gainVulnerable, gainWeak, hitDamage } from '../damage.ts'
-import { actionsForEnemy, advanceCube, enemyAbilities, enemyDef } from '../enemies.ts'
+import { actionsForEnemy, advanceCube, enemyAbilities, enemyAttackBonus, enemyDef, startingHp } from '../enemies.ts'
 import type { EnemyAction } from '../enemies.ts'
+import { CARDS } from '../cards.ts'
 import { shuffle } from '../rng.ts'
 import type { Enemy, Player } from '../types.ts'
+import { mandatoryChoicePending } from './queries.ts'
+
+const CURSE_CARDS = Object.values(CARDS)
+  .filter((card) => card.owner === 'curse' && card.id !== 'ascenders_bane')
+  .flatMap((card) => Array(['clumsy', 'injury', 'parasite', 'regret'].includes(card.id) ? 2 : 1).fill(card.id))
 
 /**
  * The Enemy Turn (p.13): clear enemy Block, act from the highest row downward
@@ -23,7 +29,7 @@ import type { Enemy, Player } from '../types.ts'
  * player. Block and Strength always land on the enemy itself, never on a player.
  */
 export function enemyTurn(state: CombatState): CombatState {
-  if (state.phase !== 'enemy' || (state.pendingTriggers?.length ?? 0) > 0) return state
+  if (state.phase !== 'enemy' || (state.pendingTriggers?.length ?? 0) > 0 || mandatoryChoicePending(state)) return state
   const next = clone(state)
 
   // Enemy Block is cleared at the start of the ENEMY turn, unlike player Block.
@@ -40,6 +46,16 @@ export function enemyTurn(state: CombatState): CombatState {
     for (const action of actionsForEnemy(enemy, next.die)) {
       applyEnemyAction(next, enemy, action)
       if (combatIsOver(next)) break
+    }
+    const grant = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+      .find((ability) => ability.kind === 'grantAllyBuffer')
+    if (grant?.kind === 'grantAllyBuffer' && !enemy.dead) {
+      const target = next.enemies.find((candidate) => !candidate.dead && candidate.defId === grant.defId)
+      const buffer = target && enemyAbilities(enemyDef(target.defId, target.ascension))
+        .find((ability) => ability.kind === 'buffer')
+      if (target && buffer?.kind === 'buffer') {
+        target.abilityCubes = Math.min(buffer.max, (target.abilityCubes ?? 0) + grant.amount)
+      }
     }
   }
 
@@ -90,8 +106,6 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
     case 'attack':
     case 'attackSequence': {
       const mods = attackerModsOfEnemy(enemy)
-      const curiosity = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-        .some((ability) => ability.kind === 'curiosity')
       const hits = action.kind === 'attackSequence'
         ? action.hits
         : Array.from({ length: action.times ?? 1 }, () => ({ amount: action.amount, aoe: action.aoe }))
@@ -116,7 +130,8 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
           }
           snapshots.set(target, before)
           const amount = hitDamage(
-            hit.amount + (curiosity ? target.powers.length : 0), mods, { vulnerable: before.vulnerable },
+            hit.amount + enemyAttackBonus(state.enemies, enemy, action, target),
+            mods, { vulnerable: before.vulnerable },
           )
           before.attempted += amount
           before.lost += damagePlayer(state, target, amount).hpLost
@@ -124,7 +139,10 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
         }
       }
       for (const [target, before] of snapshots) {
-        if (before.vulnerable > 0) {
+        const terror = state.enemies.some((candidate) => !candidate.dead &&
+          enemyAbilities(enemyDef(candidate.defId, candidate.ascension))
+            .some((ability) => ability.kind === 'retainPlayerVulnerable'))
+        if (before.vulnerable > 0 && !terror) {
           target.vulnerable = before.vulnerable - 1
           state.log = [...state.log, `${target.name} spends a Vulnerable`]
         }
@@ -149,6 +167,15 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
           const gained = addDaze(state, target, painful.daze, 'draw', enemy.uid)
           if (gained > 0) state.log = [...state.log, `${name}'s Painful Stabs gave ${target.name} ${gained} Daze`]
         }
+      }
+      const wrathful = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
+        .some((ability) => ability.kind === 'blockFromUnblockedDamage')
+      if (wrathful) {
+        const dealt = [...snapshots.values()].reduce((sum, snapshot) => sum + snapshot.lost, 0)
+        const before = enemy.block
+        enemy.block = gainBlock(enemy.block, dealt)
+        if (enemy.block > before) state.log = [...state.log,
+          `${name} gains ${enemy.block - before} Block from unblocked damage`]
       }
       // One Weak token comes off after the whole action, not per hit — and only
       // if the action actually attacked something. An enemy swinging at an
@@ -236,6 +263,7 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
     }
     case 'applyWeak': {
       for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        if (!playerCanGainDebuffs(target)) continue
         const before = target.weak
         target.weak = gainWeak(target.weak, action.amount)
         if (target.weak > before) state.log = [...state.log, `${name} weakened ${target.name}`]
@@ -244,6 +272,7 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
     }
     case 'applyVulnerable': {
       for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        if (!playerCanGainDebuffs(target)) continue
         const before = target.vulnerable
         target.vulnerable = gainVulnerable(target.vulnerable, action.amount)
         if (target.vulnerable > before) {
@@ -287,10 +316,11 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
       return
     case 'addAbilityCube': {
       const tracked = enemyAbilities(enemyDef(enemy.defId, enemy.ascension))
-        .find((ability) => ability.kind === 'thorns' || ability.kind === 'beatOfDeath')
-      if (tracked?.kind !== 'thorns' && tracked?.kind !== 'beatOfDeath') return
+        .find((ability) => ability.kind === 'thorns' || ability.kind === 'beatOfDeath' || ability.kind === 'buffer')
+      if (tracked?.kind !== 'thorns' && tracked?.kind !== 'beatOfDeath' && tracked?.kind !== 'buffer') return
       const before = enemy.abilityCubes ?? 0
-      enemy.abilityCubes = Math.min(tracked.maxCubes, before + action.amount)
+      const max = tracked.kind === 'buffer' ? tracked.max : tracked.maxCubes
+      enemy.abilityCubes = Math.min(max, before + action.amount * (action.perPlayer ? state.players.length : 1))
       if (enemy.abilityCubes > before) state.log = [...state.log,
         `${name} added ${enemy.abilityCubes - before} ability cube`]
       return
@@ -342,6 +372,61 @@ export function applyEnemyAction(state: CombatState, enemy: Enemy, action: Enemy
         count += needed
       }
       state.log = [...state.log, `${name} will summon ${count} ${enemyDef(action.defId).name}${count === 1 ? '' : 's'}`]
+      return
+    }
+    case 'shuffleCurse': {
+      for (const target of action.aoe ? living : playersInRowOf(state, enemy)) {
+        const ids = shuffle(state.rng, [...CURSE_CARDS]).slice(0, action.amount)
+        const cards = ids.map((defId, index) => ({
+          uid: `curse-${state.turn}-${enemy.uid}-${target.id}-${state.log.length}-${index}`,
+          defId,
+          upgraded: false,
+        }))
+        target.draw = shuffle(state.rng, [...target.draw, ...cards])
+        state.log = [...state.log, `${name} shuffled ${cards.length} Curses into ${target.name}'s draw pile`]
+      }
+      return
+    }
+    case 'reviveMatching': {
+      const revived: Enemy[] = []
+      const rows = new Set<number>()
+      for (const target of state.enemies) {
+        if (!target.dead || !action.defIds.includes(target.defId) ||
+          (action.onePerRow && rows.has(target.row))) continue
+        target.dead = false
+        target.hp = startingHp(enemyDef(target.defId, target.ascension), state.players.length)
+        target.block = target.strength = target.vulnerable = target.weak = target.poison = 0
+        target.actionIndex = 0
+        target.abilityUsed = false
+        rows.add(target.row)
+        revived.push(target)
+      }
+      state.log = [...state.log, `${name} revived ${revived.length} summon${revived.length === 1 ? '' : 's'}`]
+      return
+    }
+    case 'doubleNamedHp': {
+      const target = state.enemies.find((candidate) => !candidate.dead && candidate.defId === action.defId)
+      if (target) {
+        target.hp *= 2
+        target.maxHp = Math.max(target.maxHp, target.hp)
+        state.log = [...state.log, `${enemyLabel(state.enemies, target)} doubles to ${target.hp} HP`]
+      }
+      return
+    }
+    case 'healMatching': {
+      for (const target of state.enemies.filter((candidate) => !candidate.dead && action.defIds.includes(candidate.defId))) {
+        const before = target.hp
+        target.hp = Math.min(target.maxHp, target.hp + action.amount)
+        if (target.hp > before) state.log = [...state.log,
+          `${name} heals ${enemyLabel(state.enemies, target)} for ${target.hp - before}`]
+      }
+      return
+    }
+    case 'gainSelfVulnerable': {
+      const before = enemy.vulnerable
+      enemy.vulnerable = gainVulnerable(enemy.vulnerable, action.amount)
+      if (enemy.vulnerable > before) state.log = [...state.log,
+        `${name} gains ${enemy.vulnerable - before} Vulnerable`]
       return
     }
     case 'actsLast':

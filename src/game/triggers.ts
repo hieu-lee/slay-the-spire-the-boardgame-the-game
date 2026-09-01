@@ -29,6 +29,11 @@ export type Trigger =
   | { kind: 'onExhaust' }
   | { kind: 'onDraw'; cardType?: CardType; cardTypes?: CardType[] }
   | { kind: 'onEnterStance'; stance?: Stance }
+  /** Hexaghost track movement fires even when already at Heat 1 or 6. */
+  | { kind: 'onAdvance' }
+  | { kind: 'onRetract' }
+  | { kind: 'onUseSoulburn' }
+  | { kind: 'onHermitDeadOn' }
   | { kind: 'onScry' }
   | { kind: 'onGainBlock' }
   /** Fires when this player actually adds one or more Poison cubes to an enemy. */

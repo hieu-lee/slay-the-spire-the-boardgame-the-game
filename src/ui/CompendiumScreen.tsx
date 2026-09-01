@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CARDS, faceOf } from '../game/cards.ts'
+import { CARDS, cardIsCurse, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { assetPath, cardImagePath, cardThumbPath } from '../game/assets.ts'
 import { StatusIcon } from './Icon.tsx'
@@ -14,6 +14,10 @@ const POOLS: { id: Pool; label: string }[] = [
   { id: 'silent', label: 'Silent' },
   { id: 'defect', label: 'Defect' },
   { id: 'watcher', label: 'Watcher' },
+  { id: 'slime_boss', label: 'Slime Boss' },
+  { id: 'guardian', label: 'Guardian' },
+  { id: 'hexaghost', label: 'Hexaghost' },
+  { id: 'hermit', label: 'Hermit' },
   { id: 'colorless', label: 'Colorless' },
   { id: 'curse', label: 'Curses' },
   { id: 'status', label: 'Statuses' },
@@ -79,7 +83,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
     const needle = search.trim().toLocaleLowerCase()
     return CARDS_BY_NAME.filter((card) => {
       const face = faceOf(card, upgraded && Boolean(card.upgrade))
-      return (pool === 'all' || card.owner === pool) &&
+      return (pool === 'all' || (pool === 'curse' ? cardIsCurse(card.id) : card.owner === pool)) &&
         (type === 'all' || face.type === type) &&
         (rarities.size === 0 || rarities.has(face.rarity)) &&
         (cost === 'all' || (!face.unplayable &&
@@ -128,7 +132,7 @@ export function CompendiumScreen({ onBack, backLabel = 'Back to main menu' }: { 
         <section className="compendium__filter-block">
           <h2>Rarity <span aria-hidden="true">≡↓</span></h2>
           <div className="compendium__checks">
-            {(['starter', 'common', 'uncommon', 'rare', 'special'] as const).map((value) => (
+            {(['starter', 'common', 'uncommon', 'rare', 'special', 'curse'] as const).map((value) => (
               <label key={value}><input type="checkbox" checked={rarities.has(value)}
                 onChange={() => toggleRarity(value)} /> {value === 'special' ? 'Other' : value}</label>
             ))}

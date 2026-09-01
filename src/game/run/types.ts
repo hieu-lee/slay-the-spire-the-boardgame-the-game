@@ -52,13 +52,19 @@ export type RunState = {
    * what the map names at the top so a deck can be built toward it.
    */
   actBossDefId: string | null
+  /** Downfall's optional own-boss reroll can be spent at most once per Act. */
+  selfBossRerolled?: boolean
+  /** Guardian's face-down 24-card transparent Gem supply. */
+  guardianGemDeck: string[]
+  /** Socket cards already gained but still waiting for their revealed Gem choice. */
+  pendingGuardianSockets: PendingGuardianSocket[]
   rewards: CardRewardOffer[]
   rewardDestination: 'map' | 'combat' | 'betweenCombat' | 'setup' | 'victory' | null
   itemDecks: ItemDecks
   eventDeck: EventCard[]
   eventsVisited: number
   roomState: MerchantState | RelicRewardState | EventRoomState | null
-  eventCombat: { kind: 'encounter' | 'elite' | 'boss'; mindBloom: boolean; bossDefId?: string } | null
+  eventCombat: { kind: 'encounter' | 'elite' | 'boss'; mindBloom: boolean; bossDefId?: string; relicReward?: boolean } | null
   courier: { usedBy: string[]; offer: CourierOffer | null }
   chooseYourRelic: boolean
   /** Optional p.23 Boss-fight continuation rule. */
@@ -108,6 +114,15 @@ export type CardRewardOffer = {
   relic?: false | null | string
   /** Shared boss choices remain public until this player picks or skips. */
   bossRelics?: false | string[]
+  /** Public Gems revealed alongside this Guardian draft. */
+  guardianGems?: string[]
+}
+
+export type PendingGuardianSocket = {
+  playerId: string
+  cardUid: string
+  gemIds: string[]
+  source: 'draft' | 'merchant' | 'gain'
 }
 
 export type PotionRewardDecision =
@@ -116,7 +131,12 @@ export type PotionRewardDecision =
   | { kind: 'pass'; playerId: string }
   | { kind: 'replace'; potionId: string }
 
-export type PendingRelicPreview = { relicId: string; rewardChoices?: string[][] }
+export type PendingRelicPreview = {
+  relicId: string
+  rewardChoices?: string[][]
+  rewardUpgraded?: boolean[]
+  guardianGemGroups?: string[][]
+}
 
 export type EncounterCard = {
   defId: string
@@ -147,4 +167,4 @@ export type CardRewardEffect = EventEffect & { tag: 'card-reward' | 'rare-reward
 
 export type CampfireChoice = 'rest' | 'smith' | 'leave' | 'ruby'
 
-export type CampfireDecision = { choice: CampfireChoice; cardUid?: string; removeCardUid?: string }
+export type CampfireDecision = { choice: CampfireChoice; cardUid?: string; removeCardUid?: string; transformCardUid?: string }

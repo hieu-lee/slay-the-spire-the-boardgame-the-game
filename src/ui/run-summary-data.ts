@@ -12,6 +12,10 @@ export const CHARACTER_LABEL: Record<string, string> = {
   silent: 'Silent',
   defect: 'Defect',
   watcher: 'Watcher',
+  slime_boss: 'Slime Boss',
+  guardian: 'Guardian',
+  hexaghost: 'Hexaghost',
+  hermit: 'Hermit',
 }
 
 /** The seat as the summary needs it, so the online shell can pass a redacted one. */
