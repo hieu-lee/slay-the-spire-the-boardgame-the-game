@@ -80,7 +80,7 @@ import { COMBAT_OUTCOME_DELAY_MS, COMBAT_OUTCOME_SOUND_DELAY_MS } from './combat
 import { cardDef, faceOf } from '../game/cards.ts'
 import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers } from '../game/meta.ts'
 import type { DailyModifierId, RunMetaOptions, RunMode } from '../game/meta.ts'
-import { installSoundEffects, useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+import { installSoundEffects, useCombatMusic, useRunOutcomeSound } from './sfx.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { useGameSettings } from './game-settings.ts'
 import { wingBootLabel } from './wing-boots.ts'
@@ -184,7 +184,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
   }, [])
   useRunOutcomeSound(run, undefined, true,
     settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
-  useBossFightMusic(run.combat, active && open && settings.bgmVolume > 0, settings.bgmVolume)
+  useCombatMusic(run, active && open && settings.bgmVolume > 0, settings.bgmVolume)
   const [viewerId, setViewerId] = useState('p1')
   const [compendium, setCompendium] = useState(false)
   const [giveUpOpen, setGiveUpOpen] = useState(false)

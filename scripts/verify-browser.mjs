@@ -1148,9 +1148,40 @@ check('Sentry uses a transparent full-body cutout and character status clears HP
 })
 await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), combatAppearanceRun)
 
-const musicBeforeBoss = await page.evaluate(() => window.__SFX_PLAYS__)
-check('ordinary combat does not start boss music', () => {
-  assert(!musicBeforeBoss.some((sound) => sound.startsWith('/assets/bgm/')))
+const hallwayMusic = [
+  [1, 'exordium.mp3', 'hallway-1-1'], [1, 'battle-trance.mp3', 'hallway-1-0'],
+  [2, 'the-city.mp3', 'hallway-2-0'], [2, 'escape-plan.mp3', 'hallway-2-1'],
+  [3, 'dramatic-entrance.mp3', 'hallway-3-1'], [3, 'the-beyond.mp3', 'hallway-3-0'],
+  [4, 'the-ending.mp3', 'hallway-4-0'],
+]
+for (const [act, file, combatId] of hallwayMusic) {
+  await page.evaluate(({ run, act, combatId }) => {
+    const next = structuredClone(run)
+    next.act = act
+    next.combat.combatId = combatId
+    Object.assign(next.combat.enemies[0], { defId: 'sentry_a', isBoss: false, dead: false })
+    window.__STS_DEBUG__.setRun(next)
+  }, { run: combatAppearanceRun, act, combatId })
+  await page.waitForFunction((file) => window.__SFX_PLAYS__.includes(`/assets/bgm/${file}`), file)
+}
+const eliteMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate((run) => {
+  const next = structuredClone(run)
+  next.act = 1
+  next.combat.combatId = 'hallway-1-1'
+  Object.assign(next.combat.enemies[0], { defId: 'lagavulin', actionIndex: 0, isBoss: false, dead: false })
+  window.__STS_DEBUG__.setRun(next)
+}, combatAppearanceRun)
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/exordium.mp3'), eliteMusicBefore)
+const awakeEliteMusicBefore = await page.evaluate(() => window.__SFX_PLAYS__.length)
+await page.evaluate(() => {
+  const next = structuredClone(window.__STS_DEBUG__.getRun())
+  next.combat.enemies[0].actionIndex = 1
+  window.__STS_DEBUG__.setRun(next)
+})
+await page.waitForFunction((before) => window.__SFX_PLAYS__.slice(before).includes('/assets/bgm/facing-the-elite.mp3'), awakeEliteMusicBefore)
+check('combat music follows each act and Lagavulin changes themes when it wakes', () => {
+  assert(true)
 })
 const bossMusic = [
   ['hexaghost', 'the-guardian-emerges.mp3'],

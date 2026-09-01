@@ -37,7 +37,7 @@ import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
 import { COMBAT_OUTCOME_DELAY_MS, COMBAT_OUTCOME_SOUND_DELAY_MS } from './combat-screen/vfx.tsx'
-import { useBossFightMusic, useRunOutcomeSound } from './sfx.ts'
+import { useCombatMusic, useRunOutcomeSound } from './sfx.ts'
 import { eventCanStartCombat } from '../game/events.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
@@ -224,7 +224,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const giveUpVote = snapshot?.giveUpVote?.deadlineAt === expiredGiveUpDeadline ? undefined : snapshot?.giveUpVote
   useRunOutcomeSound(snapshot?.run, room.restorationEpoch, room.connection === 'connected',
     settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
-  useBossFightMusic(snapshot?.run?.combat, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
+  useCombatMusic(snapshot?.run, settings.bgmVolume > 0 && room.connection === 'connected', settings.bgmVolume)
   const runPhase = snapshot?.run?.phase
   const previousRunPhase = useRef(runPhase)
   const animateOpeningHand = shouldAnimateOnlineOpeningHand(
